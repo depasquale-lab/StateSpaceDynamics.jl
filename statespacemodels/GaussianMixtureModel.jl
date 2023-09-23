@@ -21,4 +21,22 @@ function GMM(k_means::Int, data_dim::Int)
     return GMM(k_means, means, covariances, weights)
 end
 
+"""E-Step for a GMM"""
+function EStep!(gmm:GMM, data::Matrix{Float64})
+    # Compute responsibilities and return
+end
+
+"""M-Step for a GMM"""
+function MStep!(gmm:GMM, data::Matrix{Float64})
+    # Update model parameters and return
+end
+
+"""Fit the GMM to data"""
+function fit!(gmm::GMM, data::Matrix{Float64}, maxiter=50, tol=1e-3)
+    for i = 1:maxiter
+        EStep!(gmm, data)
+        MStep!(gmm, data)
+    end
+end
+
 end #module 
