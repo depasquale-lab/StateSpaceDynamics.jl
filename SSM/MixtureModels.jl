@@ -21,11 +21,11 @@ function GMM(k_means::Int, data_dim::Int)
 end
 
 function EStep!(gmm::GMM, data::Matrix{Float64})
-    N, K = size(data, 2), gmm.k_means
+    N, K = size(data, 1), gmm.k_means
     πs = zeros(N, K)
     for n in 1:N
         for k in 1:K
-            πs[n ,k] = gmm.π_k[k] * pdf(MvNormal(gmm.μ_k[:, k], gmm.Σ_k[k]), data[:, n])
+            πs[n, k] = gmm.π_k[k] * pdf(MvNormal(gmm.μ_k[:, k], gmm.Σ_k[k]), data[n, :])
         end
     end
     πs .= πs ./ sum(πs, dims=2)
@@ -38,7 +38,7 @@ function MStep!(gmm::GMM, data::Matrix{Float64}, πs::Matrix{Float64})
 
     for k in 1:K
         N_k = sum(πs[:, k])
-        μ_k = sum((data .* πs[:, k]), dims=1) ./ N_k
+        μ_k = sum(data .* πs[:, k], dims=1) ./ N_k
         gmm.μ_k[:, k] = μ_k[:]
 
         Σ_ks = zeros(D, D)
@@ -53,19 +53,19 @@ function MStep!(gmm::GMM, data::Matrix{Float64}, πs::Matrix{Float64})
 end
 
 function log_likelihood(gmm::GMM, data::Matrix{Float64})
-    N, K = size(data, 2), gmm.k_means
+    N, K = size(data, 1), gmm.k_means
     ll = 0.0
     for n in 1:N
         ll_n = 0.0
         for k in 1:K
-            ll_n += gmm.π_k[k] * pdf(MvNormal(gmm.μ_k[:, k], gmm.Σ_k[k]), data[:, n])
+            ll_n += gmm.π_k[k] * pdf(MvNormal(gmm.μ_k[:, k], gmm.Σ_k[k]), data[n, :])
         end
         ll += log(ll_n)
     end
     return ll
 end
 
-function fit!(gmm::GMM, data::Matrix{Float64}, maxiter=50, tol=1e-3)
+function fit!(gmm::GMM, data::Matrix{Float64}; maxiter::Int=50, tol::Float64=1e-3)
     prev_ll = -Inf  # Initialize to negative infinity
     for i = 1:maxiter
         π_hat = EStep!(gmm, data)
