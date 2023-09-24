@@ -2,6 +2,7 @@ module ssm
 
 using Random
 using Statistics
+using Distributions
 using LinearAlgebra
 
 export GMM, fit!
@@ -22,13 +23,26 @@ function GMM(k_means::Int, data_dim::Int)
 end
 
 """E-Step for a GMM"""
-function EStep!(gmm:GMM, data::Matrix{Float64})
+function EStep!(gmm::GMM, data::Matrix{Float64})
     # Compute responsibilities and return
+    N, K = size(data, 2), gmm.k_means
+    responsibilites = zeros(N, K)
+    for n in 1:N
+        for k in 1:K
+            responsibilites[n ,k] = gmm.weights[k] * pdf(MvNormal(gmm.means[:, k], gmm.covariances[k]), data[:, n])
+        end
+    end
+    responsibilites .= responsibilites ./ sum(responsibilites, dim=2)
+    return responsibilites
 end
 
 """M-Step for a GMM"""
-function MStep!(gmm:GMM, data::Matrix{Float64})
+function MStep!(gmm::GMM, data::Matrix{Float64}, responsibilities::Vector{Float64})
+    N, K = size(data, 2), gmm.k_means
     # Update model parameters and return
+    for k in 1:K
+        #TODO Finish M-step
+    end
 end
 
 """Fit the GMM to data"""
