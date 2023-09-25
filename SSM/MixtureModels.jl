@@ -1,9 +1,3 @@
-using Random
-using Statistics
-using Distributions
-using LinearAlgebra
-
-
 export  GMM, fit!
 
 mutable struct GMM
