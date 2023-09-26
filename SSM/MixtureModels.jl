@@ -7,10 +7,6 @@ mutable struct GMM
     π_k::Vector{Float64}
 end
 
-function isposdef(mat::Matrix{Float64})
-    return all(eigvals(mat) .> 0)
-end
-
 function GMM(k_means::Int, data_dim::Int, data::Matrix{Float64})
     μ = kmeanspp_initialization(data, k_means)
     Σ = [I(data_dim) for _ = 1:k_means]
@@ -42,25 +38,22 @@ function kmeanspp_initialization(data::Matrix{Float64}, k_means::Int)
 end
 
 function EStep!(gmm::GMM, data::Matrix{Float64})
-    N, K = size(data, 1), gmm.k_means
-    log_γ = zeros(N, K)
-    γ = zeros(N, K)  # Separate variable to hold γ
+    N, _ = size(data)
+    K = gmm.k_means
+    γ = zeros(N, K)
     
     for n in 1:N
         for k in 1:K
-            log_density = logpdf(MvNormal(gmm.μ_k[:, k], gmm.Σ_k[k]), data[n, :])
-            log_γ[n, k] = log(gmm.π_k[k]) + log_density
+            distribution = MvNormal(gmm.μ_k[:, k], gmm.Σ_k[k])
+            γ[n, k] = gmm.π_k[k] * pdf(distribution, data[n, :])
         end
     end
-    println("Debug EStep: max(log_γ) = ", maximum(log_γ), ", min(log_γ) = ", minimum(log_γ))
-    # Numerically stabilize the computation of γ
     for n in 1:N
-        max_log_γ = maximum(log_γ[n, :])
-        γ[n, :] = exp.(log_γ[n, :] .- max_log_γ)  # Take the exponential of (log_γ - max_log_γ)
-        γ[n, :] ./= sum(γ[n, :])  # Normalize to sum to 1
+        γ[n, :] ./= sum(γ[n, :], dims=1)
     end
-    return γ  # Return the γ
+    return γ
 end
+
 
 function MStep!(gmm::GMM, data::Matrix{Float64}, γ::Matrix{Float64})
     N, D = size(data)
@@ -71,31 +64,18 @@ function MStep!(gmm::GMM, data::Matrix{Float64}, γ::Matrix{Float64})
     μ_k = zeros(D, K)
     Σ_k = zeros(D, D, K)
 
-    # Easier to perform element-wise multiplication with data if it's transposed once
-    data_t = data'
-
     for k in 1:K
         N_k[k] = sum(γ[:, k])
         println("Debug MStep: N_k for cluster $k = ", N_k[k])
-        μ_k[:, k] = sum(data_t .* γ[:, k]', dims=2) ./ N_k[k]
-        Σ_k[:,:,k] = zeros(D, D)
+        μ_k[:, k] = (γ[:, k]' * data) ./ N_k[k]
     end
-
-    for n in 1:N
-        for k in 1:K
-            x_n = data[n, :] .- μ_k[:, k]'
-            Σ_k[:,:,k] += (γ[n, k] .* (x_n' * x_n))
-        end
-    end
-    
     for k in 1:K
-        Σ_k[:,:,k] ./= N_k[k]
-        if !isposdef(gmm.Σ_k[k])
-            println("Debug: Covariance matrix Σ_$k is not positive definite!")
-        end
+        x_n = data .- μ_k[:, k]'
+        Σ_k[:,:,k] += (((γ[:, k] .* x_n)' * x_n) ./ N_k[k]) + (I * 1e-6)
+        # This is a complete hack...for some reason my covariance matrices were not hermitian so i just avergaed...dunno if my calcualtions were wrong or numerical issues
+        Σ_k[:,:,k] = 0.5 * (Σ_k[:,:,k] * Σ_k[:,:,k]')
         gmm.π_k[k] = N_k[k] / N
     end
-    
     gmm.μ_k = μ_k
     gmm.Σ_k = [Σ_k[:,:,k] for k in 1:K]
 end
@@ -131,3 +111,18 @@ function fit!(gmm::GMM, data::Matrix{Float64}; maxiter::Int=50, tol::Float64=1e-
         prev_ll = curr_ll
     end
 end
+
+using StatsBase
+using LinearAlgebra
+using Distributions
+μ1, μ2 = [1., 1.], [-1., -1.]
+σ1, σ2 = [1 0; 0 1], [1 0; 0 1]
+x = [1. 2.; 1. 3.;2. 1.; 0. 0.; 0. -1.; -1. -1.]
+
+K = 2
+
+gmm = GMM(K, 2, x)
+gmm.μ_k[:, 1] = μ1
+gmm.μ_k[:, 2] = μ2
+println(log_likelihood(gmm, x))
+fit!(gmm, x)

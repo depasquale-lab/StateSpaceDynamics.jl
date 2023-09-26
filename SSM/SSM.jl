@@ -5,6 +5,7 @@ using Statistics
 using Distributions
 using LinearAlgebra
 using StatsBase
+using LogExpFunctions
 
 include("Emissions.jl")
 include("MixtureModels.jl")
