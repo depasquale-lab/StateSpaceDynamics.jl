@@ -1,3 +1,5 @@
+export EmissionsModel, GaussianEmission
+
 # Create emission models here 
 abstract type EmissionsModel end
 
@@ -12,7 +14,7 @@ function likelihood(emission::GaussianEmission, observation::Vector{Float64})
     return pdf(MvNormal(emission.μ, emission.Σ), observation)
 end
 
-# Sampling function (Optional)
+# Sampling function 
 function sample_emission(emission::GaussianEmission)
     return rand(MvNormal(emission.μ, emission.Σ))
 end

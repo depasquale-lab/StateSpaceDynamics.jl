@@ -1,6 +1,6 @@
 
 # HMM Definition
-struct HMM{EM <: EmissionModel}
+struct HMM{EM <: EmissionsModel}
     A::Matrix{Float64}  # State Transition Matrix
     B::EM               # Emission Model
     π::Vector{Float64}  # Initial State Distribution
