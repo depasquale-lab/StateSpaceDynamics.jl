@@ -37,19 +37,19 @@ function kmeanspp_initialization(data::Matrix{Float64}, k_means::Int)
     return centroids
 end
 
+# i have confirmed that this function produces the same results i get in python
 function EStep!(gmm::GMM, data::Matrix{Float64})
     N, _ = size(data)
     K = gmm.k_means
     γ = zeros(N, K)
-    
+    log_γ = zeros(N, K)
     for n in 1:N
         for k in 1:K
             distribution = MvNormal(gmm.μ_k[:, k], gmm.Σ_k[k])
-            γ[n, k] = gmm.π_k[k] * pdf(distribution, data[n, :])
+            log_γ[n, k] = log(gmm.π_k[k]) + logpdf(distribution, data[n, :])
         end
-    end
-    for n in 1:N
-        γ[n, :] ./= sum(γ[n, :], dims=1)
+        logsum = logsumexp(log_γ[n, :])
+        γ[n, :] = exp.(log_γ[n, :] .- logsum)
     end
     return γ
 end
@@ -66,14 +66,15 @@ function MStep!(gmm::GMM, data::Matrix{Float64}, γ::Matrix{Float64})
 
     for k in 1:K
         N_k[k] = sum(γ[:, k])
-        println("Debug MStep: N_k for cluster $k = ", N_k[k])
         μ_k[:, k] = (γ[:, k]' * data) ./ N_k[k]
     end
     for k in 1:K
         x_n = data .- μ_k[:, k]'
-        Σ_k[:,:,k] += (((γ[:, k] .* x_n)' * x_n) ./ N_k[k]) + (I * 1e-6)
-        # This is a complete hack...for some reason my covariance matrices were not hermitian so i just avergaed...dunno if my calcualtions were wrong or numerical issues
-        Σ_k[:,:,k] = 0.5 * (Σ_k[:,:,k] * Σ_k[:,:,k]')
+        Σ_k[:,:,k] = ((γ[:, k] .* x_n)' * x_n ./ (N_k[k] + I*1e-6)) + (I * 1e-6)
+        if !ishermitian(Σ_k[:, :, k])
+            # This is a complete hack...for some reason my covariance matrices were not hermitian so i just avergaed...dunno if my calcualtions were wrong or numerical issues
+            Σ_k[:,:,k] = 0.5 * (Σ_k[:,:,k] + Σ_k[:,:,k]')
+        end
         gmm.π_k[k] = N_k[k] / N
     end
     gmm.μ_k = μ_k
@@ -112,17 +113,3 @@ function fit!(gmm::GMM, data::Matrix{Float64}; maxiter::Int=50, tol::Float64=1e-
     end
 end
 
-using StatsBase
-using LinearAlgebra
-using Distributions
-μ1, μ2 = [1., 1.], [-1., -1.]
-σ1, σ2 = [1 0; 0 1], [1 0; 0 1]
-x = [1. 2.; 1. 3.;2. 1.; 0. 0.; 0. -1.; -1. -1.]
-
-K = 2
-
-gmm = GMM(K, 2, x)
-gmm.μ_k[:, 1] = μ1
-gmm.μ_k[:, 2] = μ2
-println(log_likelihood(gmm, x))
-fit!(gmm, x)
