@@ -72,7 +72,7 @@ function MStep!(gmm::GMM, data::Matrix{Float64}, γ::Matrix{Float64})
         x_n = data .- μ_k[:, k]'
         Σ_k[:,:,k] = ((γ[:, k] .* x_n)' * x_n ./ (N_k[k] + I*1e-6)) + (I * 1e-6)
         if !ishermitian(Σ_k[:, :, k])
-            # This is a complete hack...for some reason my covariance matrices were not hermitian so i just avergaed...dunno if my calcualtions were wrong or numerical issues
+            # Average matrix to enforce its hermitian
             Σ_k[:,:,k] = 0.5 * (Σ_k[:,:,k] + Σ_k[:,:,k]')
         end
         gmm.π_k[k] = N_k[k] / N
