@@ -29,14 +29,18 @@ function HMM(data::Matrix{Float64}, k_states::Int=2, emissions::String="Gaussian
 end
 
 
-function forward(hmm::HMM, data::matrix{Float64})
+function forward(hmm::HMM, data::Matrix{Float64})
     T, _ = size(data)
-    # Initialize an α-vector 
-    α = zeros(hmm.k_states, T)
+    K = size(hmm.A, 1)  # Number of states
+
+    # Initialize an α-matrix 
+    α = zeros(Float64, K, T)
+
     # Calculate α₁
     for k in 1:K
-        α[k, 1] = hmm.πₖ[k] * hmm.B.likelihood(data[1, :])
+        α[k, 1] = hmm.πₖ[k] * hmm.B[k].likelihood(data[1, :])
     end
+
     # Now perform the rest of the forward algorithm for t=2 to T
     for t in 2:T
         for j in 1:K
@@ -51,11 +55,58 @@ function forward(hmm::HMM, data::matrix{Float64})
     return α
 end
 
-function backward()
-    #TODO Implement
+function backward(hmm::HMM, data::Matrix{Float64})
+    T, _ = size(data)
+    K = size(hmm.A, 1)
+
+    # Initialize a β matrix
+    β = zeros(Float64, K, T)
+    
+    # Set last β equal to 1 for all states
+    β[:, T] .= 1
+
+    # Calculate β
+    for t in T-1:-1:1
+        for i in 1:K
+            sum_beta_b = 0.0
+            for j in 1:K
+                sum_beta_b += hmm.A[i, j] * hmm.B[j].likelihood(data[t+1, :]) * β[j, t+1]
+            end
+            β[i, t] = sum_beta_b
+        end
+    end
+
+    return β
 end
 
-function baumWelch!()
+
+function baumWelch!(hmm::HMM,  data::Matrix{Float6464}, max_iters::Int=100)
+    T, _ = size(data)
+    K = size(hmm.A, 1)
+    # EM via BaumWelch algorithm
+    for iter in max_iters
+        α = forward(hmm, data)
+        β = backward(hmm, data)
+        # Calculate proabilities according to Bayes rule, i.e. E-Step
+        γ = α .* β
+        γ ./= sum(γ, dims=1)
+        # Now we calculate ξ values
+        ξ = zeros(Float64, K, K, T-1)
+        for t in 1:T-1
+            # Dummy denominator variable so after ξ calculatiosn we can just divide as oppsoed to recalculating anything
+            denominator = 0.0
+            for i in 1:K
+                for j in 1:K
+                    ξ[i, j, t] = α[i, t] * hmm.A[i, j] * hmm.B[j].likelihood[data[t+1, :]] * β[j, t+1]
+                    denominator += ξ[i, j, t]
+                end
+            end
+            ξ[:, :, t] ./= denominator
+        end
+
+        # M-Step; update our parameters based on E-Step
+    end
+
     #TODO Implement
 end
 
