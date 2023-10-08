@@ -6,10 +6,11 @@ using Distributions
 using LinearAlgebra
 using StatsBase
 using LogExpFunctions
+using Plots
 
 include("Emissions.jl")
 include("MixtureModels.jl")
 include("HiddenMarkovModels.jl")
-include("KalmanFilters.jl")
+include("LDSs.jl")
 
 end

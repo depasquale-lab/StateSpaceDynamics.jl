@@ -1,4 +1,4 @@
-
+export HMM
 # HMM Definition
 struct HMM{EM <: EmissionsModel}
     A::Matrix{Float64}  # State Transition Matrix
@@ -80,11 +80,11 @@ function backward(hmm::HMM, data::Matrix{Float64})
 end
 
 
-function baumWelch!(hmm::HMM,  data::Matrix{Float6464}, max_iters::Int=100)
+function baumWelch!(hmm::HMM,  data::Matrix{Float64}, max_iters::Int=100)
     T, _ = size(data)
     K = size(hmm.A, 1)
     # EM via BaumWelch algorithm
-    for iter in max_iters
+    for iter in 1:max_iters
         α = forward(hmm, data)
         β = backward(hmm, data)
         # Calculate proabilities according to Bayes rule, i.e. E-Step
@@ -93,21 +93,29 @@ function baumWelch!(hmm::HMM,  data::Matrix{Float6464}, max_iters::Int=100)
         # Now we calculate ξ values
         ξ = zeros(Float64, K, K, T-1)
         for t in 1:T-1
-            # Dummy denominator variable so after ξ calculatiosn we can just divide as oppsoed to recalculating anything
+            # Dummy denominator variable so after ξ calculatiosn we can just divide as opposed to recalculating anything
             denominator = 0.0
             for i in 1:K
                 for j in 1:K
-                    ξ[i, j, t] = α[i, t] * hmm.A[i, j] * hmm.B[j].likelihood[data[t+1, :]] * β[j, t+1]
+                    ξ[i, j, t] = α[i, t] * hmm.A[i, j] * likelihood(hmm.B[j], data[t+1, :]) * β[j, t+1]
                     denominator += ξ[i, j, t]
                 end
             end
             ξ[:, :, t] ./= denominator
         end
-
         # M-Step; update our parameters based on E-Step
+        # Update initial state probabilities
+        hmm.πₖ .= γ[:,1]
+        # Update transition probabilities
+        for i in 1:K
+            for j in 1:K
+                hmm.A[i,j] = sum(ξ[i,j,:]) / sum(γ[i,1:T-1])
+            end
+        end
+        for k in 1:K
+            hmm.B[k] = updateEmissionModel!(hmm.B[k], data, γ[k,:])
+        end
     end
-
-    #TODO Implement
 end
 
 function fit!()
