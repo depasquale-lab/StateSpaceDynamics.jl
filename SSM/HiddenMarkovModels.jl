@@ -118,6 +118,45 @@ function baumWelch!(hmm::HMM,  data::Matrix{Float64}, max_iters::Int=100)
     end
 end
 
+function viterbi(hmm::HMM, data::Matrix{Float64})
+    T, _ = size(data)
+    K = size(hmm.A, 1)  # Number of states
+
+    # Step 1: Initialization
+    viterbi = zeros(Float64, K, T)
+    backpointer = zeros(Int, K, T)
+    
+    for i in 1:K
+        viterbi[i, 1] = hmm.πₖ[i] * hmm.B[i].likelihood(data[1, :])
+        backpointer[i, 1] = 0
+    end
+
+    # Step 2: Recursion
+    for t in 2:T
+        for j in 1:K
+            max_prob, max_state = -Inf, 0
+            for i in 1:K
+                prob = viterbi[i, t-1] * hmm.A[i,j] * hmm.B[j].likelihood(data[t, :])
+                if prob > max_prob
+                    max_prob = prob
+                    max_state = i
+                end
+            end
+            viterbi[j, t] = max_prob
+            backpointer[j, t] = max_state
+        end
+    end
+
+    # Step 3: Termination
+    best_path_prob, best_last_state = findmax(viterbi[:, T])
+    best_path = [best_last_state]
+    for t in T:-1:2
+        push!(best_path, backpointer[best_path[end], t])
+    end
+
+    return reverse(best_path)
+end
+
 function fit!()
     #TODO Implement the viterbi algorithm.
 end

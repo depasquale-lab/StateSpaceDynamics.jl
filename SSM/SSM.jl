@@ -11,6 +11,6 @@ using Plots
 include("Emissions.jl")
 include("MixtureModels.jl")
 include("HiddenMarkovModels.jl")
-include("LDSs.jl")
+include("LDS.jl")
 
 end
