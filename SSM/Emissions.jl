@@ -4,7 +4,7 @@ export EmissionsModel, GaussianEmission
 abstract type EmissionsModel end
 
 # Gaussian Emission
-struct GaussianEmission <: EmissionsModel
+mutable struct GaussianEmission <: EmissionsModel
     μ::Vector{Float64}  # State-dependent mean
     Σ::Matrix{Float64}  # State-dependent covariance
 end
@@ -23,11 +23,16 @@ function updateEmissionModel!(emission::GaussianEmission, data::Matrix{Float64},
     # Assuming data is of size (T, D) where T is the number of observations and D is the observation dimension
     T, D = size(data)
     # Update mean
-    new_mean = sum(data .* γ) ./ sum(γ)
+    weighted_sum = sum(data .* γ, dims=1)
+    new_mean = weighted_sum[:] ./ sum(γ)
+    
     # Update covariance
     centered_data = data .- new_mean'
     weighted_centered = centered_data .* sqrt.(γ)
     new_covariance = (weighted_centered' * weighted_centered) ./ sum(γ)
+    if !ishermitian(new_covariance)
+        new_covariance = (new_covariance + new_covariance') * 0.5
+    end
     emission.μ = new_mean
     emission.Σ = new_covariance
     return emission

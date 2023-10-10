@@ -1,12 +1,19 @@
 export  GMM, fit!, log_likelihood
 
-mutable struct GMM
+
+abstract type MixtureModel end
+
+"""Set of functions for estimating a Gaussian Mixtuire Model"""
+
+"""GMM Class"""
+mutable struct GMM <: MixtureModel
     k_means::Int
     μ_k::Matrix{Float64}
     Σ_k::Array{Matrix{Float64}, 1}
     π_k::Vector{Float64}
 end
 
+"""GMM Constructor"""
 function GMM(k_means::Int, data_dim::Int, data::Matrix{Float64})
     μ = kmeanspp_initialization(data, k_means)
     Σ = [I(data_dim) for _ = 1:k_means]
@@ -14,30 +21,7 @@ function GMM(k_means::Int, data_dim::Int, data::Matrix{Float64})
     return GMM(k_means, μ, Σ, πs)
 end
 
-function euclidean_distance(a::Vector{Float64}, b::Vector{Float64})
-    return sqrt(sum((a .- b).^2))
-end
-
-function kmeanspp_initialization(data::Matrix{Float64}, k_means::Int)
-    N, D = size(data)
-    centroids = zeros(D, k_means)
-    rand_idx = rand(1:N)
-    centroids[:, 1] = data[rand_idx, :]
-
-    for k in 2:k_means
-        dists = zeros(N)
-        for i in 1:N
-            dists[i] = minimum([euclidean_distance(data[i, :], centroids[:, j]) for j in 1:(k-1)])
-        end
-        probs = dists .^ 2
-        probs ./= sum(probs)
-        next_idx = sample(1:N, Weights(probs))
-        centroids[:, k] = data[next_idx, :]
-    end
-    return centroids
-end
-
-# i have confirmed that this function produces the same results i get in python
+# E-Step (Confirmed in Python)
 function EStep!(gmm::GMM, data::Matrix{Float64})
     N, _ = size(data)
     K = gmm.k_means

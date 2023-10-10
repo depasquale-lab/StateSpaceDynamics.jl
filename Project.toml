@@ -1,3 +1,4 @@
 [deps]
 LogExpFunctions = "2ab3a3ac-af41-5b50-aa03-7779005ae688"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"

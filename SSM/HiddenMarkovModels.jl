@@ -1,8 +1,8 @@
-export HMM
+export HMM, baumWelch!
 # HMM Definition
 struct HMM{EM <: EmissionsModel}
     A::Matrix{Float64}  # State Transition Matrix
-    B::EM               # Emission Model
+    B::Vector{EM}               # Emission Model
     πₖ ::Vector{Float64}  # Initial State Distribution
     D::Int              # Observation Dimension
 end
@@ -38,7 +38,7 @@ function forward(hmm::HMM, data::Matrix{Float64})
 
     # Calculate α₁
     for k in 1:K
-        α[k, 1] = hmm.πₖ[k] * hmm.B[k].likelihood(data[1, :])
+        α[k, 1] = hmm.πₖ[k] * likelihood(hmm.B[k], data[1, :])
     end
 
     # Now perform the rest of the forward algorithm for t=2 to T
@@ -48,7 +48,7 @@ function forward(hmm::HMM, data::Matrix{Float64})
             for i in 1:K
                 sum_alpha_a += α[i, t-1] * hmm.A[i, j]
             end
-            α[j, t] = sum_alpha_a * hmm.B[j].likelihood(data[t, :])
+            α[j, t] = sum_alpha_a * likelihood(hmm.B[j], data[t, :])
         end
     end
 
@@ -70,7 +70,7 @@ function backward(hmm::HMM, data::Matrix{Float64})
         for i in 1:K
             sum_beta_b = 0.0
             for j in 1:K
-                sum_beta_b += hmm.A[i, j] * hmm.B[j].likelihood(data[t+1, :]) * β[j, t+1]
+                sum_beta_b += hmm.A[i, j] * likelihood(hmm.B[j], data[t+1, :]) * β[j, t+1]
             end
             β[i, t] = sum_beta_b
         end
@@ -118,7 +118,7 @@ function baumWelch!(hmm::HMM,  data::Matrix{Float64}, max_iters::Int=100)
     end
 end
 
-function viterbi(hmm::HMM, data::Matrix{Float64})
+function viterbi(hmm::HMM{EmissionsModel}, data::Matrix{Float64})
     T, _ = size(data)
     K = size(hmm.A, 1)  # Number of states
 
