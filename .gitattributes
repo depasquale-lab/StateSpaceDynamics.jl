@@ -1,0 +1,2 @@
+# remove jupyter notebook from language stats
+notebooks/** linguist-vendored
