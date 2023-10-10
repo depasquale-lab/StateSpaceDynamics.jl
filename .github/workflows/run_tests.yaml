@@ -1,0 +1,23 @@
+name: Run Julia Tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v2
+    
+    - name: Setup Julia
+      uses: julia-actions/setup-julia@v1
+      with:
+        version: '1.6'
+        
+    - name: Install dependencies
+      run: |
+        julia --project -e 'using Pkg; Pkg.instantiate()'
+        
+    - name: Run tests
+      run: |
+        julia --project -e 'using Pkg; Pkg.test()'

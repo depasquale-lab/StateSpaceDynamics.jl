@@ -7,6 +7,7 @@ using LinearAlgebra
 using StatsBase
 using LogExpFunctions
 using Plots
+using Test
 
 include("Emissions.jl")
 include("MixtureModels.jl")
