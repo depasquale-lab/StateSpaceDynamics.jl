@@ -1,6 +1,6 @@
-name: Run Julia Tests
+name: SSM-CI
 
-on: [push, pull_request]
+on: [push]
 
 jobs:
   test:
@@ -20,4 +20,4 @@ jobs:
         
     - name: Run tests
       run: |
-        julia --project="." -e 'using Pkg; Pkg.test()'
+        julia --project="$GITHUB_WORKSPACE" -e 'using Pkg; Pkg.test()'

@@ -1,5 +1,7 @@
 name = "SSM"
 
+authors = ["Ryan Senne rsenne@bu.edu"]
+
 [deps]
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 LogExpFunctions = "2ab3a3ac-af41-5b50-aa03-7779005ae688"

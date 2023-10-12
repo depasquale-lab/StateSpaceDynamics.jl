@@ -1,3 +1,6 @@
+using SSM
+using Test
+
 function test_GMM_constructor()
     k_means = 3
     data_dim = 2
