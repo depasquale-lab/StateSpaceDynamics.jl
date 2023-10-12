@@ -20,4 +20,4 @@ jobs:
         
     - name: Run tests
       run: |
-        julia --project -e 'using Pkg; Pkg.test()'
+        julia --project="." -e 'using Pkg; Pkg.test()'

@@ -1,7 +1,7 @@
 abstract type DynamicalSystem end
 
 # LDS Definition
-struct LDS <: DynamicalSystem
+mutable struct LDS <: DynamicalSystem
     #TODO: Implement LDS
     A::Matrix{Float64} # Transition Matrix
     C::Matrix{Float64} # Observation Matrix
@@ -15,11 +15,11 @@ struct LDS <: DynamicalSystem
 end
 
 # SLDS Definition
-struct SLDS <: DynamicalSystem
+mutable struct SLDS <: DynamicalSystem
     #TODO: Implement SLDS
 end
 
 #rSLDS Definition
-struct rSLDS <: DynamicalSystem
+mutable struct rSLDS <: DynamicalSystem
     #TODO: Implement rSLDS
 end

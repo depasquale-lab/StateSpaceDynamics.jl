@@ -1,4 +1,4 @@
-export HMM, baumWelch!
+export HMM, baumWelch!, viterbi
 # HMM Definition
 struct HMM{EM <: EmissionsModel}
     A::Matrix{Float64}  # State Transition Matrix
@@ -38,44 +38,43 @@ function forward(hmm::HMM, data::Matrix{Float64})
 
     # Calculate α₁
     for k in 1:K
-        α[k, 1] = hmm.πₖ[k] * likelihood(hmm.B[k], data[1, :])
+        α[k, 1] = log(hmm.πₖ[k]) + loglikelihood(hmm.B[k], data[1, :])
     end
-
+    
     # Now perform the rest of the forward algorithm for t=2 to T
     for t in 2:T
         for j in 1:K
-            sum_alpha_a = 0.0
+            values_to_sum = Float64[]
             for i in 1:K
-                sum_alpha_a += α[i, t-1] * hmm.A[i, j]
+                push!(values_to_sum, log(hmm.A[i, j]) + α[i, t-1])
             end
-            α[j, t] = sum_alpha_a * likelihood(hmm.B[j], data[t, :])
+            log_sum_alpha_a = logsumexp(values_to_sum)
+            α[j, t] = log_sum_alpha_a + loglikelihood(hmm.B[j], data[t, :])
         end
     end
-
     return α
 end
 
 function backward(hmm::HMM, data::Matrix{Float64})
     T, _ = size(data)
-    K = size(hmm.A, 1)
+    K = size(hmm.A, 1)  # Number of states
 
     # Initialize a β matrix
     β = zeros(Float64, K, T)
     
-    # Set last β equal to 1 for all states
-    β[:, T] .= 1
+    # Set last β values. In log-space, 0 corresponds to a value of 1 in the original space.
+    β[:, T] .= 0  # log(1) = 0
 
-    # Calculate β
+    # Calculate β, starting from T-1 and going backward to 1
     for t in T-1:-1:1
         for i in 1:K
-            sum_beta_b = 0.0
+            values_to_sum = Float64[]
             for j in 1:K
-                sum_beta_b += hmm.A[i, j] * likelihood(hmm.B[j], data[t+1, :]) * β[j, t+1]
+                push!(values_to_sum, log(hmm.A[i, j]) + loglikelihood(hmm.B[j], data[t+1, :]) + β[j, t+1])
             end
-            β[i, t] = sum_beta_b
+            β[i, t] = logsumexp(values_to_sum)
         end
     end
-
     return β
 end
 
@@ -87,33 +86,44 @@ function baumWelch!(hmm::HMM,  data::Matrix{Float64}, max_iters::Int=100)
     for iter in 1:max_iters
         α = forward(hmm, data)
         β = backward(hmm, data)
+        # Compute and print the log-likelihood
+        log_likelihood = logsumexp(α[:, T])
+        println("Iteration $iter, Log-likelihood: $log_likelihood")
         # Calculate proabilities according to Bayes rule, i.e. E-Step
-        γ = α .* β
-        γ ./= sum(γ, dims=1)
+        γ = α .+ β
+        # Normalize γ values
+    for t in 1:T
+        max_gamma = maximum(γ[:, t])
+        log_sum = max_gamma + log(sum(exp.(γ[:, t] .- max_gamma)))
+        γ[:, t] .-= log_sum
+    end
         # Now we calculate ξ values
         ξ = zeros(Float64, K, K, T-1)
         for t in 1:T-1
-            # Dummy denominator variable so after ξ calculatiosn we can just divide as opposed to recalculating anything
-            denominator = 0.0
+            # Array to store the unnormalized ξ values
+            log_ξ_unnormalized = zeros(Float64, K, K)
             for i in 1:K
                 for j in 1:K
-                    ξ[i, j, t] = α[i, t] * hmm.A[i, j] * likelihood(hmm.B[j], data[t+1, :]) * β[j, t+1]
-                    denominator += ξ[i, j, t]
+                    log_ξ_unnormalized[i, j] = α[i, t] + log(hmm.A[i, j]) + loglikelihood(hmm.B[j], data[t+1, :]) + β[j, t+1]
                 end
             end
-            ξ[:, :, t] ./= denominator
+            # Normalize the ξ values using log-sum-exp operation
+            max_ξ = maximum(log_ξ_unnormalized)
+            denominator = max_ξ + log(sum(exp.(log_ξ_unnormalized .- max_ξ)))
+            
+            ξ[:, :, t] .= log_ξ_unnormalized .- denominator
         end
         # M-Step; update our parameters based on E-Step
         # Update initial state probabilities
-        hmm.πₖ .= γ[:,1]
+        hmm.πₖ .= exp.(γ[:, 1])
         # Update transition probabilities
         for i in 1:K
             for j in 1:K
-                hmm.A[i,j] = sum(ξ[i,j,:]) / sum(γ[i,1:T-1])
+                hmm.A[i,j] = exp(log(sum(exp.(ξ[i,j,:]))) - log(sum(exp.(γ[i,1:T-1]))))
             end
         end
         for k in 1:K
-            hmm.B[k] = updateEmissionModel!(hmm.B[k], data, γ[k,:])
+            hmm.B[k] = updateEmissionModel!(hmm.B[k], data, exp.(γ[k,:]))
         end
     end
 end
@@ -127,7 +137,7 @@ function viterbi(hmm::HMM{EmissionsModel}, data::Matrix{Float64})
     backpointer = zeros(Int, K, T)
     
     for i in 1:K
-        viterbi[i, 1] = hmm.πₖ[i] * hmm.B[i].likelihood(data[1, :])
+        viterbi[i, 1] = log(hmm.πₖ[i]) + loglikelihood(hmm.B[i], data[1, :])
         backpointer[i, 1] = 0
     end
 
@@ -136,7 +146,7 @@ function viterbi(hmm::HMM{EmissionsModel}, data::Matrix{Float64})
         for j in 1:K
             max_prob, max_state = -Inf, 0
             for i in 1:K
-                prob = viterbi[i, t-1] * hmm.A[i,j] * hmm.B[j].likelihood(data[t, :])
+                prob = log(viterbi[i, t-1]) + log(hmm.A[i,j]) + loglikelihood(hmm.B[j], data[t, :])
                 if prob > max_prob
                     max_prob = prob
                     max_state = i

@@ -10,8 +10,8 @@ mutable struct GaussianEmission <: EmissionsModel
 end
 
 # Likelihood function
-function likelihood(emission::GaussianEmission, observation::Vector{Float64})
-    return pdf(MvNormal(emission.μ, emission.Σ), observation)
+function loglikelihood(emission::GaussianEmission, observation::Vector{Float64})
+    return logpdf(MvNormal(emission.μ, emission.Σ), observation)
 end
 
 # Sampling function 

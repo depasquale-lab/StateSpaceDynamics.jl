@@ -24,3 +24,11 @@ function kmeanspp_initialization(data::Matrix{Float64}, k_means::Int)
     end
     return centroids
 end
+
+struct ProbabilisticPCA
+    W::Matrix{Float64}
+    σ2::Vector{Float64}
+    μ::Vector{Float64}
+    k::Int
+    D::Int
+end
