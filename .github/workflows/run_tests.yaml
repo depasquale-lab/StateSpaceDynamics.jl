@@ -13,6 +13,12 @@ jobs:
       uses: julia-actions/setup-julia@v1
       with:
         version: '1.9.3'
+
+    - name: Debug environment
+      run: |
+        echo "GITHUB_WORKSPACE: $GITHUB_WORKSPACE"
+        ls -al "$GITHUB_WORKSPACE"
+        cat "$GITHUB_WORKSPACE/Project.toml"
         
     - name: Install dependencies
       run: |
