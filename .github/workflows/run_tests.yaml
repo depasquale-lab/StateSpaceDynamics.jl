@@ -16,6 +16,7 @@ jobs:
 
     - name: Debug environment
       run: |
+        julia -e 'println(ENV["GITHUB_WORKSPACE"])'
         echo "GITHUB_WORKSPACE: $GITHUB_WORKSPACE"
         ls -al "$GITHUB_WORKSPACE"
         cat "$GITHUB_WORKSPACE/Project.toml"
@@ -23,6 +24,9 @@ jobs:
     - name: Install dependencies
       run: |
         julia --project -e 'using Pkg; Pkg.instantiate()'
+
+    - name: Activate Julia Project
+      run: julia --project="$GITHUB_WORKSPACE$" -e 'using Pkg; Pkg.activate();'
         
     - name: Run tests
       run: |
