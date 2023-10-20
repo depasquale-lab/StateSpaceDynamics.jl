@@ -26,8 +26,8 @@ jobs:
         julia --project -e 'using Pkg; Pkg.instantiate()'
 
     - name: Activate Julia Project
-      run: julia --project="$GITHUB_WORKSPACE$" -e 'using Pkg; Pkg.activate();'
+      run: julia --project="$GITHUB_WORKSPACE" -e 'using Pkg; Pkg.activate();'
         
     - name: Run tests
       run: |
-        julia --project="$GITHUB_WORKSPACE$" -e 'using Pkg; Pkg.test()'
+        julia --project="$GITHUB_WORKSPACE" -e 'using Pkg; Pkg.test()'
