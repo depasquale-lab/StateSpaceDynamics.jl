@@ -79,16 +79,25 @@ function backward(hmm::HMM, data::Matrix{Float64})
 end
 
 
-function baumWelch!(hmm::HMM,  data::Matrix{Float64}, max_iters::Int=100)
+function baumWelch!(hmm::HMM,  data::Matrix{Float64}, max_iters::Int=100, tol::Float64=1e-6)
     T, _ = size(data)
     K = size(hmm.A, 1)
-    # EM via BaumWelch algorithm
+    log_likelihood = -Inf
+    # Initialize progress bar
+    p = Progress(max_iters; dt=1, desc="Computing Baum-Welch...",)
     for iter in 1:max_iters
+        # Update the progress bar
+        next!(p; showvalues = [(:iteration, iter), (:log_likelihood, log_likelihood)])
         α = forward(hmm, data)
         β = backward(hmm, data)
-        # Compute and print the log-likelihood
-        log_likelihood = logsumexp(α[:, T])
-        println("Iteration $iter, Log-likelihood: $log_likelihood")
+        # Compute and update the log-likelihood
+        log_likelihood_current = logsumexp(α[:, T])
+        if abs(log_likelihood_current - log_likelihood) < tol
+            finish!(p)
+            break
+        else
+            log_likelihood = log_likelihood_current
+        end
         # Calculate proabilities according to Bayes rule, i.e. E-Step
         γ = α .+ β
         # Normalize γ values
@@ -128,7 +137,7 @@ function baumWelch!(hmm::HMM,  data::Matrix{Float64}, max_iters::Int=100)
     end
 end
 
-function viterbi(hmm::HMM{EmissionsModel}, data::Matrix{Float64})
+function viterbi(hmm::HMM, data::Matrix{Float64})
     T, _ = size(data)
     K = size(hmm.A, 1)  # Number of states
 
@@ -146,7 +155,7 @@ function viterbi(hmm::HMM{EmissionsModel}, data::Matrix{Float64})
         for j in 1:K
             max_prob, max_state = -Inf, 0
             for i in 1:K
-                prob = log(viterbi[i, t-1]) + log(hmm.A[i,j]) + loglikelihood(hmm.B[j], data[t, :])
+                prob = viterbi[i, t-1] + log(hmm.A[i,j]) + loglikelihood(hmm.B[j], data[t, :])
                 if prob > max_prob
                     max_prob = prob
                     max_state = i
