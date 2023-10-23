@@ -1,18 +1,20 @@
 module SSM
 
-using Random
-using Statistics
 using Distributions
 using LinearAlgebra
-using StatsBase
 using LogExpFunctions
+using Optim
 using Plots
 using ProgressMeter
+using Random
+using Statistics
+using StatsBase
 
 include("Emissions.jl")
 include("MixtureModels.jl")
 include("HiddenMarkovModels.jl")
 include("LDS.jl")
 include("Utilities.jl")
+include("Regression.jl")
 
 end
