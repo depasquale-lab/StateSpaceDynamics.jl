@@ -3,6 +3,7 @@ uuid = "19cf8126-1d00-4ad8-bf17-4e76d7bc0f6d"
 authors = ["Ryan Senne rsenne@bu.edu"]
 
 [deps]
+Coverage = "a2441757-f6aa-5fb2-8edb-039e3f45d037"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 LogExpFunctions = "2ab3a3ac-af41-5b50-aa03-7779005ae688"

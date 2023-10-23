@@ -96,7 +96,7 @@ end
 
 # Gaussian Regression
 """
-    GaussianRegression
+ GaussianRegression
 
 Struct representing a Gaussian regression model.
 """
@@ -124,12 +124,51 @@ function fit!(model::GaussianRegression, loss::Loss=LSELoss(), max_iter::Int=100
     # Define objective function for optimization, this is what optim calls a "closure"
     # for details, see https://julianlsolvers.github.io/Optim.jl/
     function Objective(betas)
-        return compute_loss(loss, invlink(model.link, model.X * betas), model.y)
+        return compute_loss(loss, model.X * betas, link(model.link, model.y))
     end
     # optimize
     result = optimize(Objective, model.β, LBFGS(), Optim.Options(iterations=max_iter))
     # update model
-    model.β = Optim.minimizer(result)
+    model.β = invlink(model.link, Optim.minimizer(result))
+end
+
+# poisson regression
+"""
+PoissonRegression
+
+Struct representing a Poisson regression model.
+"""
+
+mutable struct PoissonRegression{T <: Real} <: RegressionModel
+    X::Matrix{T}
+    y::Vector{T}
+    β::Vector{T}
+    link::Link
+end
+
+# Define a constructor that only requires X and y, and uses default values for β
+function PoissonRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, link::Link=LogLink()) where T <: Real
+    n, p = size(X)
+    # add constant if specified, i.e. β₀ or the intercept term
+    if constant
+        X = hcat(ones(T, n), X)
+        p += 1
+    end
+    β = zeros(p)  # initialize as zeros
+    return PoissonRegression(X, y, β, link)
+end
+
+# Function to optimize the model
+function fit!(model::PoissonRegression, loss::Loss=CrossEntropyLoss(), max_iter::Int=1000)
+    # Define objective function for optimization, this is what optim calls a "closure"
+    # for details, see https://julianlsolvers.github.io/Optim.jl/
+    function Objective(betas)
+        return compute_loss(loss, model.X * betas, link( model.link, model.y))
+    end
+    # optimize
+    result = optimize(Objective, model.β, LBFGS(), Optim.Options(iterations=max_iter))
+    # update model
+    model.β = invlink(model.link, Optim.minimizer(result))
 end
 
 
