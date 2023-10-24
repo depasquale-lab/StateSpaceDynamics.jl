@@ -28,6 +28,14 @@ jobs:
     - name: Activate Julia Project
       run: julia --project="$GITHUB_WORKSPACE" -e 'using Pkg; Pkg.activate();'
         
-    - name: Run tests
+     # Run tests and collect coverage data
+    - name: Run tests with coverage
       run: |
-        julia --project="$GITHUB_WORKSPACE" -e 'using Pkg; Pkg.test()'
+        julia --project="$GITHUB_WORKSPACE" -e 'using Pkg; Pkg.test(coverage=true)'
+
+    # Upload coverage data to Codecov (assuming you want to use Codecov)
+    - name: Upload coverage data to Codecov
+      uses: codecov/codecov-action@v2
+      with:
+        token: ${{secrets.CODECOV_TOKEN}}  # Only needed for private repos
+        files: ./coverage/lcov.info  # Coverage output file location

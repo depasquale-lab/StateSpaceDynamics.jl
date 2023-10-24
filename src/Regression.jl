@@ -96,7 +96,7 @@ end
 
 # Gaussian Regression
 """
- GaussianRegression
+GaussianRegression
 
 Struct representing a Gaussian regression model.
 """
@@ -148,6 +148,8 @@ end
 # logistic regression
 """
 LogisticRegression
+
+Struct representing a Logistic regression model.
 """
 mutable struct LogisticRegression{T <: Real} <: RegressionModel
     X::Matrix{T}
