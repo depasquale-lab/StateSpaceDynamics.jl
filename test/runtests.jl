@@ -31,7 +31,7 @@ function testGMM_EStep()
     # Check dimensions
     @test size(γ) == (10, k_means)
     # Check if the row sums are close to 1 (since they represent probabilities)
-    @test all(isapprox(sum(γ, dims=2), 1.0; atol=1e-6))
+    @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(γ, dims=2))
 end
 
 function testGMM_MStep()
@@ -100,4 +100,3 @@ end
 """
 Tests for HiddenMarkovModels.jl
 """
-
