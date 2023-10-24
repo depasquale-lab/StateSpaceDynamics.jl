@@ -27,7 +27,7 @@ function testGMM_EStep()
     data = randn(10, data_dim)
     gmm = GMM(k_means, data_dim, data)
     # Run EStep
-    γ = SSM.MixtureModels.EStep!(gmm, data)
+    γ = SSM.EStep!(gmm, data)
     # Check dimensions
     @test size(γ) == (10, k_means)
     # Check if the row sums are close to 1 (since they represent probabilities)
@@ -40,10 +40,10 @@ function testGMM_MStep()
     data_dim = 2
     data = randn(10, data_dim)
     gmm = GMM(k_means, data_dim, data)
-    γ = SSM.MixtureModels.EStep!(gmm, data)
+    γ = SSM.EStep!(gmm, data)
 
     # Run MStep
-    SSM.MixtureModels.MStep!(gmm, data, γ)
+    SSM.MStep!(gmm, data, γ)
 
     # Check dimensions of updated μ and Σ
     @test size(gmm.μ_k) == (data_dim, k_means)

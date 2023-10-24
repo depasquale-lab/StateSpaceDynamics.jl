@@ -33,7 +33,7 @@ jobs:
       run: |
         julia --project="$GITHUB_WORKSPACE" -e 'using Pkg; Pkg.test(coverage=true)'
 
-    # Upload coverage data to Codecov (assuming you want to use Codecov)
+    # Upload coverage data to Codecov
     - name: Upload coverage data to Codecov
       uses: codecov/codecov-action@v2
       with:
