@@ -2,8 +2,8 @@ export HMM, baumWelch!, viterbi
 # HMM Definition
 struct HMM{EM <: EmissionsModel}
     A::Matrix{Float64}  # State Transition Matrix
-    B::Vector{EM}               # Emission Model
-    πₖ ::Vector{Float64}  # Initial State Distribution
+    B::Vector{EM}       # Emission Model
+    πₖ ::Vector{Float64} # Initial State Distribution
     D::Int              # Observation Dimension
 end
 

@@ -1,5 +1,7 @@
-export RegressionModel, Link, GaussianRegression, IdentityLink,
-       LogLink, LogitLink, ProbitLink, InverseLink, Loss, LSELoss, CrossEntropyLoss, fit!
+export RegressionModel, Link, GaussianRegression, BinomialRegression, PoissonRegression, IdentityLink,
+       LogLink, LogitLink, ProbitLink, InverseLink, Loss, LSELoss, CrossEntropyLoss, PoissonLoss, fit!
+
+EPSILON = 1e-15
 
 # Abstract types
 """
@@ -48,6 +50,21 @@ function compute_loss(::CrossEntropyLoss, y_pred::Vector{Float64}, y_true::Vecto
     return -sum(y_true .* log.(y_pred) .+ (1 .- y_true) .* log.(1 .- y_pred))
 end
 
+"""
+Poisson Loss
+
+Struct representing the Poisson loss function.
+"""
+
+struct PoissonLoss <: Loss end
+
+function compute_loss(::PoissonLoss, y_pred::Vector{Float64}, y_true::Vector{Float64})::Float64
+    # Clamping y_pred because gettign extremely small negative values
+    y_pred = clamp.(y_pred, EPSILON, Inf)
+    return sum(y_pred .- (y_true .* log.(y_pred .+ EPSILON)))
+end
+
+
 # Link Functions
 # Identity Link
 """
@@ -90,6 +107,28 @@ end
 function derivlink(::LogLink, μ::Vector{T})::Vector{T} where T <: Real
     return inv.(μ)
 end
+
+"""
+    LogitLink
+
+Struct representing the logit link function.
+"""
+struct LogitLink <: Link end
+
+# Functions for logit link
+function link(::LogitLink, μ::Vector{T})::Vector{T} where T <: Real
+    return log.(μ ./ (1 .- μ))
+end
+
+function invlink(::LogitLink, η::Vector{T})::Vector{T} where T <: Real
+    return 1 ./ (1 .+ exp.(-η))
+end
+
+function derivlink(::LogitLink, μ::Vector{T})::Vector{T} where T <: Real
+    return 1 ./ (μ .* (1 .- μ))
+end
+
+
 # More link functions can be defined similarly...
 
 # Define regression models here
@@ -119,7 +158,7 @@ function GaussianRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, lin
     return GaussianRegression(X, y, β, link)
 end
 
-# poisson regression
+# Poisson regression
 """
 PoissonRegression
 
@@ -134,7 +173,7 @@ mutable struct PoissonRegression{T <: Real} <: RegressionModel
 end
 
 # Define a constructor that only requires X and y, and uses default values for β
-function PoissonRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, link::Link=LogLink()) where T <: Real
+function PoissonRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, link::Link=LogLink()) where {T<:Real}
     n, p = size(X)
     # add constant if specified, i.e. β₀ or the intercept term
     if constant
@@ -151,7 +190,7 @@ LogisticRegression
 
 Struct representing a Logistic regression model.
 """
-mutable struct LogisticRegression{T <: Real} <: RegressionModel
+mutable struct BinomialRegression{T <: Real} <: RegressionModel
     X::Matrix{T}
     y::Vector{T}
     β::Vector{T}
@@ -159,7 +198,7 @@ mutable struct LogisticRegression{T <: Real} <: RegressionModel
 end
 
 # Define a constructor that only requires X and y, and uses default values for β
-function LogisticRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, link::Link=LogitLink()) where T <: Real
+function BinomialRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, link::Link=LogitLink()) where T <: Real
     n, p = size(X)
     # add constant if specified, i.e. β₀ or the intercept term
     if constant
@@ -167,15 +206,27 @@ function LogisticRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, lin
         p += 1
     end
     β = zeros(p)  # initialize as zeros
-    return LogisticRegression(X, y, β, link)
+    return BinomialRegression(X, y, β, link)
 end
 
 # Fit function for any regression model
-function fit!(model::T, loss::Loss=LSELoss(), max_iter::Int=1000) where T <: RegressionModel
+function fit!(model::RegressionModel, loss::Union{Loss, Nothing}=nothing, max_iter::Int=1000)
+    # Auto-select loss if not provided
+    if isnothing(loss)
+        if model isa GaussianRegression
+            loss = LSELoss()
+        elseif model isa PoissonRegression
+            loss = PoissonLoss()
+        elseif model isa BinomialRegression
+            loss = CrossEntropyLoss()
+        else
+            throw(ArgumentError("Automatic loss selection is not available for this model type"))
+        end
+    end
     function Objective(β)
-        return compute_loss(loss, model.X * β, link(model.link, model.y))
+        return compute_loss(loss, invlink(model.link, model.X * β), model.y)
     end
     result = optimize(Objective, model.β, LBFGS(), Optim.Options(iterations=max_iter))
-    model.β = invlink(model.link, result.minimizer)
+    model.β = result.minimizer
 end
 
