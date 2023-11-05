@@ -78,15 +78,16 @@ function backward(hmm::HMM, data::Matrix{Float64})
     return β
 end
 
-function calculate_gamma(α::Vector{Float64}, β::Vector{Float64})
-    T, _ = size(α)
-    γ = α .+ β
-    # Normalize γ values
-    for t in 1:T
-        max_gamma = maximum(γ[:, t])
-        log_sum = max_gamma + log(sum(exp.(γ[:, t] .- max_gamma)))
-        γ[:, t] .-= log_sum
-    end
+# function calculate_gamma(α::Vector{Float64}, β::Vector{Float64})
+#     T, _ = size(α)
+#     γ = α .+ β
+#     # Normalize γ values
+#     for t in 1:T
+#         max_gamma = maximum(γ[:, t])
+#         log_sum = max_gamma + log(sum(exp.(γ[:, t] .- max_gamma)))
+#         γ[:, t] .-= log_sum
+#     end
+# end
 
 
 function baumWelch!(hmm::HMM,  data::Matrix{Float64}, max_iters::Int=100, tol::Float64=1e-6)
