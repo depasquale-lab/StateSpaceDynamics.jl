@@ -13,29 +13,17 @@ jobs:
       uses: julia-actions/setup-julia@v1
       with:
         version: '1.9.3'
-
-    - name: Debug environment
-      run: |
-        julia -e 'println(ENV["GITHUB_WORKSPACE"])'
-        echo "GITHUB_WORKSPACE: $GITHUB_WORKSPACE"
-        ls -al "$GITHUB_WORKSPACE"
-        cat "$GITHUB_WORKSPACE/Project.toml"
         
     - name: Install dependencies
       run: |
         julia --project -e 'using Pkg; Pkg.instantiate()'
 
-    - name: Activate Julia Project
-      run: julia --project="$GITHUB_WORKSPACE" -e 'using Pkg; Pkg.activate();'
-        
-     # Run tests and collect coverage data
     - name: Run tests with coverage
       run: |
-        julia --project="$GITHUB_WORKSPACE" -e 'using Pkg; Pkg.test(coverage=true)'
+        julia --project="$GITHUB_WORKSPACE" -e 'using Pkg; Pkg.test("SSM", coverage=true)'
 
-    # Upload coverage data to Codecov
     - name: Upload coverage reports to Codecov
+      uses: julia-actions/julia-processcoverage@v1
       uses: codecov/codecov-action@v3
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-

@@ -26,14 +26,32 @@ Abstract type for Loss functions.
 abstract type Loss end
 
 # Loss Functions
+
+"""
+Weighted Least Squares Loss
+
+Struct representing the weighted least squares loss function. Mostly needed for Gaussian Markov regression EM.
+"""
+struct WLSLoss <: Loss
+    weights::Vector{Float64}
+end
+
+
+# compute loss for WLS
+function compute_loss(l::WLSLoss, y_pred::Vector{Float64}, y_true::Vector{Float64})::Float64
+    return sum(l.weights .* (y_true .- y_pred).^2)
+end
+
+
 """
     LSELoss
 
-Struct representing the least squared error loss function.
+Struct representing the least squared error loss function i.e. OLS regression.
 """
 struct LSELoss <: Loss end
 
-# Compute loss for MSE
+
+# Compute loss for LSE
 function compute_loss(::LSELoss, y_pred::Vector{Float64}, y_true::Vector{Float64})::Float64
     return sum((y_true .- y_pred).^2)
 end
@@ -208,6 +226,7 @@ function BinomialRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, lin
     β = zeros(p)  # initialize as zeros
     return BinomialRegression(X, y, β, link)
 end
+
 
 # Fit function for any regression model
 function fit!(model::RegressionModel, loss::Union{Loss, Nothing}=nothing, max_iter::Int=1000)

@@ -14,7 +14,7 @@ include("Emissions.jl")
 include("MixtureModels.jl")
 include("HiddenMarkovModels.jl")
 include("LDS.jl")
-include("Utilities.jl")
 include("Regression.jl")
+include("Utilities.jl")
 
 end

@@ -100,3 +100,17 @@ end
 """
 Tests for HiddenMarkovModels.jl
 """
+#TODO: Implement tests for HMMs
+
+
+"""
+Tests for LDS.jl
+"""
+#TODO: Implement tests for LDS
+
+"""
+Tests for Regression.jl
+"""
+#TODO Implement tests for Regression
+
+
