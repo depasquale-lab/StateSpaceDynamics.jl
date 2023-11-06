@@ -176,6 +176,11 @@ function GaussianRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, lin
     return GaussianRegression(X, y, β, link)
 end
 
+# loglikelihood function
+function loglikelihood(model::GaussianRegression, β::Vector{T}) where T <: Real
+    
+end
+
 # Poisson regression
 """
 PoissonRegression

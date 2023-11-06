@@ -38,12 +38,18 @@ function updateEmissionModel!(emission::GaussianEmission, data::Matrix{Float64},
     return emission
 end
 
-struct PoissonEmissions <: EmissionsModel
-    λ::Float64 # rate of events per unit time 
+mutable struct PoissonEmissions <: EmissionsModel
+    λ::Vector{Float64} # rate of events per unit time 
 end
 
 struct GaussianOrthogonalEmissions <: EmissionsModel
     #TODO: Implement Gaussian Orthogonal Emissions
 end
 
+"""
+RegressionEmissions: A struct representing a regression model for emissions. This is used in HMM-GLM models.
+"""
+mutable struct RegressionEmissions <: EmissionsModel
+    regression_model::RegressionModel
+end
 

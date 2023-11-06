@@ -7,6 +7,7 @@ abstract type MarkovRegression end
 
 """
 I do not know if I want to support this model yet. Definitely want to incorporate the Bernoulli, Poisson, and Multinomial cases though.
+#TODO: To finish this model I need to add a variance parameter in the struct I created. I also need to make that as a case of emissions model.
 """
 
 """
@@ -43,28 +44,29 @@ Generalized EM for a GaussianMarkovRegression model.
 
 function MarkovRegressionEM(model::GaussianMarkovRegression, max_iters::Int=100, tol::Float64=1e-6)
     # the algorith mis taken from the Ph.D. thesis of Moshe Fridman see: https://www.proquest.com/docview/304089763?fromopenview=true&pq-origsite=gscholar&parentSessionId=W5CCeTcPsuORzBfQbAZ52%2B970F5PJ%2Fd%2FjWIdz2qMNXI%3D for details.
-
     for i in 1:max_iter:
+        # init log-likelihood
+        log_likelihood = -Inf
         # E-Step
         α = forward(model.HMM, model.y)
         β = backward(model.HMM, model.y)
-
         # calculate the weights for the WLS regression
-        weights = sqrt.(α .* β)
-
+        
         # M-Step
         for k in 1:model.K
+            # get weights for wls
+            weights = α[k, :] .* β[k, :]
             # define weighted loss function
-            loss = WLSLoss(weights[:, k])
+            loss = WLSLoss(weights)
             # update the regression model for each state
             model.RegressionModels[k] = fit!(model.RegressionModels[k], loss)
             # calculate the variance term
             σ² = sum(α[k, :] .* β[k, :] .* (model.y .- model.RegressionModels[k].predict(model.X)).^2) / sum(α[k, :].*β[k, :])
             # update the HMM adjacency matrix
             for i in 1:model.K
+                model.A[k, i] = sum(alpha[k, :] .* model.A[k, i] .* pdf(normal(model.X .* model.RegressionModels[k].β)).* beta[i, :]) / sum(alpha[k, :] .* beta[i, :])
                 
         end
-        # One-step Baum-Welch
         # Maybe finish this.
 end
 
