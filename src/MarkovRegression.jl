@@ -1,5 +1,3 @@
-
-
 """
 Abstract type for Markov Regression models.
 """
@@ -65,7 +63,7 @@ function MarkovRegressionEM(model::GaussianMarkovRegression, max_iters::Int=100,
             # update the HMM adjacency matrix
             for i in 1:model.K
                 model.A[k, i] = sum(alpha[k, :] .* model.A[k, i] .* pdf(normal(model.X .* model.RegressionModels[k].β)).* beta[i, :]) / sum(alpha[k, :] .* beta[i, :])
-                
+            end
         end
         # Maybe finish this.
 end

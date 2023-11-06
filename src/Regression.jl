@@ -1,25 +1,25 @@
-export RegressionModel, Link, GaussianRegression, BinomialRegression, PoissonRegression, IdentityLink,
+export GLM, Link, GaussianRegression, BinomialRegression, PoissonRegression, IdentityLink,
        LogLink, LogitLink, ProbitLink, InverseLink, Loss, LSELoss, CrossEntropyLoss, PoissonLoss, fit!
 
 EPSILON = 1e-15
 
 # Abstract types
 """
-    RegressionModel
+GLM
 
 Abstract type for GLM's, especially for SSM's.
 """
-abstract type RegressionModel end
+abstract type GLM end
 
 """
-    Link
+Link
 
 Abstract type for Link functions.
 """
 abstract type Link end
 
 """
-    Loss
+Loss
 
 Abstract type for Loss functions.
 """
@@ -44,7 +44,7 @@ end
 
 
 """
-    LSELoss
+LSELoss
 
 Struct representing the least squared error loss function i.e. OLS regression.
 """
@@ -57,7 +57,7 @@ function compute_loss(::LSELoss, y_pred::Vector{Float64}, y_true::Vector{Float64
 end
 
 """
-    CrossEntropyLoss
+CrossEntropyLoss
 
 Struct representing the cross-entropy loss function.
 """
@@ -86,7 +86,7 @@ end
 # Link Functions
 # Identity Link
 """
-    IdentityLink
+IdentityLink
 
 Struct representing the identity link function.
 """
@@ -157,7 +157,7 @@ GaussianRegression
 
 Struct representing a Gaussian regression model.
 """
-mutable struct GaussianRegression{T <: Real} <: RegressionModel
+mutable struct GaussianRegression{T <: Real} <: GLM
     X::Matrix{T}
     y::Vector{T}
     β::Vector{T}
@@ -188,7 +188,7 @@ PoissonRegression
 Struct representing a Poisson regression model.
 """
 
-mutable struct PoissonRegression{T <: Real} <: RegressionModel
+mutable struct PoissonRegression{T <: Real} <: GLM
     X::Matrix{T}
     y::Vector{T}
     β::Vector{T}
@@ -213,7 +213,7 @@ LogisticRegression
 
 Struct representing a Logistic regression model.
 """
-mutable struct BinomialRegression{T <: Real} <: RegressionModel
+mutable struct BinomialRegression{T <: Real} <: GLM
     X::Matrix{T}
     y::Vector{T}
     β::Vector{T}
@@ -234,7 +234,7 @@ end
 
 
 # Fit function for any regression model
-function fit!(model::RegressionModel, loss::Union{Loss, Nothing}=nothing, max_iter::Int=1000)
+function fit!(model::GLM, loss::Union{Loss, Nothing}=nothing, max_iter::Int=1000)
     # Auto-select loss if not provided
     if isnothing(loss)
         if model isa GaussianRegression
