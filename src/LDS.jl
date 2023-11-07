@@ -29,6 +29,15 @@ function LDS(A::Union{Matrix{Float64}, Nothing}=nothing,
     end
 end
 
+function KalmanFilter(l::LDS, y::Vector{Float64})
+end
+
+function KalmanSmoother(l::LDS, y::Vector{Float64})
+end
+
+function KalmanFilterEM(l::LDS, y::Vector{Float64})
+end
+
 
 # SLDS Definition
 mutable struct SLDS <: DynamicalSystem

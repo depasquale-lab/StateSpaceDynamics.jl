@@ -1,3 +1,4 @@
+export MarkovRegression, GaussianMarkovRegression, MarkovRegressionEM
 """
 Abstract type for Markov Regression models.
 """
@@ -25,13 +26,12 @@ end
 
 """
 Constructor for GaussianMarkovRegression. We assume there is a set of discrete data-generating regimes in the data that can be explained by essentially k-separate regression models from a Gaussian Family. The transition matrix A is a k x k matrix where A[i, j] is the probability of transitioning from state i to state j. The initial state distribution π_k is a k-dimensional vector where π_k[i] is the probability of starting in state i. The number of states K is an integer representing the number of states in the model.
-
 """
 function GaussianMarkovRegression(y::Vector{T}, X::Matrix{T}, k::Int) where T <: Real
     # initiliaze HMM
-    hmm = HMM(X, K, "Gaussian")
+    hmm = HMM(X, k, "Regression")
     # initialize regression models by fitting the K=1 case (i.e. regular old linear regression)
-    regression_models = [fit!(GaussianRegression(X, y, true)) for _ in 1:k]
+    regression_models = [GaussianRegression(X, y, true) for _ in 1:k]
     return GaussianMarkovRegression(y, X, k, regression_models, hmm)
 
 end
@@ -42,7 +42,7 @@ Generalized EM for a GaussianMarkovRegression model.
 
 function MarkovRegressionEM(model::GaussianMarkovRegression, max_iters::Int=100, tol::Float64=1e-6)
     # the algorith mis taken from the Ph.D. thesis of Moshe Fridman see: https://www.proquest.com/docview/304089763?fromopenview=true&pq-origsite=gscholar&parentSessionId=W5CCeTcPsuORzBfQbAZ52%2B970F5PJ%2Fd%2FjWIdz2qMNXI%3D for details.
-    for i in 1:max_iter:
+    for i in 1:max_iter
         # init log-likelihood
         log_likelihood = -Inf
         # E-Step
@@ -62,9 +62,11 @@ function MarkovRegressionEM(model::GaussianMarkovRegression, max_iters::Int=100,
             σ² = sum(α[k, :] .* β[k, :] .* (model.y .- model.RegressionModels[k].predict(model.X)).^2) / sum(α[k, :].*β[k, :])
             # update the HMM adjacency matrix
             for i in 1:model.K
-                model.A[k, i] = sum(alpha[k, :] .* model.A[k, i] .* pdf(normal(model.X .* model.RegressionModels[k].β)).* beta[i, :]) / sum(alpha[k, :] .* beta[i, :])
+                model.A[k, i] = sum(alpha[k, :] .* model.A[k, i] .* pdf(normal(model.X .* model.RegressionModels[k].β), σ²).* beta[i, :]) / sum(alpha[k, :] .* beta[i, :])
             end
+            # update responsibilities
         end
+    end
         # Maybe finish this.
 end
 

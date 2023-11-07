@@ -22,6 +22,8 @@ function HMM(data::Matrix{Float64}, k_states::Int=2, emissions::String="Gaussian
         # Using identity matrix for covariance
         sample_covs = [Matrix(I, D, D) for _ in 1:k_states]
         B = [GaussianEmission(sample_means[i, :], sample_covs[i]) for i in 1:k_states]
+    elseif emissions == "Regression"
+        B = [GaussianRegression(data, data[:, 1], true) for _ in 1:k_states]
     else
         throw(ErrorException("$emissions is not a supported emissions model, please choose one of the supported models."))
     end
@@ -78,16 +80,6 @@ function backward(hmm::HMM, data::Matrix{Float64})
     return β
 end
 
-# function calculate_gamma(α::Vector{Float64}, β::Vector{Float64})
-#     T, _ = size(α)
-#     γ = α .+ β
-#     # Normalize γ values
-#     for t in 1:T
-#         max_gamma = maximum(γ[:, t])
-#         log_sum = max_gamma + log(sum(exp.(γ[:, t] .- max_gamma)))
-#         γ[:, t] .-= log_sum
-#     end
-# end
 
 
 function baumWelch!(hmm::HMM,  data::Matrix{Float64}, max_iters::Int=100, tol::Float64=1e-6)

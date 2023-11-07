@@ -11,10 +11,11 @@ using Statistics
 using StatsBase
 
 include("Emissions.jl")
-include("MixtureModels.jl")
 include("HiddenMarkovModels.jl")
 include("LDS.jl")
 include("Regression.jl")
+include("MarkovRegression.jl")
+include("MixtureModels.jl")
 include("Utilities.jl")
 
 end
