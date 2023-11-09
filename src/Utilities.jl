@@ -1,7 +1,7 @@
 export kmeanspp_initialization, kmeans_clustering
 
 """Euclidean Distance for two points"""
-function euclidean_distance(a::Vector{Float64}, b::Vector{Float64})
+function euclidean_distance(a::AbstractVector{Float64}, b::AbstractVector{Float64})
     return sqrt(sum((a .- b).^2))
 end
 
@@ -19,7 +19,7 @@ function kmeanspp_initialization(data::Matrix{Float64}, k_means::Int)
         end
         probs = dists .^ 2
         probs ./= sum(probs)
-        next_idx = sample(1:N, Weights(probs))
+        next_idx = StatsBase.sample(1:N, Weights(probs))
         centroids[:, k] = data[next_idx, :]
     end
     return centroids
@@ -49,7 +49,7 @@ function kmeans_clustering(data::Matrix{Float64}, k_means::Int, max_iters::Int=1
         centroids .= new_centroids
         # Check for convergence
         if maximum([euclidean_distance(centroids[i, :], old_centroids[i, :]) for i in 1:k_means]) < tol
-            println("Converged after $iter iterations")
+            # println("Converged after $iter iterations")
             break
         end
     end

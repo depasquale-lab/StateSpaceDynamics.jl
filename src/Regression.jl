@@ -1,5 +1,6 @@
 export GLM, Link, GaussianRegression, BinomialRegression, PoissonRegression, IdentityLink,
-       LogLink, LogitLink, ProbitLink, InverseLink, Loss, LSELoss, CrossEntropyLoss, PoissonLoss, fit!
+       LogLink, LogitLink, ProbitLink, InverseLink, Loss, LSELoss, CrossEntropyLoss, PoissonLoss, 
+       loglikelihood, predict, residuals, fit!
 
 EPSILON = 1e-15
 
@@ -176,18 +177,11 @@ function GaussianRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, lin
     return GaussianRegression(X, y, β, link)
 end
 
-# loglikelihood function
-function loglikelihood(model::GaussianRegression, β::Vector{T}) where T <: Real
-    
-end
-
-# Poisson regression
 """
 PoissonRegression
 
 Struct representing a Poisson regression model.
 """
-
 mutable struct PoissonRegression{T <: Real} <: GLM
     X::Matrix{T}
     y::Vector{T}
@@ -207,7 +201,6 @@ function PoissonRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, link
     return PoissonRegression(X, y, β, link)
 end
 
-# logistic regression
 """
 LogisticRegression
 
@@ -232,6 +225,23 @@ function BinomialRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, lin
     return BinomialRegression(X, y, β, link)
 end
 
+# Predict function for any regression model
+function predict(model::GLM, X::Matrix{T}) where T <: Real
+    return invlink(model.link, X * model.β)
+end
+
+# Residuals function for any regression model
+function residuals(model::GLM)
+    return model.y - predict(model, model.X)
+end
+
+# loglikelihood function
+function loglikelihood(model::GaussianRegression{T}) where T <: Real
+    n = size(model.X, 1)
+    resid = residuals(model)
+    LL = (-0.5 * n * log(2π)) - (0.5 * n * log(var(resid))) - (0.5 * sum(resid.^2) / var(resid))
+    return LL
+end
 
 # Fit function for any regression model
 function fit!(model::GLM, loss::Union{Loss, Nothing}=nothing, max_iter::Int=1000)
@@ -253,4 +263,3 @@ function fit!(model::GLM, loss::Union{Loss, Nothing}=nothing, max_iter::Int=1000
     result = optimize(Objective, model.β, LBFGS(), Optim.Options(iterations=max_iter))
     model.β = result.minimizer
 end
-

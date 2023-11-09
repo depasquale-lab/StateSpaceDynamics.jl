@@ -10,10 +10,11 @@ using Random
 using Statistics
 using StatsBase
 
+include("Regression.jl")
 include("Emissions.jl")
 include("HiddenMarkovModels.jl")
 include("LDS.jl")
-include("Regression.jl")
+
 include("MarkovRegression.jl")
 include("MixtureModels.jl")
 include("Utilities.jl")

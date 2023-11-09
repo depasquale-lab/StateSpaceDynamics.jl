@@ -1,6 +1,12 @@
-export HMM, baumWelch!, viterbi
-# HMM Definition
-struct HMM{EM <: EmissionsModel}
+export AbstractHMM, HMM, baumWelch!, viterbi, sample
+
+"""
+Abstract type for Markov Models. I.e. HMM's, Markov Regressions, etc.
+"""
+abstract type AbstractHMM end
+
+# Vanilla HMM Definition
+struct HMM{EM <: EmissionsModel} <: AbstractHMM
     A::Matrix{Float64}  # State Transition Matrix
     B::Vector{EM}       # Emission Model
     πₖ ::Vector{Float64} # Initial State Distribution
@@ -14,24 +20,19 @@ function HMM(data::Matrix{Float64}, k_states::Int=2, emissions::String="Gaussian
     A = A ./ sum(A, dims=2)  # normalize rows to ensure they are valid probabilities
     # Initialize π
     πₖ = rand(k_states)
-    πₖ = πₖ ./ sum(πₖ)          # normalize to ensure it's a valid probability vector
+    πₖ = πₖ ./ sum(πₖ) # normalize to ensure it's a valid probability vector
     # Initialize Emission Model
     if emissions == "Gaussian"
-        # Randomly sample k_states observations from data
-        sample_means = data[sample(1:N, k_states, replace=false), :]
-        # Using identity matrix for covariance
-        sample_covs = [Matrix(I, D, D) for _ in 1:k_states]
+        # use kmeans_clustering to initialize the emission model
+        sample_means, labels = kmeans_clustering(data, k_states)
+        sample_covs = [cov(data[labels .== i, :]) for i in 1:k_states]
         B = [GaussianEmission(sample_means[i, :], sample_covs[i]) for i in 1:k_states]
-    elseif emissions == "Regression"
-        B = [GaussianRegression(data, data[:, 1], true) for _ in 1:k_states]
-    else
-        throw(ErrorException("$emissions is not a supported emissions model, please choose one of the supported models."))
+    else   throw(ErrorException("$emissions is not a supported emissions model, please choose one of the supported models."))
     end
     return HMM(A, B, πₖ, D)
 end
 
-
-function forward(hmm::HMM, data::Matrix{Float64})
+function forward(hmm::AbstractHMM, data::Matrix{Float64})
     T, _ = size(data)
     K = size(hmm.A, 1)  # Number of states
 
@@ -57,7 +58,7 @@ function forward(hmm::HMM, data::Matrix{Float64})
     return α
 end
 
-function backward(hmm::HMM, data::Matrix{Float64})
+function backward(hmm::AbstractHMM, data::Matrix{Float64})
     T, _ = size(data)
     K = size(hmm.A, 1)  # Number of states
 
@@ -79,8 +80,6 @@ function backward(hmm::HMM, data::Matrix{Float64})
     end
     return β
 end
-
-
 
 function baumWelch!(hmm::HMM,  data::Matrix{Float64}, max_iters::Int=100, tol::Float64=1e-6)
     T, _ = size(data)
@@ -143,16 +142,13 @@ end
 function viterbi(hmm::HMM, data::Matrix{Float64})
     T, _ = size(data)
     K = size(hmm.A, 1)  # Number of states
-
     # Step 1: Initialization
     viterbi = zeros(Float64, K, T)
     backpointer = zeros(Int, K, T)
-    
     for i in 1:K
         viterbi[i, 1] = log(hmm.πₖ[i]) + loglikelihood(hmm.B[i], data[1, :])
         backpointer[i, 1] = 0
     end
-
     # Step 2: Recursion
     for t in 2:T
         for j in 1:K
@@ -168,17 +164,59 @@ function viterbi(hmm::HMM, data::Matrix{Float64})
             backpointer[j, t] = max_state
         end
     end
-
     # Step 3: Termination
     best_path_prob, best_last_state = findmax(viterbi[:, T])
     best_path = [best_last_state]
     for t in T:-1:2
         push!(best_path, backpointer[best_path[end], t])
     end
-
     return reverse(best_path)
 end
 
-function fit!()
-    #TODO Implement the viterbi algorithm.
+function sample(hmm::HMM, n::Int)
+    # Number of states
+    K = size(hmm.A, 1)
+    # Initialize state and observation arrays
+    states = Vector{Int}(undef, n)
+    observations = Matrix{Float64}(undef, n, hmm.D)
+    # Start with a random state
+    states[1] = rand(1:K)
+    # Generate first observation
+    observations[1, :] = rand(MvNormal(hmm.B[states[1]].μ, hmm.B[states[1]].Σ))
+    for t in 2:n
+        # Transition to a new state
+        states[t] = StatsBase.sample(1:K, Weights(hmm.A[states[t-1], :]))
+        # Generate observation
+        observations[t, :] = rand(MvNormal(hmm.B[states[t]].μ, hmm.B[states[t]].Σ))
+    end
+    return states, observations
 end
+
+# function fit!()
+#     #TODO Implement the viterbi algorithm.
+# end
+
+# function simulate_gaussian_hmm(n, transition_mat, means, covariances)
+#     # Number of states
+#     K = size(transition_mat, 1)
+    
+#     # Initialize state and observation arrays
+#     states = Vector{Int}(undef, n)
+#     observations = Matrix{Float64}(undef, n, size(means[1], 1))
+    
+#     # Start with a random state
+#     states[1] = rand(1:K)
+    
+#     # Generate first observation
+#     observations[1, :] = rand(MvNormal(means[states[1]], covariances[states[1]]))
+    
+#     for t in 2:n
+#         # Transition to a new state
+#         states[t] = sample(1:K, Weights(transition_mat[states[t-1], :]))
+        
+#         # Generate observation
+#         observations[t, :] = rand(MvNormal(means[states[t]], covariances[states[t]]))
+#     end
+    
+#     return states, observations
+# end

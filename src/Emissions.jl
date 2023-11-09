@@ -3,13 +3,15 @@ export EmissionsModel, GaussianEmission
 # Create emission models here 
 abstract type EmissionsModel end
 
-# Gaussian Emission
+"""
+Gaussian Emission: Struct representing a Gaussian emission model.
+"""
 mutable struct GaussianEmission <: EmissionsModel
     μ::Vector{Float64}  # State-dependent mean
     Σ::Matrix{Float64}  # State-dependent covariance
 end
 
-# Likelihood function
+# Loglikelihood function
 function loglikelihood(emission::GaussianEmission, observation::Vector{Float64})
     return logpdf(MvNormal(emission.μ, emission.Σ), observation)
 end
@@ -19,6 +21,7 @@ function sample_emission(emission::GaussianEmission)
     return rand(MvNormal(emission.μ, emission.Σ))
 end
 
+# Update emissions model for Gaussian model
 function updateEmissionModel!(emission::GaussianEmission, data::Matrix{Float64}, γ::Vector{Float64})
     # Assuming data is of size (T, D) where T is the number of observations and D is the observation dimension
     T, D = size(data)
@@ -50,6 +53,20 @@ end
 RegressionEmissions: A struct representing a regression model for emissions. This is used in HMM-GLM models.
 """
 mutable struct RegressionEmissions <: EmissionsModel
-    regression_model::RegressionModel
+    regression_model::GLM
 end
+
+
+# loglikelihood of the regression model.
+function loglikelihood(emission::RegressionEmissions)
+    emission.regression_model.loglikelihood()
+end
+
+
+# Update the parameters of the regression model, e.g. the betas.
+function updateEmissionModel!(emission::RegressionEmissions, loss::Loss)
+    fit!(emission.regression_model, loss)
+end
+
+
 

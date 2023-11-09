@@ -101,6 +101,11 @@ end
 Tests for HiddenMarkovModels.jl
 """
 #TODO: Implement tests for HMMs
+function test_HMM_constructor()
+    k = 3
+    d = 2
+    data = rand(10, 2)
+end
 
 
 """

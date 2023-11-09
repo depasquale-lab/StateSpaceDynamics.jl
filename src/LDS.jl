@@ -30,6 +30,29 @@ function LDS(A::Union{Matrix{Float64}, Nothing}=nothing,
 end
 
 function KalmanFilter(l::LDS, y::Vector{Float64})
+    # first pre-allocate the matrices we will need
+    T = length(y)
+    x = zeros(T, l.D)
+    P = zeros(T, l.D, l.D)
+    v = zeros(T, l.D)
+    F = zeros(T, l.D, l.D)
+    K = zeros(T, l.D, l.D)
+    # initialize the first state
+    x[1, :] = l.x0
+    P[1, :, :] = l.P0
+    # now perform the Kalman Filter
+    for t in 2:T
+        # prediction step
+        x[t, :] = l.A * x[t-1, :]
+        P[t, :, :] = l.A * P[t-1, :, :] * l.A' + l.Q
+        # compute the Kalman gain
+        F[t, :, :] = l.C * P[t, :, :] * l.C' + l.R
+        K[t, :, :] = P[t, :, :] * l.C' * inv(F[t, :, :])
+        # update step
+        v[t, :] = y[t, :] - l.C * x[t, :]
+        x[t, :] = x[t, :] + K[t, :, :] * v[t, :]
+        P[t, :, :] = P[t, :, :] - K[t, :, :] * l.C * P[t, :, :]
+    end
 end
 
 function KalmanSmoother(l::LDS, y::Vector{Float64})
