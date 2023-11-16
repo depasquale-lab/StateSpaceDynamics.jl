@@ -86,6 +86,15 @@ function test_log_likelihood()
 
     # Log-likelihood should be a negative float
     @test ll < 0.0
+
+    # Log-likelihood should monotonically increase with iterations (when using exact EM)
+    ll_prev = -Inf
+    for i in 1:10
+        fit!(gmm, data; maxiter=1, tol=1e-3)
+        ll = log_likelihood(gmm, data)
+        @test ll > ll_prev || isapprox(ll, ll_prev; atol=1e-6)
+        ll_prev = ll
+    end
 end
 
 @testset "MixtureModels.jl Tests" begin
@@ -103,9 +112,42 @@ Tests for HiddenMarkovModels.jl
 #TODO: Implement tests for HMMs
 function test_HMM_constructor()
     k = 3
-    d = 2
-    data = rand(10, 2)
+    data_dim = 2
+    # generate random data
+    data = randn(100, data_dim)
+    # initialize HMM
+    hmm = HMM(data, k, "Gaussian")
+    # check if parameters are initialized correctly
+    println(hmm.A)
+    @test isapprox(sum(hmm.A, dims=2), ones(k))
+    @test typeof(hmm.B) == Vector{GaussianEmission}
+    @test sum(hmm.πₖ) ≈ 1.0
+    @test hmm.D == data_dim
 end
+
+function test_HMM_EM()
+    A = [0.9 0.02 0.08; 0.1 0.9 0.0; 0.0 0.1 0.9]
+    means = [[0.0, 0.0], [3.0, 2.5], [-1.0, 2.0]]
+    covs = [
+                [0.1 0.0; 0.0 0.1],  # Covariance matrix for state 1
+                [0.1 0.0; 0.0 0.1],  # Covariance matrix for state 2
+                [0.1 0.0; 0.0 0.1]   # Covariance matrix for state 3
+            ]
+    emissions_models = [GaussianEmission(mean, cov) for (mean, cov) in zip(means, covs)]
+    simul_hmm = HMM(A, emissions_models, [0.33, 0.33, 0.34], 2)
+    states, observations = SSM.sample(simul_hmm, 1000)
+    # Initialize HMM
+    k = 3
+    data_dim = 2
+    hmm = HMM(observations, k, "Gaussian")
+    # Run EM
+    # TODO: Finish later.
+end
+
+@testset "HiddenMarkovModels.jl Tests" begin
+    test_HMM_constructor()
+end
+
 
 
 """
@@ -119,3 +161,39 @@ Tests for Regression.jl
 #TODO Implement tests for Regression
 
 
+"""
+Tests for Utilities.jl
+"""
+
+function test_euclidean_distance()
+    x = [1.0, 2.0, 3.0]
+    y = [4.0, 5.0, 6.0]
+    @test SSM.euclidean_distance(x, y) == sqrt(27.0)
+end
+
+function test_kmeanspp_initialization()
+    # Generate random data
+    data = randn(100, 2)
+    # Initialize centroids
+    k_means = 3
+    centroids = kmeanspp_initialization(data, k_means)
+    # Check dimensions
+    @test size(centroids) == (2, k_means)
+end
+
+function test_kmeans_clustering()
+    # Generate random data
+    data = randn(100, 2)
+    # Initialize centroids
+    k_means = 3
+    centroids, labels = kmeans_clustering(data, k_means)
+    # Check dimensions
+    @test size(centroids) == (2, k_means)
+    @test length(labels) == 100
+end
+
+@testset "Utilities.jl Tests" begin
+    test_euclidean_distance()
+    test_kmeanspp_initialization()
+    test_kmeans_clustering()
+end

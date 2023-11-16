@@ -40,7 +40,9 @@ Generalized EM for a GaussianMarkovRegression model.
 """
 
 function MarkovRegressionEM(model::GaussianMarkovRegression, max_iters::Int=100, tol::Float64=1e-6)
-    # the algorith mis taken from the Ph.D. thesis of Moshe Fridman see: https://www.proquest.com/docview/304089763?fromopenview=true&pq-origsite=gscholar&parentSessionId=W5CCeTcPsuORzBfQbAZ52%2B970F5PJ%2Fd%2FjWIdz2qMNXI%3D for details.
+    # the algorithm is taken from the Ph.D. thesis of Moshe Fridman see: 
+    # https://www.proquest.com/docview/304089763?fromopenview=true&pq-origsite=gscholar&parentSessionId=W5CCeTcPsuORzBfQbAZ52%2B970F5PJ%2Fd%2FjWIdz2qMNXI%3D 
+    # for details.
     for i in 1:max_iters
         # init log-likelihood
         log_likelihood = -Inf

@@ -6,11 +6,16 @@ Abstract type for Markov Models. I.e. HMM's, Markov Regressions, etc.
 abstract type AbstractHMM end
 
 # Vanilla HMM Definition
-struct HMM{EM <: EmissionsModel} <: AbstractHMM
+mutable struct HMM{EM <: EmissionsModel} <: AbstractHMM
     A::Matrix{Float64}  # State Transition Matrix
     B::Vector{EM}       # Emission Model
     πₖ ::Vector{Float64} # Initial State Distribution
-    D::Int              # Observation Dimension
+    D::Int              # Latent State Dimension
+end
+
+# Constructor for HMM when all params are known, really just for sampling/testing
+function HMM(A::Matrix{Float64}, B::Vector{EM}, πₖ::Vector{Float64}, D::Int) where {EM <: EmissionsModel}
+    return HMM{EM}(A, B, πₖ, D)
 end
 
 function HMM(data::Matrix{Float64}, k_states::Int=2, emissions::String="Gaussian")
@@ -26,7 +31,7 @@ function HMM(data::Matrix{Float64}, k_states::Int=2, emissions::String="Gaussian
         # use kmeans_clustering to initialize the emission model
         sample_means, labels = kmeans_clustering(data, k_states)
         sample_covs = [cov(data[labels .== i, :]) for i in 1:k_states]
-        B = [GaussianEmission(sample_means[i, :], sample_covs[i]) for i in 1:k_states]
+        B = [GaussianEmission(sample_means[:, i], sample_covs[i]) for i in 1:k_states]
     else   throw(ErrorException("$emissions is not a supported emissions model, please choose one of the supported models."))
     end
     return HMM(A, B, πₖ, D)
@@ -58,6 +63,8 @@ function forward(hmm::AbstractHMM, data::Matrix{Float64})
     return α
 end
 
+
+
 function backward(hmm::AbstractHMM, data::Matrix{Float64})
     T, _ = size(data)
     K = size(hmm.A, 1)  # Number of states
@@ -80,6 +87,9 @@ function backward(hmm::AbstractHMM, data::Matrix{Float64})
     end
     return β
 end
+
+# function expectation_gradient(hmm::HMM, data::Matrix{Float64}, max_iters::Int=100, tol::Float64)
+# end
 
 function baumWelch!(hmm::HMM,  data::Matrix{Float64}, max_iters::Int=100, tol::Float64=1e-6)
     T, _ = size(data)
@@ -194,29 +204,4 @@ end
 
 # function fit!()
 #     #TODO Implement the viterbi algorithm.
-# end
-
-# function simulate_gaussian_hmm(n, transition_mat, means, covariances)
-#     # Number of states
-#     K = size(transition_mat, 1)
-    
-#     # Initialize state and observation arrays
-#     states = Vector{Int}(undef, n)
-#     observations = Matrix{Float64}(undef, n, size(means[1], 1))
-    
-#     # Start with a random state
-#     states[1] = rand(1:K)
-    
-#     # Generate first observation
-#     observations[1, :] = rand(MvNormal(means[states[1]], covariances[states[1]]))
-    
-#     for t in 2:n
-#         # Transition to a new state
-#         states[t] = sample(1:K, Weights(transition_mat[states[t-1], :]))
-        
-#         # Generate observation
-#         observations[t, :] = rand(MvNormal(means[states[t]], covariances[states[t]]))
-#     end
-    
-#     return states, observations
 # end

@@ -32,7 +32,7 @@ function kmeans_clustering(data::Matrix{Float64}, k_means::Int, max_iters::Int=1
     labels = zeros(Int, N)
     for iter in 1:max_iters
         # Assign each data point to the nearest cluster
-        labels .= [argmin([euclidean_distance(x, c) for c in eachrow(centroids)]) for x in eachrow(data)]
+        labels .= [argmin([euclidean_distance(x, c) for c in eachcol(centroids)]) for x in eachrow(data)]
         # Cache old centroids for convergence check
         old_centroids = centroids
         # Update the centroids
@@ -41,14 +41,14 @@ function kmeans_clustering(data::Matrix{Float64}, k_means::Int, max_iters::Int=1
             points_in_cluster = data[labels .== k, :]
             if isempty(points_in_cluster)
                 # If a cluster has no points, reinitialize its centroid
-                new_centroids[k, :] = data[rand(1:N), :]
+                new_centroids[:, k] = data[rand(1:N), :]
             else
-                new_centroids[k, :] = mean(points_in_cluster, dims=1)
+                new_centroids[:, k] = mean(points_in_cluster, dims=1)
             end
         end
         centroids .= new_centroids
         # Check for convergence
-        if maximum([euclidean_distance(centroids[i, :], old_centroids[i, :]) for i in 1:k_means]) < tol
+        if maximum([euclidean_distance(centroids[:, i], old_centroids[:, i]) for i in 1:k_means]) < tol
             # println("Converged after $iter iterations")
             break
         end
@@ -56,7 +56,8 @@ function kmeans_clustering(data::Matrix{Float64}, k_means::Int, max_iters::Int=1
     return centroids, labels
 end
 
-struct ProbabilisticPCA
+""" Factor Analysis and by special case PPCA"""
+struct FactorAnalysis
     W::Matrix{Float64}
     σ2::Vector{Float64}
     μ::Vector{Float64}

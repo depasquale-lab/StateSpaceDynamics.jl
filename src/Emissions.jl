@@ -58,7 +58,7 @@ end
 
 
 # loglikelihood of the regression model.
-function loglikelihood(emission::RegressionEmissions)
+function loglikelihood(emission::RegressionEmissions, observation::Vector{Float64})
     emission.regression_model.loglikelihood()
 end
 
