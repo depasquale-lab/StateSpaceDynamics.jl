@@ -25,6 +25,13 @@ function kmeanspp_initialization(data::Matrix{Float64}, k_means::Int)
     return centroids
 end
 
+"""K++ Initialization for Vector input"""
+function kmeanspp_initialization(data::Vector{Float64}, k_means::Int)
+    # reshape data
+    data = reshape(data, length(data), 1)
+    return kmeanspp_initialization(data, k_means)
+end
+
 """KMeans Clustering Initialization"""
 function kmeans_clustering(data::Matrix{Float64}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6)
     N, _ = size(data)
@@ -55,6 +62,14 @@ function kmeans_clustering(data::Matrix{Float64}, k_means::Int, max_iters::Int=1
     end
     return centroids, labels
 end
+
+"""KMeans Clustering Initialization for Vector input"""
+function kmeans_clustering(data::Vector{Float64}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6)
+    # reshape data
+    data = reshape(data, length(data), 1)
+    return kmeans_clustering(data, k_means, max_iters, tol)
+end
+
 
 """ Factor Analysis and by special case PPCA"""
 struct FactorAnalysis

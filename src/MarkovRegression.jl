@@ -15,8 +15,8 @@ mutable struct GaussianMarkovRegression{T <: Real} <: AbstractHMM
     X::Matrix{T} # covariates
     K::Int # number of states
     A::Matrix{T} # transition matrix
-    π_k::Vector{T} # initial state distribution
-    RegressionModels::Vector{RegressionEmissions} # Vector of Gaussian Regression Models
+    πₖ::Vector{T} # initial state distribution
+    B::Vector{RegressionEmissions} # Vector of Gaussian Regression Models
 end
 
 
@@ -28,11 +28,20 @@ function GaussianMarkovRegression(y::Vector{T}, X::Matrix{T}, k::Int) where T <:
     A = rand(k, k)
     A = A ./ sum(A, dims=2) # normalize rows to ensure they are valid probabilities
     # initialize initial state distribution
-    π_k = rand(k)
-    π_k = π_k ./ sum(π_k) # normalize to ensure it's a valid probability vector
-    # initialize regression models by fitting the K=1 case (i.e. regular old linear regression)
+    πₖ = rand(k)
+    πₖ = πₖ ./ sum(πₖ) # normalize to ensure it's a valid probability vector
+    # initialize regression models
     regression_models = [RegressionEmissions(GaussianRegression(X, y, true)) for _ in 1:k]
-    return GaussianMarkovRegression(y, X, k, A, π_k, regression_models)
+    # use a GMM to initialize the emission model
+    gmm = GMM(k, 1, y)
+    fit!(gmm, y)
+    # initialize emission model
+    for i in 1:k
+        weights = gmm.class_probabilities[:, i]
+        loss = WLSLoss(weights)
+        updateEmissionModel!(regression_models[i], loss)
+    end
+    return GaussianMarkovRegression(y, X, k, A, πₖ, regression_models)
 end
 
 """
@@ -43,30 +52,31 @@ function MarkovRegressionEM(model::GaussianMarkovRegression, max_iters::Int=100,
     # the algorithm is taken from the Ph.D. thesis of Moshe Fridman see: 
     # https://www.proquest.com/docview/304089763?fromopenview=true&pq-origsite=gscholar&parentSessionId=W5CCeTcPsuORzBfQbAZ52%2B970F5PJ%2Fd%2FjWIdz2qMNXI%3D 
     # for details.
+    # init log-likelihood
+    log_likelihood = -Inf
     for i in 1:max_iters
-        # init log-likelihood
-        log_likelihood = -Inf
+        log_likelihood_prev = log_likelihood
         # E-Step
         α = forward(model, model.y)
+        log_likelihood = logsumexp(α[:, end])
         β = backward(model, model.y)
         # M-Step
         for k in 1:model.K
             # get weights for wls
-            weights = sqrt(α[k, :] .* β[k, :])
+            weights = sqrt.(α[k, :] .* β[k, :])
             # define weighted loss function
             loss = WLSLoss(weights)
             # update the regression model for each state
-            updateEmissionModel!(model.RegressionModels[k], loss)
+            updateEmissionModel!(model.B[k], loss)
             # calculate the variance term
-            σ² = sum(α[k, :] .* β[k, :] .* (model.y .- model.RegressionModels[k].predict(model.X)).^2) / sum(α[k, :].*β[k, :])
+            σ² = sum(α[k, :] .* β[k, :] .* (model.y .- predict(model.B[k].regression_model, model.B[k].regression_model.X)).^2) / sum(α[k, :].*β[k, :])
+            print(σ²)
             # update the HMM adjacency matrix
             for i in 1:model.K
-                model.A[k, i] = sum(alpha[k, :] .* model.A[k, i] .* pdf(normal(model.X .* model.RegressionModels[k].β), σ²).* beta[i, :]) / sum(alpha[k, :] .* beta[i, :])
+                model.A[k, i] = sum(α[k, :] .* model.A[k, i] .* pdf(Normal(predict(model.B[k].regression_model, model.B[k].regression_model.X[i, :]), σ²), model.y[i]).* β[i, :]) / sum(α[k, :] .* β[i, :])
             end
-            # update responsibilities
         end
-    end
-        # Maybe finish this.
+    end# init log-likelihood
 end
 
 """

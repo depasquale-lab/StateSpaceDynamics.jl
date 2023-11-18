@@ -37,8 +37,8 @@ function HMM(data::Matrix{Float64}, k_states::Int=2, emissions::String="Gaussian
     return HMM(A, B, πₖ, D)
 end
 
-function forward(hmm::AbstractHMM, data::Matrix{Float64})
-    T, _ = size(data)
+function forward(hmm::AbstractHMM, data::Y) where Y <: AbstractArray
+    T = size(data, 1)
     K = size(hmm.A, 1)  # Number of states
 
     # Initialize an α-matrix 
@@ -64,9 +64,8 @@ function forward(hmm::AbstractHMM, data::Matrix{Float64})
 end
 
 
-
-function backward(hmm::AbstractHMM, data::Matrix{Float64})
-    T, _ = size(data)
+function backward(hmm::AbstractHMM, data::Y) where Y <: AbstractArray
+    T = size(data, 1)
     K = size(hmm.A, 1)  # Number of states
 
     # Initialize a β matrix

@@ -1,7 +1,10 @@
+"""Regression models i.e. GLM's, etc. This is not a regression package per se, but rather a collection of regression models that can be used for other models e.g. arkovRegression.jl, etc."""
+
 export GLM, Link, GaussianRegression, BinomialRegression, PoissonRegression, IdentityLink,
        LogLink, LogitLink, ProbitLink, InverseLink, Loss, LSELoss, CrossEntropyLoss, PoissonLoss, 
        loglikelihood, predict, residuals, fit!
 
+# constants
 EPSILON = 1e-15
 
 # Abstract types
@@ -103,6 +106,18 @@ function invlink(::IdentityLink, η::Vector{T})::Vector{T} where T <: Real
 end
 
 function derivlink(::IdentityLink, μ::Vector{T})::Vector{T} where T <: Real
+    return ones(T, length(μ))
+end
+
+function link(::IdentityLink, μ::Float64)::Float64
+    return μ
+end
+
+function invlink(::IdentityLink, η::Float64)::Float64
+    return η
+end
+
+function derivlink(::IdentityLink, μ::Float64)::Float64
     return ones(T, length(μ))
 end
 
@@ -225,9 +240,14 @@ function BinomialRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, lin
     return BinomialRegression(X, y, β, link)
 end
 
-# Predict function for any regression model
-function predict(model::GLM, X::Matrix{T}) where T <: Real
-    return invlink(model.link, X * model.β)
+# Predict function for any regression model where X is a matrix
+function predict(model::GLM, X::AbstractMatrix)
+    return invlink(model.link, vec(model.β' * X'))
+end
+
+# Predict function for any regression model where X is a vector
+function predict(model::GLM, x::AbstractVector)
+    return invlink(model.link, model.β' * x)
 end
 
 # Residuals function for any regression model

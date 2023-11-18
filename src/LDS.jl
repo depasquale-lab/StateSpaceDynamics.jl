@@ -1,7 +1,10 @@
-export DynamicalSystem, LDS, KalmanFilter, KalmanSmoother
 
 """Linear Dynamical Systems Models e.g. the Kalman Filter, (recurrent) Switching Linear Dynamical Systems, etc."""
 
+# export statement
+export DynamicalSystem, LDS, KalmanFilter, KalmanSmoother
+
+# Abstract types
 abstract type DynamicalSystem end
 
 abstract type Params end
@@ -112,9 +115,14 @@ function M_step(l::LDS, y::Vector{Float64})
 end
 
 function KalmanFilterEM(l::LDS, y::Vector{Float64})
+    #TODO: Implement KalmanFilterEM
 end
 
 function KalmanFilterEGD(l::LDS, y::Vector{Float64})
+end
+
+function loglikelihood(l::LDS, y::Vector{Float64})
+    return 
 end
 
 
