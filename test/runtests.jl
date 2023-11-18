@@ -125,6 +125,30 @@ function test_HMM_constructor()
     @test hmm.D == data_dim
 end
 
+function test_HMM_forward()
+    # Initialize parameters
+    k = 3
+    data_dim = 2
+    data = randn(100, data_dim)
+    hmm = HMM(data, k, "Gaussian")
+    # Run forward algorithm
+    α = SSM.forward(hmm, data)
+    # Check dimensions
+    @test size(α) == (k, 100)
+end
+
+function test_HMM_backward()
+    # Initialize parameters
+    k = 3
+    data_dim = 2
+    data = randn(100, data_dim)
+    hmm = HMM(data, k, "Gaussian")
+    # Run backward algorithm
+    β = SSM.backward(hmm, data)
+    # Check dimensions
+    @test size(β) == (k, 100)
+end
+
 function test_HMM_EM()
     A = [0.9 0.02 0.08; 0.1 0.9 0.0; 0.0 0.1 0.9]
     means = [[0.0, 0.0], [3.0, 2.5], [-1.0, 2.0]]
@@ -146,6 +170,8 @@ end
 
 @testset "HiddenMarkovModels.jl Tests" begin
     test_HMM_constructor()
+    test_HMM_forward()
+    test_HMM_backward()
 end
 
 

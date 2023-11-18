@@ -41,15 +41,12 @@ end
 function forward(hmm::AbstractHMM, data::Y) where Y <: AbstractArray
     T = size(data, 1)
     K = size(hmm.A, 1)  # Number of states
-
     # Initialize an α-matrix 
     α = zeros(Float64, K, T)
-
     # Calculate α₁
     for k in 1:K
         α[k, 1] = log(hmm.πₖ[k]) + loglikelihood(hmm.B[k], data[1, :])
     end
-    
     # Now perform the rest of the forward algorithm for t=2 to T
     for t in 2:T
         for j in 1:K
@@ -64,9 +61,8 @@ function forward(hmm::AbstractHMM, data::Y) where Y <: AbstractArray
     return α
 end
 
-
-function backward(hmm::AbstractHMM, data::Y) where Y <: AbstractArray
-    T = size(data, 1)
+function backward(hmm::AbstractHMM, data::Matrix{Float64})
+    T, _ = size(data)
     K = size(hmm.A, 1)  # Number of states
 
     # Initialize a β matrix

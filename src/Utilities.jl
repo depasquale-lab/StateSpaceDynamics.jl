@@ -11,7 +11,6 @@ function kmeanspp_initialization(data::Matrix{Float64}, k_means::Int)
     centroids = zeros(D, k_means)
     rand_idx = rand(1:N)
     centroids[:, 1] = data[rand_idx, :]
-
     for k in 2:k_means
         dists = zeros(N)
         for i in 1:N
