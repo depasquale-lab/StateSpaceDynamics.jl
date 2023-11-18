@@ -10,13 +10,18 @@ abstract type DynamicalSystem end
 abstract type Params end
 
 """LDS Params for Optimization"""
-mutable struct LDSParams <: Params
-    A::Matrix{Float64}
-    C::Matrix{Float64}
-    Q::Matrix{Float64}
-    R::Matrix{Float64}
-    x0::Vector{Float64}
-    P0::Matrix{Float64}
+mutable struct LDSParams
+    A::Union{Matrix{Float64}, Nothing} # Transition Matrix
+    H::Union{Matrix{Float64}, Nothing} # Observation Matrix
+    B::Union{Matrix{Float64}, Nothing} # Control Matrix
+    Q::Union{Matrix{Float64}, Nothing} # Process Noise Covariance
+    R::Union{Matrix{Float64}, Nothing} # Observation Noise Covariance
+    x0::Union{Vector{Float64}, Nothing} # Initial State
+    P0::Union{Matrix{Float64}, Nothing} # Initial Covariance
+    obs_dim::Int # Observation Dimension
+    latent_dim::Int # Latent Dimension
+    emissions::String # Emission Model 
+    fit_bool::Vector{Bool} # Boolean vector for which parameters to fit
 end
 
 """Linear Dynamical System (LDS) Definition"""
@@ -25,31 +30,34 @@ mutable struct LDS{T1 <: AbstractArray,
                    T3 <: AbstractArray, 
                    T4 <: AbstractArray, 
                    T5 <: AbstractVector, 
-                   T6 <: AbstractArray} <: DynamicalSystem
+                   T6 <: AbstractArray,
+                   T7 <: AbstractArray} <: DynamicalSystem
     A::T1  # Transition Matrix
     H::T2  # Observation Matrix
-    Q::T3  # Process Noise Covariance
-    R::T4  # Observation Noise Covariance
-    x0::T5 # Initial State
-    P0::T6 # Initial Covariance
-    D::Int # Observation Dimension
+    B::T3  # Control Matrix
+    Q::T4  # Process Noise Covariance
+    R::T5  # Observation Noise Covariance
+    x0::T6 # Initial State
+    P0::T7 # Initial Covariance
+    obs_dim::Int # Observation Dimension
+    latent_dim::Int # Latent Dimension
     emissions::String # Emission Model
 end
 
 """LDS Constructor"""
-function LDS(A::Union{T1, Nothing}=nothing, 
-    H::Union{T2, Nothing}=nothing,
-    Q::Union{T3, Nothing}=nothing,
-    R::Union{T4, Nothing}=nothing,
-    x0::Union{T5, Nothing}=nothing,
-    P0::Union{T6, Nothing}=nothing,
-    D::Union{Int, Nothing}=nothing,
-    emissions::String="Gaussian") where {T1 <: AbstractArray, T2 <: AbstractArray, T3 <: AbstractArray, T4 <: AbstractArray, T5 <: AbstractVector, T6 <: AbstractArray}
-    if any(isnothing, [A, H, Q, R, x0, P0, D])
-        throw(ErrorException("You must specify all parameters for the LDS model."))
-    else
-        return LDS{T1, T2, T3, T4, T5, T6}(A, C, Q, R, x0, P0, D, emissions)
-    end
+function LDS(params::LDSParams)
+    # Initialize optional parameters if they are 'nothing'
+    A = params.A !== nothing ? params.A : randn(params.D, params.D)
+    H = params.H !== nothing ? params.H : randn(params.D, params.D)
+    B = params.B # can be 'nothing' if not provided
+    Q = params.Q !== nothing ? params.Q : Matrix{Float64}(I, params.D, params.D)
+    R = params.R !== nothing ? params.R : Matrix{Float64}(I, params.D, params.D)
+    x0 = params.x0 !== nothing ? params.x0 : randn(params.D)
+    P0 = params.P0 !== nothing ? params.P0 : Matrix{Float64}(I, params.D, params.D)
+
+    LDS{typeof(A), typeof(H), typeof(B), typeof(Q), typeof(R), typeof(x0)}(
+        A, H, B, Q, R, x0, P0, params.D, params.emissions, params.fit_bool
+    )
 end
 
 function KalmanFilter(l::LDS, y::Matrix{Float64})

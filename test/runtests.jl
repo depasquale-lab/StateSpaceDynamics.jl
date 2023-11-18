@@ -4,6 +4,8 @@ using LinearAlgebra
 using Random
 using Test
 
+Random.seed!(1234)
+
 """
 Tests for MixtureModels.jl
 """
