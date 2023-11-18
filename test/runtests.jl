@@ -1,5 +1,7 @@
 using SSM
+using Distributions
 using LinearAlgebra
+using Random
 using Test
 
 """
@@ -184,7 +186,82 @@ Tests for LDS.jl
 """
 Tests for Regression.jl
 """
-#TODO Implement tests for Regression
+# sigmoid function
+function sigmoid(x)
+    return 1 / (1 + exp(-x))
+end
+
+# Generate toy data for Regression Tests
+n = 10000
+p = 2
+X = randn(n, p)
+X_concat = hcat(ones(n), X)
+β = [1.0, 2.0, 3.0]
+y_gaussian = X_concat * β .+ randn(n)
+y_poisson = Vector{Float64}(rand.(Poisson.(exp.(X_concat * β))))
+y_binomial = Vector{Float64}(rand.(Binomial.(1, sigmoid.(X_concat * β))))
+
+function test_link_functions()
+    values = [0.0, 0.5, 1.0]
+    @test SSM.link(IdentityLink(), values) == values
+    @test SSM.invlink(IdentityLink(), values) == values
+    @test SSM.derivlink(IdentityLink(), values) == ones(3)
+    @test SSM.link(LogLink(), values) == log.(values)
+    @test SSM.invlink(LogLink(), values) == exp.(values)
+    @test SSM.derivlink(LogLink(), values) == 1 ./ values
+    @test SSM.link(LogitLink(), values) == log.(values ./ (1 .- values))
+    @test SSM.invlink(LogitLink(), values) == 1 ./ (1 .+ exp.(-values))
+    @test SSM.derivlink(LogitLink(), values) == 1 ./ (values .* (1 .- values))
+end
+
+function test_Gaussian_regression()
+    # Initialize Gaussian Regression Model
+    gaussian_reg = GaussianRegression(X, y_gaussian)
+    # Check if parameters are initialized correctly
+    @test gaussian_reg.X == hcat(ones(n), X)
+    @test gaussian_reg.y == y_gaussian
+    @test gaussian_reg.β == zeros(p + 1)
+    @test gaussian_reg.link == IdentityLink()
+    # Fit the model
+    fit!(gaussian_reg)
+    # Check if parameters are updated correctly
+    @test isapprox(gaussian_reg.β, β, atol=1e-1)
+end
+
+function test_Poisson_regression()
+    # Initiliaze Poisson Regression Model
+    poisson_reg = PoissonRegression(X, y_poisson)
+    # Check if parameters are initialized correctly
+    @test poisson_reg.X == hcat(ones(n), X)
+    @test poisson_reg.y == y_poisson
+    @test poisson_reg.β == zeros(p + 1)
+    @test poisson_reg.link == LogLink()
+    # Fit the model
+    fit!(poisson_reg)
+    # Check if parameters are updated correctly
+    @test isapprox(poisson_reg.β, β, atol=1e-1)
+end
+
+function test_Binomial_Regression()
+    # Initiliaze Logistic Regression Model
+    logistic_reg = BinomialRegression(X, y_binomial)
+    # Check if parameters are initialized correctly
+    @test logistic_reg.X == hcat(ones(n), X)
+    @test logistic_reg.y == y_binomial
+    @test logistic_reg.β == zeros(p + 1)
+    @test logistic_reg.link == LogitLink()
+    # Fit the model
+    fit!(logistic_reg)
+    # Check if parameters are updated correctly
+    @test isapprox(logistic_reg.β, β, atol=1e-1)
+end
+
+@testset "Regression.jl Tests" begin
+    test_link_functions()
+    test_Gaussian_regression()
+    test_Poisson_regression()
+    test_Binomial_Regression()
+end
 
 
 """
