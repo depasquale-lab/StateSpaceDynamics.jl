@@ -32,9 +32,10 @@ function HMM(data::Matrix{Float64}, k_states::Int=2, emissions::String="Gaussian
         sample_means, labels = kmeans_clustering(data, k_states)
         sample_covs = [cov(data[labels .== i, :]) for i in 1:k_states]
         B = [GaussianEmission(sample_means[:, i], sample_covs[i]) for i in 1:k_states]
-    else   throw(ErrorException("$emissions is not a supported emissions model, please choose one of the supported models."))
+        return HMM{GaussianEmission}(A, B, πₖ, D)
+    else   
+        throw(ErrorException("$emissions is not a supported emissions model, please choose one of the supported models."))
     end
-    return HMM(A, B, πₖ, D)
 end
 
 function forward(hmm::AbstractHMM, data::Y) where Y <: AbstractArray

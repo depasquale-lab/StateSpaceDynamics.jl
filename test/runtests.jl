@@ -40,10 +40,10 @@ function testGMM_MStep()
     data_dim = 2
     data = randn(10, data_dim)
     gmm = GMM(k_means, data_dim, data)
-    γ = SSM.EStep!(gmm, data)
+    SSM.EStep!(gmm, data)
 
     # Run MStep
-    SSM.MStep!(gmm, data, γ)
+    SSM.MStep!(gmm, data)
 
     # Check dimensions of updated μ and Σ
     @test size(gmm.μ_k) == (data_dim, k_means)
