@@ -109,6 +109,7 @@ function derivlink(::IdentityLink, μ::Vector{T})::Vector{T} where T <: Real
     return ones(T, length(μ))
 end
 
+# Functions for identity link with scalars
 function link(::IdentityLink, μ::Float64)::Float64
     return μ
 end
@@ -141,6 +142,7 @@ end
 function derivlink(::LogLink, μ::Vector{T})::Vector{T} where T <: Real
     return inv.(μ)
 end
+
 
 """
     LogitLink
@@ -177,6 +179,7 @@ mutable struct GaussianRegression{T <: Real} <: GLM
     X::Matrix{T}
     y::Vector{T}
     β::Vector{T}
+    σ²::Float64
     link::Link
 end
 
@@ -189,7 +192,9 @@ function GaussianRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, lin
         p += 1
     end
     β = zeros(p)  # initialize as zeros
-    return GaussianRegression(X, y, β, link)
+    # Initialize variance
+    σ² = 1.0
+    return GaussianRegression(X, y, β, σ², link)
 end
 
 """
@@ -246,13 +251,24 @@ function predict(model::GLM, X::AbstractMatrix)
 end
 
 # Predict function for any regression model where X is a vector
-function predict(model::GLM, x::AbstractVector)
-    return invlink(model.link, model.β' * x)
+function predict(model::GLM, X::AbstractVector)
+    return invlink(model.link, model.β' * X)
 end
 
 # Residuals function for any regression model
 function residuals(model::GLM)
     return model.y - predict(model, model.X)
+end
+
+# Residuals For a specific point 
+function residuals(model::GLM, X::AbstractVector, y::Real)
+    return y - predict(model, X)
+end
+
+# loglikelihood function for a single point
+function loglikelihood(model::GaussianRegression, X::AbstractVector, y::Real)
+    residual = residuals(model, X, y)
+    return -0.5 * log(2π) - 0.5 * log(var(residual)) - 0.5 * residual^2 / var(residual)
 end
 
 # loglikelihood function
@@ -262,6 +278,13 @@ function loglikelihood(model::GaussianRegression{T}) where T <: Real
     LL = (-0.5 * n * log(2π)) - (0.5 * n * log(var(resid))) - (0.5 * sum(resid.^2) / var(resid))
     return LL
 end
+
+# function to update σ² parameter of a gaussian regression model
+function update_variance!(model::GaussianRegression)
+    dof = size(model.X, 1) - size(model.X, 2)
+    model.σ² = sum(residuals(model).^2) / dof
+end
+
 
 # Fit function for any regression model
 function fit!(model::GLM, loss::Union{Loss, Nothing}=nothing, max_iter::Int=1000)

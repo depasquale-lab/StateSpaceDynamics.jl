@@ -61,8 +61,8 @@ function forward(hmm::AbstractHMM, data::Y) where Y <: AbstractArray
     return α
 end
 
-function backward(hmm::AbstractHMM, data::Matrix{Float64})
-    T, _ = size(data)
+function backward(hmm::AbstractHMM, data::Y) where Y <: AbstractArray
+    T = size(data, 1)
     K = size(hmm.A, 1)  # Number of states
 
     # Initialize a β matrix

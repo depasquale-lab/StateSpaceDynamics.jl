@@ -12,6 +12,7 @@ mutable struct GMM <: MixtureModel
     Σ_k::Array{Matrix{Float64}, 1} # Covariance matrices of each cluster
     π_k::Vector{Float64} # Mixing coefficients
     class_probabilities::Matrix{Float64} # Probability of each class for each point
+    class_labels::Vector{Int} # Class label for each point based on the class probabilities
 end
 
 """GMM Constructor"""
@@ -22,8 +23,11 @@ function GMM(k_means::Int, data_dim::Int, data::Union{Vector{Float64}, Matrix{Fl
     πs = ones(k_means) ./ k_means
     # Initialize class_probabilities with zeros or equal probabilities
     class_probs = zeros(N, k_means)
-    return GMM(k_means, μ, Σ, πs, class_probs)
+    # Initialize class_labels with zeros
+    class_lbls = zeros(Int, N)
+    return GMM(k_means, μ, Σ, πs, class_probs, class_lbls)
 end
+
 
 # E-Step (Confirmed in Python)
 function EStep!(gmm::GMM, data::Matrix{Float64})
@@ -40,6 +44,8 @@ function EStep!(gmm::GMM, data::Matrix{Float64})
         γ[n, :] = exp.(log_γ[n, :] .- logsum)
     end
     gmm.class_probabilities = γ
+    # Update the most likely class labels for each data point
+    gmm.class_labels = [argmax(γ[n, :]) for n in 1:N]
 end
 
 function MStep!(gmm::GMM, data::Matrix{Float64})

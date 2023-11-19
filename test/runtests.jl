@@ -22,6 +22,8 @@ function test_GMM_constructor()
         @test gmm.Σ_k[i] ≈ I(data_dim)
     end
     @test sum(gmm.π_k) ≈ 1.0
+    @test size(gmm.class_labels) == (100,)
+    @test size(gmm.class_probabilities) == (100, k_means)
 end
 
 function testGMM_EStep()
@@ -31,11 +33,11 @@ function testGMM_EStep()
     data = randn(10, data_dim)
     gmm = GMM(k_means, data_dim, data)
     # Run EStep
-    γ = SSM.EStep!(gmm, data)
+    SSM.EStep!(gmm, data)
     # Check dimensions
-    @test size(γ) == (10, k_means)
+    @test size(gmm.class_probabilities) == (10, k_means)
     # Check if the row sums are close to 1 (since they represent probabilities)
-    @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(γ, dims=2))
+    @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(gmm.class_probabilities, dims=2))
 end
 
 function testGMM_MStep()
@@ -73,6 +75,15 @@ function testGMM_fit()
 
     # Check if the covariance matrices are Hermitian
     @test all([ishermitian(Σ) for Σ in gmm.Σ_k])
+
+    # Check if the mixing coefficients sum to 1
+    @test sum(gmm.π_k) ≈ 1.0
+
+    # Check if the class_probabilities add to 1
+    @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(gmm.class_probabilities, dims=2))
+
+    # Check if the class labels are integers in the range 1 to k_means
+    @test all(x -> x in 1:k_means, gmm.class_labels)
 end
 
 function test_log_likelihood()
@@ -154,8 +165,8 @@ function test_HMM_backward()
 end
 
 function test_HMM_EM()
-    A = [0.9 0.02 0.08; 0.1 0.9 0.0; 0.0 0.1 0.9]
-    means = [[0.0, 0.0], [3.0, 2.5], [-1.0, 2.0]]
+    A = [0.7 0.2 0.1; 0.1 0.7 0.2; 0.2 0.1 0.7]
+    means = [[0.0, 0.0], [-1.0, 2.0], [3.0, 2.5]]
     covs = [
                 [0.1 0.0; 0.0 0.1],  # Covariance matrix for state 1
                 [0.1 0.0; 0.0 0.1],  # Covariance matrix for state 2
@@ -163,19 +174,28 @@ function test_HMM_EM()
             ]
     emissions_models = [GaussianEmission(mean, cov) for (mean, cov) in zip(means, covs)]
     simul_hmm = HMM(A, emissions_models, [0.33, 0.33, 0.34], 2)
-    states, observations = SSM.sample(simul_hmm, 1000)
+    states, observations = SSM.sample(simul_hmm, 10000)
     # Initialize HMM
     k = 3
     data_dim = 2
     hmm = HMM(observations, k, "Gaussian")
     # Run EM
-    # TODO: Finish later.
+    baumWelch!(hmm, observations)
+    # Check if the transition matrix is close to the simulated one
+    @test hmm.A ≈ A atol=1e-1
+    # Check if the means are close to the simulated ones
+    pred_means = [hmm.B[i].μ for i in 1:k]
+    @test sort(pred_means) ≈ sort(means) atol=1e-1
+    # Check if the covariance matrices are close to the simulated ones
+    pred_covs = [hmm.B[i].Σ for i in 1:k]
+    @test pred_covs ≈ covs atol=1e-1
 end
 
 @testset "HiddenMarkovModels.jl Tests" begin
     test_HMM_constructor()
     test_HMM_forward()
     test_HMM_backward()
+    test_HMM_EM()
 end
 
 
@@ -216,6 +236,24 @@ function test_link_functions()
     @test SSM.derivlink(LogitLink(), values) == 1 ./ (values .* (1 .- values))
 end
 
+function test_link_functions_edge_cases()
+    # Test LogitLink with edge values
+    @test_throws DomainError SSM.link(LogitLink(), [-1.0, 2.0])
+    @test SSM.invlink(LogitLink(), [-Inf, Inf]) == [0.0, 1.0]
+    @test SSM.derivlink(LogitLink(), [0.0, 1.0]) == [Inf, Inf]
+
+    # Test LogLink with edge values
+    @test_throws DomainError SSM.link(LogLink(), [-1.0, 0.0])
+    @test SSM.invlink(LogLink(), [-Inf, 0.0]) == [0.0, 1.0]
+    @test SSM.derivlink(LogLink(), [0.0, 1.0]) == [Inf, 1.0]
+
+    # Test IdentityLink with edge values
+    @test SSM.link(IdentityLink(), [-Inf, Inf]) == [-Inf, Inf]
+    @test SSM.invlink(IdentityLink(), [-Inf, Inf]) == [-Inf, Inf]
+    @test SSM.derivlink(IdentityLink(), [-Inf, Inf]) == [1.0, 1.0]
+ 
+end
+
 function test_Gaussian_regression()
     # Initialize Gaussian Regression Model
     gaussian_reg = GaussianRegression(X, y_gaussian)
@@ -228,6 +266,8 @@ function test_Gaussian_regression()
     fit!(gaussian_reg)
     # Check if parameters are updated correctly
     @test isapprox(gaussian_reg.β, β, atol=1e-1)
+    # Check edge cases
+    # @test_throws ArgumentError GaussianRegression(Float64[], Float64[])
 end
 
 function test_Poisson_regression()
@@ -242,6 +282,8 @@ function test_Poisson_regression()
     fit!(poisson_reg)
     # Check if parameters are updated correctly
     @test isapprox(poisson_reg.β, β, atol=1e-1)
+    # Check edge cases
+    # @test_throws ArgumentError PoissonRegression(X, -abs.(y_poisson))
 end
 
 function test_Binomial_Regression()
@@ -256,13 +298,157 @@ function test_Binomial_Regression()
     fit!(logistic_reg)
     # Check if parameters are updated correctly
     @test isapprox(logistic_reg.β, β, atol=1e-1)
+    # Check edge cases
+    # @test_throws ArgumentError BinomialRegression(X, 2 .* y_binomial)
 end
+
+function test_WLS_loss()
+    # Test data
+    y_true = [3.0, -0.5, 2.0, 7.0]
+    y_pred = [2.5, 0.0, 2.0, 8.0]
+    weights = [1.0, 2.0, 0.5, 1.0]
+    # Expected loss calculation
+    expected_loss = sum(weights .* (y_true - y_pred).^2)
+    # Create a WLSLoss instance
+    loss = SSM.WLSLoss(weights)
+    # Compute the loss
+    computed_loss = SSM.compute_loss(loss, y_pred, y_true)
+    # Test for correctness
+    @test isapprox(computed_loss, expected_loss, atol=1e-6)
+    # Test with empty vectors
+    @test SSM.compute_loss(SSM.WLSLoss(Float64[]), Float64[], Float64[]) == 0.0
+    # Test with zero weights
+    @test SSM.compute_loss(SSM.WLSLoss(zeros(length(y_true))), y_pred, y_true) == 0.0
+    # Test with large values/weights
+    large_values = [1e6, -1e6, 1e6, -1e6]
+    large_weights = [1e6, 1e6, 1e6, 1e6]
+    expected_large_loss = sum(large_weights .* (large_values - y_pred).^2)
+    @test SSM.compute_loss(SSM.WLSLoss(large_weights), y_pred, large_values) ≈ expected_large_loss atol=1e-3
+end
+
+function test_LSE_loss()
+    # Test data
+    y_true = [3.0, -0.5, 2.0, 7.0]
+    y_pred = [2.5, 0.0, 2.0, 8.0]
+    # Expected loss calculation
+    expected_loss = sum((y_true - y_pred).^2)
+    # Create a LSELoss instance
+    loss = SSM.LSELoss()
+    # Compute the loss
+    computed_loss = SSM.compute_loss(loss, y_pred, y_true)
+    # Test for correctness
+    @test isapprox(computed_loss, expected_loss, atol=1e-6)
+    # Test with empty vectors
+    @test SSM.compute_loss(SSM.LSELoss(), Float64[], Float64[]) == 0.0
+    # Test with large values/weights
+    large_values = [1e6, -1e6, 1e6, -1e6]
+    expected_large_loss = sum((large_values - y_pred).^2)
+    @test SSM.compute_loss(SSM.LSELoss(), y_pred, large_values) ≈ expected_large_loss atol=1e-3
+end
+
+function test_CrossEntropyLoss()
+    # Test data
+    y_true = [1.0, 0.0, 1.0, 1.0]
+    y_pred = [0.9, 0.1, 0.8, 0.9]
+    # Expected loss calculation
+    expected_loss = -sum(y_true .* log.(y_pred) .+ (1 .- y_true) .* log.(1 .- y_pred))
+    # Create a CrossEntropyLoss instance
+    loss = SSM.CrossEntropyLoss()
+    # Compute the loss
+    computed_loss = SSM.compute_loss(loss, y_pred, y_true)
+    # Test for correctness
+    @test isapprox(computed_loss, expected_loss, atol=1e-6)
+    # Test with empty vectors
+    @test SSM.compute_loss(SSM.CrossEntropyLoss(), Float64[], Float64[]) == 0.0
+    # Test with large values/weights
+    large_values = [1e6, -1e6, 1e6, -1e6]
+    expected_large_loss = -sum(large_values .* log.(y_pred) .+ (1 .- large_values) .* log.(1 .- y_pred))
+    @test SSM.compute_loss(SSM.CrossEntropyLoss(), y_pred, large_values) ≈ expected_large_loss atol=1e-3
+end
+
+function test_PoissonLoss()
+    # EPSILON
+    EPSILON = 1e-15
+    # Test data
+    y_true = [1.0, 0.0, 1.0, 1.0]
+    y_pred = [0.9, 0.1, 0.8, 0.9]
+    # Corrected expected loss calculation
+    expected_loss = sum(-y_true .* log.(y_pred .+ EPSILON) + y_pred)  # Added EPSILON for stability
+    # Create a PoissonLoss instance
+    loss = SSM.PoissonLoss()
+    # Compute the loss
+    computed_loss = SSM.compute_loss(loss, y_pred, y_true)
+    # Test for correctness
+    @test isapprox(computed_loss, expected_loss, atol=1e-6)
+    # Test with empty vectors
+    @test SSM.compute_loss(SSM.PoissonLoss(), Float64[], Float64[]) == 0.0
+    # Test with large values
+    large_values = [1e6, 1e6, 1e6, 1e6]
+    # TODO: Fix this test; need better handling of large values.
+    # expected_large_loss = sum(-y_true .* log.(y_pred .+ EPSILON) + large_values)
+    # @test SSM.compute_loss(SSM.PoissonLoss(), y_pred, large_values) ≈ expected_large_loss atol=1e-3
+end
+
+function test_predictions()
+    # Initialize Gaussian Regression Model
+    gaussian_reg = GaussianRegression(X, y_gaussian)
+    # Fit the model
+    fit!(gaussian_reg)
+    # Check if predictions are correct
+    @test isapprox(predict(gaussian_reg, gaussian_reg.X), gaussian_reg.X * gaussian_reg.β, atol=1e-1)
+    # Initialize Poisson Regression Model
+    poisson_reg = PoissonRegression(X, y_poisson)
+    # Fit the model
+    fit!(poisson_reg)
+    # Check if predictions are correct
+    @test isapprox(predict(poisson_reg, poisson_reg.X), exp.(poisson_reg.X * poisson_reg.β), atol=1e-1)
+    # Initialize Logistic Regression Model
+    logistic_reg = BinomialRegression(X, y_binomial)
+    # Fit the model
+    fit!(logistic_reg)
+    # Check if predictions are correct
+    @test isapprox(predict(logistic_reg, logistic_reg.X), sigmoid.(logistic_reg.X * logistic_reg.β), atol=1e-1)
+    # Test predictions on a vector
+    # TODO: Fix this test; need to handle vector data; add multiple dispatch for link functions.
+    # @test isapprox(predict(gaussian_reg, gaussian_reg.X[1,:]),  gaussian_reg.β * gaussian_reg.X[1,:]', atol=1e-1)
+    # @test isapprox(predict(poisson_reg, poisson_reg.X[1,:]), exp.( poisson_reg.β * poisson_reg.X[1,:]'), atol=1e-1)
+    # @test isapprox(predict(logistic_reg, logistic_reg.X[1,:]), sigmoid.(logistic_reg.β * logistic_reg.X[1,:]'), atol=1e-1)
+end
+
+function test_residuals()
+    # Initialize Gaussian Regression Model
+    gaussian_reg = GaussianRegression(X, y_gaussian)
+    # Fit the model
+    fit!(gaussian_reg)
+    # Check if residuals are correct
+    @test isapprox(residuals(gaussian_reg), y_gaussian - gaussian_reg.X * gaussian_reg.β, atol=1e-1)
+    # Initialize Poisson Regression Model
+    poisson_reg = PoissonRegression(X, y_poisson)
+    # Fit the model
+    fit!(poisson_reg)
+    # Check if residuals are correct
+    @test isapprox(residuals(poisson_reg), y_poisson - exp.(poisson_reg.X * poisson_reg.β), atol=1e-1)
+    # Initialize Logistic Regression Model
+    logistic_reg = BinomialRegression(X, y_binomial)
+    # Fit the model
+    fit!(logistic_reg)
+    # Check if residuals are correct
+    @test isapprox(residuals(logistic_reg), y_binomial - sigmoid.(logistic_reg.X * logistic_reg.β), atol=1e-1)
+end
+
 
 @testset "Regression.jl Tests" begin
     test_link_functions()
+    test_link_functions_edge_cases()
     test_Gaussian_regression()
     test_Poisson_regression()
     test_Binomial_Regression()
+    test_WLS_loss()
+    test_LSE_loss()
+    test_CrossEntropyLoss()
+    test_PoissonLoss()
+    test_predictions()
+    test_residuals()
 end
 
 
