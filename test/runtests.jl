@@ -112,12 +112,39 @@ function test_log_likelihood()
     end
 end
 
+function test_GMM_vector()
+    # Initialize data
+    data = randn(1000,)
+    k_means = 2
+    # Initialize GMM
+    gmm = GMM(k_means, 1, data)
+    # Run estep
+    SSM.EStep!(gmm, data)
+    # Run mstep
+    SSM.MStep!(gmm, data)
+    # Check if the mixing coefficients sum to 1
+    @test sum(gmm.π_k) ≈ 1.0
+    # Check if the class_probabilities add to 1
+    @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(gmm.class_probabilities, dims=2))
+    # Check if the class labels are integers in the range 1 to k_means
+    @test all(x -> x in 1:k_means, gmm.class_labels)
+    # Now Run
+    fit!(gmm, data; maxiter=10, tol=1e-3)
+    # Check if the mixing coefficients sum to 1
+    @test sum(gmm.π_k) ≈ 1.0
+    # Check if the class_probabilities add to 1
+    @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(gmm.class_probabilities, dims=2))
+    # Check if the class labels are integers in the range 1 to k_means
+    @test all(x -> x in 1:k_means, gmm.class_labels)
+end
+
 @testset "MixtureModels.jl Tests" begin
     test_GMM_constructor()
     testGMM_EStep()
     testGMM_MStep()
     testGMM_fit()
     test_log_likelihood()
+    test_GMM_vector()
 end
 
 
@@ -164,6 +191,8 @@ function test_HMM_backward()
     @test size(β) == (k, 100)
 end
 
+#TODO: Add tests for gamma, xi, estep, and mstep
+
 function test_HMM_EM()
     A = [0.7 0.2 0.1; 0.1 0.7 0.2; 0.2 0.1 0.7]
     means = [[0.0, 0.0], [-1.0, 2.0], [3.0, 2.5]]
@@ -189,6 +218,10 @@ function test_HMM_EM()
     # Check if the covariance matrices are close to the simulated ones
     pred_covs = [hmm.B[i].Σ for i in 1:k]
     @test pred_covs ≈ covs atol=1e-1
+    # Check viterbi now
+    best_path = viterbi(hmm, observations)
+    @test length(best_path) == 10000
+    @test all(x -> x in 1:k, best_path)
 end
 
 @testset "HiddenMarkovModels.jl Tests" begin
@@ -197,8 +230,6 @@ end
     test_HMM_backward()
     test_HMM_EM()
 end
-
-
 
 """
 Tests for LDS.jl
@@ -449,6 +480,55 @@ end
     test_PoissonLoss()
     test_predictions()
     test_residuals()
+end
+
+"""
+Tests for Emissions.jl
+"""
+
+function test_GaussianEmission()
+    # Initialize Gaussian Emission Model
+    gaussian_emission = GaussianEmission([0.0, 0.0], [1.0 0.0; 0.0 1.0])
+    # Check if parameters are initialized correctly
+    @test gaussian_emission.μ == [0.0, 0.0]
+    @test gaussian_emission.Σ == [1.0 0.0; 0.0 1.0]
+    # Generate random data
+    data = randn(100, 2)
+    # Calculate log-likelihood
+    ll = SSM.loglikelihood(gaussian_emission, data[1, :])
+    # Check if log-likelihood is a scalar
+    @test size(ll) == ()
+    # Log-likelihood should be a negative float
+    @test ll < 0.0
+    # Check sample emission
+    sample = SSM.sample_emission(gaussian_emission)
+    @test length(sample) == 2
+    # Update emission model
+    γ = rand(100)
+    SSM.updateEmissionModel!(gaussian_emission, data, γ)
+    # Check if parameters are updated correctly
+    
+end
+
+function test_regression_emissions()
+    # Initialize a GLM
+    glm = GaussianRegression(X, y_gaussian)
+    # Initialize Regression Emission Model
+    regression_emission = RegressionEmissions(glm)
+    # Check if parameters are initialized correctly
+    @test regression_emission.regression_model.X == hcat(ones(n), X)
+    @test regression_emission.regression_model.y == y_gaussian
+    @test regression_emission.regression_model.β == zeros(p + 1)
+    @test regression_emission.regression_model.link == IdentityLink()
+    # Fit the model
+    fit!(regression_emission.regression_model)
+    # Check if parameters are updated correctly
+    @test isapprox(regression_emission.regression_model.β, β, atol=1e-1)
+end
+
+@testset "Emissions.jl Tests" begin
+    test_GaussianEmission()
+    test_regression_emissions()
 end
 
 

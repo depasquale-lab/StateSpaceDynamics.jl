@@ -1,4 +1,4 @@
-export EmissionsModel, GaussianEmission
+export EmissionsModel, GaussianEmission, RegressionEmissions
 
 # Create emission models here 
 abstract type EmissionsModel end

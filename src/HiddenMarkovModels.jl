@@ -84,6 +84,63 @@ function backward(hmm::AbstractHMM, data::Y) where Y <: AbstractArray
     return β
 end
 
+function calculate_γ(hmm::AbstractHMM, α::Matrix{Float64}, β::Matrix{Float64})
+    T = size(α, 2)
+    print(T)
+    γ = α .+ β
+    for t in 1:T
+        max_gamma = maximum(γ[:, t])
+        log_sum = max_gamma + log(sum(exp.(γ[:, t] .- max_gamma)))
+        γ[:, t] .-= log_sum
+    end
+    return γ
+end
+
+function calculate_ξ(hmm::AbstractHMM, α::Matrix{Float64}, β::Matrix{Float64}, data::Matrix{Float64})
+    T = size(data, 1)
+    K = size(hmm.A, 1)
+    ξ = zeros(Float64, K, K, T-1)
+    for t in 1:T-1
+        # Array to store the unnormalized ξ values
+        log_ξ_unnormalized = zeros(Float64, K, K)
+        for i in 1:K
+            for j in 1:K
+                log_ξ_unnormalized[i, j] = α[i, t] + log(hmm.A[i, j]) + loglikelihood(hmm.B[j], data[t+1, :]) + β[j, t+1]
+            end
+        end
+        # Normalize the ξ values using log-sum-exp operation
+        max_ξ = maximum(log_ξ_unnormalized)
+        denominator = max_ξ + log(sum(exp.(log_ξ_unnormalized .- max_ξ)))
+        ξ[:, :, t] .= log_ξ_unnormalized .- denominator
+    end
+    return ξ
+end
+
+function Estep(hmm::AbstractHMM, data::Matrix{Float64})
+    α = forward(hmm, data)
+    β = backward(hmm, data)
+    γ = calculate_γ(hmm, α, β)
+    ξ = calculate_ξ(hmm, α, β, data)
+    return γ, ξ, α, β
+end
+
+function MStep!(hmm::AbstractHMM, γ::Matrix{Float64}, ξ::Array{Float64, 3}, data::Matrix{Float64})
+    K = size(hmm.A, 1)
+    T = size(data, 1)
+    # Update initial state probabilities
+    hmm.πₖ .= exp.(γ[:, 1])
+    # Update transition probabilities
+    for i in 1:K
+        for j in 1:K
+            hmm.A[i,j] = exp(log(sum(exp.(ξ[i,j,:]))) - log(sum(exp.(γ[i,1:T-1]))))
+        end
+    end
+    # Update emission model 
+    for k in 1:K
+        hmm.B[k] = updateEmissionModel!(hmm.B[k], data, exp.(γ[k,:]))
+    end
+end
+
 # function expectation_gradient(hmm::HMM, data::Matrix{Float64}, max_iters::Int=100, tol::Float64)
 # end
 
@@ -96,8 +153,8 @@ function baumWelch!(hmm::HMM,  data::Matrix{Float64}, max_iters::Int=100, tol::F
     for iter in 1:max_iters
         # Update the progress bar
         next!(p; showvalues = [(:iteration, iter), (:log_likelihood, log_likelihood)])
-        α = forward(hmm, data)
-        β = backward(hmm, data)
+        # E-Step
+        γ, ξ, α, β = Estep(hmm, data)
         # Compute and update the log-likelihood
         log_likelihood_current = logsumexp(α[:, T])
         if abs(log_likelihood_current - log_likelihood) < tol
@@ -106,42 +163,8 @@ function baumWelch!(hmm::HMM,  data::Matrix{Float64}, max_iters::Int=100, tol::F
         else
             log_likelihood = log_likelihood_current
         end
-        # Calculate proabilities according to Bayes rule, i.e. E-Step
-        γ = α .+ β
-        # Normalize γ values
-    for t in 1:T
-        max_gamma = maximum(γ[:, t])
-        log_sum = max_gamma + log(sum(exp.(γ[:, t] .- max_gamma)))
-        γ[:, t] .-= log_sum
-    end
-        # Now we calculate ξ values
-        ξ = zeros(Float64, K, K, T-1)
-        for t in 1:T-1
-            # Array to store the unnormalized ξ values
-            log_ξ_unnormalized = zeros(Float64, K, K)
-            for i in 1:K
-                for j in 1:K
-                    log_ξ_unnormalized[i, j] = α[i, t] + log(hmm.A[i, j]) + loglikelihood(hmm.B[j], data[t+1, :]) + β[j, t+1]
-                end
-            end
-            # Normalize the ξ values using log-sum-exp operation
-            max_ξ = maximum(log_ξ_unnormalized)
-            denominator = max_ξ + log(sum(exp.(log_ξ_unnormalized .- max_ξ)))
-            
-            ξ[:, :, t] .= log_ξ_unnormalized .- denominator
-        end
-        # M-Step; update our parameters based on E-Step
-        # Update initial state probabilities
-        hmm.πₖ .= exp.(γ[:, 1])
-        # Update transition probabilities
-        for i in 1:K
-            for j in 1:K
-                hmm.A[i,j] = exp(log(sum(exp.(ξ[i,j,:]))) - log(sum(exp.(γ[i,1:T-1]))))
-            end
-        end
-        for k in 1:K
-            hmm.B[k] = updateEmissionModel!(hmm.B[k], data, exp.(γ[k,:]))
-        end
+        # M-Step
+        MStep!(hmm, γ, ξ, data)
     end
 end
 
