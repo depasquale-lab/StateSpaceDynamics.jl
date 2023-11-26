@@ -236,6 +236,111 @@ Tests for LDS.jl
 """
 #TODO: Implement tests for LDS
 
+# Create a toy example for all LDS tests. This example represents a pendulum in a frictionless environment.
+g = 9.81 # gravity
+l = 1.0 # length of pendulum
+dt = 0.01 # time step
+T = 10.0 # total time
+# Discrete-time dynamics
+A = [1.0 dt; -g/l*dt 1.0]
+# Initial state
+x0 = [0.0; 1.0]
+# Time vector
+t = 0:dt:T
+# Define the LDS model parameters
+H = I(2)  # Observation matrix (assuming direct observation)
+Q = 0.00001 * I(2)  # Process noise covariance
+observation_noise_std = 0.5
+R = (observation_noise_std^2) * I(2)  # Observation noise covariance
+P0 = 0.1*I(2)  # Initial state covariance
+x0 = [0.0; 1.0]  # Initial state mean
+# Generate true data
+x = zeros(2, length(t))
+x[:,1] = x0
+for i = 2:length(t)
+    x[:,i] = A*x[:,i-1]
+end
+# Generate noisy data
+x_noisy = zeros(2, length(t))
+x_noisy[:, 1] = x0
+
+noise = rand(Normal(0, observation_noise_std), (2, length(t)))
+
+for i in 2:length(t)
+    x_noisy[:, i] = A * x[:, i-1] + noise[:, i]
+end
+
+function test_LDS_with_params()
+    # Create the Kalman filter parameter vector
+    kf = LDS(A,
+             H,
+             nothing,
+             Q, 
+             R, 
+             x0, 
+             P0, 
+             nothing, 
+             2, 
+             2, 
+             "Gaussian", 
+             Vector([false, false, false, false, false, false, false, false]))
+    # confirm parameters are set correctly
+    @test kf.A == A
+    @test kf.H == H
+    @test kf.B === nothing
+    @test kf.Q == Q
+    @test kf.R == R
+    @test kf.x0 == x0
+    @test kf.P0 == P0
+    @test kf.inputs === nothing
+    @test kf.obs_dim == 2
+    @test kf.latent_dim == 2
+    @test kf.emissions == "Gaussian"
+    @test kf.fit_bool == Vector([false, false, false, false, false, false, false, false])
+    # get the likelihood of the model
+    ll = SSM.loglikelihood(kf, x_noisy')
+    # check if the likelihood is a scalar
+    @test size(ll) == ()
+    # check if the likelihood is negative
+    @test ll < 0.0
+    # run the filter
+    x_pred, P, v, F, K = KalmanFilter(kf, x_noisy')
+    # check dimensions
+    @test size(x_pred) == (length(t), 2)
+    @test size(P) == (length(t), 2, 2)
+    @test size(v) == (length(t), 2)
+    @test size(F) == (length(t), 2, 2)
+    @test size(K) == (length(t), 2, 2)
+    # run the smoother
+    x_smooth, p_smooth = KalmanSmoother(kf, x_noisy')
+    # check dimensions
+    @test size(x_smooth) == (length(t), 2)
+    @test size(p_smooth) == (length(t), 2, 2)
+end
+
+function test_LDS_without_params()
+    # Create the Kalman filter without any params
+    kf = LDS()
+    # confirm parameters are set correctly
+    @test kf.A !== nothing
+    @test kf.H !== nothing
+    @test kf.B === nothing
+    @test kf.Q !== nothing
+    @test kf.R !== nothing
+    @test kf.x0 !== nothing
+    @test kf.P0 !== nothing
+    @test kf.inputs === nothing
+    @test kf.obs_dim == 1
+    @test kf.latent_dim == 1
+    @test kf.emissions == "Gaussian"
+    @test kf.fit_bool == Vector([true, true, true, true, true, true, true, true])
+end
+
+@testset "LDS.jl Tests" begin
+    test_LDS_with_params()
+    # test_LDS_without_params()
+end
+
 """
 Tests for Regression.jl
 """

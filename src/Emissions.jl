@@ -62,6 +62,8 @@ function loglikelihood(emission::RegressionEmissions, observation::Vector{Float6
     loglikelihood(emission.regression_model)
 end
 
+# loglikelihood of the regression model.
+
 
 # Update the parameters of the regression model, e.g. the betas.
 function updateEmissionModel!(emission::RegressionEmissions, loss::Loss)

@@ -164,11 +164,6 @@ function derivlink(::LogitLink, μ::Vector{T})::Vector{T} where T <: Real
     return 1 ./ (μ .* (1 .- μ))
 end
 
-
-# More link functions can be defined similarly...
-
-# Define regression models here
-
 # Gaussian Regression
 """
 GaussianRegression
@@ -181,10 +176,11 @@ mutable struct GaussianRegression{T <: Real} <: GLM
     β::Vector{T}
     σ²::Float64
     link::Link
+    loss::Loss
 end
 
 # Define a constructor that only requires X and y, and uses default values for β
-function GaussianRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, link::Link=IdentityLink()) where T <: Real
+function GaussianRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, link::Link=IdentityLink(), loss::Loss=LSELoss()) where T <: Real
     n, p = size(X)
     # add constant if specified, i.e. β₀ or the intercept term
     if constant
@@ -194,7 +190,7 @@ function GaussianRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, lin
     β = zeros(p)  # initialize as zeros
     # Initialize variance
     σ² = 1.0
-    return GaussianRegression(X, y, β, σ², link)
+    return GaussianRegression(X, y, β, σ², link, loss)
 end
 
 """
@@ -207,10 +203,11 @@ mutable struct PoissonRegression{T <: Real} <: GLM
     y::Vector{T}
     β::Vector{T}
     link::Link
+    loss::Loss
 end
 
 # Define a constructor that only requires X and y, and uses default values for β
-function PoissonRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, link::Link=LogLink()) where {T<:Real}
+function PoissonRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, link::Link=LogLink() ,loss::Loss=PoissonLoss()) where {T<:Real}
     n, p = size(X)
     # add constant if specified, i.e. β₀ or the intercept term
     if constant
@@ -218,23 +215,24 @@ function PoissonRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, link
         p += 1
     end
     β = zeros(p)  # initialize as zeros
-    return PoissonRegression(X, y, β, link)
+    return PoissonRegression(X, y, β, link, loss)
 end
 
 """
-LogisticRegression
+BinomialRegression
 
-Struct representing a Logistic regression model.
+Struct representing a Binomial regression model.
 """
 mutable struct BinomialRegression{T <: Real} <: GLM
     X::Matrix{T}
     y::Vector{T}
     β::Vector{T}
     link::Link
+    loss::Loss
 end
 
 # Define a constructor that only requires X and y, and uses default values for β
-function BinomialRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, link::Link=LogitLink()) where T <: Real
+function BinomialRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, link::Link=LogitLink(),loss::Loss=CrossEntropyLoss()) where T <: Real
     n, p = size(X)
     # add constant if specified, i.e. β₀ or the intercept term
     if constant
@@ -242,7 +240,7 @@ function BinomialRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, lin
         p += 1
     end
     β = zeros(p)  # initialize as zeros
-    return BinomialRegression(X, y, β, link)
+    return BinomialRegression(X, y, β, link, loss)
 end
 
 # Predict function for any regression model where X is a matrix
@@ -265,19 +263,33 @@ function residuals(model::GLM, X::AbstractVector, y::Real)
     return y - predict(model, X)
 end
 
-# loglikelihood function for a single point
-function loglikelihood(model::GaussianRegression, X::AbstractVector, y::Real)
-    residual = residuals(model, X, y)
-    return -0.5 * log(2π) - 0.5 * log(var(residual)) - 0.5 * residual^2 / var(residual)
+# dispatch loglikelihood
+function loglikelihood(model::GaussianRegression{T}) where T <: Real
+    return _loglikelihood(model, model.loss)
 end
 
-# loglikelihood function
-function loglikelihood(model::GaussianRegression{T}) where T <: Real
+# loglikelihood function for a single point
+function loglikelihood(model::GaussianRegression, X::AbstractVector, y::Real, loss::LSELoss)
+    residual = residuals(model, X, y)
+    return -0.5 * log(2π) - 0.5 * log(model.σ²) - 0.5 * residual^2 / model.σ²
+end
+
+# loglikelihood function with LSELoss
+function _loglikelihood(model::GaussianRegression{T}, loss::LSELoss) where T <: Real
     n = size(model.X, 1)
     resid = residuals(model)
-    LL = (-0.5 * n * log(2π)) - (0.5 * n * log(var(resid))) - (0.5 * sum(resid.^2) / var(resid))
+    LL = (-0.5 * n * log(2π)) - (0.5 * n * log(model.σ²)) - (0.5 * sum(resid.^2) / model.σ²)
     return LL
 end
+
+# log likelihood for regression with WLS loss function
+function _loglikelihood(model::GaussianRegression{T}, loss::WLSLoss) where T <: Real
+    n = size(model.X, 1)
+    resid = residuals(model)
+    LL = (-0.5 * n * log(2π)) - (0.5 * n * log(var(resid))) - (0.5 * sum(loss.weights .* resid.^2) / var(resid))
+    return LL
+end
+
 
 # function to update σ² parameter of a gaussian regression model
 function update_variance!(model::GaussianRegression)
@@ -287,21 +299,9 @@ end
 
 
 # Fit function for any regression model
-function fit!(model::GLM, loss::Union{Loss, Nothing}=nothing, max_iter::Int=1000)
-    # Auto-select loss if not provided
-    if isnothing(loss)
-        if model isa GaussianRegression
-            loss = LSELoss()
-        elseif model isa PoissonRegression
-            loss = PoissonLoss()
-        elseif model isa BinomialRegression
-            loss = CrossEntropyLoss()
-        else
-            throw(ArgumentError("Automatic loss selection is not available for this model type"))
-        end
-    end
+function fit!(model::GLM, max_iter::Int=1000)
     function Objective(β)
-        return compute_loss(loss, invlink(model.link, model.X * β), model.y)
+        return compute_loss(model.loss, invlink(model.link, model.X * β), model.y)
     end
     result = optimize(Objective, model.β, LBFGS(), Optim.Options(iterations=max_iter))
     model.β = result.minimizer
