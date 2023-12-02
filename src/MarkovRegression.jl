@@ -40,7 +40,7 @@ function GaussianMarkovRegression(y::Vector{T}, X::Matrix{T}, k::Int) where T <:
     # Create the GaussianMarkovRegression object with initialized parameters
     model = GaussianMarkovRegression(y, X, k, A, πₖ, regression_models, σ², weights)
     # Perform the E-step with the initialized model
-    α, β = EStep(model, WLSLoss(model.weights))
+    α, β = EStep(model)
     # Update variance based on the E-step
     update_variance!(model, α, β)
     # Print initial parameters for verification
@@ -50,19 +50,19 @@ function GaussianMarkovRegression(y::Vector{T}, X::Matrix{T}, k::Int) where T <:
     return model
 end
 
-function initialize_emissions_model(k::Int, data::AbstractVector, regression_models::Vector{RegressionEmissions})
+function initialize_emissions_model(k::Int, data::AbstractVector, regression_emissions::Vector{RegressionEmissions})
     # init with a GMM
     gmm = GMM(k, 1, data)
     fit!(gmm, data, tol=0.1)
     # initialize emission model
     for i in 1:k
         weights = gmm.class_probabilities[:, i]
-        loss = WLSLoss(weights)
-        updateEmissionModel!(regression_models[i], loss)
+        regression_emissions[i].regression_model.loss = WLSLoss(weights)
+        updateEmissionModel!(regression_emissions[i])
     end
-    # use gmm class_probabilities as initial guess
+    # use gmm class probabilities to set initial distribution
     πₖ = gmm.class_probabilities[1, :]
-    # use gmm class probabilites to estiamte an A matrix
+    # use gmm class probabilites to estimate an A matrix
     A = estimate_transition_matrix(k, gmm.class_labels)
     return πₖ, A
 end
@@ -86,10 +86,10 @@ function estimate_transition_matrix(k::Int, class_labels::Vector{Int})
     return A
 end
 
-function EStep(model::GaussianMarkovRegression, loss::Loss)
+function EStep(model::GaussianMarkovRegression)
     # E-Step
-    α = forward(model, loss, model.y)
-    β = backward(model, loss, model.y)
+    α = forward(model, model.y)
+    β = backward(model, model.y)
     log_likelihood = logsumexp(α[:, end])
     return α, β
 end
@@ -114,20 +114,20 @@ function update_variance!(model::GaussianMarkovRegression, α::Matrix{T}, β::Ma
     model.σ² = σ²
 end
 
-function update_regression_model(model::GaussianMarkovRegression, α::Matrix{T}, β::Matrix{T}) where T <: Real
+function update_regression_model!(model::GaussianMarkovRegression, α::Matrix{T}, β::Matrix{T}) where T <: Real
     for k in 1:model.K
         # get weights for wls
         weights = sqrt.(α[k, :] .* β[k, :])
         # normalize the weights
         model.weights = weights ./ sum(weights)
         # define weighted loss function
-        loss = WLSLoss(model.weights)
+        model.B[k].regression_model.loss = WLSLoss(model.weights)
         # update the regression model for each state
-        updateEmissionModel!(model.B[k], loss)
+        updateEmissionModel!(model.B[k])
     end
 end
 
-function update_adjacency_matrix(model::GaussianMarkovRegression, α::Matrix{T}, β::Matrix{T}) where T <: Real
+function update_adjacency_matrix!(model::GaussianMarkovRegression, α::Matrix{T}, β::Matrix{T}) where T <: Real
     # update the HMM adjacency matrix
     for i in 1:model.K
         for j in 1:model.K
@@ -147,9 +147,9 @@ end
 
 function MStep(model::GaussianMarkovRegression, α::Matrix{T}, β::Matrix{T}) where T <: Real
     # M-Step
-    update_adjacency_matrix(model, α, β)
+    update_adjacency_matrix!(model, α, β)
     update_mixing_coefficients!(model, α, β)
-    update_regression_model(model, α, β)
+    update_regression_model!(model, α, β)
     update_variance!(model, α, β)
 end
 

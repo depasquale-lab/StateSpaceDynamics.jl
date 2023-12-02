@@ -268,8 +268,19 @@ function loglikelihood(model::GaussianRegression{T}) where T <: Real
     return _loglikelihood(model, model.loss)
 end
 
+# dispatch loglikelihood single point
+function loglikelihood(model::GaussianRegression{T}, X::AbstractVector, y::Real) where T <: Real
+    return _loglikelihood(model, X, y, model.loss)
+end
+
 # loglikelihood function for a single point
-function loglikelihood(model::GaussianRegression, X::AbstractVector, y::Real, loss::LSELoss)
+function _loglikelihood(model::GaussianRegression, X::AbstractVector, y::Real, loss::LSELoss)
+    residual = residuals(model, X, y)
+    return -0.5 * log(2π) - 0.5 * log(model.σ²) - 0.5 * residual^2 / model.σ²
+end
+
+# loglikelihood function for a single point
+function _loglikelihood(model::GaussianRegression, X::AbstractVector, y::Real, loss::WLSLoss)
     residual = residuals(model, X, y)
     return -0.5 * log(2π) - 0.5 * log(model.σ²) - 0.5 * residual^2 / model.σ²
 end
@@ -290,13 +301,36 @@ function _loglikelihood(model::GaussianRegression{T}, loss::WLSLoss) where T <: 
     return LL
 end
 
-
-# function to update σ² parameter of a gaussian regression model
+# dispatch for variance update
 function update_variance!(model::GaussianRegression)
+    return _update_variance!(model, model.loss)
+end
+
+function _update_variance!(model::GaussianRegression, loss::WLSLoss)
+    dof = size(model.X, 1) - size(model.X, 2)
+    model.σ² = sum(loss.weights .* residuals(model).^2) / dof
+end
+
+# function to update σ² parameter of a gaussian regression model with lse loss
+function _update_variance!(model::GaussianRegression, loss::LSELoss)
     dof = size(model.X, 1) - size(model.X, 2)
     model.σ² = sum(residuals(model).^2) / dof
 end
 
+# dispatch for regression model update
+function update_model_params!(model::GLM)
+    return _update_model_params!(model, model.loss)
+end
+
+# function to update regression model parameters for a gaussian regression model with lse loss
+function _update_model_params!(model::GaussianRegression, loss::LSELoss)
+    update_variance!(model)
+end
+
+# function to update regression model parameters for a gaussian regression model with wls loss
+function _update_model_params!(model::GaussianRegression, loss::WLSLoss)
+    update_variance!(model)
+end
 
 # Fit function for any regression model
 function fit!(model::GLM, max_iter::Int=1000)
@@ -305,4 +339,5 @@ function fit!(model::GLM, max_iter::Int=1000)
     end
     result = optimize(Objective, model.β, LBFGS(), Optim.Options(iterations=max_iter))
     model.β = result.minimizer
+    # update_model_params!(model)
 end

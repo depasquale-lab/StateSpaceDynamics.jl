@@ -333,12 +333,12 @@ function test_LDS_without_params()
     @test kf.obs_dim == 1
     @test kf.latent_dim == 1
     @test kf.emissions == "Gaussian"
-    @test kf.fit_bool == Vector([true, true, true, true, true, true, true, true])
+    @test kf.fit_bool == Vector([true, true, true, true, true, true, true])
 end
 
 @testset "LDS.jl Tests" begin
     test_LDS_with_params()
-    # test_LDS_without_params()
+    test_LDS_without_params()
 end
 
 """
@@ -666,10 +666,40 @@ function test_kmeans_clustering()
     # Check dimensions
     @test size(centroids) == (2, k_means)
     @test length(labels) == 100
+    # Now test kmeans on a vector.
+    data = randn(100,)
+    centroids, labels = kmeans_clustering(data, k_means)
+    # Check dimensions
+    @test size(centroids) == (1, k_means)
+    @test length(labels) == 100
 end
+
+
 
 @testset "Utilities.jl Tests" begin
     test_euclidean_distance()
     test_kmeanspp_initialization()
     test_kmeans_clustering()
 end
+
+"""
+Tests for MarkovRegression.jl
+"""
+
+function test_GaussianMarkovRegression()
+    y = randn(100)
+    x = randn(100, 2)
+    k = 2
+    # Initialize Gaussian Markov Regression Model
+    gaussian_markov_reg = GaussianMarkovRegression(y, x, k)
+    # Check if parameters are initialized correctly
+    @test gaussian_markov_reg.y == y
+    @test gaussian_markov_reg.x == hcat(ones(100), x)
+    @test gaussian_markov_reg.k == k
+    # @test gaussian_markvov_reg.πₖ
+end
+
+@testset "MarkovRegression.jl Tests" begin
+    # test_GaussianMarkovRegression()
+end
+

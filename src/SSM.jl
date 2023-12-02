@@ -1,6 +1,7 @@
 module SSM
 
 using Distributions
+using ForwardDiff
 using LinearAlgebra
 using LogExpFunctions
 using Logging
@@ -10,6 +11,7 @@ using ProgressMeter
 using Random
 using Statistics
 using StatsBase
+using UnPack
 
 include("Regression.jl")
 include("Emissions.jl")
