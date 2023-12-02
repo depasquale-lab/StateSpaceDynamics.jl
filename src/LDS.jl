@@ -2,7 +2,7 @@
 """Linear Dynamical Systems Models e.g. the Kalman Filter, (recurrent) Switching Linear Dynamical Systems, etc."""
 
 # export statement
-export DynamicalSystem, LDS, KalmanFilter, KalmanSmoother, loglikelihood, KalmanFilterOptim
+export DynamicalSystem, LDS, KalmanFilter, KalmanSmoother, loglikelihood, KalmanFilterOptim!
 
 # Abstract types
 abstract type DynamicalSystem end
@@ -122,7 +122,7 @@ function E_step(l::LDS, y::AbstractArray)
     return xs, Ps, Exx, Exx_lag
 end
 
-function M_step(l::LDS, y::Matrix{Float64}, xs::Matrix{Float64}, Ps::Array{Float64, 3}, Exx::Array{Float64, 3}, Exx_lag::Array{Float64, 3})
+function M_step!(l::LDS, y::Matrix{Float64}, xs::Matrix{Float64}, Ps::Array{Float64, 3}, Exx::Array{Float64, 3}, Exx_lag::Array{Float64, 3})
     T = size(y, 1)
     
 
@@ -148,7 +148,7 @@ function M_step(l::LDS, y::Matrix{Float64}, xs::Matrix{Float64}, Ps::Array{Float
 end
 
 
-function KalmanFilterEM(l::LDS, y::Vector{Float64}, max_iter::Int=100, tol::Float64=1e-6)
+function KalmanFilterEM!(l::LDS, y::AbstractArray, max_iter::Int=100, tol::Float64=1e-6)
     # Initialize log-likelihood
     prev_ll = -Inf
     # Run EM
@@ -156,7 +156,7 @@ function KalmanFilterEM(l::LDS, y::Vector{Float64}, max_iter::Int=100, tol::Floa
         # E-step
         xs, Ps, Exx, Exx_lag = E_step(l, y)
         # M-step
-        M_step(l, y, xs, Ps, Exx, Exx_lag)
+        M_step!(l, y, xs, Ps, Exx, Exx_lag)
         # Calculate log-likelihood
         ll = loglikelihood(l, y)
         # Check convergence
@@ -169,7 +169,7 @@ function KalmanFilterEM(l::LDS, y::Vector{Float64}, max_iter::Int=100, tol::Floa
 end
 
 
-function KalmanFilterOptim(l::LDS, y::AbstractArray)
+function KalmanFilterOptim!(l::LDS, y::AbstractArray)
     # create parameter vector and index vector
     params, param_idx = params_to_vector(l)
     # define objective function

@@ -3,6 +3,7 @@ using Distributions
 using LinearAlgebra
 using Random
 using Test
+using UnPack
 
 Random.seed!(1234)
 
@@ -336,9 +337,56 @@ function test_LDS_without_params()
     @test kf.fit_bool == Vector([true, true, true, true, true, true, true])
 end
 
+function test_Estep()
+    # Create the Kalman filter without any params
+    kf = LDS(;obs_dim=2, latent_dim=2, emissions="Gaussian", fit_bool=[true, true, false, true, true, true, true])
+    # run the Estep
+    xs, Ps, Exx, Exx_lag = SSM.E_step(kf, x_noisy')
+    # check dimensions
+    @test size(xs) == (length(t), 2)
+    @test size(Ps) == (length(t), 2, 2)
+    @test size(Exx) == (2, 2, length(t))
+    @test size(Exx_lag) == (2, 2, length(t)-1)
+end
+
+function test_MStep()
+    # unpack old params
+    @unpack A, H, Q, R, x0, P0 = kf
+    # get ll
+    ll = SSM.loglikelihood(kf, x_noisy')
+    # Create empty LDS
+    kf = LDS()
+    # run the Estep
+    xs, Ps, Exx, Exx_lag = SSM.E_step(kf, x_noisy')
+    # run the Mstep
+    SSM.M_step!(kf, x_noisy', xs, Ps, Exx, Exx_lag)
+    # check if the parameters have been updated
+    @test kf.A !== A
+    @test kf.H !== H
+    @test kf.Q !== Q
+    @test kf.R !== R
+    @test kf.x0 !== x0
+    @test kf.P0 !== P0
+    # check if the likelihood has increased
+    @test SSM.loglikelihood(kf, x_noisy') > ll
+end
+
+function test_KF_optim()
+    # create kf 
+    kf = LDS(;obs_dim=2, latent_dim=2, emissions="Gaussian", fit_bool=[true, true, false, true, true, true, true])
+    ll_pre = SSM.loglikelihood(kf, x_noisy')
+    # now optimize
+    KalmanFilterOptim!(kf, x_noisy')
+    ll_post = SSM.loglikelihood(kf, x_noisy')
+    # check if the likelihood has increased
+    @test ll_post ≥ ll_pre
+end
+
 @testset "LDS.jl Tests" begin
     test_LDS_with_params()
     test_LDS_without_params()
+    test_Estep()
+    test_KF_optim()
 end
 
 """
@@ -694,12 +742,15 @@ function test_GaussianMarkovRegression()
     gaussian_markov_reg = GaussianMarkovRegression(y, x, k)
     # Check if parameters are initialized correctly
     @test gaussian_markov_reg.y == y
-    @test gaussian_markov_reg.x == hcat(ones(100), x)
-    @test gaussian_markov_reg.k == k
-    # @test gaussian_markvov_reg.πₖ
+    @test gaussian_markov_reg.X == x # the constant is only in regression model as a note
+    @test gaussian_markov_reg.K == k
+    @test sum(gaussian_markov_reg.A, dims=2) ≈ ones(k)
+    @test sum(gaussian_markov_reg.πₖ) ≈ 1.0
+    @test isa(gaussian_markov_reg.B, Vector{RegressionEmissions})
+    @test length(gaussian_markov_reg.B) == k
 end
 
 @testset "MarkovRegression.jl Tests" begin
-    # test_GaussianMarkovRegression()
+    test_GaussianMarkovRegression()
 end
 
