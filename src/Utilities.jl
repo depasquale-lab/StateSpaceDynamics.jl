@@ -1,4 +1,4 @@
-export kmeanspp_initialization, kmeans_clustering
+export kmeanspp_initialization, kmeans_clustering, Autoregression, fit!, loglikelihood
 
 """Euclidean Distance for two points"""
 function euclidean_distance(a::AbstractVector{Float64}, b::AbstractVector{Float64})
@@ -70,11 +70,97 @@ function kmeans_clustering(data::Vector{Float64}, k_means::Int, max_iters::Int=1
 end
 
 
-""" Factor Analysis and by special case PPCA"""
-struct FactorAnalysis
+"""Probabilistic Principal Component Analysis"""
+struct PPCA
     W::Matrix{Float64}
     σ2::Vector{Float64}
     μ::Vector{Float64}
     k::Int
     D::Int
 end
+
+"""PPCA Constructor"""
+function PPCA(X::Matrix{Float64}, k::Int)
+    _, D = size(X)
+    # Initialize parameters
+    W = randn(D, k)
+    σ2 = ones(D)
+    μ = mean(X, dims=1)[:]
+    return PPCA(W, σ2, μ, k, D)
+end
+
+"""
+Autoregressive Model
+"""
+mutable struct Autoregression{T<:Real}
+    X::AbstractArray # Data
+    p::Int # order of the autoregressive model
+    β::Vector{T} # Coefficients for the autoregressive model
+    σ²::T # Variance of the noise
+end
+
+"""
+Constructor for the autoregressive model.
+"""
+function Autoregression(X::Vector{T}, p::Int) where T<:Real
+    # Initialize parameters
+    β = zeros(p + 1)
+    σ² = 1.0
+    return Autoregression(X, p, β, σ²)
+end
+
+"""
+Create lagged matrix for autoregressive model.
+"""
+function create_lagged_matrix(data::Vector{Float64}, p::Int)
+    T = length(data)
+    backward_lagged = zeros(Float64, T - p, p + 1)
+    # create the backward lagged matrix
+    for i in 1:p
+        backward_lagged[:, i] = data[i:T-p+i-1] # i think this is right
+    end
+    # add a constant
+    backward_lagged[:, end] = ones(T - p)
+    # create the forward lagged matrix
+    forward_lagged = data[p+1:end, :]
+    return forward_lagged, backward_lagged
+end
+
+"""
+Log-Likelihood of the autoregressive model.
+"""
+function loglikelihood(model::Autoregression)
+    forward_lagged, backward_lagged = create_lagged_matrix(model.X, model.p)
+    residuals = Vector(forward_lagged[:, 1]) - (backward_lagged * β)
+    ll = logpdf(Normal(0, sqrt(model.σ²)), residuals)
+    return ll
+end
+
+"""
+Update σ² for the autoregressive model.
+"""
+function update_σ²!(model::Autoregression, residuals::Vector{Float64})
+    n = length(residuals)
+    model.σ² = sum(residuals.^2) / n
+end
+
+"""
+Fit the model using MLE and Autodifferentiation.
+"""
+function fit!(model::Autoregression)
+    # create lagged matrix
+    forward_lagged, backward_lagged = create_lagged_matrix(model.X, model.p)
+    # define loss function i.e. log-likelihood
+    function loss(β)
+        predictions = backward_lagged * β
+        sse = sum((forward_lagged[:, 1] - predictions).^2)
+        return sse
+    end
+    # optimize using BFGS
+    result = Optim.optimize(β -> loss(β), model.β, BFGS(), autodiff=:forward)
+    # update parameters
+    model.β = result.minimizer
+    residuals = forward_lagged[:, 1] - backward_lagged * model.β
+    update_σ²!(model, residuals)
+end
+

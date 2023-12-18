@@ -3,42 +3,42 @@ export  GMM, fit!, log_likelihood
 
 abstract type MixtureModel end
 
-"""Set of functions for estimating a Gaussian Mixture Model"""
+"""Set of functions for estimating Mixture Models"""
 
 """GMM Class"""
 mutable struct GMM <: MixtureModel
-    k_means::Int # Number of clusters
-    μ_k::Matrix{Float64} # Means of each cluster
-    Σ_k::Array{Matrix{Float64}, 1} # Covariance matrices of each cluster
-    π_k::Vector{Float64} # Mixing coefficients
+    k::Int # Number of clusters
+    μₖ::Matrix{Float64} # Means of each cluster
+    Σₖ::Array{Matrix{Float64}, 1} # Covariance matrices of each cluster
+    πₖ::Vector{Float64} # Mixing coefficients
     class_probabilities::Matrix{Float64} # Probability of each class for each point
     class_labels::Vector{Int} # Class label for each point based on the class probabilities
 end
 
 """GMM Constructor"""
-function GMM(k_means::Int, data_dim::Int, data::Union{Vector{Float64}, Matrix{Float64}})
+function GMM(k::Int, data_dim::Int, data::Union{Vector{Float64}, Matrix{Float64}})
     N = size(data, 1)  # Number of data points
-    μ = kmeanspp_initialization(data, k_means)
-    Σ = [I(data_dim) for _ = 1:k_means]
-    πs = ones(k_means) ./ k_means
+    μ = kmeanspp_initialization(data, k)
+    Σ = [I(data_dim) for _ = 1:k]
+    πs = ones(k) ./ k
     # Initialize class_probabilities with zeros or equal probabilities
-    class_probs = zeros(N, k_means)
+    class_probs = zeros(N, k)
     # Initialize class_labels with zeros
     class_lbls = zeros(Int, N)
-    return GMM(k_means, μ, Σ, πs, class_probs, class_lbls)
+    return GMM(k, μ, Σ, πs, class_probs, class_lbls)
 end
 
 
 # E-Step (Confirmed in Python)
 function EStep!(gmm::GMM, data::Matrix{Float64})
     N, _ = size(data)
-    K = gmm.k_means
+    K = gmm.k
     γ = zeros(N, K)
     log_γ = zeros(N, K)
     for n in 1:N
         for k in 1:K
-            distribution = MvNormal(gmm.μ_k[:, k], gmm.Σ_k[k])
-            log_γ[n, k] = log(gmm.π_k[k]) + logpdf(distribution, data[n, :])
+            distribution = MvNormal(gmm.μₖ[:, k], gmm.Σₖ[k])
+            log_γ[n, k] = log(gmm.πₖ[k]) + logpdf(distribution, data[n, :])
         end
         logsum = logsumexp(log_γ[n, :])
         γ[n, :] = exp.(log_γ[n, :] .- logsum)
@@ -50,36 +50,36 @@ end
 
 function MStep!(gmm::GMM, data::Matrix{Float64})
     N, D = size(data)
-    K = gmm.k_means
+    K = gmm.k
     γ = gmm.class_probabilities  # Use class_probabilities from the GMM struct
 
     N_k = zeros(K)
-    μ_k = zeros(D, K)
-    Σ_k = zeros(D, D, K)
+    μₖ = zeros(D, K)
+    Σₖ = zeros(D, D, K)
 
     for k in 1:K
         N_k[k] = sum(γ[:, k])
-        μ_k[:, k] = (γ[:, k]' * data) ./ N_k[k]
+        μₖ[:, k] = (γ[:, k]' * data) ./ N_k[k]
     end
 
     for k in 1:K
-        x_n = data .- μ_k[:, k]'
-        Σ_k[:,:,k] = ((γ[:, k] .* x_n)' * x_n ./ (N_k[k] + I*1e-6)) + (I * 1e-6)
-        if !ishermitian(Σ_k[:, :, k])
-            Σ_k[:,:,k] = 0.5 * (Σ_k[:,:,k] + Σ_k[:,:,k]')
+        x_n = data .- μₖ[:, k]'
+        Σₖ[:,:,k] = ((γ[:, k] .* x_n)' * x_n ./ (N_k[k] + I*1e-6)) + (I * 1e-6)
+        if !ishermitian(Σₖ[:, :, k])
+            Σₖ[:,:,k] = 0.5 * (Σₖ[:,:,k] + Σₖ[:,:,k]')
         end
-        gmm.π_k[k] = N_k[k] / N
+        gmm.πₖ[k] = N_k[k] / N
     end
 
-    gmm.μ_k = μ_k
-    gmm.Σ_k = [Σ_k[:,:,k] for k in 1:K]
+    gmm.μₖ = μₖ
+    gmm.Σₖ = [Σₖ[:,:,k] for k in 1:K]
 end
 
 function log_likelihood(gmm::GMM, data::Matrix{Float64})
-    N, K = size(data, 1), gmm.k_means
+    N, K = size(data, 1), gmm.k
     ll = 0.0
     for n in 1:N
-        log_probabilities = [log(gmm.π_k[k]) + logpdf(MvNormal(gmm.μ_k[:, k], gmm.Σ_k[k]), data[n, :]) for k in 1:K]
+        log_probabilities = [log(gmm.πₖ[k]) + logpdf(MvNormal(gmm.μₖ[:, k], gmm.Σₖ[k]), data[n, :]) for k in 1:K]
         max_log_prob = maximum(log_probabilities)
         ll_n = max_log_prob + log(sum(exp(log_prob - max_log_prob) for log_prob in log_probabilities))
         ll += ll_n
@@ -122,5 +122,21 @@ end
 
 function fit!(gmm::GMM, data::Vector{Float64}; maxiter::Int=50, tol::Float64=1e-3)
     fit!(gmm, reshape(data, :, 1); maxiter=maxiter, tol=tol)
+end
+
+"""
+Poisson Mixture Model.
+
+Args:
+    k: number of clusters
+    data: data matrix of size (N, D) where N is the number of data points and D is the dimension of the data.
+"""
+
+mutable struct PoissonMixtureModel <: MixtureModel
+    k::Int # Number of clusters
+    λₖ::Vector{Float64} # Means of each cluster
+    πₖ::Vector{Float64} # Mixing coefficients
+    class_probabilities::Matrix{Float64} # Probability of each class for each point
+    class_labels::Vector{Int} # Class label for each point based on the class probabilities
 end
 

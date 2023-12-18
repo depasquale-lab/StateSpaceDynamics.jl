@@ -45,6 +45,15 @@ mutable struct PoissonEmissions <: EmissionsModel
     λ::Vector{Float64} # rate of events per unit time 
 end
 
+# loglikelihood of the poisson model.
+function loglikelihood(emission::PoissonEmissions, observation::Vector{Float64})
+    #TODO Implement loglikelihood for poisson model
+end
+
+function updateEmissionModel!(emission::PoissonEmissions, data::Matrix{Float64}, γ::Vector{Float64})
+    #TODO:  Implement updateEmissionModel! for poisson model
+end
+
 struct GaussianOrthogonalEmissions <: EmissionsModel
     #TODO: Implement Gaussian Orthogonal Emissions
 end
@@ -56,17 +65,29 @@ mutable struct RegressionEmissions <: EmissionsModel
     regression_model::GLM
 end
 
-
 # loglikelihood of the regression model.
 function loglikelihood(emission::RegressionEmissions, observation::Vector{Float64})
     loglikelihood(emission.regression_model)
 end
-
 
 # Update the parameters of the regression model, e.g. the betas.
 function updateEmissionModel!(emission::RegressionEmissions)
     fit!(emission.regression_model)
 end
 
+"""
+AutoRegressiveEmissions: AutoRegression Emissions Model
+"""
+mutable struct AutoRegressiveEmissions <: EmissionsModel
+    autoregression_model::Autoregression
+end
 
+# loglikelihood of the autoregressive model.
+function loglikelihood(emission::AutoRegressiveEmissions, observation::Vector{Float64})
+    loglikelihood(emission.autoregression_model, observation)
+end
+
+function updateEmissionModel!(emission::AutoRegressiveEmissions)
+    #TODO: Implement updateEmissionModel! for autoregressive model
+end
 

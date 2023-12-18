@@ -122,27 +122,43 @@ function E_step(l::LDS, y::AbstractArray)
     return xs, Ps, Exx, Exx_lag
 end
 
+
 function M_step!(l::LDS, y::Matrix{Float64}, xs::Matrix{Float64}, Ps::Array{Float64, 3}, Exx::Array{Float64, 3}, Exx_lag::Array{Float64, 3})
     T = size(y, 1)
-    
 
     # Update A, Q
     S0 = sum(Exx[:, :, 1:T-1], dims=3)
     S1 = sum(Exx_lag, dims=3)
     S2 = sum(Exx[:, :, 2:T], dims=3)
 
-    l.A = S1 / S0
-    l.Q = (S2 - l.A * S1') / (T - 1)
+    if l.fit_bool[1]
+        l.A = S1 \ S0
+    end
+
+    if l.fit_bool[4]
+        l.Q = (S2 - l.A * S1') / (T - 1)
+    end
 
     # Update H, R
-    l.H = (y' * xs) / sum(Exx, dims=3)
+    if l.fit_bool[2]
+        l.H = (y' * xs) / sum(Exx, dims=3)
+    end
+
     y_hat = l.H * xs'
     residuals = y - y_hat'
-    l.R = (residuals' * residuals) / T
 
+    if l.fit_bool[5]
+        l.R = (residuals' * residuals) / T
+    end
+   
     # Update x0, P0
-    l.x0 = xs[1, :]
-    l.P0 = Ps[1, :, :]
+    if l.fit_bool[6]
+        l.x0 = xs[1, :]
+    end
+
+    if l.fit_bool[7]
+        l.P0 = Ps[1, :, :]
+    end
 
     return l
 end
@@ -180,7 +196,19 @@ function KalmanFilterOptim!(l::LDS, y::AbstractArray)
     return optimal_params
 end
 
+"""
+Computes the loglikelihood of the LDS model given a a set of observations. This variant is used for optimization.
 
+Args:
+    params: Vector of parameters, compatible with ForwardDiff.Dual
+    param_idx: Vector of symbols corresponding to the fields in the LDS struct
+    l: LDS struct
+    y: Matrix of observations
+
+Returns:
+    ll: Loglikelihood of the LDS model
+
+"""
 function loglikelihood(params::Vector{T1}, param_idx::Vector{Symbol}, l::LDS, y::AbstractArray) where {T1}
     # Convert the parameter vector back to the LDS struct
     vector_to_params!(l, params, param_idx)
@@ -192,6 +220,16 @@ function loglikelihood(params::Vector{T1}, param_idx::Vector{Symbol}, l::LDS, y:
     return ll
 end
 
+"""
+Computes the loglikelihood of the LDS model given a a set of observations.
+
+Args:
+    l: LDS struct
+    y: Matrix of observations
+
+Returns:
+    ll: Loglikelihood of the LDS model
+"""
 function loglikelihood(l::LDS, y::AbstractArray)
     # calculates the loglikelihood of the LDS model
     xs, ps = KalmanFilter(l, y)
@@ -203,6 +241,17 @@ function loglikelihood(l::LDS, y::AbstractArray)
     return ll
 end
 
+"""
+Computes the loglikelihood of the LDS model. This variant is used 
+
+Args:
+    l: LDS struct
+    xs: Matrix of latent states
+    y: Matrix of observations
+
+Returns:
+    ll: Loglikelihood of the LDS model
+"""
 function loglikelihood(l::LDS, xs::Matrix{Float64}, y::Matrix{Float64})
     # calculates the loglikelihood of the LDS model
     kf_obs_pred = xs * l.H'
@@ -213,6 +262,16 @@ function loglikelihood(l::LDS, xs::Matrix{Float64}, y::Matrix{Float64})
     return ll
 end
 
+"""
+Converts the parameters in the LDS struct to a vector of parameters.
+
+Args:
+    l: LDS struct
+
+Returns:
+    params: Vector of parameters, compatible with ForwardDiff.Dual
+    param_idx: Vector of symbols corresponding to the fields in the LDS struct
+"""
 function params_to_vector(l::LDS)
     # Unpack parameters
     @unpack A, H, B, Q, R, x0, P0, inputs, fit_bool = l
@@ -236,6 +295,14 @@ function params_to_vector(l::LDS)
     return params, params_idx
 end
 
+"""
+Converts a vector of parameters to the corresponding fields in the LDS struct.
+
+Args:
+    l: LDS struct
+    params: Vector of parameters, compatible with ForwardDiff.Dual
+    param_idx: Vector of symbols corresponding to the fields in the LDS struct
+"""
 function vector_to_params!(l::LDS, params::Vector{<:ForwardDiff.Dual}, param_idx::Vector{Symbol})
     idx = 1
     for p in param_idx
@@ -253,9 +320,39 @@ function vector_to_params!(l::LDS, params::Vector{<:ForwardDiff.Dual}, param_idx
     end
 end
 
+"""
+Poisson Linear Dynamical System (PLDS) Definition
+
+For a description of the model see:
+Macke, Jakob H., et al. "Empirical models of spiking in neural populations." 
+Advances in neural information processing systems 24 (2011).
+
+Args:
+    A: Transition Matrix
+    H: Observation Matrix
+    B: Control Matrix
+    Q: Process Noise Covariance
+    D: History Matrix
+    d: History Vector
+    x0: Initial State
+    q0: Initial Process Noise
+"""
+
+mutable struct PLDS <: DynamicalSystem
+    A::Union{AbstractArray, Nothing}  # Transition Matrix
+    H::Union{AbstractArray, Nothing}  # Observation Matrix
+    B::Union{AbstractArray, Nothing}  # Control Matrix
+    Q::Union{AbstractArray, Nothing}  # Process Noise Covariance
+    D::Union{AbstractArray, Nothing}  # History Matrix
+    d::Union{AbstractArray, Nothing}  # History Vector
+    x0::Union{AbstractArray, Nothing} # Initial State
+    q0::Union{AbstractArray, Nothing} # Initial Process Noise
+end
 
 
-
+mutable struct PfLDS <: DynamicalSystem
+    #TODO: Implement PfLDS
+end
 
 # SLDS Definition
 mutable struct SLDS <: DynamicalSystem

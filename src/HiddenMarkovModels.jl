@@ -86,7 +86,6 @@ end
 
 function calculate_γ(hmm::AbstractHMM, α::Matrix{Float64}, β::Matrix{Float64})
     T = size(α, 2)
-    print(T)
     γ = α .+ β
     for t in 1:T
         max_gamma = maximum(γ[:, t])
@@ -96,7 +95,7 @@ function calculate_γ(hmm::AbstractHMM, α::Matrix{Float64}, β::Matrix{Float64}
     return γ
 end
 
-function calculate_ξ(hmm::AbstractHMM, α::Matrix{Float64}, β::Matrix{Float64}, data::Matrix{Float64})
+function calculate_ξ(hmm::AbstractHMM, α::Matrix{Float64}, β::Matrix{Float64}, data::AbstractArray)
     T = size(data, 1)
     K = size(hmm.A, 1)
     ξ = zeros(Float64, K, K, T-1)
@@ -221,6 +220,3 @@ function sample(hmm::HMM, n::Int)
     return states, observations
 end
 
-# function fit!()
-#     #TODO Implement the viterbi algorithm.
-# end

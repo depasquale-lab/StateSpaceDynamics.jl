@@ -16,13 +16,13 @@ function test_GMM_constructor()
     data_dim = 2
     data = randn(100, data_dim)
     gmm = GMM(k_means, data_dim, data)
-    @test gmm.k_means == k_means
-    @test size(gmm.μ_k) == (data_dim, k_means)
-    @test length(gmm.Σ_k) == k_means
+    @test gmm.k == k_means
+    @test size(gmm.μₖ) == (data_dim, k_means)
+    @test length(gmm.Σₖ) == k_means
     for i in 1:k_means
-        @test gmm.Σ_k[i] ≈ I(data_dim)
+        @test gmm.Σₖ[i] ≈ I(data_dim)
     end
-    @test sum(gmm.π_k) ≈ 1.0
+    @test sum(gmm.πₖ) ≈ 1.0
     @test size(gmm.class_labels) == (100,)
     @test size(gmm.class_probabilities) == (100, k_means)
 end
@@ -53,11 +53,11 @@ function testGMM_MStep()
     SSM.MStep!(gmm, data)
 
     # Check dimensions of updated μ and Σ
-    @test size(gmm.μ_k) == (data_dim, k_means)
-    @test length(gmm.Σ_k) == k_means
+    @test size(gmm.μₖ) == (data_dim, k_means)
+    @test length(gmm.Σₖ) == k_means
 
     # Check if the covariance matrices are Hermitian
-    @test all([ishermitian(Σ) for Σ in gmm.Σ_k])
+    @test all([ishermitian(Σ) for Σ in gmm.Σₖ])
 end
 
 function testGMM_fit()
@@ -71,14 +71,14 @@ function testGMM_fit()
     fit!(gmm, data; maxiter=10, tol=1e-3)
 
     # Check dimensions of updated μ and Σ
-    @test size(gmm.μ_k) == (data_dim, k_means)
-    @test length(gmm.Σ_k) == k_means
+    @test size(gmm.μₖ) == (data_dim, k_means)
+    @test length(gmm.Σₖ) == k_means
 
     # Check if the covariance matrices are Hermitian
-    @test all([ishermitian(Σ) for Σ in gmm.Σ_k])
+    @test all([ishermitian(Σ) for Σ in gmm.Σₖ])
 
     # Check if the mixing coefficients sum to 1
-    @test sum(gmm.π_k) ≈ 1.0
+    @test sum(gmm.πₖ) ≈ 1.0
 
     # Check if the class_probabilities add to 1
     @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(gmm.class_probabilities, dims=2))
@@ -124,7 +124,7 @@ function test_GMM_vector()
     # Run mstep
     SSM.MStep!(gmm, data)
     # Check if the mixing coefficients sum to 1
-    @test sum(gmm.π_k) ≈ 1.0
+    @test sum(gmm.πₖ) ≈ 1.0
     # Check if the class_probabilities add to 1
     @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(gmm.class_probabilities, dims=2))
     # Check if the class labels are integers in the range 1 to k_means
@@ -132,7 +132,7 @@ function test_GMM_vector()
     # Now Run
     fit!(gmm, data; maxiter=10, tol=1e-3)
     # Check if the mixing coefficients sum to 1
-    @test sum(gmm.π_k) ≈ 1.0
+    @test sum(gmm.πₖ) ≈ 1.0
     # Check if the class_probabilities add to 1
     @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(gmm.class_probabilities, dims=2))
     # Check if the class labels are integers in the range 1 to k_means
@@ -722,24 +722,54 @@ function test_kmeans_clustering()
     @test length(labels) == 100
 end
 
+# create a toy autoregression for testing; AR(3)
+α = [0.1, -0.3, 0.2]
+x = Vector{Float64}(undef, 2000)
+for i in 1:2000
+    if i <= 3
+        x[i] = randn()
+    else
+        x[i] = α[1]*x[i-1] + α[2]*x[i-2] + α[3]*x[i-3] + randn()
+    end
+end
+
+function test_autoregression()
+    ar = Autoregression(x, 3)
+    # check if parameters are initialized correctly
+    @test ar.X == x
+    @test ar.p == 3
+    @test ar.β == zeros(4)
+    @test ar.σ² == 1.0
+end
+
+function test_fit_autoregression()
+    ar = Autoregression(x, 3)
+    # fit the model
+    fit!(ar)
+    # check if parameters are updated correctly
+    @test ar.β ≈ append!(α, 0) atol=2e-1
+    @test ar.σ² ≈ 1.0 atol=1e-1
+end
 
 
 @testset "Utilities.jl Tests" begin
     test_euclidean_distance()
     test_kmeanspp_initialization()
     test_kmeans_clustering()
+    test_autoregression()
+    test_fit_autoregression()
 end
 
 """
 Tests for MarkovRegression.jl
 """
 
-function test_GaussianMarkovRegression()
+function test_SwitchingGaussianRegression()
     y = randn(100)
     x = randn(100, 2)
     k = 2
     # Initialize Gaussian Markov Regression Model
-    gaussian_markov_reg = GaussianMarkovRegression(y, x, k)
+    gaussian_markov_reg = SwitchingGaussianRegression(y, x, k)
     # Check if parameters are initialized correctly
     @test gaussian_markov_reg.y == y
     @test gaussian_markov_reg.X == x # the constant is only in regression model as a note
@@ -751,6 +781,6 @@ function test_GaussianMarkovRegression()
 end
 
 @testset "MarkovRegression.jl Tests" begin
-    test_GaussianMarkovRegression()
+    test_SwitchingGaussianRegression()
 end
 
