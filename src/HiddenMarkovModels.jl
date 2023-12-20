@@ -1,9 +1,5 @@
-export AbstractHMM, HMM, baumWelch!, viterbi, sample
+export HMM, baumWelch!, viterbi, sample
 
-"""
-Abstract type for Markov Models. I.e. HMM's, Markov Regressions, etc.
-"""
-abstract type AbstractHMM end
 
 # Vanilla HMM Definition
 mutable struct HMM{EM <: EmissionsModel} <: AbstractHMM

@@ -253,7 +253,7 @@ H = I(2)  # Observation matrix (assuming direct observation)
 Q = 0.00001 * I(2)  # Process noise covariance
 observation_noise_std = 0.5
 R = (observation_noise_std^2) * I(2)  # Observation noise covariance
-P0 = 0.1*I(2)  # Initial state covariance
+q0 = 0.1*I(2)  # Initial state covariance
 x0 = [0.0; 1.0]  # Initial state mean
 # Generate true data
 x = zeros(2, length(t))
@@ -279,7 +279,7 @@ function test_LDS_with_params()
              Q, 
              R, 
              x0, 
-             P0, 
+             q0, 
              nothing, 
              2, 
              2, 
@@ -292,7 +292,7 @@ function test_LDS_with_params()
     @test kf.Q == Q
     @test kf.R == R
     @test kf.x0 == x0
-    @test kf.P0 == P0
+    @test kf.q0 == q0
     @test kf.inputs === nothing
     @test kf.obs_dim == 2
     @test kf.latent_dim == 2
@@ -329,7 +329,7 @@ function test_LDS_without_params()
     @test kf.Q !== nothing
     @test kf.R !== nothing
     @test kf.x0 !== nothing
-    @test kf.P0 !== nothing
+    @test kf.q0 !== nothing
     @test kf.inputs === nothing
     @test kf.obs_dim == 1
     @test kf.latent_dim == 1
@@ -351,7 +351,7 @@ end
 
 function test_MStep()
     # unpack old params
-    @unpack A, H, Q, R, x0, P0 = kf
+    @unpack A, H, Q, R, x0, q0 = kf
     # get ll
     ll = SSM.loglikelihood(kf, x_noisy')
     # Create empty LDS
@@ -366,7 +366,7 @@ function test_MStep()
     @test kf.Q !== Q
     @test kf.R !== R
     @test kf.x0 !== x0
-    @test kf.P0 !== P0
+    @test kf.q0 !== q0
     # check if the likelihood has increased
     @test SSM.loglikelihood(kf, x_noisy') > ll
 end
@@ -419,6 +419,14 @@ function test_link_functions()
     @test SSM.invlink(LogitLink(), values) == 1 ./ (1 .+ exp.(-values))
     @test SSM.derivlink(LogitLink(), values) == 1 ./ (values .* (1 .- values))
 end
+
+function test_scalar_links()
+    value = 1.0
+    @test SSM.link(IdentityLink(), value) == value
+    @test SSM.invlink(IdentityLink(), value) == value
+    @test SSM.derivlink(IdentityLink(), value) == value
+end
+
 
 function test_link_functions_edge_cases()
     # Test LogitLink with edge values
@@ -633,6 +641,7 @@ end
     test_PoissonLoss()
     test_predictions()
     test_residuals()
+    test_scalar_links()
 end
 
 """
@@ -678,6 +687,7 @@ function test_regression_emissions()
     # Check if parameters are updated correctly
     @test isapprox(regression_emission.regression_model.β, β, atol=1e-1)
 end
+
 
 @testset "Emissions.jl Tests" begin
     test_GaussianEmission()

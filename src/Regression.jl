@@ -119,7 +119,7 @@ function invlink(::IdentityLink, η::Float64)::Float64
 end
 
 function derivlink(::IdentityLink, μ::Float64)::Float64
-    return ones(T, length(μ))
+    return 1.0
 end
 
 # Log Link

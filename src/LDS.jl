@@ -12,10 +12,10 @@ mutable struct LDS <: DynamicalSystem
     A::Union{AbstractArray, Nothing}  # Transition Matrix
     H::Union{AbstractArray, Nothing}  # Observation Matrix
     B::Union{AbstractArray, Nothing}  # Control Matrix
-    Q::Union{AbstractArray, Nothing}  # Process Noise Covariance
+    Q::Union{AbstractArray, Nothing}  # Qrocess Noise Covariance
     R::Union{AbstractArray, Nothing}  # Observation Noise Covariance
     x0::Union{AbstractArray, Nothing} # Initial State
-    P0::Union{AbstractArray, Nothing} # Initial Covariance
+    q0::Union{AbstractArray, Nothing} # Initial Covariance
     inputs::Union{AbstractArray, Nothing} # Inputs
     obs_dim::Int # Observation Dimension
     latent_dim::Int # Latent Dimension
@@ -29,8 +29,8 @@ function LDS()
 end
 
 # Flexible constructor that handles all three cases
-function LDS(; A=nothing, H=nothing, B=nothing, Q=nothing, R=nothing, x0=nothing, P0=nothing, inputs=nothing, obs_dim=1, latent_dim=1, emissions="Gaussian", fit_bool=fill(true, 7))
-    lds = LDS(A, H, B, Q, R, x0, P0, inputs, obs_dim, latent_dim, emissions, fit_bool)
+function LDS(; A=nothing, H=nothing, B=nothing, Q=nothing, R=nothing, x0=nothing, q0=nothing, inputs=nothing, obs_dim=1, latent_dim=1, emissions="Gaussian", fit_bool=fill(true, 7))
+    lds = LDS(A, H, B, Q, R, x0, q0, inputs, obs_dim, latent_dim, emissions, fit_bool)
     initialize_missing_parameters!(lds)
     return lds
 end
@@ -42,7 +42,7 @@ function initialize_missing_parameters!(lds::LDS)
     lds.Q = lds.Q === nothing ? I(lds.latent_dim) : lds.Q
     lds.R = lds.R === nothing ? I(lds.obs_dim) : lds.R
     lds.x0 = lds.x0 === nothing ? rand(lds.latent_dim) : lds.x0
-    lds.P0 = lds.P0 === nothing ? rand(lds.latent_dim, lds.latent_dim) : lds.P0
+    lds.q0 = lds.q0 === nothing ? rand(lds.latent_dim, lds.latent_dim) : lds.q0
     if lds.inputs !== nothing
         lds.B = lds.B === nothing ? rand(lds.latent_dim, size(lds.inputs, 2)) : lds.B
     end
@@ -52,27 +52,27 @@ function KalmanFilter(l::LDS, y::AbstractArray)
     # First pre-allocate the matrices we will need
     T = size(y, 1)
     x = zeros(T, l.latent_dim)
-    P = zeros(T, l.latent_dim, l.latent_dim)
+    q = zeros(T, l.latent_dim, l.latent_dim)
     v = zeros(T, l.latent_dim)
     F = zeros(T, l.latent_dim, l.latent_dim)
     K = zeros(T, l.latent_dim, l.latent_dim)
     # Initialize the first state
     x[1, :] = l.x0
-    P[1, :, :] = l.P0
+    q[1, :, :] = l.q0
     # Initialize the log_likelihood
     ll = 0.0
     # Now perform the Kalman Filter
     for t in 2:T
         # Prediction step
         x[t, :] = l.A * x[t-1, :]
-        P[t, :, :] = l.A * P[t-1, :, :] * l.A' + l.Q
+        q[t, :, :] = l.A * q[t-1, :, :] * l.A' + l.Q
         # Compute the Kalman gain
-        F[t, :, :] = l.H * P[t, :, :] * l.H' + l.R
-        K[t, :, :] = (P[t, :, :] * l.H') / F[t, :, :]
+        F[t, :, :] = l.H * q[t, :, :] * l.H' + l.R
+        K[t, :, :] = (q[t, :, :] * l.H') / F[t, :, :]
         # Update step
         v[t, :] = y[t, :] - l.H * x[t, :]
         x[t, :] = x[t, :] + K[t, :, :] * v[t, :]
-        P[t, :, :] = P[t, :, :] - K[t, :, :] * l.H * P[t, :, :]
+        q[t, :, :] = q[t, :, :] - K[t, :, :] * l.H * q[t, :, :]
         # Update the log-likelihood using Cholesky decomposition
         if !ishermitian(F[t, :, :])
             # @warn "F is not symmetric at time $t, this is likely a numerical issue, but worth examining."
@@ -81,49 +81,50 @@ function KalmanFilter(l::LDS, y::AbstractArray)
         chol_F = cholesky(F[t, :, :])
         ll -= 0.5 * (l.latent_dim * log(2 * π) + 2 * sum(log.(diag(chol_F.L))) + v[t, :]' * (chol_F \ v[t, :]))
     end
-    return x, P, v, F, K, ll
+    return x, q, v, F, K, ll
 end
 
 
 function KalmanSmoother(l::LDS, y::AbstractArray)
     # Forward pass (Kalman Filter)
-    x, P, v, F, K, ll = KalmanFilter(l, y)
+    x, q, v, F, K, ll = KalmanFilter(l, y)
     # Pre-allocate smoother arrays
     xs = copy(x)  # Smoothed state estimates
-    Ps = copy(P)  # Smoothed state covariances
+    qs = copy(q)  # Smoothed state covariances
     T = size(y, 1)
     # Backward pass
     for t in T-1:-1:1
         # Compute the smoother gain
-        L = P[t, :, :] * l.A' * (P[t+1, :, :] \ I)
+        L = q[t, :, :] * l.A' * (q[t+1, :, :] \ I)
         # Update smoothed estimates
         xs[t, :] += L * (xs[t+1, :] - x[t+1, :])
-        Ps[t, :, :] += L * (Ps[t+1, :, :] - P[t+1, :, :]) * L'
+        qs[t, :, :] += L * (qs[t+1, :, :] - q[t+1, :, :]) * L'
     end
-    return xs, Ps
+    return xs, qs
 end
 
 function E_step(l::LDS, y::AbstractArray)
     # Run the Kalman Smoother
-    xs, Ps = KalmanSmoother(l, y)
+    xs, qs = KalmanSmoother(l, y)
     # Calculate additional statistics needed for the M-step
     T = size(y, 1)
     Exx = zeros(l.latent_dim, l.latent_dim, T)
     Exx_lag = zeros(l.latent_dim, l.latent_dim, T-1)
 
     for t in 1:T
-        Exx[:, :, t] = Ps[t, :, :] + xs[t, :] * xs[t, :]'
+        Exx[:, :, t] = qs[t, :, :] + xs[t, :] * xs[t, :]'
         if t < T
-            L = Ps[t, :, :] * l.A' / Ps[t+1, :, :]
-            Exx_lag[:, :, t] = L * Ps[t+1, :, :] + xs[t, :] * xs[t+1, :]'
+            L = qs[t, :, :] * l.A' / qs[t+1, :, :]
+            Exx_lag[:, :, t] = L * qs[t+1, :, :] + xs[t, :] * xs[t+1, :]'
         end
     end
 
-    return xs, Ps, Exx, Exx_lag
+    return xs, qs, Exx, Exx_lag
 end
 
 
-function M_step!(l::LDS, y::Matrix{Float64}, xs::Matrix{Float64}, Ps::Array{Float64, 3}, Exx::Array{Float64, 3}, Exx_lag::Array{Float64, 3})
+
+function M_step!(l::LDS, y::Matrix{Float64}, xs::Matrix{Float64}, qs::Array{Float64, 3}, Exx::Array{Float64, 3}, Exx_lag::Array{Float64, 3})
     T = size(y, 1)
 
     # Update A, Q
@@ -151,13 +152,13 @@ function M_step!(l::LDS, y::Matrix{Float64}, xs::Matrix{Float64}, Ps::Array{Floa
         l.R = (residuals' * residuals) / T
     end
    
-    # Update x0, P0
+    # Update x0, q0
     if l.fit_bool[6]
         l.x0 = xs[1, :]
     end
 
     if l.fit_bool[7]
-        l.P0 = Ps[1, :, :]
+        l.q0 = qs[1, :, :]
     end
 
     return l
@@ -170,9 +171,9 @@ function KalmanFilterEM!(l::LDS, y::AbstractArray, max_iter::Int=100, tol::Float
     # Run EM
     for i in 1:max_iter
         # E-step
-        xs, Ps, Exx, Exx_lag = E_step(l, y)
+        xs, qs, Exx, Exx_lag = E_step(l, y)
         # M-step
-        M_step!(l, y, xs, Ps, Exx, Exx_lag)
+        M_step!(l, y, xs, qs, Exx, Exx_lag)
         # Calculate log-likelihood
         ll = loglikelihood(l, y)
         # Check convergence
@@ -274,12 +275,12 @@ Returns:
 """
 function params_to_vector(l::LDS)
     # Unpack parameters
-    @unpack A, H, B, Q, R, x0, P0, inputs, fit_bool = l
+    @unpack A, H, B, Q, R, x0, q0, inputs, fit_bool = l
     # Initialize parameter vector and index vector
     params = Vector{Float64}()
     params_idx = Vector{Symbol}()
     # List of fields and their corresponding symbols
-    fields = [:A, :H, :B, :Q, :R, :x0, :P0]
+    fields = [:A, :H, :B, :Q, :R, :x0, :q0]
     # Iterate over each field
     for (i, field) in enumerate(fields)
         if fit_bool[i]
@@ -329,37 +330,60 @@ Advances in neural information processing systems 24 (2011).
 
 Args:
     A: Transition Matrix
-    H: Observation Matrix
-    B: Control Matrix
+    C: Observation Matrix
     Q: Process Noise Covariance
-    D: History Matrix
-    d: History Vector
-    x0: Initial State
-    q0: Initial Process Noise
+    D: History Control Matrix
+    d: Mean Firing Rate Vector
+    sₖₜ: Spike History Vector
+    x₀: Initial State
+    q₀: Initial Covariance 
 """
 
 mutable struct PLDS <: DynamicalSystem
     A::Union{AbstractArray, Nothing}  # Transition Matrix
-    H::Union{AbstractArray, Nothing}  # Observation Matrix
-    B::Union{AbstractArray, Nothing}  # Control Matrix
+    C::Union{AbstractArray, Nothing}  # Observation Matrix
     Q::Union{AbstractArray, Nothing}  # Process Noise Covariance
-    D::Union{AbstractArray, Nothing}  # History Matrix
-    d::Union{AbstractArray, Nothing}  # History Vector
-    x0::Union{AbstractArray, Nothing} # Initial State
-    q0::Union{AbstractArray, Nothing} # Initial Process Noise
+    D::Union{AbstractArray, Nothing}  # History Control Matrix
+    d::Union{AbstractArray, Nothing}  # Mean Firing Rate Vector
+    sₖₜ::Union{AbstractArray, Nothing}  # Spike History Vector
+    x₀::Union{AbstractArray, Nothing} # Initial State
+    q₀::Union{AbstractArray, Nothing} # Initial Covariance
+    bₜ::Union{AbstractArray, Nothing} # Inputs
+    obs_dim::Int # Observation Dimension
+    latent_dim::Int # Latent Dimension
+    fit_bool::Vector{Bool} # Vector of booleans indicating which parameters to fit
+end
+
+# Default constructor with no parameters
+function PLDS()
+    return PLDS(nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, 1, 1, fill(true, 8))
+end
+
+# Flexible constructor that handles all three cases
+function PLDS(; A=nothing, C=nothing, Q=nothing, D=nothing, d=nothing, sₖₜ=nothing, x₀=nothing, q₀=nothing, inputs=nothing, obs_dim=1, latent_dim=1, fit_bool=fill(true, 8))
+    plds = PLDS(A, C, Q, D, d, sₖₜ, x₀, q₀, inputs, obs_dim, latent_dim, fit_bool)
+    initialize_missing_parameters!(plds)
+    return plds
+end
+
+function filter(plds::PLDS, observations::Matrix{Int})
+    T = size(observations, 1)
+    x = zeros(T, plds.latent_dim)
+    q = zeros(T, plds.latent_dim, plds.latent_dim)
+    #TODO: Finish later.
 end
 
 
-mutable struct PfLDS <: DynamicalSystem
-    #TODO: Implement PfLDS
+mutable struct fLDS <: DynamicalSystem
+    #TODO: Implement fLDS
 end
 
 # SLDS Definition
-mutable struct SLDS <: DynamicalSystem
+mutable struct SLDS <: AbstractHMM
     #TODO: Implement SLDS
 end
 
 #rSLDS Definition
-mutable struct rSLDS <: DynamicalSystem
+mutable struct rSLDS <: AbstractHMM
     #TODO: Implement rSLDS
 end

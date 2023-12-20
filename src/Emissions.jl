@@ -1,7 +1,4 @@
-export EmissionsModel, GaussianEmission, RegressionEmissions
-
-# Create emission models here 
-abstract type EmissionsModel end
+export GaussianEmission, RegressionEmissions
 
 """
 Gaussian Emission: Struct representing a Gaussian emission model.
@@ -89,5 +86,22 @@ end
 
 function updateEmissionModel!(emission::AutoRegressiveEmissions)
     #TODO: Implement updateEmissionModel! for autoregressive model
+end
+
+"""
+LDSEmissions: Linear Dynamical System Emissions Model
+"""
+
+mutable struct LDSEmissions<: EmissionsModel
+    lds_model::LDS
+end
+
+# loglikelihood of the linear dynamical system model.
+function loglikelihood(emission::LDSEmissions, observation::Vector{Float64})
+    loglikelihood(emission.lds_model, observation)
+end
+
+function updateEmissionModel!(emission::LDSEmissions)
+    #TODO: Implement updateEmissionModel! for linear dynamical system model
 end
 

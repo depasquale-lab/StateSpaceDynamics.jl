@@ -1,11 +1,16 @@
 export  GMM, fit!, log_likelihood
 
+"""
+GMM Class
 
-abstract type MixtureModel end
-
-"""Set of functions for estimating Mixture Models"""
-
-"""GMM Class"""
+Args:
+    k: number of clusters
+    μₖ: means of each cluster
+    Σₖ: covariance matrices of each cluster
+    πₖ: mixing coefficients
+    class_probabilities: probability of each class for each point
+    class_labels: class label for each point based on the class probabilities
+"""
 mutable struct GMM <: MixtureModel
     k::Int # Number of clusters
     μₖ::Matrix{Float64} # Means of each cluster

@@ -17,11 +17,21 @@ mutable struct SwitchingGaussianRegression{T <: Real} <: AbstractHMM
 end
 
 """
-Constructor for SwitchingGaussianRegression. We assume there is a set of discrete data-generating regimes 
+Constructor for SwitchingGaussianRegression. 
+    
+We assume there is a set of discrete data-generating regimes 
 in the data that can be explained by essentially k-separate regression models from a Gaussian Family. 
 The transition matrix A is a k x k matrix where A[i, j] is the probability of transitioning from state 
 i to state j. The initial state distribution π_k is a k-dimensional vector where π_k[i] is the probability 
 of starting in state i. The number of states K is an integer representing the number of states in the model.
+
+Args:
+    y: vector of observations.
+    X: matrix of covariates.
+    k: number of states.
+
+Returns:
+    SwitchingGaussianRegression object with initialized parameters.
 """
 function SwitchingGaussianRegression(y::Vector{T}, X::Matrix{T}, k::Int) where T <: Real
     # Initialize regression models
@@ -137,7 +147,7 @@ function MStep!(model::SwitchingGaussianRegression, α::Matrix{T}, β::Matrix{T}
 end
 
 """
-Generalized EM for a SwitchingGaussianRegression model.
+EM for a SwitchingGaussianRegression model.
 """
 
 function MarkovRegressionEM(model::SwitchingGaussianRegression, max_iters::Int=100, tol::Float64=1e-6)
@@ -156,6 +166,7 @@ function MarkovRegressionEM(model::SwitchingGaussianRegression, max_iters::Int=1
         prev_log_likelihood = ll
     end
 end
+
 
 """
 AutoRegressive HMM
@@ -177,15 +188,20 @@ end
 Poisson Markov regression, Binomial Markov Regression, Multinomial Markov Regression eventually
 """
 
-mutable struct SwitchingBinomialRegression{T<:Real} <: AbstractHMM
-    #TODO: Implement Switching Binomial Regression
-    y::Vector{T} # observations
-    X::Matrix{T} # covariates
+mutable struct SwitchingBinomialRegression <: AbstractHMM
+    y::Vector{Int} # observations
+    X::Matrix{Float64} # covariates
     K::Int # number of states
-    A::Matrix{T} # transition matrix
-    πₖ::Vector{T} # initial state distribution
-    B::Vector{RegressionEmissions} # Vector of Binomialn Regression Models
-    weights::Vector{T} # Vector of weights for each state
+    A::Matrix{Float64} # transition matrix
+    πₖ::Vector{Float64} # initial state distribution
+    B::Vector{RegressionEmissions} # Vector of Binomial Regression Models
+    weights::Vector{Float64} # Vector of weights for each state
+end
+
+function SwitchingBinomialRegression(y::Vector{Int}, X::Matrix{Float64}, k::Int)
+    # Initialize regression models
+    regression_models = [RegressionEmissions(BinomialRegression(X, y, true)) for _ in 1:k]
+    # Initialize emissions model and transition matrix  
 end
 
 mutable struct SwitchingPoissonRegression{T<:Real} <: AbstractHMM
