@@ -1,4 +1,4 @@
-export kmeanspp_initialization, kmeans_clustering, Autoregression, fit!, loglikelihood
+export kmeanspp_initialization, kmeans_clustering, Autoregression, fit!, loglikelihood, ensure_positive_definite
 
 """Euclidean Distance for two points"""
 function euclidean_distance(a::AbstractVector{Float64}, b::AbstractVector{Float64})
@@ -22,6 +22,23 @@ function kmeanspp_initialization(data::Matrix{Float64}, k_means::Int)
         centroids[:, k] = data[next_idx, :]
     end
     return centroids
+end
+
+function ensure_positive_definite(A::Matrix{T}) where T
+    # Perform eigenvalue decomposition
+    eigen_decomp = eigen(Symmetric(A))  # Ensure A is treated as symmetric
+    λ, V = eigen_decomp.values, eigen_decomp.vectors
+
+    # Set a threshold for eigenvalues (e.g., a small positive number)
+    ε = max(eps(T), 1e-10)
+    
+    # Replace any non-positive eigenvalues with ε
+    λ_clipped = [max(λi, ε) for λi in λ]
+
+    # Reconstruct the matrix with the clipped eigenvalues
+    A_posdef = V * Diagonal(λ_clipped) * V'
+
+    return A_posdef
 end
 
 """K++ Initialization for Vector input"""
@@ -164,4 +181,29 @@ function fit!(model::Autoregression)
     update_σ²!(model, residuals)
 end
 
+"""
+Vectorautoregression Model
+"""
+mutable struct VectorAutoregression{T<:Real}
+    X::AbstractArray # Data
+    p::Int # order of the autoregressive model
+    β::Matrix{T} # Coefficients for the autoregressive model
+    σ²::Matrix{T} # Variance of the noise
+end
+
+"""
+Constructor for the VAR model.
+"""
+function VectorAutoregression(X::Matrix{T}, p::Int) where T<:Real
+    # Initialize parameters
+    β = zeros(T, p + 1)
+    σ² = zeros(T, T)
+    return VectorAutoregression(X, p, β, σ²)
+end
+
+"""
+Helper function to create lagged matrix for VAR model.
+"""
+function create_lagged_matrix(data::Matrix{Float64}, p::Int)
+end
 

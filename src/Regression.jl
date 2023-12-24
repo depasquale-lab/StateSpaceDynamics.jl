@@ -30,7 +30,6 @@ Abstract type for Loss functions.
 abstract type Loss end
 
 # Loss Functions
-
 """
 Weighted Least Squares Loss
 

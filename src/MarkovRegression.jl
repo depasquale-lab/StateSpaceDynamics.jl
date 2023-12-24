@@ -13,7 +13,7 @@ mutable struct SwitchingGaussianRegression{T <: Real} <: AbstractHMM
     πₖ::Vector{T} # initial state distribution
     B::Vector{RegressionEmissions} # Vector of Gaussian Regression Models
     σ²::Vector{T} # Vector of variances for each state
-    weights::Vector{T} # Vector of weights for each state
+    weights::Matrix{T} # Vector of weights for each state
 end
 
 """
@@ -41,7 +41,7 @@ function SwitchingGaussianRegression(y::Vector{T}, X::Matrix{T}, k::Int) where T
     # initialize variance
     σ² = zeros(T, k)
     # Initiliaze weights
-    weights = ones(T, size(y))
+    weights = ones(T, (k, length(y)))
     # Create the SwitchingGaussianRegression object with initialized parameters
     model = SwitchingGaussianRegression(y, X, k, A, πₖ, regression_models, σ², weights)
     # Perform the E-step with the initialized model
@@ -104,14 +104,19 @@ function update_mixing_coefficients!(model::SwitchingGaussianRegression, γ::Mat
     model.πₖ = exp.(γ[:, 1])
 end
 
-#TODO: This is not correct--need to debug.
+#TODO: This is not correct--need to debug. Need to fix the fact that i set weights ti be a vector--should be a matrix.
+
 function update_variance!(model::SwitchingGaussianRegression, γ::Matrix{T}) where T <: Real
+    weights = model.weights
+    N = size(weights, 2) - 1
     # update the variance term
     σ² = zeros(T, model.K)
     for k in 1:model.K
         resid = residuals(model.B[k].regression_model)
-        weighted_mean = sum(exp.(γ[k, :]) .* resid) / sum(exp.(γ[k, :])) / (length(resid) - 1)
-        σ²[k] = sum(exp.(γ[k, :]) .* (resid .- weighted_mean).^2) / sum(exp.(γ[k, :]))
+        weighted_mean = sum(weights[k] .* resid) / sum(weights[k])
+        print(sum(weights[k] .* (resid .- weighted_mean).^2))
+        print(sum(weights[k]))
+        σ²[k] = sum(weights[k] .* (resid .- weighted_mean).^2) / sum(weights[k]) / N
     end
     model.σ² = σ²
 end
@@ -121,9 +126,9 @@ function update_regression_model!(model::SwitchingGaussianRegression, α::Matrix
         # get weights for wls
         weights = sqrt.(exp.(α[k, :] .+ β[k, :]))
         # normalize the weights
-        model.weights = weights
+        model.weights[k, :] = weights
         # define weighted loss function
-        model.B[k].regression_model.loss = WLSLoss(model.weights)
+        model.B[k].regression_model.loss = WLSLoss(model.weights[k, :])
         # update the regression model for each state
         updateEmissionModel!(model.B[k])
     end

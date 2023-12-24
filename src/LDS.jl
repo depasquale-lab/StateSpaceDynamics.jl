@@ -2,10 +2,8 @@
 """Linear Dynamical Systems Models e.g. the Kalman Filter, (recurrent) Switching Linear Dynamical Systems, etc."""
 
 # export statement
-export DynamicalSystem, LDS, KalmanFilter, KalmanSmoother, loglikelihood, KalmanFilterOptim!
+export LDS, KalmanFilter, KalmanSmoother, loglikelihood, KalmanFilterOptim!
 
-# Abstract types
-abstract type DynamicalSystem end
 
 """Linear Dynamical System (LDS) Definition"""
 mutable struct LDS <: DynamicalSystem
@@ -50,7 +48,7 @@ end
 
 function KalmanFilter(l::LDS, y::AbstractArray)
     # First pre-allocate the matrices we will need
-    T = size(y, 1)
+    T, D = size(y)
     x = zeros(T, l.latent_dim)
     q = zeros(T, l.latent_dim, l.latent_dim)
     v = zeros(T, l.latent_dim)
@@ -59,8 +57,6 @@ function KalmanFilter(l::LDS, y::AbstractArray)
     # Initialize the first state
     x[1, :] = l.x0
     q[1, :, :] = l.q0
-    # Initialize the log_likelihood
-    ll = 0.0
     # Now perform the Kalman Filter
     for t in 2:T
         # Prediction step
@@ -68,19 +64,15 @@ function KalmanFilter(l::LDS, y::AbstractArray)
         q[t, :, :] = l.A * q[t-1, :, :] * l.A' + l.Q
         # Compute the Kalman gain
         F[t, :, :] = l.H * q[t, :, :] * l.H' + l.R
-        K[t, :, :] = (q[t, :, :] * l.H') / F[t, :, :]
+        K[t, :, :] = (q[t, :, :] * l.H') * pinv(F[t, :, :] + 1e-9 * I(D))
         # Update step
         v[t, :] = y[t, :] - l.H * x[t, :]
         x[t, :] = x[t, :] + K[t, :, :] * v[t, :]
         q[t, :, :] = q[t, :, :] - K[t, :, :] * l.H * q[t, :, :]
-        # Update the log-likelihood using Cholesky decomposition
-        if !ishermitian(F[t, :, :])
-            # @warn "F is not symmetric at time $t, this is likely a numerical issue, but worth examining."
-            F[t, :, :] = (F[t, :, :] + F[t, :, :]') / 2
-        end
-        chol_F = cholesky(F[t, :, :])
-        ll -= 0.5 * (l.latent_dim * log(2 * π) + 2 * sum(log.(diag(chol_F.L))) + v[t, :]' * (chol_F \ v[t, :]))
     end
+    # Compute the log-likelihood
+    residuals = y - (x * l.H')
+    ll = loglikelihood(residuals, F, T, D)
     return x, q, v, F, K, ll
 end
 
@@ -89,79 +81,85 @@ function KalmanSmoother(l::LDS, y::AbstractArray)
     # Forward pass (Kalman Filter)
     x, q, v, F, K, ll = KalmanFilter(l, y)
     # Pre-allocate smoother arrays
-    xs = copy(x)  # Smoothed state estimates
-    qs = copy(q)  # Smoothed state covariances
+    xs = zeros(size(x))  # Smoothed state estimates
+    qs = zeros(size(q))  # Smoothed state covariances
     T = size(y, 1)
+    time_cov = zeros(size(q))
     # Backward pass
-    for t in T-1:-1:1
+    xs[T, :] = x[T, :]
+    qs[T, :, :] = q[T, :, :]
+    time_cov[T, :, :] = (I(l.latent_dim) - K[T, :, :] * l.H') * l.A * q[T-1, :, :]
+    J_t = 0
+    for t in T:-1:2
         # Compute the smoother gain
-        L = q[t, :, :] * l.A' * (q[t+1, :, :] \ I)
+        J = q[t-1, :, :] * l.A' * pinv(q[t, :, :])
         # Update smoothed estimates
-        xs[t, :] += L * (xs[t+1, :] - x[t+1, :])
-        qs[t, :, :] += L * (qs[t+1, :, :] - q[t+1, :, :]) * L'
+        xs[t-1, :] = x[t-1, :] + J * (xs[t, :] - l.A * x[t-1, :])
+        qs[t-1, :, :] = q[t-1, :, :] + J * (qs[t, :, :] - q[t, :, :]) * J'
+        # Update time covariance
+        time_cov[t-1, :, :] = q[t, :, :] * J' + J_t * (time_cov[t, :, :] - l.A * q[t, :, :]) * J'
+        # Save previous smoother gain
+        J_t = J
     end
-    return xs, qs
+    return xs, qs, time_cov
 end
 
-function E_step(l::LDS, y::AbstractArray)
-    # Run the Kalman Smoother
-    xs, qs = KalmanSmoother(l, y)
-    # Calculate additional statistics needed for the M-step
+function EStep(l::LDS, y::AbstractArray)
+    # get length
     T = size(y, 1)
-    Exx = zeros(l.latent_dim, l.latent_dim, T)
-    Exx_lag = zeros(l.latent_dim, l.latent_dim, T-1)
-
+    # Run Kalman Smoother
+    xs, qs, time_cov = KalmanSmoother(l, y)
+    # define sufficient statistics
+    δ = zeros(size(y[1,:], 1), size(xs[1,:], 1))
+    γ = zeros(size(xs[1,:], 1), size(xs[1,:], 1))
+    β = zeros(size(xs[1,:], 1), size(xs[1,:], 1))
+    # E-step
     for t in 1:T
-        Exx[:, :, t] = qs[t, :, :] + xs[t, :] * xs[t, :]'
-        if t < T
-            L = qs[t, :, :] * l.A' / qs[t+1, :, :]
-            Exx_lag[:, :, t] = L * qs[t+1, :, :] + xs[t, :] * xs[t+1, :]'
+        # compute sufficient statistics
+        δ += y[t, :] * xs[t, :]'
+        γ += xs[t, :] * xs[t, :]' + qs[t, :, :]
+        if t > 1
+            β += xs[t, :] * xs[t-1, :]' + time_cov[t, :, :]
         end
     end
-
-    return xs, qs, Exx, Exx_lag
+    # calculate γ₁ and γ₂
+    γ₁ = γ - xs[T, :] * xs[T,:]' - qs[T, :, :]
+    γ₂ = γ - xs[1, :] * xs[1,:]' - qs[1, :, :]
+    return xs, qs, δ, γ, γ₁, γ₂, β
 end
 
-
-
-function M_step!(l::LDS, y::Matrix{Float64}, xs::Matrix{Float64}, qs::Array{Float64, 3}, Exx::Array{Float64, 3}, Exx_lag::Array{Float64, 3})
+function MStep!(l::LDS, y::AbstractArray, xs::AbstractArray, qs::AbstractArray, δ::AbstractArray, γ::AbstractArray, γ₁::AbstractArray, γ₂::AbstractArray, β::AbstractArray)
+    # get length
     T = size(y, 1)
+    # calculate alpha
+    α = y' * y
 
-    # Update A, Q
-    S0 = sum(Exx[:, :, 1:T-1], dims=3)
-    S1 = sum(Exx_lag, dims=3)
-    S2 = sum(Exx[:, :, 2:T], dims=3)
-
+    # update A
     if l.fit_bool[1]
-        l.A = S1 \ S0
+        l.A = β * pinv(γ₁)
     end
-
-    if l.fit_bool[4]
-        l.Q = (S2 - l.A * S1') / (T - 1)
-    end
-
-    # Update H, R
+    # update H
     if l.fit_bool[2]
-        l.H = (y' * xs) / sum(Exx, dims=3)
+        l.H = δ * pinv(γ)
     end
-
-    y_hat = l.H * xs'
-    residuals = y - y_hat'
-
+    # update Q
+    if l.fit_bool[4]
+        l.Q = (γ₂ - (l.A * β')) / (T-1)
+    end
+    # update R
     if l.fit_bool[5]
-        l.R = (residuals' * residuals) / T
+        l.R = (α - (l.H * δ')) / T
     end
-   
-    # Update x0, q0
+
+    # update x0
     if l.fit_bool[6]
         l.x0 = xs[1, :]
     end
 
+    # update q0
     if l.fit_bool[7]
         l.q0 = qs[1, :, :]
     end
-
-    return l
 end
 
 
@@ -171,18 +169,19 @@ function KalmanFilterEM!(l::LDS, y::AbstractArray, max_iter::Int=100, tol::Float
     # Run EM
     for i in 1:max_iter
         # E-step
-        xs, qs, Exx, Exx_lag = E_step(l, y)
+        xs, qs, δ, γ, γ₁, γ₂, β = EStep(l, y)
         # M-step
-        M_step!(l, y, xs, qs, Exx, Exx_lag)
+        MStep!(l, y, xs, qs, δ, γ, γ₁, γ₂, β)
         # Calculate log-likelihood
         ll = loglikelihood(l, y)
+        println("Log-likelihood at iteration $i: ", ll)
         # Check convergence
         if abs(ll - prev_ll) < tol
             break
         end
         prev_ll = ll
     end
-    return l, ll
+    return l, prev_ll
 end
 
 
@@ -190,7 +189,7 @@ function KalmanFilterOptim!(l::LDS, y::AbstractArray)
     # create parameter vector and index vector
     params, param_idx = params_to_vector(l)
     # define objective function
-    nll(params) = loglikelihood(params, param_idx, l, y)
+    nll(params) = -loglikelihood(params, param_idx, l, y)
     result = optimize(nll, params, BFGS(), Optim.Options(iterations=1000), autodiff=:forward)
     optimal_params = result.minimizer
     # update parameters
@@ -211,13 +210,15 @@ Returns:
 
 """
 function loglikelihood(params::Vector{T1}, param_idx::Vector{Symbol}, l::LDS, y::AbstractArray) where {T1}
+    T, D = size(y)
     # Convert the parameter vector back to the LDS struct
     vector_to_params!(l, params, param_idx)
     # The key is to ensure that all operations and functions used here are compatible with ForwardDiff.Dual
-    xs, ps = KalmanFilter(l, y)
-    kf_obs_pred = xs * l.H'
-    residuals = y - kf_obs_pred
-    ll = sum(logpdf(MvNormal(zeros(T1, l.latent_dim), l.R), residuals'))
+    xs, _, _, F, _, _ = KalmanFilter(l, y)
+    # calculate the residuals
+    residuals = y - (xs * l.H')
+    # calculate the loglikelihood
+    ll = loglikelihood(residuals, F, T, D)
     return ll
 end
 
@@ -232,36 +233,87 @@ Returns:
     ll: Loglikelihood of the LDS model
 """
 function loglikelihood(l::LDS, y::AbstractArray)
+    T, D = size(y)
     # calculates the loglikelihood of the LDS model
-    xs, ps = KalmanFilter(l, y)
-    kf_obs_pred = xs * l.H'
-    # now we need to calculate the residuals
-    residuals = y - kf_obs_pred
-    # now we need to calculate the loglikelihood
-    ll = sum(logpdf(MvNormal(zeros(l.latent_dim), l.R), residuals'))
+    xs, _, _, F, _, _ = KalmanFilter(l, y)
+    # calculate the residuals
+    residuals = y - (xs * l.H')
+    # calculate the loglikelihood
+    ll = loglikelihood(residuals, F, T, D)
+    return ll
+end
+
+function loglikelihood(residuals::AbstractArray, F::AbstractArray, T::Int, D::Int)
+    ll = 0.0
+    # calculate the loglikelihood
+    for t in 1:T
+        # use cholesky to compute the log determinant of F for stability
+
+        # check if F is symmetric
+        if !ishermitian(F[t, :, :])
+            F[t, :, :] = (F[t, :, :] + F[t, :, :]') / 2
+        end
+        # Regularize F to ensure it is positive definite
+        if !isposdef(F[t, :, :])
+            F[t, :, :] = F[t, :, :] + 1e-9 * I(D)
+        end
+        chol_F = cholesky(F[t, :, :])
+        logdet_F = 2 * sum(log.(diag(chol_F.U)))
+        ll += -0.5*(D*log(2*pi)+ logdet_F + (residuals[t, :]' * pinv(F[t, :, :]) * residuals[t, :]))
+        if ll == Inf
+            break
+        end
+    end
     return ll
 end
 
 """
-Computes the loglikelihood of the LDS model. This variant is used 
-
-Args:
-    l: LDS struct
-    xs: Matrix of latent states
-    y: Matrix of observations
-
-Returns:
-    ll: Loglikelihood of the LDS model
+Compute p(X|Y) for a given LDS model and a set of observations.
 """
-function loglikelihood(l::LDS, xs::Matrix{Float64}, y::Matrix{Float64})
-    # calculates the loglikelihood of the LDS model
-    kf_obs_pred = xs * l.H'
-    # now we need to calculate the residuals
-    residuals = y - kf_obs_pred
-    # now we need to calculate the loglikelihood
-    ll = sum(logpdf(MvNormal(zeros(l.latent_dim), l.R), residuals'))
+function loglikelihood_X(X::AbstractArray, l::LDS, y::AbstractArray)
+    T = size(y, 1)
+    # p(q₁)
+    ll = -0.5 * (X[1, :])' * pinv(l.q0) * X[1, :]
+    # p(qₜ|qₜ₋₁)
+    for t in 2:T
+        ll += (X[t, :]-l.A*X[t-1, :])' * pinv(l.Q) * (X[t, :]-l.A*X[t-1, :])
+    end
+    # p(yₜ|qₜ)
+    for t in 1:T
+        ll += (y[t, :]-l.H*X[t, :])' * pinv(l.R) * (y[t, :]-l.H*X[t, :])
+    end
     return ll
 end
+
+"""
+Calculates the gradient of the loglikelihood of the LDS model given a a set of observations.
+"""
+function ∇ₗₗ(X::AbstractArray, l::LDS, y::AbstractArray)
+    grad = ForwardDiff.gradient(X -> loglikelihood_X(X, l, y), X)
+    return grad
+end
+
+"""
+Calculates the Hessian of the loglikelihood of the LDS model given a a set of observations.
+"""
+function ∇²ₗₗ(X::AbstractArray, l::LDS, y::AbstractArray)
+    hess = ForwardDiff.hessian(X -> loglikelihood_X(X, l, y), X)
+    return hess
+end
+
+"""
+Calculates the most likely set of observations "X" based on the LDS model and a set of observations "y". This is
+the Kalman Smoother. This matrix formulation is based on the paper "A new look at state-space models for neural data"
+DOI 10.1007/s10827-009-0179-x
+"""
+function matrix_Kalman_Smoother(l::LDS, y::AbstractArray)
+    # create an initial guess for the latent state "X"
+    X = randn(size(y, 1), l.latent_dim)
+    # Smooth
+    X̂ = ∇²ₗₗ(X, l, y) \ ∇ₗₗ(X, l, y)
+    return X̂
+end
+
 
 """
 Converts the parameters in the LDS struct to a vector of parameters.

@@ -1,20 +1,27 @@
-export HMM, baumWelch!, viterbi, sample
+export GaussianHMM, baumWelch!, viterbi, sample
 
+"""
+GaussianHMM: A hidden markov model with Gaussian emissions.
 
-# Vanilla HMM Definition
-mutable struct HMM{EM <: EmissionsModel} <: AbstractHMM
+Args:
+    A::Matrix{Float64}: State Transition Matrix
+    B::Vector{GaussianEmission}: Emission Model
+    πₖ::Vector{Float64}: Initial State Distribution
+    D::Int: Latent State Dimension
+"""
+mutable struct GaussianHMM{GaussianEmission} <: AbstractHMM
     A::Matrix{Float64}  # State Transition Matrix
-    B::Vector{EM}       # Emission Model
+    B::Vector{GaussianEmission}       # Emission Model
     πₖ ::Vector{Float64} # Initial State Distribution
-    D::Int              # Latent State Dimension
+    K::Int              # Latent State Dimension
 end
 
-# Constructor for HMM when all params are known, really just for sampling/testing
-function HMM(A::Matrix{Float64}, B::Vector{EM}, πₖ::Vector{Float64}, D::Int) where {EM <: EmissionsModel}
-    return HMM{EM}(A, B, πₖ, D)
+# Constructor for GaussianHMM when all params are known, really just for sampling/testing
+function GaussianHMM(A::Matrix{Float64}, B::Vector{GaussianEmission}, πₖ::Vector{Float64}, K::Int)
+    return HMM{EM}(A, B, πₖ, K)
 end
 
-function HMM(data::Matrix{Float64}, k_states::Int=2, emissions::String="Gaussian")
+function GaussianHMM(data::Matrix{Float64}, k_states::Int=2)
     N, D = size(data)
     # Initialize A
     A = rand(k_states, k_states)
@@ -23,15 +30,12 @@ function HMM(data::Matrix{Float64}, k_states::Int=2, emissions::String="Gaussian
     πₖ = rand(k_states)
     πₖ = πₖ ./ sum(πₖ) # normalize to ensure it's a valid probability vector
     # Initialize Emission Model
-    if emissions == "Gaussian"
-        # use kmeans_clustering to initialize the emission model
-        sample_means, labels = kmeans_clustering(data, k_states)
-        sample_covs = [cov(data[labels .== i, :]) for i in 1:k_states]
-        B = [GaussianEmission(sample_means[:, i], sample_covs[i]) for i in 1:k_states]
-        return HMM{GaussianEmission}(A, B, πₖ, D)
-    else   
-        throw(ErrorException("$emissions is not a supported emissions model, please choose one of the supported models."))
-    end
+
+    # use kmeans_clustering to initialize the emission model
+    sample_means, labels = kmeans_clustering(data, k_states)
+    sample_covs = [cov(data[labels .== i, :]) for i in 1:k_states]
+    B = [GaussianEmission(sample_means[:, i], sample_covs[i]) for i in 1:k_states]
+    return GaussianHMM(A, B, πₖ, k_states)
 end
 
 function forward(hmm::AbstractHMM, data::Y) where Y <: AbstractArray
@@ -136,10 +140,7 @@ function MStep!(hmm::AbstractHMM, γ::Matrix{Float64}, ξ::Array{Float64, 3}, da
     end
 end
 
-# function expectation_gradient(hmm::HMM, data::Matrix{Float64}, max_iters::Int=100, tol::Float64)
-# end
-
-function baumWelch!(hmm::HMM,  data::Matrix{Float64}, max_iters::Int=100, tol::Float64=1e-6)
+function baumWelch!(hmm::AbstractHMM, data::Matrix{Float64}, max_iters::Int=100, tol::Float64=1e-6)
     T, _ = size(data)
     K = size(hmm.A, 1)
     log_likelihood = -Inf
@@ -163,7 +164,7 @@ function baumWelch!(hmm::HMM,  data::Matrix{Float64}, max_iters::Int=100, tol::F
     end
 end
 
-function viterbi(hmm::HMM, data::Matrix{Float64})
+function viterbi(hmm::AbstractHMM, data::Matrix{Float64})
     T, _ = size(data)
     K = size(hmm.A, 1)  # Number of states
     # Step 1: Initialization
@@ -197,7 +198,7 @@ function viterbi(hmm::HMM, data::Matrix{Float64})
     return reverse(best_path)
 end
 
-function sample(hmm::HMM, n::Int)
+function sample(hmm::GaussianHMM, n::Int)
     # Number of states
     K = size(hmm.A, 1)
     # Initialize state and observation arrays
@@ -214,5 +215,34 @@ function sample(hmm::HMM, n::Int)
         observations[t, :] = rand(MvNormal(hmm.B[states[t]].μ, hmm.B[states[t]].Σ))
     end
     return states, observations
+end
+
+"""
+PoissonHMM: A hidden markov model with Poisson emissions.
+
+Args:
+    A::Matrix{Float64}: State Transition Matrix
+    B::Vector{PoissonEmission}: Emission Model
+    πₖ::Vector{Float64}: Initial State Distribution
+    D::Int: Latent State Dimension
+"""
+
+mutable struct PoissonHMM{PoissonEmission} <: AbstractHMM
+    A::Matrix{Float64}  # State Transition Matrix
+    B::Vector{PoissonEmission} # Emission Model
+    πₖ ::Vector{Float64} # Initial State Distribution
+    K::Int # Latent State Dimension
+end
+
+function PoissonHMM(data::Matrix{Float64}, K::Int)
+    T, D = size(data)
+    # Initialize A
+    A = rand(K, K)
+    A = A ./ sum(A, dims=2)  # normalize rows to ensure they are valid probabilities
+    # Initialize π
+    πₖ = rand(K)
+    πₖ = πₖ ./ sum(πₖ) # normalize to ensure it's a valid probability vector
+    # Initialize Emission Model
+    #TODO: Finish later
 end
 
