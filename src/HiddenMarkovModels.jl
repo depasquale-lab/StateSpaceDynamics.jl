@@ -14,11 +14,12 @@ mutable struct GaussianHMM{GaussianEmission} <: AbstractHMM
     B::Vector{GaussianEmission}       # Emission Model
     πₖ ::Vector{Float64} # Initial State Distribution
     K::Int              # Latent State Dimension
+    D::Int              # Dimension of the data
 end
 
 # Constructor for GaussianHMM when all params are known, really just for sampling/testing
-function GaussianHMM(A::Matrix{Float64}, B::Vector{GaussianEmission}, πₖ::Vector{Float64}, K::Int)
-    return HMM{EM}(A, B, πₖ, K)
+function GaussianHMM(A::Matrix{Float64}, B::Vector{GaussianEmission}, πₖ::Vector{Float64}, K::Int, D::Int)
+    return GaussianHMM{GaussianEmission}(A, B, πₖ, K, D)
 end
 
 function GaussianHMM(data::Matrix{Float64}, k_states::Int=2)
@@ -35,7 +36,7 @@ function GaussianHMM(data::Matrix{Float64}, k_states::Int=2)
     sample_means, labels = kmeans_clustering(data, k_states)
     sample_covs = [cov(data[labels .== i, :]) for i in 1:k_states]
     B = [GaussianEmission(sample_means[:, i], sample_covs[i]) for i in 1:k_states]
-    return GaussianHMM(A, B, πₖ, k_states)
+    return GaussianHMM(A, B, πₖ, k_states, D)
 end
 
 function forward(hmm::AbstractHMM, data::Y) where Y <: AbstractArray

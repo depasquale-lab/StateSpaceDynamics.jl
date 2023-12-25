@@ -153,13 +153,13 @@ end
 Tests for HiddenMarkovModels.jl
 """
 #TODO: Implement tests for HMMs
-function test_HMM_constructor()
+function test_GaussianHMM_constructor()
     k = 3
     data_dim = 2
     # generate random data
     data = randn(100, data_dim)
     # initialize HMM
-    hmm = HMM(data, k, "Gaussian")
+    hmm = GaussianHMM(data, k)
     # check if parameters are initialized correctly
     println(hmm.A)
     @test isapprox(sum(hmm.A, dims=2), ones(k))
@@ -173,7 +173,7 @@ function test_HMM_forward()
     k = 3
     data_dim = 2
     data = randn(100, data_dim)
-    hmm = HMM(data, k, "Gaussian")
+    hmm = GaussianHMM(data, k)
     # Run forward algorithm
     α = SSM.forward(hmm, data)
     # Check dimensions
@@ -185,7 +185,7 @@ function test_HMM_backward()
     k = 3
     data_dim = 2
     data = randn(100, data_dim)
-    hmm = HMM(data, k, "Gaussian")
+    hmm = GaussianHMM(data, k)
     # Run backward algorithm
     β = SSM.backward(hmm, data)
     # Check dimensions
@@ -203,12 +203,12 @@ function test_HMM_EM()
                 [0.1 0.0; 0.0 0.1]   # Covariance matrix for state 3
             ]
     emissions_models = [GaussianEmission(mean, cov) for (mean, cov) in zip(means, covs)]
-    simul_hmm = HMM(A, emissions_models, [0.33, 0.33, 0.34], 2)
+    simul_hmm = GaussianHMM(A, emissions_models, [0.33, 0.33, 0.34], 2, 2)
     states, observations = SSM.sample(simul_hmm, 10000)
     # Initialize HMM
     k = 3
     data_dim = 2
-    hmm = HMM(observations, k, "Gaussian")
+    hmm = GaussianHMM(observations, k)
     # Run EM
     baumWelch!(hmm, observations)
     # Check if the transition matrix is close to the simulated one
@@ -226,7 +226,7 @@ function test_HMM_EM()
 end
 
 @testset "HiddenMarkovModels.jl Tests" begin
-    test_HMM_constructor()
+    test_GaussianHMM_constructor()
     test_HMM_forward()
     test_HMM_backward()
     test_HMM_EM()
@@ -341,12 +341,17 @@ function test_Estep()
     # Create the Kalman filter without any params
     kf = LDS(;obs_dim=2, latent_dim=2, emissions="Gaussian", fit_bool=[true, true, false, true, true, true, true])
     # run the Estep
-    xs, Ps, Exx, Exx_lag = SSM.E_step(kf, x_noisy')
+    xs, qs, δ, γ, γ₁, γ₂, β, ll = SSM.EStep(kf, x_noisy')
     # check dimensions
     @test size(xs) == (length(t), 2)
-    @test size(Ps) == (length(t), 2, 2)
-    @test size(Exx) == (2, 2, length(t))
-    @test size(Exx_lag) == (2, 2, length(t)-1)
+    @test size(qs) == (length(t), 2, 2)
+    @test size(δ) == (2, 2)
+    @test size(γ) == (2, 2)
+    @test size(γ₁) == (2, 2)
+    @test size(γ₂) == (2, 2)
+    @test size(β) == (2, 2)
+    # check if the likelihood is a scalar
+    @test size(ll) == ()
 end
 
 function test_MStep()
@@ -357,9 +362,9 @@ function test_MStep()
     # Create empty LDS
     kf = LDS()
     # run the Estep
-    xs, Ps, Exx, Exx_lag = SSM.E_step(kf, x_noisy')
+    xs, qs, δ, γ, γ₁, γ₂, β, ll = SSM.EStep(kf, x_noisy')
     # run the Mstep
-    SSM.M_step!(kf, x_noisy', xs, Ps, Exx, Exx_lag)
+    SSM.MStep!(kf, x_noisy', xs, qs, δ, γ, γ₁, γ₂, β)
     # check if the parameters have been updated
     @test kf.A !== A
     @test kf.H !== H
@@ -373,7 +378,7 @@ end
 
 function test_KF_optim()
     # create kf 
-    kf = LDS(;obs_dim=2, latent_dim=2, emissions="Gaussian", fit_bool=[true, true, false, true, true, true, true])
+    kf = LDS(;obs_dim=2, latent_dim=2, fit_bool=[true, true, false, true, true, true, true])
     ll_pre = SSM.loglikelihood(kf, x_noisy')
     # now optimize
     KalmanFilterOptim!(kf, x_noisy')

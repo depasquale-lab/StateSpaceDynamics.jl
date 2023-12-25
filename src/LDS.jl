@@ -40,7 +40,7 @@ function initialize_missing_parameters!(lds::LDS)
     lds.Q = lds.Q === nothing ? I(lds.latent_dim) : lds.Q
     lds.R = lds.R === nothing ? I(lds.obs_dim) : lds.R
     lds.x0 = lds.x0 === nothing ? rand(lds.latent_dim) : lds.x0
-    lds.q0 = lds.q0 === nothing ? rand(lds.latent_dim, lds.latent_dim) : lds.q0
+    lds.q0 = lds.q0 === nothing ? 0.1 * I(lds.latent_dim) : lds.q0
     if lds.inputs !== nothing
         lds.B = lds.B === nothing ? rand(lds.latent_dim, size(lds.inputs, 2)) : lds.B
     end
@@ -57,6 +57,8 @@ function KalmanFilter(l::LDS, y::AbstractArray)
     # Initialize the first state
     x[1, :] = l.x0
     q[1, :, :] = l.q0
+    # Initialize loglikelihood
+    ll = 0.0
     # Now perform the Kalman Filter
     for t in 2:T
         # Prediction step
@@ -64,15 +66,14 @@ function KalmanFilter(l::LDS, y::AbstractArray)
         q[t, :, :] = l.A * q[t-1, :, :] * l.A' + l.Q
         # Compute the Kalman gain
         F[t, :, :] = l.H * q[t, :, :] * l.H' + l.R
-        K[t, :, :] = (q[t, :, :] * l.H') * pinv(F[t, :, :] + 1e-9 * I(D))
+        K[t, :, :] = (q[t, :, :] * l.H') * pinv(F[t, :, :])
         # Update step
         v[t, :] = y[t, :] - l.H * x[t, :]
         x[t, :] = x[t, :] + K[t, :, :] * v[t, :]
         q[t, :, :] = q[t, :, :] - K[t, :, :] * l.H * q[t, :, :]
+        # check that F is positive definite
+        ll += loglikelihood(l, x[t, :], y[t, :], F[t, :, :])
     end
-    # Compute the log-likelihood
-    residuals = y - (x * l.H')
-    ll = loglikelihood(residuals, F, T, D)
     return x, q, v, F, K, ll
 end
 
@@ -97,18 +98,18 @@ function KalmanSmoother(l::LDS, y::AbstractArray)
         xs[t-1, :] = x[t-1, :] + J * (xs[t, :] - l.A * x[t-1, :])
         qs[t-1, :, :] = q[t-1, :, :] + J * (qs[t, :, :] - q[t, :, :]) * J'
         # Update time covariance
-        time_cov[t-1, :, :] = q[t, :, :] * J' + J_t * (time_cov[t, :, :] - l.A * q[t, :, :]) * J'
+        time_cov[t-1, :, :] = (q[t, :, :] * J') + (J_t * (time_cov[t+1, :, :] - l.A * q[t, :, :]) * J')
         # Save previous smoother gain
         J_t = J
     end
-    return xs, qs, time_cov
+    return xs, qs, time_cov, ll
 end
 
 function EStep(l::LDS, y::AbstractArray)
     # get length
     T = size(y, 1)
     # Run Kalman Smoother
-    xs, qs, time_cov = KalmanSmoother(l, y)
+    xs, qs, time_cov, ll = KalmanSmoother(l, y)
     # define sufficient statistics
     δ = zeros(size(y[1,:], 1), size(xs[1,:], 1))
     γ = zeros(size(xs[1,:], 1), size(xs[1,:], 1))
@@ -123,9 +124,9 @@ function EStep(l::LDS, y::AbstractArray)
         end
     end
     # calculate γ₁ and γ₂
-    γ₁ = γ - xs[T, :] * xs[T,:]' - qs[T, :, :]
-    γ₂ = γ - xs[1, :] * xs[1,:]' - qs[1, :, :]
-    return xs, qs, δ, γ, γ₁, γ₂, β
+    γ₁ = γ - (xs[T, :] * xs[T,:]') - qs[T, :, :]
+    γ₂ = γ - (xs[1, :] * xs[1,:]') - qs[1, :, :]
+    return xs, qs, δ, γ, γ₁, γ₂, β, ll
 end
 
 function MStep!(l::LDS, y::AbstractArray, xs::AbstractArray, qs::AbstractArray, δ::AbstractArray, γ::AbstractArray, γ₁::AbstractArray, γ₂::AbstractArray, β::AbstractArray)
@@ -145,10 +146,16 @@ function MStep!(l::LDS, y::AbstractArray, xs::AbstractArray, qs::AbstractArray, 
     # update Q
     if l.fit_bool[4]
         l.Q = (γ₂ - (l.A * β')) / (T-1)
+        if !ishermitian(l.Q)
+            l.Q = (l.Q + l.Q') / 2
+        end
     end
     # update R
     if l.fit_bool[5]
         l.R = (α - (l.H * δ')) / T
+        if !ishermitian(l.R)
+            l.R = (l.R + l.R') / 2
+        end
     end
 
     # update x0
@@ -169,11 +176,10 @@ function KalmanFilterEM!(l::LDS, y::AbstractArray, max_iter::Int=100, tol::Float
     # Run EM
     for i in 1:max_iter
         # E-step
-        xs, qs, δ, γ, γ₁, γ₂, β = EStep(l, y)
+        xs, qs, δ, γ, γ₁, γ₂, β, ll = EStep(l, y)
         # M-step
         MStep!(l, y, xs, qs, δ, γ, γ₁, γ₂, β)
         # Calculate log-likelihood
-        ll = loglikelihood(l, y)
         println("Log-likelihood at iteration $i: ", ll)
         # Check convergence
         if abs(ll - prev_ll) < tol
@@ -241,6 +247,17 @@ function loglikelihood(l::LDS, y::AbstractArray)
     # calculate the loglikelihood
     ll = loglikelihood(residuals, F, T, D)
     return ll
+end
+
+function loglikelihood(l::LDS, x::AbstractArray, y::AbstractArray, S::AbstractArray)
+    # check if S is symmetric
+    if !ishermitian(S)
+        S = (S + S') / 2
+    end
+    if !isposdef(S)
+        println(S)
+    end
+    return logpdf(MvNormal(l.H * x, S), y)
 end
 
 function loglikelihood(residuals::AbstractArray, F::AbstractArray, T::Int, D::Int)
