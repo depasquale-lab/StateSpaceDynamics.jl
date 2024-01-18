@@ -145,3 +145,20 @@ mutable struct PoissonMixtureModel <: MixtureModel
     class_labels::Vector{Int} # Class label for each point based on the class probabilities
 end
 
+"""
+Binomial Mixture Model.
+
+Args:
+    k: number of clusters
+    data: data matrix of size (N, D) where N is the number of data points and D is the dimension of the data.
+"""
+
+mutable struct BinomialMixtureModel <: MixtureModel
+    k::Int # Number of clusters
+    pₖ::Vector{Float64} # Means of each cluster
+    πₖ::Vector{Float64} # Mixing coefficients
+    class_probabilities::Matrix{Float64} # Probability of each class for each point
+    class_labels::Vector{Int} # Class label for each point based on the class probabilities
+end
+
+

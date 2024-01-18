@@ -13,7 +13,7 @@ mutable struct LDS <: DynamicalSystem
     Q::Union{AbstractArray, Nothing}  # Qrocess Noise Covariance
     R::Union{AbstractArray, Nothing}  # Observation Noise Covariance
     x0::Union{AbstractArray, Nothing} # Initial State
-    q0::Union{AbstractArray, Nothing} # Initial Covariance
+    p0::Union{AbstractArray, Nothing} # Initial Covariance
     inputs::Union{AbstractArray, Nothing} # Inputs
     obs_dim::Int # Observation Dimension
     latent_dim::Int # Latent Dimension
@@ -27,8 +27,8 @@ function LDS()
 end
 
 # Flexible constructor that handles all three cases
-function LDS(; A=nothing, H=nothing, B=nothing, Q=nothing, R=nothing, x0=nothing, q0=nothing, inputs=nothing, obs_dim=1, latent_dim=1, emissions="Gaussian", fit_bool=fill(true, 7))
-    lds = LDS(A, H, B, Q, R, x0, q0, inputs, obs_dim, latent_dim, emissions, fit_bool)
+function LDS(; A=nothing, H=nothing, B=nothing, Q=nothing, R=nothing, x0=nothing, p0=nothing, inputs=nothing, obs_dim=1, latent_dim=1, emissions="Gaussian", fit_bool=fill(true, 7))
+    lds = LDS(A, H, B, Q, R, x0, p0, inputs, obs_dim, latent_dim, emissions, fit_bool)
     initialize_missing_parameters!(lds)
     return lds
 end
@@ -40,128 +40,200 @@ function initialize_missing_parameters!(lds::LDS)
     lds.Q = lds.Q === nothing ? I(lds.latent_dim) : lds.Q
     lds.R = lds.R === nothing ? I(lds.obs_dim) : lds.R
     lds.x0 = lds.x0 === nothing ? rand(lds.latent_dim) : lds.x0
-    lds.q0 = lds.q0 === nothing ? rand(lds.latent_dim, lds.latent_dim) : lds.q0
+    lds.p0 = lds.p0 === nothing ? rand(lds.latent_dim, lds.latent_dim) : lds.p0
     if lds.inputs !== nothing
         lds.B = lds.B === nothing ? rand(lds.latent_dim, size(lds.inputs, 2)) : lds.B
     end
 end
 
+"""
+Initiliazes the parameters of the LDS model using PCA.
+
+Args:
+    l: LDS struct
+    y: Matrix of observations
+"""
+function pca_init!(l::LDS, y::AbstractArray)
+    # get number of observations
+    T = size(y, 1)
+    # get number of latent dimensions
+    K = l.latent_dim
+    # get number of observation dimensions
+    D = l.obs_dim
+    # init a pca model
+    ppca = PPCA(y, k)
+    # run EM
+    fit!(ppca, y)
+    # set the parameters
+    l.C = ppca.W
+    # set the initial state by projecting the first observation onto the latent space
+    l.x0 = ppca.z[1, :]
+end
+
 function KalmanFilter(l::LDS, y::AbstractArray)
     # First pre-allocate the matrices we will need
     T, D = size(y)
-    x = zeros(T, l.latent_dim)
-    q = zeros(T, l.latent_dim, l.latent_dim)
+    x_pred = zeros(T, l.latent_dim)
+    p_pred = zeros(T, l.latent_dim, l.latent_dim)
+    x_filt = zeros(T, l.latent_dim)
+    p_filt = zeros(T, l.latent_dim, l.latent_dim)
     v = zeros(T, l.latent_dim)
     F = zeros(T, l.latent_dim, l.latent_dim)
     K = zeros(T, l.latent_dim, l.latent_dim)
     # Initialize the first state
-    x[1, :] = l.x0
-    q[1, :, :] = l.q0
+    x_pred[1, :] = l.x0
+    p_pred[1, :, :] = l.p0
+    x_filt[1, :] = l.x0
+    p_filt[1, :, :] = l.p0
     # Now perform the Kalman Filter
     for t in 2:T
         # Prediction step
-        x[t, :] = l.A * x[t-1, :]
-        q[t, :, :] = l.A * q[t-1, :, :] * l.A' + l.Q
+        x_pred[t, :] = l.A * x_filt[t-1, :]
+        p_pred[t, :, :] = l.A * p_filt[t-1, :, :] * l.A' + l.Q
         # Compute the Kalman gain
-        F[t, :, :] = l.H * q[t, :, :] * l.H' + l.R
-        K[t, :, :] = (q[t, :, :] * l.H') * pinv(F[t, :, :] + 1e-9 * I(D))
+        F[t, :, :] = l.H * p_pred[t, :, :] * l.H' + l.R
+        K[t, :, :] = (p_pred[t, :, :] * l.H') * pinv(F[t, :, :])
         # Update step
-        v[t, :] = y[t, :] - l.H * x[t, :]
-        x[t, :] = x[t, :] + K[t, :, :] * v[t, :]
-        q[t, :, :] = q[t, :, :] - K[t, :, :] * l.H * q[t, :, :]
+        v[t, :] = y[t, :] - l.H * x_pred[t, :]
+        x_filt[t, :] = x_pred[t, :] + K[t, :, :] * v[t, :]
+        p_filt[t, :, :] = p_pred[t, :, :] - K[t, :, :] * l.H * p_pred[t, :, :]
     end
     # Compute the log-likelihood
-    residuals = y - (x * l.H')
+    residuals = y - (x_filt * l.H')
     ll = loglikelihood(residuals, F, T, D)
-    return x, q, v, F, K, ll
+    return x_filt, p_filt, x_pred, p_pred, v, F, K, ll
 end
-
 
 function KalmanSmoother(l::LDS, y::AbstractArray)
     # Forward pass (Kalman Filter)
-    x, q, v, F, K, ll = KalmanFilter(l, y)
+    x_filt, p_filt, x_pred, p_pred, v, F, K, ll = KalmanFilter(l, y)
     # Pre-allocate smoother arrays
-    xs = zeros(size(x))  # Smoothed state estimates
-    qs = zeros(size(q))  # Smoothed state covariances
+    x_smooth = zeros(size(x_filt))  # Smoothed state estimates
+    p_smooth = zeros(size(p_filt))  # Smoothed state covariances
+    J = ones(size(p_filt))  # Smoother gain
     T = size(y, 1)
-    time_cov = zeros(size(q))
     # Backward pass
-    xs[T, :] = x[T, :]
-    qs[T, :, :] = q[T, :, :]
-    time_cov[T, :, :] = (I(l.latent_dim) - K[T, :, :] * l.H') * l.A * q[T-1, :, :]
-    J_t = 0
+    x_smooth[T, :] = x_filt[T, :]
+    p_smooth[T, :, :] = p_filt[T, :, :]
     for t in T:-1:2
         # Compute the smoother gain
-        J = q[t-1, :, :] * l.A' * pinv(q[t, :, :])
+        J[t-1, :, :] = p_filt[t-1, :, :] * l.A' / p_pred[t, :, :]
         # Update smoothed estimates
-        xs[t-1, :] = x[t-1, :] + J * (xs[t, :] - l.A * x[t-1, :])
-        qs[t-1, :, :] = q[t-1, :, :] + J * (qs[t, :, :] - q[t, :, :]) * J'
-        # Update time covariance
-        time_cov[t-1, :, :] = q[t, :, :] * J' + J_t * (time_cov[t, :, :] - l.A * q[t, :, :]) * J'
-        # Save previous smoother gain
-        J_t = J
+        x_smooth[t-1, :] = x_filt[t-1, :] + J[t-1, :, :] * (x_smooth[t, :] - l.A * x_filt[t-1, :])
+        p_smooth[t-1, :, :] = p_filt[t-1, :, :] + J[t-1, :, :] * (p_smooth[t, :, :] - p_filt[t, :, :]) * J[t-1, :, :]'
     end
-    return xs, qs, time_cov
+    return x_smooth, p_smooth, J
 end
 
-function EStep(l::LDS, y::AbstractArray)
-    # get length
-    T = size(y, 1)
-    # Run Kalman Smoother
-    xs, qs, time_cov = KalmanSmoother(l, y)
-    # define sufficient statistics
-    δ = zeros(size(y[1,:], 1), size(xs[1,:], 1))
-    γ = zeros(size(xs[1,:], 1), size(xs[1,:], 1))
-    β = zeros(size(xs[1,:], 1), size(xs[1,:], 1))
-    # E-step
+"""
+Computes the sufficient statistics for the E-step of the EM algorithm. This implementation uses the definitions from
+Pattern Recognition and Machine Learning by Christopher Bishop (pg. 642).
+
+This function computes the following statistics:
+    E[zₙ] = ̂xₙ
+    E[zₙzₙᵀ] = ̂xₙ̂xₙᵀ + ̂pₙ
+    E[zₙzₙ₋₁ᵀ] = Jₙ₋₁̂pₙ + ̂xₙ̂xₙ₋₁ᵀ
+
+Args:
+    J: Smoother gain
+    V: Smoothed state covariances
+    μ: Smoothed state estimates
+"""
+function sufficient_statistics(J::AbstractArray, V::AbstractArray, μ::AbstractArray)
+    T = size(μ, 1)
+    # Initialize sufficient statistics
+    E_z = zeros(T, size(μ, 2))
+    E_zz = zeros(T, size(μ, 2), size(μ, 2))
+    E_zz_prev = zeros(T, size(μ, 2), size(μ, 2))
+    # Compute sufficient statistics
     for t in 1:T
-        # compute sufficient statistics
-        δ += y[t, :] * xs[t, :]'
-        γ += xs[t, :] * xs[t, :]' + qs[t, :, :]
+        E_z[t, :] = μ[t, :]
+        E_zz[t, :, :] = μ[t, :] * μ[t, :]' + V[t, :, :]
         if t > 1
-            β += xs[t, :] * xs[t-1, :]' + time_cov[t, :, :]
+            E_zz_prev[t, :, :] = J[t-1, :, :] * V[t, :, :] + μ[t, :] * μ[t-1, :]'
         end
     end
-    # calculate γ₁ and γ₂
-    γ₁ = γ - xs[T, :] * xs[T,:]' - qs[T, :, :]
-    γ₂ = γ - xs[1, :] * xs[1,:]' - qs[1, :, :]
-    return xs, qs, δ, γ, γ₁, γ₂, β
+    return E_z, E_zz, E_zz_prev
+end 
+
+function EStep(l::LDS, y::AbstractArray)
+    # run the kalman smoother
+    xs, ps, J = KalmanSmoother(l, y)
+    # compute the sufficient statistics
+    E_z, E_zz, E_zz_prev = sufficient_statistics(J, ps, xs)
+    return xs, ps, E_z, E_zz, E_zz_prev
 end
 
-function MStep!(l::LDS, y::AbstractArray, xs::AbstractArray, qs::AbstractArray, δ::AbstractArray, γ::AbstractArray, γ₁::AbstractArray, γ₂::AbstractArray, β::AbstractArray)
-    # get length
-    T = size(y, 1)
-    # calculate alpha
-    α = y' * y
-
-    # update A
+function update_state_mean!(l::LDS, E_z::AbstractArray)
+    # update the state mean
     if l.fit_bool[1]
-        l.A = β * pinv(γ₁)
-    end
-    # update H
-    if l.fit_bool[2]
-        l.H = δ * pinv(γ)
-    end
-    # update Q
-    if l.fit_bool[4]
-        l.Q = (γ₂ - (l.A * β')) / (T-1)
-    end
-    # update R
-    if l.fit_bool[5]
-        l.R = (α - (l.H * δ')) / T
-    end
-
-    # update x0
-    if l.fit_bool[6]
-        l.x0 = xs[1, :]
-    end
-
-    # update q0
-    if l.fit_bool[7]
-        l.q0 = qs[1, :, :]
+        l.x0 = E_z[1, :]
     end
 end
 
+function update_state_covariance!(l::LDS, E_z::AbstractArray, E_zz::AbstractArray)
+    # update the state covariance
+    if l.fit_bool[2]
+        l.p0 = E_zz[1, :, :] - E_z[1, :] * E_z[1, :]'
+    end
+end
+
+function update_transition_matrix!(l::LDS, E_zz::AbstractArray, E_zz_prev::AbstractArray)
+    # update the transition matrix
+    if l.fit_bool[3]
+        l.A = sum(E_zz_prev[2:end, :, :], dims=1) * pinv(sum(E_zz[1:end-1, :, :], dims=1))
+    end
+end
+
+function update_Q!(l::LDS, E_zz::AbstractArray, E_zz_prev::AbstractArray)
+    # get length
+    T = size(E_zz, 1)
+    # update the process noise covariance
+    if l.fit_bool[4]
+        running_sum = zeros(l.latent_dim, l.latent_dim)
+        for t in 2:T
+            running_sum += E_zz[t, :, :] - (l.A * E_zz_prev[t, :, :]) - (E_zz_prev[t, :, :] * l.A') + (l.A * E_zz_prev[t-1, :, :] * l.A')
+        end 
+        l.Q = (1/(T-1)) * running_sum
+    end
+end
+
+# need to fix this so it is X_n*E_z
+function update_H!(l::LDS, E_z::AbstractArray, E_zz::AbstractArray, y_n::AbstractArray)
+    # get length
+    T = size(E_z, 1)
+    # update the observation matrix
+    if l.fit_bool[5]
+        running_sum = zeros(l.obs_dim, l.latent_dim)
+        for t in 1:T
+            running_sum += (y_n[t, :] * E_z[t, :]') * pinv(E_zz[t, :, :])
+        end 
+        l.H = running_sum
+    end
+end
+
+function update_R!(l::LDS, E_z::AbstractArray, E_zz::AbstractArray, y_n::AbstractArray)
+    # get length
+    T = size(E_z, 1)
+    # update the observation noise covariance
+    if l.fit_bool[6]
+        running_sum = zeros(l.obs_dim, l.obs_dim)
+        for t in 1:T
+            running_sum += (y_n[t, :] * y_n[t, :]') - (l.H * E_z[t, :] * y_n[t, :]') - (y_n[t, :] * E_z[t, :]' * l.H) + (l.H' * E_zz[t, :, :] * l.H)
+        end
+        l.R = (1/T) * running_sum
+    end
+end
+
+function MStep!(l::LDS, E_z, E_zz, E_zz_prev, y_n)
+    # update the parameters
+    update_state_mean!(l, E_z)
+    update_state_covariance!(l, E_z, E_zz)
+    update_transition_matrix!(l, E_zz, E_zz_prev)
+    update_Q!(l, E_zz, E_zz_prev)
+    update_H!(l, E_z, E_zz, y_n)
+    update_R!(l, E_z, E_zz, y_n)
+end
 
 function KalmanFilterEM!(l::LDS, y::AbstractArray, max_iter::Int=100, tol::Float64=1e-6)
     # Initialize log-likelihood
@@ -169,9 +241,9 @@ function KalmanFilterEM!(l::LDS, y::AbstractArray, max_iter::Int=100, tol::Float
     # Run EM
     for i in 1:max_iter
         # E-step
-        xs, qs, δ, γ, γ₁, γ₂, β = EStep(l, y)
+        xs, ps, E_z, E_zz, E_zz_prev = EStep(l, y)
         # M-step
-        MStep!(l, y, xs, qs, δ, γ, γ₁, γ₂, β)
+        MStep!(l, E_z, E_zz, E_zz_prev, xs)
         # Calculate log-likelihood
         ll = loglikelihood(l, y)
         println("Log-likelihood at iteration $i: ", ll)
@@ -224,6 +296,7 @@ end
 
 """
 Computes the loglikelihood of the LDS model given a a set of observations.
+#TODO: There is an error in thus function.
 
 Args:
     l: LDS struct
@@ -272,13 +345,13 @@ Compute p(X|Y) for a given LDS model and a set of observations.
 """
 function loglikelihood_X(X::AbstractArray, l::LDS, y::AbstractArray)
     T = size(y, 1)
-    # p(q₁)
-    ll = -0.5 * (X[1, :])' * pinv(l.q0) * X[1, :]
-    # p(qₜ|qₜ₋₁)
+    # p(p₁)
+    ll = -0.5 * (X[1, :] - l.x0)' * pinv(l.p0) * (X[1, :] - l.x0)
+    # p(pₜ|pₜ₋₁)
     for t in 2:T
         ll += (X[t, :]-l.A*X[t-1, :])' * pinv(l.Q) * (X[t, :]-l.A*X[t-1, :])
     end
-    # p(yₜ|qₜ)
+    # p(yₜ|pₜ)
     for t in 1:T
         ll += (y[t, :]-l.H*X[t, :])' * pinv(l.R) * (y[t, :]-l.H*X[t, :])
     end
@@ -327,12 +400,12 @@ Returns:
 """
 function params_to_vector(l::LDS)
     # Unpack parameters
-    @unpack A, H, B, Q, R, x0, q0, inputs, fit_bool = l
+    @unpack A, H, B, Q, R, x0, p0, inputs, fit_bool = l
     # Initialize parameter vector and index vector
     params = Vector{Float64}()
     params_idx = Vector{Symbol}()
     # List of fields and their corresponding symbols
-    fields = [:A, :H, :B, :Q, :R, :x0, :q0]
+    fields = [:A, :H, :B, :Q, :R, :x0, :p0]
     # Iterate over each field
     for (i, field) in enumerate(fields)
         if fit_bool[i]
@@ -388,7 +461,7 @@ Args:
     d: Mean Firing Rate Vector
     sₖₜ: Spike History Vector
     x₀: Initial State
-    q₀: Initial Covariance 
+    p₀: Initial Covariance 
 """
 
 mutable struct PLDS <: DynamicalSystem
@@ -399,7 +472,7 @@ mutable struct PLDS <: DynamicalSystem
     d::Union{AbstractArray, Nothing}  # Mean Firing Rate Vector
     sₖₜ::Union{AbstractArray, Nothing}  # Spike History Vector
     x₀::Union{AbstractArray, Nothing} # Initial State
-    q₀::Union{AbstractArray, Nothing} # Initial Covariance
+    p₀::Union{AbstractArray, Nothing} # Initial Covariance
     bₜ::Union{AbstractArray, Nothing} # Inputs
     obs_dim::Int # Observation Dimension
     latent_dim::Int # Latent Dimension
@@ -412,8 +485,8 @@ function PLDS()
 end
 
 # Flexible constructor that handles all three cases
-function PLDS(; A=nothing, C=nothing, Q=nothing, D=nothing, d=nothing, sₖₜ=nothing, x₀=nothing, q₀=nothing, inputs=nothing, obs_dim=1, latent_dim=1, fit_bool=fill(true, 8))
-    plds = PLDS(A, C, Q, D, d, sₖₜ, x₀, q₀, inputs, obs_dim, latent_dim, fit_bool)
+function PLDS(; A=nothing, C=nothing, Q=nothing, D=nothing, d=nothing, sₖₜ=nothing, x₀=nothing, p₀=nothing, inputs=nothing, obs_dim=1, latent_dim=1, fit_bool=fill(true, 8))
+    plds = PLDS(A, C, Q, D, d, sₖₜ, x₀, p₀, inputs, obs_dim, latent_dim, fit_bool)
     initialize_missing_parameters!(plds)
     return plds
 end
@@ -421,7 +494,7 @@ end
 function filter(plds::PLDS, observations::Matrix{Int})
     T = size(observations, 1)
     x = zeros(T, plds.latent_dim)
-    q = zeros(T, plds.latent_dim, plds.latent_dim)
+    p = zeros(T, plds.latent_dim, plds.latent_dim)
     #TODO: Finish later.
 end
 

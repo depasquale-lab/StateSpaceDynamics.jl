@@ -61,8 +61,8 @@ begin
 	yrange = range(ymin, stop=ymax, length=100)
 
 	# Plot each Gaussian in the GMM
-	for k in 1:gmm.k_means
-    	Z = [evaluate_mvg(x, y, gmm.μ_k[:, k], gmm.Σ_k[k]) for x in xrange, y in 			yrange]
+	for k in 1:gmm.k
+    	Z = [evaluate_mvg(x, y, gmm.μₖ[:, k], gmm.Σₖ[k]) for x in xrange, y in 			yrange]
     	contour!(xrange, yrange, Z', levels=10, linewidth=2, label="Gaussian $k")
 	end
 
