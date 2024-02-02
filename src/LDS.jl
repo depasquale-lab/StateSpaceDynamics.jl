@@ -2,7 +2,7 @@
 """Linear Dynamical Systems Models e.g. the Kalman Filter, (recurrent) Switching Linear Dynamical Systems, etc."""
 
 # export statement
-export LDS, KalmanFilter, KalmanSmoother, loglikelihood, KalmanFilterOptim!
+export LDS, KalmanFilter, KalmanSmoother, loglikelihood
 
 
 """Linear Dynamical System (LDS) Definition"""
@@ -61,11 +61,11 @@ function pca_init!(l::LDS, y::AbstractArray)
     # get number of observation dimensions
     D = l.obs_dim
     # init a pca model
-    ppca = PPCA(y, k)
+    ppca = PPCA(y, K)
     # run EM
     fit!(ppca, y)
     # set the parameters
-    l.C = ppca.W
+    l.H = ppca.W
     # set the initial state by projecting the first observation onto the latent space
     l.x0 = ppca.z[1, :]
 end
@@ -92,11 +92,11 @@ function KalmanFilter(l::LDS, y::AbstractArray)
         p_pred[t, :, :] = l.A * p_filt[t-1, :, :] * l.A' + l.Q
         # Compute the Kalman gain
         F[t, :, :] = l.H * p_pred[t, :, :] * l.H' + l.R
-        K[t, :, :] = (p_pred[t, :, :] * l.H') * pinv(F[t, :, :])
+        K[t, :, :] = p_pred[t, :, :] * l.H' * pinv(F[t, :, :])
         # Update step
-        v[t, :] = y[t, :] - l.H * x_pred[t, :]
+        v[t, :] = y[t, :] - (l.H * x_pred[t, :])
         x_filt[t, :] = x_pred[t, :] + K[t, :, :] * v[t, :]
-        p_filt[t, :, :] = p_pred[t, :, :] - K[t, :, :] * l.H * p_pred[t, :, :]
+        p_filt[t, :, :] = p_pred[t, :, :] - (K[t, :, :] * l.H * p_pred[t, :, :])
     end
     # Compute the log-likelihood
     residuals = y - (x_filt * l.H')
@@ -113,14 +113,14 @@ function KalmanSmoother(l::LDS, y::AbstractArray)
     J = ones(size(p_filt))  # Smoother gain
     T = size(y, 1)
     # Backward pass
-    x_smooth[T, :] = x_filt[T, :]
-    p_smooth[T, :, :] = p_filt[T, :, :]
+    x_smooth[end, :] = x_filt[T, :]
+    p_smooth[end, :, :] = p_filt[T, :, :]
     for t in T:-1:2
         # Compute the smoother gain
-        J[t-1, :, :] = p_filt[t-1, :, :] * l.A' / p_pred[t, :, :]
+        J[t-1, :, :] = p_filt[t-1, :, :] * l.A' * pinv(p_pred[t, :, :])
         # Update smoothed estimates
         x_smooth[t-1, :] = x_filt[t-1, :] + J[t-1, :, :] * (x_smooth[t, :] - l.A * x_filt[t-1, :])
-        p_smooth[t-1, :, :] = p_filt[t-1, :, :] + J[t-1, :, :] * (p_smooth[t, :, :] - p_filt[t, :, :]) * J[t-1, :, :]'
+        p_smooth[t-1, :, :] = p_filt[t-1, :, :] + J[t-1, :, :] * (p_smooth[t, :, :] - p_pred[t, :, :]) * J[t-1, :, :]'
     end
     return x_smooth, p_smooth, J
 end
@@ -148,9 +148,9 @@ function sufficient_statistics(J::AbstractArray, V::AbstractArray, μ::AbstractA
     # Compute sufficient statistics
     for t in 1:T
         E_z[t, :] = μ[t, :]
-        E_zz[t, :, :] = μ[t, :] * μ[t, :]' + V[t, :, :]
+        E_zz[t, :, :] = V[t, :, :] + (μ[t, :] * μ[t, :]')
         if t > 1
-            E_zz_prev[t, :, :] = J[t-1, :, :] * V[t, :, :] + μ[t, :] * μ[t-1, :]'
+            E_zz_prev[t, :, :] =  V[t, :, :] * J[t-1, :, :]' + μ[t, :] * μ[t-1, :]'
         end
     end
     return E_z, E_zz, E_zz_prev
@@ -158,78 +158,71 @@ end
 
 function EStep(l::LDS, y::AbstractArray)
     # run the kalman smoother
-    xs, ps, J = KalmanSmoother(l, y)
+    x_smooth, p_smooth, J = KalmanSmoother(l, y)
     # compute the sufficient statistics
-    E_z, E_zz, E_zz_prev = sufficient_statistics(J, ps, xs)
-    return xs, ps, E_z, E_zz, E_zz_prev
+    E_z, E_zz, E_zz_prev = sufficient_statistics(J, p_smooth, x_smooth)
+    return x_smooth, p_smooth, E_z, E_zz, E_zz_prev
 end
 
-function update_state_mean!(l::LDS, E_z::AbstractArray)
+function update_initial_state_mean!(l::LDS, E_z::AbstractArray)
     # update the state mean
     if l.fit_bool[1]
         l.x0 = E_z[1, :]
     end
 end
 
-function update_state_covariance!(l::LDS, E_z::AbstractArray, E_zz::AbstractArray)
+function update_initial_state_covariance!(l::LDS, E_z::AbstractArray, E_zz::AbstractArray)
     # update the state covariance
     if l.fit_bool[2]
-        l.p0 = E_zz[1, :, :] - E_z[1, :] * E_z[1, :]'
+        l.p0 = E_zz[1, :, :] - (E_z[1, :] * E_z[1, :]') 
     end
 end
 
-function update_transition_matrix!(l::LDS, E_zz::AbstractArray, E_zz_prev::AbstractArray)
+function update_A!(l::LDS, E_zz::AbstractArray, E_zz_prev::AbstractArray)
     # update the transition matrix
     if l.fit_bool[3]
-        l.A = sum(E_zz_prev[2:end, :, :], dims=1) * pinv(sum(E_zz[1:end-1, :, :], dims=1))
+        l.A = dropdims(sum(E_zz_prev[2:end, :, :], dims=1), dims=1) * pinv(dropdims(sum(E_zz[1:end-1, :, :], dims=1), dims=1))
     end
 end
 
 function update_Q!(l::LDS, E_zz::AbstractArray, E_zz_prev::AbstractArray)
-    # get length
-    T = size(E_zz, 1)
-    # update the process noise covariance
     if l.fit_bool[4]
+        # get length
+        T = size(E_zz, 1)
+        # update the process noise covariance
         running_sum = zeros(l.latent_dim, l.latent_dim)
         for t in 2:T
-            running_sum += E_zz[t, :, :] - (l.A * E_zz_prev[t, :, :]) - (E_zz_prev[t, :, :] * l.A') + (l.A * E_zz_prev[t-1, :, :] * l.A')
+            running_sum += E_zz[t, :, :] - (l.A * E_zz_prev[t, :, :]') - (E_zz_prev[t, :, :] * l.A') + (l.A * E_zz[t-1, :, :] * l.A')
         end 
-        l.Q = (1/(T-1)) * running_sum
+        l.Q = running_sum / (T - 1)
     end
 end
 
-# need to fix this so it is X_n*E_z
-function update_H!(l::LDS, E_z::AbstractArray, E_zz::AbstractArray, y_n::AbstractArray)
-    # get length
-    T = size(E_z, 1)
+function update_H!(l::LDS, E_z::AbstractArray, E_zz::AbstractArray, y::AbstractArray)
     # update the observation matrix
     if l.fit_bool[5]
-        running_sum = zeros(l.obs_dim, l.latent_dim)
-        for t in 1:T
-            running_sum += (y_n[t, :] * E_z[t, :]') * pinv(E_zz[t, :, :])
-        end 
-        l.H = running_sum
+        T = size(E_z, 1)
+        sum_1 = sum(y[t, :] * E_z[t, :]' for t in 1:T)
+        sum_2 = sum(E_zz[t, :, :] for t in 1:T)
+        l.H = sum_1 * pinv(sum_2)
     end
 end
 
-function update_R!(l::LDS, E_z::AbstractArray, E_zz::AbstractArray, y_n::AbstractArray)
-    # get length
+function update_R!(l::LDS, E_z::AbstractArray, E_zz::AbstractArray, y::AbstractArray)
     T = size(E_z, 1)
-    # update the observation noise covariance
-    if l.fit_bool[6]
-        running_sum = zeros(l.obs_dim, l.obs_dim)
-        for t in 1:T
-            running_sum += (y_n[t, :] * y_n[t, :]') - (l.H * E_z[t, :] * y_n[t, :]') - (y_n[t, :] * E_z[t, :]' * l.H) + (l.H' * E_zz[t, :, :] * l.H)
-        end
-        l.R = (1/T) * running_sum
+    n_dim_obs = size(y, 2)
+    res = zeros(n_dim_obs, n_dim_obs)
+    for t in 1:T
+        res += y[t, :] * y[t, :]' - l.H' * E_z[t, :] * y[t, :]' - y[t, :] * E_z[t, :]' * l.H + l.H' * E_zz[t, :, :] * l.H
     end
+    l.R = res / T
 end
 
 function MStep!(l::LDS, E_z, E_zz, E_zz_prev, y_n)
     # update the parameters
-    update_state_mean!(l, E_z)
-    update_state_covariance!(l, E_z, E_zz)
-    update_transition_matrix!(l, E_zz, E_zz_prev)
+    update_initial_state_mean!(l, E_z)
+    update_initial_state_covariance!(l, E_z, E_zz)
+    update_A!(l, E_zz, E_zz_prev)
     update_Q!(l, E_zz, E_zz_prev)
     update_H!(l, E_z, E_zz, y_n)
     update_R!(l, E_z, E_zz, y_n)
@@ -243,7 +236,7 @@ function KalmanFilterEM!(l::LDS, y::AbstractArray, max_iter::Int=100, tol::Float
         # E-step
         xs, ps, E_z, E_zz, E_zz_prev = EStep(l, y)
         # M-step
-        MStep!(l, E_z, E_zz, E_zz_prev, xs)
+        MStep!(l, E_z, E_zz, E_zz_prev, y)
         # Calculate log-likelihood
         ll = loglikelihood(l, y)
         println("Log-likelihood at iteration $i: ", ll)
@@ -256,16 +249,73 @@ function KalmanFilterEM!(l::LDS, y::AbstractArray, max_iter::Int=100, tol::Float
     return l, prev_ll
 end
 
+"""
+Constructs the Hessian matrix of the loglikelihood of the LDS model given a set of observations. This is used for the direct optimization of the loglikelihood
+as advocated by Paninski et al. (2009). The block tridiagonal structure of the Hessian is exploited to reduce the number of parameters that need to be computed, and
+to reduce the memory requirements. Together with the gradient, this allows for Kalman Smoothing to be performed by simply solving a linear system of equations:
 
-function KalmanFilterOptim!(l::LDS, y::AbstractArray)
-    # create parameter vector and index vector
-    params, param_idx = params_to_vector(l)
-    # define objective function
-    nll(params) = -loglikelihood(params, param_idx, l, y)
-    result = optimize(nll, params, BFGS(), Optim.Options(iterations=1000), autodiff=:forward)
-    optimal_params = result.minimizer
-    # update parameters
-    return optimal_params
+    ̂xₙ = H \\ ∇
+
+where ̂xₙ is the smoothed state estimate, H is the Hessian matrix, and ∇ is the gradient of the loglikelihood.
+
+Args:
+    l: LDS struct
+    y: Matrix of observations
+
+Returns:
+    H: Hessian matrix of the loglikelihood
+
+"""
+function Hessian(l::LDS, y::AbstractArray)
+    # get size of observation matrix
+    T, _ = size(y)
+    # calculate inv q and r so we can do it just once
+    inv_R = pinv(l.R)
+    inv_Q = pinv(l.Q)
+    inv_p0 = pinv(l.p0)
+    # calculate the super and sub diagonal entries of the Hessian
+    H_sub_entry = inv_Q * l.A
+    H_super_entry = Matrix(H_sub_entry')
+    # create the sub and super diagonal blocks
+    H_sub = [H_sub_entry for i in 1:T-1]
+    H_super = [H_super_entry for i in 1:T-1]
+    # calculate the diagonal entries of the Hessian
+    yt_given_xt = - l.H' * inv_R * l.H
+    xt_given_xt_1 = - inv_Q
+    xt1_given_xt = - l.A' * inv_Q * l.A
+    x_t = - inv_p0
+    # create the diagonal block
+    H_diag = [(yt_given_xt + xt_given_xt_1 + xt1_given_xt) for i in 1:T]
+    # fix the edge cases i.e. T = 1 and T = T
+    H_diag[1] = yt_given_xt + xt1_given_xt + x_t
+    H_diag[end] = yt_given_xt + xt_given_xt_1
+    return block_tridgm(H_diag, H_super, H_sub)
+end
+
+function Gradient(l::LDS, y::AbstractArray)
+    # get the size of the observation matrix
+    T, _ = size(y)
+    # get the predicted x's
+    x = zeros(T, l.latent_dim)
+    x[1, :] = l.x0
+    for t in 2:T
+        x[t, :] = l.A * x[t-1, :]
+    end
+    # calculate the inv of Q, R, and p0
+    inv_R = pinv(l.R)
+    inv_Q = pinv(l.Q)
+    inv_p0 = pinv(l.p0)
+    # calculate the gradient
+    grad = zeros(T, l.latent_dim)
+    # calculate the gradient for the first time step
+    grad[1, :] = (l.A' * inv_Q * (x[2, :] - l.A * x[1, :])) + (l.H' * inv_R * (y[1, :] - l.H * x[1, :])) - (inv_p0 * (x[1, :] - l.x0))
+    # calulate the gradient up until the last time step
+    for t in 2:T-1
+        grad[t, :] = (l.H' * inv_R * (y[t, :] - l.H * x[t, :])) - (inv_Q * (x[t, :] - l.A * x[t-1, :])) + (l.A * inv_Q * (x[t+1, :] - l.A * x[t, :]))
+    end
+    # calculate the gradient for the last time step
+    grad[T, :] = ( l.H' * inv_R * (y[T, :] - l.H * x[T, :])) - (inv_Q * (x[T, :] - l.A * x[T-1, :]))
+    return grad 
 end
 
 """
@@ -345,105 +395,24 @@ Compute p(X|Y) for a given LDS model and a set of observations.
 """
 function loglikelihood_X(X::AbstractArray, l::LDS, y::AbstractArray)
     T = size(y, 1)
+    # calculate inverses
+    inv_R = pinv(l.R)
+    inv_Q = pinv(l.Q)
+
     # p(p₁)
-    ll = -0.5 * (X[1, :] - l.x0)' * pinv(l.p0) * (X[1, :] - l.x0)
-    # p(pₜ|pₜ₋₁)
-    for t in 2:T
-        ll += (X[t, :]-l.A*X[t-1, :])' * pinv(l.Q) * (X[t, :]-l.A*X[t-1, :])
-    end
-    # p(yₜ|pₜ)
+    ll = (X[1, :] - l.x0)' * pinv(l.p0) * (X[1, :] - l.x0)
+
+    # p(pₜ|pₜ₋₁) and p(yₜ|pₜ)
     for t in 1:T
-        ll += (y[t, :]-l.H*X[t, :])' * pinv(l.R) * (y[t, :]-l.H*X[t, :])
-    end
-    return ll
-end
-
-"""
-Calculates the gradient of the loglikelihood of the LDS model given a a set of observations.
-"""
-function ∇ₗₗ(X::AbstractArray, l::LDS, y::AbstractArray)
-    grad = ForwardDiff.gradient(X -> loglikelihood_X(X, l, y), X)
-    return grad
-end
-
-"""
-Calculates the Hessian of the loglikelihood of the LDS model given a a set of observations.
-"""
-function ∇²ₗₗ(X::AbstractArray, l::LDS, y::AbstractArray)
-    hess = ForwardDiff.hessian(X -> loglikelihood_X(X, l, y), X)
-    return hess
-end
-
-"""
-Calculates the most likely set of observations "X" based on the LDS model and a set of observations "y". This is
-the Kalman Smoother. This matrix formulation is based on the paper "A new look at state-space models for neural data"
-DOI 10.1007/s10827-009-0179-x
-"""
-function matrix_Kalman_Smoother(l::LDS, y::AbstractArray)
-    # create an initial guess for the latent state "X"
-    X = randn(size(y, 1), l.latent_dim)
-    # Smooth
-    X̂ = ∇²ₗₗ(X, l, y) \ ∇ₗₗ(X, l, y)
-    return X̂
-end
-
-
-"""
-Converts the parameters in the LDS struct to a vector of parameters.
-
-Args:
-    l: LDS struct
-
-Returns:
-    params: Vector of parameters, compatible with ForwardDiff.Dual
-    param_idx: Vector of symbols corresponding to the fields in the LDS struct
-"""
-function params_to_vector(l::LDS)
-    # Unpack parameters
-    @unpack A, H, B, Q, R, x0, p0, inputs, fit_bool = l
-    # Initialize parameter vector and index vector
-    params = Vector{Float64}()
-    params_idx = Vector{Symbol}()
-    # List of fields and their corresponding symbols
-    fields = [:A, :H, :B, :Q, :R, :x0, :p0]
-    # Iterate over each field
-    for (i, field) in enumerate(fields)
-        if fit_bool[i]
-            # Special handling for 'B' when inputs are present
-            if field == :B && !isnothing(inputs)
-                params = vcat(params, vec(B))
-            else
-                params = vcat(params, vec(getfield(l, field)))
-            end
-            push!(params_idx, field)
+        if t > 1
+            # add p(pₜ|pₜ₋₁)
+            ll += (X[t, :]-l.A*X[t-1, :])' * inv_Q * (X[t, :]-l.A*X[t-1, :])
         end
+        # add p(yₜ|pₜ)
+        ll += (y[t, :]-l.H*X[t, :])' * inv_R * (y[t, :]-l.H*X[t, :])
     end
-    return params, params_idx
-end
-
-"""
-Converts a vector of parameters to the corresponding fields in the LDS struct.
-
-Args:
-    l: LDS struct
-    params: Vector of parameters, compatible with ForwardDiff.Dual
-    param_idx: Vector of symbols corresponding to the fields in the LDS struct
-"""
-function vector_to_params!(l::LDS, params::Vector{<:ForwardDiff.Dual}, param_idx::Vector{Symbol})
-    idx = 1
-    for p in param_idx
-        current_param = getfield(l, p)
-        param_size = length(current_param)
-        # Extract the parameter segment from 'params'
-        param_segment = params[idx:(idx + param_size - 1)]
-        # Convert Dual numbers to Float64 (extract the value part)
-        value_segment = map(x -> x.value, param_segment)
-        # Reshape and assign the segment back to the field in 'l'
-        reshaped_param = reshape(value_segment, size(current_param))
-        setfield!(l, p, reshaped_param)
-        # Update the index for the next parameter
-        idx += param_size
-    end
+    
+    return -0.5 * ll
 end
 
 """

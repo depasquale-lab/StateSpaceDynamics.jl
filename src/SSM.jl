@@ -9,6 +9,7 @@ using Optim
 using Plots
 using ProgressMeter
 using Random
+using SparseArrays
 using Statistics
 using StatsBase
 using UnPack

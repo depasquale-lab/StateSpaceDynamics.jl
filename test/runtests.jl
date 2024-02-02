@@ -371,22 +371,10 @@ function test_MStep()
     @test SSM.loglikelihood(kf, x_noisy') > ll
 end
 
-function test_KF_optim()
-    # create kf 
-    kf = LDS(;obs_dim=2, latent_dim=2, emissions="Gaussian", fit_bool=[true, true, false, true, true, true, true])
-    ll_pre = SSM.loglikelihood(kf, x_noisy')
-    # now optimize
-    KalmanFilterOptim!(kf, x_noisy')
-    ll_post = SSM.loglikelihood(kf, x_noisy')
-    # check if the likelihood has increased
-    @test ll_post ≥ ll_pre
-end
-
 @testset "LDS.jl Tests" begin
     test_LDS_with_params()
     test_LDS_without_params()
     test_Estep()
-    test_KF_optim()
 end
 
 """

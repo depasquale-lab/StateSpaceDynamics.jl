@@ -1,4 +1,4 @@
-export kmeanspp_initialization, kmeans_clustering, Autoregression, fit!, loglikelihood, ensure_positive_definite, PPCA, fit!
+export kmeanspp_initialization, kmeans_clustering, Autoregression, fit!, loglikelihood, ensure_positive_definite, PPCA, fit!, block_tridgm
 
 """Euclidean Distance for two points"""
 function euclidean_distance(a::AbstractVector{Float64}, b::AbstractVector{Float64})
@@ -81,6 +81,45 @@ function kmeans_clustering(data::Vector{Float64}, k_means::Int, max_iters::Int=1
     data = reshape(data, length(data), 1)
     return kmeans_clustering(data, k_means, max_iters, tol)
 end
+
+"""Convenience fucntion to construct a block tridiagonal amtrix from three vectors of matrices"""
+function block_tridgm(main_diag::Vector{Matrix{T}}, upper_diag::Vector{Matrix{T}}, lower_diag::Vector{Matrix{T}}) where T<:Real
+   # Check that the vectors have the correct lengths
+   if length(upper_diag) != length(main_diag) - 1 || length(lower_diag) != length(main_diag) - 1
+    error("The length of upper_diag and lower_diag must be one less than the length of main_diag")
+    end
+
+    # Determine the size of the blocks and the total matrix size
+    m = size(main_diag[1], 1) # Size of each block
+    n = length(main_diag) # Number of blocks
+    N = m * n # Total size of the matrix
+
+    # Initialize a sparse matrix
+    A = spzeros(N, N)
+
+    # Fill in the main diagonal blocks
+    for i in 1:n
+        row = (i - 1) * m + 1
+        col = row
+        A[row:row+m-1, col:col+m-1] = main_diag[i]
+    end
+
+    # Fill in the upper diagonal blocks
+    for i in 1:n-1
+        row = (i - 1) * m + 1
+        col = row + m
+        A[row:row+m-1, col:col+m-1] = upper_diag[i]
+    end
+
+    # Fill in the lower diagonal blocks
+    for i in 1:n-1
+        row = i * m + 1
+        col = (i - 1) * m + 1
+        A[row:row+m-1, col:col+m-1] = lower_diag[i]
+    end
+
+    return A
+end 
 
 
 """Probabilistic Principal Component Analysis"""
