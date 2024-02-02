@@ -1,15 +1,22 @@
 export  GMM, fit!, log_likelihood
 
 """
-GMM Class
+GMM
 
-Args:
-    k: number of clusters
-    μₖ: means of each cluster
-    Σₖ: covariance matrices of each cluster
-    πₖ: mixing coefficients
-    class_probabilities: probability of each class for each point
-    class_labels: class label for each point based on the class probabilities
+A Gaussian Mixture Model (GMM) for clustering and density estimation.
+
+## Fields
+- `k::Int`: Number of clusters.
+- `μₖ::Matrix{Float64}`: Means of each cluster (dimensions: data_dim x k).
+- `Σₖ::Array{Matrix{Float64}, 1}`: Covariance matrices of each cluster.
+- `πₖ::Vector{Float64}`: Mixing coefficients for each cluster.
+- `class_probabilities::Matrix{Float64}`: Probability of each class for each data point.
+- `class_labels::Vector{Int}`: Class label for each data point based on the highest probability.
+
+## Examples
+```julia
+gmm = GMM(3, 2, data) # 3 clusters, 2-dimensional data
+fit!(gmm, data)
 """
 mutable struct GMM <: MixtureModel
     k::Int # Number of clusters
@@ -19,6 +26,7 @@ mutable struct GMM <: MixtureModel
     class_probabilities::Matrix{Float64} # Probability of each class for each point
     class_labels::Vector{Int} # Class label for each point based on the class probabilities
 end
+
 
 """GMM Constructor"""
 function GMM(k::Int, data_dim::Int, data::Union{Vector{Float64}, Matrix{Float64}})

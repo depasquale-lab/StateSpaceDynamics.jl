@@ -238,7 +238,6 @@ function KalmanFilterEM!(l::LDS, y::AbstractArray, max_iter::Int=100, tol::Float
         # M-step
         MStep!(l, E_z, E_zz, E_zz_prev, y)
         # Calculate log-likelihood
-        ll = loglikelihood(l, y)
         println("Log-likelihood at iteration $i: ", ll)
         # Check convergence
         if abs(ll - prev_ll) < tol
@@ -364,6 +363,17 @@ function loglikelihood(l::LDS, y::AbstractArray)
     # calculate the loglikelihood
     ll = loglikelihood(residuals, F, T, D)
     return ll
+end
+
+function loglikelihood(l::LDS, x::AbstractArray, y::AbstractArray, S::AbstractArray)
+    # check if S is symmetric
+    if !ishermitian(S)
+        S = (S + S') / 2
+    end
+    if !isposdef(S)
+        println(S)
+    end
+    return logpdf(MvNormal(l.H * x, S), y)
 end
 
 function loglikelihood(residuals::AbstractArray, F::AbstractArray, T::Int, D::Int)
