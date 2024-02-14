@@ -1,4 +1,22 @@
-export kmeanspp_initialization, kmeans_clustering, Autoregression, fit!, loglikelihood, ensure_positive_definite, PPCA, fit!, block_tridgm
+export kmeanspp_initialization, kmeans_clustering, Autoregression, fit!, loglikelihood, ensure_positive_definite, PPCA, fit!, block_tridgm, interleave_reshape
+
+"""Interleave Reshape"""
+function interleave_reshape(data::AbstractArray, t::Int, d::Int)
+    # get length of data 
+    l = length(data)
+    # check if the length of data equal to t * d
+    if l != (t * d)
+        error("The length of data must be equivalent to  t * d")
+    end
+    # create a matrix of zeros
+    X = zeros(t, d)
+    # loop through the data and reshape
+    for i in 1:d
+        X[:, i] = data[i:d:l]
+    end
+    # return the reshaped matrix
+    return X
+end
 
 """Euclidean Distance for two points"""
 function euclidean_distance(a::AbstractVector{Float64}, b::AbstractVector{Float64})

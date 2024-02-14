@@ -20,7 +20,7 @@ end
 begin
 	g = 9.81 # gravity
 	l = 1.0 # length of pendulum
-	dt = 0.001 # time step
+	dt = 0.0001 # time step
 	T = 10.0 # total time
 	# Discrete-time dynamics
 	A = [1.0 dt; -g/l*dt 1.0]
@@ -89,7 +89,7 @@ begin
 	# Extract standard deviations from each covariance matrix 'page'
 	for i = 1:num_steps
     	for j = 1:num_states
-        	std_devs[j, i] = sqrt(abs(p_filt[i, j, j]))  # Assuming the diagonal elements represent variances for each state.
+        	std_devs[j, i] = sqrt(abs(p_filt[i, j, j]))
     	end
 	end
 
@@ -102,8 +102,8 @@ begin
 	tt = 1:num_steps
 
 	# Plot the state estimates.
-	p = plot(tt, x_filt[:, 1], ribbon = (upper_bound[:, 1] - x_filt[:, 1], x_filt[:, 1] - lower_bound[:, 1]), fillalpha=0.1, label="State 1 with CI")
-	plot!(p, tt, x_filt[:, 2], ribbon = (upper_bound[:, 2] - x_filt[:, 2], x_filt[:, 2] - lower_bound[:, 2]), fillalpha=0.1, label="State 2 with CI")
+	p = plot(tt, x_filt[:, 1], ribbon = (upper_bound[:, 1] - x_filt[:, 1], x_filt[:, 1] - lower_bound[:, 1]), fillalpha=0.25, label="State 1 with CI")
+	plot!(p, tt, x_filt[:, 2], ribbon = (upper_bound[:, 2] - x_filt[:, 2], x_filt[:, 2] - lower_bound[:, 2]), fillalpha=0.25, label="State 2 with CI")
 
 	# Set labels
 	xlabel!(p, "Time")

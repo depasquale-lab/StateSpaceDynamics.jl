@@ -77,9 +77,9 @@ function KalmanFilter(l::LDS, y::AbstractArray)
     p_pred = zeros(T, l.latent_dim, l.latent_dim)
     x_filt = zeros(T, l.latent_dim)
     p_filt = zeros(T, l.latent_dim, l.latent_dim)
-    v = zeros(T, l.latent_dim)
-    F = zeros(T, l.latent_dim, l.latent_dim)
-    K = zeros(T, l.latent_dim, l.latent_dim)
+    v = zeros(T, l.obs_dim)
+    F = zeros(T, l.obs_dim, l.obs_dim)
+    K = zeros(T, l.latent_dim, l.obs_dim)
     # Initialize the first state
     x_pred[1, :] = l.x0
     p_pred[1, :, :] = l.p0
@@ -99,8 +99,7 @@ function KalmanFilter(l::LDS, y::AbstractArray)
         p_filt[t, :, :] = p_pred[t, :, :] - (K[t, :, :] * l.H * p_pred[t, :, :])
     end
     # Compute the log-likelihood
-    residuals = y - (x_filt * l.H')
-    ll = loglikelihood(residuals, F, T, D)
+    ll = loglikelihood(x_filt, l, y)
     return x_filt, p_filt, x_pred, p_pred, v, F, K, ll
 end
 
@@ -253,9 +252,9 @@ Constructs the Hessian matrix of the loglikelihood of the LDS model given a set 
 as advocated by Paninski et al. (2009). The block tridiagonal structure of the Hessian is exploited to reduce the number of parameters that need to be computed, and
 to reduce the memory requirements. Together with the gradient, this allows for Kalman Smoothing to be performed by simply solving a linear system of equations:
 
-    ̂xₙ = H \\ ∇
+    ̂xₙ₊₁ = ̂xₙ - H \\ ∇
 
-where ̂xₙ is the smoothed state estimate, H is the Hessian matrix, and ∇ is the gradient of the loglikelihood.
+where ̂xₙ is the current smoothed state estimate, H is the Hessian matrix, and ∇ is the gradient of the loglikelihood.
 
 Args:
     l: LDS struct
@@ -291,15 +290,9 @@ function Hessian(l::LDS, y::AbstractArray)
     return block_tridgm(H_diag, H_super, H_sub)
 end
 
-function Gradient(l::LDS, y::AbstractArray)
+function Gradient(l::LDS, y::AbstractArray, x::AbstractArray)
     # get the size of the observation matrix
     T, _ = size(y)
-    # get the predicted x's
-    x = zeros(T, l.latent_dim)
-    x[1, :] = l.x0
-    for t in 2:T
-        x[t, :] = l.A * x[t-1, :]
-    end
     # calculate the inv of Q, R, and p0
     inv_R = pinv(l.R)
     inv_Q = pinv(l.Q)
@@ -310,100 +303,26 @@ function Gradient(l::LDS, y::AbstractArray)
     grad[1, :] = (l.A' * inv_Q * (x[2, :] - l.A * x[1, :])) + (l.H' * inv_R * (y[1, :] - l.H * x[1, :])) - (inv_p0 * (x[1, :] - l.x0))
     # calulate the gradient up until the last time step
     for t in 2:T-1
-        grad[t, :] = (l.H' * inv_R * (y[t, :] - l.H * x[t, :])) - (inv_Q * (x[t, :] - l.A * x[t-1, :])) + (l.A * inv_Q * (x[t+1, :] - l.A * x[t, :]))
+        grad[t, :] = (l.H' * inv_R * (y[t, :] - l.H * x[t, :])) - (inv_Q * (x[t, :] - l.A * x[t-1, :])) + (l.A' * inv_Q * (x[t+1, :] - l.A * x[t, :]))
     end
     # calculate the gradient for the last time step
     grad[T, :] = ( l.H' * inv_R * (y[T, :] - l.H * x[T, :])) - (inv_Q * (x[T, :] - l.A * x[T-1, :]))
-    return grad 
+    # return a reshaped gradient so that we can match up the dimensions with the Hessian
+    return grad
 end
 
 """
-Computes the loglikelihood of the LDS model given a a set of observations. This variant is used for optimization.
+Compute p(X|Y) for a given LDS model and a set of observations i.e. the loglikelihood.
 
 Args:
-    params: Vector of parameters, compatible with ForwardDiff.Dual
-    param_idx: Vector of symbols corresponding to the fields in the LDS struct
+    X: Matrix of latent states
     l: LDS struct
     y: Matrix of observations
 
 Returns:
-    ll: Loglikelihood of the LDS model
-
+    ll: Loglikelihood of the LDS model given the observations
 """
-function loglikelihood(params::Vector{T1}, param_idx::Vector{Symbol}, l::LDS, y::AbstractArray) where {T1}
-    T, D = size(y)
-    # Convert the parameter vector back to the LDS struct
-    vector_to_params!(l, params, param_idx)
-    # The key is to ensure that all operations and functions used here are compatible with ForwardDiff.Dual
-    xs, _, _, F, _, _ = KalmanFilter(l, y)
-    # calculate the residuals
-    residuals = y - (xs * l.H')
-    # calculate the loglikelihood
-    ll = loglikelihood(residuals, F, T, D)
-    return ll
-end
-
-"""
-Computes the loglikelihood of the LDS model given a a set of observations.
-#TODO: There is an error in thus function.
-
-Args:
-    l: LDS struct
-    y: Matrix of observations
-
-Returns:
-    ll: Loglikelihood of the LDS model
-"""
-function loglikelihood(l::LDS, y::AbstractArray)
-    T, D = size(y)
-    # calculates the loglikelihood of the LDS model
-    xs, _, _, F, _, _ = KalmanFilter(l, y)
-    # calculate the residuals
-    residuals = y - (xs * l.H')
-    # calculate the loglikelihood
-    ll = loglikelihood(residuals, F, T, D)
-    return ll
-end
-
-function loglikelihood(l::LDS, x::AbstractArray, y::AbstractArray, S::AbstractArray)
-    # check if S is symmetric
-    if !ishermitian(S)
-        S = (S + S') / 2
-    end
-    if !isposdef(S)
-        println(S)
-    end
-    return logpdf(MvNormal(l.H * x, S), y)
-end
-
-function loglikelihood(residuals::AbstractArray, F::AbstractArray, T::Int, D::Int)
-    ll = 0.0
-    # calculate the loglikelihood
-    for t in 1:T
-        # use cholesky to compute the log determinant of F for stability
-
-        # check if F is symmetric
-        if !ishermitian(F[t, :, :])
-            F[t, :, :] = (F[t, :, :] + F[t, :, :]') / 2
-        end
-        # Regularize F to ensure it is positive definite
-        if !isposdef(F[t, :, :])
-            F[t, :, :] = F[t, :, :] + 1e-9 * I(D)
-        end
-        chol_F = cholesky(F[t, :, :])
-        logdet_F = 2 * sum(log.(diag(chol_F.U)))
-        ll += -0.5*(D*log(2*pi)+ logdet_F + (residuals[t, :]' * pinv(F[t, :, :]) * residuals[t, :]))
-        if ll == Inf
-            break
-        end
-    end
-    return ll
-end
-
-"""
-Compute p(X|Y) for a given LDS model and a set of observations.
-"""
-function loglikelihood_X(X::AbstractArray, l::LDS, y::AbstractArray)
+function loglikelihood(X::AbstractArray, l::LDS, y::AbstractArray)
     T = size(y, 1)
     # calculate inverses
     inv_R = pinv(l.R)
@@ -424,6 +343,16 @@ function loglikelihood_X(X::AbstractArray, l::LDS, y::AbstractArray)
     
     return -0.5 * ll
 end
+
+"""
+Compute the marginal loglikelihood of a given LDS model and a set of observations.
+
+Args:
+    l: LDS struct
+    y: Matrix of observations
+"""
+function marginal_loglikelihood(l::LDS, y::AbstractArray)
+    return
 
 """
 Poisson Linear Dynamical System (PLDS) Definition
