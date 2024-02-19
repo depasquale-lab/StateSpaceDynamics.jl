@@ -290,6 +290,18 @@ function Hessian(l::LDS, y::AbstractArray)
     return block_tridgm(H_diag, H_super, H_sub)
 end
 
+
+"""
+Constructs the gradient of the loglikelihood of the LDS model given a set of observations. This is used for the direct optimization of the loglikelihood.
+
+Args:
+    l: LDS struct
+    y: Matrix of observations
+    x: Matrix of latent states
+
+Returns:
+    grad: Gradient of the loglikelihood
+"""
 function Gradient(l::LDS, y::AbstractArray, x::AbstractArray)
     # get the size of the observation matrix
     T, _ = size(y)
@@ -353,6 +365,7 @@ Args:
 """
 function marginal_loglikelihood(l::LDS, y::AbstractArray)
     return
+end
 
 """
 Poisson Linear Dynamical System (PLDS) Definition

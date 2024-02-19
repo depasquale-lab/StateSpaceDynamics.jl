@@ -100,7 +100,7 @@ function kmeans_clustering(data::Vector{Float64}, k_means::Int, max_iters::Int=1
     return kmeans_clustering(data, k_means, max_iters, tol)
 end
 
-"""Convenience fucntion to construct a block tridiagonal amtrix from three vectors of matrices"""
+"""Convenience function to construct a block tridiagonal matrix from three vectors of matrices"""
 function block_tridgm(main_diag::Vector{Matrix{T}}, upper_diag::Vector{Matrix{T}}, lower_diag::Vector{Matrix{T}}) where T<:Real
    # Check that the vectors have the correct lengths
    if length(upper_diag) != length(main_diag) - 1 || length(lower_diag) != length(main_diag) - 1
