@@ -16,102 +16,87 @@ begin
 	using Plots
 end
 
-# ╔═╡ 67829ab6-3cc9-4d57-b3a4-6ff2df6ac473
+# ╔═╡ c3f10cbe-2505-47d3-a3de-340a8b7d63de
+md"""# Example: Linear Gaussian Dynamical System""" 
+
+# ╔═╡ 69d63be2-a958-43e6-8bbf-5bdd5da60a8b
 begin
-	g = 9.81 # gravity
-	l = 1.0 # length of pendulum
-	dt = 0.0001 # time step
-	T = 10.0 # total time
-	# Discrete-time dynamics
-	A = [1.0 dt; -g/l*dt 1.0]
-	# Initial state
-	x0 = [0.0; 1.0]
-	# Time vector
-	t = 0:dt:T
-	# Generate data
-	x = zeros(2, length(t))
-	x[:,1] = x0
-	for i = 2:length(t)
-    	x[:,i] = A*x[:,i-1]
-	end
-	# Plot data 
-	plot(t, x[1,:], label="Position")
-	plot!(t, x[2,:], label="Velocity")
-end
+	# simulate a linear gaussian dynamical system that we can filter and smooth using the KF and RTS Smoother. For this example we are simulating an observed 2-D oscillator, with a 4-D oscillating state space.
 
-# ╔═╡ fc4bab31-4866-46a6-bdec-7596db2e40ed
-begin
-	# Now lets add noise to the system and see if we can recover the dynamics
-	# Add driving Gaussian noise to simulate observations
-	x_noisy = zeros(2, length(t))
-	x_noisy[:, 1] = x0
-	observation_noise_std = 0.5
+	# set up true system parameters
+	oscillating_dynamics = 0.95 .* [cos(0.5) -sin(0.5) 0 0; 
+							sin(0.5) cos(0.5) 0 0; 
+							0 0 cos(0.25) -sin(0.25);
+	                        0 0 sin(0.25) cos(0.25)]
+	transition_dynamics = [1 1 0 0; 0.7 0 0.7 0]
+	process_noise = 0.1 * I(4)
+	measurement_noise = 75 * I(2)
 
-	noise = rand(Normal(0, observation_noise_std), (2, length(t)))
+	# pre-allocate arrays 
+	x_init = [1, 1, 1, 1] # initial state
+	P_init = I(4) # initial variance
 
-	for i in 2:length(t)
-    	x_noisy[:, i] = A * x[:, i-1] + noise[:, i]
+	state_dynamics = zeros(4, 1000) # simulate 1000 t-steps
+	state_dynamics[:, 1] = x_init
+
+	process_noises = rand(MvNormal([0, 0, 0, 0], sqrt.(process_noise)), 1000)
+	for i in 2:1000
+		state_dynamics[:, i] = oscillating_dynamics * state_dynamics[:, i-1] + process_noises[:, i]
 	end
 
-	# Define the LDS model parameters
-	H = I(2)  # Observation matrix (assuming direct observation)
-	Q = 1e-8* I(2)  # Process noise covariance
-	R = 0.25 * I(2)  # Observation noise covariance
-	P0 = 1e-2 * I(2)  # Initial state covariance
-	plot(t, x_noisy[1, :], label="Noisy Position")
-	plot!(t, x_noisy[2, :], label="Noisy Velocity")
-end
+	# now simulate a set of observations
+	observation_dynamics = zeros(2, 1000)
+	measurement_noises = rand(MvNormal([0, 0], sqrt.(measurement_noise)), 1000)
 
-# ╔═╡ 444b013b-0f64-46d1-ab84-28b44ff998a3
-begin
-	# Create the Kalman filter parameter vector
-	kf = SSM.LDS(A, 
-			Matrix{Float64}(H), 
-			nothing, 
-			Matrix{Float64}(Q), 
-			Matrix{Float64}(R), 
-			x0, 
-			Matrix{Float64}(P0), 
-			nothing, 
-			2, 
-			2, 
-			"Gaussian", 
-			Vector([true, true, false, true, true, true, true, false]))
-
-	# Run the Kalman filter
-	x_filt, p_filt, x_pred, p_pred, v, F, K, ll = SSM.KalmanFilter(kf, x_noisy')
+	for i in 1:1000
+		observation_dynamics[:, i] = transition_dynamics * state_dynamics[:, i]  + measurement_noises[:, i]
+	end
 	
-	# Initialize the standard deviations array.
-	num_states = size(p_filt, 2)  # Number of states.
-	num_steps = size(p_filt, 1)   # Number of time steps.
-	std_devs = zeros(num_states, num_steps)
+	# State Dynamics for X_1 and X_2
+	state_dyns_12 = plot(state_dynamics[1, :], label="X_1", legend=:topright, xlabel="t", ylabel="state value")
+	plot!(state_dyns_12, state_dynamics[2, :], label="X_2")
+	
+	# State Dynamics for X_3 and X_4
+	state_dyns_34 = plot(state_dynamics[3, :], label="X_3", legend=:topright, xlabel="t", ylabel="state value")
+	plot!(state_dyns_34, state_dynamics[4, :], label="X_4")
+	
+	# Phase Plot for X_1/X_2 and X_3/X_4
+	phase_plots = plot(state_dynamics[1, :], state_dynamics[2, :], label="Phase 1/2", legend=:topright, xlabel="X_1", ylabel="X_2")
+	plot!(phase_plots, state_dynamics[3, :], state_dynamics[4, :], label="Phase 3/4")
+	
+	# Observations Plot for Y_1 and Y_2
+	observations_plot = plot(observation_dynamics[1, :], label="Y_1", legend=:topright, xlabel="t", ylabel="observation value")
+	plot!(observations_plot, observation_dynamics[2, :], label="Y_2")
+	
+	# Combine all plots into a 2x2 layout
+	combined_plot = plot(state_dyns_12, state_dyns_34, phase_plots, observations_plot, layout=(2, 2), size=(800, 600))
+end
 
-	# Extract standard deviations from each covariance matrix 'page'
-	for i = 1:num_steps
-    	for j = 1:num_states
-        	std_devs[j, i] = sqrt(abs(p_filt[i, j, j]))
-    	end
-	end
+	
 
-	# Calculate the 95% confidence interval bounds.
-	z_score = 1.96  # for 95% confidence
-	upper_bound = x_filt .+ (z_score .* std_devs)'
-	lower_bound = x_filt .- (z_score .* std_devs)'
+# ╔═╡ aba3f47d-4839-48e7-9f97-cb85747753c9
+begin
+	# lets now see how we can recover the dynamics using the kalman filter.
+	lds = SSM.LDS(oscillating_dynamics, transition_dynamics, nothing, process_noise, measurement_noise, x_init, P_init, nothing, 2, 4, ones(7))
 
-	# Time vector for plotting (assuming sequential time steps starting from 1)
-	tt = 1:num_steps
+	# now lets filter
+	x_filt, p_filt, x_pred, p_pred, v, F, K, ll = SSM.KalmanFilter(lds, observation_dynamics')
+	
+	# now smooth
+	x_smooth, p_smooth = SSM.KalmanSmoother(lds, observation_dynamics')
 
-	# Plot the state estimates.
-	p = plot(tt, x_filt[:, 1], ribbon = (upper_bound[:, 1] - x_filt[:, 1], x_filt[:, 1] - lower_bound[:, 1]), fillalpha=0.25, label="State 1 with CI")
-	plot!(p, tt, x_filt[:, 2], ribbon = (upper_bound[:, 2] - x_filt[:, 2], x_filt[:, 2] - lower_bound[:, 2]), fillalpha=0.25, label="State 2 with CI")
+	# # plot the results
+	plot(state_dynamics[1, :])
+	plot!(x_filt[:, 1])
+	plot!(x_smooth[:, 1])
+	# # plot!(x_filt[:, 3])
+	# # plot!(x_filt[:, 4])
 
-	# Set labels
-	xlabel!(p, "Time")
-	ylabel!(p, "State Estimate")
+	
 end
 
 # ╔═╡ Cell order:
 # ╠═53c96240-c044-11ee-2f83-e93206e06ac6
-# ╠═67829ab6-3cc9-4d57-b3a4-6ff2df6ac473
-# ╠═fc4bab31-4866-46a6-bdec-7596db2e40ed
-# ╠═444b013b-0f64-46d1-ab84-28b44ff998a3
+# ╟─c3f10cbe-2505-47d3-a3de-340a8b7d63de
+# ╠═69d63be2-a958-43e6-8bbf-5bdd5da60a8b
+# ╠═aba3f47d-4839-48e7-9f97-cb85747753c9

@@ -282,7 +282,6 @@ function test_LDS_with_params()
              nothing, 
              2, 
              2, 
-             "Gaussian", 
              Vector([false, false, false, false, false, false, false, false]))
     # confirm parameters are set correctly
     @test kf.A == A
@@ -295,7 +294,6 @@ function test_LDS_with_params()
     @test kf.inputs === nothing
     @test kf.obs_dim == 2
     @test kf.latent_dim == 2
-    @test kf.emissions == "Gaussian"
     @test kf.fit_bool == Vector([false, false, false, false, false, false, false, false])
     # get the likelihood of the model
     # ll = SSM.loglikelihood(kf, x_noisy')
@@ -334,7 +332,6 @@ function test_LDS_without_params()
     @test kf.inputs === nothing
     @test kf.obs_dim == 1
     @test kf.latent_dim == 1
-    @test kf.emissions == "Gaussian"
     @test kf.fit_bool == Vector([true, true, true, true, true, true, true])
 end
 

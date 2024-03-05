@@ -3,6 +3,7 @@ uuid = "19cf8126-1d00-4ad8-bf17-4e76d7bc0f6d"
 authors = ["Ryan Senne rsenne@bu.edu"]
 
 [deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 Coverage = "a2441757-f6aa-5fb2-8edb-039e3f45d037"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 Flatten = "4c728ea3-d9ee-5c9a-9642-b6f7d7dc04fa"

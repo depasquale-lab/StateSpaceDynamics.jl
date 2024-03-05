@@ -17,18 +17,17 @@ mutable struct LDS <: DynamicalSystem
     inputs::Union{AbstractArray, Nothing} # Inputs
     obs_dim::Int # Observation Dimension
     latent_dim::Int # Latent Dimension
-    emissions::String # Emission Model
     fit_bool::Vector{Bool} # Vector of booleans indicating which parameters to fit
 end
 
 # Default constructor with no parameters
 function LDS()
-    return LDS(nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, 1, 1, "Gaussian", fill(true, 7))
+    return LDS(nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, 1, 1, fill(true, 7))
 end
 
 # Flexible constructor that handles all three cases
-function LDS(; A=nothing, H=nothing, B=nothing, Q=nothing, R=nothing, x0=nothing, p0=nothing, inputs=nothing, obs_dim=1, latent_dim=1, emissions="Gaussian", fit_bool=fill(true, 7))
-    lds = LDS(A, H, B, Q, R, x0, p0, inputs, obs_dim, latent_dim, emissions, fit_bool)
+function LDS(; A=nothing, H=nothing, B=nothing, Q=nothing, R=nothing, x0=nothing, p0=nothing, inputs=nothing, obs_dim=1, latent_dim=1, fit_bool=fill(true, 7))
+    lds = LDS(A, H, B, Q, R, x0, p0, inputs, obs_dim, latent_dim, fit_bool)
     initialize_missing_parameters!(lds)
     return lds
 end
@@ -78,55 +77,64 @@ function KalmanFilter(l::LDS, y::AbstractArray)
     x_filt = zeros(T, l.latent_dim)
     p_filt = zeros(T, l.latent_dim, l.latent_dim)
     v = zeros(T, l.obs_dim)
-    F = zeros(T, l.obs_dim, l.obs_dim)
+    S = zeros(T, l.obs_dim, l.obs_dim)
     K = zeros(T, l.latent_dim, l.obs_dim)
-    # Initialize the first state
-    x_pred[1, :] = l.x0
-    p_pred[1, :, :] = l.p0
-    x_filt[1, :] = l.x0
-    p_filt[1, :, :] = l.p0
+    # Init the log-likelihood
+    ml = 0.0
     # Now perform the Kalman Filter
-    for t in 2:T
-        # Prediction step
-        x_pred[t, :] = l.A * x_filt[t-1, :]
-        p_pred[t, :, :] = l.A * p_filt[t-1, :, :] * l.A' + l.Q
-        # Compute the Kalman gain
-        F[t, :, :] = l.H * p_pred[t, :, :] * l.H' + l.R
-        K[t, :, :] = p_pred[t, :, :] * l.H' * pinv(F[t, :, :])
+    for t in 1:T
+        if t==1
+            # Initialize the first state
+            x_pred[1, :] = l.x0
+            p_pred[1, :, :] = l.p0
+            x_filt[1, :] = l.x0
+            p_filt[1, :, :] = l.p0
+        else
+            # Prediction step
+            x_pred[t, :] = l.A * x_filt[t-1, :]
+            p_pred[t, :, :] = (l.A * p_filt[t-1, :, :] * l.A') + l.Q
+        end
+        # Compute the Kalman gain, innovation, and innovation covariance
+        v[t, :, :] = y[t, :] - (l.H * x_pred[t, :])
+        S[t, :, :] = (l.H * p_pred[t, :, :] * l.H') + l.R
+        K[t, :, :] = p_pred[t, :, :] * l.H' * pinv(S[t, :, :])
         # Update step
-        v[t, :] = y[t, :] - (l.H * x_pred[t, :])
-        x_filt[t, :] = x_pred[t, :] + K[t, :, :] * v[t, :]
-        p_filt[t, :, :] = p_pred[t, :, :] - (K[t, :, :] * l.H * p_pred[t, :, :])
+        x_filt[t, :] = x_pred[t, :] + (K[t, :, :] * v[t, :])
+        p_filt[t, :, :] = (I(l.latent_dim) - K[t, :, :] * l.H) * p_pred[t, :, :]
+        ml += marginal_loglikelihood(l, v[t, :], S[t, :, :])
     end
-    # Compute the log-likelihood
     ll = loglikelihood(x_filt, l, y)
-    return x_filt, p_filt, x_pred, p_pred, v, F, K, ll
+    return x_filt, p_filt, x_pred, p_pred, v, S, K, ll, ml
 end
 
 function KalmanSmoother(l::LDS, y::AbstractArray)
     # Forward pass (Kalman Filter)
-    x_filt, p_filt, x_pred, p_pred, v, F, K, ll = KalmanFilter(l, y)
+    x_filt, p_filt, x_pred, p_pred, v, F, K, ll, ml = KalmanFilter(l, y)
     # Pre-allocate smoother arrays
     x_smooth = zeros(size(x_filt))  # Smoothed state estimates
     p_smooth = zeros(size(p_filt))  # Smoothed state covariances
     J = ones(size(p_filt))  # Smoother gain
     T = size(y, 1)
     # Backward pass
-    x_smooth[end, :] = x_filt[T, :]
-    p_smooth[end, :, :] = p_filt[T, :, :]
     for t in T:-1:2
+        if t == T
+            x_smooth[end, :] = x_filt[T, :]
+            p_smooth[end, :, :] = p_filt[T, :, :]
+        end
         # Compute the smoother gain
         J[t-1, :, :] = p_filt[t-1, :, :] * l.A' * pinv(p_pred[t, :, :])
         # Update smoothed estimates
         x_smooth[t-1, :] = x_filt[t-1, :] + J[t-1, :, :] * (x_smooth[t, :] - l.A * x_filt[t-1, :])
         p_smooth[t-1, :, :] = p_filt[t-1, :, :] + J[t-1, :, :] * (p_smooth[t, :, :] - p_pred[t, :, :]) * J[t-1, :, :]'
+        # quickly enforce symmetry
+        p_smooth[t-1, :, :] = 0.5 * (p_smooth[t-1, :, :] + p_smooth[t-1, :, :]')
     end
-    return x_smooth, p_smooth, J
+    return x_smooth, p_smooth, J, ll, ml
 end
 
 """
 Computes the sufficient statistics for the E-step of the EM algorithm. This implementation uses the definitions from
-Pattern Recognition and Machine Learning by Christopher Bishop (pg. 642).
+Pattern Recognition and Machine Learning by Christopher Bishop (pg. 642), Shumway and Stoffer (1982), and Roweis and Ghahramani (1995).
 
 This function computes the following statistics:
     E[zₙ] = ̂xₙ
@@ -149,7 +157,7 @@ function sufficient_statistics(J::AbstractArray, V::AbstractArray, μ::AbstractA
         E_z[t, :] = μ[t, :]
         E_zz[t, :, :] = V[t, :, :] + (μ[t, :] * μ[t, :]')
         if t > 1
-            E_zz_prev[t, :, :] =  V[t, :, :] * J[t-1, :, :]' + μ[t, :] * μ[t-1, :]'
+            E_zz_prev[t, :, :] =  (V[t, :, :] * J[t-1, :, :]') + (μ[t, :] * μ[t-1, :]')
         end
     end
     return E_z, E_zz, E_zz_prev
@@ -157,10 +165,10 @@ end
 
 function EStep(l::LDS, y::AbstractArray)
     # run the kalman smoother
-    x_smooth, p_smooth, J = KalmanSmoother(l, y)
+    x_smooth, p_smooth, J, ll, ml = KalmanSmoother(l, y)
     # compute the sufficient statistics
     E_z, E_zz, E_zz_prev = sufficient_statistics(J, p_smooth, x_smooth)
-    return x_smooth, p_smooth, E_z, E_zz, E_zz_prev
+    return x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ll, ml
 end
 
 function update_initial_state_mean!(l::LDS, E_z::AbstractArray)
@@ -186,14 +194,17 @@ end
 
 function update_Q!(l::LDS, E_zz::AbstractArray, E_zz_prev::AbstractArray)
     if l.fit_bool[4]
-        # get length
-        T = size(E_zz, 1)
-        # update the process noise covariance
-        running_sum = zeros(l.latent_dim, l.latent_dim)
-        for t in 2:T
-            running_sum += E_zz[t, :, :] - (l.A * E_zz_prev[t, :, :]') - (E_zz_prev[t, :, :] * l.A') + (l.A * E_zz[t-1, :, :] * l.A')
-        end 
-        l.Q = running_sum / (T - 1)
+        N = size(E_zz, 1)
+        # Initialize Q_new
+        Q_new = zeros(size(l.A))
+        # Calculate the sum of expectations
+        sum_expectations = zeros(size(l.A))
+        for n in 2:N
+            sum_expectations += E_zz[n, :, :] - (l.A * E_zz_prev[n, :, :]') #- (E_zz_prev[n, :, :] * l.A) + (l.A * E_zz[n-1, :, :] * l.A')
+        end
+        # Finalize Q_new calculation
+        Q_new = (1 / (N - 1)) * sum_expectations
+        l.Q = 0.5 * (Q_new + Q_new')
     end
 end
 
@@ -208,13 +219,19 @@ function update_H!(l::LDS, E_z::AbstractArray, E_zz::AbstractArray, y::AbstractA
 end
 
 function update_R!(l::LDS, E_z::AbstractArray, E_zz::AbstractArray, y::AbstractArray)
-    T = size(E_z, 1)
-    n_dim_obs = size(y, 2)
-    res = zeros(n_dim_obs, n_dim_obs)
-    for t in 1:T
-        res += y[t, :] * y[t, :]' - l.H' * E_z[t, :] * y[t, :]' - y[t, :] * E_z[t, :]' * l.H + l.H' * E_zz[t, :, :] * l.H
+    if l.fit_bool[6]
+        N = size(E_z, 1)
+        # Initialize the update matrix
+        update_matrix = zeros(size(l.H))
+        # Calculate the sum of terms
+        sum_terms = zeros(size(l.H))
+        for n in 1:N
+            sum_terms += (y[n, :] * y[n, :]') - (l.H * E_z[n, :] * y[n, :]') - (y[n, :] * E_z[n, :]' * l.H) + (l.H * E_zz[n, :, :] * l.H)
+        end
+        # Finalize the update matrix calculation
+        update_matrix = (1 / N) * sum_terms
+        l.R = 0.5 * (update_matrix + update_matrix')
     end
-    l.R = res / T
 end
 
 function MStep!(l::LDS, E_z, E_zz, E_zz_prev, y_n)
@@ -229,22 +246,22 @@ end
 
 function KalmanFilterEM!(l::LDS, y::AbstractArray, max_iter::Int=100, tol::Float64=1e-6)
     # Initialize log-likelihood
-    prev_ll = -Inf
+    prev_ml = -Inf
     # Run EM
     for i in 1:max_iter
         # E-step
-        xs, ps, E_z, E_zz, E_zz_prev = EStep(l, y)
+        x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ll, ml = EStep(l, y)
         # M-step
         MStep!(l, E_z, E_zz, E_zz_prev, y)
         # Calculate log-likelihood
-        println("Log-likelihood at iteration $i: ", ll)
+        println("Log-likelihood at iteration $i: ", ml)
         # Check convergence
-        if abs(ll - prev_ll) < tol
+        if abs(ml - prev_ml) < tol
             break
         end
-        prev_ll = ll
+        prev_ml = ml
     end
-    return l, prev_ll
+    return l, prev_ml
 end
 
 """
@@ -262,7 +279,6 @@ Args:
 
 Returns:
     H: Hessian matrix of the loglikelihood
-
 """
 function Hessian(l::LDS, y::AbstractArray)
     # get size of observation matrix
@@ -318,7 +334,7 @@ function Gradient(l::LDS, y::AbstractArray, x::AbstractArray)
         grad[t, :] = (l.H' * inv_R * (y[t, :] - l.H * x[t, :])) - (inv_Q * (x[t, :] - l.A * x[t-1, :])) + (l.A' * inv_Q * (x[t+1, :] - l.A * x[t, :]))
     end
     # calculate the gradient for the last time step
-    grad[T, :] = ( l.H' * inv_R * (y[T, :] - l.H * x[T, :])) - (inv_Q * (x[T, :] - l.A * x[T-1, :]))
+    grad[T, :] = (l.H' * inv_R * (y[T, :] - l.H * x[T, :])) - (inv_Q * (x[T, :] - l.A * x[T-1, :]))
     # return a reshaped gradient so that we can match up the dimensions with the Hessian
     return grad
 end
@@ -363,8 +379,8 @@ Args:
     l: LDS struct
     y: Matrix of observations
 """
-function marginal_loglikelihood(l::LDS, y::AbstractArray)
-    return
+function marginal_loglikelihood(l::LDS, v::AbstractArray, j::AbstractArray)
+    return (-0.5) * ((v' * pinv(j) * v) + logdet(j) + log(2*pi))
 end
 
 """
