@@ -200,7 +200,7 @@ function update_Q!(l::LDS, E_zz::AbstractArray, E_zz_prev::AbstractArray)
         # Calculate the sum of expectations
         sum_expectations = zeros(size(l.A))
         for n in 2:N
-            sum_expectations += E_zz[n, :, :] - (l.A * E_zz_prev[n, :, :]') #- (E_zz_prev[n, :, :] * l.A) + (l.A * E_zz[n-1, :, :] * l.A')
+            sum_expectations += E_zz[n, :, :] - (l.A * E_zz_prev[n, :, :]') - (E_zz_prev[n, :, :] * l.A') + (l.A * E_zz[n-1, :, :] * l.A')
         end
         # Finalize Q_new calculation
         Q_new = (1 / (N - 1)) * sum_expectations
@@ -226,7 +226,7 @@ function update_R!(l::LDS, E_z::AbstractArray, E_zz::AbstractArray, y::AbstractA
         # Calculate the sum of terms
         sum_terms = zeros(size(l.H))
         for n in 1:N
-            sum_terms += (y[n, :] * y[n, :]') - (l.H * E_z[n, :] * y[n, :]') - (y[n, :] * E_z[n, :]' * l.H) + (l.H * E_zz[n, :, :] * l.H)
+            sum_terms += (y[n, :] * y[n, :]') - (l.H' * E_z[n, :] * y[n, :]') - (y[n, :] * E_z[n, :]' * l.H) + (l.H' * E_zz[n, :, :] * l.H)
         end
         # Finalize the update matrix calculation
         update_matrix = (1 / N) * sum_terms
