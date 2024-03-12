@@ -30,7 +30,6 @@ end
 
 """
 Newton-Raphson Routine assuming that the Hessian is block-tridiagonal. This is for an LDS model.
-
 """
 function newton_raphson_tridg!(l::LDS, x0::AbstractArray, y::AbstractArray, niters::Int, tol::Float64=1e-6)
     # Initialize xₜ before the loop

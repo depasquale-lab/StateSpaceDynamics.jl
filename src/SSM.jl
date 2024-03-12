@@ -24,5 +24,4 @@ include("MarkovRegression.jl")
 include("MixtureModels.jl")
 include("Optimization.jl")
 
-
 end

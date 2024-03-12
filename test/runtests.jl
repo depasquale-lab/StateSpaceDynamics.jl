@@ -172,24 +172,24 @@ function test_HMM_forward()
     # Initialize parameters
     k = 3
     data_dim = 2
-    data = randn(100, data_dim)
+    data = randn(1000, data_dim)
     hmm = GaussianHMM(data, k)
     # Run forward algorithm
     α = SSM.forward(hmm, data)
     # Check dimensions
-    @test size(α) == (k, 100)
+    @test size(α) == (k, 1000)
 end
 
 function test_HMM_backward()
     # Initialize parameters
     k = 3
     data_dim = 2
-    data = randn(100, data_dim)
+    data = randn(1000, data_dim)
     hmm = GaussianHMM(data, k)
     # Run backward algorithm
     β = SSM.backward(hmm, data)
     # Check dimensions
-    @test size(β) == (k, 100)
+    @test size(β) == (k, 1000)
 end
 
 #TODO: Add tests for gamma, xi, estep, and mstep
@@ -235,7 +235,6 @@ end
 """
 Tests for LDS.jl
 """
-#TODO: Implement tests for LDS
 # Create a toy example for all LDS tests. This example represents a pendulum in a frictionless environment.
 g = 9.81 # gravity
 l = 1.0 # length of pendulum
@@ -295,14 +294,8 @@ function test_LDS_with_params()
     @test kf.obs_dim == 2
     @test kf.latent_dim == 2
     @test kf.fit_bool == Vector([false, false, false, false, false, false, false, false])
-    # get the likelihood of the model
-    # ll = SSM.loglikelihood(kf, x_noisy')
-    # check if the likelihood is a scalar
-    # @test size(ll) == ()
-    # check if the likelihood is negative
-    # @test ll < 0.0
     # run the filter
-    x_filt, p_filt, x_pred, p_pred, v, F, K, ll = KalmanFilter(kf, x_noisy')
+    x_filt, p_filt, x_pred, p_pred, v, F, K, ml = KalmanFilter(kf, x_noisy')
     # check dimensions
     @test size(x_filt) == (length(t), 2)
     @test size(p_filt) == (length(t), 2, 2)
@@ -330,54 +323,106 @@ function test_LDS_without_params()
     @test kf.x0 !== nothing
     @test kf.p0 !== nothing
     @test kf.inputs === nothing
-    @test kf.obs_dim == 1
-    @test kf.latent_dim == 1
+    @test kf.obs_dim == 2
+    @test kf.latent_dim == 2
+    @test kf.fit_bool == fill(true, 7)
+end
+
+function test_LDS_EStep()
+    # Create the Kalman filter parameter vector
+    kf = LDS(A,
+             H,
+             nothing,
+             Q, 
+             R, 
+             x0, 
+             p0, 
+             nothing, 
+             2, 
+             2, 
+             Vector([true, true, true, true, true, true, true]))
+    # run the EStep
+    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.EStep(kf, x_noisy')
+    # check dimensions
+    @test size(x_smooth) == (length(t), 2)
+    @test size(p_smooth) == (length(t), 2, 2)
+    @test size(E_z) == (length(t), 2)
+    @test size(E_zz) == (length(t), 2, 2)
+    @test size(E_zz_prev) == (length(t), 2, 2)
+    @test size(ml) == ()
+end
+
+function test_LDS_MStep!()
+    # Create the Kalman filter parameter vector
+    kf = LDS(A,
+             H,
+             nothing,
+             Q, 
+             R, 
+             x0, 
+             p0, 
+             nothing, 
+             2, 
+             2, 
+             Vector([true, true, true, true, true, true, true]))
+    # run the EStep
+    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.EStep(kf, x_noisy')
+    # run the MStep
+    SSM.MStep!(kf, E_z, E_zz, E_zz_prev, x_noisy')
+    # check if the parameters are updated
+    @test kf.A !== A
+    @test kf.H !== H
+    @test kf.B === nothing
+    @test kf.Q !== Q
+    @test kf.R !== R
+    @test kf.x0 !== x0
+    @test kf.p0 !== p0
+    @test kf.inputs === nothing
+    @test kf.obs_dim == 2
+    @test kf.latent_dim == 2
     @test kf.fit_bool == Vector([true, true, true, true, true, true, true])
 end
 
-# function test_Estep()
-#     # Create the Kalman filter without any params
-#     kf = LDS(;obs_dim=2, latent_dim=2, emissions="Gaussian", fit_bool=[true, true, false, true, true, true, true])
-#     # run the Estep
-#     xs, qs, δ, γ, γ₁, γ₂, β, ll = SSM.EStep(kf, x_noisy')
-#     # check dimensions
-#     @test size(xs) == (length(t), 2)
-#     @test size(qs) == (length(t), 2, 2)
-#     @test size(δ) == (2, 2)
-#     @test size(γ) == (2, 2)
-#     @test size(γ₁) == (2, 2)
-#     @test size(γ₂) == (2, 2)
-#     @test size(β) == (2, 2)
-#     # check if the likelihood is a scalar
-#     @test size(ll) == ()
-# end
+function test_LDS_EM()
+    kf = LDS(A,
+             H,
+             nothing,
+             Q, 
+             R, 
+             x0, 
+             p0, 
+             nothing, 
+             2, 
+             2, 
+             Vector([true, true, true, true, true, true, true]))
+    # run the EM
+    for i in 1:10
+        ml_prev = -Inf
+        l, ml = SSM.KalmanFilterEM!(kf, x_noisy', 1)
+        @test ml > ml_prev
+        ml_prev = ml
+    end
+    # check if the parameters are updated
+    @test kf.A !== A
+    @test kf.H !== H
+    @test kf.B === nothing
+    @test kf.Q !== Q
+    @test kf.R !== R
+    @test kf.x0 !== x0
+    @test kf.p0 !== p0
+    @test kf.inputs === nothing
+    @test kf.obs_dim == 2
+    @test kf.latent_dim == 2
+    @test kf.fit_bool == Vector([true, true, true, true, true, true, true]) 
+end
 
-# function test_MStep()
-#     # unpack old params
-#     @unpack A, H, Q, R, x0, p0 = kf
-#     # get ll
-#     # ll = SSM.loglikelihood(kf, x_noisy')
-#     # Create empty LDS
-#     kf = LDS()
-#     # run the Estep
-#     xs, qs, δ, γ, γ₁, γ₂, β, ll = SSM.EStep(kf, x_noisy')
-#     # run the Mstep
-#     SSM.MStep!(kf, x_noisy', xs, qs, δ, γ, γ₁, γ₂, β)
-#     # check if the parameters have been updated
-#     @test kf.A !== A
-#     @test kf.H !== H
-#     @test kf.Q !== Q
-#     @test kf.R !== R
-#     @test kf.x0 !== x0
-#     @test kf.p0 !== p0
-#     # check if the likelihood has increased
-#     # @test SSM.loglikelihood(kf, x_noisy') > ll
-# end
 
 @testset "LDS.jl Tests" begin
     test_LDS_with_params()
     test_LDS_without_params()
-    # test_Estep()
+    test_LDS_EStep()
+    test_LDS_MStep!()
+    test_LDS_EM()
 end
 
 """

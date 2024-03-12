@@ -104,7 +104,7 @@ function update_mixing_coefficients!(model::SwitchingGaussianRegression, γ::Mat
     model.πₖ = exp.(γ[:, 1])
 end
 
-#TODO: This is not correct--need to debug. Need to fix the fact that i set weights ti be a vector--should be a matrix.
+#TODO: This is not correct--need to debug. Need to fix the fact that i set weights to be a vector--should be a matrix.
 
 function update_variance!(model::SwitchingGaussianRegression, γ::Matrix{T}) where T <: Real
     weights = model.weights
@@ -114,8 +114,7 @@ function update_variance!(model::SwitchingGaussianRegression, γ::Matrix{T}) whe
     for k in 1:model.K
         resid = residuals(model.B[k].regression_model)
         weighted_mean = sum(weights[k] .* resid) / sum(weights[k])
-        print(sum(weights[k] .* (resid .- weighted_mean).^2))
-        print(sum(weights[k]))
+        println(sum(weights[k] .* (resid .- weighted_mean).^2))
         σ²[k] = sum(weights[k] .* (resid .- weighted_mean).^2) / sum(weights[k]) / N
     end
     model.σ² = σ²
@@ -172,7 +171,6 @@ function MarkovRegressionEM(model::SwitchingGaussianRegression, max_iters::Int=1
     end
 end
 
-
 """
 AutoRegressive HMM
 """
@@ -187,12 +185,9 @@ mutable struct AutoRegressiveHMM{T<:Real} <: AbstractHMM
     p::Int # order of the autoregressive model
 end
 
-
-
 """
 Poisson Markov regression, Binomial Markov Regression, Multinomial Markov Regression eventually
 """
-
 mutable struct SwitchingBinomialRegression <: AbstractHMM
     y::Vector{Int} # observations
     X::Matrix{Float64} # covariates

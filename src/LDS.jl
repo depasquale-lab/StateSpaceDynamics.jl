@@ -4,6 +4,9 @@
 # export statement
 export LDS, KalmanFilter, KalmanSmoother, loglikelihood
 
+# constants
+const DEFAULT_LATENT_DIM = 2
+const DEFAULT_OBS_DIM = 2
 
 """Linear Dynamical System (LDS) Definition"""
 mutable struct LDS <: DynamicalSystem
@@ -20,16 +23,22 @@ mutable struct LDS <: DynamicalSystem
     fit_bool::Vector{Bool} # Vector of booleans indicating which parameters to fit
 end
 
-# Default constructor with no parameters
-function LDS()
-    return LDS(nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, 1, 1, fill(true, 7))
-end
-
-# Flexible constructor that handles all three cases
-function LDS(; A=nothing, H=nothing, B=nothing, Q=nothing, R=nothing, x0=nothing, p0=nothing, inputs=nothing, obs_dim=1, latent_dim=1, fit_bool=fill(true, 7))
-    lds = LDS(A, H, B, Q, R, x0, p0, inputs, obs_dim, latent_dim, fit_bool)
-    initialize_missing_parameters!(lds)
-    return lds
+function LDS(; 
+    A::Union{AbstractArray, Nothing}=nothing,
+    H::Union{AbstractArray, Nothing}=nothing,
+    B::Union{AbstractArray, Nothing}=nothing,
+    Q::Union{AbstractArray, Nothing}=nothing,
+    R::Union{AbstractArray, Nothing}=nothing,
+    x0::Union{AbstractArray, Nothing}=nothing,
+    p0::Union{AbstractArray, Nothing}=nothing,
+    inputs::Union{AbstractArray, Nothing}=nothing,
+    obs_dim::Int=DEFAULT_OBS_DIM,
+    latent_dim::Int=DEFAULT_LATENT_DIM,
+    fit_bool::Vector{Bool}=fill(true, 7)
+)
+    LDS(
+        A, H, B, Q, R, x0, p0, inputs, obs_dim, latent_dim, fit_bool
+    ) |> initialize_missing_parameters!
 end
 
 # Function to initialize missing parameters
@@ -43,6 +52,7 @@ function initialize_missing_parameters!(lds::LDS)
     if lds.inputs !== nothing
         lds.B = lds.B === nothing ? rand(lds.latent_dim, size(lds.inputs, 2)) : lds.B
     end
+    return lds
 end
 
 """
@@ -103,13 +113,12 @@ function KalmanFilter(l::LDS, y::AbstractArray)
         p_filt[t, :, :] = (I(l.latent_dim) - K[t, :, :] * l.H) * p_pred[t, :, :]
         ml += marginal_loglikelihood(l, v[t, :], S[t, :, :])
     end
-    ll = loglikelihood(x_filt, l, y)
-    return x_filt, p_filt, x_pred, p_pred, v, S, K, ll, ml
+    return x_filt, p_filt, x_pred, p_pred, v, S, K, ml
 end
 
-function KalmanSmoother(l::LDS, y::AbstractArray)
+function RTSSmoother(l::LDS, y::AbstractArray)
     # Forward pass (Kalman Filter)
-    x_filt, p_filt, x_pred, p_pred, v, F, K, ll, ml = KalmanFilter(l, y)
+    x_filt, p_filt, x_pred, p_pred, v, F, K, ml = KalmanFilter(l, y)
     # Pre-allocate smoother arrays
     x_smooth = zeros(size(x_filt))  # Smoothed state estimates
     p_smooth = zeros(size(p_filt))  # Smoothed state covariances
@@ -129,7 +138,31 @@ function KalmanSmoother(l::LDS, y::AbstractArray)
         # quickly enforce symmetry
         p_smooth[t-1, :, :] = 0.5 * (p_smooth[t-1, :, :] + p_smooth[t-1, :, :]')
     end
-    return x_smooth, p_smooth, J, ll, ml
+    return x_smooth, p_smooth, J, ml
+end
+
+function DirectSmoother(l::LDS, y::AbstractArray)
+    # Pre-allocate arrays
+    T, D = size(y)
+    x_smooth = zeros(T, l.latent_dim)
+    p_smooth = zeros(T, l.latent_dim, l.latent_dim)
+    # Compute the precdiction as a starting point for the optimization
+    x_pred = zeros(T, l.latent_dim)
+    X_pred[1, :] = l.x0
+    for t in 2:T
+        x_pred[t, :] = l.A * x_pred[t-1, :]
+    end
+    # Now do the optimization
+    x_smooth = newton_raphson_tridg!(l, x_pred, y, 10) # this should stop at the first iteration in theory but likely will at iteration 2
+    # Compute the smoothed state covariances
+end
+
+function KalmanSmoother(l::LDS, y::AbstractArray, method::String="RTS")
+    if method == "RTS"
+        return RTSSmoother(l, y)
+    else
+        return DirectSmoother(l, y)
+    end
 end
 
 """
@@ -165,10 +198,10 @@ end
 
 function EStep(l::LDS, y::AbstractArray)
     # run the kalman smoother
-    x_smooth, p_smooth, J, ll, ml = KalmanSmoother(l, y)
+    x_smooth, p_smooth, J, ml = KalmanSmoother(l, y)
     # compute the sufficient statistics
     E_z, E_zz, E_zz_prev = sufficient_statistics(J, p_smooth, x_smooth)
-    return x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ll, ml
+    return x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml
 end
 
 function update_initial_state_mean!(l::LDS, E_z::AbstractArray)
@@ -244,17 +277,19 @@ function MStep!(l::LDS, E_z, E_zz, E_zz_prev, y_n)
     update_R!(l, E_z, E_zz, y_n)
 end
 
-function KalmanFilterEM!(l::LDS, y::AbstractArray, max_iter::Int=100, tol::Float64=1e-6)
+function KalmanFilterEM!(l::LDS, y::AbstractArray, max_iter::Int=1000, tol::Float64=1e-6)
     # Initialize log-likelihood
     prev_ml = -Inf
     # Run EM
     for i in 1:max_iter
         # E-step
-        x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ll, ml = EStep(l, y)
+        _, _, E_z, E_zz, E_zz_prev, ml = EStep(l, y)
         # M-step
         MStep!(l, E_z, E_zz, E_zz_prev, y)
+        # Calculate the expected log-likelihood
+        ll = loglikelihood(E_z, l, y)
         # Calculate log-likelihood
-        println("Log-likelihood at iteration $i: ", ml)
+        println("Marginal Log-likelihood at iteration $i: ", ml)
         # Check convergence
         if abs(ml - prev_ml) < tol
             break
@@ -330,7 +365,7 @@ function Gradient(l::LDS, y::AbstractArray, x::AbstractArray)
     # calculate the gradient for the first time step
     grad[1, :] = (l.A' * inv_Q * (x[2, :] - l.A * x[1, :])) + (l.H' * inv_R * (y[1, :] - l.H * x[1, :])) - (inv_p0 * (x[1, :] - l.x0))
     # calulate the gradient up until the last time step
-    for t in 2:T-1
+    Threads.@threads for t in 2:T-1
         grad[t, :] = (l.H' * inv_R * (y[t, :] - l.H * x[t, :])) - (inv_Q * (x[t, :] - l.A * x[t-1, :])) + (l.A' * inv_Q * (x[t+1, :] - l.A * x[t, :]))
     end
     # calculate the gradient for the last time step
@@ -355,10 +390,8 @@ function loglikelihood(X::AbstractArray, l::LDS, y::AbstractArray)
     # calculate inverses
     inv_R = pinv(l.R)
     inv_Q = pinv(l.Q)
-
     # p(p₁)
     ll = (X[1, :] - l.x0)' * pinv(l.p0) * (X[1, :] - l.x0)
-
     # p(pₜ|pₜ₋₁) and p(yₜ|pₜ)
     for t in 1:T
         if t > 1
@@ -380,7 +413,7 @@ Args:
     y: Matrix of observations
 """
 function marginal_loglikelihood(l::LDS, v::AbstractArray, j::AbstractArray)
-    return (-0.5) * ((v' * pinv(j) * v) + logdet(j) + log(2*pi))
+    return (-0.5) * ((v' * pinv(j) * v) + logdet(j) + l.obs_dim*log(2*pi))
 end
 
 """
@@ -400,7 +433,6 @@ Args:
     x₀: Initial State
     p₀: Initial Covariance 
 """
-
 mutable struct PLDS <: DynamicalSystem
     A::Union{AbstractArray, Nothing}  # Transition Matrix
     C::Union{AbstractArray, Nothing}  # Observation Matrix
@@ -416,17 +448,25 @@ mutable struct PLDS <: DynamicalSystem
     fit_bool::Vector{Bool} # Vector of booleans indicating which parameters to fit
 end
 
-# Default constructor with no parameters
-function PLDS()
-    return PLDS(nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, 1, 1, fill(true, 8))
+function PLDS(; 
+    A::Union{AbstractArray, Nothing}=nothing,
+    C::Union{AbstractArray, Nothing}=nothing,
+    Q::Union{AbstractArray, Nothing}=nothing,
+    D::Union{AbstractArray, Nothing}=nothing,
+    d::Union{AbstractArray, Nothing}=nothing,
+    sₖₜ::Union{AbstractArray, Nothing}=nothing,
+    x0::Union{AbstractArray, Nothing}=nothing,
+    p0::Union{AbstractArray, Nothing}=nothing,
+    bₜ::Union{AbstractArray, Nothing}=nothing,
+    obs_dim::Int=DEFAULT_OBS_DIM,
+    latent_dim::Int=DEFAULT_LATENT_DIM,
+    fit_bool::Vector{Bool}=fill(true, 7)
+)
+    PLDS(
+        A, C, Q, D, d, sₖₜ, x0, p0, bₜ, obs_dim, latent_dim, fit_bool
+    ) |> initialize_missing_parameters!
 end
 
-# Flexible constructor that handles all three cases
-function PLDS(; A=nothing, C=nothing, Q=nothing, D=nothing, d=nothing, sₖₜ=nothing, x₀=nothing, p₀=nothing, inputs=nothing, obs_dim=1, latent_dim=1, fit_bool=fill(true, 8))
-    plds = PLDS(A, C, Q, D, d, sₖₜ, x₀, p₀, inputs, obs_dim, latent_dim, fit_bool)
-    initialize_missing_parameters!(plds)
-    return plds
-end
 
 function filter(plds::PLDS, observations::Matrix{Int})
     T = size(observations, 1)

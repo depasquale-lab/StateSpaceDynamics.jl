@@ -1,5 +1,21 @@
 export kmeanspp_initialization, kmeans_clustering, Autoregression, fit!, loglikelihood, ensure_positive_definite, PPCA, fit!, block_tridgm, interleave_reshape
 
+"""Inverts a block-tridiagonal Matrix"""
+function invert_block_tridiagonal(A::Vector{Matrix{T}}, B::Vector{Matrix{T}}, C::Vector{Matrix{T}}) where T<:Real
+    # Check that the vectors have the correct lengths
+    if length(B) != length(A) - 1 || length(C) != length(A) - 1
+        error("The length of B and C must be one less than the length of A")
+    end
+    # Determine the size of the blocks and the total matrix size
+    m = size(A[1], 1) # Size of each block
+    n = length(A) # Number of blocks
+    N = m * n # Total size of the matrix
+    # Pre-allocate a matrix to store the inverse
+    M_inv = zeros(T, N, N)
+    # 
+
+end
+
 """Interleave Reshape"""
 function interleave_reshape(data::AbstractArray, t::Int, d::Int)
     # get length of data 
@@ -350,5 +366,6 @@ end
 Helper function to create lagged matrix for VAR model.
 """
 function create_lagged_matrix(data::Matrix{Float64}, p::Int)
+    
 end
 

@@ -13,6 +13,11 @@ function loglikelihood(emission::GaussianEmission, observation::Vector{Float64})
     return logpdf(MvNormal(emission.μ, emission.Σ), observation)
 end
 
+# Likelihood function
+function likelihood(emission::GaussianEmission, observation::Vector{Float64})
+    return pdf(MvNormal(emission.μ, emission.Σ), observation)
+end
+
 # Sampling function 
 function sample_emission(emission::GaussianEmission)
     return rand(MvNormal(emission.μ, emission.Σ))
@@ -25,14 +30,19 @@ function updateEmissionModel!(emission::GaussianEmission, data::Matrix{Float64},
     # Update mean
     weighted_sum = sum(data .* γ, dims=1)
     new_mean = weighted_sum[:] ./ sum(γ)
-    
     # Update covariance
     centered_data = data .- new_mean'
     weighted_centered = centered_data .* sqrt.(γ)
     new_covariance = (weighted_centered' * weighted_centered) ./ sum(γ)
+    # check if the covariance is symmetric
     if !ishermitian(new_covariance)
         new_covariance = (new_covariance + new_covariance') * 0.5
     end
+    # check if matrix is posdef
+    if !isposdef(new_covariance)
+        new_covariance = new_covariance + 1e-12 * I
+    end
+    # update the emission model
     emission.μ = new_mean
     emission.Σ = new_covariance
     return emission
