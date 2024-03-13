@@ -1,4 +1,5 @@
 """Regression models i.e. GLM's, etc. This is not a regression package per se, but rather a collection of regression models that can be used for other models e.g. MarkovRegression.jl, etc."""
+
 export GLM, Link, GaussianRegression, BinomialRegression, PoissonRegression, IdentityLink,
        LogLink, LogitLink, ProbitLink, InverseLink, Loss, LSELoss, CrossEntropyLoss, PoissonLoss, 
        loglikelihood, predict, residuals, fit!

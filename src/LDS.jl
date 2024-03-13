@@ -467,12 +467,8 @@ function PLDS(;
     ) |> initialize_missing_parameters!
 end
 
-
-function filter(plds::PLDS, observations::Matrix{Int})
-    T = size(observations, 1)
-    x = zeros(T, plds.latent_dim)
-    p = zeros(T, plds.latent_dim, plds.latent_dim)
-    #TODO: Finish later.
+function initialize_missing_parameters!(plds::PLDS)
+    # Initialize missing parameters with random values (that make sense! i.e. covarainces are symmetric and positive definite)
 end
 
 

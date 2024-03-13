@@ -104,8 +104,6 @@ function update_mixing_coefficients!(model::SwitchingGaussianRegression, γ::Mat
     model.πₖ = exp.(γ[:, 1])
 end
 
-#TODO: This is not correct--need to debug. Need to fix the fact that i set weights to be a vector--should be a matrix.
-
 function update_variance!(model::SwitchingGaussianRegression, γ::Matrix{T}) where T <: Real
     weights = model.weights
     N = size(weights, 2) - 1
