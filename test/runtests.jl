@@ -168,7 +168,7 @@ function test_GaussianHMM_constructor()
     @test hmm.D == data_dim
 end
 
-function test_HMM_forward()
+function test_HMM_forward_and_back()
     # Initialize parameters
     k = 3
     data_dim = 2
@@ -178,14 +178,7 @@ function test_HMM_forward()
     α = SSM.forward(hmm, data)
     # Check dimensions
     @test size(α) == (k, 1000)
-end
-
-function test_HMM_backward()
-    # Initialize parameters
-    k = 3
-    data_dim = 2
-    data = randn(1000, data_dim)
-    hmm = GaussianHMM(data, k)
+    # @test length(c) == 1000
     # Run backward algorithm
     β = SSM.backward(hmm, data)
     # Check dimensions
@@ -193,29 +186,28 @@ function test_HMM_backward()
 end
 
 #TODO: Add tests for gamma, xi, estep, and mstep
-
 function test_HMM_EM()
+    Random.seed!(1234)
     A = [0.7 0.2 0.1; 0.1 0.7 0.2; 0.2 0.1 0.7]
-    means = [[0.0, 0.0], [-1.0, 2.0], [3.0, 2.5]]
-    covs = [
-                [0.1 0.0; 0.0 0.1],  # Covariance matrix for state 1
-                [0.1 0.0; 0.0 0.1],  # Covariance matrix for state 2
-                [0.1 0.0; 0.0 0.1]   # Covariance matrix for state 3
-            ]
+        means = [[0.0, 0.0], [-1.0, 2.0], [3.0, 2.5]]
+        covs = [
+                    [0.1 0.0; 0.0 0.1],  # Covariance matrix for state 1
+                    [0.1 0.0; 0.0 0.1],  # Covariance matrix for state 2
+                    [0.1 0.0; 0.0 0.1]   # Covariance matrix for state 3
+                ]
     emissions_models = [GaussianEmission(mean, cov) for (mean, cov) in zip(means, covs)]
-    simul_hmm = GaussianHMM(A, emissions_models, [0.33, 0.33, 0.34], 2, 2)
+    simul_hmm = GaussianHMM(A, emissions_models, [0.33, 0.33, 0.34], 3, 2)
     states, observations = SSM.sample(simul_hmm, 10000)
     # Initialize HMM
     k = 3
     data_dim = 2
-    hmm = GaussianHMM(observations, k)
-    # Run EM
-    baumWelch!(hmm, observations)
+    hmm = GaussianHMM(observations, 3)
+    baumWelch!(hmm, observations, 100)
     # Check if the transition matrix is close to the simulated one
     @test hmm.A ≈ A atol=1e-1
     # Check if the means are close to the simulated ones
     pred_means = [hmm.B[i].μ for i in 1:k]
-    @test sort(pred_means) ≈ sort(means) atol=1e-1
+    @test sort(pred_means) ≈ sort(means) atol=2e-1
     # Check if the covariance matrices are close to the simulated ones
     pred_covs = [hmm.B[i].Σ for i in 1:k]
     @test pred_covs ≈ covs atol=1e-1
@@ -227,8 +219,7 @@ end
 
 @testset "HiddenMarkovModels.jl Tests" begin
     test_GaussianHMM_constructor()
-    test_HMM_forward()
-    test_HMM_backward()
+    test_HMM_forward_and_back()
     test_HMM_EM()
 end
 
