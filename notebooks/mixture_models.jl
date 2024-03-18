@@ -9,9 +9,10 @@ using InteractiveUtils
 begin
 	# change this to your system path
 	using Pkg
-	Pkg.activate("/Users/ryansenne/Documents/Github/SSM")
-	include("/Users/ryansenne/Documents/Github/SSM//src/SSM.jl")
-	using .SSM
+	
+	#in the package manager, use "dev path\to\local\package\under\development"
+	using SSM
+
 	using LinearAlgebra
 	using Distributions
 	using Random
