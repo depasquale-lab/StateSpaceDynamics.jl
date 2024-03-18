@@ -9,8 +9,8 @@ using InteractiveUtils
 begin
 	# change this to your system path
 	using Pkg
-	
-	#in the package manager, use "dev path\to\local\package\under\development"
+
+	# In the package manager, use "dev path\to\local\package\under\development"
 	using SSM
 
 	using LinearAlgebra
@@ -37,7 +37,7 @@ begin
 	combined_data = Matrix{Float64}(hcat(data1, data2)')
 	# create model and visualize data points
 	gmm = SSM.GMM(2, 2, combined_data)
-	scatter(data1[1, :], data1[2, :], label="k₁")
+	p = scatter(data1[1, :], data1[2, :], label="k₁")
 	scatter!(data2[1, :], data2[2, :], label="k₂")
 	plot!(title="Gaussian Mixture", xlabel="x₁", ylabel="x₂")
 end
@@ -70,6 +70,11 @@ begin
 	# Show the plot
 	plot!()
 end
+
+# Display the plot
+display(p)
+# Wait until 'enter' on command line
+readline()
 
 # ╔═╡ Cell order:
 # ╠═278317f2-36fe-4632-96d2-7b1d71190c53
