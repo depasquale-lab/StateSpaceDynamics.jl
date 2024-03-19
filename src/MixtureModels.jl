@@ -144,12 +144,13 @@ function log_likelihood(gmm::GMM, data::Matrix{Float64})
     return ll
 end
 
-function fit!(gmm::GMM, data::Matrix{Float64}; maxiter::Int=50, tol::Float64=1e-3)
+# **NOTE** Auto initializes means by default (thus, using repeated maxiter=1 provides unexpected results)
+function fit!(gmm::GMM, data::Matrix{Float64}; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=true)
     prev_ll = -Inf  # Initialize to negative infinity
 
-    println("Called w maxiter: $maxiter")
-
-    gmm.μₖ = kmeanspp_initialization(data, gmm.k)
+    if initialize_kmeans
+        gmm.μₖ = kmeanspp_initialization(data, gmm.k)
+    end
 
     for i = 1:maxiter
         # E-Step
@@ -182,8 +183,8 @@ function log_likelihood(gmm::GMM, data::Vector{Float64})
     log_likelihood(gmm, reshape(data, :, 1))
 end
 
-function fit!(gmm::GMM, data::Vector{Float64}; maxiter::Int=50, tol::Float64=1e-3)
-    fit!(gmm, reshape(data, :, 1); maxiter=maxiter, tol=tol)
+function fit!(gmm::GMM, data::Vector{Float64}; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=true)
+    fit!(gmm, reshape(data, :, 1); maxiter=maxiter, tol=tol, initialize_kmeans=initialize_kmeans)
 end
 
 """

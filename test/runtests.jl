@@ -78,10 +78,14 @@ function test_log_likelihood(gmm::GMM, data::Union{Matrix{Float64}, Vector{Float
     @test ll < 0.0
 
     # Log-likelihood should monotonically increase with iterations (when using exact EM)
+
+    #repeatedly applying fit! without initializtion, so first initialize means
+    # Initialize k means of gmm
+	gmm.μₖ = kmeanspp_initialization(data, gmm.k)
     
     ll_prev = -Inf
     for i in 1:10
-        fit!(gmm, data; maxiter=1, tol=1e-3)
+        fit!(gmm, data; maxiter=1, tol=1e-3, initialize_kmeans=false)
         ll = log_likelihood(gmm, data)
         @test ll > ll_prev || isapprox(ll, ll_prev; atol=1e-6)
         ll_prev = ll
@@ -104,6 +108,7 @@ end
     standard_gmm = GMM(k, data_dim)
     # Generate sample data
     standard_data = randn(10, data_dim)
+
     # Test constructor method of GMM
     test_GMM_properties(standard_gmm, k, data_dim)
 
