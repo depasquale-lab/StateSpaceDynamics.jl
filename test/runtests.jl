@@ -11,88 +11,62 @@ Random.seed!(1234)
 Tests for MixtureModels.jl
 """
 
-function test_GMM_constructor()
-    k_means = 3
-    data_dim = 2
-    data = randn(100, data_dim)
-    gmm = GMM(k_means, data_dim, data)
-    @test gmm.k == k_means
-    @test size(gmm.μₖ) == (data_dim, k_means)
-    @test length(gmm.Σₖ) == k_means
-    for i in 1:k_means
-        @test gmm.Σₖ[i] ≈ I(data_dim)
+# Test general properties of GMM
+function test_GMM_properties(gmm::GMM, k::Int, data_dim::Int)
+    @test gmm.k == k
+    @test size(gmm.μₖ) == (data_dim, k)
+
+    for Σ in gmm.Σₖ
+        @test size(Σ) == (data_dim, data_dim)
+        @test ishermitian(Σ)
     end
+
+    @test length(gmm.πₖ) == k
     @test sum(gmm.πₖ) ≈ 1.0
-    @test size(gmm.class_labels) == (100,)
-    @test size(gmm.class_probabilities) == (100, k_means)
 end
 
-function testGMM_EStep()
-    # Initialize parameters
-    k_means = 3
-    data_dim = 2
-    data = randn(10, data_dim)
-    gmm = GMM(k_means, data_dim, data)
+
+
+function testGMM_EStep(gmm::GMM, data::Union{Matrix{Float64}, Vector{Float64}})
+
+    k::Int = gmm.k
+    data_dim::Int = size(data, 2)
+    
     # Run EStep
-    SSM.EStep!(gmm, data)
+    class_probabilities = SSM.EStep(gmm, data)
     # Check dimensions
-    @test size(gmm.class_probabilities) == (10, k_means)
+    @test size(class_probabilities) == (size(data, 1), k)
     # Check if the row sums are close to 1 (since they represent probabilities)
-    @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(gmm.class_probabilities, dims=2))
+    @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(class_probabilities, dims=2))
+    
+    test_GMM_properties(gmm, k, data_dim)
 end
 
-function testGMM_MStep()
-    # Initialize parameters
-    k_means = 3
-    data_dim = 2
-    data = randn(10, data_dim)
-    gmm = GMM(k_means, data_dim, data)
-    SSM.EStep!(gmm, data)
+function testGMM_MStep(gmm::GMM, data::Union{Matrix{Float64}, Vector{Float64}})
+
+    k::Int = gmm.k
+    data_dim::Int = size(data, 2)
+
+    class_probabilities = SSM.EStep(gmm, data)
 
     # Run MStep
-    SSM.MStep!(gmm, data)
+    SSM.MStep!(gmm, data, class_probabilities)
 
-    # Check dimensions of updated μ and Σ
-    @test size(gmm.μₖ) == (data_dim, k_means)
-    @test length(gmm.Σₖ) == k_means
-
-    # Check if the covariance matrices are Hermitian
-    @test all([ishermitian(Σ) for Σ in gmm.Σₖ])
+    test_GMM_properties(gmm, k, data_dim)
 end
 
-function testGMM_fit()
-    # Initialize parameters
-    k_means = 3
-    data_dim = 2
-    data = randn(10, data_dim)
-    gmm = GMM(k_means, data_dim, data)
+function testGMM_fit(gmm::GMM, data::Union{Matrix{Float64}, Vector{Float64}})
+
+    k::Int = gmm.k
+    data_dim::Int = size(data, 2)
 
     # Run fit!
     fit!(gmm, data; maxiter=10, tol=1e-3)
 
-    # Check dimensions of updated μ and Σ
-    @test size(gmm.μₖ) == (data_dim, k_means)
-    @test length(gmm.Σₖ) == k_means
-
-    # Check if the covariance matrices are Hermitian
-    @test all([ishermitian(Σ) for Σ in gmm.Σₖ])
-
-    # Check if the mixing coefficients sum to 1
-    @test sum(gmm.πₖ) ≈ 1.0
-
-    # Check if the class_probabilities add to 1
-    @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(gmm.class_probabilities, dims=2))
-
-    # Check if the class labels are integers in the range 1 to k_means
-    @test all(x -> x in 1:k_means, gmm.class_labels)
+    test_GMM_properties(gmm, k, data_dim)
 end
 
-function test_log_likelihood()
-    # Initialize parameters
-    k_means = 3
-    data_dim = 2
-    data = randn(10, data_dim)
-    gmm = GMM(k_means, data_dim, data)
+function test_log_likelihood(gmm::GMM, data::Union{Matrix{Float64}, Vector{Float64}})
 
     # Calculate log-likelihood
     ll = log_likelihood(gmm, data)
@@ -104,6 +78,7 @@ function test_log_likelihood()
     @test ll < 0.0
 
     # Log-likelihood should monotonically increase with iterations (when using exact EM)
+    
     ll_prev = -Inf
     for i in 1:10
         fit!(gmm, data; maxiter=1, tol=1e-3)
@@ -113,39 +88,69 @@ function test_log_likelihood()
     end
 end
 
-function test_GMM_vector()
-    # Initialize data
-    data = randn(1000,)
-    k_means = 2
-    # Initialize GMM
-    gmm = GMM(k_means, 1, data)
-    # Run estep
-    SSM.EStep!(gmm, data)
-    # Run mstep
-    SSM.MStep!(gmm, data)
-    # Check if the mixing coefficients sum to 1
-    @test sum(gmm.πₖ) ≈ 1.0
-    # Check if the class_probabilities add to 1
-    @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(gmm.class_probabilities, dims=2))
-    # Check if the class labels are integers in the range 1 to k_means
-    @test all(x -> x in 1:k_means, gmm.class_labels)
-    # Now Run
-    fit!(gmm, data; maxiter=10, tol=1e-3)
-    # Check if the mixing coefficients sum to 1
-    @test sum(gmm.πₖ) ≈ 1.0
-    # Check if the class_probabilities add to 1
-    @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(gmm.class_probabilities, dims=2))
-    # Check if the class labels are integers in the range 1 to k_means
-    @test all(x -> x in 1:k_means, gmm.class_labels)
-end
+
 
 @testset "MixtureModels.jl Tests" begin
-    test_GMM_constructor()
-    testGMM_EStep()
-    testGMM_MStep()
-    testGMM_fit()
-    test_log_likelihood()
-    test_GMM_vector()
+    # Initialize test models
+
+
+    # Standard GMM model
+
+    # Number of clusters
+    k = 3
+    # Dimension of data points
+    data_dim = 2
+    # Construct gmm
+    standard_gmm = GMM(k, data_dim)
+    # Generate sample data
+    standard_data = randn(10, data_dim)
+    # Test constructor method of GMM
+    test_GMM_properties(standard_gmm, k, data_dim)
+
+
+
+    # Vector-data GMM model
+
+    # Number of clusters
+    k = 2
+    # Dimension of data points
+    data_dim = 1
+    # Construct gmm
+    vector_gmm = GMM(k, data_dim)
+    # Generate sample data
+    vector_data = randn(1000,)
+    # Test constructor method of GMM
+    test_GMM_properties(vector_gmm, k, data_dim)
+
+
+   
+
+    
+
+    # Test EM methods of the GMMs
+
+    # Paired data and GMMs to test
+    tester_set = [
+        (standard_gmm, standard_data), 
+        (vector_gmm, vector_data),
+        ]
+
+    for (gmm, data) in tester_set
+        k = gmm.k
+        data_dim = size(data, 2)
+
+        gmm = GMM(k, data_dim)
+        testGMM_EStep(gmm, data)
+
+        gmm = GMM(k, data_dim)
+        testGMM_MStep(gmm, data)
+
+        gmm = GMM(k, data_dim)
+        testGMM_fit(gmm, data)
+
+        gmm = GMM(k, data_dim)
+        test_log_likelihood(gmm, data)
+    end
 end
 
 
@@ -820,4 +825,3 @@ end
 @testset "MarkovRegression.jl Tests" begin
     test_SwitchingGaussianRegression()
 end
-

@@ -1,5 +1,17 @@
 export  GMM, fit!, log_likelihood
 
+#Move general rand() for MM to Global Types?
+"""
+
+    rand(d::MixtureModel, n)
+
+Draw `n` samples from `d`.
+"""
+rand(d::MixtureModel, n::Int)
+
+
+
+
 """
 GMM
 
@@ -13,6 +25,8 @@ A Gaussian Mixture Model (GMM) for clustering and density estimation.
 - `class_probabilities::Matrix{Float64}`: Probability of each class for each data point.
 - `class_labels::Vector{Int}`: Class label for each data point based on the highest probability.
 
+
+
 ## Examples
 ```julia
 gmm = GMM(3, 2, data) # 3 clusters, 2-dimensional data
@@ -23,31 +37,60 @@ mutable struct GMM <: MixtureModel
     μₖ::Matrix{Float64} # Means of each cluster
     Σₖ::Array{Matrix{Float64}, 1} # Covariance matrices of each cluster
     πₖ::Vector{Float64} # Mixing coefficients
-    class_probabilities::Matrix{Float64} # Probability of each class for each point
-    class_labels::Vector{Int} # Class label for each point based on the class probabilities
 end
 
 
 """GMM Constructor"""
-function GMM(k::Int, data_dim::Int, data::Union{Vector{Float64}, Matrix{Float64}})
-    N = size(data, 1)  # Number of data points
-    μ = kmeanspp_initialization(data, k)
+function GMM(k::Int, data_dim::Int)
     Σ = [I(data_dim) for _ = 1:k]
     πs = ones(k) ./ k
-    # Initialize class_probabilities with zeros or equal probabilities
-    class_probs = zeros(N, k)
-    # Initialize class_labels with zeros
-    class_lbls = zeros(Int, N)
-    return GMM(k, μ, Σ, πs, class_probs, class_lbls)
+    μ = zeros(Float64, data_dim, k)  # Mean of each cluster initialized to zero matrix
+    return GMM(k, μ, Σ, πs)
 end
 
 
+
+"""
+rand(gmm::GMM, n)
+
+Draw 'n' samples from gmm. Returns 'data dim' by n size Matrix{Float64}.
+
+"""
+function Base.rand(gmm::GMM, n::Int)
+    # Determine the number of samples from each component
+    component_samples = rand(Multinomial(n, gmm.πₖ), 1)
+    
+    # Initialize a container for all samples
+    samples = Matrix{Float64}(undef, size(gmm.μₖ, 1), n)
+    start_idx = 1
+    
+    for i in 1:gmm.k
+        num_samples = component_samples[i]
+        if num_samples > 0
+            # Sample all at once from the i-th Gaussian component
+            dist = MvNormal(gmm.μₖ[:, i], gmm.Σₖ[i])
+            samples[:, start_idx:(start_idx + num_samples - 1)] = rand(dist, num_samples)
+            start_idx += num_samples
+        end
+    end
+    return samples
+end
+
+
+
+
+
 # E-Step (Confirmed in Python)
-function EStep!(gmm::GMM, data::Matrix{Float64})
+function EStep(gmm::GMM, data::Matrix{Float64})
     N, _ = size(data)
     K = gmm.k
     γ = zeros(N, K)
     log_γ = zeros(N, K)
+    class_probabilities = zeros(N, K)
+    class_labels = zeros(Int, N)
+
+
+
     for n in 1:N
         for k in 1:K
             distribution = MvNormal(gmm.μₖ[:, k], gmm.Σₖ[k])
@@ -56,15 +99,16 @@ function EStep!(gmm::GMM, data::Matrix{Float64})
         logsum = logsumexp(log_γ[n, :])
         γ[n, :] = exp.(log_γ[n, :] .- logsum)
     end
-    gmm.class_probabilities = γ
-    # Update the most likely class labels for each data point
-    gmm.class_labels = [argmax(γ[n, :]) for n in 1:N]
+    # Update probability of each class for each point
+    class_probabilities = γ
+
+    return class_probabilities
 end
 
-function MStep!(gmm::GMM, data::Matrix{Float64})
+function MStep!(gmm::GMM, data::Matrix{Float64}, class_probabilities::Matrix{Float64})
     N, D = size(data)
     K = gmm.k
-    γ = gmm.class_probabilities  # Use class_probabilities from the GMM struct
+    γ = class_probabilities  
 
     N_k = zeros(K)
     μₖ = zeros(D, K)
@@ -102,11 +146,16 @@ end
 
 function fit!(gmm::GMM, data::Matrix{Float64}; maxiter::Int=50, tol::Float64=1e-3)
     prev_ll = -Inf  # Initialize to negative infinity
+
+    println("Called w maxiter: $maxiter")
+
+    gmm.μₖ = kmeanspp_initialization(data, gmm.k)
+
     for i = 1:maxiter
         # E-Step
-        EStep!(gmm, data)
+        class_probabilities = EStep(gmm, data)
         # M-Step
-        MStep!(gmm, data)
+        MStep!(gmm, data, class_probabilities)
         # Calculate current log-likelihood
         curr_ll = log_likelihood(gmm, data)
         # Debug: Output log-likelihood
@@ -121,12 +170,12 @@ function fit!(gmm::GMM, data::Matrix{Float64}; maxiter::Int=50, tol::Float64=1e-
 end
 
 # Handle vector data by reshaping it into a 2D matrix with a single column
-function EStep!(gmm::GMM, data::Vector{Float64})
-    EStep!(gmm, reshape(data, :, 1))
+function EStep(gmm::GMM, data::Vector{Float64})
+    EStep(gmm, reshape(data, :, 1))
 end
 
-function MStep!(gmm::GMM, data::Vector{Float64})
-    MStep!(gmm, reshape(data, :, 1))
+function MStep!(gmm::GMM, data::Vector{Float64}, class_probabilities::Matrix{Float64})
+    MStep!(gmm, reshape(data, :, 1), class_probabilities::Matrix{Float64})
 end
 
 function log_likelihood(gmm::GMM, data::Vector{Float64})
