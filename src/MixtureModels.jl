@@ -1,38 +1,25 @@
-export  GMM, fit!, log_likelihood
-
-#Move general rand() for MM to Global Types?
-"""
-
-    rand(d::MixtureModel, n)
-
-Draw `n` samples from `d`.
-"""
-rand(d::MixtureModel, n::Int)
-
+export  GaussianMixtureModel, MMM, fit!, log_likelihood, sample
 
 
 
 """
-GMM
+GaussianMixtureModel
 
-A Gaussian Mixture Model (GMM) for clustering and density estimation.
+A Gaussian Mixture Model (GaussianMixtureModel) for clustering and density estimation.
 
 ## Fields
 - `k::Int`: Number of clusters.
 - `μₖ::Matrix{Float64}`: Means of each cluster (dimensions: data_dim x k).
 - `Σₖ::Array{Matrix{Float64}, 1}`: Covariance matrices of each cluster.
 - `πₖ::Vector{Float64}`: Mixing coefficients for each cluster.
-- `class_probabilities::Matrix{Float64}`: Probability of each class for each data point.
-- `class_labels::Vector{Int}`: Class label for each data point based on the highest probability.
-
 
 
 ## Examples
 ```julia
-gmm = GMM(3, 2, data) # 3 clusters, 2-dimensional data
+gmm = GaussianMixtureModel(3, 2, data) # 3 clusters, 2-dimensional data
 fit!(gmm, data)
 """
-mutable struct GMM <: MixtureModel
+mutable struct GaussianMixtureModel <: MixtureModel
     k::Int # Number of clusters
     μₖ::Matrix{Float64} # Means of each cluster
     Σₖ::Array{Matrix{Float64}, 1} # Covariance matrices of each cluster
@@ -40,23 +27,23 @@ mutable struct GMM <: MixtureModel
 end
 
 
-"""GMM Constructor"""
-function GMM(k::Int, data_dim::Int)
+"""GaussianMixtureModel Constructor"""
+function GaussianMixtureModel(k::Int, data_dim::Int)
     Σ = [I(data_dim) for _ = 1:k]
     πs = ones(k) ./ k
     μ = zeros(Float64, data_dim, k)  # Mean of each cluster initialized to zero matrix
-    return GMM(k, μ, Σ, πs)
+    return GaussianMixtureModel(k, μ, Σ, πs)
 end
 
 
 
 """
-rand(gmm::GMM, n)
+rand(gmm::GaussianMixtureModel, n)
 
 Draw 'n' samples from gmm. Returns 'data dim' by n size Matrix{Float64}.
 
 """
-function Base.rand(gmm::GMM, n::Int)
+function sample(gmm::GaussianMixtureModel, n::Int)
     # Determine the number of samples from each component
     component_samples = rand(Multinomial(n, gmm.πₖ), 1)
     
@@ -81,13 +68,17 @@ end
 
 
 # E-Step (Confirmed in Python)
-function EStep(gmm::GMM, data::Matrix{Float64})
+"""
+    Returns 
+        - `class_probabilities::Matrix{Float64}`: Probability of each class for each data point.
+
+"""
+function EStep(gmm::GaussianMixtureModel, data::Matrix{Float64})
     N, _ = size(data)
     K = gmm.k
     γ = zeros(N, K)
     log_γ = zeros(N, K)
     class_probabilities = zeros(N, K)
-    class_labels = zeros(Int, N)
 
 
 
@@ -105,7 +96,7 @@ function EStep(gmm::GMM, data::Matrix{Float64})
     return class_probabilities
 end
 
-function MStep!(gmm::GMM, data::Matrix{Float64}, class_probabilities::Matrix{Float64})
+function MStep!(gmm::GaussianMixtureModel, data::Matrix{Float64}, class_probabilities::Matrix{Float64})
     N, D = size(data)
     K = gmm.k
     γ = class_probabilities  
@@ -132,7 +123,7 @@ function MStep!(gmm::GMM, data::Matrix{Float64}, class_probabilities::Matrix{Flo
     gmm.Σₖ = [Σₖ[:,:,k] for k in 1:K]
 end
 
-function log_likelihood(gmm::GMM, data::Matrix{Float64})
+function log_likelihood(gmm::GaussianMixtureModel, data::Matrix{Float64})
     N, K = size(data, 1), gmm.k
     ll = 0.0
     for n in 1:N
@@ -145,7 +136,7 @@ function log_likelihood(gmm::GMM, data::Matrix{Float64})
 end
 
 # **NOTE** Auto initializes means by default (thus, using repeated maxiter=1 provides unexpected results)
-function fit!(gmm::GMM, data::Matrix{Float64}; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=true)
+function fit!(gmm::GaussianMixtureModel, data::Matrix{Float64}; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=true)
     prev_ll = -Inf  # Initialize to negative infinity
 
     if initialize_kmeans
@@ -168,22 +159,25 @@ function fit!(gmm::GMM, data::Matrix{Float64}; maxiter::Int=50, tol::Float64=1e-
         end
         prev_ll = curr_ll
     end
+
+    class_probabilities = EStep(gmm, data)
+    return class_probabilities
 end
 
 # Handle vector data by reshaping it into a 2D matrix with a single column
-function EStep(gmm::GMM, data::Vector{Float64})
+function EStep(gmm::GaussianMixtureModel, data::Vector{Float64})
     EStep(gmm, reshape(data, :, 1))
 end
 
-function MStep!(gmm::GMM, data::Vector{Float64}, class_probabilities::Matrix{Float64})
+function MStep!(gmm::GaussianMixtureModel, data::Vector{Float64}, class_probabilities::Matrix{Float64})
     MStep!(gmm, reshape(data, :, 1), class_probabilities::Matrix{Float64})
 end
 
-function log_likelihood(gmm::GMM, data::Vector{Float64})
+function log_likelihood(gmm::GaussianMixtureModel, data::Vector{Float64})
     log_likelihood(gmm, reshape(data, :, 1))
 end
 
-function fit!(gmm::GMM, data::Vector{Float64}; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=true)
+function fit!(gmm::GaussianMixtureModel, data::Vector{Float64}; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=true)
     fit!(gmm, reshape(data, :, 1); maxiter=maxiter, tol=tol, initialize_kmeans=initialize_kmeans)
 end
 
@@ -204,19 +198,82 @@ mutable struct PoissonMixtureModel <: MixtureModel
 end
 
 """
-Binomial Mixture Model.
+MMM
 
-Args:
-    k: number of clusters
-    data: data matrix of size (N, D) where N is the number of data points and D is the dimension of the data.
+A Multinomial Mixture Model (MMM) for clustering and density estimation of categorical data.
+
+## Fields
+- `k::Int`: Number of clusters.
+- `pₖ::Array{Matrix{Float64}, 1}`: Category probabilities for each cluster (each Matrix is categories x k).
+- `πₖ::Vector{Float64}`: Mixing coefficients for each cluster.
 """
 
-mutable struct BinomialMixtureModel <: MixtureModel
+mutable struct MMM <: MixtureModel
     k::Int # Number of clusters
-    pₖ::Vector{Float64} # Means of each cluster
+    pₖ::Array{Matrix{Float64}, 1} # Category probabilities for each cluster
     πₖ::Vector{Float64} # Mixing coefficients
-    class_probabilities::Matrix{Float64} # Probability of each class for each point
-    class_labels::Vector{Int} # Class label for each point based on the class probabilities
+
+    # Inner constructor with validation
+    function MMM(k::Int, p::Array{Matrix{Float64}, 1}, πs::Vector{Float64})
+        # Perform validations here as previously described
+
+        # Check that πs sums to 1
+        if abs(sum(πs) - 1) > 1e-6
+            error("The mixing coefficients (πₖ) must sum to 1.")
+        end
+
+        # Check that k matches the length of πs and p
+        if k != length(πs) || k != length(p)
+            error("The number of clusters (k) must match the length of πₖ and the number of probability matrices in pₖ.")
+        end
+
+        # Validation for each probability matrix in p
+        for (i, matrix) in enumerate(p)
+            for col in eachcol(matrix)
+                if abs(sum(col) - 1) > 1e-6
+                    error("Each column of the probability matrix for cluster $i must sum to 1.")
+                end
+            end
+        end
+
+        # If all validations pass, create the struct instance
+        new(k, p, πs)
+    end
+end
+
+"""MMM Constructor"""
+function MMM(k::Int, data_dim::Int, num_categories::Int)
+    πs = ones(k) ./ k
+    p = [rand(num_categories, data_dim) for _ = 1:k] # Randomly initialize category probabilities
+    for matrix in p
+        for col in eachcol(matrix)
+            col ./= sum(col) # Normalize probabilities
+        end
+    end
+    return MMM(k, p, πs)
+end
+
+
+"""
+rand(mmm::MMM, n)
+
+Draw 'n' samples from mmm. Returns an array of size n, where each element represents a sampled category.
+"""
+function sample(mmm::MMM, n::Int)
+    # Determine the number of samples from each component
+    component_samples = rand(Multinomial(n, mmm.πₖ), 1)
+    
+    samples = []
+    for i in 1:mmm.k
+        num_samples = component_samples[i]
+        if num_samples > 0
+            # Sample all at once from the i-th multinomial component
+            for j = 1:num_samples
+                push!(samples, rand(Categorical(mmm.pₖ[i][:, j])))
+            end
+        end
+    end
+    return samples
 end
 
 

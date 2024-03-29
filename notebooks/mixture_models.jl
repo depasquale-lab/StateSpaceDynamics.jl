@@ -25,22 +25,55 @@ using PlutoUI
 # ╔═╡ daaed62c-9700-4098-a6c8-c5bf56dc7fc6
 md"hi"
 
+
+
+
+
+"""
+# Let's simulate observations from a Gaussian Mixture Model
+begin
+	# Seed for reproducibility
+	Random.seed!(123)
+
+	k = 2 # Number of clusters
+	num_categories = 4 # Number of categories
+	data_dim = 2 # For plotting purposes, though this isn't directly used by MMM
+
+	# Initialize the MMM with dummy data for demonstration
+	# Actual MMM initialization might differ based on the complete implementation
+	πs = [0.5, 0.5] # Mixing coefficients for simplicity, assuming two clusters
+	
+	# Randomly initialize p and normalize columns to sum to 1
+	p = [rand(num_categories, data_dim) for _ in 1:k] # Random initialization
+	for matrix in p
+		for col in eachcol(matrix)
+			col ./= sum(col) # Normalize each column to sum to 1
+		end
+	end
+
+	# Assuming an MMM constructor that accepts these parameters
+	mmmIdeal = MMM(k, p, πs)
+
+	n = 1000 # Number of samples
+	samples = rand(mmmIdeal, n) # Use the custom rand() function
+
+	# Assign fixed points in 2D space for each category for plotting
+	category_points = Dict(1 => (-1, -1), 2 => (1, -1), 3 => (-1, 1), 4 => (1, 1))
+
+	# Convert sampled categories to points
+	points = map(sample -> category_points[sample], samples)
+
+	# Plot
+	p = scatter(map(p -> p[1], points), map(p -> p[2], points), label="Samples", alpha=0.5, color=:blue)
+	plot!(title="Multinomial Mixture Model Samples", xlabel="x₁", ylabel="x₂")
+end
+"""
+
+
 # ╔═╡ dd7fc95b-70a7-402c-a921-da9c1105dac8
 # Let's simulate observations from a Gaussian Mixture Model
 begin
 	Random.seed!(123)
-	"""
-	# set means and covs
-	μ₁, μ₂ = [0.1, 0.3], [-1.2, 2.2]
-	Σ₁, Σ₂ = [1 0.2; 0.2 1], [1 0.9; 0.9 1]
-	# simulate data
-	data1, data2 = rand(MvNormal(μ₁, Σ₁), 500), rand(MvNormal(μ₂, Σ₂), 500)
-	combined_data = Matrix{Float64}(hcat(data1, data2)')
-	# create model and visualize data points
-	gmm = SSM.GMM(2, 2, combined_data)
-	p = scatter(data1[1, :], data1[2, :], label="k₁")
-	scatter!(data2[1, :], data2[2, :], label="k₂")
-	plot!(title="Gaussian Mixture", xlabel="x₁", ylabel="x₂")"""
 
 	k = 2
 	data_dim = 2
@@ -48,7 +81,7 @@ begin
 	Σ₁, Σ₂ = [1 0.2; 0.2 1], [1 0.9; 0.9 1]
 	
 
-	gmmIdeal = SSM.GMM(k, data_dim)
+	gmmIdeal = SSM.GaussianMixtureModel(k, data_dim)
 	gmmIdeal.μₖ[:, 1] = μ₁
 	gmmIdeal.μₖ[:, 2] = μ₂
 	gmmIdeal.Σₖ[1] = Σ₁
@@ -56,11 +89,11 @@ begin
 
 
 
-	data = rand(gmmIdeal, 1000)
+	data = SSM.sample(gmmIdeal, 1000)
 	# Transpose to match expected structure
 	data = permutedims(data)
 
-	gmmEstimate = SSM.GMM(k, data_dim)
+	gmmEstimate = SSM.GaussianMixtureModel(k, data_dim)
 
 	p = scatter(data[:, 1], data[:, 2], label="Samples")
 	plot!(title="Gaussian Mixture", xlabel="x₁", ylabel="x₂")
@@ -125,7 +158,7 @@ begin
 	xrange = range(xmin, stop=xmax, length=100)
 	yrange = range(ymin, stop=ymax, length=100)
 
-	# Plot each Gaussian in the GMM
+	# Plot each Gaussian in the GaussianMixtureModel
 	for k in 1:gmmEstimate.k
     	Z = [evaluate_mvg(x, y, gmmEstimate.μₖ[:, k], gmmEstimate.Σₖ[k]) for x in xrange, y in 			yrange]
     	contour!(xrange, yrange, Z', levels=10, linewidth=2, label="Gaussian Estimate $k")

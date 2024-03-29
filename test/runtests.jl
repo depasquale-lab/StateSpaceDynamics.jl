@@ -11,8 +11,8 @@ Random.seed!(1234)
 Tests for MixtureModels.jl
 """
 
-# Test general properties of GMM
-function test_GMM_properties(gmm::GMM, k::Int, data_dim::Int)
+# Test general properties of GaussianMixtureModel
+function test_GaussianMixtureModel_properties(gmm::GaussianMixtureModel, k::Int, data_dim::Int)
     @test gmm.k == k
     @test size(gmm.μₖ) == (data_dim, k)
 
@@ -27,7 +27,7 @@ end
 
 
 
-function testGMM_EStep(gmm::GMM, data::Union{Matrix{Float64}, Vector{Float64}})
+function testGaussianMixtureModel_EStep(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
 
     k::Int = gmm.k
     data_dim::Int = size(data, 2)
@@ -39,10 +39,10 @@ function testGMM_EStep(gmm::GMM, data::Union{Matrix{Float64}, Vector{Float64}})
     # Check if the row sums are close to 1 (since they represent probabilities)
     @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(class_probabilities, dims=2))
     
-    test_GMM_properties(gmm, k, data_dim)
+    test_GaussianMixtureModel_properties(gmm, k, data_dim)
 end
 
-function testGMM_MStep(gmm::GMM, data::Union{Matrix{Float64}, Vector{Float64}})
+function testGaussianMixtureModel_MStep(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
 
     k::Int = gmm.k
     data_dim::Int = size(data, 2)
@@ -52,10 +52,10 @@ function testGMM_MStep(gmm::GMM, data::Union{Matrix{Float64}, Vector{Float64}})
     # Run MStep
     SSM.MStep!(gmm, data, class_probabilities)
 
-    test_GMM_properties(gmm, k, data_dim)
+    test_GaussianMixtureModel_properties(gmm, k, data_dim)
 end
 
-function testGMM_fit(gmm::GMM, data::Union{Matrix{Float64}, Vector{Float64}})
+function testGaussianMixtureModel_fit(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
 
     k::Int = gmm.k
     data_dim::Int = size(data, 2)
@@ -63,10 +63,10 @@ function testGMM_fit(gmm::GMM, data::Union{Matrix{Float64}, Vector{Float64}})
     # Run fit!
     fit!(gmm, data; maxiter=10, tol=1e-3)
 
-    test_GMM_properties(gmm, k, data_dim)
+    test_GaussianMixtureModel_properties(gmm, k, data_dim)
 end
 
-function test_log_likelihood(gmm::GMM, data::Union{Matrix{Float64}, Vector{Float64}})
+function test_log_likelihood(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
 
     # Calculate log-likelihood
     ll = log_likelihood(gmm, data)
@@ -98,43 +98,43 @@ end
     # Initialize test models
 
 
-    # Standard GMM model
+    # Standard GaussianMixtureModel model
 
     # Number of clusters
     k = 3
     # Dimension of data points
     data_dim = 2
     # Construct gmm
-    standard_gmm = GMM(k, data_dim)
+    standard_gmm = GaussianMixtureModel(k, data_dim)
     # Generate sample data
     standard_data = randn(10, data_dim)
 
-    # Test constructor method of GMM
-    test_GMM_properties(standard_gmm, k, data_dim)
+    # Test constructor method of GaussianMixtureModel
+    test_GaussianMixtureModel_properties(standard_gmm, k, data_dim)
 
 
 
-    # Vector-data GMM model
+    # Vector-data GaussianMixtureModel model
 
     # Number of clusters
     k = 2
     # Dimension of data points
     data_dim = 1
     # Construct gmm
-    vector_gmm = GMM(k, data_dim)
+    vector_gmm = GaussianMixtureModel(k, data_dim)
     # Generate sample data
     vector_data = randn(1000,)
-    # Test constructor method of GMM
-    test_GMM_properties(vector_gmm, k, data_dim)
+    # Test constructor method of GaussianMixtureModel
+    test_GaussianMixtureModel_properties(vector_gmm, k, data_dim)
 
 
    
 
     
 
-    # Test EM methods of the GMMs
+    # Test EM methods of the GaussianMixtureModels
 
-    # Paired data and GMMs to test
+    # Paired data and GaussianMixtureModels to test
     tester_set = [
         (standard_gmm, standard_data), 
         (vector_gmm, vector_data),
@@ -144,16 +144,16 @@ end
         k = gmm.k
         data_dim = size(data, 2)
 
-        gmm = GMM(k, data_dim)
-        testGMM_EStep(gmm, data)
+        gmm = GaussianMixtureModel(k, data_dim)
+        testGaussianMixtureModel_EStep(gmm, data)
 
-        gmm = GMM(k, data_dim)
-        testGMM_MStep(gmm, data)
+        gmm = GaussianMixtureModel(k, data_dim)
+        testGaussianMixtureModel_MStep(gmm, data)
 
-        gmm = GMM(k, data_dim)
-        testGMM_fit(gmm, data)
+        gmm = GaussianMixtureModel(k, data_dim)
+        testGaussianMixtureModel_fit(gmm, data)
 
-        gmm = GMM(k, data_dim)
+        gmm = GaussianMixtureModel(k, data_dim)
         test_log_likelihood(gmm, data)
     end
 end

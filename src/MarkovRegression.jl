@@ -55,18 +55,19 @@ end
 
 function initialize_emissions_model(k::Int, data::AbstractVector, regression_emissions::Vector{RegressionEmissions})
     # init with a GMM
-    gmm = GMM(k, 1, data)
-    fit!(gmm, data, tol=0.1)
+    gmm = GaussianMixtureModel(k, size(data,2))
+    class_probabilities = fit!(gmm, data, tol=0.1)
     # initialize emission model
     for i in 1:k
-        weights = gmm.class_probabilities[:, i]
+        weights = class_probabilities[:, i]
         regression_emissions[i].regression_model.loss = WLSLoss(weights)
         updateEmissionModel!(regression_emissions[i])
     end
     # use gmm class probabilities to set initial distribution
-    πₖ = gmm.class_probabilities[1, :]
+    πₖ = class_probabilities[1, :]
     # use gmm class probabilites to estimate an A matrix
-    A = estimate_transition_matrix(k, gmm.class_labels)
+    class_labels = [argmax(class_probabilities[n, :]) for n in axes(class_probabilities,1)]
+    A = estimate_transition_matrix(k, class_labels)
     return πₖ, A
 end
 
