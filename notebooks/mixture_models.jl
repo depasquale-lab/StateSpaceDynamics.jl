@@ -82,16 +82,15 @@ begin
 	
 
 	gmmIdeal = SSM.GaussianMixtureModel(k, data_dim)
-	gmmIdeal.μₖ[:, 1] = μ₁
-	gmmIdeal.μₖ[:, 2] = μ₂
+	gmmIdeal.μₖ[1, :] = μ₁
+	gmmIdeal.μₖ[2, :] = μ₂
 	gmmIdeal.Σₖ[1] = Σ₁
 	gmmIdeal.Σₖ[2] = Σ₂
 
 
 
 	data = SSM.sample(gmmIdeal, 1000)
-	# Transpose to match expected structure
-	data = permutedims(data)
+	
 
 	gmmEstimate = SSM.GaussianMixtureModel(k, data_dim)
 
@@ -122,7 +121,7 @@ function compare_gmms(gmmIdeal, gmmEstimate)
 
         for j in 1:k
             if !paired_j[j]
-                mean_diff = norm(gmmIdeal.μₖ[:,i] - gmmEstimate.μₖ[:,j])
+                mean_diff = norm(gmmIdeal.μₖ[i,:] - gmmEstimate.μₖ[j,:])
                 if mean_diff < best_match_diff
                     best_match_diff = mean_diff
                     best_match_idx = j
@@ -160,7 +159,7 @@ begin
 
 	# Plot each Gaussian in the GaussianMixtureModel
 	for k in 1:gmmEstimate.k
-    	Z = [evaluate_mvg(x, y, gmmEstimate.μₖ[:, k], gmmEstimate.Σₖ[k]) for x in xrange, y in 			yrange]
+    	Z = [evaluate_mvg(x, y, gmmEstimate.μₖ[k, :], gmmEstimate.Σₖ[k]) for x in xrange, y in 			yrange]
     	contour!(xrange, yrange, Z', levels=10, linewidth=2, label="Gaussian Estimate $k")
 	end
 end

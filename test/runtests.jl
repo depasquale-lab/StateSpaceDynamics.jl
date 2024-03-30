@@ -14,7 +14,7 @@ Tests for MixtureModels.jl
 # Test general properties of GaussianMixtureModel
 function test_GaussianMixtureModel_properties(gmm::GaussianMixtureModel, k::Int, data_dim::Int)
     @test gmm.k == k
-    @test size(gmm.μₖ) == (data_dim, k)
+    @test size(gmm.μₖ) == (k, data_dim)
 
     for Σ in gmm.Σₖ
         @test size(Σ) == (data_dim, data_dim)
@@ -81,7 +81,7 @@ function test_log_likelihood(gmm::GaussianMixtureModel, data::Union{Matrix{Float
 
     #repeatedly applying fit! without initializtion, so first initialize means
     # Initialize k means of gmm
-	gmm.μₖ = kmeanspp_initialization(data, gmm.k)
+	gmm.μₖ = permutedims(kmeanspp_initialization(data, gmm.k))
     
     ll_prev = -Inf
     for i in 1:10

@@ -1,4 +1,4 @@
-export  GaussianMixtureModel, MMM, fit!, log_likelihood, sample
+export  GaussianMixtureModel, fit!, log_likelihood, sample
 
 
 
@@ -31,7 +31,7 @@ end
 function GaussianMixtureModel(k::Int, data_dim::Int)
     Σ = [I(data_dim) for _ = 1:k]
     πs = ones(k) ./ k
-    μ = zeros(Float64, data_dim, k)  # Mean of each cluster initialized to zero matrix
+    μ = zeros(Float64, k, data_dim)  # Mean of each cluster initialized to zero matrix
     return GaussianMixtureModel(k, μ, Σ, πs)
 end
 
@@ -48,15 +48,15 @@ function sample(gmm::GaussianMixtureModel, n::Int)
     component_samples = rand(Multinomial(n, gmm.πₖ), 1)
     
     # Initialize a container for all samples
-    samples = Matrix{Float64}(undef, size(gmm.μₖ, 1), n)
+    samples = Matrix{Float64}(undef, n, size(gmm.μₖ, 2))
     start_idx = 1
     
     for i in 1:gmm.k
         num_samples = component_samples[i]
         if num_samples > 0
             # Sample all at once from the i-th Gaussian component
-            dist = MvNormal(gmm.μₖ[:, i], gmm.Σₖ[i])
-            samples[:, start_idx:(start_idx + num_samples - 1)] = rand(dist, num_samples)
+            dist = MvNormal(gmm.μₖ[i, :], gmm.Σₖ[i])
+            samples[start_idx:(start_idx + num_samples - 1), :] = transpose(rand(dist, num_samples))
             start_idx += num_samples
         end
     end
@@ -84,7 +84,7 @@ function EStep(gmm::GaussianMixtureModel, data::Matrix{Float64})
 
     for n in 1:N
         for k in 1:K
-            distribution = MvNormal(gmm.μₖ[:, k], gmm.Σₖ[k])
+            distribution = MvNormal(gmm.μₖ[k, :], gmm.Σₖ[k])
             log_γ[n, k] = log(gmm.πₖ[k]) + logpdf(distribution, data[n, :])
         end
         logsum = logsumexp(log_γ[n, :])
@@ -102,16 +102,16 @@ function MStep!(gmm::GaussianMixtureModel, data::Matrix{Float64}, class_probabil
     γ = class_probabilities  
 
     N_k = zeros(K)
-    μₖ = zeros(D, K)
+    μₖ = zeros(K, D)
     Σₖ = zeros(D, D, K)
 
     for k in 1:K
         N_k[k] = sum(γ[:, k])
-        μₖ[:, k] = (γ[:, k]' * data) ./ N_k[k]
+        μₖ[k, :] = (γ[:, k]' * data) ./ N_k[k]
     end
 
     for k in 1:K
-        x_n = data .- μₖ[:, k]'
+        x_n = data .- μₖ[k, :]'
         Σₖ[:,:,k] = ((γ[:, k] .* x_n)' * x_n ./ (N_k[k] + I*1e-6)) + (I * 1e-6)
         if !ishermitian(Σₖ[:, :, k])
             Σₖ[:,:,k] = 0.5 * (Σₖ[:,:,k] + Σₖ[:,:,k]')
@@ -127,7 +127,7 @@ function log_likelihood(gmm::GaussianMixtureModel, data::Matrix{Float64})
     N, K = size(data, 1), gmm.k
     ll = 0.0
     for n in 1:N
-        log_probabilities = [log(gmm.πₖ[k]) + logpdf(MvNormal(gmm.μₖ[:, k], gmm.Σₖ[k]), data[n, :]) for k in 1:K]
+        log_probabilities = [log(gmm.πₖ[k]) + logpdf(MvNormal(gmm.μₖ[k, :], gmm.Σₖ[k]), data[n, :]) for k in 1:K]
         max_log_prob = maximum(log_probabilities)
         ll_n = max_log_prob + log(sum(exp(log_prob - max_log_prob) for log_prob in log_probabilities))
         ll += ll_n
@@ -140,7 +140,7 @@ function fit!(gmm::GaussianMixtureModel, data::Matrix{Float64}; maxiter::Int=50,
     prev_ll = -Inf  # Initialize to negative infinity
 
     if initialize_kmeans
-        gmm.μₖ = kmeanspp_initialization(data, gmm.k)
+        gmm.μₖ = permutedims(kmeanspp_initialization(data, gmm.k))
     end
 
     for i = 1:maxiter
