@@ -1,4 +1,4 @@
-export  GaussianMixtureModel, fit!, log_likelihood, sample
+export  GaussianMixtureModel, PoissonMixtureModel, fit!, log_likelihood, sample
 
 
 
@@ -38,7 +38,7 @@ end
 
 
 """
-rand(gmm::GaussianMixtureModel, n)
+sample(gmm::GaussianMixtureModel, n)
 
 Draw 'n' samples from gmm. Returns 'data dim' by n size Matrix{Float64}.
 
@@ -90,10 +90,8 @@ function EStep(gmm::GaussianMixtureModel, data::Matrix{Float64})
         logsum = logsumexp(log_γ[n, :])
         γ[n, :] = exp.(log_γ[n, :] .- logsum)
     end
-    # Update probability of each class for each point
-    class_probabilities = γ
-
-    return class_probabilities
+    # Return probability of each class for each point
+    return γ
 end
 
 function MStep!(gmm::GaussianMixtureModel, data::Matrix{Float64}, class_probabilities::Matrix{Float64})
@@ -193,87 +191,118 @@ mutable struct PoissonMixtureModel <: MixtureModel
     k::Int # Number of clusters
     λₖ::Vector{Float64} # Means of each cluster
     πₖ::Vector{Float64} # Mixing coefficients
-    class_probabilities::Matrix{Float64} # Probability of each class for each point
-    class_labels::Vector{Int} # Class label for each point based on the class probabilities
 end
 
-"""
-MMM
 
-A Multinomial Mixture Model (MMM) for clustering and density estimation of categorical data.
-
-## Fields
-- `k::Int`: Number of clusters.
-- `pₖ::Array{Matrix{Float64}, 1}`: Category probabilities for each cluster (each Matrix is categories x k).
-- `πₖ::Vector{Float64}`: Mixing coefficients for each cluster.
-"""
-
-mutable struct MMM <: MixtureModel
-    k::Int # Number of clusters
-    pₖ::Array{Matrix{Float64}, 1} # Category probabilities for each cluster
-    πₖ::Vector{Float64} # Mixing coefficients
-
-    # Inner constructor with validation
-    function MMM(k::Int, p::Array{Matrix{Float64}, 1}, πs::Vector{Float64})
-        # Perform validations here as previously described
-
-        # Check that πs sums to 1
-        if abs(sum(πs) - 1) > 1e-6
-            error("The mixing coefficients (πₖ) must sum to 1.")
-        end
-
-        # Check that k matches the length of πs and p
-        if k != length(πs) || k != length(p)
-            error("The number of clusters (k) must match the length of πₖ and the number of probability matrices in pₖ.")
-        end
-
-        # Validation for each probability matrix in p
-        for (i, matrix) in enumerate(p)
-            for col in eachcol(matrix)
-                if abs(sum(col) - 1) > 1e-6
-                    error("Each column of the probability matrix for cluster $i must sum to 1.")
-                end
-            end
-        end
-
-        # If all validations pass, create the struct instance
-        new(k, p, πs)
-    end
-end
-
-"""MMM Constructor"""
-function MMM(k::Int, data_dim::Int, num_categories::Int)
+"""PoissonMixtureModel Constructor"""
+function PoissonMixtureModel(k::Int)
+    λs = ones(k)
     πs = ones(k) ./ k
-    p = [rand(num_categories, data_dim) for _ = 1:k] # Randomly initialize category probabilities
-    for matrix in p
-        for col in eachcol(matrix)
-            col ./= sum(col) # Normalize probabilities
-        end
-    end
-    return MMM(k, p, πs)
+    return PoissonMixtureModel(k, λs, πs)
 end
 
-
-"""
-rand(mmm::MMM, n)
-
-Draw 'n' samples from mmm. Returns an array of size n, where each element represents a sampled category.
-"""
-function sample(mmm::MMM, n::Int)
-    # Determine the number of samples from each component
-    component_samples = rand(Multinomial(n, mmm.πₖ), 1)
+"""E-Step for PMM"""
+function EStep(pmm::PoissonMixtureModel, data::Matrix{Int})
+    N, _ = size(data)
+    γ = zeros(N, pmm.k)
     
-    samples = []
-    for i in 1:mmm.k
+    for n in 1:N
+        for k in 1:pmm.k
+            λk = pmm.λₖ[k]
+            log_γnk = log(pmm.πₖ[k]) + logpdf(Poisson(λk), data[n, 1])
+            γ[n, k] = exp(log_γnk)  # Direct computation of responsibilities
+        end
+        γ[n, :] /= sum(γ[n, :])  # Normalize responsibilities
+    end
+    
+    return γ  # Return the responsibility matrix
+end
+
+"""M-Step for PMM"""
+function MStep!(pmm::PoissonMixtureModel, data::Matrix{Int}, γ::Matrix{Float64})
+    N, _ = size(data)
+    
+    for k in 1:pmm.k
+        Nk = sum(γ[:, k])
+        pmm.λₖ[k] = sum(γ[:, k] .* data) / Nk  # Update λk
+        pmm.πₖ[k] = Nk / N  # Update mixing coefficient
+    end
+end
+
+"""Fit PMM using the EM algorithm with KMeans initialization and convergence check"""
+function fit!(pmm::PoissonMixtureModel, data::Matrix{Int}; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=true)
+    prev_ll = -Inf  # Initialize previous log likelihood to negative infinity
+
+    if initialize_kmeans
+        λₖ_matrix = permutedims(kmeanspp_initialization(Float64.(data), pmm.k))
+        pmm.λₖ = vec(λₖ_matrix)
+    end
+
+    for iter in 1:maxiter
+        γ = EStep(pmm, data)  # E-Step
+        MStep!(pmm, data, γ)  # M-Step
+        curr_ll = log_likelihood(pmm, data)  # Current log likelihood
+
+        println("Iteration: $iter, Log-likelihood: $curr_ll")
+
+        if abs(curr_ll - prev_ll) < tol  # Check for convergence
+            println("Convergence reached at iteration $iter")
+            break
+        end
+        prev_ll = curr_ll  # Update previous log likelihood
+    end
+end
+
+"""Log Likelihood for PMM"""
+function log_likelihood(pmm::PoissonMixtureModel, data::Matrix{Int})
+    ll = 0.0
+    for n in 1:size(data, 1)
+        ll_n = log(sum([pmm.πₖ[k] * pdf(Poisson(pmm.λₖ[k]), data[n, 1]) for k in 1:pmm.k]))
+        ll += ll_n
+    end
+    return ll
+end
+
+"""
+sample(pmm::PoissonMixtureModel, n)
+
+Draw 'n' samples from pmm. Returns a Vector{Int} of length n.
+
+"""
+function sample(pmm::PoissonMixtureModel, n::Int)
+    # Determine the number of samples from each component
+    component_samples = rand(Multinomial(n, pmm.πₖ), 1)
+    
+    # Initialize a container for all samples
+    samples = Vector{Int}(undef, n)
+    start_idx = 1
+    
+    for i in 1:pmm.k
         num_samples = component_samples[i]
         if num_samples > 0
-            # Sample all at once from the i-th multinomial component
-            for j = 1:num_samples
-                push!(samples, rand(Categorical(mmm.pₖ[i][:, j])))
-            end
+            # Sample all at once from the i-th Poisson component
+            λ = pmm.λₖ[i] # λ for the i-th component
+            samples[start_idx:(start_idx + num_samples - 1)] = rand(Poisson(λ), num_samples)
+            start_idx += num_samples
         end
     end
     return samples
 end
 
 
+# Handle vector data by reshaping it into a 2D matrix with a single column
+function EStep(pmm::PoissonMixtureModel, data::Vector{Int})
+    EStep(pmm, reshape(data, :, 1))
+end
+
+function MStep!(pmm::PoissonMixtureModel, data::Vector{Int}, class_probabilities::Matrix{Float64})
+    MStep!(pmm, reshape(data, :, 1), class_probabilities)
+end
+
+function log_likelihood(pmm::PoissonMixtureModel, data::Vector{Int})
+    log_likelihood(pmm, reshape(data, :, 1))
+end
+
+function fit!(pmm::PoissonMixtureModel, data::Vector{Int}; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=true)
+    fit!(pmm, reshape(data, :, 1); maxiter=maxiter, tol=tol, initialize_kmeans=initialize_kmeans)
+end

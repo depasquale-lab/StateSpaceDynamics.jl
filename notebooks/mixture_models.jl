@@ -26,6 +26,46 @@ using PlutoUI
 md"hi"
 
 
+# Let's simulate observations from a Poisson Mixture Model
+
+
+# Initialize a Poisson Mixture Model with predefined parameters for simulation
+original_pmm = PoissonMixtureModel(3)
+original_pmm.λₖ = [2.0, 10.0, 20] # Means of the Poisson distributions
+original_pmm.πₖ = [0.3, 0.3, 0.4] # Mixing coefficients
+
+# Simulate 1000 samples from the original PMM
+simulated_data = SSM.sample(original_pmm, 1000)
+
+# Fit a new PMM to the simulated data
+fitted_pmm = PoissonMixtureModel(3) # Initialize with the same number of clusters
+fit!(fitted_pmm, simulated_data)
+
+# Define a range of values to plot the PMF over
+x_range = 0:maximum(simulated_data)
+
+# Calculate the PMF of the fitted PMM for each value in the range
+pmf_values = zeros(length(x_range))
+
+for i in eachindex(x_range)
+    x = x_range[i]
+    pmf = sum([fitted_pmm.πₖ[k] * pdf(Poisson(fitted_pmm.λₖ[k]), x) for k in 1:fitted_pmm.k])
+    pmf_values[i] = pmf
+end
+
+# Plotting
+p = histogram(simulated_data, bins=maximum(simulated_data)-minimum(simulated_data), 
+          normed=true, alpha=0.5, label="Simulated Data", legend=:topright)
+
+# Plot the PMF of the fitted PMM
+plot!(x_range, pmf_values, line=(:red, 2), label="Fitted PMM")
+
+display(p)
+
+println("Plotted histogram for Poisson.")
+
+# Pause program here
+readline()
 
 
 
