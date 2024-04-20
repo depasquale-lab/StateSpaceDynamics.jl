@@ -25,12 +25,12 @@ begin
 
 	# set up true system parameters
 	oscillating_dynamics = 0.95 .* [cos(0.5) -sin(0.5) 0 0; 
-							sin(0.5) cos(0.5) 0 0; 
-							0 0 cos(0.25) -sin(0.25);
-	                        0 0 sin(0.25) cos(0.25)]
+								    sin(0.5) cos(0.5) 0 0; 
+							        0 0 cos(0.25) -sin(0.25);
+	                                0 0 sin(0.25) cos(0.25)]
 	transition_dynamics = [1 1 0 0; 0.7 0 0.7 0]
 	process_noise = 0.1 * I(4)
-	measurement_noise = 75 * I(2)
+	measurement_noise = 5 * I(2)
 
 	# pre-allocate arrays 
 	x_init = [1, 1, 1, 1] # initial state
@@ -86,11 +86,11 @@ begin
 	x_smooth, p_smooth = SSM.KalmanSmoother(lds, observation_dynamics')
 
 	# # plot the results
-	plot(state_dynamics[1, :])
-	plot!(x_filt[:, 1])
-	plot!(x_smooth[:, 1])
-	# # plot!(x_filt[:, 3])
-	# # plot!(x_filt[:, 4])
+	# plot(state_dynamics[1, :])
+	plot(x_filt[:, 1])
+	plot!(x_filt[:, 2])
+	plot!(x_filt[:, 3])
+	plot!(x_filt[:, 4])
 
 	
 end

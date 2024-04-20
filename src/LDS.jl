@@ -233,7 +233,7 @@ function update_Q!(l::LDS, E_zz::AbstractArray, E_zz_prev::AbstractArray)
         # Calculate the sum of expectations
         sum_expectations = zeros(size(l.A))
         for n in 2:N
-            sum_expectations += E_zz[n, :, :] - (l.A * E_zz_prev[n, :, :]') - (E_zz_prev[n, :, :] * l.A') + (l.A * E_zz[n-1, :, :] * l.A')
+            sum_expectations += E_zz[n, :, :] - (E_zz_prev[n, :, :] * l.A') - (l.A * E_zz_prev[n, :, :]') + (l.A * E_zz[n-1, :, :] * l.A')
         end
         # Finalize Q_new calculation
         Q_new = (1 / (N - 1)) * sum_expectations
@@ -259,7 +259,7 @@ function update_R!(l::LDS, E_z::AbstractArray, E_zz::AbstractArray, y::AbstractA
         # Calculate the sum of terms
         sum_terms = zeros(size(l.H))
         for n in 1:N
-            sum_terms += (y[n, :] * y[n, :]') - (l.H' * E_z[n, :] * y[n, :]') - (y[n, :] * E_z[n, :]' * l.H) + (l.H' * E_zz[n, :, :] * l.H)
+            sum_terms += (y[n, :] * y[n, :]') - (l.H * E_z[n, :] * y[n, :]') #- (y[n, :] * E_z[n, :]' * l.H) + (l.H' * E_zz[n, :, :] * l.H)
         end
         # Finalize the update matrix calculation
         update_matrix = (1 / N) * sum_terms
@@ -316,29 +316,40 @@ Returns:
     H: Hessian matrix of the loglikelihood
 """
 function Hessian(l::LDS, y::AbstractArray)
-    # get size of observation matrix
+    # precompute results
     T, _ = size(y)
-    # calculate inv q and r so we can do it just once
     inv_R = pinv(l.R)
     inv_Q = pinv(l.Q)
     inv_p0 = pinv(l.p0)
-    # calculate the super and sub diagonal entries of the Hessian
+    
+    # super and sub diagonals
     H_sub_entry = inv_Q * l.A
     H_super_entry = Matrix(H_sub_entry')
-    # create the sub and super diagonal blocks
-    H_sub = [H_sub_entry for i in 1:T-1]
-    H_super = [H_super_entry for i in 1:T-1]
-    # calculate the diagonal entries of the Hessian
+
+    H_sub = Vector{typeof(H_sub_entry)}(undef, T-1)
+    H_super = Vector{typeof(H_super_entry)}(undef, T-1)
+
+    Threads.@threads for i in 1:T-1
+        H_sub[i] = H_sub_entry
+        H_super[i] = H_super_entry
+    end
+
+    # main diagonal
     yt_given_xt = - l.H' * inv_R * l.H
     xt_given_xt_1 = - inv_Q
     xt1_given_xt = - l.A' * inv_Q * l.A
     x_t = - inv_p0
-    # create the diagonal block
-    H_diag = [(yt_given_xt + xt_given_xt_1 + xt1_given_xt) for i in 1:T]
-    # fix the edge cases i.e. T = 1 and T = T
+
+    H_diag = Vector{typeof(yt_given_xt)}(undef, T)
+    Threads.@threads for i in 2:T-1
+        H_diag[i] = yt_given_xt + xt_given_xt_1 + xt1_given_xt
+    end
+
+    # Edge cases 
     H_diag[1] = yt_given_xt + xt1_given_xt + x_t
-    H_diag[end] = yt_given_xt + xt_given_xt_1
-    return block_tridgm(H_diag, H_super, H_sub)
+    H_diag[T] = yt_given_xt + xt_given_xt_1
+
+    return block_tridgm(H_diag, H_super, H_sub), H_diag, H_super, H_sub
 end
 
 

@@ -40,7 +40,7 @@ function newton_raphson_tridg!(l::LDS, x0::AbstractArray, y::AbstractArray, nite
         # Compute the gradient
         grad = Gradient(l, y, xₜ)
         # Compute the Hessian
-        hess = Hessian(l, y)
+        hess, _, _, _ = Hessian(l, y)
         # reshape the gradient to a vector to pass to newton_raphson_step_tridg!, we transpose as the way Julia reshapes is by vertically stacking columns as we need to match up observations to the Hessian.
         grad = Matrix{Float64}(reshape(grad', (T*D), 1))
         # Compute the Newton-Raphson step        
