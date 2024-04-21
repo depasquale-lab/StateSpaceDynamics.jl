@@ -40,7 +40,7 @@ end
 """
 sample(gmm::GaussianMixtureModel, n)
 
-Draw 'n' samples from gmm. Returns 'data dim' by n size Matrix{Float64}.
+Draw 'n' samples from gmm. Returns n by 'data dim' size Matrix{Float64}.
 
 """
 function sample(gmm::GaussianMixtureModel, n::Int)
