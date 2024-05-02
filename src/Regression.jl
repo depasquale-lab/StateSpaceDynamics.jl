@@ -14,19 +14,7 @@ GLM
 Abstract type for GLM's, especially for SSM's.
 """
 abstract type GLM end
-
-"""
-Link
-
-Abstract type for Link functions.
-"""
 abstract type Link end
-
-"""
-Loss
-
-Abstract type for Loss functions.
-"""
 abstract type Loss end
 
 # Loss Functions
@@ -69,6 +57,15 @@ struct CrossEntropyLoss <: Loss end
 # Compute loss for CrossEntropy
 function compute_loss(::CrossEntropyLoss, y_pred::Vector{Float64}, y_true::Vector{Float64})::Float64
     return -sum(y_true .* log.(y_pred) .+ (1 .- y_true) .* log.(1 .- y_pred))
+end
+
+struct WeightedCrossEntropyLoss <: Loss
+    weights::Vector{Float64}
+end
+
+# Compute loss for WeightedCrossEntropy
+function compute_loss(l::WeightedCrossEntropyLoss, y_pred::Vector{Float64}, y_true::Vector{Float64})::Float64
+    return -sum(l.weights .* (y_true .* log.(y_pred) .+ (1 .- y_true) .* log.(1 .- y_pred)))
 end
 
 """
@@ -240,6 +237,11 @@ function BinomialRegression(X::Matrix{T}, y::Vector{T}, constant::Bool=true, lin
     end
     β = zeros(p)  # initialize as zeros
     return BinomialRegression(X, y, β, link, loss)
+end
+
+function loglikelihood(model::BinomialRegression{T}) where T <: Real
+    p = invlink(model.link, model.β' * model.X)
+    return sum(model.y' * log.(p) + (1 .- model.y)' * log.(1 .- p))
 end
 
 # Predict function for any regression model where X is a matrix

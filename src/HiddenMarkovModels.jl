@@ -56,7 +56,7 @@ This set of functions is for the Baum-Welch algorithm but uses the scaling facto
 #     # Now perform the rest of the forward algorithm for t=2 to T
 #     for t in 2:T
 #         for j in 1:K
-#             α[j, t] = 0 
+#             α[j, t] = 0 d
 #             for i in 1:K
 #                 α[j, t] += α[i, t-1] * hmm.A[i, j] # αⱼ(t) = ∑ᵢ αᵢ(t-1) * Aᵢⱼ
 #             end
@@ -256,7 +256,7 @@ function MStep!(hmm::AbstractHMM, γ::Matrix{Float64}, ξ::Array{Float64, 3}, da
     # Update transition probabilities
     for i in 1:K
         for j in 1:K
-            hmm.A[i,j] = exp(log(sum(exp.(ξ[i,j,:]))) - log(sum(exp.(γ[i,1:T-1]))))
+            hmm.A[i, j] = exp(log(sum(exp.(ξ[i,j,:]))) - log(sum(exp.(γ[i, 1:T-1]))))
         end
     end
     # Update emission model 

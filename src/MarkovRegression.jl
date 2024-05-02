@@ -1,4 +1,4 @@
-export SwitchingGaussianRegression, MarkovRegressionEM
+export SwitchingGaussianRegression, MarkovRegressionEM, SwitchingBinomialRegression
 """
 SwitchingGaussianRegression
 
@@ -200,6 +200,15 @@ function SwitchingBinomialRegression(y::Vector{Int}, X::Matrix{Float64}, k::Int)
     # Initialize regression models
     regression_models = [RegressionEmissions(BinomialRegression(X, y, true)) for _ in 1:k]
     # Initialize emissions model and transition matrix  
+    πₖ = rand(k)
+    A = rand(k, k)
+    # Normalize
+    A ./= sum(A, dims=2)
+    πₖ ./= sum(πₖ)
+    # Initialize weights
+    weights = ones(k, length(y))
+    # Create the SwitchingBinomialRegression object with initialized parameters
+    return SwitchingBinomialRegression(y, X, k, A, πₖ, regression_models, weights)
 end
 
 mutable struct SwitchingPoissonRegression{T<:Real} <: AbstractHMM

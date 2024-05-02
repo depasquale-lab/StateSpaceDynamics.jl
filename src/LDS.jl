@@ -141,20 +141,41 @@ function RTSSmoother(l::LDS, y::AbstractArray)
     return x_smooth, p_smooth, J, ml
 end
 
-function DirectSmoother(l::LDS, y::AbstractArray)
+function DirectSmoother(l::LDS, y::AbstractArray, tol::Float64=1e-6)
     # Pre-allocate arrays
     T, D = size(y)
-    x_smooth = zeros(T, l.latent_dim)
     p_smooth = zeros(T, l.latent_dim, l.latent_dim)
     # Compute the precdiction as a starting point for the optimization
-    x_pred = zeros(T, l.latent_dim)
-    X_pred[1, :] = l.x0
+    xₜ = zeros(T, l.latent_dim)
+    xₜ[1, :] = l.x0
     for t in 2:T
-        x_pred[t, :] = l.A * x_pred[t-1, :]
+        xₜ[t, :] = l.A * xₜ[t-1, :]
     end
-    # Now do the optimization
-    x_smooth = newton_raphson_tridg!(l, x_pred, y, 10) # this should stop at the first iteration in theory but likely will at iteration 2
-    # Compute the smoothed state covariances
+    # Compute the Hessian of the loglikelihood
+    H, main, super, sub = Hessian(l, y)
+    # compute the inverse of the main diagonal of the Hessian, this is the posterior covariance
+    p_smooth = block_tridiagonal_inverse(sub, main, super)
+    # now optimize
+    for i in 1:5 # this should stop at the first iteration in theory but likely will at iteration 2
+        # Compute the gradient
+        grad = Gradient(l, y, xₜ)
+        # reshape the gradient to a vector to pass to newton_raphson_step_tridg!, we transpose as the way Julia reshapes is by vertically stacking columns as we need to match up observations to the Hessian.
+        grad = Matrix{Float64}(reshape(grad', (T*D), 1))
+        # Compute the Newton-Raphson step        
+        xₜ₊₁ = newton_raphson_step_tridg!(xₜ, H, grad)
+        # Check for convergence (uncomment the following lines to enable convergence checking)
+        if norm(xₜ₊₁ - xₜ) < tol
+            println("Converged at iteration ", i)
+            return xₜ₊₁, p_smooth
+        else
+            println("Norm of gradient iterate difference: ", norm(xₜ₊₁ - xₜ))
+        end
+        # Update the iterate
+        xₜ = xₜ₊₁
+    end
+    # Print a warning if the routine did not converge
+    println("Warning: Newton-Raphson routine did not converge.")
+    return xₜ, p_smooth
 end
 
 function KalmanSmoother(l::LDS, y::AbstractArray, method::String="RTS")

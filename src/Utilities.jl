@@ -1,10 +1,9 @@
-export kmeanspp_initialization, kmeans_clustering, Autoregression, fit!, loglikelihood, ensure_positive_definite, PPCA, fit!, block_tridgm, interleave_reshape
+export kmeanspp_initialization, kmeans_clustering, Autoregression, fit!, loglikelihood, ensure_positive_definite, PPCA, fit!, block_tridgm, interleave_reshape, block_tridiagonal_inverse
 
 """Block Tridiagonal Inverse"""
 function block_tridiagonal_inverse(A, B, C)
     n = length(B)
     block_size = size(B[1], 1)
-
     # Initialize Di and Ei arrays
     D = Array{AbstractMatrix}(undef, n+1)
     E = Array{AbstractMatrix}(undef, n+1)
