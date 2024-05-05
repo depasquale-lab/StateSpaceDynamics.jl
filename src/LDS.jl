@@ -217,14 +217,6 @@ function sufficient_statistics(J::AbstractArray, V::AbstractArray, μ::AbstractA
     return E_z, E_zz, E_zz_prev
 end 
 
-function EStep(l::LDS, y::AbstractArray)
-    # run the kalman smoother
-    x_smooth, p_smooth, J, ml = KalmanSmoother(l, y)
-    # compute the sufficient statistics
-    E_z, E_zz, E_zz_prev = sufficient_statistics(J, p_smooth, x_smooth)
-    return x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml
-end
-
 function update_initial_state_mean!(l::LDS, E_z::AbstractArray)
     # update the state mean
     if l.fit_bool[1]
@@ -280,12 +272,20 @@ function update_R!(l::LDS, E_z::AbstractArray, E_zz::AbstractArray, y::AbstractA
         # Calculate the sum of terms
         sum_terms = zeros(size(l.H))
         for n in 1:N
-            sum_terms += (y[n, :] * y[n, :]') - (l.H * E_z[n, :] * y[n, :]') #- (y[n, :] * E_z[n, :]' * l.H) + (l.H' * E_zz[n, :, :] * l.H)
+            sum_terms += (y[n, :] * y[n, :]') - (l.H * (y[n, :] * E_z[n, :]')') - ((y[n, :] * E_z[n, :]') * l.H') + (l.H * E_zz[n, :, :] * l.H')
         end
         # Finalize the update matrix calculation
         update_matrix = (1 / N) * sum_terms
         l.R = 0.5 * (update_matrix + update_matrix')
     end
+end
+
+function EStep(l::LDS, y::AbstractArray)
+    # run the kalman smoother
+    x_smooth, p_smooth, J, ml = KalmanSmoother(l, y)
+    # compute the sufficient statistics
+    E_z, E_zz, E_zz_prev = sufficient_statistics(J, p_smooth, x_smooth)
+    return x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml
 end
 
 function MStep!(l::LDS, E_z, E_zz, E_zz_prev, y_n)
