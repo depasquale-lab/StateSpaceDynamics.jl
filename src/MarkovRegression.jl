@@ -170,20 +170,6 @@ function MarkovRegressionEM(model::SwitchingGaussianRegression, max_iters::Int=1
 end
 
 """
-AutoRegressive HMM
-"""
-mutable struct AutoRegressiveHMM{T<:Real} <: AbstractHMM
-    y::Matrix{T} # observations
-    K::Int # number of states
-    A::Matrix{T} # transition matrix
-    πₖ::Vector{T} # initial state distribution
-    B::Vector{AutoRegressiveEmissions} # Vector of AutoRegressive Emissions Models
-    σ²::Vector{T} # Vector of variances for each state
-    weights::Vector{T} # Vector of weights for each state
-    p::Int # order of the autoregressive model
-end
-
-"""
 Poisson Markov regression, Binomial Markov Regression, Multinomial Markov Regression eventually
 """
 mutable struct SwitchingBinomialRegression <: AbstractHMM

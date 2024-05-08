@@ -90,19 +90,11 @@ function updateEmissionModel!(emission::MultinomialEmissions, data::Matrix{Float
     #TODO: Implement updateEmissionModel! for multinomial model
 end
 
-
-"""
-Gaussian Orthogonal Emissions. 
-"""
-struct GaussianOrthogonalEmissions <: EmissionsModel
-    #TODO: Implement Gaussian Orthogonal Emissions
-end
-
 """
 RegressionEmissions: A struct representing a regression model for emissions. This is used in HMM-GLM models.
 """
 mutable struct RegressionEmissions <: EmissionsModel
-    regression_model::GLM
+    regression_model::Regression
 end
 
 # loglikelihood of the regression model.
@@ -114,37 +106,3 @@ end
 function updateEmissionModel!(emission::RegressionEmissions)
     fit!(emission.regression_model)
 end
-
-"""
-AutoRegressiveEmissions: AutoRegression Emissions Model
-"""
-mutable struct AutoRegressiveEmissions <: EmissionsModel
-    autoregression_model::Autoregression
-end
-
-# loglikelihood of the autoregressive model.
-function loglikelihood(emission::AutoRegressiveEmissions, observation::Vector{Float64})
-    loglikelihood(emission.autoregression_model, observation)
-end
-
-function updateEmissionModel!(emission::AutoRegressiveEmissions)
-    #TODO: Implement updateEmissionModel! for autoregressive model
-end
-
-"""
-LDSEmissions: Linear Dynamical System Emissions Model
-"""
-
-mutable struct LDSEmissions<: EmissionsModel
-    lds_model::LDS
-end
-
-# loglikelihood of the linear dynamical system model.
-function loglikelihood(emission::LDSEmissions, observation::Vector{Float64})
-    loglikelihood(emission.lds_model, observation)
-end
-
-function updateEmissionModel!(emission::LDSEmissions)
-    #TODO: Implement updateEmissionModel! for linear dynamical system model
-end
-
