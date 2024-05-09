@@ -1,20 +1,28 @@
-export HMM, baumWelch!, viterbi, sample
+export GaussianHMM, baumWelch!, viterbi, sample
 
+"""
+GaussianHMM: A hidden markov model with Gaussian emissions.
 
-# Vanilla HMM Definition
-mutable struct HMM{EM <: EmissionsModel} <: AbstractHMM
+Args:
+    A::Matrix{Float64}: State Transition Matrix
+    B::Vector{GaussianEmission}: Emission Model
+    πₖ::Vector{Float64}: Initial State Distribution
+    D::Int: Latent State Dimension
+"""
+mutable struct GaussianHMM{GaussianEmission} <: AbstractHMM
     A::Matrix{Float64}  # State Transition Matrix
-    B::Vector{EM}       # Emission Model
+    B::Vector{GaussianEmission}       # Emission Model
     πₖ ::Vector{Float64} # Initial State Distribution
-    D::Int              # Latent State Dimension
+    K::Int              # Latent State Dimension
+    D::Int              # Dimension of the data
 end
 
-# Constructor for HMM when all params are known, really just for sampling/testing
-function HMM(A::Matrix{Float64}, B::Vector{EM}, πₖ::Vector{Float64}, D::Int) where {EM <: EmissionsModel}
-    return HMM{EM}(A, B, πₖ, D)
+# Constructor for GaussianHMM when all params are known, really just for sampling/testing
+function GaussianHMM(A::Matrix{Float64}, B::Vector{GaussianEmission}, πₖ::Vector{Float64}, K::Int, D::Int)
+    return GaussianHMM{GaussianEmission}(A, B, πₖ, K, D)
 end
 
-function HMM(data::Matrix{Float64}, k_states::Int=2, emissions::String="Gaussian")
+function GaussianHMM(data::Matrix{Float64}, k_states::Int=2)
     N, D = size(data)
     # Initialize A
     A = rand(k_states, k_states)
@@ -23,17 +31,138 @@ function HMM(data::Matrix{Float64}, k_states::Int=2, emissions::String="Gaussian
     πₖ = rand(k_states)
     πₖ = πₖ ./ sum(πₖ) # normalize to ensure it's a valid probability vector
     # Initialize Emission Model
-    if emissions == "Gaussian"
-        # use kmeans_clustering to initialize the emission model
-        sample_means, labels = kmeans_clustering(data, k_states)
-        sample_covs = [cov(data[labels .== i, :]) for i in 1:k_states]
-        B = [GaussianEmission(sample_means[:, i], sample_covs[i]) for i in 1:k_states]
-        return HMM{GaussianEmission}(A, B, πₖ, D)
-    else   
-        throw(ErrorException("$emissions is not a supported emissions model, please choose one of the supported models."))
-    end
-end
 
+    # use kmeans_clustering to initialize the emission model
+    sample_means, labels = kmeans_clustering(data, k_states)
+    sample_covs = [cov(data[labels .== i, :]) for i in 1:k_states]
+    B = [GaussianEmission(sample_means[:, i], sample_covs[i]) for i in 1:k_states]
+    return GaussianHMM(A, B, πₖ, k_states, D)
+end
+"""
+This set of functions is for the Baum-Welch algorithm but uses the scaling factors version of the forward-backward algorithm. I'm keeping this here for now in case we want to use it later. 
+"""
+# function forward(hmm::AbstractHMM, data::AbstractArray)
+#     T = size(data, 1)
+#     K = size(hmm.A, 1)  # Number of states
+#     # Initialize the scaled α-matrix and scaling factors
+#     α = zeros(Float64, K, T)
+#     c = zeros(Float64, T)
+#     # Calculate α₁
+#     for k in 1:K
+#         α[k, 1] = hmm.πₖ[k] * likelihood(hmm.B[k], data[1, :]) # α₁(k) = πₖ(k) * Bₖ(y₁)
+#     end
+#     c[1] = 1 / (sum(α[:, 1]) + eps(Float64))
+#     α[:, 1] *= c[1]
+#     # Now perform the rest of the forward algorithm for t=2 to T
+#     for t in 2:T
+#         for j in 1:K
+#             α[j, t] = 0 
+#             for i in 1:K
+#                 α[j, t] += α[i, t-1] * hmm.A[i, j] # αⱼ(t) = ∑ᵢ αᵢ(t-1) * Aᵢⱼ
+#             end
+#             α[j, t] *= likelihood(hmm.B[j], data[t, :])  # αⱼ(t) *= Bⱼ(yₜ)
+#         end
+#         c[t] = 1 / (sum(α[:, t]) + eps(Float64)) # Scale the α values
+#         α[:, t] *= c[t]
+#     end
+#     return α, c
+# end
+
+# function backward(hmm::AbstractHMM, data::AbstractArray, scaling_factors::Vector{Float64})
+#     T = size(data, 1)
+#     K = size(hmm.A, 1)  # Number of states
+#     # Initialize the scaled β matrix
+#     β = zeros(Float64, K, T)
+#     # Set last β values.
+#     β[:, T] .= 1  # βₖ(T) = 1 What should this be?
+#     # Calculate β, starting from T-1 and going backward to 1
+#     for t in T-1:-1:1
+#         for i in 1:K
+#             β[i, t] = 0
+#             for j in 1:K
+#                 β[i, t] += hmm.A[i, j] * likelihood(hmm.B[j], data[t+1, :]) * β[j, t+1] # βᵢ(t) = ∑ⱼ Aᵢⱼ * Bⱼ(yₜ₊₁) * βⱼ(t₊₁)
+#             end
+#             β[i, t] *= scaling_factors[t+1] # Scale the β values
+#         end
+#     end
+#     return β
+# end
+
+# function calculate_γ(hmm::AbstractHMM, α::Matrix{Float64}, β::Matrix{Float64})
+#     T = size(α, 2)
+#     γ = α .* β # γₖ(t) = αₖ(t) * βₖ(t)
+#     for t in 1:T
+#         γ[:, t] /= sum(γ[:, t]) # Normalize the γ values
+#     end
+#     return γ
+# end
+
+# function calculate_ξ(hmm::AbstractHMM, α::Matrix{Float64}, β::Matrix{Float64}, scaling_factors::Vector{Float64}, data::AbstractArray)
+#     T = size(data, 1)
+#     K = size(hmm.A, 1)
+#     ξ = zeros(Float64, K, K, T-1)
+#     for t in 1:T-1
+#         for i in 1:K
+#             for j in 1:K
+#                 ξ[i, j, t] = (scaling_factors[t+1]) * α[i, t] * hmm.A[i, j] * likelihood(hmm.B[j], data[t+1, :]) * β[j, t+1] # ξᵢⱼ(t) = αᵢ(t) * Aᵢⱼ * Bⱼ(yₜ₊₁) * βⱼ(t₊₁)
+#             end
+#         end
+#         ξ[:, :, t] /= sum(ξ[:, :, t]) # Normalize the ξ values
+#     end
+#     return ξ
+# end
+
+# function Estep(hmm::AbstractHMM, data::Matrix{Float64})
+#     α, c = forward(hmm, data)
+#     β = backward(hmm, data, c)
+#     γ = calculate_γ(hmm, α, β)
+#     ξ = calculate_ξ(hmm, α, β, c, data)
+#     return γ, ξ, α, β, c
+# end
+
+# function MStep!(hmm::AbstractHMM, γ::Matrix{Float64}, ξ::Array{Float64, 3}, data::Matrix{Float64})
+#     K = size(hmm.A, 1)
+#     T = size(data, 1)
+#     # Update initial state probabilities
+#     hmm.πₖ .= γ[:, 1] / sum(γ[:, 1])
+#     # Update transition probabilities
+#     for i in 1:K
+#         for j in 1:K
+#             hmm.A[i, j] = sum(ξ[i, j, :]) / sum(γ[i, 1:T-1])
+#         end
+#     end
+#     # Update emission model 
+#     for k in 1:K
+#         hmm.B[k] = updateEmissionModel!(hmm.B[k], data, γ[k,:])
+#     end
+# end
+
+# function baumWelch!(hmm::AbstractHMM, data::Matrix{Float64}, max_iters::Int=100, tol::Float64=1e-6)
+#     # Initialize log-likelihood
+#     ll_prev = -Inf
+#     # Initialize progress bar
+#     p = Progress(max_iters; dt=1, desc="Computing Baum-Welch...",)
+#     for iter in 1:max_iters
+#         # Update the progress bar
+#         next!(p; showvalues = [(:iteration, iter), (:log_likelihood, ll_prev)])
+#         # E-Step
+#         γ, ξ, α, β, c = Estep(hmm, data)
+#         # Compute and update the log-likelihood
+#         log_likelihood = sum(log.((1 ./ c)))
+#         println(log_likelihood)
+#         if abs(log_likelihood - ll_prev) < tol
+#             finish!(p)
+#             break
+#         else
+#             ll_prev = log_likelihood
+#         end
+#         # M-Step
+#         MStep!(hmm, γ, ξ, data)
+#     end
+# end
+"""
+This set of functions is for the Baum-Welch algorithm but uses the log-space version of the forward-backward algorithm. I'm keeping this here for now in case we want to use it later. 
+"""
 function forward(hmm::AbstractHMM, data::Y) where Y <: AbstractArray
     T = size(data, 1)
     K = size(hmm.A, 1)  # Number of states
@@ -63,7 +192,7 @@ function backward(hmm::AbstractHMM, data::Y) where Y <: AbstractArray
 
     # Initialize a β matrix
     β = zeros(Float64, K, T)
-    
+
     # Set last β values. In log-space, 0 corresponds to a value of 1 in the original space.
     β[:, T] .= 0  # log(1) = 0
 
@@ -111,7 +240,7 @@ function calculate_ξ(hmm::AbstractHMM, α::Matrix{Float64}, β::Matrix{Float64}
     return ξ
 end
 
-function Estep(hmm::AbstractHMM, data::Matrix{Float64})
+function EStep(hmm::AbstractHMM, data::Matrix{Float64})
     α = forward(hmm, data)
     β = backward(hmm, data)
     γ = calculate_γ(hmm, α, β)
@@ -136,10 +265,7 @@ function MStep!(hmm::AbstractHMM, γ::Matrix{Float64}, ξ::Array{Float64, 3}, da
     end
 end
 
-# function expectation_gradient(hmm::HMM, data::Matrix{Float64}, max_iters::Int=100, tol::Float64)
-# end
-
-function baumWelch!(hmm::HMM,  data::Matrix{Float64}, max_iters::Int=100, tol::Float64=1e-6)
+function baumWelch!(hmm::AbstractHMM, data::Matrix{Float64}, max_iters::Int=100, tol::Float64=1e-6)
     T, _ = size(data)
     K = size(hmm.A, 1)
     log_likelihood = -Inf
@@ -149,9 +275,10 @@ function baumWelch!(hmm::HMM,  data::Matrix{Float64}, max_iters::Int=100, tol::F
         # Update the progress bar
         next!(p; showvalues = [(:iteration, iter), (:log_likelihood, log_likelihood)])
         # E-Step
-        γ, ξ, α, β = Estep(hmm, data)
+        γ, ξ, α, β = EStep(hmm, data)
         # Compute and update the log-likelihood
         log_likelihood_current = logsumexp(α[:, T])
+        println(log_likelihood_current)
         if abs(log_likelihood_current - log_likelihood) < tol
             finish!(p)
             break
@@ -163,7 +290,7 @@ function baumWelch!(hmm::HMM,  data::Matrix{Float64}, max_iters::Int=100, tol::F
     end
 end
 
-function viterbi(hmm::HMM, data::Matrix{Float64})
+function viterbi(hmm::AbstractHMM, data::Matrix{Float64})
     T, _ = size(data)
     K = size(hmm.A, 1)  # Number of states
     # Step 1: Initialization
@@ -197,7 +324,7 @@ function viterbi(hmm::HMM, data::Matrix{Float64})
     return reverse(best_path)
 end
 
-function sample(hmm::HMM, n::Int)
+function sample(hmm::GaussianHMM, n::Int)
     # Number of states
     K = size(hmm.A, 1)
     # Initialize state and observation arrays
@@ -214,5 +341,34 @@ function sample(hmm::HMM, n::Int)
         observations[t, :] = rand(MvNormal(hmm.B[states[t]].μ, hmm.B[states[t]].Σ))
     end
     return states, observations
+end
+
+"""
+PoissonHMM: A hidden markov model with Poisson emissions.
+
+Args:
+    A::Matrix{Float64}: State Transition Matrix
+    B::Vector{PoissonEmission}: Emission Model
+    πₖ::Vector{Float64}: Initial State Distribution
+    D::Int: Latent State Dimension
+"""
+
+mutable struct PoissonHMM{PoissonEmission} <: AbstractHMM
+    A::Matrix{Float64}  # State Transition Matrix
+    B::Vector{PoissonEmission} # Emission Model
+    πₖ ::Vector{Float64} # Initial State Distribution
+    K::Int # Latent State Dimension
+end
+
+function PoissonHMM(data::Matrix{Float64}, K::Int)
+    T, D = size(data)
+    # Initialize A
+    A = rand(K, K)
+    A = A ./ sum(A, dims=2)  # normalize rows to ensure they are valid probabilities
+    # Initialize π
+    πₖ = rand(K)
+    πₖ = πₖ ./ sum(πₖ) # normalize to ensure it's a valid probability vector
+    # Initialize Emission Model
+    #TODO: Finish later
 end
 

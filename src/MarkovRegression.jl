@@ -13,7 +13,7 @@ mutable struct SwitchingGaussianRegression{T <: Real} <: AbstractHMM
     πₖ::Vector{T} # initial state distribution
     B::Vector{RegressionEmissions} # Vector of Gaussian Regression Models
     σ²::Vector{T} # Vector of variances for each state
-    weights::Vector{T} # Vector of weights for each state
+    weights::Matrix{T} # Vector of weights for each state
 end
 
 """
@@ -41,7 +41,7 @@ function SwitchingGaussianRegression(y::Vector{T}, X::Matrix{T}, k::Int) where T
     # initialize variance
     σ² = zeros(T, k)
     # Initiliaze weights
-    weights = ones(T, size(y))
+    weights = ones(T, (k, length(y)))
     # Create the SwitchingGaussianRegression object with initialized parameters
     model = SwitchingGaussianRegression(y, X, k, A, πₖ, regression_models, σ², weights)
     # Perform the E-step with the initialized model
@@ -55,18 +55,19 @@ end
 
 function initialize_emissions_model(k::Int, data::AbstractVector, regression_emissions::Vector{RegressionEmissions})
     # init with a GMM
-    gmm = GMM(k, 1, data)
-    fit!(gmm, data, tol=0.1)
+    gmm = GaussianMixtureModel(k, size(data,2))
+    class_probabilities = fit!(gmm, data, tol=0.1)
     # initialize emission model
     for i in 1:k
-        weights = gmm.class_probabilities[:, i]
+        weights = class_probabilities[:, i]
         regression_emissions[i].regression_model.loss = WLSLoss(weights)
         updateEmissionModel!(regression_emissions[i])
     end
     # use gmm class probabilities to set initial distribution
-    πₖ = gmm.class_probabilities[1, :]
+    πₖ = class_probabilities[1, :]
     # use gmm class probabilites to estimate an A matrix
-    A = estimate_transition_matrix(k, gmm.class_labels)
+    class_labels = [argmax(class_probabilities[n, :]) for n in axes(class_probabilities,1)]
+    A = estimate_transition_matrix(k, class_labels)
     return πₖ, A
 end
 
@@ -104,14 +105,16 @@ function update_mixing_coefficients!(model::SwitchingGaussianRegression, γ::Mat
     model.πₖ = exp.(γ[:, 1])
 end
 
-#TODO: This is not correct--need to debug.
 function update_variance!(model::SwitchingGaussianRegression, γ::Matrix{T}) where T <: Real
+    weights = model.weights
+    N = size(weights, 2) - 1
     # update the variance term
     σ² = zeros(T, model.K)
     for k in 1:model.K
         resid = residuals(model.B[k].regression_model)
-        weighted_mean = sum(exp.(γ[k, :]) .* resid) / sum(exp.(γ[k, :])) / (length(resid) - 1)
-        σ²[k] = sum(exp.(γ[k, :]) .* (resid .- weighted_mean).^2) / sum(exp.(γ[k, :]))
+        weighted_mean = sum(weights[k] .* resid) / sum(weights[k])
+        println(sum(weights[k] .* (resid .- weighted_mean).^2))
+        σ²[k] = sum(weights[k] .* (resid .- weighted_mean).^2) / sum(weights[k]) / N
     end
     model.σ² = σ²
 end
@@ -121,9 +124,9 @@ function update_regression_model!(model::SwitchingGaussianRegression, α::Matrix
         # get weights for wls
         weights = sqrt.(exp.(α[k, :] .+ β[k, :]))
         # normalize the weights
-        model.weights = weights
+        model.weights[k, :] = weights
         # define weighted loss function
-        model.B[k].regression_model.loss = WLSLoss(model.weights)
+        model.B[k].regression_model.loss = WLSLoss(model.weights[k, :])
         # update the regression model for each state
         updateEmissionModel!(model.B[k])
     end
@@ -167,7 +170,6 @@ function MarkovRegressionEM(model::SwitchingGaussianRegression, max_iters::Int=1
     end
 end
 
-
 """
 AutoRegressive HMM
 """
@@ -182,12 +184,9 @@ mutable struct AutoRegressiveHMM{T<:Real} <: AbstractHMM
     p::Int # order of the autoregressive model
 end
 
-
-
 """
 Poisson Markov regression, Binomial Markov Regression, Multinomial Markov Regression eventually
 """
-
 mutable struct SwitchingBinomialRegression <: AbstractHMM
     y::Vector{Int} # observations
     X::Matrix{Float64} # covariates
