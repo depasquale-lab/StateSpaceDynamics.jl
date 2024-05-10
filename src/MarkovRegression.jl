@@ -162,3 +162,40 @@ function fit!(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64}, max_iter::I
     end
     return lls
 end
+
+function viterbi(hmm::hmmglm, X::Matrix{Float64}, y::Vector{Float64})
+    T = length(y)
+    K = size(hmm.A, 1)  # Number of states
+
+    # Step 1: Initialization
+    viterbi = zeros(Float64, T, K)
+    backpointer = zeros(Int, T, K)
+    for i in 1:K
+        viterbi[1, i] = log(hmm.πₖ[i]) + loglikelihood(hmm.B[i], X[1, :], y[1])
+        backpointer[1, i] = 0
+    end
+
+    # Step 2: Recursion
+    for t in 2:T
+        for j in 1:K
+            max_prob, max_state = -Inf, 0
+            for i in 1:K
+                prob = viterbi[t-1, i] + log(hmm.A[i, j]) + loglikelihood(hmm.B[j], X[t, :], y[t])
+                if prob > max_prob
+                    max_prob = prob
+                    max_state = i
+                end
+            end
+            viterbi[t, j] = max_prob
+            backpointer[t, j] = max_state
+        end
+    end
+
+    # Step 3: Termination
+    best_path_prob, best_last_state = findmax(viterbi[T, :])
+    best_path = [best_last_state]
+    for t in T:-1:2
+        push!(best_path, backpointer[t, best_path[end]])
+    end
+    return reverse(best_path)
+end
