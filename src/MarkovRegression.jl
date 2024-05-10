@@ -137,23 +137,28 @@ function fit!(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64}, max_iter::I
     if initialize
         initialize_regression!(model, X, y)
     end
+    # ll variable
+    lls = [-Inf]
+    # Initialize first log-likelihood
     prev_ll = -Inf
     # run EM algorithm
     for i in 1:max_iter
         # E-step
         γ, ξ, α, _ = E_step(model, X, y)
         # Log-likelihood
-        ll = logsumexp(α[:, end])
+        ll = logsumexp(α[end, :])
+        push!(lls, ll)
         println("Log-Likelihood at iter $i: $ll")
         # M-step
         M_step!(model, γ, ξ, X, y)
         # check for convergence
         if i > 1
             if abs(ll - prev_ll) < tol
-                break
+                return lls
             end
         else
             prev_ll = ll
         end
     end
+    return lls
 end
