@@ -94,15 +94,15 @@ end
 RegressionEmissions: A struct representing a regression model for emissions. This is used in HMM-GLM models.
 """
 mutable struct RegressionEmissions <: EmissionsModel
-    regression_model::Regression
+    regression::Regression
 end
 
 # loglikelihood of the regression model.
-function loglikelihood(emission::RegressionEmissions, observation::Vector{Float64})
-    loglikelihood(emission.regression_model)
+function loglikelihood(emission::RegressionEmissions, X::Vector{Float64}, y::Float64)
+    loglikelihood(emission.regression, X, y)
 end
 
 # Update the parameters of the regression model, e.g. the betas.
-function updateEmissionModel!(emission::RegressionEmissions)
-    fit!(emission.regression_model)
+function update_emissions_model!(emission::RegressionEmissions, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
+    fit!(emission.regression, X, y, w)
 end

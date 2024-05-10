@@ -19,22 +19,40 @@ mutable struct GaussianRegression <: Regression
     GaussianRegression(β::Vector{Float64}, σ²::Float64, include_intercept::Bool) = new(β, σ², include_intercept)
 end
 
-function log_likelihood(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64})
+function loglikelihood(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64})
     # confirm that the model has been fit
     @assert !isempty(model.β) && model.σ² != 0.0 "Model parameters not initialized, please call fit! first."
+    # add intercept if specified
+    if model.include_intercept
+        X = hcat(ones(size(X, 1)), X)
+    end
     # calculate log likelihood
     residuals = y - X * model.β
     n = length(y)
     -0.5 * n * log(2π * model.σ²) - (0.5 / model.σ²) * sum(residuals.^2)
 end
 
-function least_squares(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64})
+function loglikelihood(model::GaussianRegression, X::Vector{Float64}, y::Float64)
     # confirm that the model has been fit
-    @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
-    residuals = y - X * model.β
-    return sum(residuals.^2)
+    @assert !isempty(model.β) && model.σ² != 0.0 "Model parameters not initialized, please call fit! first."
+    # add intercept if specified
+    if model.include_intercept
+        X = vcat(1.0, X)
+    end
+    # calculate log likelihood
+    residuals = y - X' * model.β
+    n = length(y)
+    -0.5 * n * log(2π * model.σ²) - (0.5 / model.σ²) * sum(residuals.^2)
 end
 
+function least_squares(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
+    # confirm that the model has been fit
+    @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
+    residuals =  y - (X * model.β)
+    return sum(w.*(residuals.^2))
+end
+
+# something is weird here with the gradient... I'll come back to it. Issue is with Optim, ForwardDiff produces same gradient as this function
 function gradient!(G::Vector{Float64}, model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64})
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
@@ -43,16 +61,16 @@ function gradient!(G::Vector{Float64}, model::GaussianRegression, X::Matrix{Floa
     G .= 2 * X' * residuals
 end
 
-function update_variance!(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64})
+function update_variance!(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # get number of parameters
     p = length(model.β)
     residuals = y - X * model.β
-    model.σ² = sum(residuals.^2) / (length(y) - p) # unbiased estimate
+    model.σ² = sum(w.*(residuals.^2)) / sum(w) # biased estimate
 end
 
-function fit!(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64})
+function fit!(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
     # add intercept if specified
     if model.include_intercept
         X = hcat(ones(size(X, 1)), X)
@@ -63,13 +81,13 @@ function fit!(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64})
     model.β = rand(p)
     model.σ² = 1.0
     # minimize objective
-    objective(β) = least_squares(GaussianRegression(β, model.σ², true), X, y)
-    objective_grad!(G, β) = gradient!(G, GaussianRegression(β, model.σ², true), X, y)
+    objective(β) = least_squares(GaussianRegression(β, model.σ², true), X, y, w)
+    #objective_grad!(G, β) = gradient!(G, GaussianRegression(β, model.σ², true), X, y) # troubleshoot this later
 
     result = optimize(objective, model.β, LBFGS(), Optim.Options())
     # update parameters
     model.β = result.minimizer
-    update_variance!(model, X, y)
+    update_variance!(model, X, y, w)
 end
 
 """

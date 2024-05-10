@@ -1,210 +1,159 @@
-export SwitchingGaussianRegression, MarkovRegressionEM, SwitchingBinomialRegression
-"""
-SwitchingGaussianRegression
+export SwitchingGaussianRegression, EM
 
-Struct representing a Gaussian Markov Regression model.
-
+abstract type hmmglm <: AbstractHMM end
 """
-mutable struct SwitchingGaussianRegression{T <: Real} <: AbstractHMM
-    y::Vector{T} # observations
-    X::Matrix{T} # covariates
-    K::Int # number of states
-    A::Matrix{T} # transition matrix
-    πₖ::Vector{T} # initial state distribution
-    B::Vector{RegressionEmissions} # Vector of Gaussian Regression Models
-    σ²::Vector{T} # Vector of variances for each state
-    weights::Matrix{T} # Vector of weights for each state
-end
+    SwitchingGaussianRegression
 
-"""
-Constructor for SwitchingGaussianRegression. 
-    
-We assume there is a set of discrete data-generating regimes 
-in the data that can be explained by essentially k-separate regression models from a Gaussian Family. 
-The transition matrix A is a k x k matrix where A[i, j] is the probability of transitioning from state 
-i to state j. The initial state distribution π_k is a k-dimensional vector where π_k[i] is the probability 
-of starting in state i. The number of states K is an integer representing the number of states in the model.
+Struct representing a Gaussian hmm-glm model. This model is specifically a Hidden Markov Model with Gaussian Regression emissions. One can think of this model
+as a time-dependent mixture of Gaussian regression models. This is similar to how a vanilla HMM is a time-dependent mixture of Gaussian distributions. Thus,
+at each time point we can assess the most likely state and the most likely regression model given the data.
 
 Args:
-    y: vector of observations.
-    X: matrix of covariates.
-    k: number of states.
-
-Returns:
-    SwitchingGaussianRegression object with initialized parameters.
+    A::Matrix{T}: Transition matrix
+    B::Vector{RegressionEmissions}: Vector of Gaussian Regression Models
+    πₖ::Vector{T}: initial state distribution
+    K::Int: number of states
 """
-function SwitchingGaussianRegression(y::Vector{T}, X::Matrix{T}, k::Int) where T <: Real
-    # Initialize regression models
-    regression_models = [RegressionEmissions(GaussianRegression(X, y, true)) for _ in 1:k]
-    # Initialize emissions model and transition matrix
-    πₖ, A = initialize_emissions_model(k, y, regression_models)
-    # initialize variance
-    σ² = zeros(T, k)
-    # Initiliaze weights
-    weights = ones(T, (k, length(y)))
-    # Create the SwitchingGaussianRegression object with initialized parameters
-    model = SwitchingGaussianRegression(y, X, k, A, πₖ, regression_models, σ², weights)
-    # Perform the E-step with the initialized model
-    _, _, γ, _, _ = EStep(model)
-    # Update variance based on the E-step
-    update_variance!(model, γ)
-    # Print initial parameters for verification
-    println("Initial Variance: ", model.σ²)
-    return model
-end
-
-function initialize_emissions_model(k::Int, data::AbstractVector, regression_emissions::Vector{RegressionEmissions})
-    # init with a GMM
-    gmm = GMM(k, 1, data)
-    fit!(gmm, data, tol=0.1)
-    # initialize emission model
-    for i in 1:k
-        weights = gmm.class_probabilities[:, i]
-        regression_emissions[i].regression_model.loss = WLSLoss(weights)
-        updateEmissionModel!(regression_emissions[i])
-    end
-    # use gmm class probabilities to set initial distribution
-    πₖ = gmm.class_probabilities[1, :]
-    # use gmm class probabilites to estimate an A matrix
-    A = estimate_transition_matrix(k, gmm.class_labels)
-    return πₖ, A
-end
-
-function estimate_transition_matrix(k::Int, class_labels::Vector{Int})
-    # Initialize transition matrix with zeros
-    A = zeros(k, k)
-    # Count transitions from i to j
-    for t in 1:length(class_labels)-1
-        current_state = class_labels[t]
-        next_state = class_labels[t+1]
-        A[current_state, next_state] += 1
-    end
-    # Normalize each row to sum to 1
-    for i in 1:k
-        row_sum = sum(A[i, :])
-        if row_sum != 0  # Avoid division by zero
-            A[i, :] ./= row_sum
-        end
-    end
-    return A
-end
-
-function EStep(model::SwitchingGaussianRegression)
-    # E-Step
-    α = forward(model, model.y)
-    β = backward(model, model.y)
-    γ = calculate_γ(model, α, β)
-    ξ = calculate_ξ(model, α, β, model.y)
-    log_likelihood = logsumexp(α[:, end])
-    return α, β, γ, ξ, log_likelihood
-end
-
-function update_mixing_coefficients!(model::SwitchingGaussianRegression, γ::Matrix{T}) where T <: Real
-    # update the mixing coefficients
-    model.πₖ = exp.(γ[:, 1])
-end
-
-function update_variance!(model::SwitchingGaussianRegression, γ::Matrix{T}) where T <: Real
-    weights = model.weights
-    N = size(weights, 2) - 1
-    # update the variance term
-    σ² = zeros(T, model.K)
-    for k in 1:model.K
-        resid = residuals(model.B[k].regression_model)
-        weighted_mean = sum(weights[k] .* resid) / sum(weights[k])
-        println(sum(weights[k] .* (resid .- weighted_mean).^2))
-        σ²[k] = sum(weights[k] .* (resid .- weighted_mean).^2) / sum(weights[k]) / N
-    end
-    model.σ² = σ²
-end
-
-function update_regression_model!(model::SwitchingGaussianRegression, α::Matrix{T}, β::Matrix{T}) where T <: Real
-    for k in 1:model.K
-        # get weights for wls
-        weights = sqrt.(exp.(α[k, :] .+ β[k, :]))
-        # normalize the weights
-        model.weights[k, :] = weights
-        # define weighted loss function
-        model.B[k].regression_model.loss = WLSLoss(model.weights[k, :])
-        # update the regression model for each state
-        updateEmissionModel!(model.B[k])
-    end
-end
-
-function update_adjacency_matrix!(model::SwitchingGaussianRegression, γ::Matrix{T}, ξ::Array{Float64, 3}) where T <: Real
-    # update the HMM adjacency matrix
-    for i in 1:model.K
-        for j in 1:model.K
-            model.A[i, j] = exp(log(sum(exp.(ξ[i, j, :]))) - log(sum(exp.(γ[i, 1:end-1]))))
-        end
-    end
-end
-
-function MStep!(model::SwitchingGaussianRegression, α::Matrix{T}, β::Matrix{T}, γ::Matrix{T}, ξ::Array{Float64, 3}) where T <: Real
-    # M-Step
-    update_adjacency_matrix!(model, γ, ξ)
-    update_mixing_coefficients!(model, γ)
-    update_regression_model!(model, α, β)
-    update_variance!(model, γ)
-end
-
-"""
-EM for a SwitchingGaussianRegression model.
-"""
-
-function MarkovRegressionEM(model::SwitchingGaussianRegression, max_iters::Int=100, tol::Float64=1e-6)
-    # init log-likelihood
-    prev_log_likelihood = -Inf
-    for i in 1:max_iters
-        # E-Step
-        α, β, γ, ξ, ll = EStep(model)
-        # M-Step
-        MStep!(model, α, β, γ, ξ)
-        println("Log-likelihood at iteration $i: ", ll)
-        # check convergence
-        if abs(ll - prev_log_likelihood) < tol
-            break
-        end
-        prev_log_likelihood = ll
-    end
-end
-
-"""
-Poisson Markov regression, Binomial Markov Regression, Multinomial Markov Regression eventually
-"""
-mutable struct SwitchingBinomialRegression <: AbstractHMM
-    y::Vector{Int} # observations
-    X::Matrix{Float64} # covariates
+mutable struct SwitchingGaussianRegression{T <: Real} <: hmmglm
+    A::Matrix{T} # transition matrix
+    B::Vector{RegressionEmissions} # Vector of Gaussian Regression Models
+    πₖ::Vector{T} # initial state distribution
     K::Int # number of states
-    A::Matrix{Float64} # transition matrix
-    πₖ::Vector{Float64} # initial state distribution
-    B::Vector{RegressionEmissions} # Vector of Binomial Regression Models
-    weights::Vector{Float64} # Vector of weights for each state
 end
 
-function SwitchingBinomialRegression(y::Vector{Int}, X::Matrix{Float64}, k::Int)
-    # Initialize regression models
-    regression_models = [RegressionEmissions(BinomialRegression(X, y, true)) for _ in 1:k]
-    # Initialize emissions model and transition matrix  
-    πₖ = rand(k)
-    A = rand(k, k)
-    # Normalize
-    A ./= sum(A, dims=2)
-    πₖ ./= sum(πₖ)
-    # Initialize weights
-    weights = ones(k, length(y))
-    # Create the SwitchingBinomialRegression object with initialized parameters
-    return SwitchingBinomialRegression(y, X, k, A, πₖ, regression_models, weights)
+function SwitchingGaussianRegression(; A::Matrix{Float64}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), K::Int)
+    # if A matrix is not passed, initialize using Dirichlet 
+    isempty(A) ? A = initialize_transition_matrix(K) : nothing
+    # if B vector is not passed, initialize using Gaussian Regression
+    isempty(B) ? B = [RegressionEmissions(GaussianRegression()) for k in 1:K] : nothing
+    # if πₖ vector is not passed, initialize using Dirichlet
+    isempty(πₖ) ? πₖ = initialize_state_distribution(K) : nothing
+    # return model
+    return SwitchingGaussianRegression(A, B, πₖ, K)
 end
 
-mutable struct SwitchingPoissonRegression{T<:Real} <: AbstractHMM
-    #TODO: Implement Switching Poisson Regression
+function update_regression!(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64}, w::Matrix{Float64}=ones(length(y), model.K))
+   # update regression models 
+    for k in 1:model.K
+        update_emissions_model!(model.B[k], X, y, w[:, k])
+    end
 end
 
-mutable struct SwitchingMultinomialRegression{T<:Real} <: AbstractHMM
-    #TODO: Implement Switching Multinomial Regression
+function initialize_regression!(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64})
+    # first fit the regression models to all of the data unweighted
+    update_regression!(model, X, y)
+    # add white noise to the beta coefficients
+    for k in 1:model.K
+        model.B[k].regression.β += randn(length(model.B[k].regression.β))
+    end
 end
 
-mutable struct SwitchingNegativeBinomialRegression{T<:Real} <: AbstractHMM
-    #TODO: Implement Switching Negative Binomial Regression
+function forward(hmm::hmmglm, X::Matrix{Float64}, y::Vector{Float64})
+    T = length(y)
+    K = size(hmm.A, 1)  # Number of states
+    # Initialize an α-matrix 
+    α = zeros(Float64, T, K)
+    # Calculate α₁
+    for k in 1:K
+        α[1, k] = log(hmm.πₖ[k]) + loglikelihood(hmm.B[k], X[1, :], y[1])
+    end
+    # Now perform the rest of the forward algorithm for t=2 to T
+    for t in 2:T
+        for k in 1:K
+            values_to_sum = Float64[]
+            for i in 1:K
+                push!(values_to_sum, log(hmm.A[i, k]) + α[t-1, i])
+            end
+            log_sum_alpha_a = logsumexp(values_to_sum)
+            α[t, k] = log_sum_alpha_a + loglikelihood(hmm.B[k], X[t, :], y[t])
+        end
+    end
+    return α
+end
+
+function backward(hmm::hmmglm,  X::Matrix{Float64}, y::Vector{Float64})
+    T = length(y)
+    K = size(hmm.A, 1)  # Number of states
+
+    # Initialize a β matrix
+    β = zeros(Float64, T, K)
+
+    # Set last β values. In log-space, 0 corresponds to a value of 1 in the original space.
+    β[T, :] .= 0  # log(1) = 0
+
+    # Calculate β, starting from T-1 and going backward to 1
+    for t in T-1:-1:1
+        for i in 1:K
+            values_to_sum = Float64[]
+            for j in 1:K
+                push!(values_to_sum, log(hmm.A[i, j]) + loglikelihood(hmm.B[j], X[t+1, :], y[t+1]) + β[t+1, j])
+            end
+            β[t, i] = logsumexp(values_to_sum)
+        end
+    end
+    return β
+end
+
+function calculate_ξ(hmm::hmmglm, α::Matrix{Float64}, β::Matrix{Float64}, X::Matrix{Float64}, y::Vector{Float64})
+    T = length(y)
+    K = size(hmm.A, 1)
+    ξ = zeros(Float64, T-1, K, K)
+    for t in 1:T-1
+        # Array to store the unnormalized ξ values
+        log_ξ_unnormalized = zeros(Float64, K, K)
+        for i in 1:K
+            for j in 1:K
+                log_ξ_unnormalized[i, j] = α[t, i] + log(hmm.A[i, j]) + loglikelihood(hmm.B[j], X[t+1, :], y[t+1]) + β[t+1, j]
+            end
+        end
+        # Normalize the ξ values using log-sum-exp operation
+        max_ξ = maximum(log_ξ_unnormalized)
+        denominator = max_ξ + log(sum(exp.(log_ξ_unnormalized .- max_ξ)))
+        ξ[t, :, :] .= log_ξ_unnormalized .- denominator
+    end
+    return ξ
+end
+
+function E_step(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64})
+    # run forward-backward algorithm
+    α = forward(model, X, y)
+    β = backward(model, X, y)
+    γ = calculate_γ(model, α, β)
+    ξ = calculate_ξ(model, α, β, X, y)
+    return γ, ξ, α, β
+end
+
+function M_step!(model::hmmglm, γ::Matrix{Float64}, ξ::Array{Float64, 3}, X::Matrix{Float64}, y::Vector{Float64})
+    # update initial state distribution
+    update_initial_state_distribution!(model, γ)   
+    # update transition matrix
+    update_transition_matrix!(model, γ, ξ)
+    # update regression models
+    update_regression!(model, X, y, exp.(γ)) 
+end
+
+function fit!(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64}, max_iter::Int=100, tol::Float64=1e-6, initialize::Bool=true)
+    # initialize regression models
+    if initialize
+        initialize_regression!(model, X, y)
+    end
+    prev_ll = -Inf
+    # run EM algorithm
+    for i in 1:max_iter
+        # E-step
+        γ, ξ, α, _ = E_step(model, X, y)
+        # Log-likelihood
+        ll = logsumexp(α[:, end])
+        println("Log-Likelihood at iter $i: $ll")
+        # M-step
+        M_step!(model, γ, ξ, X, y)
+        # check for convergence
+        if i > 1
+            if abs(ll - prev_ll) < tol
+                break
+            end
+        else
+            prev_ll = ll
+        end
+    end
 end
