@@ -156,9 +156,8 @@ function fit!(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64}, max_iter::I
             if abs(ll - prev_ll) < tol
                 return lls
             end
-        else
-            prev_ll = ll
         end
+        prev_ll = ll 
     end
     return lls
 end

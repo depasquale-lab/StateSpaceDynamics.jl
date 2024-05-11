@@ -91,7 +91,7 @@ function fit!(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64},
 end
 
 """
-    BernoulliRegression
+    BernoulliRegression, often referred to as Logistic Regression.
 
 Args:
     β::Vector{Float64}: Coefficients of the regression model
@@ -106,14 +106,53 @@ mutable struct BernoulliRegression <: Regression
     BernoulliRegression(β::Vector{Float64}, include_intercept::Bool) = new(β, include_intercept)
 end
 
-function log_likelihood(model::BernoulliRegression, X::Matrix{Float64}, y::Vector{Float64})
+function log_likelihood(model::BernoulliRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # add intercept if specified
     if model.include_intercept
         X = hcat(ones(size(X, 1)), X)
     end
-    n = length(y)
-    p = 1 ./ (1 .+ exp.(-X * model.β)) # use stats fun for this
-    return sum(y .* log.(p) .+ (1 .- y) .* log.(1 .- p))
+    # calculate log likelihood
+    p = logistic.(X * model.β)
+    return sum(w.*(y .* log.(p) .+ (1 .- y) .* log.(1 .- p)))
 end
+
+function log_likelihood(model::BernoulliRegression, X::Vector{Float64}, y::Float64, w::Float64=1.0)
+    # confirm that the model has been fit
+    @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
+    # add intercept if specified
+    if model.include_intercept
+        X = hcat(ones(size(X, 1)), X)
+    end
+    # calculate log likelihood
+    p = logistic(X * model.β) # use stats fun for this
+    return w * (y * log.(p) + (1 - y) * log(1 - p))
+end
+
+function gradient!(grad::Vector{Float64}, model::BernoulliRegression, X::Matrix{Float64}, y::Vector{Float64})
+    # confirm the model has been fit
+    @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
+    # add intercept if specified
+    if model.include_intercept
+        X = hcat(ones(size(X, 1)), X)
+    end
+    # calculate gradient
+end
+
+function fit!(model::BernoulliRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
+    # add intercept if specified
+    if model.include_intercept
+        X = hcat(ones(size(X, 1)), X)
+    end
+    # get number of parameters
+    p = size(X, 2)
+    # initialize parameters
+    model.β = rand(p)
+    # minimize objective
+    objective(β) = -log_likelihood(BernoulliRegression(β, true), X, y, w)
+    result = optimize(objective, model.β, LBFGS(), Optim.Options())
+    # update parameters
+    model.β = result.minimizer
+end
+    
