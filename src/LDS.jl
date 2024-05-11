@@ -141,20 +141,41 @@ function RTSSmoother(l::LDS, y::AbstractArray)
     return x_smooth, p_smooth, J, ml
 end
 
-function DirectSmoother(l::LDS, y::AbstractArray)
+function DirectSmoother(l::LDS, y::AbstractArray, tol::Float64=1e-6)
     # Pre-allocate arrays
     T, D = size(y)
-    x_smooth = zeros(T, l.latent_dim)
     p_smooth = zeros(T, l.latent_dim, l.latent_dim)
     # Compute the precdiction as a starting point for the optimization
-    x_pred = zeros(T, l.latent_dim)
-    X_pred[1, :] = l.x0
+    xₜ = zeros(T, l.latent_dim)
+    xₜ[1, :] = l.x0
     for t in 2:T
-        x_pred[t, :] = l.A * x_pred[t-1, :]
+        xₜ[t, :] = l.A * xₜ[t-1, :]
     end
-    # Now do the optimization
-    x_smooth = newton_raphson_tridg!(l, x_pred, y, 10) # this should stop at the first iteration in theory but likely will at iteration 2
-    # Compute the smoothed state covariances
+    # Compute the Hessian of the loglikelihood
+    H, main, super, sub = Hessian(l, y)
+    # compute the inverse of the main diagonal of the Hessian, this is the posterior covariance
+    p_smooth = block_tridiagonal_inverse(sub, main, super)
+    # now optimize
+    for i in 1:5 # this should stop at the first iteration in theory but likely will at iteration 2
+        # Compute the gradient
+        grad = Gradient(l, y, xₜ)
+        # reshape the gradient to a vector to pass to newton_raphson_step_tridg!, we transpose as the way Julia reshapes is by vertically stacking columns as we need to match up observations to the Hessian.
+        grad = Matrix{Float64}(reshape(grad', (T*D), 1))
+        # Compute the Newton-Raphson step        
+        xₜ₊₁ = newton_raphson_step_tridg!(xₜ, H, grad)
+        # Check for convergence (uncomment the following lines to enable convergence checking)
+        if norm(xₜ₊₁ - xₜ) < tol
+            println("Converged at iteration ", i)
+            return xₜ₊₁, p_smooth
+        else
+            println("Norm of gradient iterate difference: ", norm(xₜ₊₁ - xₜ))
+        end
+        # Update the iterate
+        xₜ = xₜ₊₁
+    end
+    # Print a warning if the routine did not converge
+    println("Warning: Newton-Raphson routine did not converge.")
+    return xₜ, p_smooth
 end
 
 function KalmanSmoother(l::LDS, y::AbstractArray, method::String="RTS")
@@ -196,14 +217,6 @@ function sufficient_statistics(J::AbstractArray, V::AbstractArray, μ::AbstractA
     return E_z, E_zz, E_zz_prev
 end 
 
-function EStep(l::LDS, y::AbstractArray)
-    # run the kalman smoother
-    x_smooth, p_smooth, J, ml = KalmanSmoother(l, y)
-    # compute the sufficient statistics
-    E_z, E_zz, E_zz_prev = sufficient_statistics(J, p_smooth, x_smooth)
-    return x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml
-end
-
 function update_initial_state_mean!(l::LDS, E_z::AbstractArray)
     # update the state mean
     if l.fit_bool[1]
@@ -233,7 +246,7 @@ function update_Q!(l::LDS, E_zz::AbstractArray, E_zz_prev::AbstractArray)
         # Calculate the sum of expectations
         sum_expectations = zeros(size(l.A))
         for n in 2:N
-            sum_expectations += E_zz[n, :, :] - (l.A * E_zz_prev[n, :, :]') - (E_zz_prev[n, :, :] * l.A') + (l.A * E_zz[n-1, :, :] * l.A')
+            sum_expectations += E_zz[n, :, :] - (E_zz_prev[n, :, :] * l.A') - (l.A * E_zz_prev[n, :, :]') + (l.A * E_zz[n-1, :, :] * l.A')
         end
         # Finalize Q_new calculation
         Q_new = (1 / (N - 1)) * sum_expectations
@@ -259,12 +272,20 @@ function update_R!(l::LDS, E_z::AbstractArray, E_zz::AbstractArray, y::AbstractA
         # Calculate the sum of terms
         sum_terms = zeros(size(l.H))
         for n in 1:N
-            sum_terms += (y[n, :] * y[n, :]') - (l.H' * E_z[n, :] * y[n, :]') - (y[n, :] * E_z[n, :]' * l.H) + (l.H' * E_zz[n, :, :] * l.H)
+            sum_terms += (y[n, :] * y[n, :]') - (l.H * (y[n, :] * E_z[n, :]')') - ((y[n, :] * E_z[n, :]') * l.H') + (l.H * E_zz[n, :, :] * l.H')
         end
         # Finalize the update matrix calculation
         update_matrix = (1 / N) * sum_terms
         l.R = 0.5 * (update_matrix + update_matrix')
     end
+end
+
+function EStep(l::LDS, y::AbstractArray)
+    # run the kalman smoother
+    x_smooth, p_smooth, J, ml = KalmanSmoother(l, y)
+    # compute the sufficient statistics
+    E_z, E_zz, E_zz_prev = sufficient_statistics(J, p_smooth, x_smooth)
+    return x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml
 end
 
 function MStep!(l::LDS, E_z, E_zz, E_zz_prev, y_n)
@@ -316,29 +337,40 @@ Returns:
     H: Hessian matrix of the loglikelihood
 """
 function Hessian(l::LDS, y::AbstractArray)
-    # get size of observation matrix
+    # precompute results
     T, _ = size(y)
-    # calculate inv q and r so we can do it just once
     inv_R = pinv(l.R)
     inv_Q = pinv(l.Q)
     inv_p0 = pinv(l.p0)
-    # calculate the super and sub diagonal entries of the Hessian
+    
+    # super and sub diagonals
     H_sub_entry = inv_Q * l.A
     H_super_entry = Matrix(H_sub_entry')
-    # create the sub and super diagonal blocks
-    H_sub = [H_sub_entry for i in 1:T-1]
-    H_super = [H_super_entry for i in 1:T-1]
-    # calculate the diagonal entries of the Hessian
+
+    H_sub = Vector{typeof(H_sub_entry)}(undef, T-1)
+    H_super = Vector{typeof(H_super_entry)}(undef, T-1)
+
+    Threads.@threads for i in 1:T-1
+        H_sub[i] = H_sub_entry
+        H_super[i] = H_super_entry
+    end
+
+    # main diagonal
     yt_given_xt = - l.H' * inv_R * l.H
     xt_given_xt_1 = - inv_Q
     xt1_given_xt = - l.A' * inv_Q * l.A
     x_t = - inv_p0
-    # create the diagonal block
-    H_diag = [(yt_given_xt + xt_given_xt_1 + xt1_given_xt) for i in 1:T]
-    # fix the edge cases i.e. T = 1 and T = T
+
+    H_diag = Vector{typeof(yt_given_xt)}(undef, T)
+    Threads.@threads for i in 2:T-1
+        H_diag[i] = yt_given_xt + xt_given_xt_1 + xt1_given_xt
+    end
+
+    # Edge cases 
     H_diag[1] = yt_given_xt + xt1_given_xt + x_t
-    H_diag[end] = yt_given_xt + xt_given_xt_1
-    return block_tridgm(H_diag, H_super, H_sub)
+    H_diag[T] = yt_given_xt + xt_given_xt_1
+
+    return block_tridgm(H_diag, H_super, H_sub), H_diag, H_super, H_sub
 end
 
 

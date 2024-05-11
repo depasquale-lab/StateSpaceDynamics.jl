@@ -12,6 +12,7 @@ using Random
 using SparseArrays
 using Statistics
 using StatsBase
+using StatsFuns
 using UnPack
 
 include("GlobalTypes.jl")

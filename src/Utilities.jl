@@ -1,19 +1,40 @@
-export kmeanspp_initialization, kmeans_clustering, Autoregression, fit!, loglikelihood, ensure_positive_definite, PPCA, fit!, block_tridgm, interleave_reshape
+export kmeanspp_initialization, kmeans_clustering, Autoregression, fit!, loglikelihood, ensure_positive_definite, PPCA, fit!, block_tridgm, interleave_reshape, block_tridiagonal_inverse
 
-"""Inverts a block-tridiagonal Matrix"""
-function invert_block_tridiagonal(A::Vector{Matrix{T}}, B::Vector{Matrix{T}}, C::Vector{Matrix{T}}) where T<:Real
-    # Check that the vectors have the correct lengths
-    if length(B) != length(A) - 1 || length(C) != length(A) - 1
-        error("The length of B and C must be one less than the length of A")
+"""Block Tridiagonal Inverse"""
+function block_tridiagonal_inverse(A, B, C)
+    n = length(B)
+    block_size = size(B[1], 1)
+    # Initialize Di and Ei arrays
+    D = Array{AbstractMatrix}(undef, n+1)
+    E = Array{AbstractMatrix}(undef, n+1)
+    λii = Array{AbstractMatrix}(undef, n)
+
+    # Add a zero matrix to the subdiagonal and superdiagonal
+    pushfirst!(A, zeros(block_size, block_size))
+    push!(C, zeros(block_size, block_size))
+    
+    # Initial conditions
+    D[1] = zeros(block_size, block_size)
+    E[n+1] = zeros(block_size, block_size)
+ 
+    # Forward sweep for D
+    for i in 1:n
+        D[i+1] = inv(B[i] - A[i] * D[i]) * C[i]
     end
-    # Determine the size of the blocks and the total matrix size
-    m = size(A[1], 1) # Size of each block
-    n = length(A) # Number of blocks
-    N = m * n # Total size of the matrix
-    # Pre-allocate a matrix to store the inverse
-    M_inv = zeros(T, N, N)
-    # 
+  
+    # Backward sweep for E
+    for i in n:-1:1
+        E[i] = inv(B[i] - C[i]*E[i+1]) * A[i]
+    end
 
+    # Compute the inverses of the diagonal blocks λii
+    for i in 1:n
+        term1 = (I - E[i+1]*D[i+1])
+        term2 = (B[i] - A[i]*D[i])
+        λii[i] = inv(term1)*inv(term2)
+    end
+
+    return λii
 end
 
 """Interleave Reshape"""
@@ -118,9 +139,9 @@ end
 
 """Convenience function to construct a block tridiagonal matrix from three vectors of matrices"""
 function block_tridgm(main_diag::Vector{Matrix{T}}, upper_diag::Vector{Matrix{T}}, lower_diag::Vector{Matrix{T}}) where T<:Real
-   # Check that the vectors have the correct lengths
-   if length(upper_diag) != length(main_diag) - 1 || length(lower_diag) != length(main_diag) - 1
-    error("The length of upper_diag and lower_diag must be one less than the length of main_diag")
+    # Check that the vectors have the correct lengths
+    if length(upper_diag) != length(main_diag) - 1 || length(lower_diag) != length(main_diag) - 1
+        error("The length of upper_diag and lower_diag must be one less than the length of main_diag")
     end
 
     # Determine the size of the blocks and the total matrix size
@@ -128,32 +149,44 @@ function block_tridgm(main_diag::Vector{Matrix{T}}, upper_diag::Vector{Matrix{T}
     n = length(main_diag) # Number of blocks
     N = m * n # Total size of the matrix
 
-    # Initialize a sparse matrix
-    A = spzeros(N, N)
+    # Initialize containers for constructing sparse matrix
+    row_indices = Int[]
+    col_indices = Int[]
+    values = T[]
+
+    # Function to add block indices and values to arrays
+    function append_block(i_row, i_col, block)
+        base_row = (i_row - 1) * m
+        base_col = (i_col - 1) * m
+        for j in 1:m
+            for i in 1:m
+                push!(row_indices, base_row + i)
+                push!(col_indices, base_col + j)
+                push!(values, block[i, j])
+            end
+        end
+    end
 
     # Fill in the main diagonal blocks
     for i in 1:n
-        row = (i - 1) * m + 1
-        col = row
-        A[row:row+m-1, col:col+m-1] = main_diag[i]
+        append_block(i, i, main_diag[i])
     end
 
     # Fill in the upper diagonal blocks
     for i in 1:n-1
-        row = (i - 1) * m + 1
-        col = row + m
-        A[row:row+m-1, col:col+m-1] = upper_diag[i]
+        append_block(i, i + 1, upper_diag[i])
     end
 
     # Fill in the lower diagonal blocks
     for i in 1:n-1
-        row = i * m + 1
-        col = (i - 1) * m + 1
-        A[row:row+m-1, col:col+m-1] = lower_diag[i]
+        append_block(i + 1, i, lower_diag[i])
     end
 
+    # Create sparse matrix from collected indices and values
+    A = sparse(row_indices, col_indices, values, N, N)
+
     return A
-end 
+end
 
 
 """Probabilistic Principal Component Analysis"""
