@@ -11,88 +11,60 @@ Random.seed!(1234)
 Tests for MixtureModels.jl
 """
 
-function test_GMM_constructor()
-    k_means = 3
-    data_dim = 2
-    data = randn(100, data_dim)
-    gmm = GMM(k_means, data_dim, data)
-    @test gmm.k == k_means
-    @test size(gmm.μₖ) == (data_dim, k_means)
-    @test length(gmm.Σₖ) == k_means
-    for i in 1:k_means
-        @test gmm.Σₖ[i] ≈ I(data_dim)
+# Test general properties of GaussianMixtureModel
+function test_GaussianMixtureModel_properties(gmm::GaussianMixtureModel, k::Int, data_dim::Int)
+    @test gmm.k == k
+    @test size(gmm.μₖ) == (k, data_dim)
+
+    for Σ in gmm.Σₖ
+        @test size(Σ) == (data_dim, data_dim)
+        @test ishermitian(Σ)
     end
+
+    @test length(gmm.πₖ) == k
     @test sum(gmm.πₖ) ≈ 1.0
-    @test size(gmm.class_labels) == (100,)
-    @test size(gmm.class_probabilities) == (100, k_means)
 end
 
-function testGMM_EStep()
-    # Initialize parameters
-    k_means = 3
-    data_dim = 2
-    data = randn(10, data_dim)
-    gmm = GMM(k_means, data_dim, data)
+function testGaussianMixtureModel_EStep(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
+
+    k::Int = gmm.k
+    data_dim::Int = size(data, 2)
+    
     # Run EStep
-    SSM.EStep!(gmm, data)
+    class_probabilities = SSM.EStep(gmm, data)
     # Check dimensions
-    @test size(gmm.class_probabilities) == (10, k_means)
+    @test size(class_probabilities) == (size(data, 1), k)
     # Check if the row sums are close to 1 (since they represent probabilities)
-    @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(gmm.class_probabilities, dims=2))
+    @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(class_probabilities, dims=2))
+    
+    test_GaussianMixtureModel_properties(gmm, k, data_dim)
 end
 
-function testGMM_MStep()
-    # Initialize parameters
-    k_means = 3
-    data_dim = 2
-    data = randn(10, data_dim)
-    gmm = GMM(k_means, data_dim, data)
-    SSM.EStep!(gmm, data)
+function testGaussianMixtureModel_MStep(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
+
+    k::Int = gmm.k
+    data_dim::Int = size(data, 2)
+
+    class_probabilities = SSM.EStep(gmm, data)
 
     # Run MStep
-    SSM.MStep!(gmm, data)
+    SSM.MStep!(gmm, data, class_probabilities)
 
-    # Check dimensions of updated μ and Σ
-    @test size(gmm.μₖ) == (data_dim, k_means)
-    @test length(gmm.Σₖ) == k_means
-
-    # Check if the covariance matrices are Hermitian
-    @test all([ishermitian(Σ) for Σ in gmm.Σₖ])
+    test_GaussianMixtureModel_properties(gmm, k, data_dim)
 end
 
-function testGMM_fit()
-    # Initialize parameters
-    k_means = 3
-    data_dim = 2
-    data = randn(10, data_dim)
-    gmm = GMM(k_means, data_dim, data)
+function testGaussianMixtureModel_fit(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
+
+    k::Int = gmm.k
+    data_dim::Int = size(data, 2)
 
     # Run fit!
     fit!(gmm, data; maxiter=10, tol=1e-3)
 
-    # Check dimensions of updated μ and Σ
-    @test size(gmm.μₖ) == (data_dim, k_means)
-    @test length(gmm.Σₖ) == k_means
-
-    # Check if the covariance matrices are Hermitian
-    @test all([ishermitian(Σ) for Σ in gmm.Σₖ])
-
-    # Check if the mixing coefficients sum to 1
-    @test sum(gmm.πₖ) ≈ 1.0
-
-    # Check if the class_probabilities add to 1
-    @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(gmm.class_probabilities, dims=2))
-
-    # Check if the class labels are integers in the range 1 to k_means
-    @test all(x -> x in 1:k_means, gmm.class_labels)
+    test_GaussianMixtureModel_properties(gmm, k, data_dim)
 end
 
-function test_log_likelihood()
-    # Initialize parameters
-    k_means = 3
-    data_dim = 2
-    data = randn(10, data_dim)
-    gmm = GMM(k_means, data_dim, data)
+function test_log_likelihood(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
 
     # Calculate log-likelihood
     ll = log_likelihood(gmm, data)
@@ -104,50 +76,180 @@ function test_log_likelihood()
     @test ll < 0.0
 
     # Log-likelihood should monotonically increase with iterations (when using exact EM)
+
+    #repeatedly applying fit! without initializtion, so first initialize means
+    # Initialize k means of gmm
+	gmm.μₖ = permutedims(kmeanspp_initialization(data, gmm.k))
+    
     ll_prev = -Inf
     for i in 1:10
-        fit!(gmm, data; maxiter=1, tol=1e-3)
+        fit!(gmm, data; maxiter=1, tol=1e-3, initialize_kmeans=false)
         ll = log_likelihood(gmm, data)
         @test ll > ll_prev || isapprox(ll, ll_prev; atol=1e-6)
         ll_prev = ll
     end
 end
 
-function test_GMM_vector()
-    # Initialize data
-    data = randn(1000,)
-    k_means = 2
-    # Initialize GMM
-    gmm = GMM(k_means, 1, data)
-    # Run estep
-    SSM.EStep!(gmm, data)
-    # Run mstep
-    SSM.MStep!(gmm, data)
-    # Check if the mixing coefficients sum to 1
-    @test sum(gmm.πₖ) ≈ 1.0
-    # Check if the class_probabilities add to 1
-    @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(gmm.class_probabilities, dims=2))
-    # Check if the class labels are integers in the range 1 to k_means
-    @test all(x -> x in 1:k_means, gmm.class_labels)
-    # Now Run
-    fit!(gmm, data; maxiter=10, tol=1e-3)
-    # Check if the mixing coefficients sum to 1
-    @test sum(gmm.πₖ) ≈ 1.0
-    # Check if the class_probabilities add to 1
-    @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(gmm.class_probabilities, dims=2))
-    # Check if the class labels are integers in the range 1 to k_means
-    @test all(x -> x in 1:k_means, gmm.class_labels)
+"""
+Tests for PoissonMixtureModel
+"""
+
+# Test general properties of PoissonMixtureModel
+function test_PoissonMixtureModel_properties(pmm::PoissonMixtureModel, k::Int)
+    @test pmm.k == k
+    @test length(pmm.λₖ) == k
+    @test length(pmm.πₖ) == k
+    @test sum(pmm.πₖ) ≈ 1.0
 end
+
+function testPoissonMixtureModel_EStep(pmm::PoissonMixtureModel, data::Union{Matrix{Int}, Vector{Int}})
+    k::Int = pmm.k
+    
+    # Run EStep
+    class_probabilities = SSM.EStep(pmm, data)
+    # Check dimensions
+    @test size(class_probabilities) == (size(data, 1), k)
+    # Check if the row sums are close to 1 (since they represent probabilities)
+    @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(class_probabilities, dims=2))
+    
+    test_PoissonMixtureModel_properties(pmm, k)
+end
+
+function testPoissonMixtureModel_MStep(pmm::PoissonMixtureModel, data::Union{Matrix{Int}, Vector{Int}})
+    k::Int = pmm.k
+
+    class_probabilities = SSM.EStep(pmm, data)
+
+    # Run MStep
+    SSM.MStep!(pmm, data, class_probabilities)
+
+    test_PoissonMixtureModel_properties(pmm, k)
+end
+
+function testPoissonMixtureModel_fit(pmm::PoissonMixtureModel, data::Union{Matrix{Int}, Vector{Int}})
+    k::Int = pmm.k
+
+    # Run fit!
+    fit!(pmm, data; maxiter=10, tol=1e-3)
+
+    test_PoissonMixtureModel_properties(pmm, k)
+end
+
+function test_log_likelihood(pmm::PoissonMixtureModel, data::Union{Matrix{Int}, Vector{Int}})
+    # Calculate log-likelihood
+    ll = log_likelihood(pmm, data)
+
+    # Check if log-likelihood is a scalar
+    @test size(ll) == ()
+
+    # Log-likelihood should not necessarily be negative for Poisson models
+
+    # Initialize λₖ with kmeans_init
+    λₖ_matrix = permutedims(kmeanspp_initialization(Float64.(data), pmm.k))
+    pmm.λₖ = vec(λₖ_matrix)
+
+    # Log-likelihood should monotonically increase with iterations (when using exact EM)
+    ll_prev = -Inf
+    for i in 1:10
+        fit!(pmm, data; maxiter=1, tol=1e-3, initialize_kmeans=false)
+        ll = log_likelihood(pmm, data)
+        @test ll > ll_prev || isapprox(ll, ll_prev; atol=1e-6)
+        ll_prev = ll
+    end
+end
+
+
+
 
 @testset "MixtureModels.jl Tests" begin
-    test_GMM_constructor()
-    testGMM_EStep()
-    testGMM_MStep()
-    testGMM_fit()
-    test_log_likelihood()
-    test_GMM_vector()
-end
+    # Test GaussianMixtureModel
 
+    
+    # Initialize test models
+
+
+    # Standard GaussianMixtureModel model
+
+    # Number of clusters
+    k = 3
+    # Dimension of data points
+    data_dim = 2
+    # Construct gmm
+    standard_gmm = GaussianMixtureModel(k, data_dim)
+    # Generate sample data
+    standard_data = randn(10, data_dim)
+
+    # Test constructor method of GaussianMixtureModel
+    test_GaussianMixtureModel_properties(standard_gmm, k, data_dim)
+
+
+
+    # Vector-data GaussianMixtureModel model
+
+    # Number of clusters
+    k = 2
+    # Dimension of data points
+    data_dim = 1
+    # Construct gmm
+    vector_gmm = GaussianMixtureModel(k, data_dim)
+    # Generate sample data
+    vector_data = randn(1000,)
+    # Test constructor method of GaussianMixtureModel
+    test_GaussianMixtureModel_properties(vector_gmm, k, data_dim)
+  
+    # Test EM methods of the GaussianMixtureModels
+
+    # Paired data and GaussianMixtureModels to test
+    tester_set = [
+        (standard_gmm, standard_data), 
+        (vector_gmm, vector_data),
+        ]
+
+    for (gmm, data) in tester_set
+        k = gmm.k
+        data_dim = size(data, 2)
+
+        gmm = GaussianMixtureModel(k, data_dim)
+        testGaussianMixtureModel_EStep(gmm, data)
+
+        gmm = GaussianMixtureModel(k, data_dim)
+        testGaussianMixtureModel_MStep(gmm, data)
+
+        gmm = GaussianMixtureModel(k, data_dim)
+        testGaussianMixtureModel_fit(gmm, data)
+
+        gmm = GaussianMixtureModel(k, data_dim)
+        test_log_likelihood(gmm, data)
+    end
+  
+    # Test PoissonMixtureModel
+    k = 3  # Number of clusters
+    
+    # Simulate some Poisson-distributed data using the sample function
+    # First, define a temporary PMM for sampling purposes
+    temp_pmm = PoissonMixtureModel(k)
+    temp_pmm.λₖ = [5.0, 10.0, 15.0]  # Assign some λ values for generating data
+    temp_pmm.πₖ = [1/3, 1/3, 1/3]  # Equal mixing coefficients for simplicity
+    data = SSM.sample(temp_pmm, 300)  # Generate sample data
+    
+    standard_pmm = PoissonMixtureModel(k)
+    
+    # Conduct tests
+    test_PoissonMixtureModel_properties(standard_pmm, k)
+    
+    tester_set = [(standard_pmm, data)]
+    
+    for (pmm, data) in tester_set
+        pmm = PoissonMixtureModel(k)
+        testPoissonMixtureModel_EStep(pmm, data)
+        pmm = PoissonMixtureModel(k)
+        testPoissonMixtureModel_MStep(pmm, data)
+        pmm = PoissonMixtureModel(k)
+        testPoissonMixtureModel_fit(pmm, data)
+        pmm = PoissonMixtureModel(k)
+        test_log_likelihood(pmm, data)
+    end
+end
 
 """
 Tests for HiddenMarkovModels.jl
@@ -554,5 +656,3 @@ end
 """
 Tests for MarkovRegression.jl
 """
-
-
