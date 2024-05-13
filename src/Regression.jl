@@ -1,3 +1,5 @@
+export GaussianRegression, BernoulliRegression, fit!, loglikelihood
+
 # abstract regression type
 abstract type Regression end
 
@@ -52,14 +54,14 @@ function least_squares(model::GaussianRegression, X::Matrix{Float64}, y::Vector{
     return sum(w.*(residuals.^2))
 end
 
-# something is weird here with the gradient... I'll come back to it. Issue is with Optim, ForwardDiff produces same gradient as this function
-function gradient!(G::Vector{Float64}, model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64})
-    # confirm that the model has been fit
-    @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
-    # calculate gradient
-    residuals = y - X * model.β
-    G .= 2 * X' * residuals
-end
+# # something is weird here with the gradient... I'll come back to it. Issue is with Optim, ForwardDiff produces same gradient as this function
+# function gradient!(G::Vector{Float64}, model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64})
+#     # confirm that the model has been fit
+#     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
+#     # calculate gradient
+#     residuals = y - X * model.β
+#     G .= 2 * X' * residuals
+# end
 
 function update_variance!(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
     # confirm that the model has been fit
@@ -130,15 +132,15 @@ function loglikelihood(model::BernoulliRegression, X::Vector{Float64}, y::Float6
     return sum(w .* (y .* log.(p) .+ (1 .- y) .* log.(1 .- p)))
 end
 
-function gradient!(grad::Vector{Float64}, model::BernoulliRegression, X::Matrix{Float64}, y::Vector{Float64})
-    # confirm the model has been fit
-    @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
-    # add intercept if specified
-    if model.include_intercept
-        X = hcat(ones(size(X, 1)), X)
-    end
-    # calculate gradient
-end
+# function gradient!(grad::Vector{Float64}, model::BernoulliRegression, X::Matrix{Float64}, y::Vector{Float64})
+#     # confirm the model has been fit
+#     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
+#     # add intercept if specified
+#     if model.include_intercept
+#         X = hcat(ones(size(X, 1)), X)
+#     end
+#     # calculate gradient
+# end
 
 function fit!(model::BernoulliRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
     # add intercept if specified

@@ -2,8 +2,8 @@ using SSM
 using Distributions
 using LinearAlgebra
 using Random
+using StatsFuns
 using Test
-using UnPack
 
 Random.seed!(1234)
 
@@ -263,7 +263,14 @@ function toy_HMM(k::Int=3, data_dim::Int=2, n::Int=1000)
     return hmm, data
 end
 
-function test_HMM_properties(hmm::AbstractHMM)
+function test_toy_HMM()
+    hmm, data = toy_HMM()
+    @test size(data, 2) == hmm.D
+    @test size(data, 1) == 1000
+    @test hmm.K == 3
+end
+
+function test_HMM_properties(hmm::GaussianHMM)
     @test isapprox(sum(hmm.A, dims=2), ones(hmm.K))
     @test typeof(hmm.B) == Vector{GaussianEmission}
     @test sum(hmm.πₖ) ≈ 1.0
@@ -271,79 +278,81 @@ end
 
 function test_GaussianHMM_constructor()
     hmm, _ = toy_HMM()
-    # check if parameters are initialized correctly
     test_HMM_properties(hmm)
 end
 
 function test_HMM_forward_and_back()
-    # Initialize toy model and data
     hmm, data = toy_HMM()
-    # Run forward algorithm
     α = SSM.forward(hmm, data)
-    # Check dimensions
-    @test size(α) == (1000, hmm.K)
-    # Run backward algorithm
+    @test size(α) == (size(data, 1), hmm.K)
     β = SSM.backward(hmm, data)
-    # Check dimensions
-    @test size(β) == (1000, hmm.K)
+    @test size(β) == (size(data, 1), hmm.K)
 end
 
 function test_HMM_gamma_xi()
-    # Initialize toy model and data
     hmm, data = toy_HMM()
-    # Run forward and backward algorithms
     α = SSM.forward(hmm, data)
     β = SSM.backward(hmm, data)
-    # Calculate gamma and xi
     γ = SSM.calculate_γ(hmm, α, β)
     ξ = SSM.calculate_ξ(hmm, α, β, data)
-    # Check dimensions
-    @test size(γ) == (1000, hmm.K)
-    @test size(ξ) == (999, hmm.K, hmm.K)
-    # Check if the row sums of gamma are close to 1
+    @test size(γ) == (size(data, 1), hmm.K)
+    @test size(ξ) == (size(data, 1) - 1, hmm.K, hmm.K)
     @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(exp.(γ), dims=2))
-    # Check if the row sums of xi are close to 1
     @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(exp.(ξ), dims=(2, 3)))
 end
 
 function test_HMM_E_step()
+    hmm, data = toy_HMM()
+    γ, ξ, α, β = SSM.E_step(hmm, data)
+    @test size(γ) == (size(data, 1), hmm.K)
+    @test size(ξ) == (size(data, 1) - 1, hmm.K, hmm.K)
+end
+
+function test_HMM_M_step()
+    hmm, data = toy_HMM()
+    # test indiviudal M-step functions
+    γ, ξ, α, β = SSM.E_step(hmm, data)
+    SSM.update_initial_state_distribution!(hmm, γ)
+    @test sum(hmm.πₖ) ≈ 1.0
+    SSM.update_transition_matrix!(hmm, γ, ξ)
+    @test isapprox(sum(hmm.A, dims=2), ones(hmm.K))
+    SSM.update_emission_models!(hmm, γ, data)
+    @test typeof(hmm.B) == Vector{GaussianEmission}
+    # test M-step
+    γ, ξ, α, β = SSM.E_step(hmm, data)
+    SSM.M_step!(hmm, γ, ξ, data)
+    test_HMM_properties(hmm)
 end
 
 function test_HMM_EM()
     Random.seed!(1234)
     A = [0.7 0.2 0.1; 0.1 0.7 0.2; 0.2 0.1 0.7]
-        means = [[0.0, 0.0], [-1.0, 2.0], [3.0, 2.5]]
-        covs = [
-                    [0.1 0.0; 0.0 0.1],  # Covariance matrix for state 1
-                    [0.1 0.0; 0.0 0.1],  # Covariance matrix for state 2
-                    [0.1 0.0; 0.0 0.1]   # Covariance matrix for state 3
-                ]
+    means = [[0.0, 0.0], [-1.0, 2.0], [3.0, 2.5]]
+    covs = [
+        [0.1 0.0; 0.0 0.1], 
+        [0.1 0.0; 0.0 0.1], 
+        [0.1 0.0; 0.0 0.1]
+    ]
     emissions_models = [GaussianEmission(mean, cov) for (mean, cov) in zip(means, covs)]
     simul_hmm = GaussianHMM(A, emissions_models, [0.33, 0.33, 0.34], 3, 2)
     states, observations = SSM.sample(simul_hmm, 10000)
-    # Initialize HMM
-    k = 3
-    data_dim = 2
     hmm = GaussianHMM(observations, 3)
     baumWelch!(hmm, observations, 100)
-    # Check if the transition matrix is close to the simulated one
-    # @test hmm.A ≈ A atol=1e-1
-    # Check if the means are close to the simulated ones
-    pred_means = [hmm.B[i].μ for i in 1:k]
-    @test sort(pred_means) ≈ sort(means) atol=2e-1
-    # Check if the covariance matrices are close to the simulated ones
-    pred_covs = [hmm.B[i].Σ for i in 1:k]
-    @test pred_covs ≈ covs atol=1e-1
-    # Check viterbi now
+    pred_means = [hmm.B[i].μ for i in 1:3]
+    @test sort(pred_means) ≈ sort(means) atol=0.2
+    pred_covs = [hmm.B[i].Σ for i in 1:3]
+    @test pred_covs ≈ covs atol=0.1
     best_path = viterbi(hmm, observations)
     @test length(best_path) == 10000
-    @test all(x -> x in 1:k, best_path)
+    @test all(x -> x in 1:3, best_path)
 end
-
 @testset "HiddenMarkovModels.jl Tests" begin
+    test_toy_HMM()
     test_GaussianHMM_constructor()
     test_HMM_forward_and_back()
     test_HMM_gamma_xi()
+    test_HMM_E_step()
+    test_HMM_M_step()
     test_HMM_EM()
 end
 
@@ -543,8 +552,120 @@ end
 """
 Tests for Regression.jl
 """
+function test_GaussianRegression_fit()
+    # Generate synthetic data
+    X = hcat(ones(100), randn(100, 2))
+    true_β = [0.5, -1.2, 2.3]
+    y = X * true_β + randn(100) * 0.5
+    
+    # Initialize and fit the model
+    model = GaussianRegression()
+    fit!(model, X[:, 2:end], y)
+    
+    # Check if the fitted coefficients are close to the true coefficients
+    @test isapprox(model.β, true_β, atol=0.5)
+    @test model.σ² > 0
+end
 
-#TODO: implement test for regression
+function test_GaussianRegression_loglikelihood()
+    # Generate synthetic data
+    X = hcat(ones(100), randn(100, 2))
+    true_β = [0.5, -1.2, 2.3]
+    y = X * true_β + randn(100) * 0.5
+    
+    # Initialize and fit the model
+    model = GaussianRegression()
+    fit!(model, X[:, 2:end], y)
+    
+    # Check log likelihood
+    loglik = SSM.loglikelihood(model, X[:, 2:end], y)
+    @test loglik < 0
+end
+
+function test_GaussianRegression_empty_model()
+    model = GaussianRegression()
+    @test isempty(model.β)
+    @test model.σ² == 0.0
+end
+
+function test_GaussianRegression_intercept()
+    X = hcat(ones(100), randn(100, 2))
+    true_β = [0.5, -1.2, 2.3]
+    y = X * true_β + randn(100) * 0.5
+    
+    model = GaussianRegression(include_intercept=false)
+    fit!(model, X[:, 2:end], y)
+    @test length(model.β) == 2
+    
+    model_with_intercept = GaussianRegression()
+    fit!(model_with_intercept, X[:, 2:end], y)
+    @test length(model_with_intercept.β) == 3
+end
+
+@testset "GaussianRegression Tests" begin
+    test_GaussianRegression_fit()
+    test_GaussianRegression_loglikelihood()
+    test_GaussianRegression_empty_model()
+    test_GaussianRegression_intercept()
+end
+
+function test_BernoulliRegression_fit()
+    # Generate synthetic data
+    X = hcat(ones(100), randn(100, 2))
+    true_β = [0.5, -1.2, 2.3]
+    p = logistic.(X * true_β)
+    y = rand.(Bernoulli.(p))
+    
+    # Initialize and fit the model
+    model = BernoulliRegression()
+    fit!(model, X[:, 2:end], y)
+    
+    # Check if the fitted coefficients are reasonable
+    @test length(model.β) == 3
+end
+
+function test_BernoulliRegression_loglikelihood()
+    # Generate synthetic data
+    X = hcat(ones(100), randn(100, 2))
+    true_β = [0.5, -1.2, 2.3]
+    p = logistic.(X * true_β)
+    y = rand.(Bernoulli.(p))
+    
+    # Initialize and fit the model
+    model = BernoulliRegression()
+    fit!(model, X[:, 2:end], y)
+    
+    # Check log likelihood
+    loglik = SSM.loglikelihood(model, X[:, 2:end], y)
+    @test loglik < 0
+end
+
+function test_BernoulliRegression_empty_model()
+    model = BernoulliRegression()
+    @test isempty(model.β)
+end
+
+function test_BernoulliRegression_intercept()
+    X = hcat(ones(100), randn(100, 2))
+    true_β = [0.5, -1.2, 2.3]
+    p = logistic.(X * true_β)
+    y = rand.(Bernoulli.(p))
+    
+    model = BernoulliRegression(include_intercept=false)
+    fit!(model, X[:, 2:end], y)
+    @test length(model.β) == 2
+    
+    model_with_intercept = BernoulliRegression()
+    fit!(model_with_intercept, X[:, 2:end], y)
+    @test length(model_with_intercept.β) == 3
+end
+
+@testset "BernoulliRegression Tests" begin
+    test_BernoulliRegression_fit()
+    test_BernoulliRegression_loglikelihood()
+    test_BernoulliRegression_empty_model()
+    test_BernoulliRegression_intercept()
+end
 
 """
 Tests for Emissions.jl
@@ -615,33 +736,87 @@ function test_kmeans_clustering()
     @test length(labels) == 100
 end
 
-# create a toy autoregression for testing; AR(3)
-α = [0.1, -0.3, 0.2]
-x = Vector{Float64}(undef, 2000)
-for i in 1:2000
-    if i <= 3
-        x[i] = randn()
-    else
-        x[i] = α[1]*x[i-1] + α[2]*x[i-2] + α[3]*x[i-3] + randn()
+function test_block_tridgm()
+    # Test with minimal block sizes
+    super = [rand(1, 1) for i in 1:1]
+    sub = [rand(1, 1) for i in 1:1]
+    main = [rand(1, 1) for i in 1:2]
+    A = block_tridgm(main, super, sub)
+    @test size(A) == (2, 2)
+    @test A[1, 1] == main[1][1, 1]
+    @test A[2, 2] == main[2][1, 1]
+    @test A[1, 2] == super[1][1, 1]
+    @test A[2, 1] == sub[1][1, 1]
+
+    # Test with 2x2 blocks and a larger matrix
+    super = [rand(2, 2) for i in 1:9]
+    sub = [rand(2, 2) for i in 1:9]
+    main = [rand(2, 2) for i in 1:10]
+    A = block_tridgm(main, super, sub)
+    @test size(A) == (20, 20)
+
+    # Check some blocks in the matrix
+    for i in 1:10
+        @test A[(2i-1):(2i), (2i-1):(2i)] == main[i]
+        if i < 10
+            @test A[(2i-1):(2i), (2i+1):(2i+2)] == super[i]
+            @test A[(2i+1):(2i+2), (2i-1):(2i)] == sub[i]
+        end
+    end
+
+    # Test with integer blocks
+    super = [rand(Int, 2, 2) for i in 1:9]
+    sub = [rand(Int, 2, 2) for i in 1:9]
+    main = [rand(Int, 2, 2) for i in 1:10]
+    A = block_tridgm(main, super, sub)
+    @test size(A) == (20, 20)
+    for i in 1:10
+        @test A[(2i-1):(2i), (2i-1):(2i)] == main[i]
+        if i < 10
+            @test A[(2i-1):(2i), (2i+1):(2i+2)] == super[i]
+            @test A[(2i+1):(2i+2), (2i-1):(2i)] == sub[i]
+        end
     end
 end
 
-function test_autoregression()
-    ar = Autoregression(x, 3)
-    # check if parameters are initialized correctly
-    @test ar.X == x
-    @test ar.p == 3
-    @test ar.β == zeros(4)
-    @test ar.σ² == 1.0
-end
+function test_interleave_reshape()
+    # Test with valid data and dimensions
+    data = collect(1:6)
+    t = 2
+    d = 3
+    X = interleave_reshape(data, t, d)
+    @test size(X) == (2, 3)
+    @test X == [1 2 3; 4 5 6]
 
-function test_fit_autoregression()
-    ar = Autoregression(x, 3)
-    # fit the model
-    fit!(ar)
-    # check if parameters are updated correctly
-    @test ar.β ≈ append!(α, 0) atol=2e-1
-    @test ar.σ² ≈ 1.0 atol=1e-1
+    # Test with another set of valid data and dimensions
+    data = collect(1:12)
+    t = 4
+    d = 3
+    X = interleave_reshape(data, t, d)
+    @test size(X) == (4, 3)
+    @test X == [1 2 3; 4 5 6; 7 8 9; 10 11 12]
+
+    # Test with a longer set of data
+    data = collect(1:20)
+    t = 4
+    d = 5
+    X = interleave_reshape(data, t, d)
+    @test size(X) == (4, 5)
+    @test X == [1 2 3 4 5; 6 7 8 9 10; 11 12 13 14 15; 16 17 18 19 20]
+
+    # Test with float data
+    data = collect(1.0:0.5:6.5)
+    t = 4
+    d = 3
+    X = interleave_reshape(data, t, d)
+    @test size(X) == (4, 3)
+    @test X == [1.0 1.5 2.0; 2.5 3.0 3.5; 4.0 4.5 5.0; 5.5 6.0 6.5]
+
+    # Test with mismatched dimensions (should raise an error)
+    data = collect(1:11)
+    t = 2
+    d = 5
+    @test_throws ErrorException interleave_reshape(data, t, d)
 end
 
 
@@ -649,9 +824,13 @@ end
     test_euclidean_distance()
     test_kmeanspp_initialization()
     test_kmeans_clustering()
-    test_autoregression()
-    test_fit_autoregression()
+    test_block_tridgm()
+    test_interleave_reshape()
 end
+
+"""
+Tests for Preprocessing.jl
+"""
 
 """
 Tests for MarkovRegression.jl

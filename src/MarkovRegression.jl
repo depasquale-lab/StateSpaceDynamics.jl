@@ -32,6 +32,37 @@ function SwitchingGaussianRegression(; A::Matrix{Float64}=Matrix{Float64}(undef,
     return SwitchingGaussianRegression(A, B, πₖ, K)
 end
 
+"""
+    SwitchingBernoulliRegression
+
+Struct representing a Bernoulli hmm-glm model. This model is specifically a Hidden Markov Model with Bernoulli Regression emissions. One can think of this model
+as a time-dependent mixture of Bernoulli regression models. This is similar to how a vanilla HMM is a time-dependent mixture of Bernoulli distributions. Thus,
+at each time point we can assess the most likely state and the most likely regression model given the data.
+
+Args:
+    A::Matrix{T}: Transition matrix
+    B::Vector{RegressionEmissions}: Vector of Bernoulli Regression Models
+    πₖ::Vector{T}: initial state distribution
+    K::Int: number of states
+"""
+mutable struct SwitchingBernoulliRegression <: hmmglm
+    A::Matrix{Float64} # transition matrix
+    B::Vector{RegressionEmissions} # Vector of Bernoulli Regression Models
+    πₖ::Vector{Float64} # initial state distribution
+    K::Int # number of states
+end
+
+function SwitchingBernoulliRegression(; A::Matrix{Float64}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), K::Int)
+    # if A matrix is not passed, initialize using Dirichlet 
+    isempty(A) ? A = initialize_transition_matrix(K) : nothing
+    # if B vector is not passed, initialize using Gaussian Regression
+    isempty(B) ? B = [RegressionEmissions(BernoulliRegression()) for k in 1:K] : nothing
+    # if πₖ vector is not passed, initialize using Dirichlet
+    isempty(πₖ) ? πₖ = initialize_state_distribution(K) : nothing
+    # return model
+    return SwitchingBernoulliRegression(A, B, πₖ, K)
+end
+
 function update_regression!(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64}, w::Matrix{Float64}=ones(length(y), model.K))
    # update regression models 
     for k in 1:model.K
@@ -160,24 +191,6 @@ function fit!(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64}, max_iter::I
         prev_ll = ll 
     end
     return lls
-end
-
-mutable struct SwitchingBernoulliRegression <: hmmglm
-    A::Matrix{Float64} # transition matrix
-    B::Vector{RegressionEmissions} # Vector of Bernoulli Regression Models
-    πₖ::Vector{Float64} # initial state distribution
-    K::Int # number of states
-end
-
-function SwitchingBernoulliRegression(; A::Matrix{Float64}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), K::Int)
-    # if A matrix is not passed, initialize using Dirichlet 
-    isempty(A) ? A = initialize_transition_matrix(K) : nothing
-    # if B vector is not passed, initialize using Gaussian Regression
-    isempty(B) ? B = [RegressionEmissions(BernoulliRegression()) for k in 1:K] : nothing
-    # if πₖ vector is not passed, initialize using Dirichlet
-    isempty(πₖ) ? πₖ = initialize_state_distribution(K) : nothing
-    # return model
-    return SwitchingBernoulliRegression(A, B, πₖ, K)
 end
 
 function viterbi(hmm::hmmglm, X::Matrix{Float64}, y::Vector{Float64})
