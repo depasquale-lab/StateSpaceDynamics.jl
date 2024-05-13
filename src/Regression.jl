@@ -84,7 +84,7 @@ function fit!(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64},
     objective(β) = least_squares(GaussianRegression(β, model.σ², true), X, y, w)
     #objective_grad!(G, β) = gradient!(G, GaussianRegression(β, model.σ², true), X, y) # troubleshoot this later
 
-    result = optimize(objective, model.β, LBFGS(), Optim.Options())
+    result = optimize(objective, model.β, LBFGS())
     # update parameters
     model.β = result.minimizer
     update_variance!(model, X, y, w)
@@ -106,11 +106,11 @@ mutable struct BernoulliRegression <: Regression
     BernoulliRegression(β::Vector{Float64}, include_intercept::Bool) = new(β, include_intercept)
 end
 
-function log_likelihood(model::BernoulliRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
+function loglikelihood(model::BernoulliRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
-    # add intercept if specified
-    if model.include_intercept
+    # add intercept if specified and not already included
+    if model.include_intercept && size(X, 2) == length(model.β) - 1 
         X = hcat(ones(size(X, 1)), X)
     end
     # calculate log likelihood
@@ -118,16 +118,16 @@ function log_likelihood(model::BernoulliRegression, X::Matrix{Float64}, y::Vecto
     return sum(w.*(y .* log.(p) .+ (1 .- y) .* log.(1 .- p)))
 end
 
-function log_likelihood(model::BernoulliRegression, X::Vector{Float64}, y::Float64, w::Float64=1.0)
+function loglikelihood(model::BernoulliRegression, X::Vector{Float64}, y::Float64, w::Float64=1.0)
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # add intercept if specified
-    if model.include_intercept
+    if model.include_intercept && length(X) == length(model.β) - 1
         X = hcat(ones(size(X, 1)), X)
     end
     # calculate log likelihood
-    p = logistic(X * model.β) # use stats fun for this
-    return w * (y * log.(p) + (1 - y) * log(1 - p))
+    p = logistic.(X * model.β) # use stats fun for this
+    return sum(w .* (y .* log.(p) .+ (1 .- y) .* log.(1 .- p)))
 end
 
 function gradient!(grad::Vector{Float64}, model::BernoulliRegression, X::Matrix{Float64}, y::Vector{Float64})
@@ -150,8 +150,8 @@ function fit!(model::BernoulliRegression, X::Matrix{Float64}, y::Vector{Float64}
     # initialize parameters
     model.β = rand(p)
     # minimize objective
-    objective(β) = -log_likelihood(BernoulliRegression(β, true), X, y, w)
-    result = optimize(objective, model.β, LBFGS(), Optim.Options())
+    objective(β) = -loglikelihood(BernoulliRegression(β, true), X, y, w)
+    result = optimize(objective, model.β, LBFGS())
     # update parameters
     model.β = result.minimizer
 end
