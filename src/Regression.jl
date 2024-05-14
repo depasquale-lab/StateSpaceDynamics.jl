@@ -1,4 +1,4 @@
-export GaussianRegression, BernoulliRegression, fit!, loglikelihood
+export GaussianRegression, BernoulliRegression, fit!, loglikelihood, least_squares, update_variance!
 
 # abstract regression type
 abstract type Regression end
@@ -108,7 +108,7 @@ mutable struct BernoulliRegression <: Regression
     BernoulliRegression(β::Vector{Float64}, include_intercept::Bool) = new(β, include_intercept)
 end
 
-function loglikelihood(model::BernoulliRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
+function loglikelihood(model::BernoulliRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, BitVector}, w::Vector{Float64}=ones(length(y)))
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # add intercept if specified and not already included
@@ -117,10 +117,12 @@ function loglikelihood(model::BernoulliRegression, X::Matrix{Float64}, y::Vector
     end
     # calculate log likelihood
     p = logistic.(X * model.β)
+    # convert y if neccesary
+    y = convert(Vector{Float64}, y)
     return sum(w.*(y .* log.(p) .+ (1 .- y) .* log.(1 .- p)))
 end
 
-function loglikelihood(model::BernoulliRegression, X::Vector{Float64}, y::Float64, w::Float64=1.0)
+function loglikelihood(model::BernoulliRegression, X::Vector{Float64}, y::Union{Float64, BitVector}, w::Float64=1.0)
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # add intercept if specified
@@ -129,6 +131,8 @@ function loglikelihood(model::BernoulliRegression, X::Vector{Float64}, y::Float6
     end
     # calculate log likelihood
     p = logistic.(X * model.β) # use stats fun for this
+    # convert y if neccesary
+    y = convert(Float64, y)
     return sum(w .* (y .* log.(p) .+ (1 .- y) .* log.(1 .- p)))
 end
 
@@ -142,7 +146,7 @@ end
 #     # calculate gradient
 # end
 
-function fit!(model::BernoulliRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
+function fit!(model::BernoulliRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, BitVector}, w::Vector{Float64}=ones(length(y)))
     # add intercept if specified
     if model.include_intercept
         X = hcat(ones(size(X, 1)), X)
@@ -151,6 +155,8 @@ function fit!(model::BernoulliRegression, X::Matrix{Float64}, y::Vector{Float64}
     p = size(X, 2)
     # initialize parameters
     model.β = rand(p)
+    # convert y if necessary
+    y = convert(Vector{Float64}, y)
     # minimize objective
     objective(β) = -loglikelihood(BernoulliRegression(β, true), X, y, w)
     result = optimize(objective, model.β, LBFGS())

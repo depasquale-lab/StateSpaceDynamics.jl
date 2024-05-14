@@ -835,3 +835,21 @@ Tests for Preprocessing.jl
 """
 Tests for MarkovRegression.jl
 """
+function test_hmmglm_properties(model::SSM.hmmglm)
+    # test basic properties of the model
+    @test size(model.A) == (model.K, model.K)
+    @test length(model.B) == model.K
+    @test length(model.πₖ) == model.K
+    @test sum(model.πₖ) ≈ 1.0
+    @test sum(model.A, dims=2) ≈ ones(model.K)
+end
+
+function test_SwitchingGaussianRegression_initialization()
+    K = 3
+    model = SwitchingGaussianRegression(K=K)
+    test_hmmglm_properties(model)
+end
+
+@testset "SwitchingGaussianRegression Tests" begin
+    test_SwitchingGaussianRegression_initialization()
+end
