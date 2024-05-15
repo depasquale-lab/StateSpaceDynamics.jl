@@ -1,4 +1,4 @@
-export GaussianRegression, BernoulliRegression, fit!, loglikelihood, least_squares, update_variance!
+export GaussianRegression, BernoulliRegression, PoissonRegression, fit!, loglikelihood, least_squares, update_variance!
 
 # abstract regression type
 abstract type Regression end
@@ -47,21 +47,20 @@ function loglikelihood(model::GaussianRegression, X::Vector{Float64}, y::Float64
     -0.5 * n * log(2π * model.σ²) - (0.5 / model.σ²) * sum(residuals.^2)
 end
 
-function least_squares(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
+function least_squares(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)), λ::Float64=0.0)
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     residuals =  y - (X * model.β)
-    return sum(w.*(residuals.^2))
+    return sum(w.*(residuals.^2)) + (λ * sum(model.β.^2))
 end
 
-# # something is weird here with the gradient... I'll come back to it. Issue is with Optim, ForwardDiff produces same gradient as this function
-# function gradient!(G::Vector{Float64}, model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64})
-#     # confirm that the model has been fit
-#     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
-#     # calculate gradient
-#     residuals = y - X * model.β
-#     G .= 2 * X' * residuals
-# end
+function gradient!(G::Vector{Float64}, model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)), λ::Float64=0.0)
+    # confirm that the model has been fit
+    @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
+    # calculate gradient
+    residuals = y - X * model.β
+    G .= (-2 * X' * Diagonal(w) * residuals) + (2*λ*model.β)
+end
 
 function update_variance!(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
     # confirm that the model has been fit
@@ -69,7 +68,7 @@ function update_variance!(model::GaussianRegression, X::Matrix{Float64}, y::Vect
     # get number of parameters
     p = length(model.β)
     residuals = y - X * model.β
-    model.σ² = sum(w.*(residuals.^2)) / sum(w) # biased estimate
+    model.σ² = sum(w.*(residuals.^2)) / sum(w) # biased estimate, could use n-1
 end
 
 function fit!(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
@@ -84,7 +83,7 @@ function fit!(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64},
     model.σ² = 1.0
     # minimize objective
     objective(β) = least_squares(GaussianRegression(β, model.σ², true), X, y, w)
-    #objective_grad!(G, β) = gradient!(G, GaussianRegression(β, model.σ², true), X, y) # troubleshoot this later
+    objective_grad!(G, β) = gradient!(G, GaussianRegression(β, model.σ², true), X, y) # troubleshoot this later
 
     result = optimize(objective, model.β, LBFGS())
     # update parameters
@@ -164,3 +163,65 @@ function fit!(model::BernoulliRegression, X::Matrix{Float64}, y::Union{Vector{Fl
     model.β = result.minimizer
 end
     
+"""
+    PoissonRegression
+
+Args:
+    β::Vector{Float64}: Coefficients of the regression model
+    include_intercept::Bool: Whether to include an intercept term in the model
+"""
+mutable struct PoissonRegression <: Regression
+    β::Vector{Float64}
+    include_intercept::Bool
+    # Empty constructor
+    PoissonRegression(; include_intercept::Bool = true) = new(Vector{Float64}(), include_intercept)
+    # Parametric Constructor
+    PoissonRegression(β::Vector{Float64}, include_intercept::Bool) = new(β, include_intercept)
+end
+
+function loglikelihood(model::PoissonRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(y)))
+    # confirm that the model has been fit
+    @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
+    # add intercept if specified
+    if model.include_intercept && size(X, 2) == length(model.β) - 1
+        X = hcat(ones(size(X, 1)), X)
+    end
+    # calculate log likelihood
+    λ = exp.(X * model.β)
+    # convert y if necessary
+    y = convert(Vector{Float64}, y)
+    return sum(w .* (y .* log.(λ) .- λ .- log.(factorial.(Int.(y)))))
+end
+
+function loglikelihood(model::PoissonRegression, X::Vector{Float64}, y::Union{Float64, Int64}, w::Float64=1.0)
+    # confirm that the model has been fit
+    @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
+    # add intercept if specified
+    if model.include_intercept && length(X) == length(model.β) - 1
+        X = hcat(ones(size(X, 1)), X)
+    end
+    # calculate log likelihood
+    λ = exp.(X * model.β)
+    # convert y if necessary
+    y = convert(Float64, y)
+    return sum(w .* (y .* log.(λ) .- λ .- log.(factorial.(Int.(y)))))
+end
+
+function fit!(model::PoissonRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(y)))
+    # add intercept if specified
+    if model.include_intercept
+        X = hcat(ones(size(X, 1)), X)
+    end
+    # get number of parameters
+    p = size(X, 2)
+    # initialize parameters
+    model.β = rand(p)
+    # convert y if necessary
+    y = convert(Vector{Float64}, y)
+    # minimize objective
+    objective(β) = -loglikelihood(PoissonRegression(β, true), X, y, w)
+    result = optimize(objective, model.β, LBFGS())
+    # update parameters
+    model.β = result.minimizer
+end
+

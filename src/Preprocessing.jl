@@ -1,7 +1,5 @@
 export ProbabilisticPCA
 
-
-
 """Probabilistic Principal Component Analysis"""
 mutable struct ProbabilisticPCA
     W::Matrix{Float64}
