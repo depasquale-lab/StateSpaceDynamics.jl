@@ -15,10 +15,13 @@ mutable struct GaussianRegression <: Regression
     β::Vector{Float64}
     σ²::Float64
     include_intercept::Bool
+    λ::Float64
+    # Check that the regularization parameter is non-negative
+    @assert λ >= 0.0  "Regularization parameter must be non-negative."
     # Empty constructor
-    GaussianRegression(; include_intercept::Bool = true) = new(Vector{Float64}(), 0.0, include_intercept)
+    GaussianRegression(; include_intercept::Bool = true, λ::Float64=0.0) = new(Vector{Float64}(), 0.0, include_intercept, λ)
     # Parametric Constructor
-    GaussianRegression(β::Vector{Float64}, σ²::Float64, include_intercept::Bool) = new(β, σ², include_intercept)
+    GaussianRegression(β::Vector{Float64}, σ²::Float64, include_intercept::Bool) = new(β, σ², include_intercept, 0.0)
 end
 
 function loglikelihood(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64})
@@ -47,19 +50,19 @@ function loglikelihood(model::GaussianRegression, X::Vector{Float64}, y::Float64
     -0.5 * n * log(2π * model.σ²) - (0.5 / model.σ²) * sum(residuals.^2)
 end
 
-function least_squares(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)), λ::Float64=0.0)
+function least_squares(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     residuals =  y - (X * model.β)
-    return sum(w.*(residuals.^2)) + (λ * sum(model.β.^2))
+    return sum(w.*(residuals.^2)) + (model.λ * sum(model.β.^2))
 end
 
-function gradient!(G::Vector{Float64}, model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)), λ::Float64=0.0)
+function gradient!(G::Vector{Float64}, model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # calculate gradient
     residuals = y - X * model.β
-    G .= (-2 * X' * Diagonal(w) * residuals) + (2*λ*model.β)
+    G .= (-2 * X' * Diagonal(w) * residuals) + (2*model.λ*model.β)
 end
 
 function update_variance!(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
