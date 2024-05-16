@@ -12,16 +12,20 @@ Args:
     include_intercept::Bool: Whether to include an intercept term in the model
 """
 mutable struct GaussianRegression <: Regression
-    β::Vector{Float64}
-    σ²::Float64
-    include_intercept::Bool
-    λ::Float64
-    # Check that the regularization parameter is non-negative
-    @assert λ >= 0.0  "Regularization parameter must be non-negative."
+    β::Vector{Float64} # coefficients of the model
+    σ²::Float64 # variance of the model
+    include_intercept::Bool # whether to include an intercept term
+    λ::Float64 # regularization parameter
     # Empty constructor
-    GaussianRegression(; include_intercept::Bool = true, λ::Float64=0.0) = new(Vector{Float64}(), 0.0, include_intercept, λ)
+    function GaussianRegression(; include_intercept::Bool = true, λ::Float64=0.0)
+        @assert λ >= 0.0 "Regularization parameter must be non-negative."
+        new(Vector{Float64}(), 0.0, include_intercept, λ)
+    end
     # Parametric Constructor
-    GaussianRegression(β::Vector{Float64}, σ²::Float64, include_intercept::Bool) = new(β, σ², include_intercept, 0.0)
+    function GaussianRegression(β::Vector{Float64}, σ²::Float64, include_intercept::Bool, λ::Float64=0.0)
+        @assert λ >= 0.0 "Regularization parameter must be non-negative."
+        new(β, σ², include_intercept, λ)
+    end
 end
 
 function loglikelihood(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64})
@@ -100,14 +104,22 @@ end
 Args:
     β::Vector{Float64}: Coefficients of the regression model
     include_intercept::Bool: Whether to include an intercept term in the model
+    λ::Float64: Regularization parameter for the model
 """
 mutable struct BernoulliRegression <: Regression
     β::Vector{Float64}
     include_intercept::Bool
+    λ::Float64
     # Empty constructor
-    BernoulliRegression(; include_intercept::Bool = true) = new(Vector{Float64}(), include_intercept)
+    function BernoulliRegression(; include_intercept::Bool = true, λ::Float64=0.0) 
+        @assert λ >= 0.0 "Regularization parameter must be non-negative."
+        new(Vector{Float64}(), include_intercept, λ)
+    end
     # Parametric Constructor
-    BernoulliRegression(β::Vector{Float64}, include_intercept::Bool) = new(β, include_intercept)
+    function BernoulliRegression(β::Vector{Float64}, include_intercept::Bool, λ::Float64=0.0)
+        @assert λ >= 0.0 "Regularization parameter must be non-negative."
+        new(β, include_intercept, λ)
+    end
 end
 
 function loglikelihood(model::BernoulliRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, BitVector}, w::Vector{Float64}=ones(length(y)))
