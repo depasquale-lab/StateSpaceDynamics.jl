@@ -208,9 +208,15 @@ mutable struct PoissonRegression <: Regression
     include_intercept::Bool
     λ::Float64
     # Empty constructor
-    PoissonRegression(; include_intercept::Bool = true) = new(Vector{Float64}(), include_intercept)
+    function PoissonRegression(; include_intercept::Bool = true, λ::Float64=0.0) 
+        @assert λ >= 0.0 "Regularization parameter must be non-negative."
+        new(Vector{Float64}(), include_intercept, λ)
+    end
     # Parametric Constructor
-    PoissonRegression(β::Vector{Float64}, include_intercept::Bool) = new(β, include_intercept)
+    function PoissonRegression(β::Vector{Float64}, include_intercept::Bool, λ::Float64=0.0)
+        @assert λ >= 0.0 "Regularization parameter must be non-negative."
+        new(β, include_intercept, λ)
+    end
 end
 
 function loglikelihood(model::PoissonRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(y)))

@@ -84,17 +84,18 @@ mutable struct SwitchingPoissonRegression <: hmmglm
     B::Vector{RegressionEmissions} # Vector of Poisson Regression Models
     πₖ::Vector{Float64} # initial state distribution
     K::Int # number of states
+    λ::Float64 # regularization parameter
 end
 
-function SwitchingPoissonRegression(; A::Matrix{Float64}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), K::Int)
+function SwitchingPoissonRegression(; A::Matrix{Float64}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), λ::Float64=0.0, K::Int)
     # if A matrix is not passed, initialize using Dirichlet 
     isempty(A) ? A = initialize_transition_matrix(K) : nothing
     # if B vector is not passed, initialize using Gaussian Regression
-    isempty(B) ? B = [RegressionEmissions(PoissonRegression()) for k in 1:K] : nothing
+    isempty(B) ? B = [RegressionEmissions(PoissonRegression(; λ=λ)) for k in 1:K] : nothing
     # if πₖ vector is not passed, initialize using Dirichlet
     isempty(πₖ) ? πₖ = initialize_state_distribution(K) : nothing
     # return model
-    return SwitchingPoissonRegression(A, B, πₖ, K)
+    return SwitchingPoissonRegression(A, B, πₖ, K, λ)
 end
 
 function update_regression!(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64}, w::Matrix{Float64}=ones(length(y), model.K))
