@@ -7,7 +7,7 @@ This package implements a number of state-space models in julia. It take inspira
 
 - [x] Mixture Models
   - [x] Gaussian Mixture Models
-  - [ ] Poisson Mixture Models
+  - [x] Poisson Mixture Models
   - [ ] Binomial Mixture Models
   - [ ] Negative Binomial Mixture Models
   - [ ] Student's t Mixture Models
@@ -30,12 +30,9 @@ This package implements a number of state-space models in julia. It take inspira
   - [ ] Negative Binomial GLMs
 - [x] HMM-GLM's
   - [x] Gaussian HMM-GLMs
-  - [ ] Poisson HMM-GLMs
-  - [ ] Binomial HMM-GLMs
+  - [x] Poisson HMM-GLMs
+  - [x] Bernoulli HMM-GLMs
   - [ ] Negative Binomial HMM-GLMs
   - [ ] Multinomial HMM-GLMs
-- [x] Misc.
-  - [x] Autoregressive Models
-  - [ ] Vector AutoRegressive Models
 
 We are hoping to add more models in the future. If you have any suggestions, please open an issue.
