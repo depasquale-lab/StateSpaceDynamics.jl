@@ -52,17 +52,18 @@ mutable struct SwitchingBernoulliRegression <: hmmglm
     B::Vector{RegressionEmissions} # Vector of Bernoulli Regression Models
     πₖ::Vector{Float64} # initial state distribution
     K::Int # number of states
+    λ::Float64 # regularization parameter
 end
 
-function SwitchingBernoulliRegression(; A::Matrix{Float64}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), K::Int)
+function SwitchingBernoulliRegression(; A::Matrix{Float64}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), λ::Float64=0.0, K::Int)
     # if A matrix is not passed, initialize using Dirichlet 
     isempty(A) ? A = initialize_transition_matrix(K) : nothing
     # if B vector is not passed, initialize using Gaussian Regression
-    isempty(B) ? B = [RegressionEmissions(BernoulliRegression()) for k in 1:K] : nothing
+    isempty(B) ? B = [RegressionEmissions(BernoulliRegression(;λ=λ)) for k in 1:K] : nothing
     # if πₖ vector is not passed, initialize using Dirichlet
     isempty(πₖ) ? πₖ = initialize_state_distribution(K) : nothing
     # return model
-    return SwitchingBernoulliRegression(A, B, πₖ, K)
+    return SwitchingBernoulliRegression(A, B, πₖ, K, λ)
 end
 
 """
@@ -196,7 +197,7 @@ function M_step!(model::hmmglm, γ::Matrix{Float64}, ξ::Array{Float64, 3}, X::M
     update_regression!(model, X, y, exp.(γ)) 
 end
 
-function fit!(model::hmmglm, X::Matrix{Float64}, y::Vector{T}, max_iter::Int=100, tol::Float64=1e-6, initialize::Bool=true) where T<: Real
+function fit!(model::hmmglm, X::Matrix{Float64}, y::Union{Vector{T}, BitVector}, max_iter::Int=100, tol::Float64=1e-6, initialize::Bool=true) where T<: Real
     # convert y to Float64
     y = convert(Vector{Float64}, y)
     # initialize regression models
