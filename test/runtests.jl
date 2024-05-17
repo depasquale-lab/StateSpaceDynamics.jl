@@ -667,6 +667,63 @@ end
     test_BernoulliRegression_intercept()
 end
 
+function test_PoissonRegression_fit()
+    # Generate synthetic data
+    X = hcat(ones(100), randn(100, 2))
+    true_β = [0.5, -1.2, 2.3]
+    λ = exp.(X * true_β)
+    y = rand.(Poisson.(λ))
+    
+    # Initialize and fit the model
+    model = PoissonRegression()
+    fit!(model, X[:, 2:end], y)
+    
+    # Check if the fitted coefficients are reasonable
+    @test length(model.β) == 3
+end
+
+function test_PoissonRegression_loglikelihood()
+    # Generate synthetic data
+    X = hcat(ones(100), randn(100, 2))
+    true_β = [0.5, -1.2, 2.3]
+    λ = exp.(X * true_β)
+    y = rand.(Poisson.(λ))
+    
+    # Initialize and fit the model
+    model = PoissonRegression()
+    fit!(model, X[:, 2:end], y)
+    
+    # Check log likelihood
+    loglik = SSM.loglikelihood(model, X[:, 2:end], y)
+    @test loglik < 0
+end
+
+function test_PoissonRegression_empty_model()
+    model = PoissonRegression()
+    @test isempty(model.β)
+end
+
+function test_PoissonRegression_intercept()
+    X = hcat(ones(100), randn(100, 2))
+    true_β = [0.5, -1.2, 2.3]
+    λ = exp.(X * true_β)
+    y = rand.(Poisson.(λ))
+    
+    model = PoissonRegression(include_intercept=false)
+    fit!(model, X[:, 2:end], y)
+    @test length(model.β) == 2
+    
+    model_with_intercept = PoissonRegression()
+    fit!(model_with_intercept, X[:, 2:end], y)
+    @test length(model_with_intercept.β) == 3
+end
+@testset "PoissonRegression Tests" begin
+    test_PoissonRegression_fit()
+    test_PoissonRegression_loglikelihood()
+    test_PoissonRegression_empty_model()
+    test_PoissonRegression_intercept()
+end
+
 """
 Tests for Emissions.jl
 """
@@ -844,12 +901,20 @@ function test_hmmglm_properties(model::SSM.hmmglm)
     @test sum(model.A, dims=2) ≈ ones(model.K)
 end
 
-function test_SwitchingGaussianRegression_initialization()
+function test_HMMGLM_initialization()
+    # initialize models
     K = 3
-    model = SwitchingGaussianRegression(K=K)
-    test_hmmglm_properties(model)
+    gaussian_model = SwitchingGaussianRegression(K=K)
+    bernoulli_model = SwitchingBernoulliRegression(K=K)
+    poisson_model = SwitchingPoissonRegression(K=K)
+    # test properties
+    test_hmmglm_properties(gaussian_model)
+    test_hmmglm_properties(bernoulli_model)
+    test_hmmglm_properties(poisson_model)
 end
 
-@testset "SwitchingGaussianRegression Tests" begin
-    test_SwitchingGaussianRegression_initialization()
+
+
+@testset "SwitchingRegression Tests" begin
+    test_HMMGLM_initialization()
 end
