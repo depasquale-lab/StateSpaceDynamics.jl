@@ -3,7 +3,6 @@ module SSM
 using Distributions
 using ForwardDiff
 using LinearAlgebra
-using LogExpFunctions
 using Logging
 using Optim
 using Plots
@@ -14,7 +13,8 @@ using Statistics
 using StatsBase
 using StatsFuns
 using SpecialFunctions
-using UnPack
+using Base.Threads
+
 
 include("GlobalTypes.jl")
 include("Utilities.jl")

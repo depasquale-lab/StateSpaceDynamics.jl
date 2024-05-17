@@ -100,7 +100,7 @@ end
 
 function update_regression!(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64}, w::Matrix{Float64}=ones(length(y), model.K))
    # update regression models 
-    for k in 1:model.K
+    @threads for k in 1:model.K
         update_emissions_model!(model.B[k], X, y, w[:, k])
     end
 end
@@ -109,7 +109,7 @@ function initialize_regression!(model::hmmglm, X::Matrix{Float64}, y::Vector{Flo
     # first fit the regression models to all of the data unweighted
     update_regression!(model, X, y)
     # add white noise to the beta coefficients
-    for k in 1:model.K
+    @threads for k in 1:model.K
         model.B[k].regression.β += randn(length(model.B[k].regression.β))
     end
 end
@@ -120,12 +120,12 @@ function forward(hmm::hmmglm, X::Matrix{Float64}, y::Vector{Float64})
     # Initialize an α-matrix 
     α = zeros(Float64, T, K)
     # Calculate α₁
-    for k in 1:K
+    @threads for k in 1:K
         α[1, k] = log(hmm.πₖ[k]) + loglikelihood(hmm.B[k], X[1, :], y[1])
     end
     # Now perform the rest of the forward algorithm for t=2 to T
     for t in 2:T
-        for k in 1:K
+        @threads for k in 1:K
             values_to_sum = Float64[]
             for i in 1:K
                 push!(values_to_sum, log(hmm.A[i, k]) + α[t-1, i])
@@ -149,7 +149,7 @@ function backward(hmm::hmmglm,  X::Matrix{Float64}, y::Vector{Float64})
 
     # Calculate β, starting from T-1 and going backward to 1
     for t in T-1:-1:1
-        for i in 1:K
+        @threads for i in 1:K
             values_to_sum = Float64[]
             for j in 1:K
                 push!(values_to_sum, log(hmm.A[i, j]) + loglikelihood(hmm.B[j], X[t+1, :], y[t+1]) + β[t+1, j])
@@ -167,15 +167,13 @@ function calculate_ξ(hmm::hmmglm, α::Matrix{Float64}, β::Matrix{Float64}, X::
     for t in 1:T-1
         # Array to store the unnormalized ξ values
         log_ξ_unnormalized = zeros(Float64, K, K)
-        for i in 1:K
+        @threads for i in 1:K
             for j in 1:K
                 log_ξ_unnormalized[i, j] = α[t, i] + log(hmm.A[i, j]) + loglikelihood(hmm.B[j], X[t+1, :], y[t+1]) + β[t+1, j]
             end
         end
         # Normalize the ξ values using log-sum-exp operation
-        max_ξ = maximum(log_ξ_unnormalized)
-        denominator = max_ξ + log(sum(exp.(log_ξ_unnormalized .- max_ξ)))
-        ξ[t, :, :] .= log_ξ_unnormalized .- denominator
+        ξ[t, :, :] .= log_ξ_unnormalized .- logsumexp(log_ξ_unnormalized)
     end
     return ξ
 end

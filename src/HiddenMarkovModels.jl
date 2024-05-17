@@ -1,7 +1,7 @@
 export GaussianHMM, baumWelch!, viterbi, sample, initialize_transition_matrix, initialize_state_distribution
 
 """
-GaussianHMM: A hidden markov model with Gaussian emissions.
+GaussianHMM: A hidden Markov model with Gaussian emissions.
 
 Args:
     A::Matrix{Float64}: State Transition Matrix
@@ -38,7 +38,7 @@ end
 function initialize_transition_matrix(K::Int)
     # initialize a transition matrix
     A = zeros(Float64, K, K)
-    for i in 1:K
+    @threads for i in 1:K
         A[i, :] = rand(Dirichlet(ones(K)))
     end
     return A
@@ -55,12 +55,12 @@ function forward(hmm::AbstractHMM, data::Y) where Y <: AbstractArray
     # Initialize an α-matrix 
     α = zeros(Float64, T, K)
     # Calculate α₁
-    for k in 1:K
+    @threads for k in 1:K
         α[1, k] = log(hmm.πₖ[k]) + loglikelihood(hmm.B[k], data[1, :])
     end
     # Now perform the rest of the forward algorithm for t=2 to T
     for t in 2:T
-        for j in 1:K
+        @threads for j in 1:K
             values_to_sum = Float64[]
             for i in 1:K
                 push!(values_to_sum, log(hmm.A[i, j]) + α[t-1, i])
@@ -84,7 +84,7 @@ function backward(hmm::AbstractHMM, data::Y) where Y <: AbstractArray
 
     # Calculate β, starting from T-1 and going backward to 1
     for t in T-1:-1:1
-        for i in 1:K
+        @threads for i in 1:K
             values_to_sum = Float64[]
             for j in 1:K
                 push!(values_to_sum, log(hmm.A[i, j]) + loglikelihood(hmm.B[j], data[t+1, :]) + β[t+1, j])
@@ -98,10 +98,8 @@ end
 function calculate_γ(hmm::AbstractHMM, α::Matrix{Float64}, β::Matrix{Float64})
     T = size(α, 1)
     γ = α .+ β
-    for t in 1:T
-        max_gamma = maximum(γ[t, :])
-        log_sum = max_gamma + log(sum(exp.(γ[t, :] .- max_gamma)))
-        γ[t, :] .-= log_sum
+    @threads for t in 1:T
+        γ[t, :] .-= logsumexp(γ[t, :])
     end
     return γ
 end
@@ -113,15 +111,13 @@ function calculate_ξ(hmm::AbstractHMM, α::Matrix{Float64}, β::Matrix{Float64}
     for t in 1:T-1
         # Array to store the unnormalized ξ values
         log_ξ_unnormalized = zeros(Float64, K, K)
-        for i in 1:K
+        @threads for i in 1:K
             for j in 1:K
                 log_ξ_unnormalized[i, j] = α[t, i] + log(hmm.A[i, j]) + loglikelihood(hmm.B[j], data[t+1, :]) + β[t+1, j]
             end
         end
         # Normalize the ξ values using log-sum-exp operation
-        max_ξ = maximum(log_ξ_unnormalized)
-        denominator = max_ξ + log(sum(exp.(log_ξ_unnormalized .- max_ξ)))
-        ξ[t, :, :] .= log_ξ_unnormalized .- denominator
+        ξ[t, :, :] .= log_ξ_unnormalized .- logsumexp(log_ξ_unnormalized)
     end
     return ξ
 end
@@ -135,9 +131,9 @@ function update_transition_matrix!(hmm::AbstractHMM, γ::Matrix{Float64}, ξ::Ar
     K = size(hmm.A, 1)
     T = size(γ, 1)
     # Update transition probabilities
-    for i in 1:K
+    @threads for i in 1:K
         for j in 1:K
-            hmm.A[i, j] = exp(log(sum(exp.(ξ[:, i, j]))) - log(sum(exp.(γ[1:T-1, i]))))
+            hmm.A[i, j] = exp(logsumexp(ξ[:, i, j]) - logsumexp(γ[1:T-1, i]))
         end
     end
 end
@@ -369,33 +365,3 @@ This set of functions is for the Baum-Welch algorithm but uses the scaling facto
 #         M_step!(hmm, γ, ξ, data)
 #     end
 # end
-
-"""
-PoissonHMM: A hidden markov model with Poisson emissions.
-
-Args:
-    A::Matrix{Float64}: State Transition Matrix
-    B::Vector{PoissonEmission}: Emission Model
-    πₖ::Vector{Float64}: Initial State Distribution
-    D::Int: Latent State Dimension
-"""
-
-mutable struct PoissonHMM{PoissonEmission} <: AbstractHMM
-    A::Matrix{Float64}  # State Transition Matrix
-    B::Vector{PoissonEmission} # Emission Model
-    πₖ ::Vector{Float64} # Initial State Distribution
-    K::Int # Latent State Dimension
-end
-
-function PoissonHMM(data::Matrix{Float64}, K::Int)
-    T, D = size(data)
-    # Initialize A
-    A = rand(K, K)
-    A = A ./ sum(A, dims=2)  # normalize rows to ensure they are valid probabilities
-    # Initialize π
-    πₖ = rand(K)
-    πₖ = πₖ ./ sum(πₖ) # normalize to ensure it's a valid probability vector
-    # Initialize Emission Model
-    #TODO: Finish later
-end
-
