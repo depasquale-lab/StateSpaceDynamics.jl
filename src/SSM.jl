@@ -13,6 +13,7 @@ using SparseArrays
 using Statistics
 using StatsBase
 using StatsFuns
+using SpecialFunctions
 using UnPack
 
 include("GlobalTypes.jl")

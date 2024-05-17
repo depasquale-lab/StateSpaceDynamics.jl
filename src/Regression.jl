@@ -206,6 +206,7 @@ Args:
 mutable struct PoissonRegression <: Regression
     β::Vector{Float64}
     include_intercept::Bool
+    λ::Float64
     # Empty constructor
     PoissonRegression(; include_intercept::Bool = true) = new(Vector{Float64}(), include_intercept)
     # Parametric Constructor
@@ -223,7 +224,7 @@ function loglikelihood(model::PoissonRegression, X::Matrix{Float64}, y::Union{Ve
     λ = exp.(X * model.β)
     # convert y if necessary
     y = convert(Vector{Float64}, y)
-    return sum(w .* (y .* log.(λ) .- λ .- log.(factorial.(Int.(y)))))
+    return sum(w .* (y .* log.(λ) .- λ .- loggamma.(Int.(y) .+ 1)))
 end
 
 function loglikelihood(model::PoissonRegression, X::Vector{Float64}, y::Union{Float64, Int64}, w::Float64=1.0)
@@ -237,7 +238,22 @@ function loglikelihood(model::PoissonRegression, X::Vector{Float64}, y::Union{Fl
     λ = exp.(X * model.β)
     # convert y if necessary
     y = convert(Float64, y)
-    return sum(w .* (y .* log.(λ) .- λ .- log.(factorial.(Int.(y)))))
+    return sum(w .* (y .* log.(λ) .- λ .- log.(factorial.(Int.(y))))) 
+end
+
+function gradient!(grad::Vector{Float64}, model::PoissonRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(y)))
+    # confirm that the model has been fit
+    @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
+    # add intercept if specified
+    if model.include_intercept && size(X, 2) == length(model.β) - 1
+        X = hcat(ones(size(X, 1)), X)
+    end
+    # calculate the rate
+    rate = exp.(X * model.β)
+    # convert y if necessary
+    y = convert(Vector{Float64}, y)
+    # calculate gradient
+    grad .= -X' * (Diagonal(w) * (y .- rate)) + (model.λ * 2 * model.β)
 end
 
 function fit!(model::PoissonRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(y)))
@@ -252,7 +268,8 @@ function fit!(model::PoissonRegression, X::Matrix{Float64}, y::Union{Vector{Floa
     # convert y if necessary
     y = convert(Vector{Float64}, y)
     # minimize objective
-    objective(β) = -loglikelihood(PoissonRegression(β, true), X, y, w)
+    objective(β) = -loglikelihood(PoissonRegression(β, true), X, y, w) + (model.λ * sum(β.^2))
+    objective_grad!(β, g) = gradient!(g, PoissonRegression(β, true), X, y, w)
     result = optimize(objective, model.β, LBFGS())
     # update parameters
     model.β = result.minimizer
