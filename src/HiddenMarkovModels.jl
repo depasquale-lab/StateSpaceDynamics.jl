@@ -1,7 +1,10 @@
 export GaussianHMM, baumWelch!, viterbi, sample, initialize_transition_matrix, initialize_state_distribution
 
 """
-GaussianHMM: A hidden Markov model with Gaussian emissions.
+
+    GaussianHMM(A::Matrix{Float64}, B::Vector{GaussianEmission}, πₖ::Vector{Float64}, D::Int)
+
+A hidden Markov model with Gaussian emissions.
 
 Args:
     A::Matrix{Float64}: State Transition Matrix

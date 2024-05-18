@@ -15,7 +15,6 @@ using StatsFuns
 using SpecialFunctions
 using Base.Threads
 
-
 include("GlobalTypes.jl")
 include("Utilities.jl")
 include("Regression.jl")
