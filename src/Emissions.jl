@@ -1,4 +1,4 @@
-export GaussianEmission, RegressionEmissions
+export GaussianEmission, RegressionEmissions, loglikelihood
 
 """
 GaussianEmission: Struct representing a Gaussian emission model.
