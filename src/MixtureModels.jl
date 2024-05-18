@@ -23,7 +23,27 @@ function sample(mixture_model::MixtureModel, n::Int) end
 
 
 
+"""
+    fit!(model::MixtureModel, data::AbstractMatrix; <keyword arguments>)
 
+Fit the given mixture model to the data using the Expectation-Maximization (EM) algorithm. 
+
+# Arguments
+- `model::MixtureModel`: The mixture model to fit.
+- `data::AbstractMatrix`: The data matrix where rows correspond to data points.
+- `maxiter::Int=50`: The maximum number of iterations for the EM algorithm (default is 50).
+- `tol::Float64=1e-3`: The convergence tolerance for the log-likelihood (default is 1e-3).
+- `initialize_kmeans::Bool=true`: Whether to initialize the model parameters using KMeans (default is true).
+
+# Returns
+- The class probabilities (responsibilities) for each data point.
+
+# Examples
+```julia
+gmm = GaussianMixtureModel(3, 2)  # Create a Gaussian Mixture Model with 3 clusters and 2-dimensional data
+fit!(gmm, data)  # Fit the model to the data
+"""
+function fit!(gmm::MixtureModel, data::AbstractMatrix; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=true) end
 
 
 
