@@ -554,9 +554,9 @@ Tests for Regression.jl
 """
 function test_GaussianRegression_fit()
     # Generate synthetic data
-    X = hcat(ones(100), randn(100, 2))
+    X = hcat(ones(1000), randn(1000, 2))
     true_β = [0.5, -1.2, 2.3]
-    y = X * true_β + randn(100) * 0.5
+    y = X * true_β + randn(1000) * 0.5
     
     # Initialize and fit the model
     model = GaussianRegression()
@@ -565,20 +565,29 @@ function test_GaussianRegression_fit()
     # Check if the fitted coefficients are close to the true coefficients
     @test isapprox(model.β, true_β, atol=0.5)
     @test model.σ² > 0
+    @test isapprox(model.σ², 0.25, atol=0.1)
 end
 
 function test_GaussianRegression_loglikelihood()
     # Generate synthetic data
-    X = hcat(ones(100), randn(100, 2))
+    X = hcat(ones(1000), randn(1000, 2))
     true_β = [0.5, -1.2, 2.3]
-    y = X * true_β + randn(100) * 0.5
+    y = X * true_β + randn(1000) * 0.5
     
     # Initialize and fit the model
     model = GaussianRegression()
     fit!(model, X[:, 2:end], y)
+    # check if the fitted coefficients are close to the true coefficients
+    @test isapprox(model.β, true_β, atol=0.5)
+    @test model.σ² > 0
+    @test isapprox(model.σ², 0.25, atol=0.1)
     
     # Check log likelihood
     loglik = SSM.loglikelihood(model, X[:, 2:end], y)
+    @test loglik < 0
+
+    # test loglikelihood on a single point
+    loglik = SSM.loglikelihood(model, X[1, 2:end], y[1])
     @test loglik < 0
 end
 
@@ -589,9 +598,9 @@ function test_GaussianRegression_empty_model()
 end
 
 function test_GaussianRegression_intercept()
-    X = hcat(ones(100), randn(100, 2))
+    X = hcat(ones(1000), randn(1000, 2))
     true_β = [0.5, -1.2, 2.3]
-    y = X * true_β + randn(100) * 0.5
+    y = X * true_β + randn(1000) * 0.5
     
     model = GaussianRegression(include_intercept=false)
     fit!(model, X[:, 2:end], y)
@@ -600,6 +609,7 @@ function test_GaussianRegression_intercept()
     model_with_intercept = GaussianRegression()
     fit!(model_with_intercept, X[:, 2:end], y)
     @test length(model_with_intercept.β) == 3
+    @test isapprox(model_with_intercept.β, true_β, atol=0.5)
 end
 
 @testset "GaussianRegression Tests" begin
@@ -611,7 +621,7 @@ end
 
 function test_BernoulliRegression_fit()
     # Generate synthetic data
-    X = hcat(ones(100), randn(100, 2))
+    X = hcat(ones(1000), randn(1000, 2))
     true_β = [0.5, -1.2, 2.3]
     p = logistic.(X * true_β)
     y = rand.(Bernoulli.(p))
@@ -622,11 +632,12 @@ function test_BernoulliRegression_fit()
     
     # Check if the fitted coefficients are reasonable
     @test length(model.β) == 3
+    @test isapprox(model.β, true_β, atol=0.5)
 end
 
 function test_BernoulliRegression_loglikelihood()
     # Generate synthetic data
-    X = hcat(ones(100), randn(100, 2))
+    X = hcat(ones(1000), randn(1000, 2))
     true_β = [0.5, -1.2, 2.3]
     p = logistic.(X * true_β)
     y = rand.(Bernoulli.(p))
@@ -634,10 +645,18 @@ function test_BernoulliRegression_loglikelihood()
     # Initialize and fit the model
     model = BernoulliRegression()
     fit!(model, X[:, 2:end], y)
+    # check if the fitted coefficients are close to the true coefficients
+    @test length(model.β) == 3
+    @test isapprox(model.β, true_β, atol=0.5)
     
     # Check log likelihood
     loglik = SSM.loglikelihood(model, X[:, 2:end], y)
     @test loglik < 0
+
+
+    # test loglikelihood on a single point
+    # loglik = SSM.loglikelihood(model, X[1, 2:end], y[1])
+    # @test loglik < 0
 end
 
 function test_BernoulliRegression_empty_model()
@@ -646,7 +665,7 @@ function test_BernoulliRegression_empty_model()
 end
 
 function test_BernoulliRegression_intercept()
-    X = hcat(ones(100), randn(100, 2))
+    X = hcat(ones(1000), randn(1000, 2))
     true_β = [0.5, -1.2, 2.3]
     p = logistic.(X * true_β)
     y = rand.(Bernoulli.(p))
@@ -658,6 +677,7 @@ function test_BernoulliRegression_intercept()
     model_with_intercept = BernoulliRegression()
     fit!(model_with_intercept, X[:, 2:end], y)
     @test length(model_with_intercept.β) == 3
+    @test isapprox(model_with_intercept.β, true_β, atol=0.5)
 end
 
 @testset "BernoulliRegression Tests" begin
@@ -669,7 +689,7 @@ end
 
 function test_PoissonRegression_fit()
     # Generate synthetic data
-    X = hcat(ones(100), randn(100, 2))
+    X = hcat(ones(1000), randn(1000, 2))
     true_β = [0.5, -1.2, 2.3]
     λ = exp.(X * true_β)
     y = rand.(Poisson.(λ))
@@ -677,14 +697,15 @@ function test_PoissonRegression_fit()
     # Initialize and fit the model
     model = PoissonRegression()
     fit!(model, X[:, 2:end], y)
-    
-    # Check if the fitted coefficients are reasonable
+
+    # Check if the fitted coefficients are close to the true coefficients
     @test length(model.β) == 3
+    @test isapprox(model.β, true_β, atol=0.5)
 end
 
 function test_PoissonRegression_loglikelihood()
     # Generate synthetic data
-    X = hcat(ones(100), randn(100, 2))
+    X = hcat(ones(1000), randn(1000, 2))
     true_β = [0.5, -1.2, 2.3]
     λ = exp.(X * true_β)
     y = rand.(Poisson.(λ))
@@ -692,10 +713,17 @@ function test_PoissonRegression_loglikelihood()
     # Initialize and fit the model
     model = PoissonRegression()
     fit!(model, X[:, 2:end], y)
+    # check if the fitted coefficients are close to the true coefficients
+    @test length(model.β) == 3
+    @test isapprox(model.β, true_β, atol=0.5)
     
     # Check log likelihood
     loglik = SSM.loglikelihood(model, X[:, 2:end], y)
     @test loglik < 0
+
+    # test loglikelihood on a single point
+    # loglik = SSM.loglikelihood(model, X[1, 2:end], y[1])
+    # @test loglik < 0
 end
 
 function test_PoissonRegression_empty_model()
@@ -704,7 +732,7 @@ function test_PoissonRegression_empty_model()
 end
 
 function test_PoissonRegression_intercept()
-    X = hcat(ones(100), randn(100, 2))
+    X = hcat(ones(1000), randn(1000, 2))
     true_β = [0.5, -1.2, 2.3]
     λ = exp.(X * true_β)
     y = rand.(Poisson.(λ))
@@ -716,6 +744,7 @@ function test_PoissonRegression_intercept()
     model_with_intercept = PoissonRegression()
     fit!(model_with_intercept, X[:, 2:end], y)
     @test length(model_with_intercept.β) == 3
+    @test isapprox(model_with_intercept.β, true_β, atol=0.5)
 end
 @testset "PoissonRegression Tests" begin
     test_PoissonRegression_fit()
@@ -746,14 +775,52 @@ function test_GaussianEmission()
     sample = SSM.sample_emission(gaussian_emission)
     @test length(sample) == 2
     # Update emission model
-    γ = rand(100)
+    γ = ones(100)
     SSM.updateEmissionModel!(gaussian_emission, data, γ)
     # Check if parameters are updated correctly
-    
+    @test gaussian_emission.μ ≈ mean(data, dims=1)'
+    @test gaussian_emission.Σ ≈ cov(data, corrected=false)
 end
+
+function test_regression_emissions()
+    # generate synthetic data
+    X = hcat(ones(1000), randn(1000, 2))
+    true_β = [0.5, -1.2, 2.3]
+    true_σ² = 0.5
+    # gaussian glm response
+    y = X * true_β + rand(Normal(0., sqrt(true_σ²)), 1000)
+    # poisson glm response
+    y_poisson = rand.(Poisson.(exp.(X * true_β)))
+    y_poisson = convert(Vector{Float64}, y_poisson)
+    # bernoulli glm response
+    y_bernoulli = rand.(Bernoulli.(logistic.(X * true_β)))
+    y_bernoulli = convert(Vector{Float64}, y_bernoulli)
+    # initialize emission models
+    gaussian_emission = RegressionEmissions(GaussianRegression(;include_intercept=false))
+    poisson_emission = RegressionEmissions(PoissonRegression(;include_intercept=false))
+    bernoulli_emission = RegressionEmissions(BernoulliRegression(;include_intercept=false))
+    # update emission models
+    SSM.update_emissions_model!(gaussian_emission, X, y)
+    SSM.update_emissions_model!(poisson_emission, X, y_poisson)
+    SSM.update_emissions_model!(bernoulli_emission, X, y_bernoulli)
+    # check if parameters are updated correctly
+    @test isapprox(gaussian_emission.regression.β, true_β, atol=0.5)
+    @test isapprox(gaussian_emission.regression.σ², true_σ², atol=0.1)
+    @test isapprox(poisson_emission.regression.β, true_β, atol=0.5)
+    @test isapprox(bernoulli_emission.regression.β, true_β, atol=0.5)
+    # test the loglikelihood
+    # ll_gaussian = SSM.loglikelihood(gaussian_emission, X[1, :], y[1])
+    # ll_poisson = SSM.loglikelihood(poisson_emission, X[1, :], y_poisson[1])
+    # ll_bernoulli = SSM.loglikelihood(bernoulli_emission, X[1, :], y_bernoulli[1])
+    # @test ll_gaussian < 0
+    # @test ll_poisson < 0
+    # @test ll_bernoulli < 0
+end
+
 
 @testset "Emissions.jl Tests" begin
     test_GaussianEmission()
+    test_regression_emissions()
 end
 
 """
@@ -912,8 +979,6 @@ function test_HMMGLM_initialization()
     test_hmmglm_properties(bernoulli_model)
     test_hmmglm_properties(poisson_model)
 end
-
-
 
 @testset "SwitchingRegression Tests" begin
     test_HMMGLM_initialization()

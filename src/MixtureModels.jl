@@ -1,9 +1,7 @@
 export  GaussianMixtureModel, PoissonMixtureModel, fit!, log_likelihood, sample
 
-
-
 """
-GaussianMixtureModel
+    GaussianMixtureModel
 
 A Gaussian Mixture Model (GaussianMixtureModel) for clustering and density estimation.
 
@@ -35,8 +33,6 @@ function GaussianMixtureModel(k::Int, data_dim::Int)
     return GaussianMixtureModel(k, μ, Σ, πs)
 end
 
-
-
 """
 sample(gmm::GaussianMixtureModel, n)
 
@@ -63,10 +59,6 @@ function sample(gmm::GaussianMixtureModel, n::Int)
     return samples
 end
 
-
-
-
-
 # E-Step (Confirmed in Python)
 """
     Returns 
@@ -79,8 +71,6 @@ function EStep(gmm::GaussianMixtureModel, data::Matrix{Float64})
     γ = zeros(N, K)
     log_γ = zeros(N, K)
     class_probabilities = zeros(N, K)
-
-
 
     for n in 1:N
         for k in 1:K
