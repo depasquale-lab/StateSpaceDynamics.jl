@@ -1,20 +1,49 @@
 export  GaussianMixtureModel, PoissonMixtureModel, fit!, log_likelihood, sample
 
+
+
+
+
 """
+    sample(model::MixtureModel, n::Int)
+
+Draw `n` samples from the given mixture model.
+
+# Returns
+- A matrix or vector of samples (with shape 'n' by 'data dimension'), depending on mixture model type. 
+
+# Examples
+```julia
+# Gaussian Mixture Model example
+gmm = GaussianMixtureModel(3, 2)  # Create a Gaussian Mixture Model with 3 clusters and 2-dimensional data
+gmm_samples = sample(gmm, 100)  # Draw 100 samples from the Gaussian Mixture Model
+```
+"""
+function sample(mixture_model::MixtureModel, n::Int) end
+
+
+
+
+
+
+
+
+"""
+    GaussianMixtureModel
     GaussianMixtureModel
 
 A Gaussian Mixture Model (GaussianMixtureModel) for clustering and density estimation.
 
-## Fields
+# Fields
 - `k::Int`: Number of clusters.
 - `μₖ::Matrix{Float64}`: Means of each cluster (dimensions: data_dim x k).
 - `Σₖ::Array{Matrix{Float64}, 1}`: Covariance matrices of each cluster.
 - `πₖ::Vector{Float64}`: Mixing coefficients for each cluster.
 
 
-## Examples
+# Examples
 ```julia
-gmm = GaussianMixtureModel(3, 2, data) # 3 clusters, 2-dimensional data
+gmm = GaussianMixtureModel(3, 2) # Create a Gaussian Mixture Model with 3 clusters and 2-dimensional data
 fit!(gmm, data)
 """
 mutable struct GaussianMixtureModel <: MixtureModel
@@ -25,7 +54,6 @@ mutable struct GaussianMixtureModel <: MixtureModel
 end
 
 
-"""GaussianMixtureModel Constructor"""
 function GaussianMixtureModel(k::Int, data_dim::Int)
     Σ = [I(data_dim) for _ = 1:k]
     πs = ones(k) ./ k
@@ -33,12 +61,13 @@ function GaussianMixtureModel(k::Int, data_dim::Int)
     return GaussianMixtureModel(k, μ, Σ, πs)
 end
 
-"""
-sample(gmm::GaussianMixtureModel, n)
 
-Draw 'n' samples from gmm. Returns n by 'data dim' size Matrix{Float64}.
 
-"""
+
+
+
+
+
 function sample(gmm::GaussianMixtureModel, n::Int)
     # Determine the number of samples from each component
     component_samples = rand(Multinomial(n, gmm.πₖ), 1)
@@ -253,12 +282,7 @@ function log_likelihood(pmm::PoissonMixtureModel, data::Matrix{Int})
     return ll
 end
 
-"""
-sample(pmm::PoissonMixtureModel, n)
 
-Draw 'n' samples from pmm. Returns a Vector{Int} of length n.
-
-"""
 function sample(pmm::PoissonMixtureModel, n::Int)
     # Determine the number of samples from each component
     component_samples = rand(Multinomial(n, pmm.πₖ), 1)
