@@ -13,6 +13,7 @@ using SparseArrays
 using Statistics
 using StatsBase
 using StatsFuns
+using SpecialFunctions
 using UnPack
 
 include("GlobalTypes.jl")
@@ -24,5 +25,6 @@ include("HiddenMarkovModels.jl")
 include("MarkovRegression.jl")
 include("MixtureModels.jl")
 include("Optimization.jl")
+include("Preprocessing.jl")
 
 end

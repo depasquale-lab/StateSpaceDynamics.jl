@@ -1,4 +1,4 @@
-export SwitchingGaussianRegression, EM
+export SwitchingGaussianRegression, SwitchingBernoulliRegression, SwitchingPoissonRegression, fit!, viterbi, log_likelihood
 
 abstract type hmmglm <: AbstractHMM end
 """
@@ -13,23 +13,89 @@ Args:
     B::Vector{RegressionEmissions}: Vector of Gaussian Regression Models
     πₖ::Vector{T}: initial state distribution
     K::Int: number of states
+    λ::Float64: regularization parameter for the regression models
 """
 mutable struct SwitchingGaussianRegression{T <: Real} <: hmmglm
     A::Matrix{T} # transition matrix
     B::Vector{RegressionEmissions} # Vector of Gaussian Regression Models
     πₖ::Vector{T} # initial state distribution
     K::Int # number of states
+    λ::Float64 # regularization parameter
 end
 
-function SwitchingGaussianRegression(; A::Matrix{Float64}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), K::Int)
+function SwitchingGaussianRegression(; A::Matrix{Float64}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), λ::Float64=0.0, K::Int)
     # if A matrix is not passed, initialize using Dirichlet 
     isempty(A) ? A = initialize_transition_matrix(K) : nothing
     # if B vector is not passed, initialize using Gaussian Regression
-    isempty(B) ? B = [RegressionEmissions(GaussianRegression()) for k in 1:K] : nothing
+    isempty(B) ? B = [RegressionEmissions(GaussianRegression(;λ=λ)) for k in 1:K] : nothing
     # if πₖ vector is not passed, initialize using Dirichlet
     isempty(πₖ) ? πₖ = initialize_state_distribution(K) : nothing
     # return model
-    return SwitchingGaussianRegression(A, B, πₖ, K)
+    return SwitchingGaussianRegression(A, B, πₖ, K, λ)
+end
+
+"""
+    SwitchingBernoulliRegression
+
+Struct representing a Bernoulli hmm-glm model. This model is specifically a Hidden Markov Model with Bernoulli Regression emissions. One can think of this model
+as a time-dependent mixture of Bernoulli regression models. This is similar to how a vanilla HMM is a time-dependent mixture of Bernoulli distributions. Thus,
+at each time point we can assess the most likely state and the most likely regression model given the data.
+
+Args:
+    A::Matrix{T}: Transition matrix
+    B::Vector{RegressionEmissions}: Vector of Bernoulli Regression Models
+    πₖ::Vector{T}: initial state distribution
+    K::Int: number of states
+"""
+mutable struct SwitchingBernoulliRegression <: hmmglm
+    A::Matrix{Float64} # transition matrix
+    B::Vector{RegressionEmissions} # Vector of Bernoulli Regression Models
+    πₖ::Vector{Float64} # initial state distribution
+    K::Int # number of states
+    λ::Float64 # regularization parameter
+end
+
+function SwitchingBernoulliRegression(; A::Matrix{Float64}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), λ::Float64=0.0, K::Int)
+    # if A matrix is not passed, initialize using Dirichlet 
+    isempty(A) ? A = initialize_transition_matrix(K) : nothing
+    # if B vector is not passed, initialize using Gaussian Regression
+    isempty(B) ? B = [RegressionEmissions(BernoulliRegression(;λ=λ)) for k in 1:K] : nothing
+    # if πₖ vector is not passed, initialize using Dirichlet
+    isempty(πₖ) ? πₖ = initialize_state_distribution(K) : nothing
+    # return model
+    return SwitchingBernoulliRegression(A, B, πₖ, K, λ)
+end
+
+"""
+    SwitchingPoissonRegression
+
+Struct representing a Poisson hmm-glm model. This model is specifically a Hidden Markov Model with Poisson Regression emissions. One can think of this model
+as a time-dependent mixture of Poisson regression models. This is similar to how a vanilla HMM is a time-dependent mixture of Poisson distributions. Thus,
+at each time point we can assess the most likely state and the most likely regression model given the data.
+
+Args:
+    A::Matrix{T}: Transition matrix
+    B::Vector{RegressionEmissions}: Vector of Poisson Regression Models
+    πₖ::Vector{T}: initial state distribution
+    K::Int: number of states
+"""
+mutable struct SwitchingPoissonRegression <: hmmglm
+    A::Matrix{Float64} # transition matrix
+    B::Vector{RegressionEmissions} # Vector of Poisson Regression Models
+    πₖ::Vector{Float64} # initial state distribution
+    K::Int # number of states
+    λ::Float64 # regularization parameter
+end
+
+function SwitchingPoissonRegression(; A::Matrix{Float64}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), λ::Float64=0.0, K::Int)
+    # if A matrix is not passed, initialize using Dirichlet 
+    isempty(A) ? A = initialize_transition_matrix(K) : nothing
+    # if B vector is not passed, initialize using Gaussian Regression
+    isempty(B) ? B = [RegressionEmissions(PoissonRegression(; λ=λ)) for k in 1:K] : nothing
+    # if πₖ vector is not passed, initialize using Dirichlet
+    isempty(πₖ) ? πₖ = initialize_state_distribution(K) : nothing
+    # return model
+    return SwitchingPoissonRegression(A, B, πₖ, K, λ)
 end
 
 function update_regression!(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64}, w::Matrix{Float64}=ones(length(y), model.K))
@@ -132,7 +198,9 @@ function M_step!(model::hmmglm, γ::Matrix{Float64}, ξ::Array{Float64, 3}, X::M
     update_regression!(model, X, y, exp.(γ)) 
 end
 
-function fit!(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64}, max_iter::Int=100, tol::Float64=1e-6, initialize::Bool=true)
+function fit!(model::hmmglm, X::Matrix{Float64}, y::Union{Vector{T}, BitVector}, max_iter::Int=100, tol::Float64=1e-6, initialize::Bool=true) where T<: Real
+    # convert y to Float64
+    y = convert(Vector{Float64}, y)
     # initialize regression models
     if initialize
         initialize_regression!(model, X, y)

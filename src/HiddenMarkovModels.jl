@@ -150,7 +150,7 @@ function update_emission_models!(hmm::AbstractHMM, γ::Matrix{Float64}, data::Ma
     end
 end
 
-function EStep(hmm::AbstractHMM, data::Matrix{Float64})
+function E_step(hmm::AbstractHMM, data::Matrix{Float64})
     α = forward(hmm, data)
     β = backward(hmm, data)
     γ = calculate_γ(hmm, α, β)
@@ -158,7 +158,7 @@ function EStep(hmm::AbstractHMM, data::Matrix{Float64})
     return γ, ξ, α, β
 end
 
-function MStep!(hmm::AbstractHMM, γ::Matrix{Float64}, ξ::Array{Float64, 3}, data::Matrix{Float64})
+function M_step!(hmm::AbstractHMM, γ::Matrix{Float64}, ξ::Array{Float64, 3}, data::Matrix{Float64})
     # Update initial state probabilities
     update_initial_state_distribution!(hmm, γ)
     # Update transition probabilities
@@ -177,7 +177,7 @@ function baumWelch!(hmm::AbstractHMM, data::Matrix{Float64}, max_iters::Int=100,
         # Update the progress bar
         next!(p; showvalues = [(:iteration, iter), (:log_likelihood, log_likelihood)])
         # E-Step
-        γ, ξ, α, β = EStep(hmm, data)
+        γ, ξ, α, β = E_step(hmm, data)
         # Compute and update the log-likelihood
         log_likelihood_current = logsumexp(α[T, :])
         println(log_likelihood_current)
@@ -188,7 +188,7 @@ function baumWelch!(hmm::AbstractHMM, data::Matrix{Float64}, max_iters::Int=100,
             log_likelihood = log_likelihood_current
         end
         # M-Step
-        MStep!(hmm, γ, ξ, data)
+        M_step!(hmm, γ, ξ, data)
     end
 end
 
@@ -329,7 +329,7 @@ This set of functions is for the Baum-Welch algorithm but uses the scaling facto
 #     return γ, ξ, α, β, c
 # end
 
-# function MStep!(hmm::AbstractHMM, γ::Matrix{Float64}, ξ::Array{Float64, 3}, data::Matrix{Float64})
+# function M_step!(hmm::AbstractHMM, γ::Matrix{Float64}, ξ::Array{Float64, 3}, data::Matrix{Float64})
 #     K = size(hmm.A, 1)
 #     T = size(data, 1)
 #     # Update initial state probabilities
@@ -366,7 +366,7 @@ This set of functions is for the Baum-Welch algorithm but uses the scaling facto
 #             ll_prev = log_likelihood
 #         end
 #         # M-Step
-#         MStep!(hmm, γ, ξ, data)
+#         M_step!(hmm, γ, ξ, data)
 #     end
 # end
 
