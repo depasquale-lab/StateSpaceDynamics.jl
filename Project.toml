@@ -1,5 +1,6 @@
 name = "SSM"
 uuid = "19cf8126-1d00-4ad8-bf17-4e76d7bc0f6d"
+version = "0.0.0"
 authors = ["Ryan Senne rsenne@bu.edu"]
 
 [deps]

@@ -481,7 +481,7 @@ mutable struct PLDS <: DynamicalSystem
 end
 
 function PLDS(; 
-    A::Union{AbstractArray, Nothing}=nothing,
+    A::Union{AbstractArray, Nothing}=nothing, 
     C::Union{AbstractArray, Nothing}=nothing,
     Q::Union{AbstractArray, Nothing}=nothing,
     D::Union{AbstractArray, Nothing}=nothing,
@@ -502,6 +502,8 @@ end
 function initialize_missing_parameters!(plds::PLDS)
     # Initialize missing parameters with random values (that make sense! i.e. covarainces are symmetric and positive definite)
 end
+
+
 
 
 mutable struct fLDS <: DynamicalSystem
