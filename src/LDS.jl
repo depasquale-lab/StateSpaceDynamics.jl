@@ -4,55 +4,54 @@
 # export statement
 export LDS, KalmanFilter, KalmanSmoother, loglikelihood
 
-# constants
-const DEFAULT_LATENT_DIM = 2
-const DEFAULT_OBS_DIM = 2
-
 """Linear Dynamical System (LDS) Definition"""
 mutable struct LDS <: DynamicalSystem
-    A::Union{AbstractArray, Nothing}  # Transition Matrix
-    H::Union{AbstractArray, Nothing}  # Observation Matrix
-    B::Union{AbstractArray, Nothing}  # Control Matrix
-    Q::Union{AbstractArray, Nothing}  # Qrocess Noise Covariance
-    R::Union{AbstractArray, Nothing}  # Observation Noise Covariance
-    x0::Union{AbstractArray, Nothing} # Initial State
-    p0::Union{AbstractArray, Nothing} # Initial Covariance
-    inputs::Union{AbstractArray, Nothing} # Inputs
+    A::AbstractMatrix{<:Real}  # Transition Matrix
+    H::AbstractMatrix{<:Real}  # Observation Matrix
+    B::AbstractMatrix{<:Real}  # Control Matrix
+    Q::AbstractMatrix{<:Real}  # Process Noise Covariance
+    R::AbstractMatrix{<:Real}  # Observation Noise Covariance
+    x0::AbstractVector{<:Real} # Initial State
+    p0::AbstractMatrix{<:Real} # Initial Covariance
+    inputs::AbstractMatrix{<:Real} # Inputs
     obs_dim::Int # Observation Dimension
     latent_dim::Int # Latent Dimension
     fit_bool::Vector{Bool} # Vector of booleans indicating which parameters to fit
 end
 
 function LDS(; 
-    A::Union{AbstractArray, Nothing}=nothing,
-    H::Union{AbstractArray, Nothing}=nothing,
-    B::Union{AbstractArray, Nothing}=nothing,
-    Q::Union{AbstractArray, Nothing}=nothing,
-    R::Union{AbstractArray, Nothing}=nothing,
-    x0::Union{AbstractArray, Nothing}=nothing,
-    p0::Union{AbstractArray, Nothing}=nothing,
-    inputs::Union{AbstractArray, Nothing}=nothing,
-    obs_dim::Int=DEFAULT_OBS_DIM,
-    latent_dim::Int=DEFAULT_LATENT_DIM,
+    A::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    H::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    B::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    Q::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    R::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    x0::AbstractVector{<:Real}=Vector{Float64}(undef, 0),
+    p0::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    inputs::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    obs_dim::Int,
+    latent_dim::Int,
     fit_bool::Vector{Bool}=fill(true, 7)
 )
-    LDS(
-        A, H, B, Q, R, x0, p0, inputs, obs_dim, latent_dim, fit_bool
-    ) |> initialize_missing_parameters!
-end
 
-# Function to initialize missing parameters
-function initialize_missing_parameters!(lds::LDS)
-    lds.A = lds.A === nothing ? rand(lds.latent_dim, lds.latent_dim) : lds.A
-    lds.H = lds.H === nothing ? rand(lds.obs_dim, lds.latent_dim) : lds.H
-    lds.Q = lds.Q === nothing ? I(lds.latent_dim) : lds.Q
-    lds.R = lds.R === nothing ? I(lds.obs_dim) : lds.R
-    lds.x0 = lds.x0 === nothing ? rand(lds.latent_dim) : lds.x0
-    lds.p0 = lds.p0 === nothing ? rand(lds.latent_dim, lds.latent_dim) : lds.p0
-    if lds.inputs !== nothing
-        lds.B = lds.B === nothing ? rand(lds.latent_dim, size(lds.inputs, 2)) : lds.B
+    A = isempty(A) ? rand(latent_dim, latent_dim) : A
+    H = isempty(H) ? rand(obs_dim, latent_dim) : H
+    B = isempty(B) ? zeros(latent_dim, 1) : B
+    Q = isempty(Q) ? I(latent_dim) : Q
+    R = isempty(R) ? I(obs_dim) : R
+    x0 = isempty(x0) ? rand(latent_dim) : x0
+    p0 = isempty(p0) ? I(latent_dim) : p0
+    inputs = isempty(inputs) ? zeros(1, 1) : inputs
+    
+    # Ensure obs_dim and latent_dim are assigned values
+    if obs_dim === nothing
+        error("You must supply the dimension of the observations.")
     end
-    return lds
+
+    if latent_dim === nothing
+        error("You must supply the dimension of the latent states.")
+    end
+
+    return LDS(A, H, B, Q, R, x0, p0, inputs, obs_dim, latent_dim, fit_bool)
 end
 
 """
@@ -280,7 +279,7 @@ function update_R!(l::LDS, E_z::AbstractArray, E_zz::AbstractArray, y::AbstractA
     end
 end
 
-function EStep(l::LDS, y::AbstractArray)
+function E_Step(l::LDS, y::AbstractArray)
     # run the kalman smoother
     x_smooth, p_smooth, J, ml = KalmanSmoother(l, y)
     # compute the sufficient statistics
@@ -288,7 +287,7 @@ function EStep(l::LDS, y::AbstractArray)
     return x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml
 end
 
-function MStep!(l::LDS, E_z, E_zz, E_zz_prev, y_n)
+function M_Step!(l::LDS, E_z, E_zz, E_zz_prev, y_n)
     # update the parameters
     update_initial_state_mean!(l, E_z)
     update_initial_state_covariance!(l, E_z, E_zz)
@@ -304,9 +303,9 @@ function KalmanFilterEM!(l::LDS, y::AbstractArray, max_iter::Int=1000, tol::Floa
     # Run EM
     for i in 1:max_iter
         # E-step
-        _, _, E_z, E_zz, E_zz_prev, ml = EStep(l, y)
+        _, _, E_z, E_zz, E_zz_prev, ml = E_Step(l, y)
         # M-step
-        MStep!(l, E_z, E_zz, E_zz_prev, y)
+        M_Step!(l, E_z, E_zz, E_zz_prev, y)
         # Calculate the expected log-likelihood
         ll = loglikelihood(E_z, l, y)
         # Calculate log-likelihood
@@ -407,7 +406,7 @@ function Gradient(l::LDS, y::AbstractArray, x::AbstractArray)
 end
 
 """
-Compute p(X|Y) for a given LDS model and a set of observations i.e. the loglikelihood.
+Compute p(X, Y) for a given LDS model and a set of observations i.e. the loglikelihood.
 
 Args:
     X: Matrix of latent states
@@ -502,9 +501,6 @@ end
 function initialize_missing_parameters!(plds::PLDS)
     # Initialize missing parameters with random values (that make sense! i.e. covarainces are symmetric and positive definite)
 end
-
-
-
 
 mutable struct fLDS <: DynamicalSystem
     #TODO: Implement fLDS

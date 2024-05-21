@@ -25,13 +25,13 @@ function test_GaussianMixtureModel_properties(gmm::GaussianMixtureModel, k::Int,
     @test sum(gmm.πₖ) ≈ 1.0
 end
 
-function testGaussianMixtureModel_EStep(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
+function testGaussianMixtureModel_E_Step(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
 
     k::Int = gmm.k
     data_dim::Int = size(data, 2)
     
-    # Run EStep
-    class_probabilities = SSM.EStep(gmm, data)
+    # Run E_Step
+    class_probabilities = SSM.E_Step(gmm, data)
     # Check dimensions
     @test size(class_probabilities) == (size(data, 1), k)
     # Check if the row sums are close to 1 (since they represent probabilities)
@@ -40,15 +40,15 @@ function testGaussianMixtureModel_EStep(gmm::GaussianMixtureModel, data::Union{M
     test_GaussianMixtureModel_properties(gmm, k, data_dim)
 end
 
-function testGaussianMixtureModel_MStep(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
+function testGaussianMixtureModel_M_Step(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
 
     k::Int = gmm.k
     data_dim::Int = size(data, 2)
 
-    class_probabilities = SSM.EStep(gmm, data)
+    class_probabilities = SSM.E_Step(gmm, data)
 
-    # Run MStep
-    SSM.MStep!(gmm, data, class_probabilities)
+    # Run M_Step
+    SSM.M_Step!(gmm, data, class_probabilities)
 
     test_GaussianMixtureModel_properties(gmm, k, data_dim)
 end
@@ -102,11 +102,11 @@ function test_PoissonMixtureModel_properties(pmm::PoissonMixtureModel, k::Int)
     @test sum(pmm.πₖ) ≈ 1.0
 end
 
-function testPoissonMixtureModel_EStep(pmm::PoissonMixtureModel, data::Union{Matrix{Int}, Vector{Int}})
+function testPoissonMixtureModel_E_Step(pmm::PoissonMixtureModel, data::Union{Matrix{Int}, Vector{Int}})
     k::Int = pmm.k
     
-    # Run EStep
-    class_probabilities = SSM.EStep(pmm, data)
+    # Run E_Step
+    class_probabilities = SSM.E_Step(pmm, data)
     # Check dimensions
     @test size(class_probabilities) == (size(data, 1), k)
     # Check if the row sums are close to 1 (since they represent probabilities)
@@ -115,13 +115,13 @@ function testPoissonMixtureModel_EStep(pmm::PoissonMixtureModel, data::Union{Mat
     test_PoissonMixtureModel_properties(pmm, k)
 end
 
-function testPoissonMixtureModel_MStep(pmm::PoissonMixtureModel, data::Union{Matrix{Int}, Vector{Int}})
+function testPoissonMixtureModel_M_Step(pmm::PoissonMixtureModel, data::Union{Matrix{Int}, Vector{Int}})
     k::Int = pmm.k
 
-    class_probabilities = SSM.EStep(pmm, data)
+    class_probabilities = SSM.E_Step(pmm, data)
 
-    # Run MStep
-    SSM.MStep!(pmm, data, class_probabilities)
+    # Run M_Step
+    SSM.M_Step!(pmm, data, class_probabilities)
 
     test_PoissonMixtureModel_properties(pmm, k)
 end
@@ -210,10 +210,10 @@ end
         data_dim = size(data, 2)
 
         gmm = GaussianMixtureModel(k, data_dim)
-        testGaussianMixtureModel_EStep(gmm, data)
+        testGaussianMixtureModel_E_Step(gmm, data)
 
         gmm = GaussianMixtureModel(k, data_dim)
-        testGaussianMixtureModel_MStep(gmm, data)
+        testGaussianMixtureModel_M_Step(gmm, data)
 
         gmm = GaussianMixtureModel(k, data_dim)
         testGaussianMixtureModel_fit(gmm, data)
@@ -241,9 +241,9 @@ end
     
     for (pmm, data) in tester_set
         pmm = PoissonMixtureModel(k)
-        testPoissonMixtureModel_EStep(pmm, data)
+        testPoissonMixtureModel_E_Step(pmm, data)
         pmm = PoissonMixtureModel(k)
-        testPoissonMixtureModel_MStep(pmm, data)
+        testPoissonMixtureModel_M_Step(pmm, data)
         pmm = PoissonMixtureModel(k)
         testPoissonMixtureModel_fit(pmm, data)
         pmm = PoissonMixtureModel(k)
@@ -395,26 +395,24 @@ end
 
 function test_LDS_with_params()
     # Create the Kalman filter parameter vector
-    kf = LDS(A,
-             H,
-             nothing,
-             Q, 
-             R, 
-             x0, 
-             p0, 
-             nothing, 
-             2, 
-             2, 
-             Vector([false, false, false, false, false, false, false, false]))
+    kf = LDS(;A=A,
+             H=H,
+             Q=Q, 
+             R=R, 
+             x0=x0, 
+             p0=p0, 
+             obs_dim=2, 
+             latent_dim=2, 
+             fit_bool=Vector([false, false, false, false, false, false, false, false]))
     # confirm parameters are set correctly
     @test kf.A == A
     @test kf.H == H
-    @test kf.B === nothing
+    @test isapprox(kf.B, zeros(kf.latent_dim, size(kf.inputs, 2)), atol=1e-6)
     @test kf.Q == Q
     @test kf.R == R
     @test kf.x0 == x0
     @test kf.p0 == p0
-    @test kf.inputs === nothing
+    @test isapprox(kf.inputs, zeros(1, 1), atol=1e-6)
     @test kf.obs_dim == 2
     @test kf.latent_dim == 2
     @test kf.fit_bool == Vector([false, false, false, false, false, false, false, false])
@@ -437,36 +435,26 @@ end
 
 function test_LDS_without_params()
     # Create the Kalman filter without any params
-    kf = LDS()
+    kf = LDS(; obs_dim=2, latent_dim=2, fit_bool=Vector([true, true, true, true, true, true, true]))
     # confirm parameters are set correctly
-    @test kf.A !== nothing
-    @test kf.H !== nothing
-    @test kf.B === nothing
-    @test kf.Q !== nothing
-    @test kf.R !== nothing
-    @test kf.x0 !== nothing
-    @test kf.p0 !== nothing
-    @test kf.inputs === nothing
+    @test !isempty(kf.A)
+    @test !isempty(kf.H)
+    @test !isempty(kf.B)
+    @test !isempty(kf.Q)
+    @test !isempty(kf.R)
+    @test !isempty(kf.x0)
+    @test !isempty(kf.p0)
+    @test !isempty(kf.inputs)
     @test kf.obs_dim == 2
     @test kf.latent_dim == 2
     @test kf.fit_bool == fill(true, 7)
 end
 
-function test_LDS_EStep()
+function test_LDS_E_Step()
     # Create the Kalman filter parameter vector
-    kf = LDS(A,
-             H,
-             nothing,
-             Q, 
-             R, 
-             x0, 
-             p0, 
-             nothing, 
-             2, 
-             2, 
-             Vector([true, true, true, true, true, true, true]))
-    # run the EStep
-    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.EStep(kf, x_noisy')
+    kf = LDS(;A=A, H=H, Q=Q, R=R, x0=x0, p0=p0, obs_dim=2, latent_dim=2, fit_bool=Vector([true, true, true, true, true, true, true]))
+    # run the E_Step
+    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.E_Step(kf, x_noisy')
     # check dimensions
     @test size(x_smooth) == (length(t), 2)
     @test size(p_smooth) == (length(t), 2, 2)
@@ -476,49 +464,29 @@ function test_LDS_EStep()
     @test size(ml) == ()
 end
 
-function test_LDS_MStep!()
+function test_LDS_M_Step!()
     # Create the Kalman filter parameter vector
-    kf = LDS(A,
-             H,
-             nothing,
-             Q, 
-             R, 
-             x0, 
-             p0, 
-             nothing, 
-             2, 
-             2, 
-             Vector([true, true, true, true, true, true, true]))
-    # run the EStep
-    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.EStep(kf, x_noisy')
-    # run the MStep
-    SSM.MStep!(kf, E_z, E_zz, E_zz_prev, x_noisy')
+    kf = LDS(;A=A, H=H, Q=Q, R=R, x0=x0, p0=p0, obs_dim=2, latent_dim=2, fit_bool=Vector([true, true, true, true, true, true, true]))
+    # run the E_Step
+    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.E_Step(kf, x_noisy')
+    # run the M_Step
+    SSM.M_Step!(kf, E_z, E_zz, E_zz_prev, x_noisy')
     # check if the parameters are updated
     @test kf.A !== A
     @test kf.H !== H
-    @test kf.B === nothing
+    @test isapprox(kf.B, zeros(kf.latent_dim, 1))
     @test kf.Q !== Q
     @test kf.R !== R
     @test kf.x0 !== x0
     @test kf.p0 !== p0
-    @test kf.inputs === nothing
+    @test isapprox(kf.inputs, zeros(1, 1))
     @test kf.obs_dim == 2
     @test kf.latent_dim == 2
     @test kf.fit_bool == Vector([true, true, true, true, true, true, true])
 end
 
 function test_LDS_EM()
-    kf = LDS(A,
-             H,
-             nothing,
-             Q, 
-             R, 
-             x0, 
-             p0, 
-             nothing, 
-             2, 
-             2, 
-             Vector([true, true, true, true, true, true, true]))
+    kf = LDS(;A=A, H=H, Q=Q, R=R, x0=x0, p0=p0, obs_dim=2, latent_dim=2, fit_bool=Vector([true, true, true, true, true, true, true]))
     # run the EM
     for i in 1:10
         ml_prev = -Inf
@@ -529,12 +497,12 @@ function test_LDS_EM()
     # check if the parameters are updated
     @test kf.A !== A
     @test kf.H !== H
-    @test kf.B === nothing
+    @test isapprox(kf.B, zeros(kf.latent_dim, 1))
     @test kf.Q !== Q
     @test kf.R !== R
     @test kf.x0 !== x0
     @test kf.p0 !== p0
-    @test kf.inputs === nothing
+    @test isapprox(kf.inputs, zeros(1, 1))
     @test kf.obs_dim == 2
     @test kf.latent_dim == 2
     @test kf.fit_bool == Vector([true, true, true, true, true, true, true]) 
@@ -544,8 +512,8 @@ end
 @testset "LDS.jl Tests" begin
     test_LDS_with_params()
     test_LDS_without_params()
-    test_LDS_EStep()
-    test_LDS_MStep!()
+    test_LDS_E_Step()
+    test_LDS_M_Step!()
     test_LDS_EM()
 end
 

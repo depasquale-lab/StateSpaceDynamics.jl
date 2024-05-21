@@ -14,7 +14,7 @@ A Gaussian Mixture Model (GaussianMixtureModel) for clustering and density estim
 
 ## Examples
 ```julia
-gmm = GaussianMixtureModel(3, 2, data) # 3 clusters, 2-dimensional data
+gmm = GaussianMixtureModel(3, 2) # 3 clusters, 2-dimensional data
 fit!(gmm, data)
 """
 mutable struct GaussianMixtureModel <: MixtureModel
@@ -65,7 +65,7 @@ end
         - `class_probabilities::Matrix{Float64}`: Probability of each class for each data point.
 
 """
-function EStep(gmm::GaussianMixtureModel, data::Matrix{Float64})
+function E_Step(gmm::GaussianMixtureModel, data::Matrix{Float64})
     N, _ = size(data)
     K = gmm.k
     γ = zeros(N, K)
@@ -84,7 +84,7 @@ function EStep(gmm::GaussianMixtureModel, data::Matrix{Float64})
     return γ
 end
 
-function MStep!(gmm::GaussianMixtureModel, data::Matrix{Float64}, class_probabilities::Matrix{Float64})
+function M_Step!(gmm::GaussianMixtureModel, data::Matrix{Float64}, class_probabilities::Matrix{Float64})
     N, D = size(data)
     K = gmm.k
     γ = class_probabilities  
@@ -133,9 +133,9 @@ function fit!(gmm::GaussianMixtureModel, data::Matrix{Float64}; maxiter::Int=50,
 
     for i = 1:maxiter
         # E-Step
-        class_probabilities = EStep(gmm, data)
+        class_probabilities = E_Step(gmm, data)
         # M-Step
-        MStep!(gmm, data, class_probabilities)
+        M_Step!(gmm, data, class_probabilities)
         # Calculate current log-likelihood
         curr_ll = log_likelihood(gmm, data)
         # Debug: Output log-likelihood
@@ -148,17 +148,17 @@ function fit!(gmm::GaussianMixtureModel, data::Matrix{Float64}; maxiter::Int=50,
         prev_ll = curr_ll
     end
 
-    class_probabilities = EStep(gmm, data)
+    class_probabilities = E_Step(gmm, data)
     return class_probabilities
 end
 
 # Handle vector data by reshaping it into a 2D matrix with a single column
-function EStep(gmm::GaussianMixtureModel, data::Vector{Float64})
-    EStep(gmm, reshape(data, :, 1))
+function E_Step(gmm::GaussianMixtureModel, data::Vector{Float64})
+    E_Step(gmm, reshape(data, :, 1))
 end
 
-function MStep!(gmm::GaussianMixtureModel, data::Vector{Float64}, class_probabilities::Matrix{Float64})
-    MStep!(gmm, reshape(data, :, 1), class_probabilities::Matrix{Float64})
+function M_Step!(gmm::GaussianMixtureModel, data::Vector{Float64}, class_probabilities::Matrix{Float64})
+    M_Step!(gmm, reshape(data, :, 1), class_probabilities::Matrix{Float64})
 end
 
 function log_likelihood(gmm::GaussianMixtureModel, data::Vector{Float64})
@@ -192,7 +192,7 @@ function PoissonMixtureModel(k::Int)
 end
 
 """E-Step for PMM"""
-function EStep(pmm::PoissonMixtureModel, data::Matrix{Int})
+function E_Step(pmm::PoissonMixtureModel, data::Matrix{Int})
     N, _ = size(data)
     γ = zeros(N, pmm.k)
     
@@ -209,7 +209,7 @@ function EStep(pmm::PoissonMixtureModel, data::Matrix{Int})
 end
 
 """M-Step for PMM"""
-function MStep!(pmm::PoissonMixtureModel, data::Matrix{Int}, γ::Matrix{Float64})
+function M_Step!(pmm::PoissonMixtureModel, data::Matrix{Int}, γ::Matrix{Float64})
     N, _ = size(data)
     
     for k in 1:pmm.k
@@ -229,8 +229,8 @@ function fit!(pmm::PoissonMixtureModel, data::Matrix{Int}; maxiter::Int=50, tol:
     end
 
     for iter in 1:maxiter
-        γ = EStep(pmm, data)  # E-Step
-        MStep!(pmm, data, γ)  # M-Step
+        γ = E_Step(pmm, data)  # E-Step
+        M_Step!(pmm, data, γ)  # M-Step
         curr_ll = log_likelihood(pmm, data)  # Current log likelihood
 
         println("Iteration: $iter, Log-likelihood: $curr_ll")
@@ -281,12 +281,12 @@ end
 
 
 # Handle vector data by reshaping it into a 2D matrix with a single column
-function EStep(pmm::PoissonMixtureModel, data::Vector{Int})
-    EStep(pmm, reshape(data, :, 1))
+function E_Step(pmm::PoissonMixtureModel, data::Vector{Int})
+    E_Step(pmm, reshape(data, :, 1))
 end
 
-function MStep!(pmm::PoissonMixtureModel, data::Vector{Int}, class_probabilities::Matrix{Float64})
-    MStep!(pmm, reshape(data, :, 1), class_probabilities)
+function M_Step!(pmm::PoissonMixtureModel, data::Vector{Int}, class_probabilities::Matrix{Float64})
+    M_Step!(pmm, reshape(data, :, 1), class_probabilities)
 end
 
 function log_likelihood(pmm::PoissonMixtureModel, data::Vector{Int})
