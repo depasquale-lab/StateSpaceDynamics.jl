@@ -50,7 +50,6 @@ function fit!(gmm::MixtureModel, data::AbstractMatrix; maxiter::Int=50, tol::Flo
 
 """
     GaussianMixtureModel
-    GaussianMixtureModel
 
 A Gaussian Mixture Model (GaussianMixtureModel) for clustering and density estimation.
 
