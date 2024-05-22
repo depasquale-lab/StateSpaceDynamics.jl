@@ -1,16 +1,16 @@
 export GaussianHMM, baumWelch!, viterbi, sample, initialize_transition_matrix, initialize_state_distribution
 
 """
+    mutable struct GaussianHMM{GaussianEmission} <: AbstractHMM
 
-    GaussianHMM(A::Matrix{Float64}, B::Vector{GaussianEmission}, πₖ::Vector{Float64}, D::Int)
+Represents a Gaussian Hidden Markov Model (HMM).
 
-A hidden Markov model with Gaussian emissions.
-
-Args:
-    A::Matrix{Float64}: State Transition Matrix
-    B::Vector{GaussianEmission}: Emission Model
-    πₖ::Vector{Float64}: Initial State Distribution
-    D::Int: Latent State Dimension
+# Fields
+- `A::Matrix{Float64}`: State Transition Matrix.
+- `B::Vector{GaussianEmission}`: Emission Model.
+- `πₖ::Vector{Float64}`: Initial State Distribution.
+- `K::Int`: Latent State Dimension.
+- `D::Int`: Dimension of the data.
 """
 mutable struct GaussianHMM{GaussianEmission} <: AbstractHMM
     A::Matrix{Float64}  # State Transition Matrix
@@ -20,11 +20,50 @@ mutable struct GaussianHMM{GaussianEmission} <: AbstractHMM
     D::Int              # Dimension of the data
 end
 
-# Constructor for GaussianHMM when all params are known, really just for sampling/testing
+"""
+    GaussianHMM(A::Matrix{Float64}, B::Vector{GaussianEmission}, πₖ::Vector{Float64}, K::Int, D::Int)
+
+Creates a Gaussian Hidden Markov Model (HMM) with the specified parameters.
+
+# Arguments
+- `A::Matrix{Float64}`: State Transition Matrix.
+- `B::Vector{GaussianEmission}`: Emission Model.
+- `πₖ::Vector{Float64}`: Initial State Distribution.
+- `K::Int`: Latent State Dimension.
+- `D::Int`: Dimension of the data.
+
+# Examples:
+```julia
+A = [0.7 0.3; 0.4 0.6]
+B = [GaussianEmission([0.0, 0.0], [1.0 0.0; 0.0 1.0]), GaussianEmission([1.0, 1.0], [1.0 0.0; 0.0 1.0])]
+πₖ = [0.6, 0.4]
+K = 2
+D = 2
+hmm = GaussianHMM(A, B, πₖ, K, D)
+```
+"""
 function GaussianHMM(A::Matrix{Float64}, B::Vector{GaussianEmission}, πₖ::Vector{Float64}, K::Int, D::Int)
     return GaussianHMM{GaussianEmission}(A, B, πₖ, K, D)
 end
 
+"""
+    GaussianHMM(data::Matrix{Float64}, k_states::Int=2)
+
+Creates a Gaussian Hidden Markov Model (HMM) from data, with the number of latent states specified.
+
+# Arguments
+- `data::Matrix{Float64}`: Observational data.
+- `k_states::Int=2`: Number of latent states (default is 2).
+
+# Returns
+A `GaussianHMM` initialized using k-means clustering on the provided data.
+
+# Examples:
+```julia
+data = randn(100, 2)
+hmm = GaussianHMM(data, 2)
+```
+"""
 function GaussianHMM(data::Matrix{Float64}, k_states::Int=2)
     N, D = size(data)
     # Initialize A
