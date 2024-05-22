@@ -540,13 +540,73 @@ function test_LDS_EM()
     @test kf.fit_bool == Vector([true, true, true, true, true, true, true]) 
 end
 
-
-@testset "LDS.jl Tests" begin
+@testset "LDS Tests" begin
     test_LDS_with_params()
     test_LDS_without_params()
     test_LDS_EStep()
     test_LDS_MStep!()
     test_LDS_EM()
+end
+
+function test_PLDS_constructor_with_params()
+    # create a set of parameters to test with
+    obs_dim = 10
+    latent_dim = 5
+
+    A = randn(latent_dim, latent_dim)
+    C = randn(obs_dim, latent_dim)
+    Q = I(latent_dim)
+    x0 = randn(latent_dim)
+    p0 = I(latent_dim)
+    d = randn(obs_dim)
+    D = randn(obs_dim, obs_dim)
+    fit_bool=Vector([true, true, true, true, true, true, true])
+
+    # create the PLDS model
+    plds = PoissonLDS(A=A, C=C, Q=Q, D=D, d=d, x0=x0, p0=p0, obs_dim=obs_dim, latent_dim=latent_dim, fit_bool=fit_bool)
+
+    # test model
+    @test plds.A == A
+    @test plds.C == C
+    @test plds.Q == Q
+    @test plds.x0 == x0
+    @test plds.p0 == p0
+    @test plds.d == d
+    @test plds.D == D
+    @test plds.obs_dim == obs_dim
+    @test plds.latent_dim == latent_dim
+end
+
+function test_PLDS_constructor_without_params()
+    # create the PLDS model
+    plds = PoissonLDS(;obs_dim=10, latent_dim=5)
+
+    # test model
+
+    # test parameters are not empty
+    @test !isempty(plds.A)
+    @test !isempty(plds.C)
+    @test !isempty(plds.Q)
+    @test !isempty(plds.x0)
+    @test !isempty(plds.p0)
+    @test !isempty(plds.d)
+    @test !isempty(plds.D)
+    @test plds.obs_dim == 10
+    @test plds.latent_dim == 5
+
+    # test dims of parameters
+    @test size(plds.A) == (5, 5)
+    @test size(plds.C) == (10, 5)
+    @test size(plds.Q) == (5, 5)
+    @test size(plds.x0) == (5,)
+    @test size(plds.p0) == (5, 5)
+    @test size(plds.d) == (10,)
+    @test size(plds.D) == (10, 10)
+end
+
+@testset "PLDS Tests" begin
+    test_PLDS_constructor_with_params()
+    test_PLDS_constructor_without_params()
 end
 
 """

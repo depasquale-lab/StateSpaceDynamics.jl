@@ -2,7 +2,7 @@
 """Linear Dynamical Systems Models e.g. the Kalman Filter, (recurrent) Switching Linear Dynamical Systems, etc."""
 
 # export statement
-export LDS, KalmanFilter, KalmanSmoother, loglikelihood
+export LDS, KalmanFilter, KalmanSmoother, loglikelihood, PoissonLDS
 
 # constants
 const DEFAULT_LATENT_DIM = 2
@@ -449,71 +449,82 @@ function marginal_loglikelihood(l::LDS, v::AbstractArray, j::AbstractArray)
 end
 
 """
-Poisson Linear Dynamical System (PLDS) Definition
+    PoissonLDS(A, C, Q, D, d, x₀, p₀, obs_dim, latent_dim, fit_bool)
 
-For a description of the model see:
-Macke, Jakob H., et al. "Empirical models of spiking in neural populations." 
-Advances in neural information processing systems 24 (2011).
+A Poisson Linear Dynamical System (PLDS).
 
-Args:
-    A: Transition Matrix
-    C: Observation Matrix
-    Q: Process Noise Covariance
-    D: History Control Matrix
-    d: Mean Firing Rate Vector
-    sₖₜ: Spike History Vector
-    x₀: Initial State
-    p₀: Initial Covariance 
+This model is described in detail in Macke, Jakob H., et al. "Empirical models of spiking in neural populations." 
+Advances in Neural Information Processing Systems 24 (2011).
+
+# Arguments
+- `A::AbstractMatrix{<:Real}`: Transition matrix.
+- `C::AbstractMatrix{<:Real}`: Observation matrix.
+- `Q::AbstractMatrix{<:Real}`: Process noise covariance matrix.
+- `D::AbstractMatrix{<:Real}`: History control matrix.
+- `d::AbstractVector{<:Real}`: Mean firing rate vector.
+- `x₀::AbstractVector{<:Real}`: Initial state vector.
+- `p₀::AbstractMatrix{<:Real}`: Initial covariance matrix.
+- `obs_dim::Int`: Observation dimension.
+- `latent_dim::Int`: Latent dimension.
+- `fit_bool::Vector{Bool}`: Vector of booleans indicating which parameters to fit.
+
+# Examples
+```julia
+A = rand(3, 3)
+C = rand(4, 3)
+Q = I(3)
+D = rand(3, 4)
+d = rand(4)
+x₀ = rand(3)
+p₀ = I(3)
+obs_dim = 4
+latent_dim = 3
+fit_bool = fill(true, 7)
+
+plds = PoissonLDS(A, C, Q, D, d, x₀, p₀, obs_dim, latent_dim, fit_bool)
 """
-mutable struct PLDS <: DynamicalSystem
-    A::Union{AbstractArray, Nothing}  # Transition Matrix
-    C::Union{AbstractArray, Nothing}  # Observation Matrix
-    Q::Union{AbstractArray, Nothing}  # Process Noise Covariance
-    D::Union{AbstractArray, Nothing}  # History Control Matrix
-    d::Union{AbstractArray, Nothing}  # Mean Firing Rate Vector
-    sₖₜ::Union{AbstractArray, Nothing}  # Spike History Vector
-    x₀::Union{AbstractArray, Nothing} # Initial State
-    p₀::Union{AbstractArray, Nothing} # Initial Covariance
-    bₜ::Union{AbstractArray, Nothing} # Inputs
-    obs_dim::Int # Observation Dimension
-    latent_dim::Int # Latent Dimension
-    fit_bool::Vector{Bool} # Vector of booleans indicating which parameters to fit
+mutable struct PoissonLDS
+    A:: AbstractMatrix{<:Real} # Transition Matrix
+    C:: AbstractMatrix{<:Real} # Observation Matrix
+    Q:: AbstractMatrix{<:Real} # Process Noise Covariance
+    D:: AbstractMatrix{<:Real} # History Control Matrix
+    d:: AbstractVector{<:Real} # Mean Firing Rate Vector
+    x0:: AbstractVector{<:Real} # Initial State
+    p0:: AbstractMatrix{<:Real} # Initial Covariance
+    obs_dim:: Int # Observation Dimension
+    latent_dim:: Int # Latent Dimension
+    fit_bool:: Vector{Bool} # Vector of booleans indicating which parameters to fit
 end
 
-function PLDS(; 
-    A::Union{AbstractArray, Nothing}=nothing,
-    C::Union{AbstractArray, Nothing}=nothing,
-    Q::Union{AbstractArray, Nothing}=nothing,
-    D::Union{AbstractArray, Nothing}=nothing,
-    d::Union{AbstractArray, Nothing}=nothing,
-    sₖₜ::Union{AbstractArray, Nothing}=nothing,
-    x0::Union{AbstractArray, Nothing}=nothing,
-    p0::Union{AbstractArray, Nothing}=nothing,
-    bₜ::Union{AbstractArray, Nothing}=nothing,
-    obs_dim::Int=DEFAULT_OBS_DIM,
-    latent_dim::Int=DEFAULT_LATENT_DIM,
-    fit_bool::Vector{Bool}=fill(true, 7)
-)
-    PLDS(
-        A, C, Q, D, d, sₖₜ, x0, p0, bₜ, obs_dim, latent_dim, fit_bool
-    ) |> initialize_missing_parameters!
-end
+function PoissonLDS(;
+    A::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    C::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    Q::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    D::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    d::AbstractVector{<:Real}=Vector{Float64}(undef, 0),
+    x0::AbstractVector{<:Real}=Vector{Float64}(undef, 0),
+    p0::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    obs_dim::Int,
+    latent_dim::Int,
+    fit_bool::Vector{Bool}=fill(true, 7))
 
-function initialize_missing_parameters!(plds::PLDS)
-    # Initialize missing parameters with random values (that make sense! i.e. covarainces are symmetric and positive definite)
-end
+    # Initialize missing parameters
+    A = isempty(A) ? rand(latent_dim, latent_dim) : A
+    C = isempty(C) ? rand(obs_dim, latent_dim) : C
+    Q = isempty(Q) ? I(latent_dim) : Q
+    D = isempty(D) ? rand(obs_dim, obs_dim) : D
+    d = isempty(d) ? rand(obs_dim) : d
+    x0 = isempty(x0) ? rand(latent_dim) : x0
+    p0 = isempty(p0) ? rand(latent_dim, latent_dim) : p0
 
+    # Check that the observation dimension and latent dimension are specified
+    if obs_dim === nothing 
+        error("Observation dimension must be specified.")
+    end
 
-mutable struct fLDS <: DynamicalSystem
-    #TODO: Implement fLDS
-end
+    if latent_dim === nothing
+        error("Latent dimension must be specified.")
+    end
 
-# SLDS Definition
-mutable struct SLDS <: AbstractHMM
-    #TODO: Implement SLDS
-end
-
-#rSLDS Definition
-mutable struct rSLDS <: AbstractHMM
-    #TODO: Implement rSLDS
+    PoissonLDS(A, C, Q, D, d, x0, p0, obs_dim, latent_dim, fit_bool)
 end
