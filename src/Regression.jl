@@ -89,8 +89,8 @@ function fit!(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64},
     model.β = rand(p)
     model.σ² = 1.0
     # minimize objective
-    objective(β) = least_squares(GaussianRegression(β, model.σ², true), X, y, w)
-    objective_grad!(G, β) = gradient!(G, GaussianRegression(β, model.σ², true), X, y)
+    objective(β) = least_squares(GaussianRegression(β, model.σ², true, model.λ), X, y, w)
+    objective_grad!(G, β) = gradient!(G, GaussianRegression(β, model.σ², true, model.λ), X, y, w)
 
     result = optimize(objective, objective_grad!, model.β, LBFGS())
     # update parameters
@@ -189,8 +189,8 @@ function fit!(model::BernoulliRegression, X::Matrix{Float64}, y::Union{Vector{Fl
     # convert y if necessary
     y = convert(Vector{Float64}, y)
     # minimize objective
-    objective(β) = -loglikelihood(BernoulliRegression(β, true), X, y, w) + (model.λ * sum(β.^2))
-    objective_grad!(β, g) = gradient!(g, BernoulliRegression(β, true), X, y, w) # troubleshoot this
+    objective(β) = -loglikelihood(BernoulliRegression(β, true, model.λ), X, y, w) + (model.λ * sum(β.^2))
+    objective_grad!(β, g) = gradient!(g, BernoulliRegression(β, true, model.λ), X, y, w) # troubleshoot this
     result = optimize(objective, model.β, LBFGS())
     # update parameters
     model.β = result.minimizer
@@ -276,8 +276,8 @@ function fit!(model::PoissonRegression, X::Matrix{Float64}, y::Union{Vector{Floa
     # convert y if necessary
     y = convert(Vector{Float64}, y)
     # minimize objective
-    objective(β) = -loglikelihood(PoissonRegression(β, true), X, y, w) + (model.λ * sum(β.^2))
-    objective_grad!(β, g) = gradient!(g, PoissonRegression(β, true), X, y, w)
+    objective(β) = -loglikelihood(PoissonRegression(β, true, model.λ), X, y, w) + (model.λ * sum(β.^2))
+    objective_grad!(β, g) = gradient!(g, PoissonRegression(β, true, model.λ), X, y, w)
     result = optimize(objective, model.β, LBFGS())
     # update parameters
     model.β = result.minimizer
