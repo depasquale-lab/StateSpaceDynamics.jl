@@ -924,6 +924,37 @@ end
 Tests for Preprocessing.jl
 """
 
+function test_PPCA_with_params()
+    # Set parameters
+    W = randn(3, 2)
+    σ² = 0.5
+    μ = [0.0, 0.0]
+    # create PPCA object
+    ppca = ProbabilisticPCA(W, σ², μ, 2, 3)
+    # Check if parameters are set correctly
+    @test ppca.W === W
+    @test ppca.σ² === σ²
+    @test ppca.μ === μ
+    @test ppca.D === 3
+    @test ppca.k === 2
+end
+
+function test_PPCA_without_params()
+    # create ppca object
+    ppca = ProbabilisticPCA(;k=2, D=3)
+    # Check if parameters are set correctly
+    @test size(ppca.W) == (3, 2)
+    @test ppca.σ² > 0
+    @test length(ppca.μ) == 3
+    @test ppca.D == 3
+    @test ppca.k == 2
+end
+
+@testset "PPCA Tests" begin
+    test_PPCA_with_params()
+    test_PPCA_without_params()
+end
+
 """
 Tests for MarkovRegression.jl
 """
