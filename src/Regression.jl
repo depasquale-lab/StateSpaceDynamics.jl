@@ -90,7 +90,7 @@ function fit!(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64},
     model.σ² = 1.0
     # minimize objective
     objective(β) = least_squares(GaussianRegression(β, model.σ², true), X, y, w)
-    objective_grad!(G, β) = gradient!(G, GaussianRegression(β, model.σ², true), X, y)
+    objective_grad!(G, β) = gradient!(G, GaussianRegression(β, model.σ², true), X, y, w)
 
     result = optimize(objective, objective_grad!, model.β, LBFGS())
     # update parameters
