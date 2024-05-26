@@ -4,30 +4,60 @@ export GaussianRegression, BernoulliRegression, PoissonRegression, fit!, loglike
 abstract type Regression end
 
 """
-    GaussianRegression
+    mutable struct GaussianRegression <: Regression
 
 Args:
-    β::Vector{Float64}: Coefficients of the regression model
-    σ²::Float64: Variance of the regression model
-    include_intercept::Bool: Whether to include an intercept term in the model
+- `β::Vector{Float64}`: Coefficients of the regression model
+- `σ²::Float64`: Variance of the regression model
+- `include_intercept::Bool`: Whether to include an intercept term in the model
+
+Constructors:
+- `GaussianRegression(; include_intercept::Bool = true, λ::Float64=0.0)`
+- `GaussianRegression(β::Vector{Float64}, σ²::Float64, include_intercept::Bool, λ::Float64=0.0)`
+
+Example:
+```julia
+model = GaussianRegression()
+model = GaussianRegression(include_intercept=false, λ=0.1)
+model = GaussianRegression([0.1, 0.2], 0.1, true, 0.1)
+```
 """
 mutable struct GaussianRegression <: Regression
     β::Vector{Float64} # coefficients of the model
     σ²::Float64 # variance of the model
     include_intercept::Bool # whether to include an intercept term
     λ::Float64 # regularization parameter
-    # Empty constructor
+  
     function GaussianRegression(; include_intercept::Bool = true, λ::Float64=0.0)
         @assert λ >= 0.0 "Regularization parameter must be non-negative."
         new(Vector{Float64}(), 0.0, include_intercept, λ)
     end
-    # Parametric Constructor
+    
     function GaussianRegression(β::Vector{Float64}, σ²::Float64, include_intercept::Bool, λ::Float64=0.0)
         @assert λ >= 0.0 "Regularization parameter must be non-negative."
         new(β, σ², include_intercept, λ)
     end
 end
 
+
+"""
+    loglikelihood(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64})
+
+Calculate the log-likelihood of a Gaussian regression model.
+
+Args:
+- `model::GaussianRegression`: Gaussian regression model
+- `X::Matrix{Float64}`: Design matrix
+- `y::Vector{Float64}`: Response vector
+
+Example:
+```julia
+model = GaussianRegression()
+X = rand(100, 2)
+y = X * [0.1, 0.2] + 0.1 * randn(100)
+loglikelihood(model, X, y)
+```
+"""
 function loglikelihood(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64})
     # confirm that the model has been fit
     @assert !isempty(model.β) && model.σ² != 0.0 "Model parameters not initialized, please call fit! first."
@@ -41,6 +71,24 @@ function loglikelihood(model::GaussianRegression, X::Matrix{Float64}, y::Vector{
     -0.5 * n * log(2π * model.σ²) - (0.5 / model.σ²) * sum(residuals.^2)
 end
 
+"""
+    loglikelihood(model::GaussianRegression, X::Vector{Float64}, y::Float64)
+
+Calculate the log-likelihood of a single observation of Gaussian regression model.
+
+Args:
+- `model::GaussianRegression`: Gaussian regression model
+- `X::Matrix{Float64}`: Design matrix
+- `y::Vector{Float64}`: Response vector
+
+Example:
+```julia
+model = GaussianRegression()
+X = rand(2)
+y = X * [0.1, 0.2] + 0.1 * randn()
+loglikelihood(model, X, y)
+```
+"""
 function loglikelihood(model::GaussianRegression, X::Vector{Float64}, y::Float64)
     # confirm that the model has been fit
     @assert !isempty(model.β) && model.σ² != 0.0 "Model parameters not initialized, please call fit! first."
@@ -49,11 +97,36 @@ function loglikelihood(model::GaussianRegression, X::Vector{Float64}, y::Float64
         X = vcat(1.0, X)
     end
     # calculate log likelihood
-    residuals = y - X' * model.β
+    residuals = y - (X' * model.β)
     n = length(y)
     -0.5 * n * log(2π * model.σ²) - (0.5 / model.σ²) * sum(residuals.^2)
 end
 
+"""
+    least_squares(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
+
+Calculate the (weighted) least squares objective function for a Gaussian regression model.
+
+Args:
+- `model::GaussianRegression`: Gaussian regression model
+- `X::Matrix{Float64}`: Design matrix
+- `y::Vector{Float64}`: Response vector
+- `w::Vector{Float64}`: Weights for the observations
+
+Example:
+```julia
+model = GaussianRegression()
+X = rand(100, 2)
+y = X * [0.1, 0.2] + 0.1 * randn(100)
+least_squares(model, X, y)
+
+model = GaussianRegression()
+X = rand(100, 2)
+y = X * [0.1, 0.2] + 0.1 * randn(100)
+w = rand(100)
+least_squares(model, X, y, w)
+```
+"""
 function least_squares(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
@@ -61,6 +134,28 @@ function least_squares(model::GaussianRegression, X::Matrix{Float64}, y::Vector{
     return sum(w.*(residuals.^2)) + (model.λ * sum(model.β.^2))
 end
 
+"""
+    gradient!(G::Vector{Float64}, model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
+
+Calculate the gradient of the least squares objective function for a Gaussian regression model.
+
+    
+Args:
+- `G::Vector{Float64}`: Gradient of the objective function
+- `model::GaussianRegression`: Gaussian regression model
+- `X::Matrix{Float64}`: Design matrix
+- `y::Vector{Float64}`: Response vector
+- `w::Vector{Float64}`: Weights for the observations
+
+Example:
+```julia
+model = GaussianRegression()
+X = rand(100, 2)
+y = X * [0.1, 0.2] + 0.1 * randn(100)
+G = zeros(2)
+gradient!(G, model, X, y)
+```
+"""
 function gradient!(G::Vector{Float64}, model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
@@ -69,6 +164,31 @@ function gradient!(G::Vector{Float64}, model::GaussianRegression, X::Matrix{Floa
     G .= (-2 * X' * Diagonal(w) * residuals) + (2*model.λ*model.β)
 end
 
+"""
+    update_variance!(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
+
+Update the (weighted) variance of a Gaussian regression model. Uses the biased estimator.
+
+Args:
+- `model::GaussianRegression`: Gaussian regression model
+- `X::Matrix{Float64}`: Design matrix
+- `y::Vector{Float64}`: Response vector
+- `w::Vector{Float64}`: Weights for the observations
+
+Example:
+```julia
+model = GaussianRegression()
+X = rand(100, 2)
+y = X * [0.1, 0.2] + 0.1 * randn(100)
+update_variance!(model, X, y)
+
+model = GaussianRegression()
+X = rand(100, 2)
+y = X * [0.1, 0.2] + 0.1 * randn(100)
+w = rand(100)
+update_variance!(model, X, y, w)
+```
+"""
 function update_variance!(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
@@ -78,6 +198,31 @@ function update_variance!(model::GaussianRegression, X::Matrix{Float64}, y::Vect
     model.σ² = sum(w.*(residuals.^2)) / sum(w) # biased estimate, could use n-1
 end
 
+"""
+    fit!(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
+
+Fit a Gaussian regression model using weighted least squares.
+
+Args:
+- `model::GaussianRegression`: Gaussian regression model
+- `X::Matrix{Float64}`: Design matrix
+- `y::Vector{Float64}`: Response vector
+- `w::Vector{Float64}`: Weights for the observations
+
+Example:
+```julia
+model = GaussianRegression()
+X = rand(100, 2)
+y = X * [0.1, 0.2] + 0.1 * randn(100)
+fit!(model, X, y)
+
+model = GaussianRegression()
+X = rand(100, 2)
+y = X * [0.1, 0.2] + 0.1 * randn(100)
+w = rand(100)
+fit!(model, X, y, w)
+``` 
+"""
 function fit!(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
     # add intercept if specified
     if model.include_intercept
@@ -102,9 +247,20 @@ end
     BernoulliRegression(β::Vector{Float64}, include_intercept::Bool, λ::Float64=0.0)
 
 Args:
-    β::Vector{Float64}: Coefficients of the regression model
-    include_intercept::Bool: Whether to include an intercept term in the model
-    λ::Float64: Regularization parameter for the model
+- `β::Vector{Float64}`: Coefficients of the regression model
+- `include_intercept::Bool`: Whether to include an intercept term in the model
+- `λ::Float64`: Regularization parameter for the model
+
+Constructors:
+- `BernoulliRegression(; include_intercept::Bool = true, λ::Float64=0.0)`
+- `BernoulliRegression(β::Vector{Float64}, include_intercept::Bool, λ::Float64=0.0)`
+
+Example:
+```julia
+model = BernoulliRegression()
+model = BernoulliRegression(include_intercept=false, λ=0.1)
+model = BernoulliRegression([0.1, 0.2], true, 0.1)
+```
 """
 mutable struct BernoulliRegression <: Regression
     β::Vector{Float64}
@@ -122,6 +278,25 @@ mutable struct BernoulliRegression <: Regression
     end
 end
 
+"""
+    loglikelihood(model::BernoulliRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, BitVector}, w::Vector{Float64}=ones(length(y))
+
+Calculate the log-likelihood of a Bernoulli regression model.
+
+Args:
+- `model::BernoulliRegression`: Bernoulli regression model
+- `X::Matrix{Float64}`: Design matrix
+- `y::Union{Vector{Float64}, BitVector}`: Response vector
+- `w::Vector{Float64}`: Weights for the observations
+
+Example:
+```julia
+model = BernoulliRegression()
+X = rand(100, 2)
+y = rand(Bool, 100)
+loglikelihood(model, X, y)
+```
+"""
 function loglikelihood(model::BernoulliRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, Vector{Int64}, BitVector}, w::Vector{Float64}=ones(length(y)))
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
@@ -136,15 +311,34 @@ function loglikelihood(model::BernoulliRegression, X::Matrix{Float64}, y::Union{
     return sum(w .* (y .* log.(p) .+ (1 .- y) .* log.(1 .- p)))
 end
 
+"""
+    loglikelihood(model::BernoulliRegression, X::Vector{Float64}, y::Union{Float64, Bool, Int64}, w::Float64=1.0)
+
+Calculate the log-likelihood of a single observation of a Bernoulli regression model.
+
+Args:
+- `model::BernoulliRegression`: Bernoulli regression model
+- `X::Vector{Float64}`: Design vector
+- `y::Union{Float64, Bool, Int64}`: Response value
+- `w::Float64`: Weight for the observation
+
+Example:
+```julia
+model = BernoulliRegression()
+X = rand(2)
+y = rand(Bool)
+loglikelihood(model, X, y)
+```
+"""
 function loglikelihood(model::BernoulliRegression, X::Vector{Float64}, y::Union{Float64, Bool, Int64}, w::Float64=1.0)
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # add intercept if specified
     if model.include_intercept && length(X) == length(model.β) - 1
-        X = hcat(ones(size(X, 1)), X)
+        X = vcat(1.0, X)
     end
     # calculate log likelihood
-    p = logistic.(X * model.β) # use stats fun for this
+    p = logistic.(X' * model.β) # use stats fun for this
     # convert y if neccesary
     y = convert(Float64, y)
     return sum(w .* (y .* log.(p) .+ (1 .- y) .* log.(1 .- p))) 
@@ -156,11 +350,11 @@ end
 Calculate the gradient of the negative log-likelihood function for a Bernoulli regression model. 
 
 Args:
-    grad::Vector{Float64}: Gradient of the negative log-likelihood function
-    model::BernoulliRegression: Bernoulli regression model
-    X::Matrix{Float64}: Design matrix
-    y::Union{Vector{Float64}, BitVector}: Response vector
-    w::Vector{Float64}: Weights for the observations
+- `grad::Vector{Float64}`: Gradient of the negative log-likelihood function
+- `model::BernoulliRegression`: Bernoulli regression model
+- `X::Matrix{Float64}`: Design matrix
+- `y::Union{Vector{Float64}, BitVector}`: Response vector
+- `w::Vector{Float64}`: Weights for the observations
 """
 function gradient!(grad::Vector{Float64}, model::BernoulliRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, Vector{Int64}, BitVector}, w::Vector{Float64}=ones(length(y)))
     # confirm the model has been fit
@@ -177,6 +371,31 @@ function gradient!(grad::Vector{Float64}, model::BernoulliRegression, X::Matrix{
     grad .= -(X' * (w .* (y .- p))) + 2 * model.λ * model.β
 end
 
+"""
+    fit!(model::BernoulliRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, BitVector}, w::Vector{Float64}=ones(length(y))
+
+Fit a Bernoulli regression model using maximum likelihood estimation.
+
+Args:
+- `model::BernoulliRegression`: Bernoulli regression model
+- `X::Matrix{Float64}`: Design matrix
+- `y::Union{Vector{Float64}, BitVector}`: Response vector
+- `w::Vector{Float64}`: Weights for the observations
+
+Example:
+```julia
+model = BernoulliRegression()
+X = rand(100, 2)
+y = rand(Bool, 100)
+fit!(model, X, y)
+
+model = BernoulliRegression()
+X = rand(100, 2)
+y = rand(Bool, 100)
+w = rand(100)
+fit!(model, X, y, w)
+```
+"""
 function fit!(model::BernoulliRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, Vector{Int64}, BitVector}, w::Vector{Float64}=ones(length(y)))
     # add intercept if specified
     if model.include_intercept
@@ -197,11 +416,22 @@ function fit!(model::BernoulliRegression, X::Matrix{Float64}, y::Union{Vector{Fl
 end
     
 """
-    PoissonRegression
+    mutable struct PoissonRegression <: Regression
 
 Args:
-    β::Vector{Float64}: Coefficients of the regression model
-    include_intercept::Bool: Whether to include an intercept term in the model
+- `β::Vector{Float64}`: Coefficients of the regression model
+- `include_intercept::Bool`: Whether to include an intercept term in the model
+
+Constructors:
+- `PoissonRegression(; include_intercept::Bool = true, λ::Float64=0.0)`
+- `PoissonRegression(β::Vector{Float64}, include_intercept::Bool, λ::Float64=0.0)`
+
+Example:
+```julia
+model = PoissonRegression()
+model = PoissonRegression(include_intercept=false, λ=0.1)
+model = PoissonRegression([0.1, 0.2], true, 0.1)
+```
 """
 mutable struct PoissonRegression <: Regression
     β::Vector{Float64}
@@ -219,6 +449,25 @@ mutable struct PoissonRegression <: Regression
     end
 end
 
+"""
+    loglikelihood(model::PoissonRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(y)))
+
+Calculate the log-likelihood of a Poisson regression model.
+
+Args:
+- `model::PoissonRegression`: Poisson regression model
+- `X::Matrix{Float64}`: Design matrix
+- `y::Union{Vector{Float64}, Vector{Int64}}`: Response vector
+- `w::Vector{Float64}`: Weights for the observations
+
+Example:
+```julia
+model = PoissonRegression()
+X = rand(100, 2)
+y = rand(Poisson(1), 100)
+loglikelihood(model, X, y)
+```
+"""
 function loglikelihood(model::PoissonRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(y)))
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
@@ -233,22 +482,60 @@ function loglikelihood(model::PoissonRegression, X::Matrix{Float64}, y::Union{Ve
     return sum(w .* (y .* log.(λ) .- λ .- loggamma.(Int.(y) .+ 1)))
 end
 
+"""
+    loglikelihood(model::PoissonRegression, X::Vector{Float64}, y::Union{Float64, Int64}, w::Float64=1.0)
+
+Calculate the log-likelihood of a single observation of a Poisson regression model.
+
+Args:
+- `model::PoissonRegression`: Poisson regression model
+- `X::Vector{Float64}`: Design vector
+- `y::Union{Float64, Int64}`: Response value
+- `w::Float64`: Weight for the observation
+
+Example:
+```julia
+model = PoissonRegression()
+X = rand(2)
+y = rand(Poisson(1))
+loglikelihood(model, X, y)
+```
+"""
 function loglikelihood(model::PoissonRegression, X::Vector{Float64}, y::Union{Float64, Int64}, w::Float64=1.0)
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # add intercept if specified
     if model.include_intercept && size(X, 2) == length(model.β) - 1
-        X = hcat(ones(size(X, 1)), X)
+        X = vcat(1.0, X)
     end
     # calculate log likelihood
-    println(size(X))
-    println(size(model.β))
-    λ = exp.(X * model.β)
+    λ = exp.(X' * model.β)
     # convert y if necessary
     y = convert(Float64, y)
     return sum(w .* (y .* log.(λ) .- λ .- log.(factorial.(Int.(y))))) 
 end
 
+"""
+    gradient!(grad::Vector{Float64}, model::PoissonRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(y)))
+
+Calculate the gradient of the negative log-likelihood function for a Poisson regression model.
+
+Args:
+- `grad::Vector{Float64}`: Gradient of the negative log-likelihood function
+- `model::PoissonRegression`: Poisson regression model
+- `X::Matrix{Float64}`: Design matrix
+- `y::Union{Vector{Float64}, Vector{Int64}}`: Response vector
+- `w::Vector{Float64}`: Weights for the observations
+
+Example:
+```julia
+model = PoissonRegression()
+X = rand(100, 2)
+y = rand(Poisson(1), 100)
+G = zeros(2)
+gradient!(G, model, X, y)
+```
+"""
 function gradient!(grad::Vector{Float64}, model::PoissonRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(y)))
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
@@ -264,6 +551,31 @@ function gradient!(grad::Vector{Float64}, model::PoissonRegression, X::Matrix{Fl
     grad .= -X' * (Diagonal(w) * (y .- rate)) + (model.λ * 2 * model.β)
 end
 
+"""
+    fit!(model::PoissonRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(y)))
+
+Fit a Poisson regression model using maximum likelihood estimation.
+
+Args:
+- `model::PoissonRegression`: Poisson regression model
+- `X::Matrix{Float64}`: Design matrix
+- `y::Union{Vector{Float64}, Vector{Int64}}`: Response vector
+- `w::Vector{Float64}`: Weights for the observations
+
+Example:
+```julia
+model = PoissonRegression()
+X = rand(100, 2)
+y = rand(Poisson(1), 100)
+fit!(model, X, y)
+
+model = PoissonRegression()
+X = rand(100, 2)
+y = rand(Poisson(1), 100)
+w = rand(100)
+fit!(model, X, y, w)
+```
+"""
 function fit!(model::PoissonRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(y)))
     # add intercept if specified
     if model.include_intercept
