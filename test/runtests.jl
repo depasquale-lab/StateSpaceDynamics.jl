@@ -1,8 +1,10 @@
 using SSM
 using Distributions
+using ForwardDiff
 using LinearAlgebra
 using Random
 using StatsFuns
+using SpecialFunctions
 using Test
 
 Random.seed!(1234)
@@ -612,11 +614,49 @@ function test_GaussianRegression_intercept()
     @test isapprox(model_with_intercept.β, true_β, atol=0.5)
 end
 
+function test_Gaussian_ll_gradient()
+    # generate data and observations
+    X = hcat(ones(1000), randn(1000, 2))
+    true_β = [0.5, -1.2, 2.3]
+    y = X * true_β + randn(1000) * 0.5
+    # initialize model
+    model = GaussianRegression()
+    model.β = [0., 0., 0.]
+    model.σ² = 1.
+
+    # use ForwardDiff to calculate the gradient
+    function objective(β, w)
+        return sum(w.*(y - X * β).^2) + (model.λ * sum(β.^2))
+    end
+
+    grad = ForwardDiff.gradient(x -> objective(x, ones(1000)), model.β)
+    # calculate the gradient manually
+    grad_analytic = SSM.gradient!([0., 0., 0.], model, X, y)
+    # check if the gradients are close
+    @test isapprox(grad, grad_analytic, atol=1e-6)
+
+    # now do the same with Weights
+    weights = rand(1000)
+    grad = ForwardDiff.gradient(x -> objective(x, weights), model.β)
+    grad_analytic = SSM.gradient!([0., 0., 0.], model, X, y, weights)
+    @test isapprox(grad, grad_analytic, atol=1e-6)
+
+    # finally test when λ is not 0
+    model = GaussianRegression(λ=0.1)
+    model.β = rand(3)
+
+    grad = ForwardDiff.gradient(x -> objective(x, ones(1000)), model.β)
+    grad_analytic = SSM.gradient!([0., 0., 0.], model, X, y)
+    @test isapprox(grad, grad_analytic, atol=1e-6)
+
+end
+
 @testset "GaussianRegression Tests" begin
     test_GaussianRegression_fit()
     test_GaussianRegression_loglikelihood()
     test_GaussianRegression_empty_model()
     test_GaussianRegression_intercept()
+    test_Gaussian_ll_gradient()
 end
 
 function test_BernoulliRegression_fit()
@@ -653,10 +693,9 @@ function test_BernoulliRegression_loglikelihood()
     loglik = SSM.loglikelihood(model, X[:, 2:end], y)
     @test loglik < 0
 
-
-    # test loglikelihood on a single point
-    # loglik = SSM.loglikelihood(model, X[1, 2:end], y[1])
-    # @test loglik < 0
+    #test loglikelihood on a single point
+    loglik = SSM.loglikelihood(model, X[1, 2:end], y[1])
+    @test loglik < 0
 end
 
 function test_BernoulliRegression_empty_model()
@@ -680,11 +719,47 @@ function test_BernoulliRegression_intercept()
     @test isapprox(model_with_intercept.β, true_β, atol=0.5)
 end
 
+function test_Bernoulli_ll_gradient()
+    # generate data and observations
+    X = hcat(ones(1000), randn(1000, 2))
+    true_β = [0.5, -1.2, 2.3]
+    p = logistic.(X * true_β)
+    y = rand.(Bernoulli.(p))
+    # initialize model
+    model = BernoulliRegression()
+    model.β = [0., 0., 0.]
+
+    # use ForwardDiff to calculate the gradient
+    function objective(β, w)
+        return -sum(w .* (y .* log.(logistic.(X * β)) .+ (1 .- y) .* log.(1 .- logistic.(X * β)))) + (model.λ * sum(β.^2))
+    end
+    grad = ForwardDiff.gradient(x -> objective(x, ones(1000)), model.β)
+    # calculate the gradient manually
+    grad_analytic = SSM.gradient!([0., 0., 0.], model, X, y)
+    # check if the gradients are close
+    @test isapprox(grad, grad_analytic, atol=1e-6)
+
+    # now do the same with Weights
+    weights = rand(1000)
+    grad = ForwardDiff.gradient(x -> objective(x, weights), model.β)
+    grad_analytic = SSM.gradient!([0., 0., 0.], model, X, y, weights)
+    @test isapprox(grad, grad_analytic, atol=1e-6)
+
+    # finally test when λ is not 0
+    model = BernoulliRegression(λ=0.1)
+    model.β = rand(3)
+
+    grad = ForwardDiff.gradient(x -> objective(x, ones(1000)), model.β)
+    grad_analytic = SSM.gradient!([0., 0., 0.], model, X, y)
+    @test isapprox(grad, grad_analytic, atol=1e-6)
+end
+
 @testset "BernoulliRegression Tests" begin
     test_BernoulliRegression_fit()
     test_BernoulliRegression_loglikelihood()
     test_BernoulliRegression_empty_model()
     test_BernoulliRegression_intercept()
+    test_Bernoulli_ll_gradient()
 end
 
 function test_PoissonRegression_fit()
@@ -721,9 +796,9 @@ function test_PoissonRegression_loglikelihood()
     loglik = SSM.loglikelihood(model, X[:, 2:end], y)
     @test loglik < 0
 
-    # test loglikelihood on a single point
-    # loglik = SSM.loglikelihood(model, X[1, 2:end], y[1])
-    # @test loglik < 0
+    #test loglikelihood on a single point
+    loglik = SSM.loglikelihood(model, X[1, :], y[1])
+    @test loglik < 0
 end
 
 function test_PoissonRegression_empty_model()
@@ -746,11 +821,47 @@ function test_PoissonRegression_intercept()
     @test length(model_with_intercept.β) == 3
     @test isapprox(model_with_intercept.β, true_β, atol=0.5)
 end
+
+function test_Poisson_ll_gradient()
+    # generate data and observations
+    X = hcat(ones(1000), randn(1000, 2))
+    true_β = [0.5, -1.2, 2.3]
+    λ = exp.(X * true_β)
+    y = rand.(Poisson.(λ))
+    # initialize model
+    model = PoissonRegression()
+    model.β = [0., 0., 0.]
+
+    # use ForwardDiff to calculate the gradient
+    function objective(β, w)
+        return sum(w .* (y .* log.(exp.(X * β)) .- exp.(X * β) .- loggamma.(Int.(y) .+ 1))) + (model.λ * sum(β.^2))
+    end
+    grad = -ForwardDiff.gradient(x -> objective(x, ones(1000)), model.β)
+    # calculate the gradient manually
+    grad_analytic = SSM.gradient!([0., 0., 0.], model, X, y)
+    # check if the gradients are close
+    @test isapprox(grad, grad_analytic, atol=1e-6)
+
+    # now do the same with Weights
+    weights = rand(1000)
+    grad = -ForwardDiff.gradient(x -> objective(x, weights), model.β)
+    grad_analytic = SSM.gradient!([0., 0., 0.], model, X, y, weights)
+    @test isapprox(grad, grad_analytic, atol=1e-6)
+
+    # finally test when λ is not 0
+    model = PoissonRegression(λ=0.1)
+    model.β = rand(3)
+
+    grad = -ForwardDiff.gradient(x -> objective(x, ones(1000)), model.β)
+    grad_analytic = SSM.gradient!([0., 0., 0.], model, X, y)
+end
+
 @testset "PoissonRegression Tests" begin
     test_PoissonRegression_fit()
     test_PoissonRegression_loglikelihood()
     test_PoissonRegression_empty_model()
     test_PoissonRegression_intercept()
+    test_Poisson_ll_gradient()
 end
 
 """
