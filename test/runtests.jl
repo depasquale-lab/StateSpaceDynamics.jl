@@ -395,15 +395,7 @@ end
 
 function test_LDS_with_params()
     # Create the Kalman filter parameter vector
-    kf = LDS(;A=A,
-             H=H,
-             Q=Q, 
-             R=R, 
-             x0=x0, 
-             p0=p0, 
-             obs_dim=2, 
-             latent_dim=2, 
-             fit_bool=Vector([false, false, false, false, false, false, false, false]))
+    kf = LDS(;A=A, H=H, Q=Q, R=R, x0=x0, p0=p0, obs_dim=2, latent_dim=2, fit_bool=Vector([false, false, false, false, false, false, false, false]))
     # confirm parameters are set correctly
     @test kf.A == A
     @test kf.H == H
@@ -508,6 +500,20 @@ function test_LDS_EM()
     @test kf.fit_bool == Vector([true, true, true, true, true, true, true]) 
 end
 
+function test_direct_smoother()
+    # create kalman filter object
+    kf = LDS(;A=A, H=H, Q=Q, R=R, x0=x0, p0=p0, obs_dim=2, latent_dim=2, fit_bool=Vector([true, true, true, true, true, true, true]))
+    # run the RTS-Smoother
+    x_smooth, p_smooth = KalmanSmoother(kf, x_noisy')
+    # run the Direct Smoothing algorithm
+    x_smooth_direct, p_smooth_direct = KalmanSmoother(kf, permutedims(x_noisy), "Direct")
+    @test size(x_smooth) == size(x_smooth_direct)
+    @test size(p_smooth) == size(p_smooth_direct)
+    # check if the results are the same
+    @test isapprox(x_smooth, x_smooth_direct, atol=1e-6)
+    @test isapprox(p_smooth, p_smooth_direct, atol=1e-6)
+end
+
 
 @testset "LDS.jl Tests" begin
     test_LDS_with_params()
@@ -515,6 +521,7 @@ end
     test_LDS_E_Step()
     test_LDS_M_Step!()
     test_LDS_EM()
+    test_direct_smoother()
 end
 
 """

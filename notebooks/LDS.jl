@@ -7,8 +7,8 @@ using InteractiveUtils
 # ╔═╡ 53c96240-c044-11ee-2f83-e93206e06ac6
 begin
 	using Pkg
-	Pkg.activate("/Users/ryansenne/Documents/Github/SSM")
-	include("/Users/ryansenne/Documents/Github/SSM//src/SSM.jl")
+	Pkg.activate("/Users/ryansenne/Documents/GitHub/ssm_julia")
+	include("/Users/ryansenne/Documents/GitHub/ssm_julia//src/SSM.jl")
 	using .SSM
 	using LinearAlgebra
 	using Distributions
@@ -71,16 +71,6 @@ state_sequence, observation_sequence = simulate_LDS(100, 0.9, 0.75, [1., -1], [0
 	
 end
 
-# ╔═╡ dd275f99-1d29-4dbd-a804-7e64893074b0
-begin
-	# plot our latent states and what we actually observed
-	l = @layout [a; b; c]
-	p1 = plot(state_sequence[:, 2], linewidth=:3, labels="Velocity")
-	p2 = plot(state_sequence[:, 1], linewidth=:3, labels="Position")
-	p3 = plot(observation_sequence, linewidth=:3, labels="Noisy Position")
-	plot(p1, p2, p3, layout=l)
-end
-
 # ╔═╡ 6fa55d13-f126-40f1-8b34-4221a70d36b3
 md"""From what we can see, the position follows the general trends of the true state evolution. But, we can certainly do better. Furthermore, we have no understanding of the velocity of the spring moment-to-moment (we only have it because we simulated it)! We can first try the Kalman Filter to see if we can a.) get a better estimate of the position and b.) estimate the springs velocity."""
 
@@ -110,25 +100,6 @@ $p(x_t|y_{1:T}) \propto p(y_t|x_t)p(x_t|y_{1:t-1})$
 
 It is worth examining this relation. What this means is that Bayesian Filtets, (the Kalman Filter included!) tell us how to update our beliefs about the state of our hidden variables based on a single new piece of evidence, $y_t$. Thus, the Kalman Filter, really is just a special case of computing this marginal conditional posterior distribution using a recursive algorithm. 
 """
-
-# ╔═╡ 3ac3ee86-3426-4cf4-ba02-29d692348e9a
-begin
-	# set up parameters, we currently are assuming we know these, in practice we may know only a few, if any at all
-	β = 0.75
-	α = 0.9
-	A = [1 1; -β (1 - α)]
-	H = reshape([1., 0.], 1, 2)
-	Q = 0.01 * I(2)
-	R = [1]
-	x₀ = [1, -1]
-	P₀ = 0.01 * I(2)
-
-	# set up a LDS object
-	spring_LDS = SSM.LDS(A, H, nothing, Q, R, x₀, P₀, nothing, 1, 2, fill(false, 7))
-
-	# now we can filter our observations
-	x_filtered, p_filtered = SSM.KalmanFilter(spring_LDS, observation_sequence)
-end
 
 # ╔═╡ a28a94b6-e160-45e8-9762-80108aac176a
 begin
@@ -166,7 +137,7 @@ $p(x_t|y_{1:T})$
 # ╔═╡ 43b64fbd-62ad-42a4-9905-1062eeec4001
 begin
 	# we already set up parameters from the previous example, the usage is very similar to the Kalman Filter.
-	x_smooth, p_smooth = SSM.KalmanSmoother(spring_LDS, observation_sequence, "RTS") 
+	x_smooth, p_smooth = SSM.KalmanSmoother(spring_LDS, observation_sequence, "Direct") 
 end
 
 # ╔═╡ 93a7e46f-a8e3-4bba-9e01-30b194b653f6
@@ -185,12 +156,6 @@ begin
 	plot(smooth_1, smooth_2, layout=l2)
 end
 
-# ╔═╡ 00800593-d432-420e-9e15-fd40fd7de7ee
-
-
-# ╔═╡ bdaa735a-7490-4ddd-931b-f01e1382e740
-
-
 # ╔═╡ 1a173cad-acec-4358-8147-8119ce6b7449
 begin
 
@@ -198,6 +163,72 @@ begin
 	modelless_spring = SSM.LDS(;obs_dim=1, latent_dim=2)
 	# perform EM
 	SSM.KalmanFilterEM!(modelless_spring, observation_sequence)
+end
+
+# ╔═╡ 3ac3ee86-3426-4cf4-ba02-29d692348e9a
+begin
+	# set up parameters, we currently are assuming we know these, in practice we may know only a few, if any at all
+	β = 0.75
+	α = 0.9
+	A = [1 1; -β (1 - α)]
+	H = reshape([1., 0.], 1, 2)
+	Q = 0.01 * I(2)
+	R = [1.;;]
+	x₀ = [1, -1]
+	P₀ = 0.01 * I(2)
+
+	# set up a LDS object
+	spring_LDS = SSM.LDS(;A=A, H=H, Q=Q, R=R, x0=x₀, p0=P₀, obs_dim=1, latent_dim=2, fit_bool=fill(false, 7))
+
+	# now we can filter our observations
+	x_filtered, p_filtered = SSM.KalmanFilter(spring_LDS, observation_sequence)
+end
+
+# ╔═╡ dd275f99-1d29-4dbd-a804-7e64893074b0
+begin
+	# plot our latent states and what we actually observed
+	l = @layout [a; b; c]
+	p1 = plot(state_sequence[:, 2], linewidth=:3, labels="Velocity")
+	p2 = plot(state_sequence[:, 1], linewidth=:3, labels="Position")
+	p3 = plot(observation_sequence, linewidth=:3, labels="Noisy Position")
+	plot(p1, p2, p3, layout=l)
+end
+
+# ╔═╡ 3d563e4c-d36c-40f4-9e5e-52187407ce92
+begin
+	# Create a toy example for all LDS tests. This example represents a pendulum in a frictionless environment.
+	g = 9.81 # gravity
+	l = 1.0 # length of pendulum
+	dt = 0.01 # time step
+	T = 10.0 # total time
+	# Discrete-time dynamics
+	A = [1.0 dt; -g/l*dt 1.0]
+	# Initial state
+	x0 = [0.0; 1.0]
+	# Time vector
+	t = 0:dt:T
+	# Define the LDS model parameters
+	H = I(2)  # Observation matrix (assuming direct observation)
+	Q = 0.00001 * I(2)  # Process noise covariance
+	observation_noise_std = 0.5
+	R = (observation_noise_std^2) * I(2)  # Observation noise covariance
+	p0 = 0.1*I(2)  # Initial state covariance
+	x0 = [0.0; 1.0]  # Initial state mean
+	# Generate true data
+	x = zeros(2, length(t))
+	x[:,1] = x0
+	for i = 2:length(t)
+	    x[:,i] = A*x[:,i-1]
+	end
+	# Generate noisy data
+	x_noisy = zeros(2, length(t))
+	x_noisy[:, 1] = x0
+	
+	noise = rand(Normal(0, observation_noise_std), (2, length(t)))
+	
+	for i in 2:length(t)
+	    x_noisy[:, i] = A * x[:, i-1] + noise[:, i]
+	end
 end
 
 # ╔═╡ Cell order:
@@ -218,6 +249,5 @@ end
 # ╠═4ea51161-6402-46dc-9222-b687a59cf424
 # ╠═43b64fbd-62ad-42a4-9905-1062eeec4001
 # ╠═93a7e46f-a8e3-4bba-9e01-30b194b653f6
-# ╠═00800593-d432-420e-9e15-fd40fd7de7ee
-# ╠═bdaa735a-7490-4ddd-931b-f01e1382e740
 # ╠═1a173cad-acec-4358-8147-8119ce6b7449
+# ╠═3d563e4c-d36c-40f4-9e5e-52187407ce92

@@ -55,7 +55,7 @@ function LDS(;
 end
 
 """
-Initiliazes the parameters of the LDS model using PCA.
+Initiliazes the parameters of the LDS (the observation matrix and the initial state values, i.e., H and x0), model using PPCA.
 
 Args:
     l: LDS struct
@@ -142,9 +142,8 @@ end
 
 function DirectSmoother(l::LDS, y::AbstractArray, tol::Float64=1e-6)
     # Pre-allocate arrays
-    T, D = size(y)
-    p_smooth = zeros(T, l.latent_dim, l.latent_dim)
-    # Compute the precdiction as a starting point for the optimization
+    T = size(y, 1)
+    # Compute the prediction as a starting point for the optimization
     xₜ = zeros(T, l.latent_dim)
     xₜ[1, :] = l.x0
     for t in 2:T
@@ -153,18 +152,19 @@ function DirectSmoother(l::LDS, y::AbstractArray, tol::Float64=1e-6)
     # Compute the Hessian of the loglikelihood
     H, main, super, sub = Hessian(l, y)
     # compute the inverse of the main diagonal of the Hessian, this is the posterior covariance
-    p_smooth = block_tridiagonal_inverse(sub, main, super)
+    p_smooth = block_tridiagonal_inverse(-sub, -main, -super)
     # now optimize
     for i in 1:5 # this should stop at the first iteration in theory but likely will at iteration 2
         # Compute the gradient
         grad = Gradient(l, y, xₜ)
         # reshape the gradient to a vector to pass to newton_raphson_step_tridg!, we transpose as the way Julia reshapes is by vertically stacking columns as we need to match up observations to the Hessian.
-        grad = Matrix{Float64}(reshape(grad', (T*D), 1))
+        grad = Matrix{Float64}(reshape(grad', size(H, 1), 1))
         # Compute the Newton-Raphson step        
         xₜ₊₁ = newton_raphson_step_tridg!(xₜ, H, grad)
         # Check for convergence (uncomment the following lines to enable convergence checking)
         if norm(xₜ₊₁ - xₜ) < tol
             println("Converged at iteration ", i)
+            println("Norm of gradient iterate difference: ", norm(xₜ₊₁ - xₜ))
             return xₜ₊₁, p_smooth
         else
             println("Norm of gradient iterate difference: ", norm(xₜ₊₁ - xₜ))
@@ -180,8 +180,10 @@ end
 function KalmanSmoother(l::LDS, y::AbstractArray, method::String="RTS")
     if method == "RTS"
         return RTSSmoother(l, y)
-    else
+    elseif method == "Direct"
         return DirectSmoother(l, y)
+    else 
+        error("Invalid method. Please choose either 'RTS' or 'Direct'.")
     end
 end
 
@@ -346,8 +348,8 @@ function Hessian(l::LDS, y::AbstractArray)
     H_sub_entry = inv_Q * l.A
     H_super_entry = Matrix(H_sub_entry')
 
-    H_sub = Vector{typeof(H_sub_entry)}(undef, T-1)
-    H_super = Vector{typeof(H_super_entry)}(undef, T-1)
+    H_sub = Vector{Matrix{Float64}}(undef, T-1)
+    H_super = Vector{Matrix{Float64}}(undef, T-1)
 
     Threads.@threads for i in 1:T-1
         H_sub[i] = H_sub_entry
@@ -360,7 +362,7 @@ function Hessian(l::LDS, y::AbstractArray)
     xt1_given_xt = - l.A' * inv_Q * l.A
     x_t = - inv_p0
 
-    H_diag = Vector{typeof(yt_given_xt)}(undef, T)
+    H_diag = Vector{Matrix{Float64}}(undef, T)
     Threads.@threads for i in 2:T-1
         H_diag[i] = yt_given_xt + xt_given_xt_1 + xt1_given_xt
     end
