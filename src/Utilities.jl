@@ -48,13 +48,7 @@ function interleave_reshape(data::AbstractArray, t::Int, d::Int)
     if l != (t * d)
         error("The length of data must be equivalent to  t * d")
     end
-    # create a matrix of zeros
-    X = zeros(t, d)
-    # loop through the data and reshape
-    for i in 1:d
-        X[:, i] = data[i:d:l]
-    end
-    # return the reshaped matrix
+    X = permutedims(reshape(data', d, t))
     return X
 end
 

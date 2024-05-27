@@ -1,5 +1,6 @@
 using SSM
 using Distributions
+using ForwardDiff
 using LinearAlgebra
 using Random
 using StatsFuns
@@ -514,6 +515,51 @@ function test_direct_smoother()
     @test isapprox(p_smooth, p_smooth_direct, atol=1e-6)
 end
 
+function test_LDS_gradient()
+    # create kalman filter object
+    kf = LDS(;A=A, H=H, Q=Q, R=R, x0=x0, p0=p0, obs_dim=2, latent_dim=2, fit_bool=Vector([true, true, true, true, true, true, true]))
+    # calcualte the gradient
+    grad = SSM.Gradient(kf, x_noisy', zeros(size(x_noisy')))
+    # check dimensions
+    @test size(grad) == (length(t), kf.obs_dim)
+    # calculate the gradient using autodiff
+    obj(x) = x -> SSM.loglikelihood(x, kf, x_noisy')
+    grad_auto = ForwardDiff.gradient(obj(x), zeros(size(x_noisy')))
+    # check if the gradients are the same
+    @test isapprox(grad, grad_auto, atol=1e-6)
+end
+
+function test_LDS_Hessian()
+    # create kalman filter object
+    kf = LDS(;A=A, H=H, Q=Q, R=R, x0=x0, p0=p0, obs_dim=2, latent_dim=2, fit_bool=Vector([true, true, true, true, true, true, true]))
+    # calcualte the Hessian
+    hess, main, super, sub = SSM.Hessian(kf, x_noisy[:, 1:3]') # only look at first three observations as hessian is expensive to calculate using autodiff
+
+    # check lengths of main, super, and sub diagonals
+    @test typeof(main) == Vector{Matrix{Float64}}
+    @test typeof(super) == Vector{Matrix{Float64}}
+    @test typeof(sub) == Vector{Matrix{Float64}}
+    @test length(main) == 3
+    @test length(super) == 2
+    @test length(sub) == 2
+
+    # check dimensions
+    @test size(hess) == (3*kf.obs_dim, 3*kf.obs_dim)
+
+    # calculate the Hessian using autodiff
+    function log_likelihood(x::AbstractArray, l::LDS, y::AbstractArray)
+        # this wrapper function just makes it so we can pass a D x T array and not a T x D array. Otherwise the Hessian is out of order.
+        x = x'
+        ll = SSM.loglikelihood(x, l, y)
+        return ll  # Negate the log-likelihood
+    end
+    obj(x) = x -> log_likelihood(x, kf, zeros(size(x_noisy[:, 1:3]')))
+    hess_auto = ForwardDiff.hessian(obj(x), zeros(size(x_noisy[:, 1:3])))
+    # check if the Hessian are the same
+    @test isapprox(Matrix(hess), hess_auto, atol=1e-6)
+end
+
+
 
 @testset "LDS.jl Tests" begin
     test_LDS_with_params()
@@ -522,6 +568,8 @@ end
     test_LDS_M_Step!()
     test_LDS_EM()
     test_direct_smoother()
+    test_LDS_gradient()
+    test_LDS_Hessian()
 end
 
 """
