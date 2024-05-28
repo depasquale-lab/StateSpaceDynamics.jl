@@ -3,3 +3,4 @@
 /tests/ssm_testing_notebook.ipynb
 *.csv
 .DS_Store
+docs/build/
