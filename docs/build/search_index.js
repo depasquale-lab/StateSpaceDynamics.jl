@@ -1,3 +1,3 @@
 var documenterSearchIndex = {"docs":
-[]
+[{"location":"","page":"-","title":"-","text":"GaussianMixtureModel","category":"page"},{"location":"#SSM.GaussianMixtureModel","page":"-","title":"SSM.GaussianMixtureModel","text":"GaussianMixtureModel\n\nA Gaussian Mixture Model (GaussianMixtureModel) for clustering and density estimation.\n\nFields\n\nk::Int: Number of clusters.\nμₖ::Matrix{Float64}: Means of each cluster (dimensions: data_dim x k).\nΣₖ::Array{Matrix{Float64}, 1}: Covariance matrices of each cluster.\nπₖ::Vector{Float64}: Mixing coefficients for each cluster.\n\nExamples\n\n```julia gmm = GaussianMixtureModel(3, 2) # 3 clusters, 2-dimensional data fit!(gmm, data)\n\n\n\n\n\n","category":"type"}]
 }
