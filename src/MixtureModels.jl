@@ -15,7 +15,7 @@ A Gaussian Mixture Model (GaussianMixtureModel) for clustering and density estim
 ## Examples
 ```julia
 gmm = GaussianMixtureModel(3, 2) # 3 clusters, 2-dimensional data
-fit!(gmm, data)
+fit!(gmm, data)```
 """
 mutable struct GaussianMixtureModel <: MixtureModel
     k::Int # Number of clusters
