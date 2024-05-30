@@ -4,6 +4,8 @@ using SSM
 
 root = joinpath(dirname(pathof(SSM)), "..", "docs")
 
-entr([], [SSM]) do
+println("working dir: ", pwd())
+
+entr(["./docs/src"], [SSM]) do
     makedocs(root = root, sitename="SSM Julia")
 end

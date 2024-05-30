@@ -1,3 +1,4 @@
 ```@docs
 GaussianMixtureModel
+PoissonMixtureModel
 ```
