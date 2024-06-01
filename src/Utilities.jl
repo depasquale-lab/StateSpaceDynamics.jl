@@ -39,16 +39,15 @@ function block_tridiagonal_inverse(A, B, C)
     return λii
 end
 
-"""Interleave Reshape"""
 function interleave_reshape(data::AbstractArray, t::Int, d::Int)
     # get length of data 
-    l = length(data)
+    l = size(data, 1)
     # check if the length of data equal to t * d
     if l != (t * d)
-        error("The length of data must be equivalent to  t * d")
+        error("The length of data must be equivalent to t * d")
     end
-    # create a matrix of zeros
-    X = zeros(t, d)
+    # create a matrix of the same type as data
+    X = similar(data, t, d)
     # loop through the data and reshape
     for i in 1:d
         X[:, i] = data[i:d:l]

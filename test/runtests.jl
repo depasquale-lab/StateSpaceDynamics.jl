@@ -1,5 +1,6 @@
 using SSM
 using Distributions
+using ForwardDiff
 using LinearAlgebra
 using Random
 using StatsFuns
@@ -558,12 +559,13 @@ function test_PLDS_constructor_with_params()
     Q = I(latent_dim)
     x0 = randn(latent_dim)
     p0 = I(latent_dim)
+    refrac = 1
     d = randn(obs_dim)
     D = randn(obs_dim, obs_dim)
     fit_bool=Vector([true, true, true, true, true, true, true])
 
     # create the PLDS model
-    plds = PoissonLDS(A=A, C=C, Q=Q, D=D, d=d, x0=x0, p0=p0, obs_dim=obs_dim, latent_dim=latent_dim, fit_bool=fit_bool)
+    plds = PoissonLDS(A=A, C=C, Q=Q, D=D, d=d, x0=x0, p0=p0, refractory_period=1, obs_dim=obs_dim, latent_dim=latent_dim, fit_bool=fit_bool)
 
     # test model
     @test plds.A == A
@@ -573,6 +575,7 @@ function test_PLDS_constructor_with_params()
     @test plds.p0 == p0
     @test plds.d == d
     @test plds.D == D
+    @test plds.refractory_period == 1
     @test plds.obs_dim == obs_dim
     @test plds.latent_dim == latent_dim
 end
@@ -580,8 +583,6 @@ end
 function test_PLDS_constructor_without_params()
     # create the PLDS model
     plds = PoissonLDS(;obs_dim=10, latent_dim=5)
-
-    # test model
 
     # test parameters are not empty
     @test !isempty(plds.A)
@@ -591,6 +592,7 @@ function test_PLDS_constructor_without_params()
     @test !isempty(plds.p0)
     @test !isempty(plds.d)
     @test !isempty(plds.D)
+    @test plds.refractory_period == 1
     @test plds.obs_dim == 10
     @test plds.latent_dim == 5
 
@@ -604,9 +606,80 @@ function test_PLDS_constructor_without_params()
     @test size(plds.D) == (10, 10)
 end
 
+function test_countspikes()
+    # create a set of observations that is a matrix of spikes/events
+    obs = [0 0 1; 1 1 1; 0 1 0]
+    # count the spikes when window=1
+    count = SSM.countspikes(obs, 1)
+    # check the count
+    @test count == [0 0 0; 0 0 1; 1 1 1]
+    # count spikes when window=2
+    count_2 = SSM.countspikes(obs, 2)
+    # check the count
+    @test count_2 == [0 0 0; 0 0 1; 1 1 2]
+end
+
+function test_logposterior()
+    # create a plds model
+    plds = PoissonLDS(;obs_dim=10, latent_dim=5)
+    # create some observations
+    obs = rand(Bool, 100, 10)
+    # create latent state
+    x = randn(100, 5)
+    # calculate the log posterior
+    logpost = SSM.logposterior(x, plds, obs)
+    # check the dimensions
+    @test logpost isa Float64
+end
+
+function test_gradient_plds()
+    # create a plds model
+    plds = PoissonLDS(;obs_dim=10, latent_dim=5)
+    # create some observations
+    obs = rand(Bool, 100, 10)
+    # create initial latent state for gradient calculation
+    x = randn(100, 5)
+    # calculate the gradient
+    grad = SSM.Gradient(x, plds, obs)
+    # check the dimensions
+    @test size(grad) == (100, 5)
+    # check the gradients using autodiff
+    obj(x) = x -> SSM.logposterior(x, plds, obs)
+    grad_autodiff = ForwardDiff.gradient(obj(x), x)
+    @test grad ≈ grad_autodiff atol=1e-6
+end
+
+function test_hessian_plds()
+    # create a plds model
+    plds = PoissonLDS(;obs_dim=10, latent_dim=5)
+    # create some observations
+    obs = rand(Bool, 100, 10)
+    # create initial latent state for hessian calculation
+    x = randn(100, 5)
+    # calculate the hessian
+    hess, main, super, sub = SSM.Hessian(x, plds, obs)
+    # check the dimensions
+    @test length(main) == 100
+    @test length(super) == 99
+    @test length(sub) == 99
+    @test size(hess) == (500, 500)
+    # check the hessian using autodiff
+    function obj_logposterior(x::Vector)
+        x = SSM.interleave_reshape(x, 100, 5)
+        return SSM.logposterior(x, plds, obs)
+    end
+    hess_autodiff = ForwardDiff.hessian(obj_logposterior, reshape(x', 500))
+    @test hess ≈ hess_autodiff atol=1e-6
+end
+
+
 @testset "PLDS Tests" begin
     test_PLDS_constructor_with_params()
     test_PLDS_constructor_without_params()
+    test_countspikes()
+    test_logposterior()
+    test_gradient_plds()
+    test_hessian_plds()
 end
 
 """

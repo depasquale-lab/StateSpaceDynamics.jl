@@ -449,6 +449,39 @@ function marginal_loglikelihood(l::LDS, v::AbstractArray, j::AbstractArray)
 end
 
 """
+    mutable struct PoissonLDS <: DynamicalSystem
+
+A Poisson Linear Dynamical System (PLDS).
+
+# Fields
+- `A:: AbstractMatrix{<:Real}`: Transition Matrix
+- `C:: AbstractMatrix{<:Real}`: Observation Matrix
+- `Q:: AbstractMatrix{<:Real}`: Process Noise Covariance
+- `D:: AbstractMatrix{<:Real}`: History Control Matrix
+- `d:: AbstractVector{<:Real}`: Mean Firing Rate Vector
+- `x0:: AbstractVector{<:Real}`: Initial State
+- `p0:: AbstractMatrix{<:Real}`: Initial Covariance
+- `refractory_period:: Int`: Refractory Period
+- `obs_dim:: Int`: Observation Dimension
+- `latent_dim:: Int`: Latent Dimension
+- `fit_bool:: Vector{Bool}`: Vector of booleans indicating which parameters to fit.
+"""
+mutable struct PoissonLDS <: DynamicalSystem
+    A:: AbstractMatrix{<:Real} # Transition Matrix
+    C:: AbstractMatrix{<:Real} # Observation Matrix
+    Q:: AbstractMatrix{<:Real} # Process Noise Covariance
+    D:: AbstractMatrix{<:Real} # History Control Matrix
+    d:: AbstractVector{<:Real} # Mean Firing Rate Vector
+    b:: AbstractMatrix{<:Real} # Latent State Input
+    x0:: AbstractVector{<:Real} # Initial State
+    p0:: AbstractMatrix{<:Real} # Initial Covariance
+    refractory_period:: Int # Refractory Period
+    obs_dim:: Int # Observation Dimension
+    latent_dim:: Int # Latent Dimension
+    fit_bool:: Vector{Bool} # Vector of booleans indicating which parameters to fit
+end
+
+"""
     PoissonLDS(A, C, Q, D, d, x₀, p₀, obs_dim, latent_dim, fit_bool)
 
 A Poisson Linear Dynamical System (PLDS).
@@ -462,8 +495,10 @@ Advances in Neural Information Processing Systems 24 (2011).
 - `Q::AbstractMatrix{<:Real}`: Process noise covariance matrix.
 - `D::AbstractMatrix{<:Real}`: History control matrix.
 - `d::AbstractVector{<:Real}`: Mean firing rate vector.
+- `b::AbstractMatrix{<:Real}`: Latent state input.
 - `x₀::AbstractVector{<:Real}`: Initial state vector.
 - `p₀::AbstractMatrix{<:Real}`: Initial covariance matrix.
+- `refractory_period::Int`: Refractory period.
 - `obs_dim::Int`: Observation dimension.
 - `latent_dim::Int`: Latent dimension.
 - `fit_bool::Vector{Bool}`: Vector of booleans indicating which parameters to fit.
@@ -477,33 +512,23 @@ D = rand(3, 4)
 d = rand(4)
 x₀ = rand(3)
 p₀ = I(3)
+refractory_period = 1
 obs_dim = 4
 latent_dim = 3
 fit_bool = fill(true, 7)
 
-plds = PoissonLDS(A, C, Q, D, d, x₀, p₀, obs_dim, latent_dim, fit_bool)
+plds = PoissonLDS(A, C, Q, D, d, x₀, p₀, refractory_period, obs_dim, latent_dim, fit_bool)
 """
-mutable struct PoissonLDS
-    A:: AbstractMatrix{<:Real} # Transition Matrix
-    C:: AbstractMatrix{<:Real} # Observation Matrix
-    Q:: AbstractMatrix{<:Real} # Process Noise Covariance
-    D:: AbstractMatrix{<:Real} # History Control Matrix
-    d:: AbstractVector{<:Real} # Mean Firing Rate Vector
-    x0:: AbstractVector{<:Real} # Initial State
-    p0:: AbstractMatrix{<:Real} # Initial Covariance
-    obs_dim:: Int # Observation Dimension
-    latent_dim:: Int # Latent Dimension
-    fit_bool:: Vector{Bool} # Vector of booleans indicating which parameters to fit
-end
-
 function PoissonLDS(;
     A::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
     C::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
     Q::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
     D::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
     d::AbstractVector{<:Real}=Vector{Float64}(undef, 0),
+    b::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
     x0::AbstractVector{<:Real}=Vector{Float64}(undef, 0),
     p0::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    refractory_period::Int=1,
     obs_dim::Int,
     latent_dim::Int,
     fit_bool::Vector{Bool}=fill(true, 7))
@@ -512,10 +537,11 @@ function PoissonLDS(;
     A = isempty(A) ? rand(latent_dim, latent_dim) : A
     C = isempty(C) ? rand(obs_dim, latent_dim) : C
     Q = isempty(Q) ? I(latent_dim) : Q
-    D = isempty(D) ? rand(obs_dim, obs_dim) : D
-    d = isempty(d) ? rand(obs_dim) : d
+    D = isempty(D) ? rand() * I(obs_dim) : D
+    d = isempty(d) ? abs.(rand(obs_dim)) : d
+    b = isempty(b) ? Matrix{Float64}(undef, 0, latent_dim) : b
     x0 = isempty(x0) ? rand(latent_dim) : x0
-    p0 = isempty(p0) ? rand(latent_dim, latent_dim) : p0
+    p0 = isempty(p0) ? I(latent_dim) : p0
 
     # Check that the observation dimension and latent dimension are specified
     if obs_dim === nothing 
@@ -526,5 +552,182 @@ function PoissonLDS(;
         error("Latent dimension must be specified.")
     end
 
-    PoissonLDS(A, C, Q, D, d, x0, p0, obs_dim, latent_dim, fit_bool)
+    PoissonLDS(A, C, Q, D, d, b, x0, p0, refractory_period, obs_dim, latent_dim, fit_bool)
 end
+
+"""
+    logposterior(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
+
+Calculate the log-posterior of a Poisson Linear Dynamical System (PLDS) given the observed data.
+
+# Arguments
+- `x::Matrix{<:Real}`: The latent state variables of the PLDS.
+- `plds::PoissonLDS`: The Poisson Linear Dynamical System model.
+- `y::Matrix{<:Real}`: The observed data.
+
+# Returns
+- `Float64`: The log-posterior of the PLDS.
+
+# Examples
+```julia
+```
+"""
+function logposterior(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
+    # confirm the driving inputs are initialized
+    if isempty(plds.b)
+        plds.b = zeros(size(y, 1), plds.latent_dim)
+    end    
+    # Calculate the log-posterior
+    T = size(y, 1)
+    # Get an array of prior spikes
+    s = countspikes(y, plds.refractory_period)
+    # calculate the first term
+    pygivenx = 0.0
+    for t in 1:T
+        pygivenx += (y[t, :]' * (plds.C * x[t, :] + plds.D * s[t, :] + plds.d)) - sum(exp.(plds.C * x[t, :] + plds.D * s[t, :] + plds.d))
+    end
+    # calculate the second term
+    px1 =-0.5 * (x[1, :] - plds.x0)' * pinv(plds.p0) * (x[1, :] - plds.x0)
+    # calculate the last term
+    pxtgivenxt1 = 0.0
+    for t in 2:T
+        pxtgivenxt1 += -0.5 * (x[t, :] - (plds.A * x[t-1, :] + plds.b[t-1, :]))' * pinv(plds.Q) * (x[t, :] - (plds.A * x[t-1, :] + plds.b[t-1, :])) 
+    end
+    # sum the terms
+    return pygivenx + px1 + pxtgivenxt1
+end
+
+
+"""
+    loglikelihood()
+
+Calculates the complete data log-likelihood of the observations given the latent states and the model parameters, up to a constant. When the number of trials is 1, this function is equivalent to `logposterior()`.
+"""
+function loglikelihood(x::Array)
+    error("Not implemented yet.")
+end
+
+"""
+    Gradient(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
+
+Calculate the gradient of the log-likelihood with respect to the latent states.
+
+# Arguments
+- `x::Matrix{<:Real}`: Matrix of latent states.
+- `plds::PoissonLDS`: PoissonLDS object containing model parameters.
+- `y::Matrix{<:Real}`: Matrix of observed data.
+
+# Returns
+- `grad::Matrix{Float64}`: Matrix of gradients of the log-likelihood with respect to the latent states.
+
+# Example
+"""
+function Gradient(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
+    # calculate the gradient of the log-likelihood with respect to the latent states
+    T = size(y, 1)
+    # Get an array of prior spikes
+    s = countspikes(y, plds.refractory_period)
+    # get set of fixed constants, i.e inverses of matrices
+    inv_Q = pinv(plds.Q)
+    inv_p0 = pinv(plds.p0)
+    # calculate the gradient
+    grad = zeros(T, plds.latent_dim)
+    # calculate grad of first observation
+    grad[1, :] = ((y[1, :]' * plds.C)' - sum(plds.C' * exp.(plds.C * x[1, :] + plds.d), dims=2)) + (plds.A' * inv_Q * (x[2, :] - plds.A * x[1, :])) - (inv_p0 * (x[1, :] - plds.x0))
+    # calculate grad of the rest of the observations
+    for t in 2:T-1
+        grad[t, :] = ((y[t, :]' * plds.C)' - sum(plds.C' * exp.(plds.C * x[t, :] + plds.D * s[t, :] + plds.d), dims=2)) - (inv_Q * (x[t, :] - (plds.A * x[t-1, :]))) + (plds.A' * inv_Q * (x[t+1, :] - (plds.A * x[t, :])))
+    end
+    # calculate grad of the last observation
+    grad[T, :] = ((y[T, :]' * plds.C)' - sum(plds.C' * exp.(plds.C * x[T, :] + plds.D * s[T, :] + plds.d), dims=2)) - (inv_Q * (x[T, :] - (plds.A * x[T-1, :])))
+    return grad
+end
+
+"""
+    Hessian(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
+
+Compute the Hessian matrix for a Poisson linear dynamical system (PLDS) model w.r.t. the latent state.
+
+# Arguments
+- `x::Matrix{<:Real}`: The latent state matrix of shape `(T, n)`, where `T` is the number of time steps and `n` is the dimensionality of the latent state.
+- `plds::PoissonLDS`: The Poisson linear dynamical system model.
+- `y::Matrix{<:Real}`: The observed data matrix of shape `(T, m)`, where `m` is the dimensionality of the observed data.
+
+# Returns
+- `hessian::Matrix`: The Hessian matrix of shape `(Txn, Txn)`.
+- `main::Vector`: The main diagonal of the Hessian matrix.
+- `H_super::Vector`: The super-diagonal entries of the Hessian matrix.
+- `H_sub::Vector`: The sub-diagonal entries of the Hessian matrix.
+"""
+function Hessian(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
+    # pre-compute a few things
+    T = size(y, 1)
+    inv_Q = pinv(plds.Q)
+    inv_p0 = pinv(plds.p0)
+    s = SSM.countspikes(y, plds.refractory_period)
+
+    # calculate super and sub diagonals
+    H_sub_entry = inv_Q * plds.A
+    H_super_entry = Matrix(H_sub_entry')
+ 
+    H_sub = Vector{typeof(H_sub_entry)}(undef, T-1)
+    H_super = Vector{typeof(H_super_entry)}(undef, T-1)
+ 
+    Threads.@threads for i in 1:T-1
+        H_sub[i] = H_sub_entry
+        H_super[i] = H_super_entry
+    end
+     
+     # pre-compute common terms
+    xt_given_xt_1 = - inv_Q
+    xt1_given_xt = - plds.A' * inv_Q * plds.A
+    xt = - inv_p0
+
+    # calculate the main diagonal
+    main = Vector{typeof(xt1_given_xt)}(undef, T)
+
+    # helper function to calculate the poisson hessian term
+    function calculatepoissonhess(C::Matrix{<:Real}, λ::Vector{<:Real})
+        hess = zeros(size(C, 2), size(C, 2))
+        for i in 1:size(C, 1)
+            hess -= λ[i] * C[i, :] * C[i, :]'
+        end
+        return hess
+    end
+
+    Threads.@threads for t in 1:T
+        λ = exp.(plds.C * x[t, :] + plds.D * s[t, :] + plds.d)
+        if t == 1
+            main[t] = xt + xt1_given_xt + calculatepoissonhess(plds.C, λ)
+        elseif t == T
+            main[t] = xt_given_xt_1 + calculatepoissonhess(plds.C, λ)
+        else
+            main[t] = xt_given_xt_1 + xt1_given_xt + calculatepoissonhess(plds.C, λ)
+        end
+    end
+    return Matrix(block_tridgm(main, H_super, H_sub)), main, H_super, H_sub
+end
+    
+
+"""
+    countspikes(y::Matrix{<:Real}, window::Int)
+   
+Counts the number of "spikes" or "events" within a specified time window to calcualate sₖₜ for the Poisson LDS model.
+
+Args:
+- `y::Matrix{<:Real}`: Matrix of observations.
+- `window::Int`: Time window for counting spikes.
+"""
+function countspikes(y::Matrix{<:Real}, window::Int=1)
+    # Get size of the observation matrix
+    T, D = size(y)
+    # Initialize the spike-count matrix
+    s = zeros(T, D)
+    # Count the number of spikes from 2 to T
+    for t in 2:T
+        start_idx = max(1, t-window)
+        s[t, :] = sum(y[start_idx:t-1, :], dims=1)
+    end
+    return s
+end
+
