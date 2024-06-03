@@ -18,3 +18,7 @@ Run "make.jl". This file automatically rebuilds the documentation each time a ch
 Using a new process (or REPL), run "server.jl". With any browswer, open the localhost URL displayed. This script runs a local server to view the built documentation (this is the officially recommended method for viewing). 
 
 Leave both processes running throughout your work session. You are good to go!
+
+## Recommended Reading
+
+Learn how to work with Documentor.jl here: https://documenter.juliadocs.org/stable/man/guide/.
