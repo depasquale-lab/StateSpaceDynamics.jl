@@ -21,4 +21,4 @@ Leave both processes running throughout your work session. You are good to go!
 
 ## Recommended Reading
 
-Learn how to work with Documentor.jl here: https://documenter.juliadocs.org/stable/man/guide/.
+Learn how to work with Documenter.jl here: https://documenter.juliadocs.org/stable/man/guide/.
