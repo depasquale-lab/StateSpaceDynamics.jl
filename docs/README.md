@@ -12,6 +12,7 @@ SSM
 If these packages are included, your project environment is all set!
 
 ## Work Session Set-Up
+If using VSCode: It is recommended to use a separate window for documentation development as opposed to package development.
 
 Run "make.jl". This file automatically rebuilds the documentation each time a change is made to the SSM package (or docs/src directory). 
 
