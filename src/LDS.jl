@@ -472,7 +472,7 @@ mutable struct PoissonLDS <: DynamicalSystem
     Q:: AbstractMatrix{<:Real} # Process Noise Covariance
     D:: AbstractMatrix{<:Real} # History Control Matrix
     d:: AbstractVector{<:Real} # Mean Firing Rate Vector
-    b:: AbstractMatrix{<:Real} # Latent State Input
+    b:: AbstractArray{<:Real} # Latent State Input
     x0:: AbstractVector{<:Real} # Initial State
     p0:: AbstractMatrix{<:Real} # Initial Covariance
     refractory_period:: Int # Refractory Period
@@ -572,11 +572,7 @@ Calculate the log-posterior of a Poisson Linear Dynamical System (PLDS) given th
 ```julia
 ```
 """
-function logposterior(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
-    # confirm the driving inputs are initialized
-    if isempty(plds.b)
-        plds.b = zeros(size(y, 1), plds.latent_dim)
-    end    
+function logposterior(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real}, b::Matrix{<:Real}=zeros(size(x, 1), size(x, 2))) 
     # Calculate the log-posterior
     T = size(y, 1)
     # Get an array of prior spikes
@@ -591,7 +587,7 @@ function logposterior(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
     # calculate the last term
     pxtgivenxt1 = 0.0
     for t in 2:T
-        pxtgivenxt1 += -0.5 * (x[t, :] - (plds.A * x[t-1, :] + plds.b[t-1, :]))' * pinv(plds.Q) * (x[t, :] - (plds.A * x[t-1, :] + plds.b[t-1, :])) 
+        pxtgivenxt1 += -0.5 * (x[t, :] - ((plds.A * x[t-1, :]) - b[t-1, :]))' * pinv(plds.Q) * (x[t, :] - ((plds.A * x[t-1, :]) - b[t-1, :])) 
     end
     # sum the terms
     return pygivenx + px1 + pxtgivenxt1
@@ -599,12 +595,90 @@ end
 
 
 """
-    loglikelihood()
+    directsmooth(plds::PoissonLDS, y::Matrix{<:Real}, input::Matrix{<:Real})
 
-Calculates the complete data log-likelihood of the observations given the latent states and the model parameters, up to a constant. When the number of trials is 1, this function is equivalent to `logposterior()`.
+Perform direct smoothing on a Poisson linear dynamical system (PLDS) given the observations `y` and input `input`.
+
+# Arguments
+- `plds::PoissonLDS`: The Poisson linear dynamical system.
+- `y::Matrix{<:Real}`: The observations matrix.
+- `input::Matrix{<:Real}`: The input matrix.
+
+# Returns
+- `x::Matrix{Float64}`: The smoothed latent states matrix.
+
+# Example
 """
-function loglikelihood(x::Array)
-    error("Not implemented yet.")
+function directsmooth(plds::PoissonLDS, y::Matrix{<:Real}, input::Matrix{<:Real}, max_iter::Int=1000, tol::Float64=1e-6)
+    # get the length of the observations
+    T = size(y, 1)
+    # generate a set of initial latent states that we can pass to a newton step
+    x = zeros(T, plds.latent_dim)
+    # calculate the prediction step
+    x[1, :] = plds.x0
+    for t in 2:T
+        x[t, :] = plds.A * x[t-1, :] + input[t, :]
+    end
+    # smooth the observations
+    for i in 1:max_iter
+        # calcualte the gradient
+        grad = Gradient(x, plds, y)
+        # reshape the gradient to a Vector
+        grad = Matrix{Float64}(reshape(grad', (T*plds.latent_dim), 1))
+        # calculate the Hessian
+        H, main, super, sub = Hessian(plds, y)
+        # calculate the newton raphson step
+        x_new = newton_raphson_step_tridg!(x, H, grad)
+        # check for convergence
+        if norm(x_new - x) < tol
+            println("Converged at iteration ", i)
+            return x_new
+        else
+            println("Norm of gradient iterate difference: ", norm(x_new - x))
+        end
+        # update the latent states
+        x = x_new
+    end
+    # print a warning if the routine did not converge
+    println("Warning: Newton-Raphson routine did not converge.")
+    return x
+end
+
+"""
+    loglikelihood(x::Array{<:Real}, plds::PoissonLDS, y::Array{<:Real})
+
+Calculate the complete-data log-likelihood of the observed data given the latent states and the Poisson LDS model.
+
+# Arguments
+- `x::Array{<:Real}`: The latent states of the Poisson LDS model.
+- `plds::PoissonLDS`: The Poisson LDS model.
+- `y::Array{<:Real}`: The observed data.
+
+# Returns
+- `ll::Float64`: The log-likelihood of the observed data.
+
+# Example
+"""
+function loglikelihood(x::Array{<:Real}, plds::PoissonLDS, y::Array{<:Real})
+    # confirm the driving inputs are initialized
+    if isempty(plds.b)
+        plds.b = zeros(size(y, 1), plds.latent_dim, size(y, 3))
+    end
+    # Calculate the log-likelihood over all trials
+    ll = 0.0
+    for n in 1:size(y, 3)
+        ll += logposterior(x[:, :, n], plds, y[:, :, n], plds.b[:, :, n])
+    end
+    return ll
+end
+
+function smooth(plds::PoissonLDS, y::Array{<:Real})
+    # smooth the latent states for each trial
+    x_smooth = zeros(size(y, 1), plds.latent_dim, size(y, 3))
+    p_smooth = zeros(size(y, 1), plds.latent_dim, plds.latent_dim, size(y, 3))
+    for n in 1:size(y, 3)
+        x_smooth[:, :, n] = 0.0 # implement this
+    end
 end
 
 """
@@ -622,7 +696,7 @@ Calculate the gradient of the log-likelihood with respect to the latent states.
 
 # Example
 """
-function Gradient(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
+function Gradient(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real}, b::Matrix{<:Real}=zeros(size(x, 1), size(x, 2)))
     # calculate the gradient of the log-likelihood with respect to the latent states
     T = size(y, 1)
     # Get an array of prior spikes
@@ -633,13 +707,13 @@ function Gradient(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
     # calculate the gradient
     grad = zeros(T, plds.latent_dim)
     # calculate grad of first observation
-    grad[1, :] = ((y[1, :]' * plds.C)' - sum(plds.C' * exp.(plds.C * x[1, :] + plds.d), dims=2)) + (plds.A' * inv_Q * (x[2, :] - plds.A * x[1, :])) - (inv_p0 * (x[1, :] - plds.x0))
+    grad[1, :] = ((y[1, :]' * plds.C)' - sum(plds.C' * exp.(plds.C * x[1, :] + plds.d), dims=2)) + (plds.A' * inv_Q * (x[2, :] - (plds.A * x[1, :] - b[1, :]))) - (inv_p0 * (x[1, :] - plds.x0))
     # calculate grad of the rest of the observations
     for t in 2:T-1
-        grad[t, :] = ((y[t, :]' * plds.C)' - sum(plds.C' * exp.(plds.C * x[t, :] + plds.D * s[t, :] + plds.d), dims=2)) - (inv_Q * (x[t, :] - (plds.A * x[t-1, :]))) + (plds.A' * inv_Q * (x[t+1, :] - (plds.A * x[t, :])))
+        grad[t, :] = ((y[t, :]' * plds.C)' - sum(plds.C' * exp.(plds.C * x[t, :] + plds.D * s[t, :] + plds.d), dims=2)) - (inv_Q * (x[t, :] - (plds.A * x[t-1, :] - b[t-1, :]))) + (plds.A' * inv_Q * (x[t+1, :] - (plds.A * x[t, :] - b[t, :])))
     end
     # calculate grad of the last observation
-    grad[T, :] = ((y[T, :]' * plds.C)' - sum(plds.C' * exp.(plds.C * x[T, :] + plds.D * s[T, :] + plds.d), dims=2)) - (inv_Q * (x[T, :] - (plds.A * x[T-1, :])))
+    grad[T, :] = ((y[T, :]' * plds.C)' - sum(plds.C' * exp.(plds.C * x[T, :] + plds.D * s[T, :] + plds.d), dims=2)) - (inv_Q * (x[T, :] - (plds.A * x[T-1, :] - b[T-1, :])))
     return grad
 end
 

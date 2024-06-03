@@ -21,8 +21,6 @@ gmm_samples = sample(gmm, 100)  # Draw 100 samples from the Gaussian Mixture Mod
 """
 function sample(mixture_model::MixtureModel, n::Int) end
 
-
-
 """
     fit!(model::MixtureModel, data::AbstractMatrix; <keyword arguments>)
 
@@ -44,9 +42,6 @@ gmm = GaussianMixtureModel(3, 2)  # Create a Gaussian Mixture Model with 3 clust
 fit!(gmm, data)  # Fit the model to the data
 """
 function fit!(gmm::MixtureModel, data::AbstractMatrix; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=true) end
-
-
-
 
 """
     GaussianMixtureModel
@@ -79,13 +74,6 @@ function GaussianMixtureModel(k::Int, data_dim::Int)
     μ = zeros(Float64, k, data_dim)  # Mean of each cluster initialized to zero matrix
     return GaussianMixtureModel(k, μ, Σ, πs)
 end
-
-
-
-
-
-
-
 
 function sample(gmm::GaussianMixtureModel, n::Int)
     # Determine the number of samples from each component

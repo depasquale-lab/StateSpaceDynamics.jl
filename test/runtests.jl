@@ -647,6 +647,13 @@ function test_gradient_plds()
     obj(x) = x -> SSM.logposterior(x, plds, obs)
     grad_autodiff = ForwardDiff.gradient(obj(x), x)
     @test grad ≈ grad_autodiff atol=1e-6
+    # now test for when there is inputs
+    b = randn(100, 5)
+    grad = SSM.Gradient(x, plds, obs, b)
+    @test size(grad) == (100, 5)
+    obj_input(x) = x -> SSM.logposterior(x, plds, obs, b)
+    grad_autodiff = ForwardDiff.gradient(obj_input(x), x)
+    @test grad ≈ grad_autodiff atol=1e-6
 end
 
 function test_hessian_plds()
@@ -669,6 +676,19 @@ function test_hessian_plds()
         return SSM.logposterior(x, plds, obs)
     end
     hess_autodiff = ForwardDiff.hessian(obj_logposterior, reshape(x', 500))
+    @test hess ≈ hess_autodiff atol=1e-6
+    # now test when there is input
+    b = randn(100, 5)
+    hess, main, super, sub = SSM.Hessian(x, plds, obs)
+    @test length(main) == 100
+    @test length(super) == 99
+    @test length(sub) == 99
+    @test size(hess) == (500, 500)
+    function obj_logposterior_input(x::Vector)
+        x = SSM.interleave_reshape(x, 100, 5)
+        return SSM.logposterior(x, plds, obs, b)
+    end
+    hess_autodiff = ForwardDiff.hessian(obj_logposterior_input, reshape(x', 500))
     @test hess ≈ hess_autodiff atol=1e-6
 end
 
