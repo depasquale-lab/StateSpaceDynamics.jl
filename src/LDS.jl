@@ -531,7 +531,7 @@ function PoissonLDS(;
     refractory_period::Int=1,
     obs_dim::Int,
     latent_dim::Int,
-    fit_bool::Vector{Bool}=fill(true, 7))
+    fit_bool::Vector{Bool}=fill(true, 8))
 
     # Initialize missing parameters
     A = isempty(A) ? rand(latent_dim, latent_dim) : A
@@ -621,18 +621,20 @@ function directsmooth(plds::PoissonLDS, y::Matrix{<:Real}, input::Matrix{<:Real}
     end
     # smooth the observations
     for i in 1:max_iter
-        # calcualte the gradient
-        grad = Gradient(x, plds, y)
+        # calculate the gradient
+        grad = Gradient(x, plds, y, input)
         # reshape the gradient to a Vector
         grad = Matrix{Float64}(reshape(grad', (T*plds.latent_dim), 1))
         # calculate the Hessian
-        H, main, super, sub = Hessian(plds, y)
+        H, main, super, sub = Hessian(x, plds, y)
         # calculate the newton raphson step
         x_new = newton_raphson_step_tridg!(x, H, grad)
         # check for convergence
         if norm(x_new - x) < tol
             println("Converged at iteration ", i)
-            return x_new
+            # calculate p_smooth
+            p_smooth = block_tridiagonal_inverse(sub, main, super)
+            return x_new, p_smooth
         else
             println("Norm of gradient iterate difference: ", norm(x_new - x))
         end
@@ -641,7 +643,8 @@ function directsmooth(plds::PoissonLDS, y::Matrix{<:Real}, input::Matrix{<:Real}
     end
     # print a warning if the routine did not converge
     println("Warning: Newton-Raphson routine did not converge.")
-    return x
+    p_smooth = block_tridiagonal_inverse(sub, main, super)
+    return x, p_smooth
 end
 
 """
@@ -672,14 +675,141 @@ function loglikelihood(x::Array{<:Real}, plds::PoissonLDS, y::Array{<:Real})
     return ll
 end
 
+"""
+    smooth(plds::PoissonLDS, y::Array{<:Real})
+
+Smooths the latent states for each trial of a Poisson linear dynamical system (PLDS) model.
+
+# Arguments
+- `plds::PoissonLDS`: The Poisson linear dynamical system model.
+- `y::Array{<:Real}`: The observed data for each trial.
+
+# Returns
+- `x_smooth::Array`: The smoothed latent states for each trial.
+- `p_smooth::Array`: The smoothed covariance matrices for each trial.
+
+"""
 function smooth(plds::PoissonLDS, y::Array{<:Real})
+    if isempty(plds.b)
+        plds.b = zeros(size(y, 1), plds.latent_dim, size(y, 3))
+    end
     # smooth the latent states for each trial
     x_smooth = zeros(size(y, 1), plds.latent_dim, size(y, 3))
     p_smooth = zeros(size(y, 1), plds.latent_dim, plds.latent_dim, size(y, 3))
     for n in 1:size(y, 3)
-        x_smooth[:, :, n] = 0.0 # implement this
+        # get inputs for each trial
+        b = plds.b[:, :, n]
+        # smooth the latent states
+        x_sm, p_sm = directsmooth(plds, y[:, :, n], b)
+        x_smooth[:, :, n] = x_sm
+        p_smooth[:, :, :, n] = p_sm
+    end
+    return x_smooth, p_smooth
+end
+
+"""
+    E_Step(plds::PoissonLDS, y::Array{<:Real})
+
+Perform the E-step of the Poisson Linear Dynamical System (PLDS) algorithm. Really just a wrapper for the smooth function.
+
+# Arguments
+- `plds::PoissonLDS`: The Poisson Linear Dynamical System model.
+- `y::Array{<:Real}`: The observed data.
+
+# Returns
+- `x_smooth`: The smoothed latent states.
+- `p_smooth`: The smoothed latent state covariances.
+"""
+function E_Step(plds::PoissonLDS, y::Array{<:Real})
+    # smooth the observations
+    x_smooth, p_smooth = smooth(plds, y)
+    return x_smooth, p_smooth
+end
+
+function update_A!(plds::PoissonLDS, x_smooth::Array{<:Real}, y::Array{<:Real})
+    # update the transition matrix
+    if plds.fit_bool[1]
+        obj(A) = -loglikelihood(x_smooth, PoissonLDS(A, plds.C, plds.Q, plds.D, plds.d, plds.b, plds.x0, plds.p0, plds.refractory_period, plds.obs_dim, plds.latent_dim, plds.fit_bool), y)
+        res = optimize(obj, plds.A, LBFGS(), Optim.Options(show_trace=true))
+        plds.A = Optim.minimizer(res)
     end
 end
+
+function update_Q!(plds::PoissonLDS, x_smooth::Array{<:Real}, y::Array{<:Real})
+    # update the process noise covariance matrix
+    if plds.fit_bool[2]
+        obj(Q) = -loglikelihood(x_smooth, PoissonLDS(plds.A, plds.C, Q, plds.D, plds.d, plds.b, plds.x0, plds.p0, plds.refractory_period, plds.obs_dim, plds.latent_dim, plds.fit_bool), y)
+        res = optimize(obj, plds.Q, LBFGS(), Optim.Options(show_trace=true))
+        plds.Q = Optim.minimizer(res)
+    end
+end
+
+function update_C!(plds::PoissonLDS, x_smooth::Array{<:Real}, y::Array{<:Real})
+    # update the observation matrix
+    if plds.fit_bool[3]
+        obj(C) = -loglikelihood(x_smooth, PoissonLDS(plds.A, C, plds.Q, plds.D, plds.d, plds.b, plds.x0, plds.p0, plds.refractory_period, plds.obs_dim, plds.latent_dim, plds.fit_bool), y)
+        res = optimize(obj, plds.C, LBFGS(), Optim.Options(show_trace=true))
+        plds.C = Optim.minimizer(res)
+    end
+end
+
+function update_D!(plds::PoissonLDS, x_smooth::Array{<:Real}, y::Array{<:Real})
+    # update the history control matrix
+    if plds.fit_bool[4]
+        obj(D) = -loglikelihood(x_smooth, PoissonLDS(plds.A, plds.C, plds.Q, D, plds.d, plds.b, plds.x0, plds.p0, plds.refractory_period, plds.obs_dim, plds.latent_dim, plds.fit_bool), y)
+        res = optimize(obj, plds.D, LBFGS(), Optim.Options(show_trace=true))
+        plds.D = Optim.minimizer(res)
+    end
+end
+
+function update_d!(plds::PoissonLDS, x_smooth::Array{<:Real}, y::Array{<:Real})
+    # update the mean firing rate vector
+    if plds.fit_bool[5]
+        obj(d) = -loglikelihood(x_smooth, PoissonLDS(plds.A, plds.C, plds.Q, plds.D, d, plds.b, plds.x0, plds.p0, plds.refractory_period, plds.obs_dim, plds.latent_dim, plds.fit_bool), y)
+        res = optimize(obj, plds.d, LBFGS(), Optim.Options(show_trace=true))
+        plds.d = Optim.minimizer(res)
+    end
+end
+
+function update_b!(plds::PoissonLDS, x_smooth::Array{<:Real}, y::Array{<:Real})
+    # update the latent state input
+    if plds.fit_bool[6]
+        obj(b) = -loglikelihood(x_smooth, PoissonLDS(plds.A, plds.C, plds.Q, plds.D, plds.d, b, plds.x0, plds.p0, plds.refractory_period, plds.obs_dim, plds.latent_dim, plds.fit_bool), y)
+        res = optimize(obj, plds.b, LBFGS(), Optim.Options(show_trace=true))
+        plds.b = Optim.minimizer(res)
+    end
+end
+
+function update_x0!(plds::PoissonLDS, x_smooth::Array{<:Real}, y::Array{<:Real})
+    # update the initial state
+    if plds.fit_bool[7]
+        obj(x0) = -loglikelihood(x_smooth, PoissonLDS(plds.A, plds.C, plds.Q, plds.D, plds.d, plds.b, x0, plds.p0, plds.refractory_period, plds.obs_dim, plds.latent_dim, plds.fit_bool), y)
+        res = optimize(obj, plds.x0, LBFGS(), Optim.Options(show_trace=true))
+        plds.x0 = Optim.minimizer(res)
+    end
+end
+
+function update_p0!(plds::PoissonLDS, x_smooth::Array{<:Real}, y::Array{<:Real})
+    # update the initial covariance
+    if plds.fit_bool[8]
+        obj(p0) = -loglikelihood(x_smooth, PoissonLDS(plds.A, plds.C, plds.Q, plds.D, plds.d, plds.b, plds.x0, p0, plds.refractory_period, plds.obs_dim, plds.latent_dim, plds.fit_bool), y)
+        res = optimize(obj, plds.p0, LBFGS(), Optim.Options(show_trace=true))
+        plds.p0 = Optim.minimizer(res)
+    end
+end
+
+function M_Step!(plds::PoissonLDS, x_smooth::Array{<:Real}, y::Array{<:Real})
+    # update the parameters
+    update_A!(plds, x_smooth, y)
+    update_Q!(plds, x_smooth, y)
+    update_C!(plds, x_smooth, y)
+    update_D!(plds, x_smooth, y)
+    update_d!(plds, x_smooth, y)
+    update_b!(plds, x_smooth, y)
+    update_x0!(plds, x_smooth, y)
+    update_p0!(plds, x_smooth, y)
+end
+
 
 """
     Gradient(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})

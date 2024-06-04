@@ -692,6 +692,23 @@ function test_hessian_plds()
     @test hess ≈ hess_autodiff atol=1e-6
 end
 
+function test_direct_smoother()
+    # create a plds model
+    plds = PoissonLDS(;obs_dim=10, latent_dim=5)
+    # create some observations
+    obs = rand(Bool, 100, 10)
+    # create inputs
+    b = randn(100, 5)
+    # run the direct smoother
+    x_smooth, p_smooth = SSM.directsmooth(plds, obs, b)
+    # check the dimensions
+    @test size(x_smooth) == (100, 5)
+    @test size(p_smooth) == (100, 5, 5)
+end
+
+function test_smooth()
+end
+
 
 @testset "PLDS Tests" begin
     test_PLDS_constructor_with_params()
@@ -700,6 +717,7 @@ end
     test_logposterior()
     test_gradient_plds()
     test_hessian_plds()
+    test_direct_smoother()
 end
 
 """

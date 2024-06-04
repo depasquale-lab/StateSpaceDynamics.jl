@@ -1,9 +1,5 @@
 export  GaussianMixtureModel, PoissonMixtureModel, fit!, log_likelihood, sample
 
-
-
-
-
 """
     sample(model::MixtureModel, n::Int)
 

@@ -36,7 +36,7 @@ function block_tridiagonal_inverse(A, B, C)
         λii[i] = inv(term1)*inv(term2)
     end
 
-    return λii
+    return permutedims(cat(λii..., dims=3), [3, 1, 2])
 end
 
 function interleave_reshape(data::AbstractArray, t::Int, d::Int)
