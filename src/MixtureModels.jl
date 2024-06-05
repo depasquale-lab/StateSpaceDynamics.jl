@@ -124,7 +124,7 @@ function log_likelihood(gmm::GaussianMixtureModel, data::Matrix{Float64})
 end
 
 # **NOTE** Auto initializes means by default (thus, using repeated maxiter=1 provides unexpected results)
-function fit!(gmm::GaussianMixtureModel, data::Matrix{Float64}; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=true)
+function fit!(gmm::GaussianMixtureModel, data::Matrix{Float64}; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=false)
     prev_ll = -Inf  # Initialize to negative infinity
 
     if initialize_kmeans
