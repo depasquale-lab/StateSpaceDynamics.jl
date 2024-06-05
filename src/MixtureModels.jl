@@ -220,7 +220,7 @@ function M_Step!(pmm::PoissonMixtureModel, data::Matrix{Int}, γ::Matrix{Float64
 end
 
 """Fit PMM using the EM algorithm with KMeans initialization and convergence check"""
-function fit!(pmm::PoissonMixtureModel, data::Matrix{Int}; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=true)
+function fit!(pmm::PoissonMixtureModel, data::Matrix{Int}; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=false)
     prev_ll = -Inf  # Initialize previous log likelihood to negative infinity
 
     if initialize_kmeans
