@@ -684,7 +684,7 @@ function directsmooth(plds::PoissonLDS, y::Matrix{<:Real}, input::Matrix{<:Real}
         if norm(x_new - x) < tol
             println("Converged at iteration ", i)
             # calculate p_smooth
-            p_smooth = block_tridiagonal_inverse(sub, main, super)
+            p_smooth, p_tt1 = block_tridiagonal_inverse(-sub, -main, -super)
             return x_new, p_smooth
         else
             println("Norm of gradient iterate difference: ", norm(x_new - x))

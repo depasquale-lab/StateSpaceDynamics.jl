@@ -730,8 +730,6 @@ function test_smooth()
     @test x_smooth ≈ x_sm_e atol=1e-6
     @test p_smooth ≈ p_sm_e atol=1e-6
 end
-
-
 @testset "PLDS Tests" begin
     test_PLDS_constructor_with_params()
     test_PLDS_constructor_without_params()
@@ -1245,7 +1243,6 @@ function test_interleave_reshape()
     d = 5
     @test_throws ErrorException interleave_reshape(data, t, d)
 end
-
 
 @testset "Utilities.jl Tests" begin
     test_euclidean_distance()
