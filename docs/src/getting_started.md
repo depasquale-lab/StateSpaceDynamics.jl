@@ -20,7 +20,7 @@ manually choose to be on the latest (untagged) version.
 Pkg.develop("<Package name TBD!>")
 ```
 
-## Example
+## Example: Training a Gaussian Mixture Model
 
 
 Given some normal distributed clusters of data:
@@ -32,7 +32,7 @@ data = CSV.read("data.csv", DataFrame)
 ![gaussian_data](assets/gmm_data_plot.png)
 
 
-We then fit a model:
+We then fit a gaussian mixture model to the data using Expectation-Maximization:
 ```julia
 k = 2
 data_dim = 2
