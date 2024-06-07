@@ -7,8 +7,8 @@ using InteractiveUtils
 # ╔═╡ 53c96240-c044-11ee-2f83-e93206e06ac6
 begin
 	using Pkg
-	Pkg.activate("/Users/ryansenne/Documents/Github/SSM")
-	include("/Users/ryansenne/Documents/Github/SSM//src/SSM.jl")
+	Pkg.activate("/Users/ryansenne/Documents/Github/ssm_julia")
+	include("/Users/ryansenne/Documents/Github/ssm_julia//src/SSM.jl")
 	using .SSM
 	using LinearAlgebra
 	using Distributions
@@ -166,7 +166,7 @@ $p(x_t|y_{1:T})$
 # ╔═╡ 43b64fbd-62ad-42a4-9905-1062eeec4001
 begin
 	# we already set up parameters from the previous example, the usage is very similar to the Kalman Filter.
-	x_smooth, p_smooth = SSM.KalmanSmoother(spring_LDS, observation_sequence, "RTS") 
+	x_smooth, p_smooth, J, ml = SSM.KalmanSmoother(spring_LDS, observation_sequence, "RTS") 
 end
 
 # ╔═╡ 93a7e46f-a8e3-4bba-9e01-30b194b653f6
@@ -185,12 +185,6 @@ begin
 	plot(smooth_1, smooth_2, layout=l2)
 end
 
-# ╔═╡ 00800593-d432-420e-9e15-fd40fd7de7ee
-
-
-# ╔═╡ bdaa735a-7490-4ddd-931b-f01e1382e740
-
-
 # ╔═╡ 1a173cad-acec-4358-8147-8119ce6b7449
 begin
 
@@ -199,6 +193,77 @@ begin
 	# perform EM
 	SSM.KalmanFilterEM!(modelless_spring, observation_sequence)
 end
+
+# ╔═╡ 04188c74-28fd-4cd3-a044-78a9c947617b
+begin
+	h, main, super, sub = SSM.Hessian(spring_LDS, observation_sequence[1:3, :])
+	covs = pinv(-Matrix(h))
+	
+	ez, ezz, ezzprev = SSM.sufficient_statistics(J, p_smooth, x_smooth)
+end
+
+# ╔═╡ 37639417-ca1b-4e8a-8f7f-2d34ba5414b7
+covs
+
+# ╔═╡ 7422cfc2-653a-47c6-9190-762ee609eb55
+covs[3:4, 1:2] #+ (ez[2, :]*ez[1, :]')
+
+# ╔═╡ 008d32b0-146c-4aea-9d64-c924ae7680b6
+ezzprev[2, :, :]
+
+# ╔═╡ d832b593-c97a-4885-8657-6e18703095d1
+begin
+
+
+	"""Block Tridiagonal Inverse"""
+	function block_tridiagonal_inverse(A, B, C)
+	    n = length(B)
+	    block_size = size(B[1], 1)
+	    # Initialize Di and Ei arrays
+	    D = Array{AbstractMatrix}(undef, n+1)
+	    E = Array{AbstractMatrix}(undef, n+1)
+	    λii = Array{Float64}(undef, n, block_size, block_size)
+		λij = Array{Float64}(undef, n-1, block_size, block_size)
+	
+	    # Add a zero matrix to the subdiagonal and superdiagonal
+	    pushfirst!(A, zeros(block_size, block_size))
+	    push!(C, zeros(block_size, block_size))
+	    
+	    # Initial conditions
+	    D[1] = zeros(block_size, block_size)
+	    E[n+1] = zeros(block_size, block_size)
+	
+	 
+	    # Forward sweep for D
+	    for i in 1:n
+	        D[i+1] = (B[i] - A[i] * D[i]) \ C[i]
+	    end
+	  
+	    # Backward sweep for E
+	    for i in n:-1:1
+	        E[i] = (B[i] - C[i]*E[i+1]) \ A[i]
+	    end
+	
+	    # Compute the inverses of the diagonal blocks λii
+	    for i in 1:n
+	        term1 = (I - D[i+1]*E[i+1])
+	        term2 = (B[i] - A[i]*D[i])
+	        λii[i, :, :] = pinv(term1) * pinv(term2)
+	    end
+
+		for i in 2:n
+			λij[i-1, :, :] = E[i]*λii[i-1, :, :]
+		end
+	
+	    return λii, -λij
+	end
+
+	a, b = block_tridiagonal_inverse(-sub, -main, -super)
+end
+
+
+# ╔═╡ 2ee27c64-8cbf-4ca4-b77b-37023b66b954
+b[1, :, :]
 
 # ╔═╡ Cell order:
 # ╠═53c96240-c044-11ee-2f83-e93206e06ac6
@@ -218,6 +283,10 @@ end
 # ╠═4ea51161-6402-46dc-9222-b687a59cf424
 # ╠═43b64fbd-62ad-42a4-9905-1062eeec4001
 # ╠═93a7e46f-a8e3-4bba-9e01-30b194b653f6
-# ╠═00800593-d432-420e-9e15-fd40fd7de7ee
-# ╠═bdaa735a-7490-4ddd-931b-f01e1382e740
 # ╠═1a173cad-acec-4358-8147-8119ce6b7449
+# ╠═04188c74-28fd-4cd3-a044-78a9c947617b
+# ╠═37639417-ca1b-4e8a-8f7f-2d34ba5414b7
+# ╠═7422cfc2-653a-47c6-9190-762ee609eb55
+# ╠═008d32b0-146c-4aea-9d64-c924ae7680b6
+# ╠═d832b593-c97a-4885-8657-6e18703095d1
+# ╠═2ee27c64-8cbf-4ca4-b77b-37023b66b954

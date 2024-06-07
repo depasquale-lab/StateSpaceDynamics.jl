@@ -154,7 +154,7 @@ function DirectSmoother(l::LDS, y::AbstractArray, tol::Float64=1e-6)
     # Compute the Hessian of the loglikelihood
     H, main, super, sub = Hessian(l, y)
     # compute the inverse of the main diagonal of the Hessian, this is the posterior covariance
-    p_smooth = block_tridiagonal_inverse(sub, main, super)
+    p_smooth, _ = block_tridiagonal_inverse(-sub, -main, -super)
     # now optimize
     for i in 1:5 # this should stop at the first iteration in theory but likely will at iteration 2
         # Compute the gradient
@@ -188,7 +188,7 @@ end
 
 """
 Computes the sufficient statistics for the E-step of the EM algorithm. This implementation uses the definitions from
-Pattern Recognition and Machine Learning by Christopher Bishop (pg. 642), Shumway and Stoffer (1982), and Roweis and Ghahramani (1995).
+Pattern Recognition and Machine Learning by Christopher Bishop (pg. 642) and Bayesian Filtering and Smoothing by Simo Sarkka and Lennart Svenson.
 
 This function computes the following statistics:
     E[zₙ] = ̂xₙ
@@ -217,9 +217,20 @@ function sufficient_statistics(J::AbstractArray, V::AbstractArray, μ::AbstractA
     return E_z, E_zz, E_zz_prev
 end 
 
+"""
+    sufficient_statistics()
+
+Compute the sufficient statistics for the E-step of the EM algorithm using the negative inverse Hessian of the loglikelihood of the latwnt states.
+
+# Arguments
+"""
+function sufficient_statistics()
+    return
+end
+
 function update_initial_state_mean!(l::LDS, E_z::AbstractArray)
     # update the state mean
-    if l.fit_bool[1]
+    if l.fit_bool[1] 
         l.x0 = E_z[1, :]
     end
 end
@@ -449,6 +460,46 @@ function marginal_loglikelihood(l::LDS, v::AbstractArray, j::AbstractArray)
 end
 
 """
+    sample(l::LDS, T::Int)
+
+Sample from a Linear Dynamical System (LDS) model.
+
+# Arguments
+- `l::LDS`: The Linear Dynamical System model.
+- `T::Int`: The number of time steps to sample.
+
+# Returns
+- `x::Matrix{Float64}`: The latent state variables.
+- `y::Matrix{Float64}`: The observed data.
+
+# Examples
+```julia
+A = rand(3, 3)
+H = rand(4, 3)
+Q = I(3)
+R = I(4)
+x0 = rand(3)
+p0 = I(3)
+l = LDS(A=A, H=H, Q=Q, R=R, x0=x0, p0=p0)
+x, y = sample(l, 100)
+```
+"""
+function sample(l::LDS, T::Int)
+    # Initializae arrays
+    x = zeros(T, l.latent_dim)
+    y = zeros(T, l.obs_dim)
+    # Sample the initial state
+    x[1, :] = rand(MvNormal(l.x0, l.p0))
+    y[1, :] = rand(MvNormal(l.H * x[1, :], l.R))
+    # Sample the rest of the states
+    for t in 2:T
+        x[t, :] = rand(MvNormal(l.A * x[t-1, :], l.Q))
+        y[t, :] = rand(MvNormal(l.H * x[t, :], l.R))
+    end
+    return x, y
+end
+
+"""
     mutable struct PoissonLDS <: DynamicalSystem
 
 A Poisson Linear Dynamical System (PLDS).
@@ -525,7 +576,7 @@ function PoissonLDS(;
     Q::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
     D::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
     d::AbstractVector{<:Real}=Vector{Float64}(undef, 0),
-    b::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    b::AbstractArray{<:Real}=Array{Float64}(undef, 0, 0, 0),
     x0::AbstractVector{<:Real}=Vector{Float64}(undef, 0),
     p0::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
     refractory_period::Int=1,
@@ -534,12 +585,12 @@ function PoissonLDS(;
     fit_bool::Vector{Bool}=fill(true, 8))
 
     # Initialize missing parameters
-    A = isempty(A) ? rand(latent_dim, latent_dim) : A
-    C = isempty(C) ? rand(obs_dim, latent_dim) : C
-    Q = isempty(Q) ? I(latent_dim) : Q
-    D = isempty(D) ? rand() * I(obs_dim) : D
+    A = isempty(A) ? 0.1 * rand(latent_dim, latent_dim) : A
+    C = isempty(C) ? 0.1 * rand(obs_dim, latent_dim) : C
+    Q = isempty(Q) ? 0.01 * I(latent_dim) : Q
+    D = isempty(D) ? -abs(rand()) * I(obs_dim) : D
     d = isempty(d) ? abs.(rand(obs_dim)) : d
-    b = isempty(b) ? Matrix{Float64}(undef, 0, latent_dim) : b
+    b = isempty(b) ? Array{Float64}(undef, 0, latent_dim, 0) : b
     x0 = isempty(x0) ? rand(latent_dim) : x0
     p0 = isempty(p0) ? I(latent_dim) : p0
 
@@ -780,12 +831,24 @@ function update_b!(plds::PoissonLDS, x_smooth::Array{<:Real}, y::Array{<:Real})
     end
 end
 
-function update_x0!(plds::PoissonLDS, x_smooth::Array{<:Real}, y::Array{<:Real})
+"""
+    update_x0!(plds::PoissonLDS, x_smooth::Array{<:Real})
+
+Update the initial state of a Poisson Linear Dynamical System (PLDS) model.
+
+# Arguments
+- `plds::PoissonLDS`: The PLDS model to update.
+- `x_smooth::Array{<:Real}`: The smoothed latents.
+
+# Details
+- If `plds.fit_bool[7]` is `true`, the initial state `plds.x0` is updated by summing all of the initial states of the smoothed latents and dividing by the number of trials.
+
+"""
+function update_x0!(plds::PoissonLDS, x_smooth::Array{<:Real})
     # update the initial state
     if plds.fit_bool[7]
-        obj(x0) = -loglikelihood(x_smooth, PoissonLDS(plds.A, plds.C, plds.Q, plds.D, plds.d, plds.b, x0, plds.p0, plds.refractory_period, plds.obs_dim, plds.latent_dim, plds.fit_bool), y)
-        res = optimize(obj, plds.x0, LBFGS(), Optim.Options(show_trace=true))
-        plds.x0 = Optim.minimizer(res)
+       # sum all of the initial states of the smoothed latents and divide by the number of trials
+        plds.x0 = sum(x_smooth[1, :, :], dims=1) / size(x_smooth, 3)
     end
 end
 
@@ -806,7 +869,7 @@ function M_Step!(plds::PoissonLDS, x_smooth::Array{<:Real}, y::Array{<:Real})
     update_D!(plds, x_smooth, y)
     update_d!(plds, x_smooth, y)
     update_b!(plds, x_smooth, y)
-    update_x0!(plds, x_smooth, y)
+    update_x0!(plds, x_smooth)
     update_p0!(plds, x_smooth, y)
 end
 
@@ -934,4 +997,41 @@ function countspikes(y::Matrix{<:Real}, window::Int=1)
     end
     return s
 end
+
+"""
+    sample(plds::PoissonLDS, T::Int, K::Int)
+
+Sample from a Poisson Linear Dynamical System (PLDS) model.
+
+# Arguments
+- `plds::PoissonLDS`: The Poisson Linear Dynamical System model.
+- `T::Int64`: The number of time steps to sample.
+- `k::Int64`: The number of trials to sample.
+
+# Returns
+- `x::Array{Float64}`: The latent state variables.
+- `y::Array{Float64}`: The observed data.
+
+# Examples
+"""
+function sample(plds::PoissonLDS, T::Int64, K::Int64)
+    # Pre-allocate arrays
+    x = zeros(T, plds.latent_dim, K)
+    y = zeros(T, plds.obs_dim, K)
+    
+    for k in 1:K
+        # Sample the initial state
+        x[1, :, k] = rand(MvNormal(plds.x0, plds.p0))
+        y[1, :, k] = rand.(Poisson.(exp.(plds.C * x[1, :, k] + plds.d)))
+        # Sample the rest of the states
+        for t in 2:T
+            s = max(1, t - plds.refractory_period)
+            spikes = sum(y[s:t-1, :, k], dims=1)'
+            x[t, :, k] = rand(MvNormal(plds.A * x[t-1, :, k] - plds.b[t-1, :, k], plds.Q))
+            y[t, :, k] = rand.(Poisson.(exp.(plds.C * x[t, :, k] + plds.D * spikes + plds.d)))
+        end
+    end
+    return x, y
+end
+
 

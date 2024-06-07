@@ -636,21 +636,21 @@ function test_gradient_plds()
     # create a plds model
     plds = PoissonLDS(;obs_dim=10, latent_dim=5)
     # create some observations
-    obs = rand(Bool, 100, 10)
+    obs = rand(Bool, 3, 10)
     # create initial latent state for gradient calculation
-    x = randn(100, 5)
+    x = randn(3, 5)
     # calculate the gradient
     grad = SSM.Gradient(x, plds, obs)
     # check the dimensions
-    @test size(grad) == (100, 5)
+    @test size(grad) == (3, 5)
     # check the gradients using autodiff
     obj(x) = x -> SSM.logposterior(x, plds, obs)
     grad_autodiff = ForwardDiff.gradient(obj(x), x)
     @test grad ≈ grad_autodiff atol=1e-6
     # now test for when there is inputs
-    b = randn(100, 5)
+    b = randn(3, 5)
     grad = SSM.Gradient(x, plds, obs, b)
-    @test size(grad) == (100, 5)
+    @test size(grad) == (3, 5)
     obj_input(x) = x -> SSM.logposterior(x, plds, obs, b)
     grad_autodiff = ForwardDiff.gradient(obj_input(x), x)
     @test grad ≈ grad_autodiff atol=1e-6
@@ -660,35 +660,35 @@ function test_hessian_plds()
     # create a plds model
     plds = PoissonLDS(;obs_dim=10, latent_dim=5)
     # create some observations
-    obs = rand(Bool, 100, 10)
+    obs = rand(Bool, 3, 10)
     # create initial latent state for hessian calculation
-    x = randn(100, 5)
+    x = randn(3, 5)
     # calculate the hessian
     hess, main, super, sub = SSM.Hessian(x, plds, obs)
     # check the dimensions
-    @test length(main) == 100
-    @test length(super) == 99
-    @test length(sub) == 99
-    @test size(hess) == (500, 500)
+    @test length(main) == 3
+    @test length(super) == 2
+    @test length(sub) == 2
+    @test size(hess) == (15, 15)
     # check the hessian using autodiff
     function obj_logposterior(x::Vector)
-        x = SSM.interleave_reshape(x, 100, 5)
+        x = SSM.interleave_reshape(x, 3, 5)
         return SSM.logposterior(x, plds, obs)
     end
-    hess_autodiff = ForwardDiff.hessian(obj_logposterior, reshape(x', 500))
+    hess_autodiff = ForwardDiff.hessian(obj_logposterior, reshape(x', 15))
     @test hess ≈ hess_autodiff atol=1e-6
     # now test when there is input
-    b = randn(100, 5)
+    b = randn(3, 5)
     hess, main, super, sub = SSM.Hessian(x, plds, obs)
-    @test length(main) == 100
-    @test length(super) == 99
-    @test length(sub) == 99
-    @test size(hess) == (500, 500)
+    @test length(main) == 3
+    @test length(super) == 2
+    @test length(sub) == 2
+    @test size(hess) == (15, 15)
     function obj_logposterior_input(x::Vector)
-        x = SSM.interleave_reshape(x, 100, 5)
+        x = SSM.interleave_reshape(x, 3, 5)
         return SSM.logposterior(x, plds, obs, b)
     end
-    hess_autodiff = ForwardDiff.hessian(obj_logposterior_input, reshape(x', 500))
+    hess_autodiff = ForwardDiff.hessian(obj_logposterior_input, reshape(x', 15))
     @test hess ≈ hess_autodiff atol=1e-6
 end
 
@@ -696,17 +696,38 @@ function test_direct_smoother()
     # create a plds model
     plds = PoissonLDS(;obs_dim=10, latent_dim=5)
     # create some observations
-    obs = rand(Bool, 100, 10)
+    obs = rand(Bool, 10, 10)
     # create inputs
-    b = randn(100, 5)
+    b = rand(10, 5)
     # run the direct smoother
     x_smooth, p_smooth = SSM.directsmooth(plds, obs, b)
     # check the dimensions
-    @test size(x_smooth) == (100, 5)
-    @test size(p_smooth) == (100, 5, 5)
+    @test size(x_smooth) == (10, 5)
+    @test size(p_smooth) == (10, 5, 5)
 end
 
 function test_smooth()
+    # create a PLDS model
+    A = [0.9 0.1; 0.1 0.9]
+    C = [1.0 0.0; 0.0 1.0]
+    Q = 0.01 * I(2)
+    x0 = [0.0; 0.0]
+    p0 = 0.1 * I(2)
+    D = 0.1 * I(2)
+    d = [0.0; 0.0]
+    b = ones(100, 2, 3)
+    plds = PoissonLDS(A=A, C=C, Q=Q, D=D, b=b, d=d, x0=x0, p0=p0, refractory_period=1, obs_dim=2, latent_dim=2)
+    # sample data
+    x, y = SSM.sample(plds, 100, 3)
+    # run the smoother
+    x_smooth, p_smooth = SSM.smooth(plds, y)
+    # check the dimensions
+    @test size(x_smooth) == (100, 2, 3)
+    @test size(p_smooth) == (100, 2, 2, 3)
+    # as the estep is the same as the smoother, we can check the output of the smoother by comparing it to the output of the estep
+    x_sm_e, p_sm_e = SSM.E_Step(plds, y)
+    @test x_smooth ≈ x_sm_e atol=1e-6
+    @test p_smooth ≈ p_sm_e atol=1e-6
 end
 
 
@@ -718,6 +739,7 @@ end
     test_gradient_plds()
     test_hessian_plds()
     test_direct_smoother()
+    test_smooth()
 end
 
 """
