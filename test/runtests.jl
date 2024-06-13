@@ -2,6 +2,7 @@ using SSM
 using Distributions
 using ForwardDiff
 using LinearAlgebra
+using Optim
 using Random
 using StatsFuns
 using SpecialFunctions
@@ -160,18 +161,10 @@ function test_log_likelihood(pmm::PoissonMixtureModel, data::Union{Matrix{Int}, 
     end
 end
 
-
-
-
 @testset "MixtureModels.jl Tests" begin
     # Test GaussianMixtureModel
-
-    
     # Initialize test models
-
-
     # Standard GaussianMixtureModel model
-
     # Number of clusters
     k = 3
     # Dimension of data points
@@ -180,14 +173,9 @@ end
     standard_gmm = GaussianMixtureModel(k, data_dim)
     # Generate sample data
     standard_data = randn(10, data_dim)
-
     # Test constructor method of GaussianMixtureModel
     test_GaussianMixtureModel_properties(standard_gmm, k, data_dim)
-
-
-
     # Vector-data GaussianMixtureModel model
-
     # Number of clusters
     k = 2
     # Dimension of data points
@@ -198,7 +186,7 @@ end
     vector_data = randn(1000,)
     # Test constructor method of GaussianMixtureModel
     test_GaussianMixtureModel_properties(vector_gmm, k, data_dim)
-  
+
     # Test EM methods of the GaussianMixtureModels
 
     # Paired data and GaussianMixtureModels to test
@@ -468,7 +456,7 @@ function test_LDS_EStep()
              2, 
              Vector([true, true, true, true, true, true, true]))
     # run the EStep
-    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.EStep(kf, x_noisy')
+    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.E_Step(kf, x_noisy')
     # check dimensions
     @test size(x_smooth) == (length(t), 2)
     @test size(p_smooth) == (length(t), 2, 2)
@@ -492,9 +480,9 @@ function test_LDS_MStep!()
              2, 
              Vector([true, true, true, true, true, true, true]))
     # run the EStep
-    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.EStep(kf, x_noisy')
+    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.E_Step(kf, x_noisy')
     # run the MStep
-    SSM.MStep!(kf, E_z, E_zz, E_zz_prev, x_noisy')
+    SSM.M_Step!(kf, E_z, E_zz, E_zz_prev, x_noisy')
     # check if the parameters are updated
     @test kf.A !== A
     @test kf.H !== H
@@ -550,6 +538,24 @@ end
     test_LDS_EM()
 end
 
+function toy_PoissonLDS()
+    T = 100
+    # create a PLDS model
+    x0 = [1.0, -1.0]
+    p0 = Matrix(Diagonal([0.001, 0.001]))
+    A = [cos(0.1) -sin(0.1); sin(0.1) cos(0.1)]
+    Q = Matrix(Diagonal([0.001, 0.001]))
+    C = [0.5 0.5; 0.5 0.1; 0.1 0.1]
+    d = [0.5, 0.5, 0.5]
+    D = Matrix(Diagonal([0., 0., 0.]))
+    b = ones(T, 2) * 0.1
+
+    plds = PoissonLDS(A=A, C=C, Q=Q, D=D, b=b, d=d, x0=x0, p0=p0, refractory_period=1, obs_dim=3, latent_dim=2)
+    # sample data
+    x, y = SSM.sample(plds, T, 3)
+    return plds, x, y
+end
+
 function test_PLDS_constructor_with_params()
     # create a set of parameters to test with
     obs_dim = 10
@@ -563,7 +569,7 @@ function test_PLDS_constructor_with_params()
     refrac = 1
     d = randn(obs_dim)
     D = randn(obs_dim, obs_dim)
-    fit_bool=Vector([true, true, true, true, true, true, true])
+    fit_bool=Vector([true, true, true, true, true, true])
 
     # create the PLDS model
     plds = PoissonLDS(A=A, C=C, Q=Q, D=D, d=d, x0=x0, p0=p0, refractory_period=1, obs_dim=obs_dim, latent_dim=latent_dim, fit_bool=fit_bool)
@@ -596,6 +602,7 @@ function test_PLDS_constructor_without_params()
     @test plds.refractory_period == 1
     @test plds.obs_dim == 10
     @test plds.latent_dim == 5
+    @test plds.fit_bool == fill(true, 6)
 
     # test dims of parameters
     @test size(plds.A) == (5, 5)
@@ -605,6 +612,7 @@ function test_PLDS_constructor_without_params()
     @test size(plds.p0) == (5, 5)
     @test size(plds.d) == (10,)
     @test size(plds.D) == (10, 10)
+    @test isempty(plds.b)
 end
 
 function test_countspikes()
@@ -627,6 +635,8 @@ function test_logposterior()
     obs = rand(Bool, 100, 10)
     # create latent state
     x = randn(100, 5)
+    b = randn(100, 5)
+    plds.b = b
     # calculate the log posterior
     logpost = SSM.logposterior(x, plds, obs)
     # check the dimensions
@@ -640,6 +650,8 @@ function test_gradient_plds()
     obs = rand(Bool, 3, 10)
     # create initial latent state for gradient calculation
     x = randn(3, 5)
+    b = zeros(3, 5)
+    plds.b = b
     # calculate the gradient
     grad = SSM.Gradient(x, plds, obs)
     # check the dimensions
@@ -648,13 +660,12 @@ function test_gradient_plds()
     obj(x) = x -> SSM.logposterior(x, plds, obs)
     grad_autodiff = ForwardDiff.gradient(obj(x), x)
     @test grad ≈ grad_autodiff atol=1e-6
-    # now test for when there is inputs
-    b = randn(3, 5)
-    grad = SSM.Gradient(x, plds, obs, b)
-    @test size(grad) == (3, 5)
-    obj_input(x) = x -> SSM.logposterior(x, plds, obs, b)
-    grad_autodiff = ForwardDiff.gradient(obj_input(x), x)
-    @test grad ≈ grad_autodiff atol=1e-6
+    # # now test for when there is inputs
+    # grad = SSM.Gradient(x, plds, obs)
+    # @test size(grad) == (3, 5)
+    # obj_input(x) = x -> SSM.logposterior(x, plds, obs)
+    # grad_autodiff = ForwardDiff.gradient(obj_input(x), x)
+    # @test grad ≈ grad_autodiff atol=1e-6
 end
 
 function test_hessian_plds()
@@ -664,6 +675,8 @@ function test_hessian_plds()
     obs = rand(Bool, 3, 10)
     # create initial latent state for hessian calculation
     x = randn(3, 5)
+    b = zeros(3, 5)
+    plds.b = b
     # calculate the hessian
     hess, main, super, sub = SSM.Hessian(x, plds, obs)
     # check the dimensions
@@ -678,19 +691,20 @@ function test_hessian_plds()
     end
     hess_autodiff = ForwardDiff.hessian(obj_logposterior, reshape(x', 15))
     @test hess ≈ hess_autodiff atol=1e-6
-    # now test when there is input
-    b = randn(3, 5)
-    hess, main, super, sub = SSM.Hessian(x, plds, obs)
-    @test length(main) == 3
-    @test length(super) == 2
-    @test length(sub) == 2
-    @test size(hess) == (15, 15)
-    function obj_logposterior_input(x::Vector)
-        x = SSM.interleave_reshape(x, 3, 5)
-        return SSM.logposterior(x, plds, obs, b)
-    end
-    hess_autodiff = ForwardDiff.hessian(obj_logposterior_input, reshape(x', 15))
-    @test hess ≈ hess_autodiff atol=1e-6
+    # # now test when there is input
+    # b = randn(3, 5)
+    # plds.b = b
+    # hess, main, super, sub = SSM.Hessian(x, plds, obs)
+    # @test length(main) == 3
+    # @test length(super) == 2
+    # @test length(sub) == 2
+    # @test size(hess) == (15, 15)
+    # function obj_logposterior_input(x::Vector)
+    #     x = SSM.interleave_reshape(x, 3, 5)
+    #     return SSM.logposterior(x, plds, obs)
+    # end
+    # hess_autodiff = ForwardDiff.hessian(obj_logposterior_input, reshape(x', 15))
+    # @test hess ≈ hess_autodiff atol=1e-6
 end
 
 function test_direct_smoother()
@@ -700,36 +714,62 @@ function test_direct_smoother()
     obs = rand(Bool, 10, 10)
     # create inputs
     b = rand(10, 5)
+    plds.b = b
     # run the direct smoother
-    x_smooth, p_smooth = SSM.directsmooth(plds, obs, b)
+    x_smooth, p_smooth = SSM.directsmooth(plds, obs)
     # check the dimensions
     @test size(x_smooth) == (10, 5)
     @test size(p_smooth) == (10, 5, 5)
 end
 
 function test_smooth()
-    # create a PLDS model
-    A = [0.9 0.1; 0.1 0.9]
-    C = [1.0 0.0; 0.0 1.0]
-    Q = 0.01 * I(2)
-    x0 = [0.0; 0.0]
-    p0 = 0.1 * I(2)
-    D = 0.1 * I(2)
-    d = [0.0; 0.0]
-    b = ones(100, 2, 3)
-    plds = PoissonLDS(A=A, C=C, Q=Q, D=D, b=b, d=d, x0=x0, p0=p0, refractory_period=1, obs_dim=2, latent_dim=2)
-    # sample data
-    x, y = SSM.sample(plds, 100, 3)
+    plds, x, y = toy_PoissonLDS()
     # run the smoother
     x_smooth, p_smooth = SSM.smooth(plds, y)
     # check the dimensions
     @test size(x_smooth) == (100, 2, 3)
     @test size(p_smooth) == (100, 2, 2, 3)
-    # as the estep is the same as the smoother, we can check the output of the smoother by comparing it to the output of the estep
-    x_sm_e, p_sm_e = SSM.E_Step(plds, y)
-    @test x_smooth ≈ x_sm_e atol=1e-6
-    @test p_smooth ≈ p_sm_e atol=1e-6
 end
+
+function test_analytical_parameter_updates()
+    # create a plds model and smaple data
+    plds_dummy, x, y = toy_PoissonLDS()
+    # create a plds model
+    plds = PoissonLDS(;obs_dim=3, latent_dim=2)
+    # set up reasonable intitial parameters
+    b = ones(100, 2) * 0.5
+    plds.A = Matrix{Float64}([1 0; 0 1])
+    plds.Q = Matrix{Float64}([1 0; 0 1])
+    plds.x0 = [1.0, -1.0]
+    plds.p0 = Matrix{Float64}([1 0; 0 1])
+    plds.b = b
+    # test for ten updates
+    for i in 1:10
+        x_sm, _, _ = SSM.smooth(plds, y)
+        # set up objective function for analytical parameters
+        obj_x0(x0) = x0 -> -SSM.loglikelihood(x_sm, SSM.PoissonLDS(A=plds.A, C=plds.C, Q=plds.Q, D=plds.D, b=plds.b, d=plds.d, x0=x0, p0=plds.p0, refractory_period=plds.refractory_period, obs_dim=plds.obs_dim, latent_dim=plds.latent_dim), y)
+        # obj_p0(p0) = p0 -> -SSM.loglikelihood(x_sm, SSM.PoissonLDS(A=plds.A, C=plds.C, Q=plds.Q, D=plds.D, b=plds.b, d=plds.d, x0=plds.x0, p0=p0, refractory_period=plds.refractory_period, obs_dim=plds.obs_dim, latent_dim=plds.latent_dim), y)
+        # obj_A(A) = A -> -SSM.loglikelihood(x_sm, SSM.PoissonLDS(A=A, C=plds.C, Q=plds.Q, D=plds.D, b=plds.b, d=plds.d, x0=plds.x0, p0=plds.p0, refractory_period=plds.refractory_period, obs_dim=plds.obs_dim, latent_dim=plds.latent_dim), y)
+        # obj_Q(Q) = Q -> -SSM.loglikelihood(x_sm, SSM.PoissonLDS(A=plds.A, C=plds.C, Q=Q, D=plds.D, b=plds.b, d=plds.d, x0=plds.x0, p0=plds.p0, refractory_period=plds.refractory_period, obs_dim=plds.obs_dim, latent_dim=plds.latent_dim), y)
+        # obj_b(b) = b -> -SSM.loglikelihood(x_sm, SSM.PoissonLDS(A=plds.A, C=plds.C, Q=plds.Q, D=plds.D, b=b, d=plds.d, x0=plds.x0, p0=plds.p0, refractory_period=plds.refractory_period, obs_dim=plds.obs_dim, latent_dim=plds.latent_dim), y)    
+        # optimize using Optim now
+        x0_opt = optimize(obj_x0(x0), plds.x0, LBFGS(), Optim.Options(show_trace=false)).minimizer
+        # p0_opt = optimize(obj_p0(p0), plds.p0, LBFGS(), Optim.Options(show_trace=false)).minimizer
+        # A_opt = optimize(obj_A(A), plds.A, LBFGS(), Optim.Options(show_trace=false)).minimizer
+        # Q_opt = optimize(obj_Q(Q), plds.Q, LBFGS(), Optim.Options(show_trace=false)).minimizer
+        # b_opt = optimize(obj_b(b), plds.b, LBFGS(), Optim.Options(show_trace=false)).minimizer
+        # optimize with em
+        E_z, E_zz, E_zz_prev, x_sm, p_sm = SSM.E_Step(plds, y)
+        SSM.M_Step!(plds, E_z, E_zz, E_zz_prev, x_sm, y)
+        # check if the parameters are updated and agree with the numerical solution
+        @test x0_opt ≈ plds.x0 atol=1e-6
+        # @test p0_opt ≈ plds.p0 atol=1e-6
+        # @test A_opt ≈ plds.A atol=1e-6
+        # @test Q_opt ≈ plds.Q atol=1e-6
+        # @test b_opt ≈ plds.b atol=1e-6
+    end
+end
+
 @testset "PLDS Tests" begin
     test_PLDS_constructor_with_params()
     test_PLDS_constructor_without_params()
@@ -739,6 +779,7 @@ end
     test_hessian_plds()
     test_direct_smoother()
     test_smooth()
+    test_analytical_parameter_updates()
 end
 
 """

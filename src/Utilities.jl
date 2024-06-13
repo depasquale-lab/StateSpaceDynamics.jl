@@ -1,6 +1,7 @@
 export kmeanspp_initialization, kmeans_clustering, PPCA, fit!, block_tridgm, interleave_reshape, block_tridiagonal_inverse
 
 # Matrix utilities
+
 """Block Tridiagonal Inverse"""
 function block_tridiagonal_inverse(A, B, C)
     n = length(B)
@@ -180,18 +181,4 @@ function kmeans_clustering(data::Vector{Float64}, k_means::Int, max_iters::Int=1
     # reshape data
     data = reshape(data, length(data), 1)
     return kmeans_clustering(data, k_means, max_iters, tol)
-end
-
-# Miscellaneous utilities
-function ensure_positive_definite(A::Matrix{T}) where T
-    # Perform eigenvalue decomposition
-    eigen_decomp = eigen(Symmetric(A))  # Ensure A is treated as symmetric
-    λ, V = eigen_decomp.values, eigen_decomp.vectors
-    # Set a threshold for eigenvalues (e.g., a small positive number)
-    ε = max(eps(T), 1e-10)
-    # Replace any non-positive eigenvalues with ε
-    λ_clipped = [max(λi, ε) for λi in λ]
-    # Reconstruct the matrix with the clipped eigenvalues
-    A_posdef = V * Diagonal(λ_clipped) * V'
-    return A_posdef
 end
