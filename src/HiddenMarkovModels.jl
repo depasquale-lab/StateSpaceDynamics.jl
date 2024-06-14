@@ -167,28 +167,32 @@ function M_step!(hmm::AbstractHMM, γ::Matrix{Float64}, ξ::Array{Float64, 3}, d
 end
 
 function baumWelch!(hmm::AbstractHMM, data::Matrix{Float64}, max_iters::Int=100, tol::Float64=1e-6)
+    # Create variable to store the previous log-likelihood
+    lls = []
     T, _ = size(data)
-    K = size(hmm.A, 1)
+    # initialize log-likelihood
     log_likelihood = -Inf
     # Initialize progress bar
     p = Progress(max_iters; dt=1, desc="Computing Baum-Welch...",)
     for iter in 1:max_iters
-        # Update the progress bar
-        next!(p; showvalues = [(:iteration, iter), (:log_likelihood, log_likelihood)])
         # E-Step
         γ, ξ, α, β = E_step(hmm, data)
         # Compute and update the log-likelihood
         log_likelihood_current = logsumexp(α[T, :])
-        println(log_likelihood_current)
+        push!(lls, log_likelihood_current)
+        # Update the progress bar
+        next!(p)
         if abs(log_likelihood_current - log_likelihood) < tol
             finish!(p)
-            break
+            return lls
         else
             log_likelihood = log_likelihood_current
         end
         # M-Step
         M_step!(hmm, γ, ξ, data)
     end
+    finish!(p)
+    return lls
 end
 
 function viterbi(hmm::AbstractHMM, data::Matrix{Float64})

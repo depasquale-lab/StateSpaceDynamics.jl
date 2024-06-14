@@ -510,12 +510,8 @@ function test_LDS_EM()
              2, 
              Vector([true, true, true, true, true, true, true]))
     # run the EM
-    for i in 1:10
-        ml_prev = -Inf
-        l, ml = SSM.KalmanFilterEM!(kf, x_noisy', 1)
-        @test ml > ml_prev
-        ml_prev = ml
-    end
+    mls = SSM.KalmanFilterEM!(kf, x_noisy', 100)
+    @test all(diff(mls) .>= 0)
     # check if the parameters are updated
     @test kf.A !== A
     @test kf.H !== H

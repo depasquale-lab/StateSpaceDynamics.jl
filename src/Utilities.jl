@@ -39,7 +39,7 @@ function block_tridiagonal_inverse(A, B, C)
     
     # Compute the inverse of the diagonal blocks λij
     for i in 2:n
-        λij[i-1, :, :] = E[i]*λii[i-1, :, :]
+        λij[i-1, :, :] = (E[i]*λii[i-1, :, :])
     end
 
     return λii, -λij

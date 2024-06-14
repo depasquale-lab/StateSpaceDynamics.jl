@@ -166,7 +166,7 @@ function DirectSmoother(l::LDS, y::AbstractArray, tol::Float64=1e-6)
         # Check for convergence (uncomment the following lines to enable convergence checking)
         if norm(xₜ₊₁ - xₜ) < tol
             println("Converged at iteration ", i)
-            return xₜ₊₁, p_smooth
+            return xₜ₊₁, p_smooth, inverse_offdiag
         else
             println("Norm of gradient iterate difference: ", norm(xₜ₊₁ - xₜ))
         end
@@ -301,23 +301,29 @@ end
 function KalmanFilterEM!(l::LDS, y::AbstractArray, max_iter::Int=1000, tol::Float64=1e-6)
     # Initialize log-likelihood
     prev_ml = -Inf
+    # Create a list to store the log-likelihood
+    mls = []
+    # Initialize progress bar
+    prog = Progress(max_iter; desc="Running EM Algorithm...")
     # Run EM
     for i in 1:max_iter
         # E-step
         _, _, E_z, E_zz, E_zz_prev, ml = E_Step(l, y)
         # M-step
         M_Step!(l, E_z, E_zz, E_zz_prev, y)
-        # Calculate the expected log-likelihood
-        ll = loglikelihood(E_z, l, y)
-        # Calculate log-likelihood
-        println("Marginal Log-likelihood at iteration $i: ", ml)
+        # update the log-likelihood
+        push!(mls, ml)
+        # update the progress bar
+        next!(prog)
         # Check convergence
         if abs(ml - prev_ml) < tol
-            break
+            finish!(prog)
+            return mls
         end
         prev_ml = ml
     end
-    return l, prev_ml
+    finish!(prog)
+    return mls
 end
 
 """
@@ -1076,6 +1082,8 @@ function M_Step!(plds::PoissonLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, E_zz
 end
 
 function fit!(plds::PoissonLDS, y::Array{<:Real}, max_iter::Int=1000, tol::Float64=1e-6)
+    # create a variable to store the log-likelihood
+    ec_lls = []
     ll_prev = -Inf
     # iterate through the EM algorithm
     for i in 1:max_iter
@@ -1089,12 +1097,14 @@ function fit!(plds::PoissonLDS, y::Array{<:Real}, max_iter::Int=1000, tol::Float
         E_z, E_zz, E_zz_prev, x_smooth, p_smooth = E_Step(plds, y)
         # calculate the log-likelihood
         ll = loglikelihood(x_smooth, plds, y)
+        push!(ec_lls, ll)
         println("Iteration: ", i, " Log-likelihood: ", ll)
         # check for convergence
         if abs(ll - ll_prev) < tol
             println("Converged at iteration ", i)
-            return x_smooth, p_smooth
+            return ec_lls
         end
+        ll_prev = ll
     end
 end
 
