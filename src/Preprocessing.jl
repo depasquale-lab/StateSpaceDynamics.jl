@@ -108,3 +108,165 @@ function fit!(ppca::ProbabilisticPCA, X::Matrix{Float64}, max_iters::Int=100, to
         prev_ll = ll
     end
 end
+
+"""
+    mutable struct PoissonPCA end
+
+A probabilsitic (PCA?) model for Poisson distributed data.
+
+# Fields
+- `C::Matrix{<:Real}`: The loading matrix
+- `b::Vector{<:Real}`: The bias vector
+- `latent_dim::Int64`: The latent dimensionality
+- `obs_dim::Int64`: The observation dimensionality
+"""
+mutable struct PoissonPCA 
+    C::Matrix{<:Real}
+    b::Vector{<:Real}
+    latent_dim::Int64
+    obs_dim::Int64
+end
+
+"""
+    PoissonPCA(;C::Matrix{<:Real}=Matrix{Float64}(undef, 0, 0), b::Vector{<:Real}=Vector{Float64}(undef, 0), latent_dim::Int64, obs_dim::Int64)
+
+Constructor for PoissonPCA
+
+# Arguments
+- `C::Matrix{<:Real}`: The loading matrix
+- `b::Vector{<:Real}`: The bias vector
+- `latent_dim::Int64`: The latent dimensionality
+- `obs_dim::Int64`: The observation dimensionality
+"""
+function PoissonPCA(;C::Matrix{<:Real}=Matrix{Float64}(undef, 0, 0), b::Vector{<:Real}=Vector{Float64}(undef, 0), latent_dim::Int64, obs_dim::Int64)
+    # initialize C
+    if isempty(C)
+        C = randn(obs_dim, latent_dim)
+    end
+    # initialize b
+    if isempty(b)
+        b = rand(obs_dim)
+    end
+    return PoissonPCA(C, b, latent_dim, obs_dim)
+end
+
+"""
+    gradient!(grad::Vector{<:Real}, x::Vector{<:Real}, model::PoissonPCA, y::Matrix{<:Real})
+    
+Calculate the gradient of the Poisson PCA model. Designed to be passed to LBFGS in Optim.jl.
+
+# Arguments
+- `grad::Vector{<:Real}`: The gradient vector
+- `x::Vector{<:Real}`: The latent variables
+- `model::PoissonPCA`: The Poisson PCA model
+- `y::Matrix{<:Real}`: The observed data
+"""
+function gradient!(grad::Vector{<:Real}, x::Vector{<:Real}, model::PoissonPCA, y::Matrix{<:Real})
+    # reshape X
+    x = reshape(x, size(y, 1), model.latent_dim)
+    # pre-allocate a gradient array
+    gradient = zeros(size(y, 1), model.latent_dim)
+    # calculate the gradient
+    for i in 1:size(x, 1)
+        gradient[i, :] = (y[i, :]' * model.C)' - (model.C' * exp.(model.C * x[i, :] + model.b))
+    end
+    # shape gradient back to a vector
+    grad .= -vec(gradient)
+end
+
+"""
+    loglikelihood_(model::PoissonPCA, x::Matrix{<:Real}, y::Matrix{<:Real})
+
+Calculate the log-likelihood of the Poisson PCA model.
+
+# Arguments
+- `model::PoissonPCA`: The Poisson PCA model
+- `x::Matrix{<:Real}`: The latent variables
+- `y::Matrix{<:Real}`: The observed data
+"""
+function loglikelihood_(model::PoissonPCA, x::Matrix{<:Real}, y::Matrix{<:Real})
+    T = size(y, 1)
+    ll = 0.0
+    for t in 1:T
+        ll += sum(y[t, :] .* (model.C * x[t, :] + model.b)) - sum(exp.(model.C * x[t, :] + model.b))
+    end
+    return ll
+end
+
+"""
+    E_Step(model::PoissonPCA, y::Matrix{<:Real})
+
+E-Step for Poisson PCA. Computes a MAP estimate of the latent variables by optimiizing the log-likelihood w.r.t. the latent variables.
+
+# Arguments
+- `model::PoissonPCA`: The Poisson PCA model
+- `y::Matrix{<:Real}`: The observed data
+"""
+function E_Step(model::PoissonPCA, y::Matrix{<:Real})
+    # create an objective function to minimize
+    function obj(x)
+        x = reshape(x, size(y, 1), model.latent_dim)
+        return -loglikelihood_(model, x, y)
+    end
+    # create a wrapper for gradient
+    function grad!(g, x)
+        gradient!(g, x, model, y)
+    end
+    # optimize the objective function
+    res = optimize(obj, grad!, vec(rand(size(y, 1), model.latent_dim)), LBFGS(), Optim.Options(g_tol=1e-6, iterations=1000), autodiff=:forward)
+    return reshape(res.minimizer, size(y, 1), model.latent_dim)
+end
+
+"""
+    M_Step!(model::PoissonPCA, x::Matrix{<:Real}, y::Matrix{<:Real})
+
+M-Step for Poisson PCA
+
+# Arguments
+- `model::PoissonPCA`: The Poisson PCA model
+- `x::Matrix{<:Real}`: The latent variables
+- `y::Matrix{<:Real}`: The observed data
+"""
+function M_Step!(model::PoissonPCA, x::Matrix{<:Real}, y::Matrix{<:Real})
+    # define objective function to minimize
+    function obj(params)
+        C = reshape(params[1:model.latent_dim * model.obs_dim], model.obs_dim, model.latent_dim)
+        b = params[model.latent_dim * model.obs_dim + 1:end]
+        return -loglikelihood_(PoissonPCA(C, b, model.latent_dim, model.obs_dim), x, y)
+    end
+    # optimize the objective function
+    res = optimize(obj, vcat(reshape(model.C, model.latent_dim * model.obs_dim), model.b), LBFGS(), Optim.Options(g_tol=1e-6, iterations=1000), autodiff=:forward)
+    model.C = reshape(res.minimizer[1:model.latent_dim * model.obs_dim], model.obs_dim, model.latent_dim)
+    model.b = res.minimizer[model.latent_dim * model.obs_dim + 1:end]
+end
+
+"""
+    fit!(model::PoissonPCA, y::Matrix{<:Real}, max_iters::Int=100, tol=1e-6)
+
+Fit the Poisson PCA model to the data.
+
+# Arguments
+- `model::PoissonPCA`: The Poisson PCA model
+- `y::Matrix{<:Real}`: The observed data
+- `max_iters::Int=100`: The maximum number of iterations
+- `tol::Float64=1e-6`: The tolerance for convergence
+"""
+function fit!(model::PoissonPCA, y::Matrix{<:Real}, max_iters::Int=100, tol=1e-6)
+    # set up first ll
+    ll_prev = -Inf
+    # Go!
+    prog = Progress(max_iters; desc="Fitting Poisson PCA...")
+    for i in 1:max_iters
+        x = E_Step(model, y)
+        M_Step!(model, x, y)
+        #println("Log-Likelihood at iter $i: $(loglikelihood_(model, x, y))")
+        next!(prog)
+        # check for convergence
+        ll = loglikelihood_(model, x, y)
+        if abs(ll - ll_prev) < tol
+            #println("Converged after $i iterations")
+            finish!(prog)
+            break
+        end
+    end
+end

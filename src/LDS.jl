@@ -48,7 +48,7 @@ function initialize_missing_parameters!(lds::LDS)
     lds.Q = lds.Q === nothing ? I(lds.latent_dim) : lds.Q
     lds.R = lds.R === nothing ? I(lds.obs_dim) : lds.R
     lds.x0 = lds.x0 === nothing ? rand(lds.latent_dim) : lds.x0
-    lds.p0 = lds.p0 === nothing ? rand(lds.latent_dim, lds.latent_dim) : lds.p0
+    lds.p0 = lds.p0 === nothing ? Matrix(rand() * I(lds.latent_dim)) : lds.p0
     if lds.inputs !== nothing
         lds.B = lds.B === nothing ? rand(lds.latent_dim, size(lds.inputs, 2)) : lds.B
     end
@@ -186,37 +186,6 @@ function KalmanSmoother(l::LDS, y::AbstractArray, method::String="RTS")
     end
 end
 
-"""
-Computes the sufficient statistics for the E-step of the EM algorithm. This implementation uses the definitions from
-Pattern Recognition and Machine Learning by Christopher Bishop (pg. 642) and Bayesian Filtering and Smoothing by Simo Sarkka and Lennart Svenson.
-
-This function computes the following statistics:
-    E[zₙ] = ̂xₙ
-    E[zₙzₙᵀ] = ̂xₙ̂xₙᵀ + ̂pₙ
-    E[zₙzₙ₋₁ᵀ] = Jₙ₋₁̂pₙ + ̂xₙ̂xₙ₋₁ᵀ
-
-Args:
-    J: Smoother gain
-    P: Smoothed state covariances
-    μ: Smoothed state estimates
-"""
-function sufficient_statistics(J::Array{<:Real}, P::Array{<:Real}, μ::Matrix{<:Real})
-    T = size(μ, 1)
-    # Initialize sufficient statistics
-    E_z = zeros(T, size(μ, 2))
-    E_zz = zeros(T, size(μ, 2), size(μ, 2))
-    E_zz_prev = zeros(T, size(μ, 2), size(μ, 2))
-    # Compute sufficient statistics
-    for t in 1:T
-        E_z[t, :] = μ[t, :]
-        E_zz[t, :, :] = P[t, :, :] + (μ[t, :] * μ[t, :]')
-        if t > 1
-            E_zz_prev[t, :, :] =  (P[t, :, :] * J[t-1, :, :]') + (μ[t, :] * μ[t-1, :]')
-        end
-    end
-    return E_z, E_zz, E_zz_prev
-end 
-
 function update_initial_state_mean!(l::DynamicalSystem, E_z::AbstractArray)
     # update the state mean
     if l.fit_bool[1] 
@@ -279,6 +248,37 @@ function update_R!(l::LDS, E_z::AbstractArray, E_zz::AbstractArray, y::AbstractA
         l.R = 0.5 * (update_matrix + update_matrix')
     end
 end
+
+"""
+Computes the sufficient statistics for the E-step of the EM algorithm. This implementation uses the definitions from
+Pattern Recognition and Machine Learning by Christopher Bishop (pg. 642) and Bayesian Filtering and Smoothing by Simo Sarkka and Lennart Svenson.
+
+This function computes the following statistics:
+    E[zₙ] = ̂xₙ
+    E[zₙzₙᵀ] = ̂xₙ̂xₙᵀ + ̂pₙ
+    E[zₙzₙ₋₁ᵀ] = Jₙ₋₁̂pₙ + ̂xₙ̂xₙ₋₁ᵀ
+
+Args:
+    J: Smoother gain
+    P: Smoothed state covariances
+    μ: Smoothed state estimates
+"""
+function sufficient_statistics(J::Array{<:Real}, P::Array{<:Real}, μ::Matrix{<:Real})
+    T = size(μ, 1)
+    # Initialize sufficient statistics
+    E_z = zeros(T, size(μ, 2))
+    E_zz = zeros(T, size(μ, 2), size(μ, 2))
+    E_zz_prev = zeros(T, size(μ, 2), size(μ, 2))
+    # Compute sufficient statistics
+    for t in 1:T
+        E_z[t, :] = μ[t, :]
+        E_zz[t, :, :] = P[t, :, :] + (μ[t, :] * μ[t, :]')
+        if t > 1
+            E_zz_prev[t, :, :] =  (P[t, :, :] * J[t-1, :, :]') + (μ[t, :] * μ[t-1, :]')
+        end
+    end
+    return E_z, E_zz, E_zz_prev
+end 
 
 function E_Step(l::LDS, y::AbstractArray)
     # run the kalman smoother
@@ -417,21 +417,21 @@ Args:
 Returns:
     ll: Loglikelihood of the LDS model given the observations
 """
-function loglikelihood(X::AbstractArray, l::LDS, y::AbstractArray)
+function loglikelihood(x::AbstractArray, l::LDS, y::AbstractArray)
     T = size(y, 1)
     # calculate inverses
     inv_R = pinv(l.R)
     inv_Q = pinv(l.Q)
     # p(p₁)
-    ll = (X[1, :] - l.x0)' * pinv(l.p0) * (X[1, :] - l.x0)
+    ll = (x[1, :] - l.x0)' * pinv(l.p0) * (x[1, :] - l.x0)
     # p(pₜ|pₜ₋₁) and p(yₜ|pₜ)
     for t in 1:T
         if t > 1
             # add p(pₜ|pₜ₋₁)
-            ll += (X[t, :]-l.A*X[t-1, :])' * inv_Q * (X[t, :]-l.A*X[t-1, :])
+            ll += (x[t, :]-l.A*x[t-1, :])' * inv_Q * (x[t, :]-l.A*x[t-1, :])
         end
         # add p(yₜ|pₜ)
-        ll += (y[t, :]-l.H*X[t, :])' * inv_R * (y[t, :]-l.H*X[t, :])
+        ll += (y[t, :]-l.H*x[t, :])' * inv_R * (y[t, :]-l.H*x[t, :])
     end
     
     return -0.5 * ll
@@ -629,10 +629,6 @@ function logposterior(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
     pxtgivenxt1 = 0.0
     for t in 2:T
         pxtgivenxt1 += -0.5 * (x[t, :] - ((plds.A * x[t-1, :]) + plds.b[t, :]))' * pinv(plds.Q) * (x[t, :] - ((plds.A * x[t-1, :]) + plds.b[t, :])) 
-    end
-    # calculate values of all log-determinants, first precompute the normal determinant, if it is less than 0, then return -Inf
-    if det(plds.Q) <= 0 || det(plds.p0) <= 0
-        return -2.0^63 # return a very small number so that the log-posterior is essentially -Inf
     end
     # calculate the log-determinants
     log_det_Q = -(T-1)/2 * logdet(plds.Q + (I * 1e-3))
@@ -1077,6 +1073,29 @@ function M_Step!(plds::PoissonLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, E_zz
     update_A_plds!(plds, E_zz, E_zz_prev)
     update_Q_plds!(plds, E_zz, E_zz_prev)
     update_observation_model!(plds, x_smooth, y)
+end
+
+function fit!(plds::PoissonLDS, y::Array{<:Real}, max_iter::Int=1000, tol::Float64=1e-6)
+    ll_prev = -Inf
+    # iterate through the EM algorithm
+    for i in 1:max_iter
+        # initialize the latent states
+        x_smooth, p_smooth, p_tt1 = smooth(plds, y)
+        # calculate the sufficient statistics
+        E_z, E_zz, E_zz_prev = sufficient_statistics(x_smooth, p_smooth, p_tt1)
+        # M-step
+        M_Step!(plds, E_z, E_zz, E_zz_prev, x_smooth, y)
+        # E-step
+        E_z, E_zz, E_zz_prev, x_smooth, p_smooth = E_Step(plds, y)
+        # calculate the log-likelihood
+        ll = loglikelihood(x_smooth, plds, y)
+        println("Iteration: ", i, " Log-likelihood: ", ll)
+        # check for convergence
+        if abs(ll - ll_prev) < tol
+            println("Converged at iteration ", i)
+            return x_smooth, p_smooth
+        end
+    end
 end
 
 """
