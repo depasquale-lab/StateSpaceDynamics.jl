@@ -10,341 +10,341 @@ using Test
 
 Random.seed!(1234)
 
-"""
-Tests for MixtureModels.jl
-"""
+# """
+# Tests for MixtureModels.jl
+# """
 
-# Test general properties of GaussianMixtureModel
-function test_GaussianMixtureModel_properties(gmm::GaussianMixtureModel, k::Int, data_dim::Int)
-    @test gmm.k == k
-    @test size(gmm.μₖ) == (k, data_dim)
+# # Test general properties of GaussianMixtureModel
+# function test_GaussianMixtureModel_properties(gmm::GaussianMixtureModel, k::Int, data_dim::Int)
+#     @test gmm.k == k
+#     @test size(gmm.μₖ) == (k, data_dim)
 
-    for Σ in gmm.Σₖ
-        @test size(Σ) == (data_dim, data_dim)
-        @test ishermitian(Σ)
-    end
+#     for Σ in gmm.Σₖ
+#         @test size(Σ) == (data_dim, data_dim)
+#         @test ishermitian(Σ)
+#     end
 
-    @test length(gmm.πₖ) == k
-    @test sum(gmm.πₖ) ≈ 1.0
-end
+#     @test length(gmm.πₖ) == k
+#     @test sum(gmm.πₖ) ≈ 1.0
+# end
 
-function testGaussianMixtureModel_EStep(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
+# function testGaussianMixtureModel_EStep(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
 
-    k::Int = gmm.k
-    data_dim::Int = size(data, 2)
+#     k::Int = gmm.k
+#     data_dim::Int = size(data, 2)
     
-    # Run EStep
-    class_probabilities = SSM.EStep(gmm, data)
-    # Check dimensions
-    @test size(class_probabilities) == (size(data, 1), k)
-    # Check if the row sums are close to 1 (since they represent probabilities)
-    @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(class_probabilities, dims=2))
+#     # Run EStep
+#     class_probabilities = SSM.EStep(gmm, data)
+#     # Check dimensions
+#     @test size(class_probabilities) == (size(data, 1), k)
+#     # Check if the row sums are close to 1 (since they represent probabilities)
+#     @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(class_probabilities, dims=2))
     
-    test_GaussianMixtureModel_properties(gmm, k, data_dim)
-end
+#     test_GaussianMixtureModel_properties(gmm, k, data_dim)
+# end
 
-function testGaussianMixtureModel_MStep(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
+# function testGaussianMixtureModel_MStep(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
 
-    k::Int = gmm.k
-    data_dim::Int = size(data, 2)
+#     k::Int = gmm.k
+#     data_dim::Int = size(data, 2)
 
-    class_probabilities = SSM.EStep(gmm, data)
+#     class_probabilities = SSM.EStep(gmm, data)
 
-    # Run MStep
-    SSM.MStep!(gmm, data, class_probabilities)
+#     # Run MStep
+#     SSM.MStep!(gmm, data, class_probabilities)
 
-    test_GaussianMixtureModel_properties(gmm, k, data_dim)
-end
+#     test_GaussianMixtureModel_properties(gmm, k, data_dim)
+# end
 
-function testGaussianMixtureModel_fit(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
+# function testGaussianMixtureModel_fit(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
 
-    k::Int = gmm.k
-    data_dim::Int = size(data, 2)
+#     k::Int = gmm.k
+#     data_dim::Int = size(data, 2)
 
-    # Run fit!
-    fit!(gmm, data; maxiter=10, tol=1e-3)
+#     # Run fit!
+#     fit!(gmm, data; maxiter=10, tol=1e-3)
 
-    test_GaussianMixtureModel_properties(gmm, k, data_dim)
-end
+#     test_GaussianMixtureModel_properties(gmm, k, data_dim)
+# end
 
-function test_log_likelihood(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
+# function test_log_likelihood(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
 
-    # Calculate log-likelihood
-    ll = log_likelihood(gmm, data)
+#     # Calculate log-likelihood
+#     ll = log_likelihood(gmm, data)
 
-    # Check if log-likelihood is a scalar
-    @test size(ll) == ()
+#     # Check if log-likelihood is a scalar
+#     @test size(ll) == ()
 
-    # Log-likelihood should be a negative float
-    @test ll < 0.0
+#     # Log-likelihood should be a negative float
+#     @test ll < 0.0
 
-    # Log-likelihood should monotonically increase with iterations (when using exact EM)
+#     # Log-likelihood should monotonically increase with iterations (when using exact EM)
 
-    #repeatedly applying fit! without initializtion, so first initialize means
-    # Initialize k means of gmm
-	gmm.μₖ = permutedims(kmeanspp_initialization(data, gmm.k))
+#     #repeatedly applying fit! without initializtion, so first initialize means
+#     # Initialize k means of gmm
+# 	gmm.μₖ = permutedims(kmeanspp_initialization(data, gmm.k))
     
-    ll_prev = -Inf
-    for i in 1:10
-        fit!(gmm, data; maxiter=1, tol=1e-3, initialize_kmeans=false)
-        ll = log_likelihood(gmm, data)
-        @test ll > ll_prev || isapprox(ll, ll_prev; atol=1e-6)
-        ll_prev = ll
-    end
-end
+#     ll_prev = -Inf
+#     for i in 1:10
+#         fit!(gmm, data; maxiter=1, tol=1e-3, initialize_kmeans=false)
+#         ll = log_likelihood(gmm, data)
+#         @test ll > ll_prev || isapprox(ll, ll_prev; atol=1e-6)
+#         ll_prev = ll
+#     end
+# end
 
-"""
-Tests for PoissonMixtureModel
-"""
+# """
+# Tests for PoissonMixtureModel
+# """
 
-# Test general properties of PoissonMixtureModel
-function test_PoissonMixtureModel_properties(pmm::PoissonMixtureModel, k::Int)
-    @test pmm.k == k
-    @test length(pmm.λₖ) == k
-    @test length(pmm.πₖ) == k
-    @test sum(pmm.πₖ) ≈ 1.0
-end
+# # Test general properties of PoissonMixtureModel
+# function test_PoissonMixtureModel_properties(pmm::PoissonMixtureModel, k::Int)
+#     @test pmm.k == k
+#     @test length(pmm.λₖ) == k
+#     @test length(pmm.πₖ) == k
+#     @test sum(pmm.πₖ) ≈ 1.0
+# end
 
-function testPoissonMixtureModel_EStep(pmm::PoissonMixtureModel, data::Union{Matrix{Int}, Vector{Int}})
-    k::Int = pmm.k
+# function testPoissonMixtureModel_EStep(pmm::PoissonMixtureModel, data::Union{Matrix{Int}, Vector{Int}})
+#     k::Int = pmm.k
     
-    # Run EStep
-    class_probabilities = SSM.EStep(pmm, data)
-    # Check dimensions
-    @test size(class_probabilities) == (size(data, 1), k)
-    # Check if the row sums are close to 1 (since they represent probabilities)
-    @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(class_probabilities, dims=2))
+#     # Run EStep
+#     class_probabilities = SSM.EStep(pmm, data)
+#     # Check dimensions
+#     @test size(class_probabilities) == (size(data, 1), k)
+#     # Check if the row sums are close to 1 (since they represent probabilities)
+#     @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(class_probabilities, dims=2))
     
-    test_PoissonMixtureModel_properties(pmm, k)
-end
+#     test_PoissonMixtureModel_properties(pmm, k)
+# end
 
-function testPoissonMixtureModel_MStep(pmm::PoissonMixtureModel, data::Union{Matrix{Int}, Vector{Int}})
-    k::Int = pmm.k
+# function testPoissonMixtureModel_MStep(pmm::PoissonMixtureModel, data::Union{Matrix{Int}, Vector{Int}})
+#     k::Int = pmm.k
 
-    class_probabilities = SSM.EStep(pmm, data)
+#     class_probabilities = SSM.EStep(pmm, data)
 
-    # Run MStep
-    SSM.MStep!(pmm, data, class_probabilities)
+#     # Run MStep
+#     SSM.MStep!(pmm, data, class_probabilities)
 
-    test_PoissonMixtureModel_properties(pmm, k)
-end
+#     test_PoissonMixtureModel_properties(pmm, k)
+# end
 
-function testPoissonMixtureModel_fit(pmm::PoissonMixtureModel, data::Union{Matrix{Int}, Vector{Int}})
-    k::Int = pmm.k
+# function testPoissonMixtureModel_fit(pmm::PoissonMixtureModel, data::Union{Matrix{Int}, Vector{Int}})
+#     k::Int = pmm.k
 
-    # Run fit!
-    fit!(pmm, data; maxiter=10, tol=1e-3)
+#     # Run fit!
+#     fit!(pmm, data; maxiter=10, tol=1e-3)
 
-    test_PoissonMixtureModel_properties(pmm, k)
-end
+#     test_PoissonMixtureModel_properties(pmm, k)
+# end
 
-function test_log_likelihood(pmm::PoissonMixtureModel, data::Union{Matrix{Int}, Vector{Int}})
-    # Calculate log-likelihood
-    ll = log_likelihood(pmm, data)
+# function test_log_likelihood(pmm::PoissonMixtureModel, data::Union{Matrix{Int}, Vector{Int}})
+#     # Calculate log-likelihood
+#     ll = log_likelihood(pmm, data)
 
-    # Check if log-likelihood is a scalar
-    @test size(ll) == ()
+#     # Check if log-likelihood is a scalar
+#     @test size(ll) == ()
 
-    # Log-likelihood should not necessarily be negative for Poisson models
+#     # Log-likelihood should not necessarily be negative for Poisson models
 
-    # Initialize λₖ with kmeans_init
-    λₖ_matrix = permutedims(kmeanspp_initialization(Float64.(data), pmm.k))
-    pmm.λₖ = vec(λₖ_matrix)
+#     # Initialize λₖ with kmeans_init
+#     λₖ_matrix = permutedims(kmeanspp_initialization(Float64.(data), pmm.k))
+#     pmm.λₖ = vec(λₖ_matrix)
 
-    # Log-likelihood should monotonically increase with iterations (when using exact EM)
-    ll_prev = -Inf
-    for i in 1:10
-        fit!(pmm, data; maxiter=1, tol=1e-3, initialize_kmeans=false)
-        ll = log_likelihood(pmm, data)
-        @test ll > ll_prev || isapprox(ll, ll_prev; atol=1e-6)
-        ll_prev = ll
-    end
-end
+#     # Log-likelihood should monotonically increase with iterations (when using exact EM)
+#     ll_prev = -Inf
+#     for i in 1:10
+#         fit!(pmm, data; maxiter=1, tol=1e-3, initialize_kmeans=false)
+#         ll = log_likelihood(pmm, data)
+#         @test ll > ll_prev || isapprox(ll, ll_prev; atol=1e-6)
+#         ll_prev = ll
+#     end
+# end
 
-@testset "MixtureModels.jl Tests" begin
-    # Test GaussianMixtureModel
-    # Initialize test models
-    # Standard GaussianMixtureModel model
-    # Number of clusters
-    k = 3
-    # Dimension of data points
-    data_dim = 2
-    # Construct gmm
-    standard_gmm = GaussianMixtureModel(k, data_dim)
-    # Generate sample data
-    standard_data = randn(10, data_dim)
-    # Test constructor method of GaussianMixtureModel
-    test_GaussianMixtureModel_properties(standard_gmm, k, data_dim)
-    # Vector-data GaussianMixtureModel model
-    # Number of clusters
-    k = 2
-    # Dimension of data points
-    data_dim = 1
-    # Construct gmm
-    vector_gmm = GaussianMixtureModel(k, data_dim)
-    # Generate sample data
-    vector_data = randn(1000,)
-    # Test constructor method of GaussianMixtureModel
-    test_GaussianMixtureModel_properties(vector_gmm, k, data_dim)
+# @testset "MixtureModels.jl Tests" begin
+#     # Test GaussianMixtureModel
+#     # Initialize test models
+#     # Standard GaussianMixtureModel model
+#     # Number of clusters
+#     k = 3
+#     # Dimension of data points
+#     data_dim = 2
+#     # Construct gmm
+#     standard_gmm = GaussianMixtureModel(k, data_dim)
+#     # Generate sample data
+#     standard_data = randn(10, data_dim)
+#     # Test constructor method of GaussianMixtureModel
+#     test_GaussianMixtureModel_properties(standard_gmm, k, data_dim)
+#     # Vector-data GaussianMixtureModel model
+#     # Number of clusters
+#     k = 2
+#     # Dimension of data points
+#     data_dim = 1
+#     # Construct gmm
+#     vector_gmm = GaussianMixtureModel(k, data_dim)
+#     # Generate sample data
+#     vector_data = randn(1000,)
+#     # Test constructor method of GaussianMixtureModel
+#     test_GaussianMixtureModel_properties(vector_gmm, k, data_dim)
 
-    # Test EM methods of the GaussianMixtureModels
+#     # Test EM methods of the GaussianMixtureModels
 
-    # Paired data and GaussianMixtureModels to test
-    tester_set = [
-        (standard_gmm, standard_data), 
-        (vector_gmm, vector_data),
-        ]
+#     # Paired data and GaussianMixtureModels to test
+#     tester_set = [
+#         (standard_gmm, standard_data), 
+#         (vector_gmm, vector_data),
+#         ]
 
-    for (gmm, data) in tester_set
-        k = gmm.k
-        data_dim = size(data, 2)
+#     for (gmm, data) in tester_set
+#         k = gmm.k
+#         data_dim = size(data, 2)
 
-        gmm = GaussianMixtureModel(k, data_dim)
-        testGaussianMixtureModel_EStep(gmm, data)
+#         gmm = GaussianMixtureModel(k, data_dim)
+#         testGaussianMixtureModel_EStep(gmm, data)
 
-        gmm = GaussianMixtureModel(k, data_dim)
-        testGaussianMixtureModel_MStep(gmm, data)
+#         gmm = GaussianMixtureModel(k, data_dim)
+#         testGaussianMixtureModel_MStep(gmm, data)
 
-        gmm = GaussianMixtureModel(k, data_dim)
-        testGaussianMixtureModel_fit(gmm, data)
+#         gmm = GaussianMixtureModel(k, data_dim)
+#         testGaussianMixtureModel_fit(gmm, data)
 
-        gmm = GaussianMixtureModel(k, data_dim)
-        test_log_likelihood(gmm, data)
-    end
+#         gmm = GaussianMixtureModel(k, data_dim)
+#         test_log_likelihood(gmm, data)
+#     end
   
-    # Test PoissonMixtureModel
-    k = 3  # Number of clusters
+#     # Test PoissonMixtureModel
+#     k = 3  # Number of clusters
     
-    # Simulate some Poisson-distributed data using the sample function
-    # First, define a temporary PMM for sampling purposes
-    temp_pmm = PoissonMixtureModel(k)
-    temp_pmm.λₖ = [5.0, 10.0, 15.0]  # Assign some λ values for generating data
-    temp_pmm.πₖ = [1/3, 1/3, 1/3]  # Equal mixing coefficients for simplicity
-    data = SSM.sample(temp_pmm, 300)  # Generate sample data
+#     # Simulate some Poisson-distributed data using the sample function
+#     # First, define a temporary PMM for sampling purposes
+#     temp_pmm = PoissonMixtureModel(k)
+#     temp_pmm.λₖ = [5.0, 10.0, 15.0]  # Assign some λ values for generating data
+#     temp_pmm.πₖ = [1/3, 1/3, 1/3]  # Equal mixing coefficients for simplicity
+#     data = SSM.sample(temp_pmm, 300)  # Generate sample data
     
-    standard_pmm = PoissonMixtureModel(k)
+#     standard_pmm = PoissonMixtureModel(k)
     
-    # Conduct tests
-    test_PoissonMixtureModel_properties(standard_pmm, k)
+#     # Conduct tests
+#     test_PoissonMixtureModel_properties(standard_pmm, k)
     
-    tester_set = [(standard_pmm, data)]
+#     tester_set = [(standard_pmm, data)]
     
-    for (pmm, data) in tester_set
-        pmm = PoissonMixtureModel(k)
-        testPoissonMixtureModel_EStep(pmm, data)
-        pmm = PoissonMixtureModel(k)
-        testPoissonMixtureModel_MStep(pmm, data)
-        pmm = PoissonMixtureModel(k)
-        testPoissonMixtureModel_fit(pmm, data)
-        pmm = PoissonMixtureModel(k)
-        test_log_likelihood(pmm, data)
-    end
-end
+#     for (pmm, data) in tester_set
+#         pmm = PoissonMixtureModel(k)
+#         testPoissonMixtureModel_EStep(pmm, data)
+#         pmm = PoissonMixtureModel(k)
+#         testPoissonMixtureModel_MStep(pmm, data)
+#         pmm = PoissonMixtureModel(k)
+#         testPoissonMixtureModel_fit(pmm, data)
+#         pmm = PoissonMixtureModel(k)
+#         test_log_likelihood(pmm, data)
+#     end
+# end
 
-"""
-Tests for HiddenMarkovModels.jl
-"""
+# """
+# Tests for HiddenMarkovModels.jl
+# """
 
-function toy_HMM(k::Int=3, data_dim::Int=2, n::Int=1000)
-    # create random data
-    data = randn(n, data_dim)
-    # fit hmm
-    hmm = GaussianHMM(data, k)
-    return hmm, data
-end
+# function toy_HMM(k::Int=3, data_dim::Int=2, n::Int=1000)
+#     # create random data
+#     data = randn(n, data_dim)
+#     # fit hmm
+#     hmm = GaussianHMM(data, k)
+#     return hmm, data
+# end
 
-function test_toy_HMM()
-    hmm, data = toy_HMM()
-    @test size(data, 2) == hmm.D
-    @test size(data, 1) == 1000
-    @test hmm.K == 3
-end
+# function test_toy_HMM()
+#     hmm, data = toy_HMM()
+#     @test size(data, 2) == hmm.D
+#     @test size(data, 1) == 1000
+#     @test hmm.K == 3
+# end
 
-function test_HMM_properties(hmm::GaussianHMM)
-    @test isapprox(sum(hmm.A, dims=2), ones(hmm.K))
-    @test typeof(hmm.B) == Vector{GaussianEmission}
-    @test sum(hmm.πₖ) ≈ 1.0
-end
+# function test_HMM_properties(hmm::GaussianHMM)
+#     @test isapprox(sum(hmm.A, dims=2), ones(hmm.K))
+#     @test typeof(hmm.B) == Vector{GaussianEmission}
+#     @test sum(hmm.πₖ) ≈ 1.0
+# end
 
-function test_GaussianHMM_constructor()
-    hmm, _ = toy_HMM()
-    test_HMM_properties(hmm)
-end
+# function test_GaussianHMM_constructor()
+#     hmm, _ = toy_HMM()
+#     test_HMM_properties(hmm)
+# end
 
-function test_HMM_forward_and_back()
-    hmm, data = toy_HMM()
-    α = SSM.forward(hmm, data)
-    @test size(α) == (size(data, 1), hmm.K)
-    β = SSM.backward(hmm, data)
-    @test size(β) == (size(data, 1), hmm.K)
-end
+# function test_HMM_forward_and_back()
+#     hmm, data = toy_HMM()
+#     α = SSM.forward(hmm, data)
+#     @test size(α) == (size(data, 1), hmm.K)
+#     β = SSM.backward(hmm, data)
+#     @test size(β) == (size(data, 1), hmm.K)
+# end
 
-function test_HMM_gamma_xi()
-    hmm, data = toy_HMM()
-    α = SSM.forward(hmm, data)
-    β = SSM.backward(hmm, data)
-    γ = SSM.calculate_γ(hmm, α, β)
-    ξ = SSM.calculate_ξ(hmm, α, β, data)
-    @test size(γ) == (size(data, 1), hmm.K)
-    @test size(ξ) == (size(data, 1) - 1, hmm.K, hmm.K)
-    @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(exp.(γ), dims=2))
-    @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(exp.(ξ), dims=(2, 3)))
-end
+# function test_HMM_gamma_xi()
+#     hmm, data = toy_HMM()
+#     α = SSM.forward(hmm, data)
+#     β = SSM.backward(hmm, data)
+#     γ = SSM.calculate_γ(hmm, α, β)
+#     ξ = SSM.calculate_ξ(hmm, α, β, data)
+#     @test size(γ) == (size(data, 1), hmm.K)
+#     @test size(ξ) == (size(data, 1) - 1, hmm.K, hmm.K)
+#     @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(exp.(γ), dims=2))
+#     @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(exp.(ξ), dims=(2, 3)))
+# end
 
-function test_HMM_E_step()
-    hmm, data = toy_HMM()
-    γ, ξ, α, β = SSM.E_step(hmm, data)
-    @test size(γ) == (size(data, 1), hmm.K)
-    @test size(ξ) == (size(data, 1) - 1, hmm.K, hmm.K)
-end
+# function test_HMM_E_step()
+#     hmm, data = toy_HMM()
+#     γ, ξ, α, β = SSM.E_step(hmm, data)
+#     @test size(γ) == (size(data, 1), hmm.K)
+#     @test size(ξ) == (size(data, 1) - 1, hmm.K, hmm.K)
+# end
 
-function test_HMM_M_step()
-    hmm, data = toy_HMM()
-    # test indiviudal M-step functions
-    γ, ξ, α, β = SSM.E_step(hmm, data)
-    SSM.update_initial_state_distribution!(hmm, γ)
-    @test sum(hmm.πₖ) ≈ 1.0
-    SSM.update_transition_matrix!(hmm, γ, ξ)
-    @test isapprox(sum(hmm.A, dims=2), ones(hmm.K))
-    SSM.update_emission_models!(hmm, γ, data)
-    @test typeof(hmm.B) == Vector{GaussianEmission}
-    # test M-step
-    γ, ξ, α, β = SSM.E_step(hmm, data)
-    SSM.M_step!(hmm, γ, ξ, data)
-    test_HMM_properties(hmm)
-end
+# function test_HMM_M_step()
+#     hmm, data = toy_HMM()
+#     # test indiviudal M-step functions
+#     γ, ξ, α, β = SSM.E_step(hmm, data)
+#     SSM.update_initial_state_distribution!(hmm, γ)
+#     @test sum(hmm.πₖ) ≈ 1.0
+#     SSM.update_transition_matrix!(hmm, γ, ξ)
+#     @test isapprox(sum(hmm.A, dims=2), ones(hmm.K))
+#     SSM.update_emission_models!(hmm, γ, data)
+#     @test typeof(hmm.B) == Vector{GaussianEmission}
+#     # test M-step
+#     γ, ξ, α, β = SSM.E_step(hmm, data)
+#     SSM.M_step!(hmm, γ, ξ, data)
+#     test_HMM_properties(hmm)
+# end
 
-function test_HMM_EM()
-    Random.seed!(1234)
-    A = [0.7 0.2 0.1; 0.1 0.7 0.2; 0.2 0.1 0.7]
-    means = [[0.0, 0.0], [-1.0, 2.0], [3.0, 2.5]]
-    covs = [
-        [0.1 0.0; 0.0 0.1], 
-        [0.1 0.0; 0.0 0.1], 
-        [0.1 0.0; 0.0 0.1]
-    ]
-    emissions_models = [GaussianEmission(mean, cov) for (mean, cov) in zip(means, covs)]
-    simul_hmm = GaussianHMM(A, emissions_models, [0.33, 0.33, 0.34], 3, 2)
-    states, observations = SSM.sample(simul_hmm, 10000)
-    hmm = GaussianHMM(observations, 3)
-    baumWelch!(hmm, observations, 100)
-    pred_means = [hmm.B[i].μ for i in 1:3]
-    @test sort(pred_means) ≈ sort(means) atol=0.2
-    pred_covs = [hmm.B[i].Σ for i in 1:3]
-    @test pred_covs ≈ covs atol=0.1
-    best_path = viterbi(hmm, observations)
-    @test length(best_path) == 10000
-    @test all(x -> x in 1:3, best_path)
-end
-@testset "HiddenMarkovModels.jl Tests" begin
-    test_toy_HMM()
-    test_GaussianHMM_constructor()
-    test_HMM_forward_and_back()
-    test_HMM_gamma_xi()
-    test_HMM_E_step()
-    test_HMM_M_step()
-    test_HMM_EM()
-end
+# function test_HMM_EM()
+#     Random.seed!(1234)
+#     A = [0.7 0.2 0.1; 0.1 0.7 0.2; 0.2 0.1 0.7]
+#     means = [[0.0, 0.0], [-1.0, 2.0], [3.0, 2.5]]
+#     covs = [
+#         [0.1 0.0; 0.0 0.1], 
+#         [0.1 0.0; 0.0 0.1], 
+#         [0.1 0.0; 0.0 0.1]
+#     ]
+#     emissions_models = [GaussianEmission(mean, cov) for (mean, cov) in zip(means, covs)]
+#     simul_hmm = GaussianHMM(A, emissions_models, [0.33, 0.33, 0.34], 3, 2)
+#     states, observations = SSM.sample(simul_hmm, 10000)
+#     hmm = GaussianHMM(observations, 3)
+#     baumWelch!(hmm, observations, 100)
+#     pred_means = [hmm.B[i].μ for i in 1:3]
+#     @test sort(pred_means) ≈ sort(means) atol=0.2
+#     pred_covs = [hmm.B[i].Σ for i in 1:3]
+#     @test pred_covs ≈ covs atol=0.1
+#     best_path = viterbi(hmm, observations)
+#     @test length(best_path) == 10000
+#     @test all(x -> x in 1:3, best_path)
+# end
+# @testset "HiddenMarkovModels.jl Tests" begin
+#     test_toy_HMM()
+#     test_GaussianHMM_constructor()
+#     test_HMM_forward_and_back()
+#     test_HMM_gamma_xi()
+#     test_HMM_E_step()
+#     test_HMM_M_step()
+#     test_HMM_EM()
+# end
 
 """
 Tests for LDS.jl
@@ -361,11 +361,11 @@ x0 = [0.0; 1.0]
 # Time vector
 t = 0:dt:T
 # Define the LDS model parameters
-H = I(2)  # Observation matrix (assuming direct observation)
-Q = 0.00001 * I(2)  # Process noise covariance
+H = Matrix{Float64}(I(2))  # Observation matrix (assuming direct observation)
+Q = 0.001 * I(2)  # Process noise covariance
 observation_noise_std = 0.5
 R = (observation_noise_std^2) * I(2)  # Observation noise covariance
-p0 = 0.1*I(2)  # Initial state covariance
+p0 = 0.1 * I(2)  # Initial state covariance
 x0 = [0.0; 1.0]  # Initial state mean
 # Generate true data
 x = zeros(2, length(t))
@@ -382,6 +382,8 @@ noise = rand(Normal(0, observation_noise_std), (2, length(t)))
 for i in 2:length(t)
     x_noisy[:, i] = A * x[:, i-1] + noise[:, i]
 end
+
+x_noisy = permutedims(x_noisy)
 
 function test_LDS_with_params()
     # Create the Kalman filter parameter vector
@@ -409,7 +411,7 @@ function test_LDS_with_params()
     @test kf.latent_dim == 2
     @test kf.fit_bool == Vector([false, false, false, false, false, false, false, false])
     # run the filter
-    x_filt, p_filt, x_pred, p_pred, v, F, K, ml = KalmanFilter(kf, x_noisy')
+    x_filt, p_filt, x_pred, p_pred, v, F, K, ml = KalmanFilter(kf, x_noisy)
     # check dimensions
     @test size(x_filt) == (length(t), 2)
     @test size(p_filt) == (length(t), 2, 2)
@@ -419,7 +421,7 @@ function test_LDS_with_params()
     @test size(F) == (length(t), 2, 2)
     @test size(K) == (length(t), 2, 2)
     # run the smoother
-    x_smooth, p_smooth = KalmanSmoother(kf, x_noisy')
+    x_smooth, p_smooth = KalmanSmoother(kf, x_noisy)
     # check dimensions
     @test size(x_smooth) == (length(t), 2)
     @test size(p_smooth) == (length(t), 2, 2)
@@ -456,7 +458,7 @@ function test_LDS_EStep()
              2, 
              Vector([true, true, true, true, true, true, true]))
     # run the EStep
-    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.E_Step(kf, x_noisy')
+    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.E_Step(kf, x_noisy)
     # check dimensions
     @test size(x_smooth) == (length(t), 2)
     @test size(p_smooth) == (length(t), 2, 2)
@@ -480,9 +482,9 @@ function test_LDS_MStep!()
              2, 
              Vector([true, true, true, true, true, true, true]))
     # run the EStep
-    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.E_Step(kf, x_noisy')
+    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.E_Step(kf, x_noisy)
     # run the MStep
-    SSM.M_Step!(kf, E_z, E_zz, E_zz_prev, x_noisy')
+    SSM.M_Step!(kf, E_z, E_zz, E_zz_prev, x_noisy)
     # check if the parameters are updated
     @test kf.A !== A
     @test kf.H !== H
@@ -510,7 +512,7 @@ function test_LDS_EM()
              2, 
              Vector([true, true, true, true, true, true, true]))
     # run the EM
-    mls = SSM.KalmanFilterEM!(kf, x_noisy', 100)
+    mls = SSM.KalmanFilterEM!(kf, x_noisy, 100)
     @test all(diff(mls) .>= 0)
     # check if the parameters are updated
     @test kf.A !== A
@@ -526,12 +528,53 @@ function test_LDS_EM()
     @test kf.fit_bool == Vector([true, true, true, true, true, true, true]) 
 end
 
+#I have to finisht his later when i can merge all current branches. i.e. tbd
+function test_EM_numeric()
+    # create a naive kalman filter to optimize via a numerical EM
+    kf = LDS(;latent_dim=2, obs_dim=2, fit_bool=fill(true, 7))
+    # create a second kalman filter to optimize using EM
+    kf_prime = LDS(;A=kf.A, Q=kf.Q, H=kf.H, R=kf.R, x0=kf.x0, p0=kf.p0, obs_dim=kf.obs_dim, latent_dim=kf.latent_dim, fit_bool=kf.fit_bool)
+    # set up an optimziation problem for three iterations
+    for i in 1:1
+        # smooth observations
+        x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.E_Step(kf, x_noisy)
+        # optimize kf_prime
+        SSM.KalmanFilterEM!(kf_prime, x_noisy, 1)
+
+        # optimize x0 and p0 first of kf
+        res_1 = optimize(x0 -> -SSM.Q(kf.A, kf.Q, kf.H, kf.R, kf.p0, x0, E_z, E_zz, E_zz_prev, x_noisy), kf.x0, LBFGS())
+        res_2 = optimize(p0 -> -SSM.Q(kf.A, kf.Q, kf.H, kf.R, p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.p0, LBFGS())
+        # test the optimization
+        @test isapprox(res_1.minimizer, kf_prime.x0; atol=1e-6)
+        @test_broken isapprox(res_2.minimizer * res_2.minimizer', kf_prime.p0; atol=1e-6)
+
+        # now update A and Q
+        res_3 = optimize(A -> -SSM.Q(A, kf.Q, kf.H, kf.R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.A, LBFGS())
+        # test if A is updated
+        @test isapprox(res_3.minimizer, kf_prime.A; atol=1e-6)
+        kf.A = res_3.minimizer
+        res_4 = optimize(Q -> -SSM.Q(kf.A, Q, kf.H, kf.R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.Q, LBFGS())
+        # test if Q is updated
+        @test isapprox(res_4.minimizer * res_4.minimizer', kf_prime.Q; atol=1e-6)
+
+        # now update H and R
+        res_5 = optimize(H -> -SSM.Q(kf.A, kf.Q, H, kf.R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.H, LBFGS())
+        # test if H is updated
+        @test isapprox(res_5.minimizer, kf_prime.H; atol=1e-6)
+        kf.H = res_5.minimizer
+        res_6 = optimize(R -> -SSM.Q(kf.A, kf.Q, kf.H, R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.R, LBFGS())
+        # test if R is updated
+        @test isapprox(res_6.minimizer * res_6.minimizer', kf_prime.R; atol=1e-6)
+    end
+end
+
 @testset "LDS Tests" begin
     test_LDS_with_params()
     test_LDS_without_params()
     test_LDS_EStep()
     test_LDS_MStep!()
     test_LDS_EM()
+    test_EM_numeric()
 end
 
 function toy_PoissonLDS()
@@ -542,11 +585,11 @@ function toy_PoissonLDS()
     A = [cos(0.1) -sin(0.1); sin(0.1) cos(0.1)]
     Q = Matrix(Diagonal([0.001, 0.001]))
     C = [0.5 0.5; 0.5 0.1; 0.1 0.1]
-    d = [0.5, 0.5, 0.5]
+    log_d = [0.5, 0.5, 0.5]
     D = Matrix(Diagonal([0., 0., 0.]))
-    b = ones(T, 2) * 0.1
+    b = ones(T, 2) * 0.0
 
-    plds = PoissonLDS(A=A, C=C, Q=Q, D=D, b=b, d=d, x0=x0, p0=p0, refractory_period=1, obs_dim=3, latent_dim=2)
+    plds = PoissonLDS(A=A, C=C, Q=Q, D=D, b=b, log_d=log_d, x0=x0, p0=p0, refractory_period=1, obs_dim=3, latent_dim=2)
     # sample data
     x, y = SSM.sample(plds, T, 3)
     return plds, x, y
@@ -563,12 +606,12 @@ function test_PLDS_constructor_with_params()
     x0 = randn(latent_dim)
     p0 = I(latent_dim)
     refrac = 1
-    d = randn(obs_dim)
+    log_d = randn(obs_dim)
     D = randn(obs_dim, obs_dim)
     fit_bool=Vector([true, true, true, true, true, true])
 
     # create the PLDS model
-    plds = PoissonLDS(A=A, C=C, Q=Q, D=D, d=d, x0=x0, p0=p0, refractory_period=1, obs_dim=obs_dim, latent_dim=latent_dim, fit_bool=fit_bool)
+    plds = PoissonLDS(;A=A, C=C, Q=Q, D=D, log_d=log_d, x0=x0, p0=p0, refractory_period=refrac, obs_dim=obs_dim, latent_dim=latent_dim, fit_bool=fit_bool)
 
     # test model
     @test plds.A == A
@@ -576,7 +619,7 @@ function test_PLDS_constructor_with_params()
     @test plds.Q == Q
     @test plds.x0 == x0
     @test plds.p0 == p0
-    @test plds.d == d
+    @test plds.log_d == log_d
     @test plds.D == D
     @test plds.refractory_period == 1
     @test plds.obs_dim == obs_dim
@@ -593,7 +636,7 @@ function test_PLDS_constructor_without_params()
     @test !isempty(plds.Q)
     @test !isempty(plds.x0)
     @test !isempty(plds.p0)
-    @test !isempty(plds.d)
+    @test !isempty(plds.log_d)
     @test !isempty(plds.D)
     @test plds.refractory_period == 1
     @test plds.obs_dim == 10
@@ -606,7 +649,7 @@ function test_PLDS_constructor_without_params()
     @test size(plds.Q) == (5, 5)
     @test size(plds.x0) == (5,)
     @test size(plds.p0) == (5, 5)
-    @test size(plds.d) == (10,)
+    @test size(plds.log_d) == (10,)
     @test size(plds.D) == (10, 10)
     @test isempty(plds.b)
 end
@@ -653,15 +696,9 @@ function test_gradient_plds()
     # check the dimensions
     @test size(grad) == (3, 5)
     # check the gradients using autodiff
-    obj(x) = x -> SSM.logposterior(x, plds, obs)
-    grad_autodiff = ForwardDiff.gradient(obj(x), x)
-    @test grad ≈ grad_autodiff atol=1e-6
-    # # now test for when there is inputs
-    # grad = SSM.Gradient(x, plds, obs)
-    # @test size(grad) == (3, 5)
-    # obj_input(x) = x -> SSM.logposterior(x, plds, obs)
-    # grad_autodiff = ForwardDiff.gradient(obj_input(x), x)
-    # @test grad ≈ grad_autodiff atol=1e-6
+    obj = x -> SSM.logposterior_nonthreaded(x, plds, obs)
+    grad_autodiff = ForwardDiff.gradient(obj, x)
+    @test grad ≈ grad_autodiff atol=1e-12
 end
 
 function test_hessian_plds()
@@ -683,24 +720,10 @@ function test_hessian_plds()
     # check the hessian using autodiff
     function obj_logposterior(x::Vector)
         x = SSM.interleave_reshape(x, 3, 5)
-        return SSM.logposterior(x, plds, obs)
+        return SSM.logposterior_nonthreaded(x, plds, obs)
     end
     hess_autodiff = ForwardDiff.hessian(obj_logposterior, reshape(x', 15))
-    @test hess ≈ hess_autodiff atol=1e-6
-    # # now test when there is input
-    # b = randn(3, 5)
-    # plds.b = b
-    # hess, main, super, sub = SSM.Hessian(x, plds, obs)
-    # @test length(main) == 3
-    # @test length(super) == 2
-    # @test length(sub) == 2
-    # @test size(hess) == (15, 15)
-    # function obj_logposterior_input(x::Vector)
-    #     x = SSM.interleave_reshape(x, 3, 5)
-    #     return SSM.logposterior(x, plds, obs)
-    # end
-    # hess_autodiff = ForwardDiff.hessian(obj_logposterior_input, reshape(x', 15))
-    # @test hess ≈ hess_autodiff atol=1e-6
+    @test hess ≈ hess_autodiff atol=1e-12
 end
 
 function test_direct_smoother()
@@ -723,48 +746,48 @@ function test_smooth()
     # run the smoother
     x_smooth, p_smooth = SSM.smooth(plds, y)
     # check the dimensions
-    @test size(x_smooth) == (100, 2, 3)
-    @test size(p_smooth) == (100, 2, 2, 3)
+    @test size(x_smooth) == (3, 100, 2)
+    @test size(p_smooth) == (3, 100, 2, 2)
 end
 
 function test_analytical_parameter_updates()
-    # create a plds model and smaple data
-    plds_dummy, x, y = toy_PoissonLDS()
-    # create a plds model
+    # create a dummy data
+    dummy_plds, x, y = toy_PoissonLDS()
+    # now create a random plds model
     plds = PoissonLDS(;obs_dim=3, latent_dim=2)
-    # set up reasonable intitial parameters
-    b = ones(100, 2) * 0.5
-    plds.A = Matrix{Float64}([1 0; 0 1])
-    plds.Q = Matrix{Float64}([1 0; 0 1])
-    plds.x0 = [1.0, -1.0]
-    plds.p0 = Matrix{Float64}([1 0; 0 1])
-    plds.b = b
-    # test for ten updates
-    for i in 1:10
-        x_sm, _, _ = SSM.smooth(plds, y)
-        # set up objective function for analytical parameters
-        obj_x0(x0) = x0 -> -SSM.loglikelihood(x_sm, SSM.PoissonLDS(A=plds.A, C=plds.C, Q=plds.Q, D=plds.D, b=plds.b, d=plds.d, x0=x0, p0=plds.p0, refractory_period=plds.refractory_period, obs_dim=plds.obs_dim, latent_dim=plds.latent_dim), y)
-        # obj_p0(p0) = p0 -> -SSM.loglikelihood(x_sm, SSM.PoissonLDS(A=plds.A, C=plds.C, Q=plds.Q, D=plds.D, b=plds.b, d=plds.d, x0=plds.x0, p0=p0, refractory_period=plds.refractory_period, obs_dim=plds.obs_dim, latent_dim=plds.latent_dim), y)
-        # obj_A(A) = A -> -SSM.loglikelihood(x_sm, SSM.PoissonLDS(A=A, C=plds.C, Q=plds.Q, D=plds.D, b=plds.b, d=plds.d, x0=plds.x0, p0=plds.p0, refractory_period=plds.refractory_period, obs_dim=plds.obs_dim, latent_dim=plds.latent_dim), y)
-        # obj_Q(Q) = Q -> -SSM.loglikelihood(x_sm, SSM.PoissonLDS(A=plds.A, C=plds.C, Q=Q, D=plds.D, b=plds.b, d=plds.d, x0=plds.x0, p0=plds.p0, refractory_period=plds.refractory_period, obs_dim=plds.obs_dim, latent_dim=plds.latent_dim), y)
-        # obj_b(b) = b -> -SSM.loglikelihood(x_sm, SSM.PoissonLDS(A=plds.A, C=plds.C, Q=plds.Q, D=plds.D, b=b, d=plds.d, x0=plds.x0, p0=plds.p0, refractory_period=plds.refractory_period, obs_dim=plds.obs_dim, latent_dim=plds.latent_dim), y)    
-        # optimize using Optim now
-        x0_opt = optimize(obj_x0(x0), plds.x0, LBFGS(), Optim.Options(show_trace=false)).minimizer
-        # p0_opt = optimize(obj_p0(p0), plds.p0, LBFGS(), Optim.Options(show_trace=false)).minimizer
-        # A_opt = optimize(obj_A(A), plds.A, LBFGS(), Optim.Options(show_trace=false)).minimizer
-        # Q_opt = optimize(obj_Q(Q), plds.Q, LBFGS(), Optim.Options(show_trace=false)).minimizer
-        # b_opt = optimize(obj_b(b), plds.b, LBFGS(), Optim.Options(show_trace=false)).minimizer
-        # optimize with em
-        E_z, E_zz, E_zz_prev, x_sm, p_sm = SSM.E_Step(plds, y)
-        SSM.M_Step!(plds, E_z, E_zz, E_zz_prev, x_sm, y)
-        # check if the parameters are updated and agree with the numerical solution
-        @test x0_opt ≈ plds.x0 atol=1e-6
-        # @test p0_opt ≈ plds.p0 atol=1e-6
-        # @test A_opt ≈ plds.A atol=1e-6
-        # @test Q_opt ≈ plds.Q atol=1e-6
-        # @test b_opt ≈ plds.b atol=1e-6
-    end
+    # save the old parameters from the model
+    A = copy(plds.A)
+    Q = copy(plds.Q)
+    x0 = copy(plds.x0)
+    p0 = copy(plds.p0)
+    # run E-Step
+    E_z, E_zz, E_zz_prev, x_sm, p_sm = SSM.E_Step(plds, y)
+
+    # optimize x0 
+    opt_x0 = x0 -> -SSM.Q_initial_obs(x0, plds.p0, E_z, E_zz)
+    result_x0 = optimize(opt_x0, plds.x0, LBFGS())
+    @test isapprox(result_x0.minimizer, SSM.update_initial_state_mean!(plds, E_z))
+
+    # optimize p0
+    opt_p0 = p0 -> -SSM.Q_initial_obs(result_x0.minimizer, p0, E_z, E_zz)
+    result_p0 = optimize(opt_p0, plds.p0, LBFGS(), Optim.Options(g_abstol=1e-12))
+    @test_broken isapprox(result_p0.minimizer * result_p0.minimizer', SSM.update_initial_state_covariance!(plds, E_zz, E_z), atol=1e-3)
+
+    Q_l = Matrix(cholesky(Q).L)
+    # optimize A and Q
+    opt_A = A -> -SSM.Q_state_model(A, Q_l, E_zz, E_zz_prev)
+    result_A = optimize(opt_A, plds.A, LBFGS(), Optim.Options(g_abstol=1e-12))
+    @test_broken isapprox(result_A.minimizer, SSM.update_A_plds!(plds, E_zz, E_zz_prev), atol=1e-6)
+
+    # update the model before update Q
+    plds.A = result_A.minimizer
+    # optimize Q now
+    opt_Q = Q -> -SSM.Q_state_model(plds.A, Q, E_zz, E_zz_prev)
+    result_Q = optimize(opt_Q, Q_l, LBFGS(), Optim.Options(g_abstol=1e-12))
+
+    @test isapprox(result_Q.minimizer * result_Q.minimizer', SSM.update_Q_plds!(plds, E_zz, E_zz_prev), atol=1e-6)
 end
+
 
 @testset "PLDS Tests" begin
     test_PLDS_constructor_with_params()

@@ -28,3 +28,8 @@ abstract type AbstractHMM end
 Abstract type for Dynamical Systems. I.e. LDS, etc.
 """
 abstract type DynamicalSystem end
+
+# smoothing methods for sufficient statistic calculation disambiguation, see LDS.jl
+abstract type SmoothingMethod end
+struct RTSSmoothing <: SmoothingMethod end
+struct DirectSmoothing <: SmoothingMethod end

@@ -45,10 +45,10 @@ end
 function initialize_missing_parameters!(lds::LDS)
     lds.A = lds.A === nothing ? rand(lds.latent_dim, lds.latent_dim) : lds.A
     lds.H = lds.H === nothing ? rand(lds.obs_dim, lds.latent_dim) : lds.H
-    lds.Q = lds.Q === nothing ? I(lds.latent_dim) : lds.Q
-    lds.R = lds.R === nothing ? I(lds.obs_dim) : lds.R
+    lds.Q = lds.Q === nothing ? Matrix{Float64}(I(lds.latent_dim)) : lds.Q
+    lds.R = lds.R === nothing ? Matrix{Float64}(I(lds.obs_dim)) : lds.R
     lds.x0 = lds.x0 === nothing ? rand(lds.latent_dim) : lds.x0
-    lds.p0 = lds.p0 === nothing ? Matrix(rand() * I(lds.latent_dim)) : lds.p0
+    lds.p0 = lds.p0 === nothing ? Matrix{Float64}(rand() * I(lds.latent_dim)) : lds.p0
     if lds.inputs !== nothing
         lds.B = lds.B === nothing ? rand(lds.latent_dim, size(lds.inputs, 2)) : lds.B
     end
@@ -111,6 +111,7 @@ function KalmanFilter(l::LDS, y::AbstractArray)
         # Update step
         x_filt[t, :] = x_pred[t, :] + (K[t, :, :] * v[t, :])
         p_filt[t, :, :] = (I(l.latent_dim) - K[t, :, :] * l.H) * p_pred[t, :, :]
+        # Update the log-likelihood
         ml += marginal_loglikelihood(l, v[t, :], S[t, :, :])
     end
     return x_filt, p_filt, x_pred, p_pred, v, S, K, ml
@@ -118,7 +119,7 @@ end
 
 function RTSSmoother(l::LDS, y::AbstractArray)
     # Forward pass (Kalman Filter)
-    x_filt, p_filt, x_pred, p_pred, v, F, K, ml = KalmanFilter(l, y)
+    x_filt, p_filt, x_pred, p_pred, v, s, K, ml = KalmanFilter(l, y)
     # Pre-allocate smoother arrays
     x_smooth = zeros(size(x_filt))  # Smoothed state estimates
     p_smooth = zeros(size(p_filt))  # Smoothed state covariances
@@ -155,6 +156,8 @@ function DirectSmoother(l::LDS, y::AbstractArray, tol::Float64=1e-6)
     H, main, super, sub = Hessian(l, y)
     # compute the inverse of the main diagonal of the Hessian, this is the posterior covariance
     p_smooth, inverse_offdiag = block_tridiagonal_inverse(-sub, -main, -super)
+    # concatenate a zero matrix to the inverse off diagonal to match the dimensions of the posterior covariance
+    inverse_offdiag = cat(zeros(1, l.latent_dim, l.latent_dim), inverse_offdiag, dims=1)
     # now optimize
     for i in 1:5 # this should stop at the first iteration in theory but likely will at iteration 2
         # Compute the gradient
@@ -166,7 +169,9 @@ function DirectSmoother(l::LDS, y::AbstractArray, tol::Float64=1e-6)
         # Check for convergence (uncomment the following lines to enable convergence checking)
         if norm(xₜ₊₁ - xₜ) < tol
             println("Converged at iteration ", i)
-            return xₜ₊₁, p_smooth, inverse_offdiag
+            # Calculate the Q-function as a substitute for the marginal loglikelihood
+            Q_val = Q(l, xₜ, p_smooth, inverse_offdiag, y)
+            return xₜ₊₁, p_smooth, inverse_offdiag, Q_val
         else
             println("Norm of gradient iterate difference: ", norm(xₜ₊₁ - xₜ))
         end
@@ -174,16 +179,123 @@ function DirectSmoother(l::LDS, y::AbstractArray, tol::Float64=1e-6)
         xₜ = xₜ₊₁
     end
     # Print a warning if the routine did not converge
-    println("Warning: Newton-Raphson routine did not converge.")
-    return xₜ, p_smooth, inverse_offdiag
+    Warn("Direct Smoother did not converge")
+    # Calculate the Q-function as a substitute for the marginal loglikelihood
+    Q_val = Q(l, xₜ, p_smooth, inverse_offdiag, y)
+    return xₜ, p_smooth, inverse_offdiag, Q_val
 end
 
-function KalmanSmoother(l::LDS, y::AbstractArray, method::String="RTS")
-    if method == "RTS"
-        return RTSSmoother(l, y)
-    else
-        return DirectSmoother(l, y)
+function KalmanSmoother(l::LDS, y::AbstractArray, Smoother::SmoothingMethod=RTSSmoothing())
+    return _smooth(l, y, Smoother)
+end
+
+function _smooth(l::LDS, y::AbstractArray, ::RTSSmoothing)
+    return RTSSmoother(l, y)
+end
+
+function _smooth(l::LDS, y::AbstractArray, ::DirectSmoothing)
+    return DirectSmoother(l, y)
+end
+
+
+"""
+    sufficient_statistics(smoothing_method, μ, P, J_or_Ptt1)
+
+Compute the sufficient statistics for a given smoothing method.
+
+# Arguments
+- `smoothing_method`: The smoothing method to use.
+- `μ`: A matrix the mean values of the latent variables at each time step.
+- `P`: An array of covariance matrices of the latent variables at each time step.
+- `J_or_Ptt1`: An array of either the smoother-gain matrices or the cross-covariance matrices between consecutive latent variables.
+
+# Returns
+- The computed sufficient statistics. See the specific implementation for details.
+
+"""
+function sufficient_statistics(smoothing_method::SmoothingMethod, μ::Matrix{<:Real}, P::Array{<:Real}, J_or_Ptt1::Array{<:Real})
+    return _sufficient_statistics(smoothing_method, μ, P, J_or_Ptt1)
+end
+
+
+"""
+    _sufficient_statistics(RTSSmoothing, μ::Matrix{<:Real}, P::Array{<:Real}, J::Array{<:Real})
+
+Computes the sufficient statistics for the E-step of the EM algorithm. This implementation uses the definitions from Pattern Recognition and Machine Learning by Christopher Bishop (pg. 642) and Bayesian Filtering and Smoothing by Simo Sarkka and Lennart Svenson.
+This version is used with the RTS-Smoother.
+
+This function computes the following statistics:
+- `E[zₙ] = ̂xₙ`
+- `E[zₙzₙᵀ] = ̂xₙ̂xₙᵀ + ̂pₙ`
+- `E[zₙzₙ₋₁ᵀ] = Jₙ₋₁̂pₙ + ̂xₙ̂xₙ₋₁ᵀ`
+
+# Arguments
+- `RTSSmoothing`: The RTSSmoothing object.
+- `μ::Matrix{<:Real}`: The mean vector of the latent states at each time step.
+- `P::Array{<:Real}`: The covariance matrix of the latent states at each time step.
+- `J::Array{<:Real}`: The smoother-gain matrix of the latent states at each time step.
+
+# Returns
+- `E_z`: The expected value of the latent states.
+- `E_zz`: The expected value of the outer product of the latent states.
+- `E_zz_prev`: The expected value of the outer product of the current and previous latent states.
+"""
+function _sufficient_statistics(smoother::RTSSmoothing, μ::Matrix{<:Real}, P::Array{<:Real}, J::Array{<:Real})
+    T = size(μ, 1)
+    # Initialize sufficient statistics
+    E_z = zeros(T, size(μ, 2))
+    E_zz = zeros(T, size(μ, 2), size(μ, 2))
+    E_zz_prev = zeros(T, size(μ, 2), size(μ, 2))
+    # Compute sufficient statistics
+    for t in 1:T
+        E_z[t, :] = μ[t, :]
+        E_zz[t, :, :] = P[t, :, :] + (μ[t, :] * μ[t, :]')
+        if t > 1
+            E_zz_prev[t, :, :] =  (P[t, :, :] * J[t-1, :, :]') + (μ[t, :] * μ[t-1, :]')
+        end
     end
+    return E_z, E_zz, E_zz_prev
+end
+
+"""
+    _sufficient_statistics(DirectSmoothing, μ::Matrix{<:Real}, P::Array{<:Real}, Ptt1::Array{<:Real})
+
+Compute the sufficient statistics for a linear dynamical system.
+
+# Arguments
+- `DirectSmoothing`: The DirectSmoothign object.
+- `μ::Matrix{<:Real}`: The mean values of the latent variables at each time step.
+- `P::Array{<:Real}`: The covariance matrices of the latent variables at each time step.
+- `Ptt1::Array{<:Real}`: The cross-covariance matrices between consecutive latent variables.
+
+# Returns
+- `E_z`: The expected values of the latent variables.
+- `E_zz`: The expected values of the outer product of the latent variables.
+- `E_zz_prev`: The expected values of the outer product of the current and previous latent variables.
+"""
+function _sufficient_statistics(smoother::DirectSmoothing, μ::Matrix{<:Real}, P::Array{<:Real}, Ptt1::Array{<:Real})
+    T = size(μ, 1)
+    # Initialize sufficient statistics
+    E_z = zeros(T, size(μ, 2))
+    E_zz = zeros(T, size(μ, 2), size(μ, 2))
+    E_zz_prev = zeros(T, size(μ, 2), size(μ, 2))
+    # Compute sufficient statistics
+    for t in 1:T
+        E_z[t, :] = μ[t, :]
+        E_zz[t, :, :] = P[t, :, :] + (μ[t, :] * μ[t, :]')
+        if t > 1
+            E_zz_prev[t, :, :] = Ptt1[t, :, :]' + (μ[t, :] * μ[t-1, :]')
+        end
+    end
+    return E_z, E_zz, E_zz_prev
+end
+
+function E_Step(l::LDS, y::AbstractArray, smoother::SmoothingMethod=RTSSmoothing())
+    # run the kalman smoother
+    x_smooth, p_smooth, J_or_ptt1, ll = KalmanSmoother(l, y, smoother)
+    # compute the sufficient statistics
+    E_z, E_zz, E_zz_prev = _sufficient_statistics(smoother, x_smooth, p_smooth, J_or_ptt1)
+    return x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ll
 end
 
 function update_initial_state_mean!(l::DynamicalSystem, E_z::AbstractArray)
@@ -203,7 +315,7 @@ end
 function update_A!(l::DynamicalSystem, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real})
     # update the transition matrix
     if l.fit_bool[3]
-        l.A = dropdims(sum(E_zz_prev[2:end, :, :], dims=1), dims=1) * pinv(dropdims(sum(E_zz[1:end-1, :, :], dims=1), dims=1))
+        l.A = dropdims(sum(E_zz_prev, dims=1), dims=1) * pinv(dropdims(sum(E_zz[1:end-1, :, :], dims=1), dims=1))
     end
 end
 
@@ -249,45 +361,6 @@ function update_R!(l::LDS, E_z::AbstractArray, E_zz::AbstractArray, y::AbstractA
     end
 end
 
-"""
-Computes the sufficient statistics for the E-step of the EM algorithm. This implementation uses the definitions from
-Pattern Recognition and Machine Learning by Christopher Bishop (pg. 642) and Bayesian Filtering and Smoothing by Simo Sarkka and Lennart Svenson.
-
-This function computes the following statistics:
-    E[zₙ] = ̂xₙ
-    E[zₙzₙᵀ] = ̂xₙ̂xₙᵀ + ̂pₙ
-    E[zₙzₙ₋₁ᵀ] = Jₙ₋₁̂pₙ + ̂xₙ̂xₙ₋₁ᵀ
-
-Args:
-    J: Smoother gain
-    P: Smoothed state covariances
-    μ: Smoothed state estimates
-"""
-function sufficient_statistics(J::Array{<:Real}, P::Array{<:Real}, μ::Matrix{<:Real})
-    T = size(μ, 1)
-    # Initialize sufficient statistics
-    E_z = zeros(T, size(μ, 2))
-    E_zz = zeros(T, size(μ, 2), size(μ, 2))
-    E_zz_prev = zeros(T, size(μ, 2), size(μ, 2))
-    # Compute sufficient statistics
-    for t in 1:T
-        E_z[t, :] = μ[t, :]
-        E_zz[t, :, :] = P[t, :, :] + (μ[t, :] * μ[t, :]')
-        if t > 1
-            E_zz_prev[t, :, :] =  (P[t, :, :] * J[t-1, :, :]') + (μ[t, :] * μ[t-1, :]')
-        end
-    end
-    return E_z, E_zz, E_zz_prev
-end 
-
-function E_Step(l::LDS, y::AbstractArray)
-    # run the kalman smoother
-    x_smooth, p_smooth, J, ml = KalmanSmoother(l, y)
-    # compute the sufficient statistics
-    E_z, E_zz, E_zz_prev = sufficient_statistics(J, p_smooth, x_smooth)
-    return x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml
-end
-
 function M_Step!(l::LDS, E_z::Matrix{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, y_n::AbstractMatrix{<:Real})
     # update the parameters
     update_initial_state_mean!(l, E_z)
@@ -298,7 +371,7 @@ function M_Step!(l::LDS, E_z::Matrix{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Ar
     update_R!(l, E_z, E_zz, y_n)
 end
 
-function KalmanFilterEM!(l::LDS, y::AbstractArray, max_iter::Int=1000, tol::Float64=1e-6)
+function KalmanFilterEM!(l::LDS, y::AbstractArray, max_iter::Int=1000, tol::Float64=1e-12, smoother::SmoothingMethod=RTSSmoothing())
     # Initialize log-likelihood
     prev_ml = -Inf
     # Create a list to store the log-likelihood
@@ -308,7 +381,7 @@ function KalmanFilterEM!(l::LDS, y::AbstractArray, max_iter::Int=1000, tol::Floa
     # Run EM
     for i in 1:max_iter
         # E-step
-        _, _, E_z, E_zz, E_zz_prev, ml = E_Step(l, y)
+        _, _, E_z, E_zz, E_zz_prev, ml = E_Step(l, y, smoother)
         # M-step
         M_Step!(l, E_z, E_zz, E_zz_prev, y)
         # update the log-likelihood
@@ -412,16 +485,105 @@ function Gradient(l::LDS, y::AbstractArray, x::AbstractArray)
     return grad
 end
 
+
 """
-Compute p(X|Y) for a given LDS model and a set of observations i.e. the loglikelihood.
+    Q(l::LDS, E_z::Matrix{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, y::Matrix{<:Real})
 
-Args:
-    X: Matrix of latent states
-    l: LDS struct
-    y: Matrix of observations
+Calculate the Q-function of the EM algorithm for an LDS model i.e. the expected complete-data loglikelihood.
 
-Returns:
-    ll: Loglikelihood of the LDS model given the observations
+# Arguments
+- `A::Matrix{<:Real}`: The transition matrix.
+- `Q::AbstractMatrix{<:Real}`: The process noise covariance matrix. Parameterized as Q = Q*Q' to ensure positive definiteness.
+- `H::Matrix{<:Real}`: The observation matrix.
+- `R::AbstractMatrix{<:Real}`: The observation noise covariance matrix. Parameterized as R = R*R' to ensure positive definiteness.
+- `P0::AbstractMatrix{<:Real}`: The initial state covariance matrix. Parameterized as P0 = P0*P0' to ensure positive definiteness.
+- `x0::Vector{<:Real}`: The initial state.
+- `E_z::Matrix{<:Real}`: The expected latent states.
+- `E_zz::Array{<:Real}`: The expected value of the latent states x the latent states.
+- `E_zz_prev::Array{<:Real}`: The expected value of the latent states x the latent states at the previous time step.
+- `y::Matrix{<:Real}`: The observed data.
+
+# Returns
+- `Float64`: The Q-function of the EM algorithm.
+
+# Examples
+"""
+function Q(A::Matrix{<:Real}, Q::AbstractMatrix{<:Real}, H::Matrix{<:Real}, R::AbstractMatrix{<:Real}, P0::AbstractMatrix{<:Real}, x0::Vector{<:Real}, E_z::Matrix{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, y::Matrix{<:Real})
+    # Convert Q, R, and P0 to proper matrices
+    Q = Q * Q'
+    R = R * R'
+    P0 = P0 * P0'
+    # calculate the inverses
+    R_inv = pinv(R)
+    Q_inv = pinv(Q)
+    P0_inv = pinv(P0)
+    # Calculate the Q-function
+    Q_val = 0.0
+    # Calculate the Q-function for the first time step
+    Q_val += -0.5 * (logdet(P0) + tr(P0_inv * (E_zz[1, :, :] - 2*(E_z[1, :] * x0') + (x0 * x0'))))
+    # Calculate the Q-function for the state model
+    for t in axes(E_z, 1)[2:end] # skip the first time step
+        # Individual terms
+        term1 = E_zz[t, :, :]
+        term2 = A * E_zz_prev[t, :, :]'
+        term3 = E_zz_prev[t, :, :] * A'
+        term4 = A * E_zz[t-1, :, :] * A'
+        # Calculate the Q-value
+        q_val = -0.5 * (logdet(Q) + tr(Q_inv * (term1 - term2 - term3 + term4)))
+        Q_val += q_val
+    end
+    # Calculate the Q-function for the observation model
+    for t in axes(E_z, 1)
+        # Individual terms
+        term1 = y[t, :] * y[t, :]'
+        term2 = H * (E_z[t, :] * y[t, :]')
+        term3 = (y[t, :] * E_z[t, :]') * H'
+        term4 = H * E_zz[t, :, :] * H'
+        # Calculate the Q-value`
+        q_val = -0.5 * (logdet(R) + tr(R_inv * (term1 - term2 - term3 + term4)))
+        Q_val += q_val
+    end
+    return Q_val
+end
+
+"""
+    Q(l::LDS, E_z::Matrix{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, y::Matrix{<:Real})
+
+Calculate the Q-function of the EM algorithm for an LDS model i.e. the expected complete-data loglikelihood.
+
+# Arguments
+- `l::LDS`: The Linear Dynamical System model.
+- `E_z::Matrix{<:Real}`: The expected latent states.
+- `E_zz::Array{<:Real}`: The expected value of the latent states x the latent states.
+- `E_zz_prev::Array{<:Real}`: The expected value of the latent states x the latent states at the previous time step.
+- `y::Matrix{<:Real}`: The observed data.
+
+# Returns
+- `Float64`: The Q-function of the EM algorithm.
+"""
+function Q(l::LDS, E_z::Matrix{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, y::Matrix{<:Real})
+    # Re-parameterize the covariance matrices of the LDS model
+    Q_chol = Matrix(cholesky(l.Q).L)
+    R_chol = Matrix(cholesky(l.R).L)
+    P0_chol = Matrix(cholesky(l.p0).L)
+    # Calculate the Q-function
+    Q_val = Q(l.A, Q_chol, l.H, R_chol, P0_chol, l.x0, E_z, E_zz, E_zz_prev, y)
+    return Q_val
+end
+
+
+"""
+    loglikelihood(x::AbstractArray, l::LDS, y::AbstractArray)
+
+Calculate the log-likelihood of a linear dynamical system (LDS) given the observed data.
+
+# Arguments
+- `x::AbstractArray`: The state sequence of the LDS.
+- `l::LDS`: The parameters of the LDS.
+- `y::AbstractArray`: The observed data.
+
+# Returns
+- `ll::Float64`: The complete-data log-likelihood of the LDS.
 """
 function loglikelihood(x::AbstractArray, l::LDS, y::AbstractArray)
     T = size(y, 1)
@@ -444,11 +606,17 @@ function loglikelihood(x::AbstractArray, l::LDS, y::AbstractArray)
 end
 
 """
-Compute the marginal loglikelihood of a given LDS model and a set of observations.
+    marginal_loglikelihood(l::LDS, v::Matrix{<:Real}, s::Array{<:Real})
 
-Args:
-    l: LDS struct
-    y: Matrix of observations
+Compute the marginal log-likelihood of the observed data given the parameters of a linear dynamical system (LDS).
+
+# Arguments
+- `l::LDS`: An instance of the LDS type representing the parameters of the linear dynamical system.
+- `v::Matrix{<:Real}`: The innovation matrix.
+- `s::Array{<:Real}`: The covariance matrix of innovations.
+
+# Returns
+- `Float64`: The marginal log-likelihood of the observed data.
 """
 function marginal_loglikelihood(l::LDS, v::AbstractArray, s::AbstractArray)
     return (-0.5) * ((v' * pinv(s) * v) + logdet(s) + l.obs_dim*log(2*pi))
@@ -505,7 +673,7 @@ A Poisson Linear Dynamical System (PLDS).
 - `C:: AbstractMatrix{<:Real}`: Observation Matrix
 - `Q:: AbstractMatrix{<:Real}`: Process Noise Covariance
 - `D:: AbstractMatrix{<:Real}`: History Control Matrix
-- `d:: AbstractVector{<:Real}`: Mean Firing Rate Vector
+- `log_d:: AbstractVector{<:Real}`: Mean Firing Rate Vector. This is in log space to ensure that the mean firing rate is always positive.
 - `x0:: AbstractVector{<:Real}`: Initial State
 - `p0:: AbstractMatrix{<:Real}`: Initial Covariance
 - `refractory_period:: Int`: Refractory Period
@@ -518,7 +686,7 @@ mutable struct PoissonLDS <: DynamicalSystem
     C:: AbstractMatrix{<:Real} # Observation Matrix
     Q:: AbstractMatrix{<:Real} # Process Noise Covariance
     D:: AbstractMatrix{<:Real} # History Control Matrix
-    d:: AbstractVector{<:Real} # Mean Firing Rate Vector
+    log_d:: AbstractVector{<:Real} # Mean Firing Rate Vector
     b:: AbstractArray{<:Real} # Latent State Input
     x0:: AbstractVector{<:Real} # Initial State
     p0:: AbstractMatrix{<:Real} # Initial Covariance
@@ -541,7 +709,7 @@ Advances in Neural Information Processing Systems 24 (2011).
 - `C::AbstractMatrix{<:Real}`: Observation matrix.
 - `Q::AbstractMatrix{<:Real}`: Process noise covariance matrix.
 - `D::AbstractMatrix{<:Real}`: History control matrix.
-- `d::AbstractVector{<:Real}`: Mean firing rate vector.
+- `log_d::AbstractVector{<:Real}`: Mean firing rate vector in log space. This way we can ensure that the mean firing rate is always positive.
 - `b::AbstractMatrix{<:Real}`: Latent state input.
 - `x₀::AbstractVector{<:Real}`: Initial state vector.
 - `p₀::AbstractMatrix{<:Real}`: Initial covariance matrix.
@@ -556,7 +724,7 @@ A = rand(3, 3)
 C = rand(4, 3)
 Q = I(3)
 D = rand(3, 4)
-d = rand(4)
+log_d = rand(4)
 x₀ = rand(3)
 p₀ = I(3)
 refractory_period = 1
@@ -571,7 +739,7 @@ function PoissonLDS(;
     C::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
     Q::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
     D::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
-    d::AbstractVector{<:Real}=Vector{Float64}(undef, 0),
+    log_d::AbstractVector{<:Real}=Vector{Float64}(undef, 0),
     b::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
     x0::AbstractVector{<:Real}=Vector{Float64}(undef, 0),
     p0::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
@@ -583,12 +751,12 @@ function PoissonLDS(;
     # Initialize missing parameters
     A = isempty(A) ? 0.1 * rand(latent_dim, latent_dim) : A
     C = isempty(C) ? 0.1 * rand(obs_dim, latent_dim) : C
-    Q = isempty(Q) ? 0.01 * I(latent_dim) : Q
+    Q = isempty(Q) ? convert(Matrix{Float64}, 0.01 * I(latent_dim)) : Q
     D = isempty(D) ? -abs(rand()) * I(obs_dim) : D
-    d = isempty(d) ? abs.(rand(obs_dim)) : d
+    log_d = isempty(log_d) ? abs.(rand(obs_dim)) : log_d
     b = isempty(b) ? Matrix{Float64}(undef, 0, latent_dim) : b
     x0 = isempty(x0) ? rand(latent_dim) : x0
-    p0 = isempty(p0) ? I(latent_dim) : p0
+    p0 = isempty(p0) ? convert(Matrix{Float64}, I(latent_dim)) : p0
 
     # Check that the observation dimension and latent dimension are specified
     if obs_dim === nothing 
@@ -599,7 +767,30 @@ function PoissonLDS(;
         error("Latent dimension must be specified.")
     end
 
-    PoissonLDS(A, C, Q, D, d, b, x0, p0, refractory_period, obs_dim, latent_dim, fit_bool)
+    PoissonLDS(A, C, Q, D, log_d, b, x0, p0, refractory_period, obs_dim, latent_dim, fit_bool)
+end
+
+function logposterior_nonthreaded(x::AbstractMatrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real}) 
+    # Re-parameterize log_d
+    d = exp.(plds.log_d)
+    # Calculate the log-posterior
+    T = size(y, 1)
+    # Get an array of prior spikes
+    s = countspikes(y, plds.refractory_period)
+    # calculate the first term
+    pygivenx = 0.0
+    for t in 1:T
+        pygivenx += (y[t, :]' * ((plds.C * x[t, :]) + (plds.D * s[t, :]) + d)) - sum(exp.((plds.C * x[t, :]) + (plds.D * s[t, :]) + d))
+    end
+    # calculate the second term
+    px1 = -0.5 * (x[1, :] - plds.x0)' * pinv(plds.p0) * (x[1, :] - plds.x0)
+    # calculate the last term
+    pxtgivenxt1 = 0.0
+    for t in 2:T
+        pxtgivenxt1 += -0.5 * (x[t, :] - ((plds.A * x[t-1, :]) + plds.b[t, :]))' * pinv(plds.Q) * (x[t, :] - ((plds.A * x[t-1, :]) + plds.b[t, :])) 
+    end
+    # sum the terms
+    return pygivenx + px1 + pxtgivenxt1
 end
 
 """
@@ -619,31 +810,187 @@ Calculate the log-posterior of a Poisson Linear Dynamical System (PLDS) given th
 ```julia
 ```
 """
-function logposterior(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real}) 
-    # Calculate the log-posterior
+function logposterior(x::AbstractMatrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
+    # Convert the log firing rate to firing rate
+    d = exp.(plds.log_d)
     T = size(y, 1)
-    # Get an array of prior spikes
     s = countspikes(y, plds.refractory_period)
-    # calculate the first term
-    pygivenx = 0.0
-    for t in 1:T
-        pygivenx += (y[t, :]' * ((plds.C * x[t, :]) + (plds.D * s[t, :]) + plds.d)) - sum(exp.((plds.C * x[t, :]) + (plds.D * s[t, :]) + plds.d))
+    # Get the number of time steps
+    pygivenx = zeros(T)
+    # Calculate p(yₜ|xₜ)
+    @threads for t in 1:T
+        temp = (plds.C * x[t, :] .+ plds.D * s[t, :] .+ d)
+        pygivenx[t] = (y[t, :]' * temp) - sum(exp.(temp))
     end
-    # calculate the second term
-    px1 = -0.5 * (x[1, :] - plds.x0)' * pinv(plds.p0) * (x[1, :] - plds.x0)
-    # calculate the last term
-    pxtgivenxt1 = 0.0
-    for t in 2:T
-        pxtgivenxt1 += -0.5 * (x[t, :] - ((plds.A * x[t-1, :]) + plds.b[t, :]))' * pinv(plds.Q) * (x[t, :] - ((plds.A * x[t-1, :]) + plds.b[t, :])) 
+    pygivenx_sum = sum(pygivenx)
+    # Calculate p(x₁)
+    px1 = -0.5 * (x[1, :] .- plds.x0)' * pinv(plds.p0) * (x[1, :] .- plds.x0)
+    # Calculate p(xₜ|xₜ₋₁)
+    pxtgivenxt1 = zeros(T-1)
+    @threads for t in 2:T
+        temp = (x[t, :] .- (plds.A * x[t-1, :] .+ plds.b[t, :]))
+        pxtgivenxt1[t-1] = -0.5 * temp' * pinv(plds.Q) * temp
     end
-    # calculate the log-determinants
-    log_det_Q = -(T-1)/2 * logdet(plds.Q + (I * 1e-3))
-    log_det_p0 = -0.5 * logdet(plds.p0 + (I * 1e-3))
-    log_det = log_det_Q + log_det_p0
-    # sum the terms
-    return pygivenx + px1 + pxtgivenxt1 + log_det
+    pxtgivenxt1_sum = sum(pxtgivenxt1)
+    # Return the log-posterior
+    return pygivenx_sum + px1 + pxtgivenxt1_sum
 end
 
+"""
+    loglikelihood(x::Array{<:Real}, plds::PoissonLDS, y::Array{<:Real})
+
+Calculate the complete-data log-likelihood of the observed data given the latent states and the Poisson LDS model.
+
+# Arguments
+- `x::Array{<:Real}`: The latent states of the Poisson LDS model.
+- `plds::PoissonLDS`: The Poisson LDS model.
+- `y::Array{<:Real}`: The observed data.
+
+# Returns
+- `ll::Float64`: The log-likelihood of the observed data.
+
+# Example
+"""
+function loglikelihood(x::Array{<:Real}, plds::PoissonLDS, y::Array{<:Real})
+    # confirm the driving inputs are initialized
+    if isempty(plds.b)
+        plds.b = zeros(size(x, 2), size(x, 3))
+    end
+    # Calculate the log-likelihood over all trials
+    ll = zeros(size(y, 1))
+    Threads.@threads for n in axes(y, 1)
+        ll[n] = logposterior(x[n, :, :], plds, y[n, :, :])
+    end
+    return sum(ll)
+end
+
+"""
+    Q_initial_obs(x0::Vector{<:Real}, sqrt_p0::Matrix{<:Real}, E_z::Array{<:Real}, E_zz::Array{<:Real})
+
+Calculate the Q-function for the initial observation.
+
+# Arguments
+- `x0::Vector{<:Real}`: The initial state.
+- `sqrt_p0::Matrix{<:Real}`: The square root of the initial state covariance matrix.
+- `E_z::Array{<:Real}`: The expected latent states.
+- `E_zz::Array{<:Real}`: The expected latent states x the latent states.
+
+# Returns
+- `Float64`: The Q-function for the initial observation.
+"""
+function Q_initial_obs(x0::Vector{<:Real}, sqrt_p0::Matrix{<:Real}, E_z::Array{<:Real}, E_zz::Array{<:Real})
+    # reparametrize p0
+    p0 = sqrt_p0 * sqrt_p0'
+    # Compute Q
+    Q_val = 0.0
+    trials = size(E_z, 1)
+    for k in 1:trials
+        Q_val += -0.5 * (logdet(p0) + tr(pinv(p0) * (E_zz[k, 1, :, :] - (E_z[k, 1, :] * x0') - (x0 * E_z[k, 1, :]') + (x0 * x0'))))
+    end
+    return Q_val
+end
+
+
+"""
+    Q_state_model(A::Matrix{<:Real}, sqrt_Q::Matrix{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real})
+
+Calculate the Q-function for the state model.
+
+# Arguments
+- `A::Matrix{<:Real}`: The transition matrix.
+- `sqrt_Q::Matrix{<:Real}`: The square root of the process noise covariance matrix.
+- `E_zz::Array{<:Real}`: The expected latent states x the latent states.
+- `E_zz_prev::Array{<:Real}`: The expected latent states x the latent states at the previous time step.
+
+# Returns
+- `Float64`: The Q-function for the state model.
+"""
+function Q_state_model(A::Matrix{<:Real}, sqrt_Q::Matrix{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real})
+    # reparametrize Q
+    Q = sqrt_Q * sqrt_Q'
+    Q_inv = pinv(Q)
+    # Compute Q
+    Q_val = 0.0
+    trials = size(E_zz, 1)
+    time_steps = size(E_zz, 2)
+    for k in 1:trials
+        for t in 2:time_steps
+            term1 = E_zz[k, t, :, :]
+            term2 = A * E_zz_prev[k, t, :, :]'
+            term3 = E_zz_prev[k, t, :, :] * A'
+            term4 = A * E_zz[k, t-1, :, :] * A'
+            Q_val += -0.5 * (logdet(Q) + tr(Q_inv * (term1 - term2 - term3 + term4)))
+        end
+    end
+    return Q_val
+end
+
+"""
+    Q_observation_model(C::Matrix{<:Real}, D::Matrix{<:Real}, log_d::Vector{<:Real}, E_z::Array{<:Real}, E_zz::Array{<:Real}, y::Array{<:Real})
+
+Calculate the Q-function for the observation model.
+
+# Arguments
+- `C::Matrix{<:Real}`: The observation matrix.
+- `D::Matrix{<:Real}`: The history control matrix.
+- `log_d::Vector{<:Real}`: The mean firing rate vector in log space.
+- `E_z::Array{<:Real}`: The expected latent states.
+- `E_zz::Array{<:Real}`: The expected latent states x the latent states.
+- `y::Array{<:Real}`: The observed data.
+
+# Returns
+- `Float64`: The Q-function for the observation model.
+"""
+function Q_observation_model(C::Matrix{<:Real}, D::Matrix{<:Real}, log_d::Vector{<:Real}, E_z::Array{<:Real}, E_zz::Array{<:Real}, y::Array{<:Real})
+    # Re-parametrize log_d
+    d = exp.(log_d)
+    # Compute Q
+    Q_val = 0.0
+    trials = size(E_z, 1)
+    time_steps = size(E_z, 2)
+    # sum over trials
+    for k in 1:trials
+        spikes = SSM.countspikes(y[k, :, :])
+        # sum over time-points
+        for t in 1:time_steps
+            # linear term
+            term_1 = y[k, t, :]' * (C * E_z[k, t, :] + D*spikes[t, :] + d)
+            # first part of quadratic term (sum over neurons)
+            term_2 = sum(exp.(C * E_z[k, t, :] + D*spikes[t, :] + d))
+            # second part of quadratic term (sum over neurons)
+            term_3 = 0.0
+            for i in axes(C, 1)
+                term_3 += 0.5 * C[i, :]' * E_zz[k, t, :, :] * C[i, :]
+            end
+            Q_val += term_1 - term_2 + term_3
+        end
+    end
+    return Q_val
+end
+
+"""
+    Q_function(plds::PoissonLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, y::Array{<:Real})
+
+Calculate the Q-function of the Poisson Linear Dynamical System (PLDS) model.
+
+# Arguments
+- `plds::PoissonLDS`: The Poisson Linear Dynamical System model.
+- `E_z::Array{<:Real}`: The expected latent states.
+- `E_zz::Array{<:Real}`: The expected latent states x the latent states.
+- `E_zz_prev::Array{<:Real}`: The expected latent states x the latent states at the previous time step.
+- `y::Array{<:Real}`: The observed data.
+
+# Returns
+- `Float64`: The Q-function of the PLDS model.
+"""
+function Q_function(plds::PoissonLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, y::Array{<:Real})
+    # reparametrize the covariance matrices
+    sqrt_Q = Matrix(cholesky(plds.Q).L)
+    sqrt_p0 = Matrix(cholesky(plds.p0).L)
+    # calculate the Q-function
+    Q_val = Q_initial_obs(plds.x0, sqrt_p0, E_z, E_zz) + Q_state_model(plds.A, sqrt_Q, E_zz, E_zz_prev) + Q_observation_model(plds.C, plds.D, plds.log_d, E_z, E_zz, y)
+    return Q_val
+end
 
 """
     directsmooth(plds::PoissonLDS, y::Matrix{<:Real})
@@ -659,7 +1006,7 @@ Perform direct smoothing on a Poisson linear dynamical system (PLDS) given the o
 
 # Example
 """
-function directsmooth(plds::PoissonLDS, y::Matrix{<:Real}, max_iter::Int=1000, tol::Float64=1e-6)
+function directsmooth(plds::PoissonLDS, y::Matrix{<:Real}, max_iter::Int=1000, tol::Float64=1e-14)
     # get the length of the observations
     T = size(y, 1)
     # generate a set of initial latent states that we can pass to a newton step
@@ -697,34 +1044,6 @@ function directsmooth(plds::PoissonLDS, y::Matrix{<:Real}, max_iter::Int=1000, t
 end
 
 """
-    loglikelihood(x::Array{<:Real}, plds::PoissonLDS, y::Array{<:Real})
-
-Calculate the complete-data log-likelihood of the observed data given the latent states and the Poisson LDS model.
-
-# Arguments
-- `x::Array{<:Real}`: The latent states of the Poisson LDS model.
-- `plds::PoissonLDS`: The Poisson LDS model.
-- `y::Array{<:Real}`: The observed data.
-
-# Returns
-- `ll::Float64`: The log-likelihood of the observed data.
-
-# Example
-"""
-function loglikelihood(x::Array{<:Real}, plds::PoissonLDS, y::Array{<:Real})
-    # confirm the driving inputs are initialized
-    if isempty(plds.b)
-        plds.b = zeros(size(x, 1), size(x, 2))
-    end
-    # Calculate the log-likelihood over all trials
-    ll = 0.0
-    for n in 1:size(y, 3)
-        ll += logposterior(x[:, :, n], plds, y[:, :, n])
-    end
-    return ll
-end
-
-"""
     smooth(plds::PoissonLDS, y::Array{<:Real})
 
 Smooths the latent states for each trial of a Poisson linear dynamical system (PLDS) model.
@@ -740,18 +1059,19 @@ Smooths the latent states for each trial of a Poisson linear dynamical system (P
 """
 function smooth(plds::PoissonLDS, y::Array{<:Real})
     if isempty(plds.b)
-        plds.b = zeros(size(y, 1), plds.latent_dim)
+        plds.b = zeros(size(y, 2), plds.latent_dim)
     end
     # smooth the latent states for each trial
-    x_smooth = zeros(size(y, 1), plds.latent_dim, size(y, 3))
-    p_smooth = zeros(size(y, 1), plds.latent_dim, plds.latent_dim, size(y, 3))
-    p_tt1 = zeros(size(y, 1), plds.latent_dim, plds.latent_dim, size(y, 3))
-    for n in 1:size(y, 3)
+    K, T, _ = size(y)
+    x_smooth = zeros(K, T, plds.latent_dim)
+    p_smooth = zeros(K, T, plds.latent_dim, plds.latent_dim)
+    p_tt1 = zeros(K, T, plds.latent_dim, plds.latent_dim)
+    Threads.@threads for k in 1:K
         # smooth the latent states
-        x_sm, p_sm, p_prev = directsmooth(plds, y[:, :, n])
-        x_smooth[:, :, n] = x_sm
-        p_smooth[:, :, :, n] = p_sm
-        p_tt1[:, :, :, n] = p_prev
+        x_sm, p_sm, p_prev = directsmooth(plds, y[k, :, :])
+        x_smooth[k, :, :] = x_sm
+        p_smooth[k, :, :, :] = p_sm
+        p_tt1[k, :, :, :] = p_prev
     end
     return x_smooth, p_smooth, p_tt1
 end
@@ -772,6 +1092,8 @@ Calculate the gradient of the log-likelihood with respect to the latent states.
 # Example
 """
 function Gradient(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
+    # convert log_d to d i.e. non-log space
+    d = exp.(plds.log_d)
     # calculate the gradient of the log-likelihood with respect to the latent states
     T = size(y, 1)
     # Get an array of prior spikes
@@ -782,13 +1104,13 @@ function Gradient(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
     # calculate the gradient
     grad = zeros(T, plds.latent_dim)
     # calculate grad of first observation
-    grad[1, :] = ((y[1, :]' * plds.C)' - sum(plds.C' * exp.(plds.C * x[1, :] + plds.d), dims=2)) + (plds.A' * inv_Q * (x[2, :] - (plds.A * x[1, :] + plds.b[1, :]))) - (inv_p0 * (x[1, :] - plds.x0))
+    grad[1, :] = ((y[1, :]' * plds.C)' - sum(plds.C' * exp.(plds.C * x[1, :] + d), dims=2)) + (plds.A' * inv_Q * (x[2, :] - (plds.A * x[1, :] + plds.b[1, :]))) - (inv_p0 * (x[1, :] - plds.x0))
     # calculate grad of the rest of the observations
     for t in 2:T-1
-        grad[t, :] = ((y[t, :]' * plds.C)' - sum(plds.C' * exp.(plds.C * x[t, :] + plds.D * s[t, :] + plds.d), dims=2)) - (inv_Q * (x[t, :] - (plds.A * x[t-1, :] + plds.b[t, :]))) + (plds.A' * inv_Q * (x[t+1, :] - (plds.A * x[t, :] + plds.b[t+1, :])))
+        grad[t, :] = ((y[t, :]' * plds.C)' - sum(plds.C' * exp.(plds.C * x[t, :] + plds.D * s[t, :] + d), dims=2)) - (inv_Q * (x[t, :] - (plds.A * x[t-1, :] + plds.b[t, :]))) + (plds.A' * inv_Q * (x[t+1, :] - (plds.A * x[t, :] + plds.b[t+1, :])))
     end
     # calculate grad of the last observation
-    grad[T, :] = ((y[T, :]' * plds.C)' - sum(plds.C' * exp.(plds.C * x[T, :] + plds.D * s[T, :] + plds.d), dims=2)) - (inv_Q * (x[T, :] - (plds.A * x[T-1, :] + plds.b[T, :])))
+    grad[T, :] = ((y[T, :]' * plds.C)' - sum(plds.C' * exp.(plds.C * x[T, :] + plds.D * s[T, :] + d), dims=2)) - (inv_Q * (x[T, :] - (plds.A * x[T-1, :] + plds.b[T, :])))
     return grad
 end
 
@@ -809,10 +1131,12 @@ Compute the Hessian matrix for a Poisson linear dynamical system (PLDS) model w.
 - `H_sub::Vector`: The sub-diagonal entries of the Hessian matrix.
 """
 function Hessian(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
+    # convert log_d to d i.e. non-log space
+    d = exp.(plds.log_d)
     # pre-compute a few things
     T = size(y, 1)
-    inv_Q = pinv(plds.Q)
-    inv_p0 = pinv(plds.p0)
+    inv_Q = inv(plds.Q)
+    inv_p0 = inv(plds.p0)
     s = SSM.countspikes(y, plds.refractory_period)
 
     # calculate super and sub diagonals
@@ -845,7 +1169,7 @@ function Hessian(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
     end
 
     Threads.@threads for t in 1:T
-        λ = exp.(plds.C * x[t, :] + plds.D * s[t, :] + plds.d)
+        λ = exp.(plds.C * x[t, :] + plds.D * s[t, :] + d)
         if t == 1
             main[t] = xt + xt1_given_xt + calculatepoissonhess(plds.C, λ)
         elseif t == T
@@ -859,18 +1183,18 @@ end
 
 function sufficient_statistics(μ::Array{<:Real}, P::Array{<:Real}, P_tt1::Array{<:Real})
     # Get dimensions
-    T, D, K = size(μ)
+    K, T, D = size(μ)
     # Initialize sufficient statistics
-    E_z = zeros(T, D, K)
-    E_zz = zeros(T, D, D, K)
-    E_zz_prev = zeros(T, D, D, K)
+    E_z = zeros(K, T, D)
+    E_zz = zeros(K, T, D, D)
+    E_zz_prev = zeros(K, T, D, D)
     # Compute sufficient statistics
     Threads.@threads for k in 1:K
         for t in 1:T
-            E_z[t, :, k] = μ[t, :, k]
-            E_zz[t, :, :, k] = P[t, :, :, k] + (μ[t, :, k] * μ[t, :, k]')
+            E_z[k, t, :] = μ[k, t, :]
+            E_zz[k, t, :, :] = P[k, t, :, :] + (μ[k, t, :] * μ[k, t, :]')
             if t > 1
-                E_zz_prev[t, :, :, k] = (P_tt1[t, :, :, k]') + (μ[t, :, k] * μ[t-1, :, k]')
+                E_zz_prev[k, t, :, :] = (P_tt1[k, t, :, :]') + (μ[k, t, :] * μ[k, t-1, :]')
             end
         end
     end
@@ -915,7 +1239,7 @@ function update_initial_state_mean!(plds::PoissonLDS, E_z::Array{<:Real})
     # update the initial state
     if plds.fit_bool[1]
        # sum all of the initial states of the smoothed latents and divide by the number of trials
-        plds.x0 = vec(sum(E_z[1, :, :], dims=2)) / size(E_z, 3)
+        plds.x0 = vec(sum(E_z[:, 1, :], dims=1)) / size(E_z, 1)
     end
 end
 
@@ -940,12 +1264,12 @@ function update_initial_state_covariance!(plds::PoissonLDS, E_zz::Array{<:Real},
     # update the initial covariance
     if plds.fit_bool[2]
         # get number of trials
-        num_trials = size(E_zz, 4)
+        num_trials = size(E_zz, 1)
         # create a new array of covariance matrices for each trial
-        p0 = zeros(size(E_zz, 2), size(E_zz, 2))
+        p0 = zeros(plds.latent_dim, plds.latent_dim)
         # calculate the covariance matrix for each trial
         for n in 1:num_trials
-            p0 += E_zz[1, :, :, n] - (E_z[1, :, n] * E_z[1, :, n]')
+            p0 += E_zz[n, 1, :, :] - (E_z[n, 1, :] * E_z[n, 1, :]')
         end
         # sum the covariance matrices and divide by the number of trials
         plds.p0 = p0 ./ num_trials
@@ -953,8 +1277,14 @@ function update_initial_state_covariance!(plds::PoissonLDS, E_zz::Array{<:Real},
 end
 
 function calculate_A(E_zz::Array{<:Real}, E_zz_prev::Array{<:Real})
-    # update the transition matrix
-    return dropdims(sum(E_zz_prev[2:end, :, :], dims=1), dims=1) * pinv(dropdims(sum(E_zz[1:end-1, :, :], dims=1), dims=1))
+    # Sum along the first dimension and remove it
+    E_zz_sum = dropdims(sum(E_zz[1:end-1, :, :], dims=1), dims=1)
+    E_zz_prev_sum = dropdims(sum(E_zz_prev, dims=1), dims=1)
+    
+    # Solve the system E_zz_sum * A' = E_zz_prev_sum' and then transpose the result
+    A = (E_zz_sum' \ E_zz_prev_sum')'
+    
+    return A
 end
 
 """
@@ -977,11 +1307,11 @@ function update_A_plds!(plds::PoissonLDS, E_zz::Array{<:Real}, E_zz_prev::Array{
     if plds.fit_bool[3]
         # get estimates of A for each trial
         A = zeros(plds.latent_dim, plds.latent_dim)
-        for n in 1:size(E_zz, 4)
-            A += calculate_A(E_zz[:, :, :, n], E_zz_prev[:, :, :, n])
+        for n in 1:size(E_zz, 1)
+            A += calculate_A(E_zz[n, :, :, :], E_zz_prev[n, :, :, :])
         end
         # Average the estimates
-        plds.A = A / size(E_zz, 4)
+        plds.A = A / size(E_zz, 1)
     end
 end
 
@@ -1004,12 +1334,12 @@ function update_Q_plds!(plds::PoissonLDS, E_zz::Array{<:Real}, E_zz_prev::Array{
     # update the process noise covariance matrix
     if plds.fit_bool[4]
         # get estimates of Q for each trial
-        Q = zeros(plds.latent_dim, plds.latent_dim, size(E_zz, 4))
-        for n in 1:size(E_zz, 4)
-            Q[:, :, n] = update_Q!(plds, E_zz[:, :, :, n], E_zz_prev[:, :, :, n])
+        Q = zeros(size(E_zz, 1), plds.latent_dim, plds.latent_dim)
+        for n in 1:size(E_zz, 1)
+            Q[n, :, :] = update_Q!(plds, E_zz[n, :, :, :], E_zz_prev[n, :, :, :])
         end
         # Average the estimates
-        plds.Q = dropdims(sum(Q, dims=3), dims=3) / size(Q, 3)
+        plds.Q = dropdims(sum(Q, dims=1), dims=1) / size(Q, 1)
     end
 end
 
@@ -1035,39 +1365,41 @@ function update_b!(plds::PoissonLDS, x_smooth::Array{<:Real})
     if plds.fit_bool[5]
         # create an array of latent state inputs for each trial
         b = zeros(size(x_smooth, 1), size(x_smooth, 2), size(x_smooth, 3))
-        for n in 1:size(x_smooth, 3)
-            for t in 2:size(x_smooth, 1)
-                b[t, :, n] = x_smooth[t, :, n] - (plds.A * x_smooth[t-1, :, n])
+        for n in 1:size(x_smooth, 1)
+            for t in 2:size(x_smooth, 2)
+                b[n, t, :] = x_smooth[n, t, :] - (plds.A * x_smooth[n, t-1, :])
             end
         end
         # sum the latent state inputs and divide by the number of trials
-        plds.b = dropdims(sum(b, dims=3), dims=3) / size(b, 3)
+        plds.b = dropdims(sum(b, dims=1), dims=1) / size(b, 1)
     end
 end
 
-function update_observation_model!(plds::PoissonLDS, x_smooth::Array{<:Real}, y::Array{<:Real})
+function update_observation_model!(plds::PoissonLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, y::Array{<:Real})
     # update the observation model parameters: C, D, and d
     if plds.fit_bool[6]
         # flatten the parameters so we can pass them to the optimizer as a single vector
-        params = vcat(vec(plds.C), vec(plds.D), plds.d)
+        params = vcat(vec(plds.C), vec(plds.D), plds.log_d)
         # create a helper function that takes a vector of the observation model parameters
-        function f(params::Vector{<:Real}, x_smooth::Array{<:Real}, y::Array{<:Real})
+        function f(params::Vector{<:Real}, E_z::Array{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, y::Array{<:Real})
             # reshape the parameters
             C = reshape(params[1:plds.obs_dim * plds.latent_dim], plds.obs_dim, plds.latent_dim)
             D = reshape(params[plds.obs_dim * plds.latent_dim + 1:plds.obs_dim * plds.latent_dim + plds.obs_dim * plds.obs_dim], plds.obs_dim, plds.obs_dim)
-            d = params[end-plds.obs_dim+1:end]
+            log_d = params[end-plds.obs_dim+1:end]
             # create a PLDS object with the new parameters
-            plds_new = PoissonLDS(A=plds.A, C=C, Q=plds.Q, D=D, d=d, x0=plds.x0, p0=plds.p0, refractory_period=plds.refractory_period, obs_dim=plds.obs_dim, latent_dim=plds.latent_dim, fit_bool=plds.fit_bool)
-            # calcualte the loglikelihood of the new model
-            ll = loglikelihood(x_smooth, plds_new, y)
-            return -ll
+            plds_new = PoissonLDS(A=plds.A, C=C, Q=plds.Q, D=D, log_d=log_d, x0=plds.x0, p0=plds.p0, refractory_period=plds.refractory_period, obs_dim=plds.obs_dim, latent_dim=plds.latent_dim, fit_bool=plds.fit_bool)
+            # calculate the loglikelihood of the new model
+            Q_val = Q(plds_new, E_z, E_zz, E_zz_prev, y)
+            return -Q_val
         end
+        # # create gradient function
+        # g! = (g, params) -> grad!(g, params, x_smooth, y, plds)
         # optimize
-        result = optimize(params -> f(params, x_smooth, y), params, LBFGS(), autodiff=:forward)
+        result = optimize(params -> f(params, E_z, E_zz, E_zz_prev, y), params, LBFGS())
         # update the parameters
         plds.C = reshape(result.minimizer[1:plds.obs_dim * plds.latent_dim], plds.obs_dim, plds.latent_dim)
         plds.D = reshape(result.minimizer[plds.obs_dim * plds.latent_dim + 1:plds.obs_dim * plds.latent_dim + plds.obs_dim * plds.obs_dim], plds.obs_dim, plds.obs_dim)
-        plds.d = result.minimizer[end-plds.obs_dim+1:end]
+        plds.log_d = result.minimizer[end-plds.obs_dim+1:end]
     end
 end
 
@@ -1078,7 +1410,7 @@ function M_Step!(plds::PoissonLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, E_zz
     update_b!(plds, x_smooth) # needs to be updated before A
     update_A_plds!(plds, E_zz, E_zz_prev)
     update_Q_plds!(plds, E_zz, E_zz_prev)
-    update_observation_model!(plds, x_smooth, y)
+    update_observation_model!(plds, E_z, E_zz, E_zz_prev, y)
 end
 
 function fit!(plds::PoissonLDS, y::Array{<:Real}, max_iter::Int=1000, tol::Float64=1e-6)
@@ -1096,7 +1428,7 @@ function fit!(plds::PoissonLDS, y::Array{<:Real}, max_iter::Int=1000, tol::Float
         # E-step
         E_z, E_zz, E_zz_prev, x_smooth, p_smooth = E_Step(plds, y)
         # calculate the log-likelihood
-        ll = loglikelihood(x_smooth, plds, y)
+        ll = Q(plds, E_z, E_zz, E_zz_prev, y)
         push!(ec_lls, ll)
         println("Iteration: ", i, " Log-likelihood: ", ll)
         # check for convergence
@@ -1122,11 +1454,20 @@ function countspikes(y::Matrix{<:Real}, window::Int=1)
     T, D = size(y)
     # Initialize the spike-count matrix
     s = zeros(T, D)
-    # Count the number of spikes from 2 to T
+    # Compute the cumulative sum of the observation matrix along the first dimension (time)
+    cumsum_y = cumsum(y, dims=1)
+    
+    # Loop over time points from 2 to T
     for t in 2:T
-        start_idx = max(1, t-window)
-        s[t, :] = sum(y[start_idx:t-1, :], dims=1)
+        if t - window <= 1
+            # If the time window is less than or equal to 1, use the cumulative sum directly
+            s[t, :] = cumsum_y[t-1, :]
+        else
+            # Otherwise, calculate the sum of the window by subtracting cumulative sums
+            s[t, :] = cumsum_y[t-1, :] .- cumsum_y[t-window-1, :]
+        end
     end
+    
     return s
 end
 
@@ -1147,20 +1488,22 @@ Sample from a Poisson Linear Dynamical System (PLDS) model.
 # Examples
 """
 function sample(plds::PoissonLDS, T::Int64, K::Int64)
+    # Convert log_d to d i.e. non-log space
+    d = exp.(plds.log_d)
     # Pre-allocate arrays
-    x = zeros(T, plds.latent_dim, K)
-    y = zeros(T, plds.obs_dim, K)
+    x = zeros(K, T, plds.latent_dim)
+    y = zeros(K, T, plds.obs_dim)
     
     for k in 1:K
         # Sample the initial stated
-        x[1, :, k] = rand(MvNormal(plds.x0, plds.p0))
-        y[1, :, k] = rand.(Poisson.(exp.(plds.C * x[1, :, k] + plds.d)))
+        x[k, 1, :] = rand(MvNormal(plds.x0, plds.p0))
+        y[k, 1, :] = rand.(Poisson.(exp.(plds.C * x[k, 1, :] + d)))
         # Sample the rest of the states
         for t in 2:T
             s = max(1, t - plds.refractory_period)
-            spikes = sum(y[s:t-1, :, k], dims=1)'
-            x[t, :, k] = rand(MvNormal((plds.A * x[t-1, :, k]) + plds.b[t, :], plds.Q))
-            y[t, :, k] = rand.(Poisson.(exp.((plds.C * x[t, :, k]) + (plds.D * spikes) + plds.d)))
+            spikes = sum(y[k, s:t-1, :], dims=1)'
+            x[k, t, :] = rand(MvNormal((plds.A * x[k, t-1, :]) + plds.b[t, :], plds.Q))
+            y[k, t, :] = rand.(Poisson.(exp.((plds.C * x[k, t, :]) + (plds.D * spikes) + d)))
         end
     end
     return x, y

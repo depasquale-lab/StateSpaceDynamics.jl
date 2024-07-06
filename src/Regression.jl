@@ -306,6 +306,8 @@ function loglikelihood(model::BernoulliRegression, X::Matrix{Float64}, y::Union{
     end
     # calculate log likelihood
     p = logistic.(X * model.β)
+    # Clamp probabilities to avoid log(0) and log(1)
+    p = clamp.(p, 1e-16, 1-1e-16)
     # convert y if neccesary
     y = convert(Vector{Float64}, y)
     return sum(w .* (y .* log.(p) .+ (1 .- y) .* log.(1 .- p)))
@@ -339,6 +341,8 @@ function loglikelihood(model::BernoulliRegression, X::Vector{Float64}, y::Union{
     end
     # calculate log likelihood
     p = logistic.(X' * model.β) # use stats fun for this
+    # Clamp probabilities to avoid log(0) and log(1)
+    p = clamp(p, 1e-16, 1-1e-16)
     # convert y if neccesary
     y = convert(Float64, y)
     return sum(w .* (y .* log.(p) .+ (1 .- y) .* log.(1 .- p))) 

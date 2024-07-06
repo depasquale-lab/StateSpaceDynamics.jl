@@ -182,3 +182,18 @@ function kmeans_clustering(data::Vector{Float64}, k_means::Int, max_iters::Int=1
     data = reshape(data, length(data), 1)
     return kmeans_clustering(data, k_means, max_iters, tol)
 end
+
+"""Ensures matrix is positive definite by projecting onto the PSD cone"""
+function ensure_posdef(A::AbstractMatrix{<:Real})
+    # Symmetrize the matrix
+    A = 0.5 * (A + A')
+    # Compute the eigendecomposition of A
+    λ, Q = eigen(A)
+    # Ensure that the eigenvalues are positive
+    λ[λ .< 1e-16] .= 1e-16
+    # Reconstruct the matrix
+    A = Q * Diagonal(λ) * Q'
+    # Re-symmetrize the matrix
+    A = 0.5 * (A + A')
+    return A
+end
