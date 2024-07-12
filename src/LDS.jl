@@ -142,47 +142,73 @@ function RTSSmoother(l::LDS, y::AbstractArray)
     return x_smooth, p_smooth, J, ml
 end
 
-function DirectSmoother(l::LDS, y::AbstractArray, tol::Float64=1e-6)
-    # Pre-allocate arrays
-    T, D = size(y)
-    p_smooth = zeros(T, l.latent_dim, l.latent_dim)
-    # Compute the precdiction as a starting point for the optimization
-    xₜ = zeros(T, l.latent_dim)
-    xₜ[1, :] = l.x0
-    for t in 2:T
-        xₜ[t, :] = l.A * xₜ[t-1, :]
+"""
+    DirectSmoother(l::LDS, y::Matrix{<:Real})
+
+This function performs direct smoothing for a linear dynamical system (LDS) given the system parameters `l` and the observed data `y`.
+
+# Arguments
+- `l::LDS`: The LDS object representing the system parameters.
+- `y::Matrix{<:Real}`: The observed data matrix.
+
+# Returns
+- `x::Matrix{<:Real}`: The optimal state estimate.
+- `p_smooth::Matrix{<:Real}`: The posterior covariance matrix.
+- `inverse_offdiag::Matrix{<:Real}`: The inverse off-diagonal matrix.
+- `Q_val::Float64`: The Q-function value.
+
+# Example
+"""
+function DirectSmoother(l::LDS, y::Matrix{<:Real})
+    # Get the length of Y
+    T = size(y, 1)
+    D = l.latent_dim
+    # create starting point for the optimization, as the likelihood is quadratic we can just use zeros
+    X₀ = zeros(T*D)
+    # create wrappers for the loglikelihood, gradient, and hessian
+    
+    function nll(vec_x::Vector{<:Real})
+        # reshape the vector to a matrix
+        x = SSM.interleave_reshape(vec_x, T, D)
+        # compute the negative loglikelihood
+        return -loglikelihood(x, l, y)
     end
-    # Compute the Hessian of the loglikelihood
-    H, main, super, sub = Hessian(l, y)
-    # compute the inverse of the main diagonal of the Hessian, this is the posterior covariance
-    p_smooth, inverse_offdiag = block_tridiagonal_inverse(-sub, -main, -super)
+
+    function g!(g::Vector{<:Real}, vec_x::Vector{<:Real})
+        # reshape the vector to a matrix
+        x = SSM.interleave_reshape(vec_x, T, D)
+        # compute the gradient
+        grad = SSM.Gradient(l, y, x)
+        # reshape the gradient to a vector
+        g .= vec(permutedims(-grad))
+    end
+
+    function h!(h::Matrix{<:Real}, vec_x::Vector{<:Real})
+        # reshape the vector to a matrix
+        x = SSM.interleave_reshape(vec_x, T, D)
+        # compute the hessian
+        H, _, _, _ = SSM.Hessian(l, y)
+        # reshape the hessian to a matrix
+        h .= -H
+    end
+
+    # set up the optimization problem
+    res = optimize(nll, g!, h!, X₀, Newton())
+
+    # get the optimal state
+    x = SSM.interleave_reshape(res.minimizer, T, D)
+
+    # get covariances and nearest-neighbor second moments
+    H, main, super, sub = SSM.Hessian(l, y)
+    p_smooth, inverse_offdiag = SSM.block_tridiagonal_inverse(-sub, -main, -super)
+
     # concatenate a zero matrix to the inverse off diagonal to match the dimensions of the posterior covariance
     inverse_offdiag = cat(zeros(1, l.latent_dim, l.latent_dim), inverse_offdiag, dims=1)
-    # now optimize
-    for i in 1:5 # this should stop at the first iteration in theory but likely will at iteration 2
-        # Compute the gradient
-        grad = Gradient(l, y, xₜ)
-        # reshape the gradient to a vector to pass to newton_raphson_step_tridg!, we transpose as the way Julia reshapes is by vertically stacking columns as we need to match up observations to the Hessian.
-        grad = Matrix{Float64}(reshape(grad', (T*D), 1))
-        # Compute the Newton-Raphson step        
-        xₜ₊₁ = newton_raphson_step_tridg!(xₜ, H, grad)
-        # Check for convergence (uncomment the following lines to enable convergence checking)
-        if norm(xₜ₊₁ - xₜ) < tol
-            println("Converged at iteration ", i)
-            # Calculate the Q-function as a substitute for the marginal loglikelihood
-            Q_val = Q(l, xₜ, p_smooth, inverse_offdiag, y)
-            return xₜ₊₁, p_smooth, inverse_offdiag, Q_val
-        else
-            println("Norm of gradient iterate difference: ", norm(xₜ₊₁ - xₜ))
-        end
-        # Update the iterate
-        xₜ = xₜ₊₁
-    end
-    # Print a warning if the routine did not converge
-    Warn("Direct Smoother did not converge")
-    # Calculate the Q-function as a substitute for the marginal loglikelihood
-    Q_val = Q(l, xₜ, p_smooth, inverse_offdiag, y)
-    return xₜ, p_smooth, inverse_offdiag, Q_val
+
+    # finally clacualte Q-function
+    Q_val = SSM.Q(l, x, p_smooth, inverse_offdiag, y)
+
+    return x, p_smooth, inverse_offdiag, Q_val
 end
 
 function KalmanSmoother(l::LDS, y::AbstractArray, Smoother::SmoothingMethod=RTSSmoothing())
@@ -571,7 +597,6 @@ function Q(l::LDS, E_z::Matrix{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:
     return Q_val
 end
 
-
 """
     loglikelihood(x::AbstractArray, l::LDS, y::AbstractArray)
 
@@ -777,17 +802,20 @@ function logposterior_nonthreaded(x::AbstractMatrix{<:Real}, plds::PoissonLDS, y
     T = size(y, 1)
     # Get an array of prior spikes
     s = countspikes(y, plds.refractory_period)
+    # pre compute matrix inverses
+    inv_p0 = pinv(plds.p0)
+    inv_Q = pinv(plds.Q)
     # calculate the first term
     pygivenx = 0.0
     for t in 1:T
         pygivenx += (y[t, :]' * ((plds.C * x[t, :]) + (plds.D * s[t, :]) + d)) - sum(exp.((plds.C * x[t, :]) + (plds.D * s[t, :]) + d))
     end
     # calculate the second term
-    px1 = -0.5 * (x[1, :] - plds.x0)' * pinv(plds.p0) * (x[1, :] - plds.x0)
+    px1 = -0.5 * (x[1, :] - plds.x0)' * inv_p0 * (x[1, :] - plds.x0)
     # calculate the last term
     pxtgivenxt1 = 0.0
     for t in 2:T
-        pxtgivenxt1 += -0.5 * (x[t, :] - ((plds.A * x[t-1, :]) + plds.b[t, :]))' * pinv(plds.Q) * (x[t, :] - ((plds.A * x[t-1, :]) + plds.b[t, :])) 
+        pxtgivenxt1 += -0.5 * (x[t, :] - ((plds.A * x[t-1, :]) + plds.b[t, :]))' * inv_Q * (x[t, :] - ((plds.A * x[t-1, :]) + plds.b[t, :])) 
     end
     # sum the terms
     return pygivenx + px1 + pxtgivenxt1
@@ -815,6 +843,9 @@ function logposterior(x::AbstractMatrix{<:Real}, plds::PoissonLDS, y::Matrix{<:R
     d = exp.(plds.log_d)
     T = size(y, 1)
     s = countspikes(y, plds.refractory_period)
+    # pre compute matrix inverses
+    inv_p0 = pinv(plds.p0)
+    inv_Q = pinv(plds.Q)
     # Get the number of time steps
     pygivenx = zeros(T)
     # Calculate p(yₜ|xₜ)
@@ -824,12 +855,12 @@ function logposterior(x::AbstractMatrix{<:Real}, plds::PoissonLDS, y::Matrix{<:R
     end
     pygivenx_sum = sum(pygivenx)
     # Calculate p(x₁)
-    px1 = -0.5 * (x[1, :] .- plds.x0)' * pinv(plds.p0) * (x[1, :] .- plds.x0)
+    px1 = -0.5 * (x[1, :] .- plds.x0)' * inv_p0 * (x[1, :] .- plds.x0)
     # Calculate p(xₜ|xₜ₋₁)
     pxtgivenxt1 = zeros(T-1)
     @threads for t in 2:T
         temp = (x[t, :] .- (plds.A * x[t-1, :] .+ plds.b[t, :]))
-        pxtgivenxt1[t-1] = -0.5 * temp' * pinv(plds.Q) * temp
+        pxtgivenxt1[t-1] = -0.5 * temp' * inv_Q * temp
     end
     pxtgivenxt1_sum = sum(pxtgivenxt1)
     # Return the log-posterior
@@ -1006,7 +1037,7 @@ Perform direct smoothing on a Poisson linear dynamical system (PLDS) given the o
 
 # Example
 """
-function directsmooth(plds::PoissonLDS, y::Matrix{<:Real}, max_iter::Int=1000, tol::Float64=1e-14)
+function directsmooth(plds::PoissonLDS, y::Matrix{<:Real}, max_iter::Int=1000, tol::Float64=1e-10)
     # get the length of the observations
     T = size(y, 1)
     # generate a set of initial latent states that we can pass to a newton step
@@ -1022,8 +1053,18 @@ function directsmooth(plds::PoissonLDS, y::Matrix{<:Real}, max_iter::Int=1000, t
         grad = Gradient(x, plds, y)
         # reshape the gradient to a Vector
         grad = Matrix{Float64}(reshape(grad', (T*plds.latent_dim), 1))
+        # Handle potential inf or nan values
+        if any(isnan.(grad)) || any(isinf.(grad))
+            # println("Warning: Grad contains inf or nan values. Attempting to regularize...")
+            grad = replace(grad, Inf=>1e8, -Inf=>-1e8, NaN=>0)
+        end
         # calculate the Hessian
         H, main, super, sub = Hessian(x, plds, y)
+        # Handle potential inf or nan values
+        if any(isnan.(H)) || any(isinf.(H))
+            # println("Warning: Hessian contains inf or nan values. Attempting to regularize...")
+            H = replace(H, Inf=>1e8, -Inf=>-1e8, NaN=>0)
+        end
         # calculate the newton raphson step
         x_new = newton_raphson_step_tridg!(x, H, grad)
         # check for convergence
@@ -1272,7 +1313,9 @@ function update_initial_state_covariance!(plds::PoissonLDS, E_zz::Array{<:Real},
             p0 += E_zz[n, 1, :, :] - (E_z[n, 1, :] * E_z[n, 1, :]')
         end
         # sum the covariance matrices and divide by the number of trials
-        plds.p0 = p0 ./ num_trials
+        p0 = p0 ./ num_trials
+        # make sure p0 is symmetric
+        plds.p0 = (p0 + p0') / 2
     end
 end
 
@@ -1339,7 +1382,9 @@ function update_Q_plds!(plds::PoissonLDS, E_zz::Array{<:Real}, E_zz_prev::Array{
             Q[n, :, :] = update_Q!(plds, E_zz[n, :, :, :], E_zz_prev[n, :, :, :])
         end
         # Average the estimates
-        plds.Q = dropdims(sum(Q, dims=1), dims=1) / size(Q, 1)
+        Q = dropdims(sum(Q, dims=1), dims=1) / size(Q, 1)
+        # make sure Q is symmetric
+        plds.Q = (Q + Q') / 2
     end
 end
 
@@ -1389,7 +1434,7 @@ function update_observation_model!(plds::PoissonLDS, E_z::Array{<:Real}, E_zz::A
             # create a PLDS object with the new parameters
             plds_new = PoissonLDS(A=plds.A, C=C, Q=plds.Q, D=D, log_d=log_d, x0=plds.x0, p0=plds.p0, refractory_period=plds.refractory_period, obs_dim=plds.obs_dim, latent_dim=plds.latent_dim, fit_bool=plds.fit_bool)
             # calculate the loglikelihood of the new model
-            Q_val = Q(plds_new, E_z, E_zz, E_zz_prev, y)
+            Q_val = Q_function(plds_new, E_z, E_zz, E_zz_prev, y)
             return -Q_val
         end
         # # create gradient function
@@ -1419,18 +1464,14 @@ function fit!(plds::PoissonLDS, y::Array{<:Real}, max_iter::Int=1000, tol::Float
     ll_prev = -Inf
     # iterate through the EM algorithm
     for i in 1:max_iter
-        # initialize the latent states
-        x_smooth, p_smooth, p_tt1 = smooth(plds, y)
-        # calculate the sufficient statistics
-        E_z, E_zz, E_zz_prev = sufficient_statistics(x_smooth, p_smooth, p_tt1)
-        # M-step
-        M_Step!(plds, E_z, E_zz, E_zz_prev, x_smooth, y)
         # E-step
-        E_z, E_zz, E_zz_prev, x_smooth, p_smooth = E_Step(plds, y)
+        E_z, E_zz, E_zz_prev, x_smooth, _ = E_Step(plds, y)
         # calculate the log-likelihood
-        ll = Q(plds, E_z, E_zz, E_zz_prev, y)
+        ll = Q_function(plds, E_z, E_zz, E_zz_prev, y)
         push!(ec_lls, ll)
         println("Iteration: ", i, " Log-likelihood: ", ll)
+        # M-step
+        M_Step!(plds, E_z, E_zz, E_zz_prev, x_smooth, y)
         # check for convergence
         if abs(ll - ll_prev) < tol
             println("Converged at iteration ", i)
