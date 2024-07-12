@@ -8,12 +8,9 @@ using StatsFuns
 using SpecialFunctions
 using Test
 
-# Random.seed!(1234)
-
 """
 Tests for MixtureModels.jl
 """
-
 # Test general properties of GaussianMixtureModel
 function test_GaussianMixtureModel_properties(gmm::GaussianMixtureModel, k::Int, data_dim::Int)
     @test gmm.k == k
@@ -315,7 +312,6 @@ function test_HMM_M_step()
 end
 
 function test_HMM_EM()
-    Random.seed!(1234)
     A = [0.7 0.2 0.1; 0.1 0.7 0.2; 0.2 0.1 0.7]
     means = [[0.0, 0.0], [-1.0, 2.0], [3.0, 2.5]]
     covs = [
@@ -327,7 +323,7 @@ function test_HMM_EM()
     simul_hmm = GaussianHMM(A, emissions_models, [0.33, 0.33, 0.34], 3, 2)
     states, observations = SSM.sample(simul_hmm, 10000)
     hmm = GaussianHMM(observations, 3)
-    baumWelch!(hmm, observations, 100)
+    baumWelch!(hmm, observations, 1000)
     pred_means = [hmm.B[i].μ for i in 1:3]
     @test sort(pred_means) ≈ sort(means) atol=0.2
     pred_covs = [hmm.B[i].Σ for i in 1:3]

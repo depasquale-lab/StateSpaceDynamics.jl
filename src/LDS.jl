@@ -403,7 +403,7 @@ function KalmanFilterEM!(l::LDS, y::AbstractArray, max_iter::Int=1000, tol::Floa
     # Create a list to store the log-likelihood
     mls = []
     # Initialize progress bar
-    prog = Progress(max_iter; desc="Running EM Algorithm...")
+    prog = Progress(max_iter; desc="Fitting LDS via EM...")
     # Run EM
     for i in 1:max_iter
         # E-step
@@ -1034,54 +1034,54 @@ Perform direct smoothing on a Poisson linear dynamical system (PLDS) given the o
 
 # Returns
 - `x::Matrix{Float64}`: The smoothed latent states matrix.
-
-# Example
 """
-function directsmooth(plds::PoissonLDS, y::Matrix{<:Real}, max_iter::Int=1000, tol::Float64=1e-10)
+function directsmooth(plds::PoissonLDS, y::Matrix{<:Real})
     # get the length of the observations
     T = size(y, 1)
-    # generate a set of initial latent states that we can pass to a newton step
-    x = zeros(T, plds.latent_dim)
-    # calculate the prediction step
-    x[1, :] = plds.x0
+    # generate a set of initial latent states that we can pass to a newton step, use dynamic model to generate
+    x₀ = zeros(T, plds.latent_dim)
+    x₀[1, :] = plds.x0
     for t in 2:T
-        x[t, :] = plds.A * x[t-1, :] + plds.b[t, :]
+        x₀[t, :] = plds.A * x₀[t-1, :] + plds.b[t, :]
     end
-    # smooth the observations
-    for i in 1:max_iter
+    # create wrappers for the log-posterior, gradient, and hessian
+
+    function nlp(vec_x::Vector{<:Real})
+        # reshape X
+        x = SSM.interleave_reshape(vec_x, T, plds.latent_dim)
+        return -logposterior(x, plds, y)
+    end
+
+    function g!(G::Vector{<:Real}, vec_x::Vector{<:Real})
+        # reshape X
+        x = SSM.interleave_reshape(vec_x, T, plds.latent_dim)
         # calculate the gradient
-        grad = Gradient(x, plds, y)
-        # reshape the gradient to a Vector
-        grad = Matrix{Float64}(reshape(grad', (T*plds.latent_dim), 1))
-        # Handle potential inf or nan values
-        if any(isnan.(grad)) || any(isinf.(grad))
-            # println("Warning: Grad contains inf or nan values. Attempting to regularize...")
-            grad = replace(grad, Inf=>1e8, -Inf=>-1e8, NaN=>0)
-        end
-        # calculate the Hessian
-        H, main, super, sub = Hessian(x, plds, y)
-        # Handle potential inf or nan values
-        if any(isnan.(H)) || any(isinf.(H))
-            # println("Warning: Hessian contains inf or nan values. Attempting to regularize...")
-            H = replace(H, Inf=>1e8, -Inf=>-1e8, NaN=>0)
-        end
-        # calculate the newton raphson step
-        x_new = newton_raphson_step_tridg!(x, H, grad)
-        # check for convergence
-        if norm(x_new - x) < tol
-            # println("Converged at iteration ", i)
-            H, main, super, sub = Hessian(x_new, plds, y)
-            # calculate p_smooth
-            p_smooth, p_tt1 = block_tridiagonal_inverse(-sub, -main, -super)
-            # add a matrix of zeros so dimensionality agrees later on
-            p_tt1 = cat(reshape(zeros(plds.latent_dim, plds.latent_dim), 1, plds.latent_dim, plds.latent_dim), p_tt1, dims=1)
-            return x_new, p_smooth, p_tt1
-        end
-        # update the latent states
-        x = x_new
+        grad = SSM.Gradient(x, plds, y)
+        G .= vec(permutedims(-grad))
     end
-    # print a warning if the routine did not converge
-    println("Warning: Newton-Raphson routine did not converge.")
+
+    function h!(H::Matrix{<:Real}, vec_x::Vector{<:Real})
+        # reshape X
+        x = SSM.interleave_reshape(vec_x, T, plds.latent_dim)
+        # Calcualte Hessian
+        hess, _, _, _ = SSM.Hessian(x, plds, y)
+        H .= hess
+    end
+
+    # set up optimization problem
+    res = optimize(nlp, g!, h!, vec(x₀), Newton())
+
+    # reshape the solution
+    x = SSM.interleave_reshape(res.minimizer, T, plds.latent_dim)
+
+    # get smoothed covariances and nearest-neighbor second moments
+    H, main, super, sub = SSM.Hessian(x, plds, y)
+    p_smooth, p_tt1 = SSM.block_tridiagonal_inverse(-sub, -main, -super)
+
+    # add a matrix of zeros so dimensionality agrees later on
+    p_tt1 = cat(reshape(zeros(plds.latent_dim, plds.latent_dim), 1, plds.latent_dim, plds.latent_dim), p_tt1, dims=1)
+
+    return x, p_smooth, p_tt1
 end
 
 """
@@ -1107,7 +1107,7 @@ function smooth(plds::PoissonLDS, y::Array{<:Real})
     x_smooth = zeros(K, T, plds.latent_dim)
     p_smooth = zeros(K, T, plds.latent_dim, plds.latent_dim)
     p_tt1 = zeros(K, T, plds.latent_dim, plds.latent_dim)
-    Threads.@threads for k in 1:K
+    for k in 1:K
         # smooth the latent states
         x_sm, p_sm, p_prev = directsmooth(plds, y[k, :, :])
         x_smooth[k, :, :] = x_sm
@@ -1462,23 +1462,32 @@ function fit!(plds::PoissonLDS, y::Array{<:Real}, max_iter::Int=1000, tol::Float
     # create a variable to store the log-likelihood
     ec_lls = []
     ll_prev = -Inf
+    # create a progress bar
+    prog = Progress(max_iter, desc="Fitting PoissonLDS va LaPlace EM: ")
     # iterate through the EM algorithm
     for i in 1:max_iter
         # E-step
         E_z, E_zz, E_zz_prev, x_smooth, _ = E_Step(plds, y)
+        println("Succesfully smmothed at iteration ", i)
         # calculate the log-likelihood
         ll = Q_function(plds, E_z, E_zz, E_zz_prev, y)
         push!(ec_lls, ll)
-        println("Iteration: ", i, " Log-likelihood: ", ll)
+        # Update progress bar
+        next!(prog)
         # M-step
         M_Step!(plds, E_z, E_zz, E_zz_prev, x_smooth, y)
         # check for convergence
         if abs(ll - ll_prev) < tol
+            finish!(prog)
             println("Converged at iteration ", i)
             return ec_lls
         end
         ll_prev = ll
     end
+    
+    ProgressMeter.finish!(prog)
+    println("Maximum iterations reached without convergence")
+    return ec_lls
 end
 
 """

@@ -516,7 +516,7 @@ function loglikelihood(model::PoissonRegression, X::Vector{Float64}, y::Union{Fl
     λ = exp.(X' * model.β)
     # convert y if necessary
     y = convert(Float64, y)
-    return sum(w .* (y .* log.(λ) .- λ .- log.(factorial.(Int.(y))))) 
+    return sum(w .* (y .* log.(λ) .- λ .- loggamma.(Int.(y) .+ 1))) 
 end
 
 """
