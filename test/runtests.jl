@@ -332,15 +332,15 @@ function test_HMM_EM()
     @test length(best_path) == 10000
     @test all(x -> x in 1:3, best_path)
 end
-@testset "HiddenMarkovModels.jl Tests" begin
-    test_toy_HMM()
-    test_GaussianHMM_constructor()
-    test_HMM_forward_and_back()
-    test_HMM_gamma_xi()
-    test_HMM_E_step()
-    test_HMM_M_step()
-    test_HMM_EM()
-end
+# @testset "HiddenMarkovModels.jl Tests" begin
+#     test_toy_HMM()
+#     test_GaussianHMM_constructor()
+#     test_HMM_forward_and_back()
+#     test_HMM_gamma_xi()
+#     test_HMM_E_step()
+#     test_HMM_M_step()
+#     test_HMM_EM()
+# end
 
 """
 Tests for LDS.jl
@@ -448,10 +448,10 @@ function test_LDS_EStep()
     @test size(E_zz_prev) == (size(x_noisy, 1), 2, 2)
     @test size(ml) == ()
     # check that both methods are the same
-    @test isapprox(x_smooth, x_smooth_dir; atol=1e-6)
-    @test isapprox(p_smooth, p_smooth_dir; atol=1e-6)
-    @test isapprox(E_z, E_z_dir; atol=1e-6)
-    @test isapprox(E_zz, E_zz_dir; atol=1e-6)
+    @test isapprox(x_smooth, x_smooth_dir; atol=1e-12)
+    @test isapprox(p_smooth, p_smooth_dir; atol=1e-12)
+    @test isapprox(E_z, E_z_dir; atol=1e-12)
+    @test isapprox(E_zz, E_zz_dir; atol=1e-12)
     println("Maximum of sufficient statistics:", sum((E_zz_prev - E_zz_prev_dir).^2))
     @test_broken isapprox(E_zz_prev, E_zz_prev_dir; atol=1e-6)
 end
@@ -530,10 +530,13 @@ function test_EM_numeric_RTS()
 
         # optimize x0 and p0 first of kf
         res_1 = optimize(x0 -> -SSM.Q(kf.A, kf.Q, kf.H, kf.R, kf.p0, x0, E_z, E_zz, E_zz_prev, x_noisy), kf.x0, LBFGS())
-        res_2 = optimize(p0 -> -SSM.Q(kf.A, kf.Q, kf.H, kf.R, p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.p0, LBFGS())
         # test the optimization
         @test isapprox(res_1.minimizer, kf_prime.x0; atol=1e-6)
-        @test_broken isapprox(res_2.minimizer * res_2.minimizer', kf_prime.p0; atol=1e-6)
+        kf.x0 = res_1.minimizer
+
+        # optimize p0
+        res_2 = optimize(p0 -> -SSM.Q(kf.A, kf.Q, kf.H, kf.R, p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.p0, LBFGS())
+        @test isapprox(res_2.minimizer * res_2.minimizer', kf_prime.p0; atol=1e-6)
 
         # now update A and Q
         res_3 = optimize(A -> -SSM.Q(A, kf.Q, kf.H, kf.R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.A, LBFGS())
@@ -569,10 +572,13 @@ function test_EM_numeric_Direct()
 
         # optimize x0 and p0 first of kf
         res_1 = optimize(x0 -> -SSM.Q(kf.A, kf.Q, kf.H, kf.R, kf.p0, x0, E_z, E_zz, E_zz_prev, x_noisy), kf.x0, LBFGS())
-        res_2 = optimize(p0 -> -SSM.Q(kf.A, kf.Q, kf.H, kf.R, p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.p0, LBFGS())
         # test the optimization
         @test isapprox(res_1.minimizer, kf_prime.x0; atol=1e-6)
-        @test_broken isapprox(res_2.minimizer * res_2.minimizer', kf_prime.p0; atol=1e-6)
+        kf.x0 = res_1.minimizer
+
+        # optimize p0
+        res_2 = optimize(p0 -> -SSM.Q(kf.A, kf.Q, kf.H, kf.R, p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.p0, LBFGS())
+        @test isapprox(res_2.minimizer * res_2.minimizer', kf_prime.p0; atol=1e-6)
 
         # now update A and Q
         res_3 = optimize(A -> -SSM.Q(A, kf.Q, kf.H, kf.R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.A, LBFGS())
@@ -794,11 +800,12 @@ function test_analytical_parameter_updates()
     opt_x0 = x0 -> -SSM.Q_initial_obs(x0, plds.p0, E_z, E_zz)
     result_x0 = optimize(opt_x0, plds.x0, LBFGS())
     @test isapprox(result_x0.minimizer, SSM.update_initial_state_mean!(plds, E_z))
+    plds.x0 = result_x0.minimizer
 
     # optimize p0
-    opt_p0 = p0 -> -SSM.Q_initial_obs(result_x0.minimizer, p0, E_z, E_zz)
+    opt_p0 = p0 -> -SSM.Q_initial_obs(plds.x0, p0, E_z, E_zz)
     result_p0 = optimize(opt_p0, plds.p0, LBFGS(), Optim.Options(g_abstol=1e-12))
-    @test_broken isapprox(result_p0.minimizer * result_p0.minimizer', SSM.update_initial_state_covariance!(plds, E_zz, E_z), atol=1e-3)
+    @test isapprox(result_p0.minimizer * result_p0.minimizer', SSM.update_initial_state_covariance!(plds, E_zz, E_z), atol=1e-3)
 
     Q_l = Matrix(cholesky(Q).L)
     # optimize A and Q

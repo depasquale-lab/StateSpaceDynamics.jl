@@ -107,7 +107,7 @@ function KalmanFilter(l::LDS, y::AbstractArray)
         # Compute the Kalman gain, innovation, and innovation covariance
         v[t, :, :] = y[t, :] - (l.H * x_pred[t, :])
         S[t, :, :] = (l.H * p_pred[t, :, :] * l.H') + l.R
-        K[t, :, :] = p_pred[t, :, :] * l.H' * pinv(S[t, :, :])
+        K[t, :, :] = p_pred[t, :, :] * l.H' / S[t, :, :]
         # Update step
         x_filt[t, :] = x_pred[t, :] + (K[t, :, :] * v[t, :])
         p_filt[t, :, :] = (I(l.latent_dim) - K[t, :, :] * l.H) * p_pred[t, :, :]
@@ -120,25 +120,29 @@ end
 function RTSSmoother(l::LDS, y::AbstractArray)
     # Forward pass (Kalman Filter)
     x_filt, p_filt, x_pred, p_pred, v, s, K, ml = KalmanFilter(l, y)
+    
     # Pre-allocate smoother arrays
-    x_smooth = zeros(size(x_filt))  # Smoothed state estimates
-    p_smooth = zeros(size(p_filt))  # Smoothed state covariances
-    J = ones(size(p_filt))  # Smoother gain
-    T = size(y, 1)
+    T, n = size(x_filt)
+    x_smooth = similar(x_filt)
+    p_smooth = similar(p_filt)
+    J = similar(p_filt)
+    
     # Backward pass
-    for t in T:-1:2
-        if t == T
-            x_smooth[end, :] = x_filt[T, :]
-            p_smooth[end, :, :] = p_filt[T, :, :]
-        end
+    x_smooth[T, :] = x_filt[T, :]
+    p_smooth[T, :, :] = p_filt[T, :, :]
+    
+    for t in T-1:-1:1
         # Compute the smoother gain
-        J[t-1, :, :] = p_filt[t-1, :, :] * l.A' * pinv(p_pred[t, :, :])
+        J[t, :, :] = p_filt[t, :, :] * l.A' / p_pred[t+1, :, :]
         # Update smoothed estimates
-        x_smooth[t-1, :] = x_filt[t-1, :] + J[t-1, :, :] * (x_smooth[t, :] - l.A * x_filt[t-1, :])
-        p_smooth[t-1, :, :] = p_filt[t-1, :, :] + J[t-1, :, :] * (p_smooth[t, :, :] - p_pred[t, :, :]) * J[t-1, :, :]'
-        # quickly enforce symmetry
-        p_smooth[t-1, :, :] = 0.5 * (p_smooth[t-1, :, :] + p_smooth[t-1, :, :]')
+        x_smooth[t, :] = x_filt[t, :] + J[t, :, :] * (x_smooth[t+1, :] - l.A * x_filt[t, :])
+        # Update smoothed covariance
+        p_smooth[t, :, :] = p_filt[t, :, :] + 
+                            J[t, :, :] * (p_smooth[t+1, :, :] - p_pred[t+1, :, :]) * J[t, :, :]'
+        # Enforce symmetry
+        p_smooth[t, :, :] = (p_smooth[t, :, :] + p_smooth[t, :, :]') / 2
     end
+    
     return x_smooth, p_smooth, J, ml
 end
 
@@ -546,7 +550,7 @@ function Q(A::Matrix{<:Real}, Q::AbstractMatrix{<:Real}, H::Matrix{<:Real}, R::A
     # Calculate the Q-function
     Q_val = 0.0
     # Calculate the Q-function for the first time step
-    Q_val += -0.5 * (logdet(P0) + tr(P0_inv * (E_zz[1, :, :] - 2*(E_z[1, :] * x0') + (x0 * x0'))))
+    Q_val += -0.5 * (logdet(P0) + tr(P0_inv * (E_zz[1, :, :] - (E_z[1, :] * x0') - (x0 * E_z[1, :]') + (x0 * x0'))))
     # Calculate the Q-function for the state model
     for t in axes(E_z, 1)[2:end] # skip the first time step
         # Individual terms
@@ -1310,7 +1314,7 @@ function update_initial_state_covariance!(plds::PoissonLDS, E_zz::Array{<:Real},
         p0 = zeros(plds.latent_dim, plds.latent_dim)
         # calculate the covariance matrix for each trial
         for n in 1:num_trials
-            p0 += E_zz[n, 1, :, :] - (E_z[n, 1, :] * E_z[n, 1, :]')
+            p0 += E_zz[n, 1, :, :] - (plds.x0 * plds.x0')
         end
         # sum the covariance matrices and divide by the number of trials
         p0 = p0 ./ num_trials
@@ -1463,12 +1467,12 @@ function fit!(plds::PoissonLDS, y::Array{<:Real}, max_iter::Int=1000, tol::Float
     ec_lls = []
     ll_prev = -Inf
     # create a progress bar
-    prog = Progress(max_iter, desc="Fitting PoissonLDS va LaPlace EM: ")
+    prog = Progress(max_iter; desc="Fitting PoissonLDS via LaPlace EM: ")
     # iterate through the EM algorithm
     for i in 1:max_iter
         # E-step
         E_z, E_zz, E_zz_prev, x_smooth, _ = E_Step(plds, y)
-        println("Succesfully smmothed at iteration ", i)
+        println("Succesfully smoothed at iteration ", i)
         # calculate the log-likelihood
         ll = Q_function(plds, E_z, E_zz, E_zz_prev, y)
         push!(ec_lls, ll)
@@ -1479,14 +1483,13 @@ function fit!(plds::PoissonLDS, y::Array{<:Real}, max_iter::Int=1000, tol::Float
         # check for convergence
         if abs(ll - ll_prev) < tol
             finish!(prog)
-            println("Converged at iteration ", i)
             return ec_lls
         end
         ll_prev = ll
     end
     
     ProgressMeter.finish!(prog)
-    println("Maximum iterations reached without convergence")
+    println("Maximum iterations reached without convergence.")
     return ec_lls
 end
 

@@ -20,6 +20,7 @@ function block_tridiagonal_inverse(A, B, C)
     D[1] = zeros(block_size, block_size)
     E[n+1] = zeros(block_size, block_size)
 
+
     # Forward sweep for D
     for i in 1:n
         D[i+1] = (B[i] - A[i] * D[i]) \ C[i]
