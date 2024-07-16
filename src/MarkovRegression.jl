@@ -105,12 +105,88 @@ function update_regression!(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64
     end
 end
 
+function update_regression!(model::hmmglm, X::Vector{Matrix{Float64}}, y::Vector{Vector{Float64}}, w::Vector{Matrix{Float64}})
+    num_trials = length(X)
+    p = size(X[1], 2)
+    if model.B[1].regression.include_intercept
+        p+=1
+    end
+
+    state1_models = Vector{RegressionEmissions}(undef, num_trials)
+    state2_models = Vector{RegressionEmissions}(undef, num_trials)
+
+    state1_weights = [w[i][:, 1] for i in eachindex(w)]
+    state2_weights = [w[i][:, 2] for i in eachindex(w)]
+
+    # Initialize Gaussian emission models for each trial + state combo
+    for trial in 1:num_trials
+        state1_models[trial] = RegressionEmissions(GaussianRegression(model.B[1].regression.β, model.B[1].regression.σ², true, model.λ))
+        state2_models[trial] = RegressionEmissions(GaussianRegression(model.B[2].regression.β, model.B[2].regression.σ², true, model.λ))
+    end
+
+    # for each trial + state combo use built in update emission function
+    for trial in 1:num_trials
+        update_emissions_model!(state1_models[trial], X[trial], y[trial], state1_weights[trial])
+        update_emissions_model!(state2_models[trial], X[trial], y[trial], state2_weights[trial])
+    end
+
+    state1_β = zeros(p)
+    state1_σ² = 0.0
+
+    state2_β = zeros(p)
+    state2_σ² = 0.0
+
+    # average across trials
+    for m in state1_models
+        state1_β += m.regression.β
+        state1_σ² += m.regression.σ²
+    end
+
+    for m in state2_models
+        state2_β += m.regression.β
+        state2_σ² += m.regression.σ²
+    end
+
+    # update! model parameters
+    model.B[1].regression.β = state1_β ./ num_trials
+    # model.B[1].regression.σ² = state1_σ² / num_trials
+    model.B[1].regression.σ² = 1.0
+
+    model.B[2].regression.β = state2_β ./ num_trials
+    # model.B[2].regression.σ² = state2_σ² / num_trials
+    model.B[2].regression.σ² = 1.0
+
+    if isnan(model.B[2].regression.σ²)
+        println("nan in variance")
+    end
+    
+    if isnan(model.B[1].regression.σ²)
+        println("nan in variance")
+    end
+    
+
+
+end
+
 function initialize_regression!(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64})
     # first fit the regression models to all of the data unweighted
     update_regression!(model, X, y)
     # add white noise to the beta coefficients
     @threads for k in 1:model.K
         model.B[k].regression.β += randn(length(model.B[k].regression.β))
+    end
+end
+
+function random_initialization!(model::hmmglm, X::Vector{Matrix{Float64}})
+    # Find number of parameters
+    p = size(X[1], 2)
+    if model.B[1].regression.include_intercept
+        p+=1
+    end
+    # Randomly initialize regression models
+    @threads for k in 1:model.K
+        model.B[k].regression.β = randn(p)
+        model.B[k].regression.σ² = 1.0
     end
 end
 
@@ -196,6 +272,16 @@ function M_step!(model::hmmglm, γ::Matrix{Float64}, ξ::Array{Float64, 3}, X::M
     update_regression!(model, X, y, exp.(γ)) 
 end
 
+function M_step!(model::hmmglm, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Float64, 3}}, X::Vector{Matrix{Float64}}, y::Vector{Vector{Float64}})
+    # Update initial state distribution
+    update_initial_state_distribution!(model, γ)
+    # Update transition matrix
+    update_transition_matrix!(model, γ, ξ)
+    # Update regression models
+    γ_exp = [exp.(γ_trial) for γ_trial in γ]
+    update_regression!(model, X, y, γ_exp)
+end
+
 function fit!(model::hmmglm, X::Matrix{Float64}, y::Union{Vector{T}, BitVector}, max_iter::Int=100, tol::Float64=1e-6, initialize::Bool=true) where T<: Real
     # convert y to Float64
     y = convert(Vector{Float64}, y)
@@ -213,6 +299,9 @@ function fit!(model::hmmglm, X::Matrix{Float64}, y::Union{Vector{T}, BitVector},
         γ, ξ, α, _ = E_step(model, X, y)
         # Log-likelihood
         ll = logsumexp(α[end, :])
+        if isnan(ll)
+            println("nan in ll")
+        end
         push!(lls, ll)
         println("Log-Likelihood at iter $i: $ll")
         # M-step
@@ -226,6 +315,52 @@ function fit!(model::hmmglm, X::Matrix{Float64}, y::Union{Vector{T}, BitVector},
         prev_ll = ll 
     end
     return lls
+end
+
+function fit!(model::hmmglm, X::Vector{Matrix{Float64}}, y::Vector{Vector{Float64}}, max_iter::Int=100, tol::Float64=1e-6, initialize::Bool=true)
+    # Randomly Initialize the regression models
+    random_initialization!(model, X)
+    # Initialize log likelihood
+    lls = [-Inf]
+    prev_ll = -Inf
+
+    # Storage for parameter tracking
+    A_stor = Vector{Matrix{Float64}}()
+    π_stor = Vector{Vector{Float64}}()
+    β1_stor = Vector{Vector{Float64}}()
+    β2_stor = Vector{Vector{Float64}}()
+    σ1_stor = Vector{Float64}()
+    σ2_stor = Vector{Float64}()
+
+    # Expectation-Maximization
+    for i in 1:max_iter
+        # E-Step
+        output = E_step.(Ref(model), X, y)
+        γ, ξ, α = map(x-> x[1], output), map(x-> x[2], output), map(x-> x[3], output)
+        # Log-likelihood
+        ll = sum(map(α -> SSM.logsumexp(α[end, :]), α))
+        push!(lls, ll)
+        println("Log-Lieklihood at iter $i: $ll")
+        # M-Step
+        M_step!(model, γ, ξ, X, y)
+
+        # Track parameters
+        push!(A_stor, deepcopy(model.A))
+        push!(π_stor, deepcopy(model.πₖ))
+        push!(β1_stor, deepcopy(model.B[1].regression.β))
+        push!(β2_stor, deepcopy(model.B[2].regression.β))
+        push!(σ1_stor, deepcopy(model.B[1].regression.σ²))
+        push!(σ2_stor, deepcopy(model.B[2].regression.σ²))
+
+        # check for convergence
+        if i > 1
+            if abs(ll - prev_ll) < tol
+                return lls, A_stor, π_stor, β1_stor, β2_stor, σ1_stor, σ2_stor
+            end
+        end
+        prev_ll = ll 
+    end
+    return lls, A_stor, π_stor, β1_stor, β2_stor, σ1_stor, σ2_stor
 end
 
 function viterbi(hmm::hmmglm, X::Matrix{Float64}, y::Vector{Float64})
