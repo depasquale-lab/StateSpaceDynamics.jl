@@ -106,15 +106,19 @@ function update_regression!(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64
 end
 
 function update_regression!(model::hmmglm, X::Vector{Matrix{Float64}}, y::Vector{Vector{Float64}}, w::Vector{Matrix{Float64}})
+    # Get number of trials and parameters for regression Models
     num_trials = length(X)
     p = size(X[1], 2)
     if model.B[1].regression.include_intercept
         p+=1
     end
 
+    # Assume a two state model while debugging
+    # initialize regression models for each trial
     state1_models = Vector{RegressionEmissions}(undef, num_trials)
     state2_models = Vector{RegressionEmissions}(undef, num_trials)
 
+    # get the state weights out of the weights vector{matrix}
     state1_weights = [w[i][:, 1] for i in eachindex(w)]
     state2_weights = [w[i][:, 2] for i in eachindex(w)]
 
@@ -124,7 +128,7 @@ function update_regression!(model::hmmglm, X::Vector{Matrix{Float64}}, y::Vector
         state2_models[trial] = RegressionEmissions(GaussianRegression(model.B[2].regression.β, model.B[2].regression.σ², true, model.λ))
     end
 
-    # for each trial + state combo use built in update emission function
+    # for each trial + state combo use built in update emission function to fit the models
     for trial in 1:num_trials
         update_emissions_model!(state1_models[trial], X[trial], y[trial], state1_weights[trial])
         update_emissions_model!(state2_models[trial], X[trial], y[trial], state2_weights[trial])
@@ -132,40 +136,40 @@ function update_regression!(model::hmmglm, X::Vector{Matrix{Float64}}, y::Vector
 
     state1_β = zeros(p)
     state1_σ² = 0.0
-
     state2_β = zeros(p)
     state2_σ² = 0.0
 
     # average across trials
     for m in state1_models
-        state1_β += m.regression.β
-        state1_σ² += m.regression.σ²
+        state1_β += m.regression.β ./ num_trials
+        state1_σ² += m.regression.σ² / num_trials
     end
 
     for m in state2_models
-        state2_β += m.regression.β
-        state2_σ² += m.regression.σ²
+        state2_β += m.regression.β ./ num_trials
+        state2_σ² += m.regression.σ² / num_trials
     end
 
-    # update! model parameters
-    model.B[1].regression.β = state1_β ./ num_trials
-    # model.B[1].regression.σ² = state1_σ² / num_trials
-    model.B[1].regression.σ² = 1.0
+    # update! overal model parameters
+    model.B[1].regression.β = state1_β
+    model.B[2].regression.β = state2_β
 
-    model.B[2].regression.β = state2_β ./ num_trials
-    # model.B[2].regression.σ² = state2_σ² / num_trials
-    model.B[2].regression.σ² = 1.0
 
-    if isnan(model.B[2].regression.σ²)
-        println("nan in variance")
-    end
-    
+    # UNCOMMENT THESE TO UPDATE VARIANCE
+    model.B[1].regression.σ² = state1_σ²
+    model.B[2].regression.σ² = state2_σ² 
+
+    # UNCOMMENT THESE TO FIX VARIANCE
+    # model.B[1].regression.σ² = 1.0
+    # model.B[2].regression.σ² = 1.0
+
     if isnan(model.B[1].regression.σ²)
         println("nan in variance")
     end
     
-
-
+    if isnan(model.B[2].regression.σ²)
+        println("nan in variance")
+    end
 end
 
 function initialize_regression!(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64})

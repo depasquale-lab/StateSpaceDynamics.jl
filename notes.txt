@@ -1,0 +1,43 @@
+Summary of Trialized Solution and Zach's Edits
+
+Data Input: One can fit spiking activity directly or neural PCs
+
+Neural Data Formatting
+    - Neural data input to Julia in 2D matrix of size timpoints x (trials * neurons)
+    - Reshaped to X::Vector{Matrix{Float64}} of shape Trials x Timepoints x neurons
+
+Neural PC Formatting
+    - Neural PCs input as (timepoints * trials) x PCs
+    - Reshaped to X::Vector{Matrix{Float64}} of shape Trials x Timepoints x PCs
+
+Kinematics Formatting
+    - Jaw Length (View1Y) processed to kin::Vector{Vector{Float64}} of shape Trials x (Length, Timepoints)
+
+
+Trialization (Following Bishop PRML pg 649):
+
+E-Step
+    - Can be run independently on each trial of data to get γ, ξ, and α for every timepoint in each trial
+
+M-Step
+    - Compute parameter updates for each trial and average them across trials
+    - Added functions
+        1 fit!()                                    MarkovRegression.jl ~ ln. 320
+        2 M_step!()                                 MarkovRegression.jl ~ ln. 275
+        3 update_regression!()                      MarkovRegression.jl ~ ln. 108
+        4 random_initialization!()                  MarkovRegression.jl ~ ln. 180
+        5 update_initial_state_distribution!()      HiddenMarkovModels.jl ~ ln. 133
+        6 update_transition_matrix!()               HiddenMarkovModels.jl ~ ln. 159
+
+
+EM Flow:
+1 random_initialization!() gives each emission model a random set of βs to start.
+2 E-step completed
+3 update_initial_state_distribution!() computes initial state updates and averages over trials
+4 update_transition_matrix!() computes transition matrix updates and averages over trials
+5 update_regression!() initializes gaussian emission models for each trial, uses Ryan's regression function on each, and averages over trials
+
+Current Problems:
+    - Learning the variance term causes decreases ll (and very rarely NaN log likelihoods - could be related to singularity) on synthetic data
+        - Fixing this variance seems to fix the issue in synthetic data, with only rare slight decreases in ll maybe caused by numerical instability
+    - On real data (a reduced set of only 25 neurons) the training behavior is highly variable.
