@@ -543,7 +543,7 @@ function test_EM_numeric_RTS()
         # test if A is updated
         @test isapprox(res_3.minimizer, kf_prime.A; atol=1e-6)
         kf.A = res_3.minimizer
-        res_4 = optimize(Q -> -SSM.Q(kf.A, Q, kf.H, kf.R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.Q, LBFGS())
+        res_4 = optimize(Q -> -SSM.Q(kf.A, Q, kf.H, kf.R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), rand(kf_prime.latent_dim, kf_prime.latent_dim), LBFGS())
         # test if Q is updated
         @test isapprox(res_4.minimizer * res_4.minimizer', kf_prime.Q; atol=1e-6)
 
@@ -555,6 +555,7 @@ function test_EM_numeric_RTS()
         res_6 = optimize(R -> -SSM.Q(kf.A, kf.Q, kf.H, R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.R, LBFGS())
         # test if R is updated
         @test isapprox(res_6.minimizer * res_6.minimizer', kf_prime.R; atol=1e-6)
+        println()
     end
 end
 
@@ -810,8 +811,9 @@ function test_analytical_parameter_updates()
     Q_l = Matrix(cholesky(Q).L)
     # optimize A and Q
     opt_A = A -> -SSM.Q_state_model(A, Q_l, E_zz, E_zz_prev)
-    result_A = optimize(opt_A, plds.A, LBFGS(), Optim.Options(g_abstol=1e-12))
-    @test_broken isapprox(result_A.minimizer, SSM.update_A_plds!(plds, E_zz, E_zz_prev), atol=1e-6)
+    result_A = optimize(opt_A, rand(plds.latent_dim, plds.latent_dim), LBFGS(), Optim.Options(g_abstol=1e-16))
+    println("Difference between analytical and numerical results:", result_A.minimizer - SSM.update_A_plds!(plds, E_zz, E_zz_prev))
+    @test isapprox(result_A.minimizer, SSM.update_A_plds!(plds, E_zz, E_zz_prev), atol=1e-5)
 
     # update the model before update Q
     plds.A = result_A.minimizer

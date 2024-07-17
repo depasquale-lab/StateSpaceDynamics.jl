@@ -414,7 +414,7 @@ function fit!(model::BernoulliRegression, X::Matrix{Float64}, y::Union{Vector{Fl
     # minimize objective
     objective(β) = -loglikelihood(BernoulliRegression(β, true, model.λ), X, y, w) + (model.λ * sum(β.^2))
     objective_grad!(β, g) = gradient!(g, BernoulliRegression(β, true, model.λ), X, y, w) # troubleshoot this
-    result = optimize(objective, model.β, LBFGS())
+    result = optimize(objective, objective_grad!, model.β, LBFGS())
     # update parameters
     model.β = result.minimizer
 end
@@ -594,7 +594,7 @@ function fit!(model::PoissonRegression, X::Matrix{Float64}, y::Union{Vector{Floa
     # minimize objective
     objective(β) = -loglikelihood(PoissonRegression(β, true, model.λ), X, y, w) + (model.λ * sum(β.^2))
     objective_grad!(β, g) = gradient!(g, PoissonRegression(β, true, model.λ), X, y, w)
-    result = optimize(objective, model.β, LBFGS())
+    result = optimize(objective, objective_grad!, model.β, LBFGS())
     # update parameters
     model.β = result.minimizer
 end
