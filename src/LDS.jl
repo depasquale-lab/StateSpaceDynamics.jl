@@ -1480,6 +1480,7 @@ function fit!(plds::PoissonLDS, y::Array{<:Real}, max_iter::Int=1000, tol::Float
         next!(prog)
         # M-step
         M_Step!(plds, E_z, E_zz, E_zz_prev, x_smooth, y)
+        println("Succesfully updated parameters at iteration ", i)
         # check for convergence
         if abs(ll - ll_prev) < tol
             finish!(prog)
