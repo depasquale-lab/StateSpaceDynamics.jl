@@ -132,17 +132,17 @@ end
 
 function update_initial_state_distribution!(hmm::AbstractHMM, γ::Vector{Matrix{Float64}})
     # Update initial state probabilities for trialized data
-    num_states = size(γ[1], 2)
+    #num_states = size(γ[1], 2)
     num_trials = length(γ)
-    running_π = zeros(Float64, num_states)
+    #running_π = zeros(Float64, num_states)
+    hmm.πₖ = mean([exp.(γ[i][1, :]) for i in 1:num_trials])
 
-    for trial_index in 1:num_trials
-        trial = γ[trial_index]
-        trial_initial_prob = exp.(trial[1, :])
-        running_π .+= (trial_initial_prob ./ num_trials)
-    end
-
-    hmm.πₖ .= running_π
+    #for trial_index in 1:num_trials
+    #    trial = γ[trial_index]
+    #    trial_initial_prob = exp.(trial[1, :])
+    #    running_π .+= (trial_initial_prob ./ num_trials)
+    #end
+    #hmm.πₖ .= running_π
 end
 
 function update_transition_matrix!(hmm::AbstractHMM, γ::Matrix{Float64}, ξ::Array{Float64, 3})
