@@ -130,6 +130,21 @@ function update_initial_state_distribution!(hmm::AbstractHMM, γ::Matrix{Float64
     hmm.πₖ .= exp.(γ[1, :])
 end
 
+function update_initial_state_distribution!(hmm::AbstractHMM, γ::Vector{Matrix{Float64}})
+    # Update initial state probabilities for trialized data
+    #num_states = size(γ[1], 2)
+    num_trials = length(γ)
+    #running_π = zeros(Float64, num_states)
+    hmm.πₖ = mean([exp.(γ[i][1, :]) for i in 1:num_trials])
+
+    #for trial_index in 1:num_trials
+    #    trial = γ[trial_index]
+    #    trial_initial_prob = exp.(trial[1, :])
+    #    running_π .+= (trial_initial_prob ./ num_trials)
+    #end
+    #hmm.πₖ .= running_π
+end
+
 function update_transition_matrix!(hmm::AbstractHMM, γ::Matrix{Float64}, ξ::Array{Float64, 3})
     K = size(hmm.A, 1)
     T = size(γ, 1)
@@ -139,6 +154,44 @@ function update_transition_matrix!(hmm::AbstractHMM, γ::Matrix{Float64}, ξ::Ar
             hmm.A[i, j] = exp(logsumexp(ξ[:, i, j]) - logsumexp(γ[1:T-1, i]))
         end
     end
+end
+
+#=
+function update_transition_matrix!(hmm::AbstractHMM, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Float64, 3}})
+    # Update transition matrix for trialized data
+    K = size(hmm.A, 1)
+    num_trials = length(γ)
+    
+    running_A = zeros(Float64, K, K)
+
+    for trial_index in 1:num_trials
+        G = γ[trial_index]
+        E = ξ[trial_index]
+        T = size(G, 1)
+
+       @threads for i in 1:K 
+            for j in 1:K
+                running_A[i, j] += exp(logsumexp(E[:, i, j]) - logsumexp(G[1:T-1, i])) ./ num_trials
+            end
+        end
+    end
+end
+=#
+
+function update_transition_matrix!(hmm::AbstractHMM, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Float64, 3}})
+    # Update transition matrix for trialized data
+    K = size(hmm.A, 1)
+    num_trials = length(γ)
+
+    E = vcat(ξ...)
+    G = vcat([γ[i][1:size(γ[i], 1)-1, :] for i in 1:num_trials]...)
+
+    @threads for i in 1:K
+        for j in 1:K
+            hmm.A[i, j] = exp(logsumexp(E[:, i, j]) - logsumexp(G[:, i]))
+        end
+    end
+
 end
 
 function update_emission_models!(hmm::AbstractHMM, γ::Matrix{Float64}, data::Matrix{Float64})

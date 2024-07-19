@@ -114,6 +114,19 @@ function initialize_regression!(model::hmmglm, X::Matrix{Float64}, y::Vector{Flo
     end
 end
 
+function random_initialization!(model::hmmglm, X::Vector{Matrix{Float64}})
+    # Find number of parameters
+    p = size(X[1], 2)
+    if model.B[1].regression.include_intercept
+        p+=1
+    end
+    # Randomly initialize regression models
+    @threads for k in 1:model.K
+        model.B[k].regression.β = randn(p)
+        model.B[k].regression.σ² = 1.0
+    end
+end
+
 function forward(hmm::hmmglm, X::Matrix{Float64}, y::Vector{Float64})
     T = length(y)
     K = size(hmm.A, 1)  # Number of states
@@ -196,6 +209,18 @@ function M_step!(model::hmmglm, γ::Matrix{Float64}, ξ::Array{Float64, 3}, X::M
     update_regression!(model, X, y, exp.(γ)) 
 end
 
+function M_step!(model::hmmglm, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Float64, 3}}, X::Vector{Matrix{Float64}}, y::Vector{Vector{Float64}})
+    # Update initial state distribution
+    update_initial_state_distribution!(model, γ)
+    # Update transition matrix
+    update_transition_matrix!(model, γ, ξ)
+    # Update regression models
+    γ_exp = [exp.(γ_trial) for γ_trial in γ]
+    #BDD change
+    #update_regression!(model, X, y, γ_exp)
+    update_regression!(model, vcat(X...), vcat(y...), vcat(γ_exp...))
+end
+
 function fit!(model::hmmglm, X::Matrix{Float64}, y::Union{Vector{T}, BitVector}, max_iter::Int=100, tol::Float64=1e-6, initialize::Bool=true) where T<: Real
     # convert y to Float64
     y = convert(Vector{Float64}, y)
@@ -213,6 +238,9 @@ function fit!(model::hmmglm, X::Matrix{Float64}, y::Union{Vector{T}, BitVector},
         γ, ξ, α, _ = E_step(model, X, y)
         # Log-likelihood
         ll = logsumexp(α[end, :])
+        if isnan(ll)
+            println("nan in ll")
+        end
         push!(lls, ll)
         println("Log-Likelihood at iter $i: $ll")
         # M-step
@@ -226,6 +254,52 @@ function fit!(model::hmmglm, X::Matrix{Float64}, y::Union{Vector{T}, BitVector},
         prev_ll = ll 
     end
     return lls
+end
+
+function fit!(model::hmmglm, X::Vector{Matrix{Float64}}, y::Vector{Vector{Float64}}, max_iter::Int=100, tol::Float64=1e-6, initialize::Bool=true)
+    # Randomly Initialize the regression models
+    random_initialization!(model, X)
+    # Initialize log likelihood
+    lls = [-Inf]
+    prev_ll = -Inf
+
+    # Storage for parameter tracking
+    A_stor = Vector{Matrix{Float64}}()
+    π_stor = Vector{Vector{Float64}}()
+    β1_stor = Vector{Vector{Float64}}()
+    β2_stor = Vector{Vector{Float64}}()
+    σ1_stor = Vector{Float64}()
+    σ2_stor = Vector{Float64}()
+
+    # Expectation-Maximization
+    for i in 1:max_iter
+        # E-Step
+        output = E_step.(Ref(model), X, y)
+        γ, ξ, α = map(x-> x[1], output), map(x-> x[2], output), map(x-> x[3], output)
+        # Log-likelihood
+        ll = sum(map(α -> SSM.logsumexp(α[end, :]), α))
+        push!(lls, ll)
+        println("Log-Lieklihood at iter $i: $ll")
+        # M-Step
+        M_step!(model, γ, ξ, X, y)
+
+        # Track parameters
+        push!(A_stor, deepcopy(model.A))
+        push!(π_stor, deepcopy(model.πₖ))
+        push!(β1_stor, deepcopy(model.B[1].regression.β))
+        push!(β2_stor, deepcopy(model.B[2].regression.β))
+        push!(σ1_stor, deepcopy(model.B[1].regression.σ²))
+        push!(σ2_stor, deepcopy(model.B[2].regression.σ²))
+
+        # check for convergence
+        if i > 1
+            if abs(ll - prev_ll) < tol
+                return lls, A_stor, π_stor, β1_stor, β2_stor, σ1_stor, σ2_stor
+            end
+        end
+        prev_ll = ll 
+    end
+    return lls, A_stor, π_stor, β1_stor, β2_stor, σ1_stor, σ2_stor
 end
 
 function viterbi(hmm::hmmglm, X::Matrix{Float64}, y::Vector{Float64})
