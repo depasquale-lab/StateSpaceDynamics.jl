@@ -105,6 +105,7 @@ function update_regression!(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64
     end
 end
 
+#=
 function update_regression!(model::hmmglm, X::Vector{Matrix{Float64}}, y::Vector{Vector{Float64}}, w::Vector{Matrix{Float64}})
     # Get number of trials and parameters for regression Models
     num_trials = length(X)
@@ -171,6 +172,7 @@ function update_regression!(model::hmmglm, X::Vector{Matrix{Float64}}, y::Vector
         println("nan in variance")
     end
 end
+=#
 
 function initialize_regression!(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64})
     # first fit the regression models to all of the data unweighted
@@ -283,7 +285,9 @@ function M_step!(model::hmmglm, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Fl
     update_transition_matrix!(model, γ, ξ)
     # Update regression models
     γ_exp = [exp.(γ_trial) for γ_trial in γ]
-    update_regression!(model, X, y, γ_exp)
+    #BDD change
+    #update_regression!(model, X, y, γ_exp)
+    update_regression!(model, vcat(X...), vcat(y...), vcat(γ_exp...))
 end
 
 function fit!(model::hmmglm, X::Matrix{Float64}, y::Union{Vector{T}, BitVector}, max_iter::Int=100, tol::Float64=1e-6, initialize::Bool=true) where T<: Real
