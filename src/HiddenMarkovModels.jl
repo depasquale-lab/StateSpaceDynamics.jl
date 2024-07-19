@@ -156,6 +156,7 @@ function update_transition_matrix!(hmm::AbstractHMM, γ::Matrix{Float64}, ξ::Ar
     end
 end
 
+#=
 function update_transition_matrix!(hmm::AbstractHMM, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Float64, 3}})
     # Update transition matrix for trialized data
     K = size(hmm.A, 1)
@@ -174,6 +175,23 @@ function update_transition_matrix!(hmm::AbstractHMM, γ::Vector{Matrix{Float64}}
             end
         end
     end
+end
+=#
+
+function update_transition_matrix!(hmm::AbstractHMM, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Float64, 3}})
+    # Update transition matrix for trialized data
+    K = size(hmm.A, 1)
+    num_trials = length(γ)
+
+    E = vcat(ξ...)
+    G = vcat([γ[i][1:size(γ[i], 1)-1, :] for i in 1:num_trials]...)
+
+    @threads for i in 1:K
+        for j in 1:K
+            hmm.A[i, j] = exp(logsumexp(E[:, i, j]) - logsumexp(G[:, i]))
+        end
+    end
+
 end
 
 function update_emission_models!(hmm::AbstractHMM, γ::Matrix{Float64}, data::Matrix{Float64})
