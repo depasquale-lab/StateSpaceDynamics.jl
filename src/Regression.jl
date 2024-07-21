@@ -364,7 +364,7 @@ function gradient!(g::Vector{<:Real}, model::BernoulliRegression, X::Matrix{<:Re
     # Clamp probabilities to avoid log(0) and log(1)
     p = clamp.(p, 1e-16, 1-1e-16)
     # Calculate gradient
-    g .= -X' * Diagonal(w) * (y .- p) #+ (2 * model.λ * model.β)
+    g .= -X' * Diagonal(w) * (y .- p) + (2 * model.λ * model.β)
 end
 
 """
@@ -404,7 +404,7 @@ function fit!(model::BernoulliRegression, X::Matrix{<:Real}, y::Vector{<:Real}, 
     # convert y if necessary
     y = convert(Vector{Float64}, y)
     # minimize objective
-    obj = β -> -SSM.loglikelihood(SSM.BernoulliRegression(β, model.include_intercept, model.λ), X, y, w) #+ (model.λ * sum(β.^2))
+    obj = β -> -SSM.loglikelihood(SSM.BernoulliRegression(β, model.include_intercept, model.λ), X, y, w) + (model.λ * sum(β.^2))
     g! = (g, β) -> SSM.gradient!(g, BernoulliRegression(β, model.include_intercept, model.λ), X, y, w)
     result = optimize(obj, g!, model.β, LBFGS())
     # update parameters
@@ -547,7 +547,7 @@ Fit a Poisson regression model using maximum likelihood estimation.
 Args:
 - `model::PoissonRegression`: Poisson regression model
 - `X::Matrix{<:Real}`: Design matrix
-- `y::Union{Vector{<:Real}, Vector{Int64}}`: Response vector
+- `y::Vector{<:Real}`: Response vector
 - `w::Vector{<:Real}`: Weights for the observations
 
 Example:
@@ -564,7 +564,7 @@ w = rand(100)
 fit!(model, X, y, w)
 ```
 """
-function fit!(model::PoissonRegression, X::Matrix{<:Real}, y::Union{Vector{<:Real}, Vector{Int64}}, w::Vector{<:Real}=ones(length(y)))
+function fit!(model::PoissonRegression, X::Matrix{<:Real}, y::Vector{<:Real}, w::Vector{<:Real}=ones(length(y)))
     # add intercept if specified
     if model.include_intercept
         X = hcat(ones(size(X, 1)), X)
@@ -574,9 +574,9 @@ function fit!(model::PoissonRegression, X::Matrix{<:Real}, y::Union{Vector{<:Rea
     # initialize parameters
     model.β = zeros(p)
     # minimize objective
-    objective(β) = -loglikelihood(PoissonRegression(β, true, model.λ), X, y, w) + (model.λ * sum(β.^2))
-    objective_grad!(β, g) = gradient!(g, PoissonRegression(β, true, model.λ), X, y, w)
-    result = optimize(objective, objective_grad!, model.β, LBFGS())
+    obj = β -> -SSM.loglikelihood(SSM.PoissonRegression(β, model.include_intercept, model.λ), X, y, w) + (model.λ * sum(β.^2))
+    g! = (g, β) -> SSM.gradient!(g, PoissonRegression(β, model.include_intercept, model.λ), X, y, w)
+    result = optimize(obj, g!, model.β, LBFGS())
     # update parameters
     model.β = result.minimizer
 end
