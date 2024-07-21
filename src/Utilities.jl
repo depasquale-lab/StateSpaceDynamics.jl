@@ -198,3 +198,13 @@ function ensure_posdef(A::AbstractMatrix{<:Real})
     A = 0.5 * (A + A')
     return A
 end
+
+"""Calculates the logistic function in a numerically stable way"""
+function logistic(x::Real)
+    if x > 0
+        return 1 / (1 + exp(-x))
+    else
+        exp_x = exp(x)
+        return exp_x / (1 + exp_x)
+    end
+end

@@ -1424,30 +1424,30 @@ function update_b!(plds::PoissonLDS, x_smooth::Array{<:Real})
     end
 end
 
-function update_observation_model!(plds::PoissonLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, y::Array{<:Real})
+function update_observation_model!(plds::PoissonLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, y::Array{<:Real})
     # update the observation model parameters: C, D, and d
     if plds.fit_bool[6]
         # flatten the parameters so we can pass them to the optimizer as a single vector
-        params = vcat(vec(plds.C), vec(plds.D), plds.log_d)
+        params = vcat(vec(plds.C), plds.log_d)
         # create a helper function that takes a vector of the observation model parameters
-        function f(params::Vector{<:Real}, E_z::Array{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, y::Array{<:Real})
-            # reshape the parameters
-            C = reshape(params[1:plds.obs_dim * plds.latent_dim], plds.obs_dim, plds.latent_dim)
-            D = reshape(params[plds.obs_dim * plds.latent_dim + 1:plds.obs_dim * plds.latent_dim + plds.obs_dim * plds.obs_dim], plds.obs_dim, plds.obs_dim)
-            log_d = params[end-plds.obs_dim+1:end]
-            # create a PLDS object with the new parameters
-            plds_new = PoissonLDS(A=plds.A, C=C, Q=plds.Q, D=D, log_d=log_d, x0=plds.x0, p0=plds.p0, refractory_period=plds.refractory_period, obs_dim=plds.obs_dim, latent_dim=plds.latent_dim, fit_bool=plds.fit_bool)
-            # calculate the loglikelihood of the new model
-            Q_val = Q_function(plds_new, E_z, E_zz, E_zz_prev, y)
+        function f(params::Vector{<:Real}, D::Matrix{<:Real}, E_z::Array{<:Real}, E_zz::Array{<:Real}, y::Array{<:Real})
+            # Split params into C and log_d
+            C_size = size(D, 1)  # Assuming C has the same number of rows as D
+            log_d = params[end-size(D, 2)+1:end]  # Assuming log_d has the same length as the number of columns in D
+            C = reshape(params[1:end-size(D, 2)], C_size, :)  # Reshape the remaining params into C
+        
+            # Call Q_observation_model with the new C and log_d, and other unchanged parameters
+            Q_val = Q_observation_model(C, D, log_d, E_z, E_zz, y)
+        
             return -Q_val
         end
         # # create gradient function
         # g! = (g, params) -> grad!(g, params, x_smooth, y, plds)
         # optimize
-        result = optimize(params -> f(params, E_z, E_zz, E_zz_prev, y), params, LBFGS())
+        result = optimize(params -> f(params, plds.D, E_z, E_zz, y), params, LBFGS())
         # update the parameters
         plds.C = reshape(result.minimizer[1:plds.obs_dim * plds.latent_dim], plds.obs_dim, plds.latent_dim)
-        plds.D = reshape(result.minimizer[plds.obs_dim * plds.latent_dim + 1:plds.obs_dim * plds.latent_dim + plds.obs_dim * plds.obs_dim], plds.obs_dim, plds.obs_dim)
+        # plds.D = reshape(result.minimizer[plds.obs_dim * plds.latent_dim + 1:plds.obs_dim * plds.latent_dim + plds.obs_dim * plds.obs_dim], plds.obs_dim, plds.obs_dim)
         plds.log_d = result.minimizer[end-plds.obs_dim+1:end]
     end
 end
@@ -1459,10 +1459,10 @@ function M_Step!(plds::PoissonLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, E_zz
     update_b!(plds, x_smooth) # needs to be updated before A
     update_A_plds!(plds, E_zz, E_zz_prev)
     update_Q_plds!(plds, E_zz, E_zz_prev)
-    update_observation_model!(plds, E_z, E_zz, E_zz_prev, y)
+    update_observation_model!(plds, E_z, E_zz, y)
 end
 
-function fit!(plds::PoissonLDS, y::Array{<:Real}, max_iter::Int=1000, tol::Float64=1e-6)
+function fit!(plds::PoissonLDS, y::Array{<:Real}, max_iter::Int=100, tol::Float64=1e-3)
     # create a variable to store the log-likelihood
     ec_lls = []
     ll_prev = -Inf
