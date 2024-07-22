@@ -106,3 +106,11 @@ end
 function update_emissions_model!(emission::RegressionEmissions, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
     fit!(emission.regression, X, y, w)
 end
+
+
+
+
+# Update the parameters of the regression model, e.g. the betas.
+function update_emissions_model!(emission::RegressionEmissions, X::Matrix{Float64}, y::Matrix{Float64}, w::Vector{Float64}=ones(length(y)))
+    fit!(emission.regression, X, y, w)
+end

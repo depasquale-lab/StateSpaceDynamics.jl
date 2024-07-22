@@ -1,43 +1,70 @@
-export GaussianRegression, BernoulliRegression, PoissonRegression, fit!, loglikelihood, least_squares, update_variance!
+export GaussianRegression, BernoulliRegression, PoissonRegression, fit!, loglikelihood, least_squares, update_variance!, predict
+
+# below used in notebooks and unit tests
+export surrogate_loglikelihood, surrogate_loglikelihood_gradient!
+
 
 # abstract regression type
 abstract type Regression end
 
 """
-    mutable struct GaussianRegression <: Regression
 
-Args:
-- `β::Vector{Float64}`: Coefficients of the regression model
-- `σ²::Float64`: Variance of the regression model
-- `include_intercept::Bool`: Whether to include an intercept term in the model
-
-Constructors:
-- `GaussianRegression(; include_intercept::Bool = true, λ::Float64=0.0)`
-- `GaussianRegression(β::Vector{Float64}, σ²::Float64, include_intercept::Bool, λ::Float64=0.0)`
-
-Example:
-```julia
-model = GaussianRegression()
-model = GaussianRegression(include_intercept=false, λ=0.1)
-model = GaussianRegression([0.1, 0.2], 0.1, true, 0.1)
-```
 """
 mutable struct GaussianRegression <: Regression
-    β::Vector{Float64} # coefficients of the model
-    σ²::Float64 # variance of the model
-    include_intercept::Bool # whether to include an intercept term
-    λ::Float64 # regularization parameter
+    num_features::Int
+    num_targets::Int
+    β::Matrix{Float64} # coefficient matrix of the model
+    Σ::Matrix{Float64} # covariance matrix of the model 
+    include_intercept::Bool # whether to include an intercept term; if true, the first column of β is assumed to be the intercept/bias
   
-    function GaussianRegression(; include_intercept::Bool = true, λ::Float64=0.0)
-        @assert λ >= 0.0 "Regularization parameter must be non-negative."
-        new(Vector{Float64}(), 0.0, include_intercept, λ)
+    function GaussianRegression(; num_features::Int, num_targets::Int, include_intercept::Bool = true)
+        if include_intercept
+            input_dim = num_features + 1
+        else
+            input_dim = num_features
+        end
+
+        new(num_features, num_targets, ones(input_dim, num_targets), Matrix{Float64}(I, num_targets, num_targets), include_intercept)
     end
     
-    function GaussianRegression(β::Vector{Float64}, σ²::Float64, include_intercept::Bool, λ::Float64=0.0)
-        @assert λ >= 0.0 "Regularization parameter must be non-negative."
-        new(β, σ², include_intercept, λ)
+    function GaussianRegression(β::Matrix{Float64}, Σ::Matrix{Float64}; num_features::Int, num_targets::Int, include_intercept::Bool = true)
+        if include_intercept
+            input_dim = num_features + 1
+        else
+            input_dim = num_features
+        end
+
+        @assert size(β) == (input_dim, num_targets)
+        @assert size(Σ) == (num_targets, num_targets)
+
+        new(num_features, num_targets, β, Σ, include_intercept)
     end
 end
+
+"""
+    predict(model::GaussianRegression, X::Matrix{Float64})
+
+Predict the response variable using a Gaussian regression model. X should be 'observations' by 'features'.
+
+# Returns
+- A matrix of predictions (with shape 'observations' by 'predicted features'). 
+
+# Examples
+```julia
+
+```
+"""
+function predict(model::GaussianRegression, X::Matrix{Float64})
+    # confirm that the model has been fit
+    @assert !all(model.β .== 0) "Coefficient matrix is all zeros. Did you forget to initialize?"
+    @assert isposdef(model.Σ) "Covariance matrix is not positive definite. Did you forget to initialize?"
+    # add intercept if specified
+    if model.include_intercept
+        X = hcat(ones(size(X, 1)), X)
+    end
+    return X * model.β
+end
+
 
 
 """
@@ -48,7 +75,7 @@ Calculate the log-likelihood of a Gaussian regression model.
 Args:
 - `model::GaussianRegression`: Gaussian regression model
 - `X::Matrix{Float64}`: Design matrix
-- `y::Vector{Float64}`: Response vector
+- `y::Matrix{Float64}`: Target data (shape 'observations' by 'target features')
 
 Example:
 ```julia
@@ -58,110 +85,95 @@ y = X * [0.1, 0.2] + 0.1 * randn(100)
 loglikelihood(model, X, y)
 ```
 """
-function loglikelihood(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64})
+function loglikelihood(model::GaussianRegression, X::Matrix{Float64}, y::Matrix{Float64})
+    # confirm dimensions of X and y are correct
+    @assert size(X, 1) == size(y, 1) "Number of rows (number of observations) in X and y must be equal."
+    @assert size(y, 2) == model.num_targets "Number of columns in y must be equal to the number of targets in the model."
+    @assert size(X, 2) == model.num_features "Number of columns in X must be equal to the number of features in the model."
+
     # confirm that the model has been fit
-    @assert !isempty(model.β) && model.σ² != 0.0 "Model parameters not initialized, please call fit! first."
+    @assert !all(model.β .== 0) "Coefficient matrix is all zeros. Did you forget to initialize?"
+    @assert isposdef(model.Σ) "Covariance matrix is not positive definite. Did you forget to initialize?"
+
     # add intercept if specified
     if model.include_intercept
         X = hcat(ones(size(X, 1)), X)
     end
+
+    # calculate inverse of covariance matrix
+    Σ_inv = inv(model.Σ)
+
     # calculate log likelihood
     residuals = y - X * model.β
-    n = length(y)
-    -0.5 * n * log(2π * model.σ²) - (0.5 / model.σ²) * sum(residuals.^2)
+
+    log_likelihood = -0.5 * size(X, 1) * size(X, 2) * log(2π) - 0.5 * size(X, 1) * logdet(model.Σ) - 0.5 * sum(residuals .* (Σ_inv * residuals')')
+
+    return log_likelihood
 end
 
-"""
-    loglikelihood(model::GaussianRegression, X::Vector{Float64}, y::Float64)
+   
 
-Calculate the log-likelihood of a single observation of Gaussian regression model.
+function surrogate_loglikelihood(model::GaussianRegression, X::Matrix{Float64}, y::Matrix{Float64}, w::Vector{Float64}=ones(size(y, 1)))
+    # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
 
-Args:
-- `model::GaussianRegression`: Gaussian regression model
-- `X::Matrix{Float64}`: Design matrix
-- `y::Vector{Float64}`: Response vector
+    # WARNING: asserts may slow down computation. Remove later?
 
-Example:
-```julia
-model = GaussianRegression()
-X = rand(2)
-y = X * [0.1, 0.2] + 0.1 * randn()
-loglikelihood(model, X, y)
-```
-"""
-function loglikelihood(model::GaussianRegression, X::Vector{Float64}, y::Float64)
+    # confirm dimensions of X and y are correct
+    @assert size(X, 1) == size(y, 1) "Number of rows (number of observations) in X and y must be equal."
+    @assert size(y, 2) == model.num_targets "Number of columns in y must be equal to the number of targets in the model."
+    @assert size(X, 2) == model.num_features "Number of columns in X must be equal to the number of features in the model."
+
     # confirm that the model has been fit
-    @assert !isempty(model.β) && model.σ² != 0.0 "Model parameters not initialized, please call fit! first."
+    @assert !all(model.β .== 0) "Coefficient matrix is all zeros. Did you forget to initialize?"
+    @assert isposdef(model.Σ) "Covariance matrix is not positive definite. Did you forget to initialize?"
+
     # add intercept if specified
     if model.include_intercept
-        X = vcat(1.0, X)
+        X = hcat(ones(size(X, 1)), X)
     end
+
+
     # calculate log likelihood
-    residuals = y - (X' * model.β)
-    n = length(y)
-    -0.5 * n * log(2π * model.σ²) - (0.5 / model.σ²) * sum(residuals.^2)
+    residuals = y - X * model.β
+
+
+        
+    # reshape w for broadcasting
+    w = reshape(w, (length(w), 1))
+
+    log_likelihood= -0.5 * sum(broadcast(*, w, residuals.^2))
+
+    return log_likelihood
 end
 
 """
-    least_squares(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
 
-Calculate the (weighted) least squares objective function for a Gaussian regression model.
-
-Args:
-- `model::GaussianRegression`: Gaussian regression model
-- `X::Matrix{Float64}`: Design matrix
-- `y::Vector{Float64}`: Response vector
-- `w::Vector{Float64}`: Weights for the observations
-
-Example:
-```julia
-model = GaussianRegression()
-X = rand(100, 2)
-y = X * [0.1, 0.2] + 0.1 * randn(100)
-least_squares(model, X, y)
-
-model = GaussianRegression()
-X = rand(100, 2)
-y = X * [0.1, 0.2] + 0.1 * randn(100)
-w = rand(100)
-least_squares(model, X, y, w)
-```
 """
-function least_squares(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
+function surrogate_loglikelihood_gradient!(G::Matrix{Float64}, model::GaussianRegression, X::Matrix{Float64}, y::Matrix{Float64}, w::Vector{Float64}=ones(size(y, 1)))
+    # WARNING: asserts may slow down computation. Remove later?
+
+    # confirm dimensions of X and y are correct
+    @assert size(X, 1) == size(y, 1) "Number of rows (number of observations) in X and y must be equal."
+    @assert size(y, 2) == model.num_targets "Number of columns in y must be equal to the number of targets in the model."
+    @assert size(X, 2) == model.num_features "Number of columns in X must be equal to the number of features in the model."
+
     # confirm that the model has been fit
-    @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
-    residuals =  y - (X * model.β)
-    return sum(w.*(residuals.^2)) + (model.λ * sum(model.β.^2))
-end
+    @assert !all(model.β .== 0) "Coefficient matrix is all zeros. Did you forget to initialize?"
+    @assert isposdef(model.Σ) "Covariance matrix is not positive definite. Did you forget to initialize?"
 
-"""
-    gradient!(G::Vector{Float64}, model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
+    # add intercept if specified
+    if model.include_intercept
+        X = hcat(ones(size(X, 1)), X)
+    end
 
-Calculate the gradient of the least squares objective function for a Gaussian regression model.
+
+    # calculate log likelihood
+    residuals = y - X * model.β
 
     
-Args:
-- `G::Vector{Float64}`: Gradient of the objective function
-- `model::GaussianRegression`: Gaussian regression model
-- `X::Matrix{Float64}`: Design matrix
-- `y::Vector{Float64}`: Response vector
-- `w::Vector{Float64}`: Weights for the observations
+    G .=  X' * Diagonal(w) * residuals
+    
 
-Example:
-```julia
-model = GaussianRegression()
-X = rand(100, 2)
-y = X * [0.1, 0.2] + 0.1 * randn(100)
-G = zeros(2)
-gradient!(G, model, X, y)
-```
-"""
-function gradient!(G::Vector{Float64}, model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
-    # confirm that the model has been fit
-    @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
-    # calculate gradient
-    residuals = y - X * model.β
-    G .= (-2 * X' * Diagonal(w) * residuals) + (2*model.λ*model.β)
 end
 
 """
@@ -189,41 +201,103 @@ w = rand(100)
 update_variance!(model, X, y, w)
 ```
 """
-function update_variance!(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
+function update_variance!(model::GaussianRegression, X::Matrix{Float64}, y::Matrix{Float64}, w::Vector{Float64}=ones(size(y), 1))
+    # WARNING: asserts may slow down computation. Remove later?
+
+    # confirm dimensions of X and y are correct
+    @assert size(X, 1) == size(y, 1) "Number of rows (number of observations) in X and y must be equal."
+    @assert size(y, 2) == model.num_targets "Number of columns in y must be equal to the number of targets in the model."
+    @assert size(X, 2) == model.num_features "Number of columns in X must be equal to the number of features in the model."
+
     # confirm that the model has been fit
-    @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
-    # get number of parameters
-    p = length(model.β)
+    @assert !all(model.β .== 0) "Coefficient matrix is all zeros. Did you forget to initialize?"
+    @assert isposdef(model.Σ) "Covariance matrix is not positive definite. Did you forget to initialize?"
+
+    # add intercept if specified
+    if model.include_intercept
+        X = hcat(ones(size(X, 1)), X)
+    end
+
+
     residuals = y - X * model.β
-    model.σ² = sum(w.*(residuals.^2)) / sum(w) # biased estimate, could use n-1
+    
+    
+    model.Σ = (residuals' * Diagonal(w) * residuals) / size(X, 1)
+    
 end
 
-"""
-    fit!(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
 
-Fit a Gaussian regression model using weighted least squares.
+function fit!(model::GaussianRegression, X::Matrix{Float64}, y::Matrix{Float64}, w::Vector{Float64}=ones(size(y, 1)))
+    # confirm dimensions of X and y are correct
+    @assert size(X, 1) == size(y, 1) "Number of rows (number of observations) in X and y must be equal."
+    @assert size(y, 2) == model.num_targets "Number of columns in y must be equal to the number of targets in the model."
+    @assert size(X, 2) == model.num_features "Number of columns in X must be equal to the number of features in the model."
 
-Args:
-- `model::GaussianRegression`: Gaussian regression model
-- `X::Matrix{Float64}`: Design matrix
-- `y::Vector{Float64}`: Response vector
-- `w::Vector{Float64}`: Weights for the observations
+    # confirm that the model has been fit
+    @assert !all(model.β .== 0) "Coefficient matrix is all zeros. Did you forget to initialize?"
+    @assert isposdef(model.Σ) "Covariance matrix is not positive definite. Did you forget to initialize?"
+    
 
-Example:
-```julia
-model = GaussianRegression()
-X = rand(100, 2)
-y = X * [0.1, 0.2] + 0.1 * randn(100)
-fit!(model, X, y)
+    
+    # minimize objective
+    function objective(β)
+        log_likelihood = surrogate_loglikelihood(
+            GaussianRegression(
+                β, 
+                model.Σ, 
+                num_features=model.num_features, 
+                num_targets=model.num_targets, 
+                include_intercept=model.include_intercept), 
+            X, y, w)
+        return -log_likelihood / size(X, 1)
+    end
 
-model = GaussianRegression()
-X = rand(100, 2)
-y = X * [0.1, 0.2] + 0.1 * randn(100)
-w = rand(100)
-fit!(model, X, y, w)
-``` 
-"""
-function fit!(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
+    function objective_grad!(G, β)
+        surrogate_loglikelihood_gradient!(
+            G, 
+            GaussianRegression(
+                β, 
+                model.Σ, 
+                num_features=model.num_features, 
+                num_targets=model.num_targets, 
+                include_intercept=model.include_intercept), 
+            X, y, w)
+        # make it the gradient of the negative log likelihood
+        G .= -1 * G / size(X, 1)
+    end
+
+    # learning_rate = 0.01
+    # max_iterations = 1000
+    # tolerance = 1e-6
+
+    # for i in 1:max_iterations
+    #     # compute gradient
+    #     G = similar(model.β)
+    #     objective_grad!(G, model.β)
+
+
+    #     println("Iteration: ", i, " Gradient: ", G)
+
+    #     # update parameters
+    #     model.β -= learning_rate * G
+
+    #     # check convergence
+    #     if norm(G) < tolerance
+    #         break
+    #     end
+    # end
+
+    # println("Optimized weights are: ", model.β)
+
+    result = optimize(objective, objective_grad!, model.β, LBFGS())
+    # update parameters
+    model.β = result.minimizer
+
+    
+    update_variance!(model, X, y, w)
+end
+
+function fit_old!(model::GaussianRegression, X::Matrix{Float64}, y::Matrix{Float64}, w::Vector{Float64}=ones(length(y)))
     # add intercept if specified
     if model.include_intercept
         X = hcat(ones(size(X, 1)), X)
@@ -234,7 +308,7 @@ function fit!(model::GaussianRegression, X::Matrix{Float64}, y::Vector{Float64},
     model.β = rand(p)
     model.σ² = 1.0
     # minimize objective
-    objective(β) = least_squares(GaussianRegression(β, model.σ², true, model.λ), X, y, w)
+    objective(β) = -surrogate_loglikelihood(GaussianRegression(β, model.σ², true, model.λ), X, y, w)
     objective_grad!(G, β) = gradient!(G, GaussianRegression(β, model.σ², true, model.λ), X, y, w)
 
     result = optimize(objective, objective_grad!, model.β, LBFGS())
