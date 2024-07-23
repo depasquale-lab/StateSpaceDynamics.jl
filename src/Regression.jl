@@ -16,18 +16,19 @@ mutable struct GaussianRegression <: Regression
     β::Matrix{Float64} # coefficient matrix of the model
     Σ::Matrix{Float64} # covariance matrix of the model 
     include_intercept::Bool # whether to include an intercept term; if true, the first column of β is assumed to be the intercept/bias
+    λ::Float64 # regularization parameter
   
-    function GaussianRegression(; num_features::Int, num_targets::Int, include_intercept::Bool = true)
+    function GaussianRegression(; num_features::Int, num_targets::Int, include_intercept::Bool = true, λ::Float64=0.0)
         if include_intercept
             input_dim = num_features + 1
         else
             input_dim = num_features
         end
 
-        new(num_features, num_targets, ones(input_dim, num_targets), Matrix{Float64}(I, num_targets, num_targets), include_intercept)
+        new(num_features, num_targets, ones(input_dim, num_targets), Matrix{Float64}(I, num_targets, num_targets), include_intercept, λ)
     end
     
-    function GaussianRegression(β::Matrix{Float64}, Σ::Matrix{Float64}; num_features::Int, num_targets::Int, include_intercept::Bool = true)
+    function GaussianRegression(β::Matrix{Float64}, Σ::Matrix{Float64}; num_features::Int, num_targets::Int, include_intercept::Bool = true, λ::Float64=0.0)
         if include_intercept
             input_dim = num_features + 1
         else
@@ -37,7 +38,7 @@ mutable struct GaussianRegression <: Regression
         @assert size(β) == (input_dim, num_targets)
         @assert size(Σ) == (num_targets, num_targets)
 
-        new(num_features, num_targets, β, Σ, include_intercept)
+        new(num_features, num_targets, β, Σ, include_intercept, λ)
     end
 end
 
@@ -141,7 +142,7 @@ function surrogate_loglikelihood(model::GaussianRegression, X::Matrix{Float64}, 
     # reshape w for broadcasting
     w = reshape(w, (length(w), 1))
 
-    log_likelihood= -0.5 * sum(broadcast(*, w, residuals.^2))
+    log_likelihood = -0.5 * sum(broadcast(*, w, residuals.^2)) - (model.λ * sum(model.β.^2))
 
     return log_likelihood
 end
@@ -171,7 +172,8 @@ function surrogate_loglikelihood_gradient!(G::Matrix{Float64}, model::GaussianRe
     residuals = y - X * model.β
 
     
-    G .=  X' * Diagonal(w) * residuals
+    G .=  X' * Diagonal(w) * residuals - (2*model.λ*model.β)
+    
     
 
 end
