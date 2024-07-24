@@ -13,7 +13,7 @@ abstract type Regression end
 mutable struct GaussianRegression <: Regression
     num_features::Int
     num_targets::Int
-    β::Matrix{Float64} # coefficient matrix of the model
+    β::Matrix{Float64} # coefficient matrix of the model. Shape num_features by num_targets. Column one is coefficients for target one, etc. The first row are the intercept terms, if included. 
     Σ::Matrix{Float64} # covariance matrix of the model 
     include_intercept::Bool # whether to include an intercept term; if true, the first column of β is assumed to be the intercept/bias
     λ::Float64 # regularization parameter
@@ -55,7 +55,7 @@ Predict the response variable using a Gaussian regression model. X should be 'ob
 
 ```
 """
-function predict(model::GaussianRegression, X::Matrix{Float64})
+function sample(model::GaussianRegression, X::Matrix{Float64})
     # confirm that the model has been fit
     @assert !all(model.β .== 0) "Coefficient matrix is all zeros. Did you forget to initialize?"
     @assert isposdef(model.Σ) "Covariance matrix is not positive definite. Did you forget to initialize?"
@@ -63,7 +63,7 @@ function predict(model::GaussianRegression, X::Matrix{Float64})
     if model.include_intercept
         X = hcat(ones(size(X, 1)), X)
     end
-    return X * model.β
+    return X * model.β + rand(MvNormal(zeros(model.num_targets), model.Σ), size(X, 1))'
 end
 
 
@@ -94,6 +94,11 @@ function loglikelihood(model::GaussianRegression, X::Matrix{Float64}, y::Matrix{
 
     # confirm that the model has been fit
     @assert !all(model.β .== 0) "Coefficient matrix is all zeros. Did you forget to initialize?"
+
+    if !isposdef(model.Σ)
+        println("Bad covariance matrix: ", model.Σ)
+    end
+    
     @assert isposdef(model.Σ) "Covariance matrix is not positive definite. Did you forget to initialize?"
 
     # add intercept if specified
@@ -158,6 +163,9 @@ function surrogate_loglikelihood_gradient!(G::Matrix{Float64}, model::GaussianRe
     @assert size(y, 2) == model.num_targets "Number of columns in y must be equal to the number of targets in the model."
     @assert size(X, 2) == model.num_features "Number of columns in X must be equal to the number of features in the model."
 
+    # confirm the size of w is correct
+    @assert length(w) == size(y, 1) "Length of w must be equal to the number of observations in y."
+
     # confirm that the model has been fit
     @assert !all(model.β .== 0) "Coefficient matrix is all zeros. Did you forget to initialize?"
     @assert isposdef(model.Σ) "Covariance matrix is not positive definite. Did you forget to initialize?"
@@ -203,13 +211,16 @@ w = rand(100)
 update_variance!(model, X, y, w)
 ```
 """
-function update_variance!(model::GaussianRegression, X::Matrix{Float64}, y::Matrix{Float64}, w::Vector{Float64}=ones(size(y), 1))
+function update_variance!(model::GaussianRegression, X::Matrix{Float64}, y::Matrix{Float64}, w::Vector{Float64}=ones(size(y, 1)))
     # WARNING: asserts may slow down computation. Remove later?
 
     # confirm dimensions of X and y are correct
     @assert size(X, 1) == size(y, 1) "Number of rows (number of observations) in X and y must be equal."
     @assert size(y, 2) == model.num_targets "Number of columns in y must be equal to the number of targets in the model."
     @assert size(X, 2) == model.num_features "Number of columns in X must be equal to the number of features in the model."
+
+    # confirm the size of w is correct
+    @assert length(w) == size(y, 1) "Length of w must be equal to the number of observations in y."
 
     # confirm that the model has been fit
     @assert !all(model.β .== 0) "Coefficient matrix is all zeros. Did you forget to initialize?"
@@ -225,6 +236,17 @@ function update_variance!(model::GaussianRegression, X::Matrix{Float64}, y::Matr
     
     
     model.Σ = (residuals' * Diagonal(w) * residuals) / size(X, 1)
+
+    # ensure rounding errors are not causing the covariance matrix to be non-positive definite
+    model.Σ = (model.Σ + model.Σ') / 2
+
+    if !isposdef(model.Σ)
+        test_Σ = (residuals' * residuals) / size(X, 1)
+        println("Bad covariance matrix with normal weights: ", test_Σ)
+        println("Bad covariance matrix with normal weights is posdef: ", isposdef(test_Σ))
+        println("Bad covariance matrix weights: ", w)
+
+    end
     
 end
 
@@ -234,6 +256,9 @@ function fit!(model::GaussianRegression, X::Matrix{Float64}, y::Matrix{Float64},
     @assert size(X, 1) == size(y, 1) "Number of rows (number of observations) in X and y must be equal."
     @assert size(y, 2) == model.num_targets "Number of columns in y must be equal to the number of targets in the model."
     @assert size(X, 2) == model.num_features "Number of columns in X must be equal to the number of features in the model."
+
+    # confirm the size of w is correct
+    @assert length(w) == size(y, 1) "Length of w must be equal to the number of observations in y."
 
     # confirm that the model has been fit
     @assert !all(model.β .== 0) "Coefficient matrix is all zeros. Did you forget to initialize?"
