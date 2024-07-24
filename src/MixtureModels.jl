@@ -1,21 +1,69 @@
 export  GaussianMixtureModel, PoissonMixtureModel, fit!, log_likelihood, sample
 
+
+
+
+
+"""
+    sample(model::MixtureModel, n::Int)
+
+Draw `n` samples from the given mixture model.
+
+# Returns
+- A matrix or vector of samples (with shape 'n' by 'data dimension'), depending on mixture model type. 
+
+# Examples
+```julia
+# Gaussian Mixture Model example
+gmm = GaussianMixtureModel(3, 2)  # Create a Gaussian Mixture Model with 3 clusters and 2-dimensional data
+gmm_samples = sample(gmm, 100)  # Draw 100 samples from the Gaussian Mixture Model
+```
+"""
+function sample(mixture_model::MixtureModel, n::Int) end
+
+
+
+"""
+    fit!(model::MixtureModel, data::AbstractMatrix; <keyword arguments>)
+
+Fit the given mixture model to the data using the Expectation-Maximization (EM) algorithm. 
+
+# Arguments
+- `model::MixtureModel`: The mixture model to fit.
+- `data::AbstractMatrix`: The data matrix where rows correspond to data points.
+- `maxiter::Int=50`: The maximum number of iterations for the EM algorithm (default is 50).
+- `tol::Float64=1e-3`: The convergence tolerance for the log-likelihood (default is 1e-3).
+- `initialize_kmeans::Bool=true`: Whether to initialize the model parameters using KMeans (default is true).
+
+# Returns
+- The class probabilities (responsibilities) for each data point.
+
+# Examples
+```julia
+gmm = GaussianMixtureModel(3, 2)  # Create a Gaussian Mixture Model with 3 clusters and 2-dimensional data
+fit!(gmm, data)  # Fit the model to the data
+"""
+function fit!(gmm::MixtureModel, data::AbstractMatrix; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=true) end
+
+
+
+
 """
     GaussianMixtureModel
 
 A Gaussian Mixture Model for clustering and density estimation.
 
-## Fields
+# Fields
 - `k::Int`: Number of clusters.
 - `μₖ::Matrix{Float64}`: Means of each cluster (dimensions: data_dim x k).
 - `Σₖ::Array{Matrix{Float64}, 1}`: Covariance matrices of each cluster.
 - `πₖ::Vector{Float64}`: Mixing coefficients for each cluster.
 
 
-## Examples
+# Examples
 ```julia
-gmm = GaussianMixtureModel(3, 2) # 3 clusters, 2-dimensional data
-fit!(gmm, data)```
+gmm = GaussianMixtureModel(3, 2) # Create a Gaussian Mixture Model with 3 clusters and 2-dimensional data
+fit!(gmm, data)
 """
 mutable struct GaussianMixtureModel <: MixtureModel
     k::Int # Number of clusters
@@ -31,7 +79,7 @@ end
 Constructor for GaussianMixtureModel. Initializes Σₖ's covariance matrices to the 
 identity, πₖ to a uniform distribution, and μₖ's means to zeros.
 
-    """
+"""
 function GaussianMixtureModel(k::Int, data_dim::Int)
     Σ = [I(data_dim) for _ = 1:k]
     πs = ones(k) ./ k
@@ -40,10 +88,7 @@ function GaussianMixtureModel(k::Int, data_dim::Int)
 end
 
 """
-sample(gmm::GaussianMixtureModel, n)
-
 Draw 'n' samples from gmm. Returns a Matrix{Float64}, where each row is a data point.
-
 """
 function sample(gmm::GaussianMixtureModel, n::Int)
     # Determine the number of samples from each component
