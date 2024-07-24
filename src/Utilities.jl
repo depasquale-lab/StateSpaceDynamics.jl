@@ -1,6 +1,11 @@
-export kmeanspp_initialization, kmeans_clustering, PPCA, fit!, block_tridgm, interleave_reshape, block_tridiagonal_inverse
+export kmeanspp_initialization, kmeans_clustering, PPCA, fit!, block_tridgm, interleave_reshape, block_tridiagonal_inverse, row_matrix
 
 # Matrix utilities
+
+"""Vector to Row Matrix"""
+function row_matrix(x::AbstractVector)
+    return reshape(x, 1, length(x))
+end
 
 """Block Tridiagonal Inverse"""
 function block_tridiagonal_inverse(A, B, C)
