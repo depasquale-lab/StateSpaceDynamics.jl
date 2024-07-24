@@ -3,5 +3,6 @@
 /tests/ssm_testing_notebook.ipynb
 *.csv
 .DS_Store
-Manifest.toml
 docs/build/
+Manifest.toml
+docs/Manifest.toml

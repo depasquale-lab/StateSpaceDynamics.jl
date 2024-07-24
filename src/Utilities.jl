@@ -14,7 +14,7 @@ function block_tridiagonal_inverse(A, B, C)
     # Initialize Di and Ei arrays
     D = Array{AbstractMatrix}(undef, n+1)
     E = Array{AbstractMatrix}(undef, n+1)
-    λii = Array{AbstractMatrix}(undef, n)
+    λii = Array{Float64}(undef, n, block_size, block_size)
 
     # Add a zero matrix to the subdiagonal and superdiagonal
     pushfirst!(A, zeros(block_size, block_size))
@@ -23,22 +23,23 @@ function block_tridiagonal_inverse(A, B, C)
     # Initial conditions
     D[1] = zeros(block_size, block_size)
     E[n+1] = zeros(block_size, block_size)
+
  
     # Forward sweep for D
     for i in 1:n
-        D[i+1] = inv(B[i] - A[i] * D[i]) * C[i]
+        D[i+1] = (B[i] - A[i] * D[i]) \ C[i]
     end
   
     # Backward sweep for E
     for i in n:-1:1
-        E[i] = inv(B[i] - C[i]*E[i+1]) * A[i]
+        E[i] = (B[i] - C[i]*E[i+1]) \ A[i]
     end
 
     # Compute the inverses of the diagonal blocks λii
     for i in 1:n
-        term1 = (I - E[i+1]*D[i+1])
+        term1 = (I - D[i+1]*E[i+1])
         term2 = (B[i] - A[i]*D[i])
-        λii[i] = inv(term1)*inv(term2)
+        λii[i, :, :] = pinv(term1) * pinv(term2)
     end
 
     return λii
@@ -52,13 +53,7 @@ function interleave_reshape(data::AbstractArray, t::Int, d::Int)
     if l != (t * d)
         error("The length of data must be equivalent to  t * d")
     end
-    # create a matrix of zeros
-    X = zeros(t, d)
-    # loop through the data and reshape
-    for i in 1:d
-        X[:, i] = data[i:d:l]
-    end
-    # return the reshaped matrix
+    X = permutedims(reshape(data', d, t))
     return X
 end
 
