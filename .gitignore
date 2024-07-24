@@ -4,3 +4,4 @@
 *.csv
 .DS_Store
 Manifest.toml
+docs/build/
