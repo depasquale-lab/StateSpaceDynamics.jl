@@ -238,15 +238,9 @@ function update_variance!(model::GaussianRegression, X::Matrix{Float64}, y::Matr
     model.Σ = (residuals' * Diagonal(w) * residuals) / size(X, 1)
 
     # ensure rounding errors are not causing the covariance matrix to be non-positive definite
-    model.Σ = (model.Σ + model.Σ') / 2
+    model.Σ = stabilize_covariance_matrix(model.Σ)
 
-    if !isposdef(model.Σ)
-        test_Σ = (residuals' * residuals) / size(X, 1)
-        println("Bad covariance matrix with normal weights: ", test_Σ)
-        println("Bad covariance matrix with normal weights is posdef: ", isposdef(test_Σ))
-        println("Bad covariance matrix weights: ", w)
-
-    end
+   
     
 end
 
@@ -290,7 +284,7 @@ function fit!(model::GaussianRegression, X::Matrix{Float64}, y::Matrix{Float64},
                 include_intercept=model.include_intercept), 
             X, y, w)
         # make it the gradient of the negative log likelihood
-        G .= -1 * G / size(X, 1)
+        G .= -G / size(X, 1)
     end
 
     # learning_rate = 0.01
