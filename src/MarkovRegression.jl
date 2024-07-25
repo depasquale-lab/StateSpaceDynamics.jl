@@ -8,14 +8,14 @@ Struct representing a Gaussian hmm-glm model. This model is specifically a Hidde
 as a time-dependent mixture of Gaussian regression models. This is similar to how a vanilla HMM is a time-dependent mixture of Gaussian distributions. Thus,
 at each time point we can assess the most likely state and the most likely regression model given the data.
 
-Args:
-    A::Matrix{T}: Transition matrix
-    B::Vector{RegressionEmissions}: Vector of Gaussian Regression Models
-    πₖ::Vector{T}: initial state distribution
-    K::Int: number of states
-    λ::Float64: regularization parameter for the regression models
-    num_features::Int # number of features
-    num_targets::Int # number of targets
+# Arguments
+- `A::Matrix{T}`: Transition matrix
+- `B::Vector{RegressionEmissions}`: Vector of Gaussian Regression Models
+- `πₖ::Vector{T}`: initial state distribution
+- `K::Int`: number of states
+- `λ::Float64`: regularization parameter for the regression models
+- `num_features::Int`: number of features
+- `num_targets::Int`: number of targets
 """
 mutable struct SwitchingGaussianRegression{T <: Real} <: hmmglm
     A::Matrix{T} # transition matrix
@@ -27,6 +27,25 @@ mutable struct SwitchingGaussianRegression{T <: Real} <: hmmglm
     num_targets::Int # number of targets
 end
 
+"""
+    SwitchingGaussianRegression(; <keyword arguments>)
+
+Constructor for Switching Gaussian Regression Model.
+
+# Arguments
+- `num_features::Int`: Number of features.
+- `num_targets::Int`: Number of targets.
+- `A::Matrix{Float64}`: Transition matrix.
+- `B::Vector{RegressionEmissions}`: Vector of Gaussian Regression Models.
+- `πₖ::Vector{Float64}`: Initial state distribution.
+- `K::Int`: Number of states.
+- `λ::Float64`: Regularization parameter for the regression models.
+
+# Examples
+```julia
+model = SwitchingGaussianRegression(num_features=2, num_targets=1, K=2)
+```
+"""
 function SwitchingGaussianRegression(; num_features::Int, num_targets::Int, A::Matrix{Float64}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), K::Int, λ::Float64=0.0)
     # if A matrix is not passed, initialize using Dirichlet 
     isempty(A) ? A = initialize_transition_matrix(K) : nothing
@@ -38,6 +57,19 @@ function SwitchingGaussianRegression(; num_features::Int, num_targets::Int, A::M
     return SwitchingGaussianRegression(A, B, πₖ, K, λ, num_features, num_targets)
 end
 
+"""
+    sample(model::SwitchingGaussianRegression, X::Matrix{Float64})
+
+Sample from the model. 
+
+# Arguments
+- `model::SwitchingGaussianRegression`: Switching gaussian regression model.
+- `X::Matrix{Float64}`: Matrix of features.
+
+# Returns
+- `y::Matrix{Float64}`: Matrix of samples.
+- `z::Matrix{Float64}`: Matrix of states. Each row is a one-hot encoding of the state at that time point.
+"""
 function sample(model::SwitchingGaussianRegression, X::Matrix{Float64})
     # sample from the model
     y = zeros(Float64, size(X, 1), model.num_targets)
@@ -64,11 +96,12 @@ Struct representing a Bernoulli hmm-glm model. This model is specifically a Hidd
 as a time-dependent mixture of Bernoulli regression models. This is similar to how a vanilla HMM is a time-dependent mixture of Bernoulli distributions. Thus,
 at each time point we can assess the most likely state and the most likely regression model given the data.
 
-Args:
-    A::Matrix{T}: Transition matrix
-    B::Vector{RegressionEmissions}: Vector of Bernoulli Regression Models
-    πₖ::Vector{T}: initial state distribution
-    K::Int: number of states
+# Arguments
+- `A::Matrix{T}`: Transition matrix.
+- `B::Vector{RegressionEmissions}`: Vector of Bernoulli Regression Models.
+- `πₖ::Vector{T}`: Initial state distribution.
+- `K::Int`: Number of states.
+- `λ::Float64`: Regularization parameter for the regression models.
 """
 mutable struct SwitchingBernoulliRegression <: hmmglm
     A::Matrix{Float64} # transition matrix
@@ -78,6 +111,23 @@ mutable struct SwitchingBernoulliRegression <: hmmglm
     λ::Float64 # regularization parameter
 end
 
+"""
+    SwitchingBernoulliRegression(; <keyword arguments>)
+
+Constructor for Switching Bernoulli Regression Model.
+
+# Arguments
+- `A::Matrix{Float64}`: Transition matrix.
+- `B::Vector{RegressionEmissions}`: Vector of Bernoulli Regression Models.
+- `πₖ::Vector{Float64}`: Initial state distribution.
+- `K::Int`: Number of states.
+- `λ::Float64`: Regularization parameter for the regression models.
+
+# Examples
+```julia
+model = SwitchingBernoulliRegression(K=2)
+```
+"""
 function SwitchingBernoulliRegression(; A::Matrix{Float64}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), K::Int, λ::Float64=0.0)
     # if A matrix is not passed, initialize using Dirichlet 
     isempty(A) ? A = initialize_transition_matrix(K) : nothing
@@ -96,11 +146,12 @@ Struct representing a Poisson hmm-glm model. This model is specifically a Hidden
 as a time-dependent mixture of Poisson regression models. This is similar to how a vanilla HMM is a time-dependent mixture of Poisson distributions. Thus,
 at each time point we can assess the most likely state and the most likely regression model given the data.
 
-Args:
-    A::Matrix{T}: Transition matrix
-    B::Vector{RegressionEmissions}: Vector of Poisson Regression Models
-    πₖ::Vector{T}: initial state distribution
-    K::Int: number of states
+# Arguments
+- `A::Matrix{T}`: Transition matrix.
+- `B::Vector{RegressionEmissions}`: Vector of Poisson Regression Models.
+- `πₖ::Vector{T}`: Initial state distribution.
+- `K::Int`: Number of states.
+- `λ::Float64`: Regularization parameter for the regression models.
 """
 mutable struct SwitchingPoissonRegression <: hmmglm
     A::Matrix{Float64} # transition matrix
@@ -110,6 +161,23 @@ mutable struct SwitchingPoissonRegression <: hmmglm
     λ::Float64 # regularization parameter
 end
 
+"""
+    SwitchingPoissonRegression(; <keyword arguments>)
+
+Constructor for Switching Poisson Regression Model.
+
+# Arguments
+- `A::Matrix{Float64}`: Transition matrix.
+- `B::Vector{RegressionEmissions}`: Vector of Poisson Regression Models.
+- `πₖ::Vector{Float64}`: Initial state distribution.
+- `K::Int`: Number of states.
+- `λ::Float64`: Regularization parameter for the regression models.
+
+# Examples
+```julia
+model = SwitchingPoissonRegression(K=2)
+```
+"""
 function SwitchingPoissonRegression(; A::Matrix{Float64}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), K::Int, λ::Float64=0.0)
     # if A matrix is not passed, initialize using Dirichlet 
     isempty(A) ? A = initialize_transition_matrix(K) : nothing
@@ -124,9 +192,6 @@ end
 function update_regression!(model::hmmglm, X::Matrix{Float64}, y::Union{Vector{Float64}, Matrix{Float64}}, w::Matrix{Float64}=ones(size(y, 1), model.K))
    # update regression models 
 
-#    # print the shape of weights with proper label
-#     println("Shape of weights: ", size(w))
-
     @threads for k in 1:model.K
         update_emissions_model!(model.B[k], X, y, w[:, k])
     end
@@ -137,15 +202,10 @@ function initialize_regression!(model::hmmglm, X::Matrix{Float64}, y::Union{Vect
     # first fit the regression models to all of the data unweighted
     update_regression!(model, X, y)
 
-    println("update regression worked")
-
     # add white noise to the beta coefficients
     @threads for k in 1:model.K
         model.B[k].regression.β += randn(size(model.B[k].regression.β))
     end
-
-    println("adding noise worked")
-
 end
 
 function forward(hmm::hmmglm, X::Matrix{Float64}, y::Vector{Float64})

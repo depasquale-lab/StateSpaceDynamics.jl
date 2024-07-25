@@ -203,7 +203,7 @@ function stabilize_covariance_matrix(Σ::Matrix{Float64})
     if !ishermitian(Σ)
         Σ = (Σ + Σ') * 0.5
     end
-    # check if matrix is posdef. If not, add a small value to the diagonal (sometimes an emission only has one observation and the covariance matrix is singular)
+    # check if matrix is posdef. If not, add a small value to the diagonal (sometimes an emission only models one observation and the covariance matrix is singular)
     if !isposdef(Σ)
         Σ = Σ + 1e-12 * I
     end
