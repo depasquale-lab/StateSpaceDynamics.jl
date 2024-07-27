@@ -28,6 +28,17 @@ function test_GaussianRegression_fit()
     @test isapprox(model.Σ, true_covariance, atol=0.1)
 end
 
+function test_GaussianRegression_intercept()
+    model, X, y, true_β, true_covariance, n = GaussianRegression_simulation()
+    
+    model = GaussianRegression(num_features=2, num_targets=1, include_intercept=false)
+    model.β = ones(2, 1)
+    model.Σ = ones(1, 1)
+    fit!(model, X, y)
+    @test length(model.β) == 2
+    
+end
+
 function test_GaussianRegression_loglikelihood()
     model, X, y, true_β, true_covariance, n = GaussianRegression_simulation()
     
@@ -46,16 +57,6 @@ function test_GaussianRegression_default_model()
     @test model.Σ == ones(1, 1)
 end
 
-function test_GaussianRegression_intercept()
-    model, X, y, true_β, true_covariance, n = GaussianRegression_simulation()
-    
-    model = GaussianRegression(num_features=2, num_targets=1, include_intercept=false)
-    model.β = ones(2, 1)
-    model.Σ = ones(1, 1)
-    fit!(model, X, y)
-    @test length(model.β) == 2
-    
-end
 
 function test_Gaussian_ll_gradient()
     # Generate synthetic data
