@@ -1,8 +1,4 @@
-export  GaussianMixtureModel, PoissonMixtureModel, fit!, log_likelihood, sample
-
-
-
-
+export  GaussianMixtureModel, PoissonMixtureModel, fit!, log_likelihood, sample, E_Step, M_Step!, MixtureModel
 
 """
     sample(model::MixtureModel, n::Int)

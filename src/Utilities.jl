@@ -1,6 +1,12 @@
 export kmeanspp_initialization, kmeans_clustering, PPCA, fit!, block_tridgm, interleave_reshape, block_tridiagonal_inverse
+export row_matrix, stabilize_covariance_matrix
 
 # Matrix utilities
+
+"""Vector to Row Matrix"""
+function row_matrix(x::AbstractVector)
+    return reshape(x, 1, length(x))
+end
 
 """Block Tridiagonal Inverse"""
 function block_tridiagonal_inverse(A, B, C)
@@ -185,4 +191,16 @@ function ensure_positive_definite(A::Matrix{T}) where T
     # Reconstruct the matrix with the clipped eigenvalues
     A_posdef = V * Diagonal(λ_clipped) * V'
     return A_posdef
+end
+
+function stabilize_covariance_matrix(Σ::Matrix{Float64})
+    # check if the covariance is symmetric. If not, make it symmetric
+    if !ishermitian(Σ)
+        Σ = (Σ + Σ') * 0.5
+    end
+    # check if matrix is posdef. If not, add a small value to the diagonal (sometimes an emission only models one observation and the covariance matrix is singular)
+    if !isposdef(Σ)
+        Σ = Σ + 1e-12 * I
+    end
+    return Σ
 end

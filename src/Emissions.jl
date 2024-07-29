@@ -102,7 +102,29 @@ function loglikelihood(emission::RegressionEmissions, X::Vector{Float64}, y::Flo
     loglikelihood(emission.regression, X, y)
 end
 
+# loglikelihood of the regression model.
+function loglikelihood(emission::RegressionEmissions, X::Matrix{Float64}, y::Matrix{Float64})
+    loglikelihood(emission.regression, X, y)
+end
+
+
 # Update the parameters of the regression model, e.g. the betas.
 function update_emissions_model!(emission::RegressionEmissions, X::Matrix{Float64}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
+    fit!(emission.regression, X, y, w)
+end
+
+
+
+
+# Update the parameters of the regression model, e.g. the betas.
+function update_emissions_model!(emission::RegressionEmissions, X::Matrix{Float64}, y::Matrix{Float64}, w::Vector{Float64}=ones(size(y, 1)))
+
+    # confirm dimensions of X and y are correct
+    @assert size(X, 1) == size(y, 1) "Number of rows (number of observations) in X and y must be equal."
+
+    # confirm the size of w is correct
+    @assert length(w) == size(y, 1) "Length of w must be equal to the number of observations in y."
+
+
     fit!(emission.regression, X, y, w)
 end
