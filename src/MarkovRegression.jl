@@ -1,4 +1,4 @@
-export SwitchingGaussianRegression, SwitchingBernoulliRegression, SwitchingPoissonRegression, fit!, viterbi, log_likelihood
+export SwitchingGaussianRegression, SwitchingBernoulliRegression, SwitchingPoissonRegression, fit!, viterbi, log_likelihood, hmmglm
 
 abstract type hmmglm <: AbstractHMM end
 """
@@ -354,6 +354,30 @@ function M_step!(model::hmmglm, γ::Matrix{Float64}, ξ::Array{Float64, 3}, X::M
     update_regression!(model, X, y, exp.(γ)) 
 end
 
+"""
+    fit!(model::hmmglm, X::Matrix{Float64}, y::Union{Vector{T}, BitVector, Matrix{Float64}}, max_iter::Int=100, tol::Float64=1e-6, initialize::Bool=true) where T<: Real
+
+Fits a Switching Regression Model (hmmglm) using the EM algorithm.
+
+# Arguments
+- `model::hmmglm`: Markov Regression model.
+- `X::Matrix{Float64}`: Matrix of features. Each row is a feature vector. First row is timestep 1.
+- `y::Union{Vector{T}, BitVector, Matrix{Float64}}`: Vector of targets or matrix of targets. For matrix y: Each row is a target vector. First row is timestep 1.
+- `max_iter::Int=100`: Maximum number of iterations.
+- `tol::Float64=1e-6`: Tolerance for convergence.
+- `initialize=True`: Whether to initialize the regression models.
+
+# Returns
+- `lls::Vector{Float64}`: Vector of log-likelihoods at each iteration.
+
+# Examples
+```julia
+X = randn(100, 2)
+y = randn(100)
+model = SwitchingGaussianRegression(num_features=2, num_targets=1, K=2)
+lls = fit!(model, X, y)
+```
+"""
 function fit!(model::hmmglm, X::Matrix{Float64}, y::Union{Vector{T}, BitVector, Matrix{Float64}}, max_iter::Int=100, tol::Float64=1e-6, initialize::Bool=true) where T<: Real
     # convert y to Float64
     if typeof(y) == BitVector
@@ -388,6 +412,28 @@ function fit!(model::hmmglm, X::Matrix{Float64}, y::Union{Vector{T}, BitVector, 
     return lls
 end
 
+"""
+    viterbi(hmm::hmmglm, X::Matrix{Float64}, y::Vector{Float64})
+
+Viterbi algorithm for Switching Regression models.
+
+# Arguments
+- `hmm::hmmglm`: Switching Regression model.
+- `X::Matrix{Float64}`: Matrix of features. Each row is a feature vector.
+- `y::Vector{Float64}`: Vector of targets.
+
+# Returns
+- `best_path::Vector{Int}`: Vector of most likely states.
+
+# Examples
+```julia
+X = randn(100, 2)
+y = randn(100)
+model = SwitchingGaussianRegression(num_features=2, num_targets=1, K=2)
+lls = fit!(model, X, y)
+best_path = viterbi(model, X, y)
+```
+"""
 function viterbi(hmm::hmmglm, X::Matrix{Float64}, y::Vector{Float64})
     T = length(y)
     K = size(hmm.A, 1)  # Number of states

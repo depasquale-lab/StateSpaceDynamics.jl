@@ -5,20 +5,12 @@
 
 To install
 [SSM Julia](https://github.com/rsenne/ssm_julia), start up
-Julia and type the following code-snipped into the REPL. It makes
-use of the native Julia package manger.
+Julia and type the following code-snipped into the REPL. 
 
 ```julia
 Pkg.add("<Package name TBD!>")
 ```
 
-Additionally, for example if you encounter any sudden issues, or
-in the case you would like to contribute to the package, you can
-manually choose to be on the latest (untagged) version.
-
-```julia
-Pkg.develop("<Package name TBD!>")
-```
 
 ## Example: Training a Gaussian Mixture Model
 
@@ -50,7 +42,7 @@ Overlaying the trained model reveals a good fit:
 ## Getting Help
 
 To get help on specific functionality you can either look up the
-information here, or if you prefer you can make use of Julia's
+information here, or use Julia's
 native doc-system. The following example shows how to get
 additional information on [`GaussianMixtureModel`](@ref) within Julia's REPL:
 
@@ -58,7 +50,6 @@ additional information on [`GaussianMixtureModel`](@ref) within Julia's REPL:
 ?GaussianMixtureModel
 ```
 
-If you encounter a bug or would like to participate in the
-development of this package come find us on Github.
+If you encounter a bug or would like to contribute to the package, come find us on Github.
 
 - [rsenne/ssm_julia](https://github.com/rsenne/ssm_julia)

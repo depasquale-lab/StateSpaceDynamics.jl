@@ -1,3 +1,0 @@
-# Training Algorithms
-
-## Expectation Maximization

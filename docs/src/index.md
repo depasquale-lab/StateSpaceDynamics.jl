@@ -1,7 +1,7 @@
 # Introduction
 
 
-Julia SSM is a state space model package for neuroscientists. Quickly deploy powerful models with minimal hassle. Etc. Etc.
+Julia SSM is a state space model package for neuroscientists. Quickly deploy powerful models with minimal hassle.
 
 ## What are State Space Models?
 

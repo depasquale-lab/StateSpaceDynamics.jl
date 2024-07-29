@@ -38,6 +38,7 @@ Fit the given mixture model to the data using the Expectation-Maximization (EM) 
 ```julia
 gmm = GaussianMixtureModel(3, 2)  # Create a Gaussian Mixture Model with 3 clusters and 2-dimensional data
 fit!(gmm, data)  # Fit the model to the data
+```
 """
 function fit!(gmm::MixtureModel, data::AbstractMatrix; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=true) end
 
@@ -60,6 +61,7 @@ A Gaussian Mixture Model for clustering and density estimation.
 ```julia
 gmm = GaussianMixtureModel(3, 2) # Create a Gaussian Mixture Model with 3 clusters and 2-dimensional data
 fit!(gmm, data)
+```
 """
 mutable struct GaussianMixtureModel <: MixtureModel
     k::Int # Number of clusters
