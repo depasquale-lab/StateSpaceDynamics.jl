@@ -34,26 +34,16 @@ end
 
 function test_LDS_with_params()
     # Create the Kalman filter parameter vector
-    kf = LDS(A,
-             H,
-             nothing,
-             Q, 
-             R, 
-             x0, 
-             p0, 
-             nothing, 
-             2, 
-             2, 
-             Vector([false, false, false, false, false, false, false, false]))
+    kf = LDS(;A=A, H=H, Q=Q, R=R, x0=x0, p0=p0, obs_dim=2, latent_dim=2, fit_bool=Vector([false, false, false, false, false, false, false, false]))
     # confirm parameters are set correctly
     @test kf.A == A
     @test kf.H == H
-    @test kf.B === nothing
+    @test isapprox(kf.B, zeros(kf.latent_dim, size(kf.inputs, 2)), atol=1e-6)
     @test kf.Q == Q
     @test kf.R == R
     @test kf.x0 == x0
     @test kf.p0 == p0
-    @test kf.inputs === nothing
+    @test isapprox(kf.inputs, zeros(1, 1), atol=1e-6)
     @test kf.obs_dim == 2
     @test kf.latent_dim == 2
     @test kf.fit_bool == Vector([false, false, false, false, false, false, false, false])
@@ -76,36 +66,26 @@ end
 
 function test_LDS_without_params()
     # Create the Kalman filter without any params
-    kf = LDS()
+    kf = LDS(; obs_dim=2, latent_dim=2, fit_bool=Vector([true, true, true, true, true, true, true]))
     # confirm parameters are set correctly
-    @test kf.A !== nothing
-    @test kf.H !== nothing
-    @test kf.B === nothing
-    @test kf.Q !== nothing
-    @test kf.R !== nothing
-    @test kf.x0 !== nothing
-    @test kf.p0 !== nothing
-    @test kf.inputs === nothing
+    @test !isempty(kf.A)
+    @test !isempty(kf.H)
+    @test !isempty(kf.B)
+    @test !isempty(kf.Q)
+    @test !isempty(kf.R)
+    @test !isempty(kf.x0)
+    @test !isempty(kf.p0)
+    @test !isempty(kf.inputs)
     @test kf.obs_dim == 2
     @test kf.latent_dim == 2
     @test kf.fit_bool == fill(true, 7)
 end
 
-function test_LDS_EStep()
+function test_LDS_E_Step()
     # Create the Kalman filter parameter vector
-    kf = LDS(A,
-             H,
-             nothing,
-             Q, 
-             R, 
-             x0, 
-             p0, 
-             nothing, 
-             2, 
-             2, 
-             Vector([true, true, true, true, true, true, true]))
-    # run the EStep
-    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.EStep(kf, x_noisy')
+    kf = LDS(;A=A, H=H, Q=Q, R=R, x0=x0, p0=p0, obs_dim=2, latent_dim=2, fit_bool=Vector([true, true, true, true, true, true, true]))
+    # run the E_Step
+    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.E_Step(kf, x_noisy')
     # check dimensions
     @test size(x_smooth) == (length(t), 2)
     @test size(p_smooth) == (length(t), 2, 2)
@@ -115,49 +95,29 @@ function test_LDS_EStep()
     @test size(ml) == ()
 end
 
-function test_LDS_MStep!()
+function test_LDS_M_Step!()
     # Create the Kalman filter parameter vector
-    kf = LDS(A,
-             H,
-             nothing,
-             Q, 
-             R, 
-             x0, 
-             p0, 
-             nothing, 
-             2, 
-             2, 
-             Vector([true, true, true, true, true, true, true]))
-    # run the EStep
-    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.EStep(kf, x_noisy')
-    # run the MStep
-    SSM.MStep!(kf, E_z, E_zz, E_zz_prev, x_noisy')
+    kf = LDS(;A=A, H=H, Q=Q, R=R, x0=x0, p0=p0, obs_dim=2, latent_dim=2, fit_bool=Vector([true, true, true, true, true, true, true]))
+    # run the E_Step
+    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.E_Step(kf, x_noisy')
+    # run the M_Step
+    SSM.M_Step!(kf, E_z, E_zz, E_zz_prev, x_noisy')
     # check if the parameters are updated
     @test kf.A !== A
     @test kf.H !== H
-    @test kf.B === nothing
+    @test isapprox(kf.B, zeros(kf.latent_dim, 1))
     @test kf.Q !== Q
     @test kf.R !== R
     @test kf.x0 !== x0
     @test kf.p0 !== p0
-    @test kf.inputs === nothing
+    @test isapprox(kf.inputs, zeros(1, 1))
     @test kf.obs_dim == 2
     @test kf.latent_dim == 2
     @test kf.fit_bool == Vector([true, true, true, true, true, true, true])
 end
 
 function test_LDS_EM()
-    kf = LDS(A,
-             H,
-             nothing,
-             Q, 
-             R, 
-             x0, 
-             p0, 
-             nothing, 
-             2, 
-             2, 
-             Vector([true, true, true, true, true, true, true]))
+    kf = LDS(;A=A, H=H, Q=Q, R=R, x0=x0, p0=p0, obs_dim=2, latent_dim=2, fit_bool=Vector([true, true, true, true, true, true, true]))
     # run the EM
     for i in 1:10
         ml_prev = -Inf
@@ -168,13 +128,71 @@ function test_LDS_EM()
     # check if the parameters are updated
     @test kf.A !== A
     @test kf.H !== H
-    @test kf.B === nothing
+    @test isapprox(kf.B, zeros(kf.latent_dim, 1))
     @test kf.Q !== Q
     @test kf.R !== R
     @test kf.x0 !== x0
     @test kf.p0 !== p0
-    @test kf.inputs === nothing
+    @test isapprox(kf.inputs, zeros(1, 1))
     @test kf.obs_dim == 2
     @test kf.latent_dim == 2
     @test kf.fit_bool == Vector([true, true, true, true, true, true, true]) 
+end
+
+function test_direct_smoother()
+    # create kalman filter object
+    kf = LDS(;A=A, H=H, Q=Q, R=R, x0=x0, p0=p0, obs_dim=2, latent_dim=2, fit_bool=Vector([true, true, true, true, true, true, true]))
+    # run the RTS-Smoother
+    x_smooth, p_smooth = KalmanSmoother(kf, x_noisy')
+    # run the Direct Smoothing algorithm
+    x_smooth_direct, p_smooth_direct = KalmanSmoother(kf, permutedims(x_noisy), "Direct")
+    @test size(x_smooth) == size(x_smooth_direct)
+    @test size(p_smooth) == size(p_smooth_direct)
+    # check if the results are the same
+    @test isapprox(x_smooth, x_smooth_direct, atol=1e-6)
+    @test isapprox(p_smooth, p_smooth_direct, atol=1e-6)
+end
+
+function test_LDS_gradient()
+    # create kalman filter object
+    kf = LDS(;A=A, H=H, Q=Q, R=R, x0=x0, p0=p0, obs_dim=2, latent_dim=2, fit_bool=Vector([true, true, true, true, true, true, true]))
+    # calcualte the gradient
+    grad = SSM.Gradient(kf, x_noisy', zeros(size(x_noisy')))
+    # check dimensions
+    @test size(grad) == (length(t), kf.obs_dim)
+    # calculate the gradient using autodiff
+    obj(x) = x -> SSM.loglikelihood(x, kf, x_noisy')
+    grad_auto = ForwardDiff.gradient(obj(x), zeros(size(x_noisy')))
+    # check if the gradients are the same
+    @test isapprox(grad, grad_auto, atol=1e-6)
+end
+
+function test_LDS_Hessian()
+    # create kalman filter object
+    kf = LDS(;A=A, H=H, Q=Q, R=R, x0=x0, p0=p0, obs_dim=2, latent_dim=2, fit_bool=Vector([true, true, true, true, true, true, true]))
+    # calcualte the Hessian
+    hess, main, super, sub = SSM.Hessian(kf, x_noisy[:, 1:3]') # only look at first three observations as hessian is expensive to calculate using autodiff
+
+    # check lengths of main, super, and sub diagonals
+    @test typeof(main) == Vector{Matrix{Float64}}
+    @test typeof(super) == Vector{Matrix{Float64}}
+    @test typeof(sub) == Vector{Matrix{Float64}}
+    @test length(main) == 3
+    @test length(super) == 2
+    @test length(sub) == 2
+
+    # check dimensions
+    @test size(hess) == (3*kf.obs_dim, 3*kf.obs_dim)
+
+    # calculate the Hessian using autodiff
+    function log_likelihood(x::AbstractArray, l::LDS, y::AbstractArray)
+        # this wrapper function just makes it so we can pass a D x T array and not a T x D array. Otherwise the Hessian is out of order.
+        x = x'
+        ll = SSM.loglikelihood(x, l, y)
+        return ll  # Negate the log-likelihood
+    end
+    obj(x) = x -> log_likelihood(x, kf, zeros(size(x_noisy[:, 1:3]')))
+    hess_auto = ForwardDiff.hessian(obj(x), zeros(size(x_noisy[:, 1:3])))
+    # check if the Hessian are the same
+    @test isapprox(Matrix(hess), hess_auto, atol=1e-6)
 end

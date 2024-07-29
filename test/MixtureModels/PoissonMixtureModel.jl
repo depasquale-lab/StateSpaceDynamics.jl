@@ -10,7 +10,7 @@ function testPoissonMixtureModel_EStep(pmm::PoissonMixtureModel, data::Union{Mat
     k::Int = pmm.k
     
     # Run EStep
-    class_probabilities = SSM.EStep(pmm, data)
+    class_probabilities = SSM.E_Step(pmm, data)
     # Check dimensions
     @test size(class_probabilities) == (size(data, 1), k)
     # Check if the row sums are close to 1 (since they represent probabilities)
@@ -22,10 +22,10 @@ end
 function testPoissonMixtureModel_MStep(pmm::PoissonMixtureModel, data::Union{Matrix{Int}, Vector{Int}})
     k::Int = pmm.k
 
-    class_probabilities = SSM.EStep(pmm, data)
+    class_probabilities = SSM.E_Step(pmm, data)
 
     # Run MStep
-    SSM.MStep!(pmm, data, class_probabilities)
+    SSM.M_Step!(pmm, data, class_probabilities)
 
     test_PoissonMixtureModel_properties(pmm, k)
 end

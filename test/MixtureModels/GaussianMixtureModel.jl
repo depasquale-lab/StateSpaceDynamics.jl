@@ -17,8 +17,8 @@ function testGaussianMixtureModel_EStep(gmm::GaussianMixtureModel, data::Union{M
     k::Int = gmm.k
     data_dim::Int = size(data, 2)
     
-    # Run EStep
-    class_probabilities = SSM.EStep(gmm, data)
+    # Run E_Step
+    class_probabilities = SSM.E_Step(gmm, data)
     # Check dimensions
     @test size(class_probabilities) == (size(data, 1), k)
     # Check if the row sums are close to 1 (since they represent probabilities)
@@ -32,10 +32,10 @@ function testGaussianMixtureModel_MStep(gmm::GaussianMixtureModel, data::Union{M
     k::Int = gmm.k
     data_dim::Int = size(data, 2)
 
-    class_probabilities = SSM.EStep(gmm, data)
+    class_probabilities = SSM.E_Step(gmm, data)
 
     # Run MStep
-    SSM.MStep!(gmm, data, class_probabilities)
+    SSM.M_Step!(gmm, data, class_probabilities)
 
     test_GaussianMixtureModel_properties(gmm, k, data_dim)
 end

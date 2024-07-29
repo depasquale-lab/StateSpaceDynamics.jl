@@ -65,10 +65,10 @@ include("MixtureModels/PoissonMixtureModel.jl")
         data_dim = size(data, 2)
 
         gmm = GaussianMixtureModel(k, data_dim)
-        testGaussianMixtureModel_E_Step(gmm, data)
+        testGaussianMixtureModel_EStep(gmm, data)
 
         gmm = GaussianMixtureModel(k, data_dim)
-        testGaussianMixtureModel_M_Step(gmm, data)
+        testGaussianMixtureModel_MStep(gmm, data)
 
         gmm = GaussianMixtureModel(k, data_dim)
         testGaussianMixtureModel_fit(gmm, data)
@@ -96,9 +96,9 @@ include("MixtureModels/PoissonMixtureModel.jl")
     
     for (pmm, data) in tester_set
         pmm = PoissonMixtureModel(k)
-        testPoissonMixtureModel_E_Step(pmm, data)
+        testPoissonMixtureModel_EStep(pmm, data)
         pmm = PoissonMixtureModel(k)
-        testPoissonMixtureModel_M_Step(pmm, data)
+        testPoissonMixtureModel_MStep(pmm, data)
         pmm = PoissonMixtureModel(k)
         testPoissonMixtureModel_fit(pmm, data)
         pmm = PoissonMixtureModel(k)
@@ -125,6 +125,7 @@ end
 """
 Tests for LDS.jl
 """
+
 include("LDS/LDS.jl")
 
 @testset "LDS.jl Tests" begin
