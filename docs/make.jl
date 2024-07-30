@@ -13,10 +13,11 @@ entr(["./docs/src"], [SSM]) do
         pages=[
             "Home" => "index.md",
             "getting_started.md",
-            "using_models.md",
             "Models" => [
-                "mixture_models.md"
+                "MixtureModels.md",
+                "RegressionModels.md",
+                "HiddenMarkovModels.md",
+                "LDS.md",
                 ],
-            "training_algorithms.md"
             ])
 end

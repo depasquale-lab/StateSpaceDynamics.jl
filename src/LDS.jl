@@ -3,8 +3,37 @@
 
 # export statement
 export LDS, KalmanFilter, KalmanSmoother, loglikelihood
+export RTSSmoother, DirectSmoother, KalmanSmoother, KalmanFilterEM!, loglikelihood, marginal_loglikelihood
 
-"""Linear Dynamical System (LDS) Definition"""
+"""
+    LDS
+
+A Linear Dynamical System (LDS) is a model that describes the evolution of a latent state variable xₜ and an observed variable yₜ. The model is defined by the following equations:
+    
+        xₜ = A * xₜ₋₁ + B * uₜ + wₜ
+        yₜ = H * xₜ + vₜ
+    
+# Fields
+- `A::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0)`: Transition Matrix
+- `H::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0)`: Observation Matrix
+- `B::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0)`: Control Matrix
+- `Q::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0)`: Process Noise Covariance
+- `R::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0)`: Observation Noise Covariance
+- `x0::AbstractVector{<:Real}=Vector{Float64}(undef, 0)`: Initial State
+- `p0::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0)`: Initial Covariance
+- `inputs::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0)`: Inputs
+- `obs_dim::Int`: Observation Dimension
+- `latent_dim::Int`: Latent Dimension
+- `fit_bool::Vector{Bool}=fill(true, 7)`: Vector of booleans indicating which parameters to fit
+
+# Examples
+```julia
+using SSM
+
+# Create an LDS model
+l = LDS(obs_dim=2, latent_dim=2)
+```
+"""
 mutable struct LDS <: DynamicalSystem
     A::AbstractMatrix{<:Real}  # Transition Matrix
     H::AbstractMatrix{<:Real}  # Observation Matrix
@@ -78,6 +107,18 @@ function pca_init!(l::LDS, y::AbstractArray)
     l.x0 = ppca.z[1, :]
 end
 
+"""
+    KalmanFilter(l::LDS, y::AbstractArray)
+
+Runs the Kalman Filter on a given LDS model and a set of observations.
+
+# Arguments
+- `l::LDS`: LDS model
+- `y::AbstractArray`: Matrix of observations
+
+# Returns
+TBC
+"""
 function KalmanFilter(l::LDS, y::AbstractArray)
     # First pre-allocate the matrices we will need
     T, D = size(y)
@@ -115,6 +156,18 @@ function KalmanFilter(l::LDS, y::AbstractArray)
     return x_filt, p_filt, x_pred, p_pred, v, S, K, ml
 end
 
+"""
+    RTSSmoother(l::LDS, y::AbstractArray)
+
+    Explanation TBC.
+
+# Arguments
+- `l::LDS`: LDS model
+- `y::AbstractArray`: Matrix of observations
+
+# Returns
+TBC
+"""
 function RTSSmoother(l::LDS, y::AbstractArray)
     # Forward pass (Kalman Filter)
     x_filt, p_filt, x_pred, p_pred, v, F, K, ml = KalmanFilter(l, y)
@@ -140,6 +193,19 @@ function RTSSmoother(l::LDS, y::AbstractArray)
     return x_smooth, p_smooth, J, ml
 end
 
+"""
+    DirectSmoother(l::LDS, y::AbstractArray, tol::Float64=1e-6)
+
+Explanation TBC.
+
+# Arguments
+- `l::LDS`: LDS model
+- `y::AbstractArray`: Matrix of observations
+- `tol::Float64=1e-6`: Tolerance for convergence
+
+# Returns
+TBC
+"""
 function DirectSmoother(l::LDS, y::AbstractArray, tol::Float64=1e-6)
     # Pre-allocate arrays
     T = size(y, 1)
@@ -177,6 +243,20 @@ function DirectSmoother(l::LDS, y::AbstractArray, tol::Float64=1e-6)
     return xₜ, p_smooth
 end
 
+
+"""
+    KalmanSmoother(l::LDS, y::AbstractArray, method::String="RTS")
+
+Explanation TBC.
+
+# Arguments
+- `l::LDS`: LDS model
+- `y::AbstractArray`: Matrix of observations
+- `method::String="RTS"`: Method to use for smoothing
+
+# Returns
+TBC
+"""
 function KalmanSmoother(l::LDS, y::AbstractArray, method::String="RTS")
     if method == "RTS"
         return RTSSmoother(l, y)
@@ -299,6 +379,25 @@ function M_Step!(l::LDS, E_z, E_zz, E_zz_prev, y_n)
     update_R!(l, E_z, E_zz, y_n)
 end
 
+"""
+    KalmanFilterEM!(l::LDS, y::AbstractArray, max_iter::Int=1000, tol::Float64=1e-6)
+
+Runs the EM algorithm for the LDS model.
+
+# Arguments
+- `l::LDS`: LDS model
+- `y::AbstractArray`: Matrix of observations
+- `max_iter::Int=1000`: Maximum number of iterations
+- `tol::Float64=1e-6`: Tolerance for convergence
+
+# Returns
+TBC
+
+# Examples
+```julia
+<TBC>
+```
+"""
 function KalmanFilterEM!(l::LDS, y::AbstractArray, max_iter::Int=1000, tol::Float64=1e-6)
     # Initialize log-likelihood
     prev_ml = -Inf
@@ -408,15 +507,17 @@ function Gradient(l::LDS, y::AbstractArray, x::AbstractArray)
 end
 
 """
-Compute p(X, Y) for a given LDS model and a set of observations i.e. the loglikelihood.
+    loglikelihood(X::AbstractArray, l::LDS, y::AbstractArray)
 
-Args:
-    X: Matrix of latent states
-    l: LDS struct
-    y: Matrix of observations
+Compute the complete loglikelihood of a given LDS model and a set of observations.
 
-Returns:
-    ll: Loglikelihood of the LDS model given the observations
+# Arguments
+- `X::AbstractArray`: Matrix of latent states
+- `l::LDS`: LDS model
+- `y::AbstractArray`: Matrix of observations
+
+# Returns
+- `ll::Float64`: Loglikelihood of the LDS model given the observations
 """
 function loglikelihood(X::AbstractArray, l::LDS, y::AbstractArray)
     T = size(y, 1)
@@ -439,11 +540,17 @@ function loglikelihood(X::AbstractArray, l::LDS, y::AbstractArray)
 end
 
 """
-Compute the marginal loglikelihood of a given LDS model and a set of observations.
+    marginal_loglikelihood(l::LDS, v::AbstractArray, j::AbstractArray)
 
-Args:
-    l: LDS struct
-    y: Matrix of observations
+Explanation TBC.
+
+# Arguments
+- `l::LDS`: LDS model
+- `v::AbstractArray`: TBC
+- `j::AbstractArray`: TBC
+
+# Returns
+- `mll::Float64`: Marginal loglikelihood of the LDS model given the observations
 """
 function marginal_loglikelihood(l::LDS, v::AbstractArray, j::AbstractArray)
     return (-0.5) * ((v' * pinv(j) * v) + logdet(j) + l.obs_dim*log(2*pi))

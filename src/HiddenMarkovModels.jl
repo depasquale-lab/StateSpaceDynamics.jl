@@ -49,14 +49,12 @@ end
 """
     GaussianHMM(data::Matrix{Float64}, k_states::Int=2)
 
-Creates a Gaussian Hidden Markov Model (HMM) from data, with the number of latent states specified.
+Initializes a Gaussian Hidden Markov Model (HMM) using K-means clusters. Both πₖ and A are initialized randomly from Dirichlet distributions.
 
 # Arguments
 - `data::Matrix{Float64}`: Observational data.
 - `k_states::Int=2`: Number of latent states (default is 2).
 
-# Returns
-A `GaussianHMM` initialized using k-means clustering on the provided data.
 
 # Examples:
 ```julia
@@ -205,6 +203,24 @@ function M_step!(hmm::AbstractHMM, γ::Matrix{Float64}, ξ::Array{Float64, 3}, d
     update_emission_models!(hmm, γ, data)
 end
 
+"""
+    baumWelch!(hmm::AbstractHMM, data::Matrix{Float64}, max_iters::Int=100, tol::Float64=1e-6)
+
+    Fits the parameters of a Hidden Markov Model (HMM) using the Baum-Welch algorithm (aka, EM algorithm).
+
+# Arguments
+- `hmm::AbstractHMM`: Hidden Markov Model (HMM) to be trained.
+- `data::Matrix{Float64}`: Observational data.
+- `max_iters::Int=100`: Maximum number of iterations.
+- `tol::Float64=1e-6`: Tolerance for convergence.
+
+# Examples:
+```julia
+data = randn(100, 2)
+hmm = GaussianHMM(data, 2)
+baumWelch!(hmm, data)
+```
+"""
 function baumWelch!(hmm::AbstractHMM, data::Matrix{Float64}, max_iters::Int=100, tol::Float64=1e-6)
     T, _ = size(data)
     K = size(hmm.A, 1)
