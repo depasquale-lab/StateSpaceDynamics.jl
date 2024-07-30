@@ -116,7 +116,7 @@ function euclidean_distance(a::AbstractVector{Float64}, b::AbstractVector{Float6
 end
 
 """KMeans++ Initialization"""
-function kmeanspp_initialization(data::Matrix{Float64}, k_means::Int)
+function kmeanspp_initialization(data::Matrix{<:Real}, k_means::Int)
     N, D = size(data)
     centroids = zeros(D, k_means)
     rand_idx = rand(1:N)
@@ -142,7 +142,7 @@ function kmeanspp_initialization(data::Vector{Float64}, k_means::Int)
 end
 
 """KMeans Clustering Initialization"""
-function kmeans_clustering(data::Matrix{Float64}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6)
+function kmeans_clustering(data::Matrix{<:Real}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6)
     N, _ = size(data)
     centroids = kmeanspp_initialization(data, k_means)  # Assuming you have this function defined
     labels = zeros(Int, N)
@@ -193,7 +193,7 @@ function ensure_positive_definite(A::Matrix{T}) where T
     return A_posdef
 end
 
-function stabilize_covariance_matrix(Σ::Matrix{Float64})
+function stabilize_covariance_matrix(Σ::Matrix{<:Real})
     # check if the covariance is symmetric. If not, make it symmetric
     if !ishermitian(Σ)
         Σ = (Σ + Σ') * 0.5

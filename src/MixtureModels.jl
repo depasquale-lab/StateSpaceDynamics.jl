@@ -52,8 +52,8 @@ A Gaussian Mixture Model for clustering and density estimation.
 
 # Fields
 - `k::Int`: Number of clusters.
-- `μₖ::Matrix{Float64}`: Means of each cluster (dimensions: data_dim x k).
-- `Σₖ::Array{Matrix{Float64}, 1}`: Covariance matrices of each cluster.
+- `μₖ::Matrix{<:Real}`: Means of each cluster (dimensions: data_dim x k).
+- `Σₖ::Array{Matrix{<:Real}, 1}`: Covariance matrices of each cluster.
 - `πₖ::Vector{Float64}`: Mixing coefficients for each cluster.
 
 
@@ -65,8 +65,8 @@ fit!(gmm, data)
 """
 mutable struct GaussianMixtureModel <: MixtureModel
     k::Int # Number of clusters
-    μₖ::Matrix{Float64} # Means of each cluster
-    Σₖ::Array{Matrix{Float64}, 1} # Covariance matrices of each cluster
+    μₖ::Matrix{<:Real} # Means of each cluster
+    Σₖ::Array{Matrix{<:Real}, 1} # Covariance matrices of each cluster
     πₖ::Vector{Float64} # Mixing coefficients
 end
 
@@ -79,14 +79,14 @@ identity, πₖ to a uniform distribution, and μₖ's means to zeros.
 
 """
 function GaussianMixtureModel(k::Int, data_dim::Int)
-    Σ = [I(data_dim) for _ = 1:k]
+    Σ = [Matrix{Float64}(I, data_dim, data_dim) for _ = 1:k]
     πs = ones(k) ./ k
     μ = zeros(Float64, k, data_dim)  # Mean of each cluster initialized to zero matrix
     return GaussianMixtureModel(k, μ, Σ, πs)
 end
 
 """
-Draw 'n' samples from gmm. Returns a Matrix{Float64}, where each row is a data point.
+Draw 'n' samples from gmm. Returns a Matrix{<:Real}, where each row is a data point.
 """
 function sample(gmm::GaussianMixtureModel, n::Int)
     # Determine the number of samples from each component
@@ -111,10 +111,10 @@ end
 # E-Step (Confirmed in Python)
 """
     Returns 
-        - `class_probabilities::Matrix{Float64}`: Probability of each class for each data point.
+        - `class_probabilities::Matrix{<:Real}`: Probability of each class for each data point.
 
 """
-function E_Step(gmm::GaussianMixtureModel, data::Matrix{Float64})
+function E_Step(gmm::GaussianMixtureModel, data::Matrix{<:Real})
     N, _ = size(data)
     K = gmm.k
     γ = zeros(N, K)
@@ -129,11 +129,11 @@ function E_Step(gmm::GaussianMixtureModel, data::Matrix{Float64})
         logsum = logsumexp(log_γ[n, :])
         γ[n, :] = exp.(log_γ[n, :] .- logsum)
     end
-    # Return probability of each class for each point
+    # Return probabilities of each class for each point
     return γ
 end
 
-function M_Step!(gmm::GaussianMixtureModel, data::Matrix{Float64}, class_probabilities::Matrix{Float64})
+function M_Step!(gmm::GaussianMixtureModel, data::Matrix{<:Real}, class_probabilities::Matrix{<:Real})
     N, D = size(data)
     K = gmm.k
     γ = class_probabilities  
@@ -162,14 +162,14 @@ end
 
 
 """
-    log_likelihood(gmm::GaussianMixtureModel, data::Matrix{Float64})
+    log_likelihood(gmm::GaussianMixtureModel, data::Matrix{<:Real})
 
 Compute the log-likelihood of the data given the Gaussian Mixture Model (GMM). The data matrix should be of shape (# observations, # features).
 
 # Returns
 - `Float64`: The log-likelihood of the data given the model.
 """
-function log_likelihood(gmm::GaussianMixtureModel, data::Matrix{Float64})
+function log_likelihood(gmm::GaussianMixtureModel, data::Matrix{<:Real})
     N, K = size(data, 1), gmm.k
     ll = 0.0
     for n in 1:N
@@ -182,12 +182,12 @@ function log_likelihood(gmm::GaussianMixtureModel, data::Matrix{Float64})
 end
 
 """
-    fit!(gmm::GaussianMixtureModel, data::Matrix{Float64}; <keyword arguments>)
+    fit!(gmm::GaussianMixtureModel, data::Matrix{<:Real}; <keyword arguments>)
 Fits a Gaussian Mixture Model (GMM) to the given data using the Expectation-Maximization (EM) algorithm.
 
 # Arguments
 - `gmm::GaussianMixtureModel`: The Gaussian Mixture Model to be fitted.
-- `data::Matrix{Float64}`: The dataset on which the model will be fitted, where each row represents a data point.
+- `data::Matrix{<:Real}`: The dataset on which the model will be fitted, where each row represents a data point.
 - `maxiter::Int=50`: The maximum number of iterations for the EM algorithm (default: 50).
 - `tol::Float64=1e-3`: The tolerance for convergence. The algorithm stops if the change in log-likelihood between iterations is less than this value (default: 1e-3).
 - `initialize_kmeans::Bool=false`: If true, initializes the means of the GMM using K-means++ initialization (default: false).
@@ -202,7 +202,7 @@ gmm = GaussianMixtureModel(k=3, d=2)  # Initialize a GMM with 3 components and 2
 class_probabilities = fit!(gmm, data, maxiter=100, tol=1e-4, initialize_kmeans=true)
 ```
 """
-function fit!(gmm::GaussianMixtureModel, data::Matrix{Float64}; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=false)
+function fit!(gmm::GaussianMixtureModel, data::Matrix{<:Real}; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=false)
     prev_ll = -Inf  # Initialize to negative infinity
 
     if initialize_kmeans
@@ -235,8 +235,8 @@ function E_Step(gmm::GaussianMixtureModel, data::Vector{Float64})
     E_Step(gmm, reshape(data, :, 1))
 end
 
-function M_Step!(gmm::GaussianMixtureModel, data::Vector{Float64}, class_probabilities::Matrix{Float64})
-    M_Step!(gmm, reshape(data, :, 1), class_probabilities::Matrix{Float64})
+function M_Step!(gmm::GaussianMixtureModel, data::Vector{Float64}, class_probabilities::Matrix{<:Real})
+    M_Step!(gmm, reshape(data, :, 1), class_probabilities::Matrix{<:Real})
 end
 
 function log_likelihood(gmm::GaussianMixtureModel, data::Vector{Float64})
@@ -301,7 +301,7 @@ function E_Step(pmm::PoissonMixtureModel, data::Matrix{Int})
 end
 
 """M-Step for PMM"""
-function M_Step!(pmm::PoissonMixtureModel, data::Matrix{Int}, γ::Matrix{Float64})
+function M_Step!(pmm::PoissonMixtureModel, data::Matrix{Int}, γ::Matrix{<:Real})
     N, _ = size(data)
     
     for k in 1:pmm.k
@@ -405,7 +405,7 @@ function E_Step(pmm::PoissonMixtureModel, data::Vector{Int})
     E_Step(pmm, reshape(data, :, 1))
 end
 
-function M_Step!(pmm::PoissonMixtureModel, data::Vector{Int}, class_probabilities::Matrix{Float64})
+function M_Step!(pmm::PoissonMixtureModel, data::Vector{Int}, class_probabilities::Matrix{<:Real})
     M_Step!(pmm, reshape(data, :, 1), class_probabilities)
 end
 
