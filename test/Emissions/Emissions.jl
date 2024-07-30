@@ -35,7 +35,10 @@ function test_regression_emissions()
     y_poisson = convert(Vector{Float64}, y_poisson)
     # bernoulli glm response
     y_bernoulli = rand.(Bernoulli.(logistic.(X * true_β)))
-    y_bernoulli = convert(Vector{Float64}, y_bernoulli)
+    # convert y
+    y_bernoulli = reshape(y_bernoulli, :, 1)
+    y_bernoulli = Float64.(y_bernoulli)
+
     # initialize emission models
     gaussian_emission = RegressionEmissions(GaussianRegression(num_features=3, num_targets=1;include_intercept=false))
     poisson_emission = RegressionEmissions(PoissonRegression(;include_intercept=false))

@@ -424,7 +424,7 @@ y = rand(Bool, 100)
 loglikelihood(model, X, y)
 ```
 """
-function loglikelihood(model::BernoulliRegression, X::Matrix{<:Real}, y::Union{Vector{Float64}, Vector{Int64}, BitVector}, w::Vector{Float64}=ones(length(y)))
+function loglikelihood(model::BernoulliRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # add intercept if specified and not already included
@@ -433,8 +433,7 @@ function loglikelihood(model::BernoulliRegression, X::Matrix{<:Real}, y::Union{V
     end
     # calculate log likelihood
     p = logistic.(X * model.β)
-    # convert y if neccesary
-    y = convert(Vector{Float64}, y)
+    
     return sum(w .* (y .* log.(p) .+ (1 .- y) .* log.(1 .- p)))
 end
 
@@ -483,7 +482,7 @@ Calculate the gradient of the negative log-likelihood function for a Bernoulli r
 - `y::Union{Vector{Float64}, BitVector}`: Response vector.
 - `w::Vector{Float64}`: Weights for the observations.
 """
-function gradient!(grad::Vector{Float64}, model::BernoulliRegression, X::Matrix{<:Real}, y::Union{Vector{Float64}, Vector{Int64}, BitVector}, w::Vector{Float64}=ones(length(y)))
+function gradient!(grad::Vector{Float64}, model::BernoulliRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
     # confirm the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # add intercept if specified
@@ -493,7 +492,7 @@ function gradient!(grad::Vector{Float64}, model::BernoulliRegression, X::Matrix{
     # calculate probs 
     p = logistic.(X * model.β)
     # convert y if necessary
-    y = convert(Vector{Float64}, y)
+    # y = convert(Vector{Float64}, y)
     # calculate gradient
     grad .= -(X' * (w .* (y .- p))) + 2 * model.λ * model.β
 end
@@ -523,7 +522,7 @@ w = rand(100)
 fit!(model, X, y, w)
 ```
 """
-function fit!(model::BernoulliRegression, X::Matrix{<:Real}, y::Union{Vector{Float64}, Vector{Int64}, BitVector}, w::Vector{Float64}=ones(length(y)))
+function fit!(model::BernoulliRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
     # add intercept if specified
     if model.include_intercept
         X = hcat(ones(size(X, 1)), X)
@@ -533,7 +532,7 @@ function fit!(model::BernoulliRegression, X::Matrix{<:Real}, y::Union{Vector{Flo
     # initialize parameters
     model.β = rand(p)
     # convert y if necessary
-    y = convert(Vector{Float64}, y)
+    # y = convert(Vector{Float64}, y)
     # minimize objective
     objective(β) = -loglikelihood(BernoulliRegression(β, true, model.λ), X, y, w) + (model.λ * sum(β.^2))
     objective_grad!(β, g) = gradient!(g, BernoulliRegression(β, true, model.λ), X, y, w) # troubleshoot this

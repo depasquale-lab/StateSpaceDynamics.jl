@@ -4,6 +4,9 @@ function test_BernoulliRegression_fit()
     true_β = [0.5, -1.2, 2.3]
     p = logistic.(X * true_β)
     y = rand.(Bernoulli.(p))
+    # convert y 
+    y = reshape(y, :, 1)
+    y = Float64.(y)
     
     # Initialize and fit the model
     model = BernoulliRegression()
@@ -20,6 +23,9 @@ function test_BernoulliRegression_loglikelihood()
     true_β = [0.5, -1.2, 2.3]
     p = logistic.(X * true_β)
     y = rand.(Bernoulli.(p))
+    # convert y
+    y = reshape(y, :, 1)
+    y = Float64.(y)
     
     # Initialize and fit the model
     model = BernoulliRegression()
@@ -47,6 +53,9 @@ function test_BernoulliRegression_intercept()
     true_β = [0.5, -1.2, 2.3]
     p = logistic.(X * true_β)
     y = rand.(Bernoulli.(p))
+    # convert y
+    y = reshape(y, :, 1)
+    y = Float64.(y)
     
     model = BernoulliRegression(include_intercept=false)
     fit!(model, X[:, 2:end], y)
@@ -64,6 +73,10 @@ function test_Bernoulli_ll_gradient()
     true_β = [0.5, -1.2, 2.3]
     p = logistic.(X * true_β)
     y = rand.(Bernoulli.(p))
+    # convert y
+    y = reshape(y, :, 1)
+    y = Float64.(y)
+
     # initialize model
     model = BernoulliRegression()
     model.β = [0., 0., 0.]
