@@ -390,7 +390,7 @@ model = BernoulliRegression([0.1, 0.2], true, 0.1)
 ```
 """
 mutable struct BernoulliRegression <: Regression
-    β::Vector{Float64}
+    β::Vector{<:Real}
     include_intercept::Bool
     λ::Float64
     # Empty constructor
@@ -399,10 +399,27 @@ mutable struct BernoulliRegression <: Regression
         new(Vector{Float64}(), include_intercept, λ)
     end
     # Parametric Constructor
-    function BernoulliRegression(β::Vector{Float64}, include_intercept::Bool, λ::Float64=0.0)
+    function BernoulliRegression(β::Vector{<:Real}, include_intercept::Bool, λ::Float64=0.0)
         @assert λ >= 0.0 "Regularization parameter must be non-negative."
         new(β, include_intercept, λ)
     end
+end
+
+
+function sample(model::BernoulliRegression, X::Matrix{<:Real})
+    # confirm that the model has been fit
+    @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
+    # add intercept if specified
+    if model.include_intercept && size(X, 2) == length(model.β) - 1
+        X = hcat(ones(size(X, 1)), X)
+    end
+
+    y = rand.(Bernoulli.(logistic.(X * model.β)))
+    # convert y 
+    y = reshape(y, :, 1)
+    y = Float64.(y)
+
+    return y
 end
 
 """

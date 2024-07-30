@@ -24,7 +24,7 @@ function random_rotation_matrix(dim::Int)
 end
 
 # Function to generate a random covariance matrix
-function random_covariance_matrix(dim::Int)
+function random_Σ(dim::Int)
     # Set the random seed for reproducibility
     Random.seed!(1234)
     
