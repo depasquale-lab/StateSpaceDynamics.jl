@@ -6,14 +6,14 @@ export GaussianHMM, baumWelch!, viterbi, sample, initialize_transition_matrix, i
 Represents a Gaussian Hidden Markov Model (HMM).
 
 # Fields
-- `A::Matrix{Float64}`: State Transition Matrix.
+- `A::Matrix{<:Real}`: State Transition Matrix.
 - `B::Vector{GaussianEmission}`: Emission Model.
 - `πₖ::Vector{Float64}`: Initial State Distribution.
 - `K::Int`: Latent State Dimension.
 - `D::Int`: Dimension of the data.
 """
 mutable struct GaussianHMM{GaussianEmission} <: AbstractHMM
-    A::Matrix{Float64}  # State Transition Matrix
+    A::Matrix{<:Real}  # State Transition Matrix
     B::Vector{GaussianEmission}       # Emission Model
     πₖ ::Vector{Float64} # Initial State Distribution
     K::Int              # Latent State Dimension
@@ -21,12 +21,12 @@ mutable struct GaussianHMM{GaussianEmission} <: AbstractHMM
 end
 
 """
-    GaussianHMM(A::Matrix{Float64}, B::Vector{GaussianEmission}, πₖ::Vector{Float64}, K::Int, D::Int)
+    GaussianHMM(A::Matrix{<:Real}, B::Vector{GaussianEmission}, πₖ::Vector{Float64}, K::Int, D::Int)
 
 Creates a Gaussian Hidden Markov Model (HMM) with the specified parameters.
 
 # Arguments
-- `A::Matrix{Float64}`: State Transition Matrix.
+- `A::Matrix{<:Real}`: State Transition Matrix.
 - `B::Vector{GaussianEmission}`: Emission Model.
 - `πₖ::Vector{Float64}`: Initial State Distribution.
 - `K::Int`: Latent State Dimension.
@@ -42,17 +42,17 @@ D = 2
 hmm = GaussianHMM(A, B, πₖ, K, D)
 ```
 """
-function GaussianHMM(A::Matrix{Float64}, B::Vector{GaussianEmission}, πₖ::Vector{Float64}, K::Int, D::Int)
+function GaussianHMM(A::Matrix{<:Real}, B::Vector{GaussianEmission}, πₖ::Vector{Float64}, K::Int, D::Int)
     return GaussianHMM{GaussianEmission}(A, B, πₖ, K, D)
 end
 
 """
-    GaussianHMM(data::Matrix{Float64}, k_states::Int=2)
+    GaussianHMM(data::Matrix{<:Real}, k_states::Int=2)
 
 Initializes a Gaussian Hidden Markov Model (HMM) using K-means clusters. Both πₖ and A are initialized randomly from Dirichlet distributions.
 
 # Arguments
-- `data::Matrix{Float64}`: Observational data.
+- `data::Matrix{<:Real}`: Observational data.
 - `k_states::Int=2`: Number of latent states (default is 2).
 
 
@@ -62,7 +62,7 @@ data = randn(100, 2)
 hmm = GaussianHMM(data, 2)
 ```
 """
-function GaussianHMM(data::Matrix{Float64}, k_states::Int=2)
+function GaussianHMM(data::Matrix{<:Real}, k_states::Int=2)
     N, D = size(data)
     # Initialize A
     A = initialize_transition_matrix(k_states)
@@ -135,7 +135,7 @@ function backward(hmm::AbstractHMM, data::Y) where Y <: AbstractArray
     return β
 end
 
-function calculate_γ(hmm::AbstractHMM, α::Matrix{Float64}, β::Matrix{Float64})
+function calculate_γ(hmm::AbstractHMM, α::Matrix{<:Real}, β::Matrix{<:Real})
     T = size(α, 1)
     γ = α .+ β
     @threads for t in 1:T
@@ -144,7 +144,7 @@ function calculate_γ(hmm::AbstractHMM, α::Matrix{Float64}, β::Matrix{Float64}
     return γ
 end
 
-function calculate_ξ(hmm::AbstractHMM, α::Matrix{Float64}, β::Matrix{Float64}, data::AbstractArray)
+function calculate_ξ(hmm::AbstractHMM, α::Matrix{<:Real}, β::Matrix{<:Real}, data::AbstractArray)
     T = size(α, 1)
     K = size(hmm.A, 1)
     ξ = zeros(Float64, T-1, K, K)
@@ -162,12 +162,12 @@ function calculate_ξ(hmm::AbstractHMM, α::Matrix{Float64}, β::Matrix{Float64}
     return ξ
 end
 
-function update_initial_state_distribution!(hmm::AbstractHMM, γ::Matrix{Float64})
+function update_initial_state_distribution!(hmm::AbstractHMM, γ::Matrix{<:Real})
     # Update initial state probabilities
     hmm.πₖ .= exp.(γ[1, :])
 end
 
-function update_transition_matrix!(hmm::AbstractHMM, γ::Matrix{Float64}, ξ::Array{Float64, 3})
+function update_transition_matrix!(hmm::AbstractHMM, γ::Matrix{<:Real}, ξ::Array{Float64, 3})
     K = size(hmm.A, 1)
     T = size(γ, 1)
     # Update transition probabilities
@@ -178,7 +178,7 @@ function update_transition_matrix!(hmm::AbstractHMM, γ::Matrix{Float64}, ξ::Ar
     end
 end
 
-function update_emission_models!(hmm::AbstractHMM, γ::Matrix{Float64}, data::Matrix{Float64})
+function update_emission_models!(hmm::AbstractHMM, γ::Matrix{<:Real}, data::Matrix{<:Real})
     K = size(hmm.B, 1)
     # Update emission model
     for k in 1:K
@@ -186,7 +186,7 @@ function update_emission_models!(hmm::AbstractHMM, γ::Matrix{Float64}, data::Ma
     end
 end
 
-function E_step(hmm::AbstractHMM, data::Matrix{Float64})
+function E_step(hmm::AbstractHMM, data::Matrix{<:Real})
     α = forward(hmm, data)
     β = backward(hmm, data)
     γ = calculate_γ(hmm, α, β)
@@ -194,7 +194,7 @@ function E_step(hmm::AbstractHMM, data::Matrix{Float64})
     return γ, ξ, α, β
 end
 
-function M_step!(hmm::AbstractHMM, γ::Matrix{Float64}, ξ::Array{Float64, 3}, data::Matrix{Float64})
+function M_step!(hmm::AbstractHMM, γ::Matrix{<:Real}, ξ::Array{Float64, 3}, data::Matrix{<:Real})
     # Update initial state probabilities
     update_initial_state_distribution!(hmm, γ)
     # Update transition probabilities
@@ -204,13 +204,13 @@ function M_step!(hmm::AbstractHMM, γ::Matrix{Float64}, ξ::Array{Float64, 3}, d
 end
 
 """
-    baumWelch!(hmm::AbstractHMM, data::Matrix{Float64}, max_iters::Int=100, tol::Float64=1e-6)
+    baumWelch!(hmm::AbstractHMM, data::Matrix{<:Real}, max_iters::Int=100, tol::Float64=1e-6)
 
     Fits the parameters of a Hidden Markov Model (HMM) using the Baum-Welch algorithm (aka, EM algorithm).
 
 # Arguments
 - `hmm::AbstractHMM`: Hidden Markov Model (HMM) to be trained.
-- `data::Matrix{Float64}`: Observational data.
+- `data::Matrix{<:Real}`: Observational data.
 - `max_iters::Int=100`: Maximum number of iterations.
 - `tol::Float64=1e-6`: Tolerance for convergence.
 
@@ -221,7 +221,7 @@ hmm = GaussianHMM(data, 2)
 baumWelch!(hmm, data)
 ```
 """
-function baumWelch!(hmm::AbstractHMM, data::Matrix{Float64}, max_iters::Int=100, tol::Float64=1e-6)
+function baumWelch!(hmm::AbstractHMM, data::Matrix{<:Real}, max_iters::Int=100, tol::Float64=1e-6)
     T, _ = size(data)
     K = size(hmm.A, 1)
     log_likelihood = -Inf
@@ -246,7 +246,7 @@ function baumWelch!(hmm::AbstractHMM, data::Matrix{Float64}, max_iters::Int=100,
     end
 end
 
-function viterbi(hmm::AbstractHMM, data::Matrix{Float64})
+function viterbi(hmm::AbstractHMM, data::Matrix{<:Real})
     T, _ = size(data)
     K = size(hmm.A, 1)  # Number of states
     # Step 1: Initialization
@@ -351,7 +351,7 @@ This set of functions is for the Baum-Welch algorithm but uses the scaling facto
 #     return β
 # end
 
-# function calculate_γ(hmm::AbstractHMM, α::Matrix{Float64}, β::Matrix{Float64})
+# function calculate_γ(hmm::AbstractHMM, α::Matrix{<:Real}, β::Matrix{<:Real})
 #     T = size(α, 2)
 #     γ = α .* β # γₖ(t) = αₖ(t) * βₖ(t)
 #     for t in 1:T
@@ -360,7 +360,7 @@ This set of functions is for the Baum-Welch algorithm but uses the scaling facto
 #     return γ
 # end
 
-# function calculate_ξ(hmm::AbstractHMM, α::Matrix{Float64}, β::Matrix{Float64}, scaling_factors::Vector{Float64}, data::AbstractArray)
+# function calculate_ξ(hmm::AbstractHMM, α::Matrix{<:Real}, β::Matrix{<:Real}, scaling_factors::Vector{Float64}, data::AbstractArray)
 #     T = size(data, 1)
 #     K = size(hmm.A, 1)
 #     ξ = zeros(Float64, K, K, T-1)
@@ -375,7 +375,7 @@ This set of functions is for the Baum-Welch algorithm but uses the scaling facto
 #     return ξ
 # end
 
-# function Estep(hmm::AbstractHMM, data::Matrix{Float64})
+# function Estep(hmm::AbstractHMM, data::Matrix{<:Real})
 #     α, c = forward(hmm, data)
 #     β = backward(hmm, data, c)
 #     γ = calculate_γ(hmm, α, β)
@@ -383,7 +383,7 @@ This set of functions is for the Baum-Welch algorithm but uses the scaling facto
 #     return γ, ξ, α, β, c
 # end
 
-# function M_step!(hmm::AbstractHMM, γ::Matrix{Float64}, ξ::Array{Float64, 3}, data::Matrix{Float64})
+# function M_step!(hmm::AbstractHMM, γ::Matrix{<:Real}, ξ::Array{Float64, 3}, data::Matrix{<:Real})
 #     K = size(hmm.A, 1)
 #     T = size(data, 1)
 #     # Update initial state probabilities
@@ -400,7 +400,7 @@ This set of functions is for the Baum-Welch algorithm but uses the scaling facto
 #     end
 # end
 
-# function baumWelch!(hmm::AbstractHMM, data::Matrix{Float64}, max_iters::Int=100, tol::Float64=1e-6)
+# function baumWelch!(hmm::AbstractHMM, data::Matrix{<:Real}, max_iters::Int=100, tol::Float64=1e-6)
 #     # Initialize log-likelihood
 #     ll_prev = -Inf
 #     # Initialize progress bar
