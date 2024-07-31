@@ -14,7 +14,7 @@ at each time point we can assess the most likely state and the most likely regre
 - `πₖ::Vector{T}`: initial state distribution
 - `K::Int`: number of states
 - `λ::Float64`: regularization parameter for the regression models
-- `num_features::Int`: number of features
+- `input_dim::Int`: number of features
 - `num_targets::Int`: number of targets
 """
 mutable struct SwitchingGaussianRegression{T <: Real} <: hmmglm
@@ -23,7 +23,7 @@ mutable struct SwitchingGaussianRegression{T <: Real} <: hmmglm
     πₖ::Vector{T} # initial state distribution
     K::Int # number of states
     λ::Float64 # regularization parameter
-    num_features::Int # number of features
+    input_dim::Int # number of features
     num_targets::Int # number of targets
 end
 
@@ -33,7 +33,7 @@ end
 Constructor for Switching Gaussian Regression Model.
 
 # Arguments
-- `num_features::Int`: Number of features.
+- `input_dim::Int`: Number of features.
 - `num_targets::Int`: Number of targets.
 - `A::Matrix{<:Real}`: Transition matrix.
 - `B::Vector{RegressionEmissions}`: Vector of Gaussian Regression Models.
@@ -43,18 +43,18 @@ Constructor for Switching Gaussian Regression Model.
 
 # Examples
 ```julia
-model = SwitchingGaussianRegression(num_features=2, num_targets=1, K=2)
+model = SwitchingGaussianRegression(input_dim=2, num_targets=1, K=2)
 ```
 """
-function SwitchingGaussianRegression(; num_features::Int, num_targets::Int, A::Matrix{<:Real}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), K::Int, λ::Float64=0.0)
+function SwitchingGaussianRegression(; input_dim::Int, num_targets::Int, A::Matrix{<:Real}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), K::Int, λ::Float64=0.0)
     # if A matrix is not passed, initialize using Dirichlet 
     isempty(A) ? A = initialize_transition_matrix(K) : nothing
     # if B vector is not passed, initialize using Gaussian Regression
-    isempty(B) ? B = [RegressionEmissions(GaussianRegression(num_features=num_features, num_targets=num_targets, λ=λ)) for k in 1:K] : nothing
+    isempty(B) ? B = [RegressionEmissions(GaussianRegression(input_dim=input_dim, num_targets=num_targets, λ=λ)) for k in 1:K] : nothing
     # if πₖ vector is not passed, initialize using Dirichlet
     isempty(πₖ) ? πₖ = initialize_state_distribution(K) : nothing
     # return model
-    return SwitchingGaussianRegression(A, B, πₖ, K, λ, num_features, num_targets)
+    return SwitchingGaussianRegression(A, B, πₖ, K, λ, input_dim, num_targets)
 end
 
 """
@@ -374,7 +374,7 @@ Fits a Switching Regression Model (hmmglm) using the EM algorithm.
 ```julia
 X = randn(100, 2)
 y = randn(100)
-model = SwitchingGaussianRegression(num_features=2, num_targets=1, K=2)
+model = SwitchingGaussianRegression(input_dim=2, num_targets=1, K=2)
 lls = fit!(model, X, y)
 ```
 """
@@ -429,7 +429,7 @@ Viterbi algorithm for Switching Regression models.
 ```julia
 X = randn(100, 2)
 y = randn(100)
-model = SwitchingGaussianRegression(num_features=2, num_targets=1, K=2)
+model = SwitchingGaussianRegression(input_dim=2, num_targets=1, K=2)
 lls = fit!(model, X, y)
 best_path = viterbi(model, X, y)
 ```

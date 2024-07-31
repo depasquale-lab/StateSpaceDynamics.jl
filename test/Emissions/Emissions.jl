@@ -38,7 +38,7 @@ function test_regression_emissions()
     y_bernoulli = SSM.sample(true_bernoulli_model, X)
 
     # initialize emission models
-    gaussian_emission = RegressionEmissions(GaussianRegression(num_features=3, num_targets=1;include_intercept=false))
+    gaussian_emission = RegressionEmissions(GaussianRegression(input_dim=3, num_targets=1;include_intercept=false))
     poisson_emission = RegressionEmissions(PoissonRegression(;include_intercept=false))
     bernoulli_emission = RegressionEmissions(BernoulliRegression(;include_intercept=false))
     # update emission models

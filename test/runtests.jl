@@ -140,10 +140,10 @@ include("LDS/LDS.jl")
 end
 
 """
-Tests for Regression.jl
+Tests for RegressionModels.jl
 """ 
 
-include("Regression/GaussianRegression.jl")
+include("RegressionModels/GaussianRegression.jl")
 
 @testset "GaussianRegression Tests" begin
     test_GaussianRegression_fit()
@@ -153,7 +153,7 @@ include("Regression/GaussianRegression.jl")
     test_Gaussian_ll_gradient()
 end
 
-include("Regression/BernoulliRegression.jl")
+include("RegressionModels/BernoulliRegression.jl")
 
 @testset "BernoulliRegression Tests" begin
     test_BernoulliRegression_fit()
@@ -163,7 +163,7 @@ include("Regression/BernoulliRegression.jl")
     test_Bernoulli_ll_gradient()
 end
 
-include("Regression/PoissonRegression.jl")
+include("RegressionModels/PoissonRegression.jl")
 
 @testset "PoissonRegression Tests" begin
     test_PoissonRegression_fit()

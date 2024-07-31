@@ -17,7 +17,7 @@ using Base.Threads
 
 include("GlobalTypes.jl")
 include("Utilities.jl")
-include("Regression.jl")
+include("RegressionModels.jl")
 include("LDS.jl")
 include("Emissions.jl")
 include("HiddenMarkovModels.jl")
