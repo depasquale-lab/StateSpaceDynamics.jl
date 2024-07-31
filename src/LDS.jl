@@ -983,21 +983,24 @@ function Q_observation_model(C::Matrix{<:Real}, D::Matrix{<:Real}, log_d::Vector
     Q_val = 0.0
     trials = size(E_z, 1)
     time_steps = size(E_z, 2)
+    # calculate CC term
+    CC = zeros(size(C, 1), size(C, 2)^2)
+    for i in axes(C, 1)
+        CC[i, :] .= vec(C[i, :] * C[i, :]')
+    end
     # sum over trials
     for k in 1:trials
-        spikes = SSM.countspikes(y[k, :, :])
+        #spikes = SSM.countspikes(y[k, :, :])
         # sum over time-points
         for t in 1:time_steps
-            # linear term
-            term_1 = y[k, t, :]' * (C * E_z[k, t, :] + D*spikes[t, :] + d)
-            # first part of quadratic term (sum over neurons)
-            term_2 = sum(exp.(C * E_z[k, t, :] + D*spikes[t, :] + d))
-            # second part of quadratic term (sum over neurons)
-            term_3 = 0.0
-            for i in axes(C, 1)
-                term_3 += 0.5 * C[i, :]' * E_zz[k, t, :, :] * C[i, :]
-            end
-            Q_val += term_1 - term_2 + term_3
+            # Mean term
+            h = (C * E_z[k, t, :]) + d
+            # calculate rho
+            # ρ = 0.5 * CC * vec(E_zz[k, t, :, :])
+            ρ = 0.5 * diag(C * E_zz[k, t, :, :] * C')
+            ŷ = exp.(h + ρ)
+            # calculate the Q-value
+            Q_val += sum((y[k, t, :] .* h) - ŷ)
         end
     end
     return Q_val
@@ -1456,7 +1459,7 @@ function M_Step!(plds::PoissonLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, E_zz
     # update the parameters
     update_initial_state_mean!(plds, E_z)
     update_initial_state_covariance!(plds, E_zz, E_z)
-    update_b!(plds, x_smooth) # needs to be updated before A
+    # update_b!(plds, x_smooth) # needs to be updated before A
     update_A_plds!(plds, E_zz, E_zz_prev)
     update_Q_plds!(plds, E_zz, E_zz_prev)
     update_observation_model!(plds, E_z, E_zz, y)
