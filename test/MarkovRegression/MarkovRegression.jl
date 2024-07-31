@@ -10,7 +10,7 @@ end
 function test_HMMGLM_initialization()
     # initialize models
     K = 3
-    gaussian_model = SwitchingGaussianRegression(input_dim=2, num_targets=1, K=K)
+    gaussian_model = SwitchingGaussianRegression(input_dim=2, output_dim=1, K=K)
     bernoulli_model = SwitchingBernoulliRegression(K=K)
     poisson_model = SwitchingPoissonRegression(K=K)
     # test properties
