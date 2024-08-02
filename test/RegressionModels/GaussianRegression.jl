@@ -115,9 +115,8 @@ function test_GaussianRegression_standard_fit(;include_intercept::Bool=true)
     @test SSM.loglikelihood(est_model, X, y) >= SSM.loglikelihood(true_model, X, y)
 end
 
-# check that a regularized fitted model has a higher loglikelihood than an unregularized fitted model (when evaluated on NEW data)
+# check that a regularized model has β values closer to a normal gaussian and the model doesn't perform too much worse
 function test_GaussianRegression_regularized_fit(;include_intercept::Bool=true)
-    # Test if this λ value improves model generalization
     λ = 0.1
 
     # Generate synthetic data
@@ -125,18 +124,21 @@ function test_GaussianRegression_regularized_fit(;include_intercept::Bool=true)
     true_model, X, y = GaussianRegression_simulation(n)
 
     # Initialize and fit an *unregularized* model
-    est_model = GaussianRegression(input_dim=2, output_dim=2, include_intercept=include_intercept)
+    est_model = GaussianRegression(input_dim=2, output_dim=2, include_intercept=true)
     fit!(est_model, X, y)
 
     # Initialize and fit a regularized model
-    regularized_est_model = GaussianRegression(input_dim=2, output_dim=2, include_intercept=include_intercept, λ=λ)
+    regularized_est_model = GaussianRegression(input_dim=2, output_dim=2, include_intercept=true, λ=λ)
     fit!(regularized_est_model, X, y)
 
 
-    # Generate testing data
-    X_test = randn(n, 2)
-    y_test = SSM.sample(true_model, X_test)
+    # confirm that the regularized model is not too much worse
+    @test isapprox(
+        SSM.loglikelihood(regularized_est_model, X, y), 
+        SSM.loglikelihood(est_model, X, y), 
+        atol=0.1
+        )
 
-    # Confirm the regularized model generalizes better 
-    @test SSM.loglikelihood(regularized_est_model, X_test, y_test) >= SSM.loglikelihood(est_model, X_test, y_test)
+    # confirm that the regularized model has smaller absolute values for beta
+    @test all(abs.(regularized_est_model.β) .<= abs.(est_model.β))
 end

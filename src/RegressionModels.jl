@@ -1,7 +1,7 @@
 export GaussianRegression, BernoulliRegression, PoissonRegression, fit!, loglikelihood, least_squares, update_variance!, predict
 
 # below used in notebooks and unit tests
-export surrogate_loglikelihood, surrogate_loglikelihood_gradient!
+export define_objective, surrogate_loglikelihood_gradient!, define_objective_gradient
 
 
 # abstract regression type
@@ -136,34 +136,63 @@ function loglikelihood(model::GaussianRegression, X::Matrix{<:Real}, y::Matrix{<
     return log_likelihood
 end
 
-   
-"""
-    surrogate_loglikelihood(model::GaussianRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
 
-Calculate the (weighted) least squares objective function for a Gaussian regression model, with an L2 penalty on the coefficients.
 
-# Arguments
-- `model::GaussianRegression`: Gaussian regression model.
-- `X::Matrix{<:Real}`: Design matrix. Each row is an observation.
-- `y::Matrix{<:Real}`: Response matrix. Each row is a response vector.
-- `w::Vector{Float64}`: Weights for the observations.
+function define_objective(model::GaussianRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+    # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
 
-# Examples
-```julia
-model = GaussianRegression(input_dim=2, output_dim=1)
-X = rand(100, 2)
-y = X * [0.1, 0.2] + 0.1 * randn(100)
-y = reshape(y, 100, 1)
-least_squares(model, X, y)
+    # confirm dimensions of X and y are correct
+    @assert size(X, 1) == size(y, 1) "Number of rows (number of observations) in X and y must be equal."
+    @assert size(y, 2) == model.output_dim "Number of columns in y must be equal to the number of targets in the model."
+    @assert size(X, 2) == model.input_dim "Number of columns in X must be equal to the number of features in the model."
 
-model = GaussianRegression(input_dim=2, output_dim=1)
-X = rand(100, 2)
-y = X * [0.1, 0.2] + 0.1 * randn(100)
-y = reshape(y, 100, 1)
-w = rand(100)
-least_squares(model, X, y, w)
-```
-"""
+    # add intercept if specified
+    if model.include_intercept
+        X = hcat(ones(size(X, 1)), X)
+    end
+
+    function objective(β::Matrix{<:Real})
+        # calculate log likelihood
+        residuals = y - X * β
+
+        # reshape w for broadcasting
+        w = reshape(w, (length(w), 1))
+        pseudo_loglikelihood = -0.5 * sum(broadcast(*, w, residuals.^2)) - (model.λ * sum(β.^2))
+
+        return -pseudo_loglikelihood / size(X, 1)
+    end
+
+    return objective
+end
+
+
+function define_objective_gradient(model::GaussianRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+    # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
+
+    # confirm dimensions of X and y are correct
+    @assert size(X, 1) == size(y, 1) "Number of rows (number of observations) in X and y must be equal."
+    @assert size(y, 2) == model.output_dim "Number of columns in y must be equal to the number of targets in the model."
+    @assert size(X, 2) == model.input_dim "Number of columns in X must be equal to the number of features in the model."
+
+    # confirm the size of w is correct
+    @assert length(w) == size(y, 1) "Length of w must be equal to the number of observations in y."
+
+    # add intercept if specified
+    if model.include_intercept
+        X = hcat(ones(size(X, 1)), X)
+    end
+
+    function objective_gradient!(G::Matrix{<:Real}, β::Matrix{<:Real})
+        # calculate log likelihood
+        residuals = y - X * β
+
+        G .= -(X' * Diagonal(w) * residuals - (2*model.λ*β)) / size(X, 1)
+    end
+    
+    return objective_gradient!
+end
+
+
 function surrogate_loglikelihood(model::GaussianRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
     # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
 
@@ -314,33 +343,8 @@ function fit!(model::GaussianRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w
     @assert length(w) == size(y, 1) "Length of w must be equal to the number of observations in y."
     
 
-    
-    # minimize objective
-    function objective(β)
-        log_likelihood = surrogate_loglikelihood(
-            GaussianRegression(
-                β, 
-                model.Σ, 
-                input_dim=model.input_dim, 
-                output_dim=model.output_dim, 
-                include_intercept=model.include_intercept), 
-            X, y, w)
-        return -log_likelihood / size(X, 1)
-    end
-
-    function objective_grad!(G, β)
-        surrogate_loglikelihood_gradient!(
-            G, 
-            GaussianRegression(
-                β, 
-                model.Σ, 
-                input_dim=model.input_dim, 
-                output_dim=model.output_dim, 
-                include_intercept=model.include_intercept), 
-            X, y, w)
-        # make it the gradient of the negative log likelihood
-        G .= -G / size(X, 1)
-    end
+    objective = define_objective(model, X, y, w)
+    objective_grad! = define_objective_gradient(model, X, y, w)
 
 
     result = optimize(objective, objective_grad!, model.β, LBFGS())
