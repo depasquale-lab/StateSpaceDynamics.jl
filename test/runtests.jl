@@ -9,6 +9,9 @@ using Test
 
 Random.seed!(1234)
 
+include("helper_functions.jl")
+
+
 """
 Tests for MixtureModels.jl
 """
@@ -172,6 +175,16 @@ include("RegressionModels/PoissonRegression.jl")
     test_PoissonRegression_empty_model()
     test_PoissonRegression_intercept()
     test_Poisson_ll_gradient()
+end
+
+include("RegressionModels/AutoRegression.jl")
+
+@testset "AutoRegression Tests" begin
+    test_AutoRegression_loglikelihood()
+    test_AutoRegression_Σ()
+    test_AutoRegression_constructor()
+    test_AutoRegression_standard_fit()
+    test_AutoRegression_regularized_fit()
 end
 
 """

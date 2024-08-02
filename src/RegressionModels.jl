@@ -1,7 +1,10 @@
-export GaussianRegression, BernoulliRegression, PoissonRegression, fit!, loglikelihood, least_squares, update_variance!, predict
+export GaussianRegression, BernoulliRegression, PoissonRegression, AutoRegression, fit!, loglikelihood, least_squares, update_variance!, sample, set_params!
 
 # below used in notebooks and unit tests
-export define_objective, surrogate_loglikelihood_gradient!, define_objective_gradient
+export define_objective, define_objective_gradient
+
+# temporary exports
+export Regression
 
 
 # abstract regression type
@@ -651,3 +654,113 @@ function fit!(model::PoissonRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w:
     model.β = result.minimizer
 end
 
+
+
+
+
+mutable struct AutoRegression <: Regression
+    data_dim::Int
+    order::Int
+    innerGaussianRegression::GaussianRegression
+
+    function AutoRegression(; data_dim::Int, order::Int, include_intercept::Bool = true, λ::Float64=0.0)
+        innerGaussianRegression = GaussianRegression(input_dim = data_dim * order, output_dim = data_dim, include_intercept = include_intercept, λ = λ)
+        new(data_dim, order, innerGaussianRegression)
+    end
+
+    function AutoRegression(β::Matrix{<:Real}, Σ::Matrix{<:Real}; data_dim::Int, order::Int, include_intercept::Bool = true, λ::Float64=0.0)
+        innerGaussianRegression = GaussianRegression(β, Σ, input_dim = data_dim * order, output_dim = data_dim, include_intercept = include_intercept, λ = λ)
+        new(data_dim, order, innerGaussianRegression)
+    end
+end
+
+function AR_to_Gaussian_data(y_prev::Matrix{<:Real})
+    # take each row of y_prev and stack them horizontally to form the input row matrix X_gaussian
+    X_gaussian = vcat([y_prev[i, :] for i in 1:size(y_prev, 1)]...)
+    X_gaussian = reshape(X_gaussian, 1, :)
+
+    return X_gaussian
+end
+
+function AR_to_Gaussian_data(y_prev::Matrix{<:Real}, y::Matrix{<:Real})
+    order = size(y_prev, 1)
+    data_dim = size(y_prev, 2)
+    X_gaussian = zeros(size(y, 1), data_dim * order)
+
+    for i in 1:size(y, 1)
+        X_gaussian[i, :] = AR_to_Gaussian_data(y_prev)
+
+
+        old_part = y_prev[2:end, :]
+        new_part = y[i, :]
+
+        old_part = reshape(old_part, order - 1, data_dim)
+        new_part = reshape(new_part, 1, data_dim)
+
+        y_prev = vcat(old_part, new_part)
+    end
+   
+
+    return X_gaussian
+end
+
+# setting Vector{Matrix{Float64}} to Vector{Matrix{<:Real}} throws an error for some reason...
+function set_params!(model::AutoRegression; βs::Vector{Matrix{Float64}} = Vector{Matrix{Float64}}(), intercept::Vector{<:Real} = Vector{Float64}(), Σ::Matrix{<:Real} = Matrix{Float64}())
+    if length(βs) != 0
+        @assert length(βs) == model.order
+
+        if model.innerGaussianRegression.include_intercept
+            model.innerGaussianRegression.β[2:end, :] = vcat([βs[i] for i in 1:length(βs)]...)
+        else
+            model.innerGaussianRegression.β = vcat([βs[i] for i in 1:length(βs)]...)
+        end
+    end
+
+    # check if intercept is empty
+    if length(intercept) != 0
+        @assert length(intercept) == model.data_dim
+        @assert model.innerGaussianRegression.include_intercept
+        model.innerGaussianRegression.β[1, :] = intercept
+    end
+
+    if size(Σ) != (0, 0)
+        @assert size(Σ) == (model.data_dim, model.data_dim)
+        model.innerGaussianRegression.Σ = Σ
+    end
+end
+
+function sample(model::AutoRegression, y_prev::Matrix{<:Real})
+    X_gaussian = AR_to_Gaussian_data(y_prev)
+    return sample(model.innerGaussianRegression, X_gaussian)
+end
+
+function sample(model::AutoRegression, y_prev::Matrix{<:Real}, n::Int)
+    y = zeros(n, model.data_dim)
+
+    for i in 1:n
+        y[i, :] = sample(model, y_prev)
+
+        old_part = y_prev[2:end, :]
+        new_part = y[i, :]
+
+        old_part = reshape(old_part, model.order - 1, model.data_dim)
+        new_part = reshape(new_part, 1, model.data_dim)
+
+        y_prev = vcat(old_part, new_part)
+    end
+    
+    return y
+end
+
+function loglikelihood(model::AutoRegression, y_prev::Matrix{<:Real}, y::Matrix{<:Real})
+    X_gaussian = AR_to_Gaussian_data(y_prev, y)
+
+    return loglikelihood(model.innerGaussianRegression, X_gaussian, y)
+end
+
+
+function fit!(model::AutoRegression, y_prev::Matrix{<:Real}, y::Matrix{<:Real})
+    X_gaussian = AR_to_Gaussian_data(y_prev, y)
+
+    return fit!(model.innerGaussianRegression, X_gaussian, y)
+end

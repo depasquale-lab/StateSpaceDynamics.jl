@@ -1,7 +1,7 @@
 function GaussianRegression_simulation(n::Int)
     X = randn(n, 2)
-    Σ = [0.1 0;
-            0 0.1]
+    Σ = [0.1 0.05;
+            0.05 0.1]
     β = [3 3;
         1 0.5;
         0.5 1]
@@ -49,15 +49,6 @@ function test_GaussianRegression_constructor()
     @test model.Σ == Matrix{Float64}(I, 2, 2)
 end
 
-function test_gradient(objective, objective_grad!, β; atol::Float64=1e-6)
-    # numerical gradient
-    G_numeric = ForwardDiff.gradient(objective, β)
-    # analytic gradient
-    G_analytic = zeros(3, 2)
-    objective_grad!(G_analytic, β)
-    # compare
-    @test isapprox(G_numeric, G_analytic, atol=atol)
-end
 
 # check surrogate_loglikelihood_gradient is close to numerical gradient
 function test_GaussianRegression_objective_gradient()
@@ -100,7 +91,15 @@ function test_GaussianRegression_standard_fit(;include_intercept::Bool=true)
     est_model = GaussianRegression(input_dim=2, output_dim=2, include_intercept=include_intercept)
     fit!(est_model, X, y)
 
+    # confirm that the fitted model has a higher loglikelihood than the true model
     @test SSM.loglikelihood(est_model, X, y) >= SSM.loglikelihood(true_model, X, y)
+
+    # confirm that the fitted model has similar β values to the true model
+    @test isapprox(est_model.β, true_model.β, atol=0.1)
+
+    # confirm that the fitted model's Σ values are good
+    @test isapprox(est_model.Σ, true_model.Σ, atol=0.1)
+    @test valid_Σ(est_model.Σ)
 end
 
 # check that a regularized model has β values closer to a normal gaussian and the model doesn't perform too much worse
@@ -129,4 +128,8 @@ function test_GaussianRegression_regularized_fit(;include_intercept::Bool=true)
 
     # confirm that the regularized model has smaller absolute values for beta
     @test all(abs.(regularized_est_model.β) .<= abs.(est_model.β))
+
+    # confirm that the fitted model's Σ values are good
+    @test isapprox(regularized_est_model.Σ, true_model.Σ, atol=0.1)
+    @test valid_Σ(regularized_est_model.Σ)
 end

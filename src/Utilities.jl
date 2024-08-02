@@ -1,5 +1,5 @@
 export kmeanspp_initialization, kmeans_clustering, PPCA, fit!, block_tridgm, interleave_reshape, block_tridiagonal_inverse
-export row_matrix, stabilize_covariance_matrix
+export row_matrix, stabilize_covariance_matrix, valid_Σ
 
 # Matrix utilities
 
@@ -203,4 +203,8 @@ function stabilize_covariance_matrix(Σ::Matrix{<:Real})
         Σ = Σ + 1e-12 * I
     end
     return Σ
+end
+
+function valid_Σ(Σ::Matrix{<:Real})
+    return ishermitian(Σ) && isposdef(Σ)
 end
