@@ -149,7 +149,7 @@ include("RegressionModels/GaussianRegression.jl")
     test_GaussianRegression_loglikelihood()
     test_GaussianRegression_Σ()
     test_GaussianRegression_constructor()
-    test_GaussianRegression_surrogate_loglikelihood_gradient()
+    test_GaussianRegression_objective_gradient()
     test_GaussianRegression_standard_fit()
     test_GaussianRegression_regularized_fit()
 end

@@ -49,57 +49,45 @@ function test_GaussianRegression_constructor()
     @test model.Σ == Matrix{Float64}(I, 2, 2)
 end
 
+function test_gradient(objective, objective_grad!, β; atol::Float64=1e-6)
+    # numerical gradient
+    G_numeric = ForwardDiff.gradient(objective, β)
+    # analytic gradient
+    G_analytic = zeros(3, 2)
+    objective_grad!(G_analytic, β)
+    # compare
+    @test isapprox(G_numeric, G_analytic, atol=atol)
+end
+
 # check surrogate_loglikelihood_gradient is close to numerical gradient
-function test_GaussianRegression_surrogate_loglikelihood_gradient()
+function test_GaussianRegression_objective_gradient()
     n = 1000
     true_model, X, y = GaussianRegression_simulation(n)
 
+
     est_model = GaussianRegression(input_dim=2, output_dim=2)
     
-    function objective_wrt_β(model, X, y, w=ones(size(y,1)))
-        function change_β(β)
-            model.β = β
-            return SSM.surrogate_loglikelihood(model, X, y, w)
-        end
-        return change_β
-    end 
 
-    
-    # numerical gradient
-    grad = ForwardDiff.gradient(objective_wrt_β(est_model, X, y), ones(3, 2))
-    # analytic gradient
-    est_model.β = ones(3, 2)
-    grad_analytic = zeros(3, 2)
-    surrogate_loglikelihood_gradient!(grad_analytic, est_model, X, y)
-    # compare
-    @test isapprox(grad, grad_analytic, atol=1e-6)
+    # test if analytical gradient is close to numerical gradient
+    objective = define_objective(est_model, X, y)
+    objective_grad! = define_objective_gradient(est_model, X, y)
+    test_gradient(objective, objective_grad!, ones(3, 2))
 
 
 
     # now do the same with Weights
     weights = rand(1000)
-    # numerical gradient
-    grad = ForwardDiff.gradient(objective_wrt_β(est_model, X, y, weights), ones(3, 2))
-    # analytic gradient
-    est_model.β = ones(3, 2)
-    grad_analytic = zeros(3, 2)
-    surrogate_loglikelihood_gradient!(grad_analytic, est_model, X, y, weights)
-    # compare
-    @test isapprox(grad, grad_analytic, atol=1e-6)
+    objective = define_objective(est_model, X, y, weights)
+    objective_grad! = define_objective_gradient(est_model, X, y, weights)
+    test_gradient(objective, objective_grad!, ones(3, 2))
 
 
 
     # finally test when λ is not 0
     est_model.λ = 0.1
-
-    # numerical gradient
-    grad = ForwardDiff.gradient(objective_wrt_β(est_model, X, y), ones(3, 2))
-    # analytic gradient
-    est_model.β = ones(3, 2)
-    grad_analytic = zeros(3, 2)
-    surrogate_loglikelihood_gradient!(grad_analytic, est_model, X, y)
-    # compare
-    @test isapprox(grad, grad_analytic, atol=1e-6)
+    objective = define_objective(est_model, X, y)
+    objective_grad! = define_objective_gradient(est_model, X, y)
+    test_gradient(objective, objective_grad!, ones(3, 2))
 end
 
 # check that a fitted model has a higher loglikelihood than the true model
