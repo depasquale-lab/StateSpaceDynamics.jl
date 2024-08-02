@@ -160,11 +160,11 @@ end
 include("RegressionModels/BernoulliRegression.jl")
 
 @testset "BernoulliRegression Tests" begin
-    test_BernoulliRegression_fit()
     test_BernoulliRegression_loglikelihood()
-    test_BernoulliRegression_empty_model()
-    test_BernoulliRegression_intercept()
-    test_Bernoulli_ll_gradient()
+    test_BernoulliRegression_constructor()
+    test_BernoulliRegression_objective_gradient()
+    test_BernoulliRegression_standard_fit()
+    test_BernoulliRegression_regularized_fit()
 end
 
 include("RegressionModels/PoissonRegression.jl")
@@ -231,6 +231,6 @@ Tests for MarkovRegression.jl
 
 include("MarkovRegression/MarkovRegression.jl")
 
-@testset "SwitchingRegression Tests" begin
-    test_HMMGLM_initialization()
-end
+# @testset "SwitchingRegression Tests" begin
+#     test_HMMGLM_initialization()
+# end

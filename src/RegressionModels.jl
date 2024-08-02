@@ -309,7 +309,6 @@ model = BernoulliRegression([0.1, 0.2], true, 0.1)
 """
 mutable struct BernoulliRegression <: Regression
     input_dim::Int
-    output_dim::Int
     β::Vector{<:Real}
     include_intercept::Bool
     λ::Float64
@@ -317,9 +316,9 @@ mutable struct BernoulliRegression <: Regression
     function BernoulliRegression(; input_dim::Int, include_intercept::Bool = true, λ::Float64=0.0) 
         @assert λ >= 0.0 "Regularization parameter must be non-negative."
         if include_intercept
-            new(input_dim, 1, zeros(input_dim + 1), include_intercept, λ)
+            new(input_dim, zeros(input_dim + 1), include_intercept, λ)
         else
-            new(input_dim, 1, zeros(input_dim), include_intercept, λ)
+            new(input_dim, zeros(input_dim), include_intercept, λ)
         end
     end
     # Parametric Constructor
@@ -331,7 +330,7 @@ mutable struct BernoulliRegression <: Regression
             @assert size(β, 1) == input_dim
         end
 
-        new(input_dim, 1, β, include_intercept, λ)
+        new(input_dim, β, include_intercept, λ)
     end
 end
 
@@ -384,33 +383,60 @@ function loglikelihood(model::BernoulliRegression, X::Matrix{<:Real}, y::Matrix{
     return sum(w .* (y .* log.(p) .+ (1 .- y) .* log.(1 .- p)))
 end
 
-"""
-    gradient!(grad::Vector{Float64}, model::BernoulliRegression, X::Matrix{<:Real}, y::Union{Vector{Float64}, BitVector}, w::Vector{Float64}=ones(length(y))
 
-Calculate the gradient of the negative log-likelihood function for a Bernoulli regression model. 
+function define_objective(model::BernoulliRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+    # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
 
-# Arguments
-- `grad::Vector{Float64}`: Gradient of the negative log-likelihood function.
-- `model::BernoulliRegression`: Bernoulli regression model.
-- `X::Matrix{<:Real}`: Design matrix.
-- `y::Union{Vector{Float64}, BitVector}`: Response vector.
-- `w::Vector{Float64}`: Weights for the observations.
-"""
-function gradient!(grad::Vector{Float64}, model::BernoulliRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
-    # confirm the model has been fit
-    @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
+    # confirm dimensions of X and y are correct
+    @assert size(X, 1) == size(y, 1) "Number of rows (number of observations) in X and y must be equal."
+    @assert size(y, 2) == 1 "BernoulliRegression Y data should be a single column."
+    @assert size(X, 2) == model.input_dim "Number of columns in X must be equal to the number of features in the model."
+
     # add intercept if specified
-    if model.include_intercept && size(X, 2) == length(model.β) - 1 
+    if model.include_intercept
         X = hcat(ones(size(X, 1)), X)
     end
-    # calculate probs 
-    p = logistic.(X * model.β)
-    # convert y if necessary
-    # y = convert(Vector{Float64}, y)
-    # calculate gradient
 
-    grad .= -(X' * (w .* (y .- p))) + 2 * model.λ * model.β
+    function objective(β)
+        # calculate log likelihood
+        p = logistic.(X * β)
+        
+        val = -sum(w .* (y .* log.(p) .+ (1 .- y) .* log.(1 .- p))) + (model.λ * sum(β.^2))
+
+        return val / size(X, 1)
+    end
+
+    return objective
 end
+
+
+function define_objective_gradient(model::BernoulliRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+    # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
+
+    # confirm dimensions of X and y are correct
+    @assert size(X, 1) == size(y, 1) "Number of rows (number of observations) in X and y must be equal."
+    @assert size(X, 2) == model.input_dim "Number of columns in X must be equal to the number of features in the model."
+
+    # confirm the size of w is correct
+    @assert length(w) == size(y, 1) "Length of w must be equal to the number of observations in y."
+
+    # add intercept if specified
+    if model.include_intercept
+        X = hcat(ones(size(X, 1)), X)
+    end
+
+    function objective_gradient!(G, β)
+        # calculate log likelihood
+        p = logistic.(X * β)
+
+        G .= (-(X' * (w .* (y .- p))) + 2 * model.λ * β) / size(X, 1)
+    end
+    
+    return objective_gradient!
+end
+
+
+
 
 """
     fit!(model::BernoulliRegression, X::Matrix{<:Real}, y::Union{Vector{Float64}, BitVector}, w::Vector{Float64}=ones(length(y))
@@ -438,20 +464,13 @@ fit!(model, X, y, w)
 ```
 """
 function fit!(model::BernoulliRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
-    # add intercept if specified
-    if model.include_intercept
-        X = hcat(ones(size(X, 1)), X)
-    end
-    # get number of parameters
-    p = size(X, 2)
-    # initialize parameters
-    model.β = rand(p)
     # convert y if necessary
     # y = convert(Vector{Float64}, y)
     # minimize objective
-    objective(β) = -loglikelihood(BernoulliRegression(β, input_dim=model.input_dim, λ=model.λ), X, y, w) + (model.λ * sum(β.^2))
-    objective_grad!(β, g) = gradient!(g, BernoulliRegression(β, input_dim=model.input_dim, λ=model.λ), X, y, w) # troubleshoot this
-    result = optimize(objective, model.β, LBFGS())
+    objective = define_objective(model, X, y, w)
+    objective_grad! = define_objective_gradient(model, X, y, w)
+    #objective_grad!(β, g) = gradient!(g, BernoulliRegression(β, input_dim=model.input_dim, λ=model.λ), X, y, w) # troubleshoot this
+    result = optimize(objective, objective_grad!, model.β, LBFGS())
     # update parameters
     model.β = result.minimizer
 end
