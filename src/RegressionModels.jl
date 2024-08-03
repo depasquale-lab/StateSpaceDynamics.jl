@@ -75,13 +75,13 @@ Sample from a Gaussian regression model.
 - `Φ::Matrix{<:Real}`: Design matrix. Each row is an observation.
 
 # Returns
-- `y::Matrix{<:Real}`: Sampled response matrix. Each row is a sample.
+- `Y::Matrix{<:Real}`: Sampled response matrix. Each row is a sample.
 
 # Examples
 ```julia
 model = GaussianRegression(input_dim=2, output_dim=1)
 Φ = rand(100, 2)
-y = sample(model, Φ)
+Y = sample(model, Φ)
 ```
 """
 function sample(model::GaussianRegression, Φ::Matrix{<:Real})
@@ -97,28 +97,28 @@ end
 
 
 """
-    loglikelihood(model::GaussianRegression, Φ::Matrix{<:Real}, y::Matrix{<:Real})
+    loglikelihood(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
 
 Calculate the log-likelihood of a Gaussian regression model.
 
 # Arguments
 - `model::GaussianRegression`: Gaussian regression model.
 - `Φ::Matrix{<:Real}`: Design matrix. Each row is an observation.
-- `y::Matrix{<:Real}`: Response matrix. Each row is a response vector.
+- `Y::Matrix{<:Real}`: Response matrix. Each row is a response vector.
 
 # Examples
 ```julia
 model = GaussianRegression(input_dim=2, output_dim=1)
 Φ = rand(100, 2)
-y = Φ * [0.1, 0.2] + 0.1 * randn(100)
-y = reshape(y, 100, 1)
-loglikelihood(model, Φ, y)
+Y = Φ * [0.1, 0.2] + 0.1 * randn(100)
+Y = reshape(Y, 100, 1)
+loglikelihood(model, Φ, Y)
 ```
 """
-function loglikelihood(model::GaussianRegression, Φ::Matrix{<:Real}, y::Matrix{<:Real})
-    # confirm dimensions of Φ and y are correct
-    @assert size(Φ, 1) == size(y, 1) "Number of rows (number of observations) in Φ and y must be equal."
-    @assert size(y, 2) == model.output_dim "Number of columns in y must be equal to the number of targets in the model."
+function loglikelihood(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
+    # confirm dimensions of Φ and Y are correct
+    @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
+    @assert size(Y, 2) == model.output_dim "Number of columns in Y must be equal to the number of targets in the model."
     @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the number of features in the model."
 
 
@@ -132,7 +132,7 @@ function loglikelihood(model::GaussianRegression, Φ::Matrix{<:Real}, y::Matrix{
     Σ_inv = inv(model.Σ)
 
     # calculate log likelihood
-    residuals = y - Φ * model.β
+    residuals = Y - Φ * model.β
 
     log_likelihood = -0.5 * size(Φ, 1) * size(Φ, 2) * log(2π) - 0.5 * size(Φ, 1) * logdet(model.Σ) - 0.5 * sum(residuals .* (Σ_inv * residuals')')
 
@@ -141,12 +141,12 @@ end
 
 
 
-function define_objective(model::GaussianRegression, Φ::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+function define_objective(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
 
-    # confirm dimensions of Φ and y are correct
-    @assert size(Φ, 1) == size(y, 1) "Number of rows (number of observations) in Φ and y must be equal."
-    @assert size(y, 2) == model.output_dim "Number of columns in y must be equal to the number of targets in the model."
+    # confirm dimensions of Φ and Y are correct
+    @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
+    @assert size(Y, 2) == model.output_dim "Number of columns in Y must be equal to the number of targets in the model."
     @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the number of features in the model."
 
     # add intercept if specified
@@ -156,7 +156,7 @@ function define_objective(model::GaussianRegression, Φ::Matrix{<:Real}, y::Matr
 
     function objective(β::Matrix{<:Real})
         # calculate log likelihood
-        residuals = y - Φ * β
+        residuals = Y - Φ * β
 
         # reshape w for broadcasting
         w = reshape(w, (length(w), 1))
@@ -169,16 +169,16 @@ function define_objective(model::GaussianRegression, Φ::Matrix{<:Real}, y::Matr
 end
 
 
-function define_objective_gradient(model::GaussianRegression, Φ::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+function define_objective_gradient(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
 
-    # confirm dimensions of Φ and y are correct
-    @assert size(Φ, 1) == size(y, 1) "Number of rows (number of observations) in Φ and y must be equal."
-    @assert size(y, 2) == model.output_dim "Number of columns in y must be equal to the number of targets in the model."
+    # confirm dimensions of Φ and Y are correct
+    @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
+    @assert size(Y, 2) == model.output_dim "Number of columns in Y must be equal to the number of targets in the model."
     @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the number of features in the model."
 
     # confirm the size of w is correct
-    @assert length(w) == size(y, 1) "Length of w must be equal to the number of observations in y."
+    @assert length(w) == size(Y, 1) "Length of w must be equal to the number of observations in Y."
 
     # add intercept if specified
     if model.include_intercept
@@ -187,7 +187,7 @@ function define_objective_gradient(model::GaussianRegression, Φ::Matrix{<:Real}
 
     function objective_gradient!(G::Matrix{<:Real}, β::Matrix{<:Real})
         # calculate log likelihood
-        residuals = y - Φ * β
+        residuals = Y - Φ * β
 
         G .= -(Φ' * Diagonal(w) * residuals - (2*model.λ*β)) / size(Φ, 1)
     end
@@ -196,35 +196,35 @@ function define_objective_gradient(model::GaussianRegression, Φ::Matrix{<:Real}
 end
 
 """
-    update_variance!(model::GaussianRegression, Φ::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+    update_variance!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
 Update the (weighted) variance of a Gaussian regression model. Uses the biased estimator.
 
 # Arguments
 - `model::GaussianRegression`: Gaussian regression model.
 - `Φ::Matrix{<:Real}`: Design matrix. Each row is an observation.
-- `y::Vector{Float64}`: Response vector. Each row is a response vector.
+- `Y::Vector{Float64}`: Response vector. Each row is a response vector.
 - `w::Vector{Float64}`: Weights for the observations.
 
 # Examples
 ```julia
 model = GaussianRegression(input_dim=2, output_dim=1)
 Φ = rand(100, 2)
-y = Φ * [0.1, 0.2] + 0.1 * randn(100)
-y = reshape(y, 100, 1)
-update_variance!(model, Φ, y)
+Y = Φ * [0.1, 0.2] + 0.1 * randn(100)
+Y = reshape(Y, 100, 1)
+update_variance!(model, Φ, Y)
 ```
 """
-function update_variance!(model::GaussianRegression, Φ::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+function update_variance!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # WARNING: asserts may slow down computation. Remove later?
 
-    # confirm dimensions of Φ and y are correct
-    @assert size(Φ, 1) == size(y, 1) "Number of rows (number of observations) in Φ and y must be equal."
-    @assert size(y, 2) == model.output_dim "Number of columns in y must be equal to the number of targets in the model."
+    # confirm dimensions of Φ and Y are correct
+    @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
+    @assert size(Y, 2) == model.output_dim "Number of columns in Y must be equal to the number of targets in the model."
     @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the number of features in the model."
 
     # confirm the size of w is correct
-    @assert length(w) == size(y, 1) "Length of w must be equal to the number of observations in y."
+    @assert length(w) == size(Y, 1) "Length of w must be equal to the number of observations in Y."
 
 
     # add intercept if specified
@@ -233,7 +233,7 @@ function update_variance!(model::GaussianRegression, Φ::Matrix{<:Real}, y::Matr
     end
 
 
-    residuals = y - Φ * model.β
+    residuals = Y - Φ * model.β
     
     
     model.Σ = (residuals' * Diagonal(w) * residuals) / size(Φ, 1)
@@ -246,43 +246,43 @@ function update_variance!(model::GaussianRegression, Φ::Matrix{<:Real}, y::Matr
 end
 
 """
-    fit!(model::GaussianRegression, Φ::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+    fit!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
 Fit a Gaussian regression model using maximum likelihood estimation.
 
 # Arguments
 - `model::GaussianRegression`: Gaussian regression model.
 - `Φ::Matrix{<:Real}`: Design matrix. Each row is an observation.
-- `y::Matrix{<:Real}`: Response matrix. Each row is a response vector.
+- `Y::Matrix{<:Real}`: Response matrix. Each row is a response vector.
 - `w::Vector{Float64}`: Weights for the observations.
 
 # Examples
 ```julia
 model = GaussianRegression(input_dim=2, output_dim=1)
 Φ = rand(100, 2)
-y = rand(100, 1)
-fit!(model, Φ, y)
+Y = rand(100, 1)
+fit!(model, Φ, Y)
 ```
 """
-function fit!(model::GaussianRegression, Φ::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
-    # confirm dimensions of Φ and y are correct
-    @assert size(Φ, 1) == size(y, 1) "Number of rows (number of observations) in Φ and y must be equal."
-    @assert size(y, 2) == model.output_dim "Number of columns in y must be equal to the number of targets in the model."
+function fit!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    # confirm dimensions of Φ and Y are correct
+    @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
+    @assert size(Y, 2) == model.output_dim "Number of columns in Y must be equal to the number of targets in the model."
     @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the number of features in the model."
 
     # confirm the size of w is correct
-    @assert length(w) == size(y, 1) "Length of w must be equal to the number of observations in y."
+    @assert length(w) == size(Y, 1) "Length of w must be equal to the number of observations in Y."
     
     # minimize objective
-    objective = define_objective(model, Φ, y, w)
-    objective_grad! = define_objective_gradient(model, Φ, y, w)
+    objective = define_objective(model, Φ, Y, w)
+    objective_grad! = define_objective_gradient(model, Φ, Y, w)
 
 
     result = optimize(objective, objective_grad!, model.β, LBFGS())
 
     # update parameters
     model.β = result.minimizer
-    update_variance!(model, Φ, y, w)
+    update_variance!(model, Φ, Y, w)
 end
 
 
@@ -342,35 +342,35 @@ function sample(model::BernoulliRegression, Φ::Matrix{<:Real})
         Φ = hcat(ones(size(Φ, 1)), Φ)
     end
 
-    y = rand.(Bernoulli.(logistic.(Φ * model.β)))
+    Y = rand.(Bernoulli.(logistic.(Φ * model.β)))
 
-    # convert y 
-    y = reshape(y, :, 1)
-    y = Float64.(y)
+    # convert Y 
+    Y = reshape(Y, :, 1)
+    Y = Float64.(Y)
 
-    return y
+    return Y
 end
 
 """
-    loglikelihood(model::BernoulliRegression, Φ::Matrix{<:Real}, y::Union{Vector{Float64}, BitVector}, w::Vector{Float64}=ones(length(y))
+    loglikelihood(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Union{Vector{Float64}, BitVector}, w::Vector{Float64}=ones(length(Y))
 
 Calculate the log-likelihood of a Bernoulli regression model.
 
 # Arguments
 - `model::BernoulliRegression`: Bernoulli regression model.
 - `Φ::Matrix{<:Real}`: Design matrix.
-- `y::Union{Vector{Float64}, BitVector}`: Response vector.
+- `Y::Union{Vector{Float64}, BitVector}`: Response vector.
 - `w::Vector{Float64}`: Weights for the observations.
 
 # Examples
 ```julia
 model = BernoulliRegression()
 Φ = rand(100, 2)
-y = rand(Bool, 100)
-loglikelihood(model, Φ, y)
+Y = rand(Bool, 100)
+loglikelihood(model, Φ, Y)
 ```
 """
-function loglikelihood(model::BernoulliRegression, Φ::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+function loglikelihood(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # add intercept if specified and not already included
@@ -380,16 +380,16 @@ function loglikelihood(model::BernoulliRegression, Φ::Matrix{<:Real}, y::Matrix
     # calculate log likelihood
     p = logistic.(Φ * model.β)
     
-    return sum(w .* (y .* log.(p) .+ (1 .- y) .* log.(1 .- p)))
+    return sum(w .* (Y .* log.(p) .+ (1 .- Y) .* log.(1 .- p)))
 end
 
 
-function define_objective(model::BernoulliRegression, Φ::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
-    # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
+function define_objective(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    # assume covariance is the identitY, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
 
-    # confirm dimensions of Φ and y are correct
-    @assert size(Φ, 1) == size(y, 1) "Number of rows (number of observations) in Φ and y must be equal."
-    @assert size(y, 2) == 1 "BernoulliRegression Y data should be a single column."
+    # confirm dimensions of Φ and Y are correct
+    @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
+    @assert size(Y, 2) == 1 "BernoulliRegression Y data should be a single column."
     @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the number of features in the model."
 
     # add intercept if specified
@@ -401,7 +401,7 @@ function define_objective(model::BernoulliRegression, Φ::Matrix{<:Real}, y::Mat
         # calculate log likelihood
         p = logistic.(Φ * β)
         
-        val = -sum(w .* (y .* log.(p) .+ (1 .- y) .* log.(1 .- p))) + (model.λ * sum(β.^2))
+        val = -sum(w .* (Y .* log.(p) .+ (1 .- Y) .* log.(1 .- p))) + (model.λ * sum(β.^2))
 
         return val / size(Φ, 1)
     end
@@ -410,15 +410,15 @@ function define_objective(model::BernoulliRegression, Φ::Matrix{<:Real}, y::Mat
 end
 
 
-function define_objective_gradient(model::BernoulliRegression, Φ::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+function define_objective_gradient(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
 
-    # confirm dimensions of Φ and y are correct
-    @assert size(Φ, 1) == size(y, 1) "Number of rows (number of observations) in Φ and y must be equal."
+    # confirm dimensions of Φ and Y are correct
+    @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
     @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the number of features in the model."
 
     # confirm the size of w is correct
-    @assert length(w) == size(y, 1) "Length of w must be equal to the number of observations in y."
+    @assert length(w) == size(Y, 1) "Length of w must be equal to the number of observations in Y."
 
     # add intercept if specified
     if model.include_intercept
@@ -429,7 +429,7 @@ function define_objective_gradient(model::BernoulliRegression, Φ::Matrix{<:Real
         # calculate log likelihood
         p = logistic.(Φ * β)
 
-        G .= (-(Φ' * (w .* (y .- p))) + 2 * model.λ * β) / size(Φ, 1)
+        G .= (-(Φ' * (w .* (Y .- p))) + 2 * model.λ * β) / size(Φ, 1)
     end
     
     return objective_gradient!
@@ -439,34 +439,34 @@ end
 
 
 """
-    fit!(model::BernoulliRegression, Φ::Matrix{<:Real}, y::Union{Vector{Float64}, BitVector}, w::Vector{Float64}=ones(length(y))
+    fit!(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Union{Vector{Float64}, BitVector}, w::Vector{Float64}=ones(length(Y))
 
 Fit a Bernoulli regression model using maximum likelihood estimation.
 
 # Arguments
 - `model::BernoulliRegression`: Bernoulli regression model.
 - `Φ::Matrix{<:Real}`: Design matrix.
-- `y::Union{Vector{Float64}, BitVector}`: Response vector.
+- `Y::Union{Vector{Float64}, BitVector}`: Response vector.
 - `w::Vector{Float64}`: Weights for the observations.
 
 # Examples
 ```julia
 model = BernoulliRegression()
 Φ = rand(100, 2)
-y = rand(Bool, 100)
-fit!(model, Φ, y)
+Y = rand(Bool, 100)
+fit!(model, Φ, Y)
 
 model = BernoulliRegression()
 Φ = rand(100, 2)
-y = rand(Bool, 100)
+Y = rand(Bool, 100)
 w = rand(100)
-fit!(model, Φ, y, w)
+fit!(model, Φ, Y, w)
 ```
 """
-function fit!(model::BernoulliRegression, Φ::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+function fit!(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # minimize objective
-    objective = define_objective(model, Φ, y, w)
-    objective_grad! = define_objective_gradient(model, Φ, y, w)
+    objective = define_objective(model, Φ, Y, w)
+    objective_grad! = define_objective_gradient(model, Φ, Y, w)
 
     result = optimize(objective, objective_grad!, model.β, LBFGS())
 
@@ -528,35 +528,35 @@ function sample(model::PoissonRegression, Φ::Matrix{<:Real})
         Φ = hcat(ones(size(Φ, 1)), Φ)
     end
 
-    y = rand.(Poisson.(exp.(Φ * model.β)))
+    Y = rand.(Poisson.(exp.(Φ * model.β)))
 
-    # convert y 
-    y = reshape(y, :, 1)
-    y = Float64.(y)
+    # convert Y 
+    Y = reshape(Y, :, 1)
+    Y = Float64.(Y)
 
-    return y
+    return Y
 end
 
 """
-    loglikelihood(model::PoissonRegression, Φ::Matrix{<:Real}, y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(y)))
+    loglikelihood(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(Y)))
 
 Calculate the log-likelihood of a Poisson regression model.
 
 # Arguments
 - `model::PoissonRegression`: Poisson regression model
 - `Φ::Matrix{<:Real}`: Design matrix
-- `y::Union{Vector{Float64}, Vector{Int64}}`: Response vector
+- `Y::Union{Vector{Float64}, Vector{Int64}}`: Response vector
 - `w::Vector{Float64}`: Weights for the observations
 
 # Examples
 ```julia
 model = PoissonRegression()
 Φ = rand(100, 2)
-y = rand(Poisson(1), 100)
-loglikelihood(model, Φ, y)
+Y = rand(Poisson(1), 100)
+loglikelihood(model, Φ, Y)
 ```
 """
-function loglikelihood(model::PoissonRegression, Φ::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+function loglikelihood(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # add intercept if specified
@@ -567,16 +567,16 @@ function loglikelihood(model::PoissonRegression, Φ::Matrix{<:Real}, y::Matrix{<
     # calculate log likelihood
     λ = exp.(Φ * model.β)
 
-    return sum(w .* (y .* log.(λ) .- λ .- loggamma.(Int.(y) .+ 1)))
+    return sum(w .* (Y .* log.(λ) .- λ .- loggamma.(Int.(Y) .+ 1)))
 end
 
 
-function define_objective(model::PoissonRegression, Φ::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+function define_objective(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
 
-    # confirm dimensions of Φ and y are correct
-    @assert size(Φ, 1) == size(y, 1) "Number of rows (number of observations) in Φ and y must be equal."
-    @assert size(y, 2) == 1 "PoissonRegression Y data should be a single column."
+    # confirm dimensions of Φ and Y are correct
+    @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
+    @assert size(Y, 2) == 1 "PoissonRegression Y data should be a single column."
     @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the number of features in the model."
 
     # add intercept if specified
@@ -588,7 +588,7 @@ function define_objective(model::PoissonRegression, Φ::Matrix{<:Real}, y::Matri
         # calculate the rate
         rate = exp.(Φ * β)
 
-        val = -sum(w .* (y .* log.(rate) .- rate .- loggamma.(Int.(y) .+ 1))) + (model.λ * sum(β.^2))
+        val = -sum(w .* (Y .* log.(rate) .- rate .- loggamma.(Int.(Y) .+ 1))) + (model.λ * sum(β.^2))
 
         return val / size(Φ, 1)
     end
@@ -596,15 +596,15 @@ function define_objective(model::PoissonRegression, Φ::Matrix{<:Real}, y::Matri
     return objective
 end
 
-function define_objective_gradient(model::PoissonRegression, Φ::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+function define_objective_gradient(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
 
-    # confirm dimensions of Φ and y are correct
-    @assert size(Φ, 1) == size(y, 1) "Number of rows (number of observations) in Φ and y must be equal."
+    # confirm dimensions of Φ and Y are correct
+    @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
     @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the number of features in the model."
 
     # confirm the size of w is correct
-    @assert length(w) == size(y, 1) "Length of w must be equal to the number of observations in y."
+    @assert length(w) == size(Y, 1) "Length of w must be equal to the number of observations in Y."
 
     # add intercept if specified
     if model.include_intercept
@@ -615,7 +615,7 @@ function define_objective_gradient(model::PoissonRegression, Φ::Matrix{<:Real},
         # calculate the rate
         rate = exp.(Φ * β)
 
-        G .= (-Φ' * (Diagonal(w) * (y .- rate)) + (model.λ * 2 * β)) / size(Φ, 1)
+        G .= (-Φ' * (Diagonal(w) * (Y .- rate)) + (model.λ * 2 * β)) / size(Φ, 1)
     end
     
     return objective_gradient!
@@ -624,7 +624,7 @@ end
 
 
 """
-    gradient!(grad::Vector{Float64}, model::PoissonRegression, Φ::Matrix{<:Real}, y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(y)))
+    gradient!(grad::Vector{Float64}, model::PoissonRegression, Φ::Matrix{<:Real}, Y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(Y)))
 
 Calculate the gradient of the negative log-likelihood function for a Poisson regression model.
 
@@ -632,19 +632,19 @@ Calculate the gradient of the negative log-likelihood function for a Poisson reg
 - `grad::Vector{Float64}`: Gradient of the negative log-likelihood function
 - `model::PoissonRegression`: Poisson regression model
 - `Φ::Matrix{<:Real}`: Design matrix
-- `y::Union{Vector{Float64}, Vector{Int64}}`: Response vector
+- `Y::Union{Vector{Float64}, Vector{Int64}}`: Response vector
 - `w::Vector{Float64}`: Weights for the observations
 
 # Examples
 ```julia
 model = PoissonRegression()
 Φ = rand(100, 2)
-y = rand(Poisson(1), 100)
+Y = rand(Poisson(1), 100)
 G = zeros(2)
-gradient!(G, model, Φ, y)
+gradient!(G, model, Φ, Y)
 ```
 """
-function gradient!(grad::Vector{Float64}, model::PoissonRegression, Φ::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y,1)))
+function gradient!(grad::Vector{Float64}, model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y,1)))
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # add intercept if specified
@@ -653,41 +653,41 @@ function gradient!(grad::Vector{Float64}, model::PoissonRegression, Φ::Matrix{<
     end
     # calculate the rate
     rate = exp.(Φ * model.β)
-    # convert y if necessary
-    # y = convert(Vector{Float64}, y)
+    # convert Y if necessary
+    # Y = convert(Vector{Float64}, Y)
     # calculate gradient
-    grad .= -Φ' * (Diagonal(w) * (y .- rate)) + (model.λ * 2 * model.β)
+    grad .= -Φ' * (Diagonal(w) * (Y .- rate)) + (model.λ * 2 * model.β)
 end
 
 """
-    fit!(model::PoissonRegression, Φ::Matrix{<:Real}, y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(y)))
+    fit!(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(Y)))
 
 Fit a Poisson regression model using maximum likelihood estimation.
 
 # Arguments
 - `model::PoissonRegression`: Poisson regression model
 - `Φ::Matrix{<:Real}`: Design matrix
-- `y::Union{Vector{Float64}, Vector{Int64}}`: Response vector
+- `Y::Union{Vector{Float64}, Vector{Int64}}`: Response vector
 - `w::Vector{Float64}`: Weights for the observations
 
 # Examples
 ```julia
 model = PoissonRegression()
 Φ = rand(100, 2)
-y = rand(Poisson(1), 100)
-fit!(model, Φ, y)
+Y = rand(Poisson(1), 100)
+fit!(model, Φ, Y)
 
 model = PoissonRegression()
 Φ = rand(100, 2)
-y = rand(Poisson(1), 100)
+Y = rand(Poisson(1), 100)
 w = rand(100)
-fit!(model, Φ, y, w)
+fit!(model, Φ, Y, w)
 ```
 """
-function fit!(model::PoissonRegression, Φ::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+function fit!(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # minimize objective
-    objective = define_objective(model, Φ, y, w)
-    objective_grad! = define_objective_gradient(model, Φ, y, w)
+    objective = define_objective(model, Φ, Y, w)
+    objective_grad! = define_objective_gradient(model, Φ, Y, w)
 
     result = optimize(objective, objective_grad!, model.β, LBFGS())
 
@@ -715,30 +715,30 @@ mutable struct AutoRegression <: Regression
     end
 end
 
-function AR_to_Gaussian_data(y_prev::Matrix{<:Real})
-    # take each row of y_prev and stack them horizontally to form the input row matrix Φ_gaussian
-    Φ_gaussian = vcat([y_prev[i, :] for i in 1:size(y_prev, 1)]...)
+function AR_to_Gaussian_data(Y_prev::Matrix{<:Real})
+    # take each row of Y_prev and stack them horizontally to form the input row matrix Φ_gaussian
+    Φ_gaussian = vcat([Y_prev[i, :] for i in 1:size(Y_prev, 1)]...)
     Φ_gaussian = reshape(Φ_gaussian, 1, :)
 
     return Φ_gaussian
 end
 
-function AR_to_Gaussian_data(y_prev::Matrix{<:Real}, y::Matrix{<:Real})
-    order = size(y_prev, 1)
-    data_dim = size(y_prev, 2)
-    Φ_gaussian = zeros(size(y, 1), data_dim * order)
+function AR_to_Gaussian_data(Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
+    order = size(Y_prev, 1)
+    data_dim = size(Y_prev, 2)
+    Φ_gaussian = zeros(size(Y, 1), data_dim * order)
 
-    for i in 1:size(y, 1)
-        Φ_gaussian[i, :] = AR_to_Gaussian_data(y_prev)
+    for i in 1:size(Y, 1)
+        Φ_gaussian[i, :] = AR_to_Gaussian_data(Y_prev)
 
 
-        old_part = y_prev[2:end, :]
-        new_part = y[i, :]
+        old_part = Y_prev[2:end, :]
+        new_part = Y[i, :]
 
         old_part = reshape(old_part, order - 1, data_dim)
         new_part = reshape(new_part, 1, data_dim)
 
-        y_prev = vcat(old_part, new_part)
+        Y_prev = vcat(old_part, new_part)
     end
    
 
@@ -770,38 +770,38 @@ function set_params!(model::AutoRegression; βs::Vector{Matrix{Float64}} = Vecto
     end
 end
 
-function sample(model::AutoRegression, y_prev::Matrix{<:Real})
-    Φ_gaussian = AR_to_Gaussian_data(y_prev)
+function sample(model::AutoRegression, Y_prev::Matrix{<:Real})
+    Φ_gaussian = AR_to_Gaussian_data(Y_prev)
     return sample(model.innerGaussianRegression, Φ_gaussian)
 end
 
-function sample(model::AutoRegression, y_prev::Matrix{<:Real}, n::Int)
-    y = zeros(n, model.data_dim)
+function sample(model::AutoRegression, Y_prev::Matrix{<:Real}, n::Int)
+    Y = zeros(n, model.data_dim)
 
     for i in 1:n
-        y[i, :] = sample(model, y_prev)
+        Y[i, :] = sample(model, Y_prev)
 
-        old_part = y_prev[2:end, :]
-        new_part = y[i, :]
+        old_part = Y_prev[2:end, :]
+        new_part = Y[i, :]
 
         old_part = reshape(old_part, model.order - 1, model.data_dim)
         new_part = reshape(new_part, 1, model.data_dim)
 
-        y_prev = vcat(old_part, new_part)
+        Y_prev = vcat(old_part, new_part)
     end
     
-    return y
+    return Y
 end
 
-function loglikelihood(model::AutoRegression, y_prev::Matrix{<:Real}, y::Matrix{<:Real})
-    Φ_gaussian = AR_to_Gaussian_data(y_prev, y)
+function loglikelihood(model::AutoRegression, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
+    Φ_gaussian = AR_to_Gaussian_data(Y_prev, Y)
 
-    return loglikelihood(model.innerGaussianRegression, Φ_gaussian, y)
+    return loglikelihood(model.innerGaussianRegression, Φ_gaussian, Y)
 end
 
 
-function fit!(model::AutoRegression, y_prev::Matrix{<:Real}, y::Matrix{<:Real})
-    Φ_gaussian = AR_to_Gaussian_data(y_prev, y)
+function fit!(model::AutoRegression, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
+    Φ_gaussian = AR_to_Gaussian_data(Y_prev, Y)
 
-    return fit!(model.innerGaussianRegression, Φ_gaussian, y)
+    return fit!(model.innerGaussianRegression, Φ_gaussian, Y)
 end
