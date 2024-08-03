@@ -976,7 +976,7 @@ Calculate the Q-function for the observation model.
 # Returns
 - `Float64`: The Q-function for the observation model.
 """
-function Q_observation_model(C::Matrix{<:Real}, D::Matrix{<:Real}, log_d::Vector{<:Real}, E_z::Array{<:Real}, E_zz::Array{<:Real}, y::Array{<:Real})
+function Q_observation_model(C::Matrix{<:Real}, D::Matrix{<:Real}, log_d::Vector{<:Real}, E_z::Array{<:Real}, P_smooth::Array{<:Real}, y::Array{<:Real})
     # Re-parametrize log_d
     d = exp.(log_d)
     # Compute Q
@@ -996,8 +996,7 @@ function Q_observation_model(C::Matrix{<:Real}, D::Matrix{<:Real}, log_d::Vector
             # Mean term
             h = (C * E_z[k, t, :]) + d
             # calculate rho
-            # ρ = 0.5 * CC * vec(E_zz[k, t, :, :])
-            ρ = 0.5 * diag(C * E_zz[k, t, :, :] * C')
+            ρ = 0.5 * CC * vec(P_smooth[k, t, :, :])
             ŷ = exp.(h + ρ)
             # calculate the Q-value
             Q_val += sum((y[k, t, :] .* h) - ŷ)
@@ -1427,27 +1426,27 @@ function update_b!(plds::PoissonLDS, x_smooth::Array{<:Real})
     end
 end
 
-function update_observation_model!(plds::PoissonLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, y::Array{<:Real})
+function update_observation_model!(plds::PoissonLDS, E_z::Array{<:Real}, P_smooth::Array{<:Real}, y::Array{<:Real})
     # update the observation model parameters: C, D, and d
     if plds.fit_bool[6]
         # flatten the parameters so we can pass them to the optimizer as a single vector
         params = vcat(vec(plds.C), plds.log_d)
         # create a helper function that takes a vector of the observation model parameters
-        function f(params::Vector{<:Real}, D::Matrix{<:Real}, E_z::Array{<:Real}, E_zz::Array{<:Real}, y::Array{<:Real})
+        function f(params::Vector{<:Real}, D::Matrix{<:Real}, E_z::Array{<:Real}, P_smooth::Array{<:Real}, y::Array{<:Real})
             # Split params into C and log_d
             C_size = size(D, 1)  # Assuming C has the same number of rows as D
             log_d = params[end-size(D, 2)+1:end]  # Assuming log_d has the same length as the number of columns in D
             C = reshape(params[1:end-size(D, 2)], C_size, :)  # Reshape the remaining params into C
         
             # Call Q_observation_model with the new C and log_d, and other unchanged parameters
-            Q_val = Q_observation_model(C, D, log_d, E_z, E_zz, y)
+            Q_val = Q_observation_model(C, D, log_d, E_z, P_smooth, y)
         
             return -Q_val
         end
         # # create gradient function
         # g! = (g, params) -> grad!(g, params, x_smooth, y, plds)
         # optimize
-        result = optimize(params -> f(params, plds.D, E_z, E_zz, y), params, LBFGS())
+        result = optimize(params -> f(params, plds.D, E_z, P_smooth, y), params, LBFGS())
         # update the parameters
         plds.C = reshape(result.minimizer[1:plds.obs_dim * plds.latent_dim], plds.obs_dim, plds.latent_dim)
         # plds.D = reshape(result.minimizer[plds.obs_dim * plds.latent_dim + 1:plds.obs_dim * plds.latent_dim + plds.obs_dim * plds.obs_dim], plds.obs_dim, plds.obs_dim)
@@ -1455,14 +1454,14 @@ function update_observation_model!(plds::PoissonLDS, E_z::Array{<:Real}, E_zz::A
     end
 end
 
-function M_Step!(plds::PoissonLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, x_smooth::Array{<:Real}, y::Array{<:Real})
+function M_Step!(plds::PoissonLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, p_smooth::Array{<:Real}, y::Array{<:Real})
     # update the parameters
     update_initial_state_mean!(plds, E_z)
     update_initial_state_covariance!(plds, E_zz, E_z)
     # update_b!(plds, x_smooth) # needs to be updated before A
     update_A_plds!(plds, E_zz, E_zz_prev)
     update_Q_plds!(plds, E_zz, E_zz_prev)
-    update_observation_model!(plds, E_z, E_zz, y)
+    update_observation_model!(plds, E_z, p_smooth, y)
 end
 
 function fit!(plds::PoissonLDS, y::Array{<:Real}, max_iter::Int=100, tol::Float64=1e-3)
@@ -1474,16 +1473,14 @@ function fit!(plds::PoissonLDS, y::Array{<:Real}, max_iter::Int=100, tol::Float6
     # iterate through the EM algorithm
     for i in 1:max_iter
         # E-step
-        E_z, E_zz, E_zz_prev, x_smooth, _ = E_Step(plds, y)
-        println("Succesfully smoothed at iteration ", i)
+        E_z, E_zz, E_zz_prev, x_smooth, p_smooth = E_Step(plds, y)
         # calculate the log-likelihood
         ll = Q_function(plds, E_z, E_zz, E_zz_prev, y)
         push!(ec_lls, ll)
         # Update progress bar
         next!(prog)
         # M-step
-        M_Step!(plds, E_z, E_zz, E_zz_prev, x_smooth, y)
-        println("Succesfully updated parameters at iteration ", i)
+        M_Step!(plds, E_z, E_zz, E_zz_prev, p_smooth, y)
         # check for convergence
         if abs(ll - ll_prev) < tol
             finish!(prog)
@@ -1491,7 +1488,6 @@ function fit!(plds::PoissonLDS, y::Array{<:Real}, max_iter::Int=100, tol::Float6
         end
         ll_prev = ll
     end
-    
     ProgressMeter.finish!(prog)
     println("Maximum iterations reached without convergence.")
     return ec_lls
