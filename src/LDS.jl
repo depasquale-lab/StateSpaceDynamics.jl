@@ -3,60 +3,87 @@
 
 # export statement
 export LDS, KalmanFilter, KalmanSmoother, loglikelihood, PoissonLDS
+export RTSSmoother, DirectSmoother, KalmanSmoother, KalmanFilterEM!, loglikelihood, marginal_loglikelihood
 
-# constants
-const DEFAULT_LATENT_DIM = 2
-const DEFAULT_OBS_DIM = 2
+"""
+    LDS
 
-"""Linear Dynamical System (LDS) Definition"""
+A Linear Dynamical System (LDS) is a model that describes the evolution of a latent state variable xₜ and an observed variable yₜ. The model is defined by the following equations:
+    
+        xₜ = A * xₜ₋₁ + B * uₜ + wₜ
+        yₜ = H * xₜ + vₜ
+    
+# Fields
+- `A::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0)`: Transition Matrix
+- `H::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0)`: Observation Matrix
+- `B::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0)`: Control Matrix
+- `Q::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0)`: Process Noise Covariance
+- `R::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0)`: Observation Noise Covariance
+- `x0::AbstractVector{<:Real}=Vector{Float64}(undef, 0)`: Initial State
+- `p0::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0)`: Initial Covariance
+- `inputs::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0)`: Inputs
+- `obs_dim::Int`: Observation Dimension
+- `latent_dim::Int`: Latent Dimension
+- `fit_bool::Vector{Bool}=fill(true, 7)`: Vector of booleans indicating which parameters to fit
+
+# Examples
+```julia
+using SSM
+
+# Create an LDS model
+l = LDS(obs_dim=2, latent_dim=2)
+```
+"""
 mutable struct LDS <: DynamicalSystem
-    A::Union{AbstractArray, Nothing}  # Transition Matrix
-    H::Union{AbstractArray, Nothing}  # Observation Matrix
-    B::Union{AbstractArray, Nothing}  # Control Matrix
-    Q::Union{AbstractArray, Nothing}  # Qrocess Noise Covariance
-    R::Union{AbstractArray, Nothing}  # Observation Noise Covariance
-    x0::Union{AbstractArray, Nothing} # Initial State
-    p0::Union{AbstractArray, Nothing} # Initial Covariance
-    inputs::Union{AbstractArray, Nothing} # Inputs
+    A::AbstractMatrix{<:Real}  # Transition Matrix
+    H::AbstractMatrix{<:Real}  # Observation Matrix
+    B::AbstractMatrix{<:Real}  # Control Matrix
+    Q::AbstractMatrix{<:Real}  # Process Noise Covariance
+    R::AbstractMatrix{<:Real}  # Observation Noise Covariance
+    x0::AbstractVector{<:Real} # Initial State
+    p0::AbstractMatrix{<:Real} # Initial Covariance
+    inputs::AbstractMatrix{<:Real} # Inputs
     obs_dim::Int # Observation Dimension
     latent_dim::Int # Latent Dimension
     fit_bool::Vector{Bool} # Vector of booleans indicating which parameters to fit
 end
 
 function LDS(; 
-    A::Union{AbstractArray, Nothing}=nothing,
-    H::Union{AbstractArray, Nothing}=nothing,
-    B::Union{AbstractArray, Nothing}=nothing,
-    Q::Union{AbstractArray, Nothing}=nothing,
-    R::Union{AbstractArray, Nothing}=nothing,
-    x0::Union{AbstractArray, Nothing}=nothing,
-    p0::Union{AbstractArray, Nothing}=nothing,
-    inputs::Union{AbstractArray, Nothing}=nothing,
-    obs_dim::Int=DEFAULT_OBS_DIM,
-    latent_dim::Int=DEFAULT_LATENT_DIM,
+    A::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    H::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    B::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    Q::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    R::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    x0::AbstractVector{<:Real}=Vector{Float64}(undef, 0),
+    p0::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    inputs::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    obs_dim::Int,
+    latent_dim::Int,
     fit_bool::Vector{Bool}=fill(true, 7)
 )
-    LDS(
-        A, H, B, Q, R, x0, p0, inputs, obs_dim, latent_dim, fit_bool
-    ) |> initialize_missing_parameters!
-end
-
-# Function to initialize missing parameters
-function initialize_missing_parameters!(lds::LDS)
-    lds.A = lds.A === nothing ? rand(lds.latent_dim, lds.latent_dim) : lds.A
-    lds.H = lds.H === nothing ? rand(lds.obs_dim, lds.latent_dim) : lds.H
-    lds.Q = lds.Q === nothing ? Matrix{Float64}(I(lds.latent_dim)) : lds.Q
-    lds.R = lds.R === nothing ? Matrix{Float64}(I(lds.obs_dim)) : lds.R
-    lds.x0 = lds.x0 === nothing ? rand(lds.latent_dim) : lds.x0
-    lds.p0 = lds.p0 === nothing ? Matrix{Float64}(rand() * I(lds.latent_dim)) : lds.p0
-    if lds.inputs !== nothing
-        lds.B = lds.B === nothing ? rand(lds.latent_dim, size(lds.inputs, 2)) : lds.B
+    A = isempty(A) ? rand(latent_dim, latent_dim) : A
+    H = isempty(H) ? rand(obs_dim, latent_dim) : H
+    B = isempty(B) ? zeros(latent_dim, 1) : B
+    Q = isempty(Q) ? Matrix{Float64}(I(latent_dim)) : Q
+    R = isempty(R) ? Matrix{Float64}(I(latent_dim)) : R
+    x0 = isempty(x0) ? rand(latent_dim) : x0
+    p0 = isempty(p0) ? Matrix{Float64}(I(latent_dim)) : p0
+    inputs = isempty(inputs) ? zeros(1, 1) : inputs
+    
+    # Ensure obs_dim and latent_dim are assigned values
+    if obs_dim === nothing
+        error("You must supply the dimension of the observations.")
     end
-    return lds
+
+    if latent_dim === nothing
+        error("You must supply the dimension of the latent states.")
+    end
+
+    return LDS(A, H, B, Q, R, x0, p0, inputs, obs_dim, latent_dim, fit_bool)
 end
 
 """
-Initiliazes the parameters of the LDS model using PCA.
+Initiliazes the parameters of the LDS (the observation matrix and the initial state values, i.e., H and x0), model using PPCA.
 
 Args:
     l: LDS struct
@@ -79,6 +106,18 @@ function pca_init!(l::LDS, y::AbstractArray)
     l.x0 = ppca.z[1, :]
 end
 
+"""
+    KalmanFilter(l::LDS, y::AbstractArray)
+
+Runs the Kalman Filter on a given LDS model and a set of observations.
+
+# Arguments
+- `l::LDS`: LDS model
+- `y::AbstractArray`: Matrix of observations
+
+# Returns
+TBC
+"""
 function KalmanFilter(l::LDS, y::AbstractArray)
     # First pre-allocate the matrices we will need
     T, D = size(y)
@@ -117,6 +156,18 @@ function KalmanFilter(l::LDS, y::AbstractArray)
     return x_filt, p_filt, x_pred, p_pred, v, S, K, ml
 end
 
+"""
+    RTSSmoother(l::LDS, y::AbstractArray)
+
+    Explanation TBC.
+
+# Arguments
+- `l::LDS`: LDS model
+- `y::AbstractArray`: Matrix of observations
+
+# Returns
+TBC
+"""
 function RTSSmoother(l::LDS, y::AbstractArray)
     # Forward pass (Kalman Filter)
     x_filt, p_filt, x_pred, p_pred, v, s, K, ml = KalmanFilter(l, y)
@@ -514,7 +565,6 @@ function Gradient(l::LDS, y::AbstractArray, x::AbstractArray)
     # return a reshaped gradient so that we can match up the dimensions with the Hessian
     return grad
 end
-
 
 """
     Q(l::LDS, E_z::Matrix{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, y::Matrix{<:Real})

@@ -1,6 +1,12 @@
 export kmeanspp_initialization, kmeans_clustering, PPCA, fit!, block_tridgm, interleave_reshape, block_tridiagonal_inverse
+export row_matrix, stabilize_covariance_matrix
 
 # Matrix utilities
+
+"""Vector to Row Matrix"""
+function row_matrix(x::AbstractVector)
+    return reshape(x, 1, length(x))
+end
 
 """Block Tridiagonal Inverse"""
 function block_tridiagonal_inverse(A, B, C)
@@ -19,7 +25,6 @@ function block_tridiagonal_inverse(A, B, C)
     # Initial conditions
     D[1] = zeros(block_size, block_size)
     E[n+1] = zeros(block_size, block_size)
-
 
     # Forward sweep for D
     for i in 1:n
@@ -121,7 +126,7 @@ function euclidean_distance(a::AbstractVector{Float64}, b::AbstractVector{Float6
 end
 
 """KMeans++ Initialization"""
-function kmeanspp_initialization(data::Matrix{Float64}, k_means::Int)
+function kmeanspp_initialization(data::Matrix{<:Real}, k_means::Int)
     N, D = size(data)
     centroids = zeros(D, k_means)
     rand_idx = rand(1:N)
@@ -147,7 +152,7 @@ function kmeanspp_initialization(data::Vector{Float64}, k_means::Int)
 end
 
 """KMeans Clustering Initialization"""
-function kmeans_clustering(data::Matrix{Float64}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6)
+function kmeans_clustering(data::Matrix{<:Real}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6)
     N, _ = size(data)
     centroids = kmeanspp_initialization(data, k_means)  # Assuming you have this function defined
     labels = zeros(Int, N)
@@ -184,21 +189,6 @@ function kmeans_clustering(data::Vector{Float64}, k_means::Int, max_iters::Int=1
     return kmeans_clustering(data, k_means, max_iters, tol)
 end
 
-"""Ensures matrix is positive definite by projecting onto the PSD cone"""
-function ensure_posdef(A::AbstractMatrix{<:Real})
-    # Symmetrize the matrix
-    A = 0.5 * (A + A')
-    # Compute the eigendecomposition of A
-    λ, Q = eigen(A)
-    # Ensure that the eigenvalues are positive
-    λ[λ .< 1e-16] .= 1e-16
-    # Reconstruct the matrix
-    A = Q * Diagonal(λ) * Q'
-    # Re-symmetrize the matrix
-    A = 0.5 * (A + A')
-    return A
-end
-
 """Calculates the logistic function in a numerically stable way"""
 function logistic(x::Real)
     if x > 0
@@ -207,4 +197,30 @@ function logistic(x::Real)
         exp_x = exp(x)
         return exp_x / (1 + exp_x)
     end
+end
+
+# Miscellaneous utilities
+function ensure_positive_definite(A::Matrix{T}) where T
+    # Perform eigenvalue decomposition
+    eigen_decomp = eigen(Symmetric(A))  # Ensure A is treated as symmetric
+    λ, V = eigen_decomp.values, eigen_decomp.vectors
+    # Set a threshold for eigenvalues (e.g., a small positive number)
+    ε = max(eps(T), 1e-10)
+    # Replace any non-positive eigenvalues with ε
+    λ_clipped = [max(λi, ε) for λi in λ]
+    # Reconstruct the matrix with the clipped eigenvalues
+    A_posdef = V * Diagonal(λ_clipped) * V'
+    return A_posdef
+end
+
+function stabilize_covariance_matrix(Σ::Matrix{<:Real})
+    # check if the covariance is symmetric. If not, make it symmetric
+    if !ishermitian(Σ)
+        Σ = (Σ + Σ') * 0.5
+    end
+    # check if matrix is posdef. If not, add a small value to the diagonal (sometimes an emission only models one observation and the covariance matrix is singular)
+    if !isposdef(Σ)
+        Σ = Σ + 1e-12 * I
+    end
+    return Σ
 end

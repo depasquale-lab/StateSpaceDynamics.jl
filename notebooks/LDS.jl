@@ -119,12 +119,12 @@ begin
 	A = [1 1; -β (1 - α)]
 	H = reshape([1., 0.], 1, 2)
 	Q = 0.01 * I(2)
-	R = [1]
+	R = [1.;;]
 	x₀ = [1, -1]
 	P₀ = 0.01 * I(2)
 
 	# set up a LDS object
-	spring_LDS = SSM.LDS(A, H, nothing, Q, R, x₀, P₀, nothing, 1, 2, fill(false, 7))
+	spring_LDS = SSM.LDS(;A=A, H=H, Q=Q, R=R, x0=x₀, p0=P₀, obs_dim=1, latent_dim=2, fit_bool=fill(false, 7))
 
 	# now we can filter our observations
 	x_filtered, p_filtered = SSM.KalmanFilter(spring_LDS, observation_sequence)

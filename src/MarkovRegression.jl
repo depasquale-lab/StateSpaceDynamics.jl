@@ -1,4 +1,4 @@
-export SwitchingGaussianRegression, SwitchingBernoulliRegression, SwitchingPoissonRegression, fit!, viterbi, log_likelihood
+export SwitchingGaussianRegression, SwitchingBernoulliRegression, SwitchingPoissonRegression, fit!, viterbi, log_likelihood, hmmglm
 
 abstract type hmmglm <: AbstractHMM end
 """
@@ -8,12 +8,14 @@ Struct representing a Gaussian hmm-glm model. This model is specifically a Hidde
 as a time-dependent mixture of Gaussian regression models. This is similar to how a vanilla HMM is a time-dependent mixture of Gaussian distributions. Thus,
 at each time point we can assess the most likely state and the most likely regression model given the data.
 
-Args:
-    A::Matrix{T}: Transition matrix
-    B::Vector{RegressionEmissions}: Vector of Gaussian Regression Models
-    πₖ::Vector{T}: initial state distribution
-    K::Int: number of states
-    λ::Float64: regularization parameter for the regression models
+# Arguments
+- `A::Matrix{T}`: Transition matrix
+- `B::Vector{RegressionEmissions}`: Vector of Gaussian Regression Models
+- `πₖ::Vector{T}`: initial state distribution
+- `K::Int`: number of states
+- `λ::Float64`: regularization parameter for the regression models
+- `num_features::Int`: number of features
+- `num_targets::Int`: number of targets
 """
 mutable struct SwitchingGaussianRegression{T <: Real} <: hmmglm
     A::Matrix{T} # transition matrix
@@ -21,17 +23,70 @@ mutable struct SwitchingGaussianRegression{T <: Real} <: hmmglm
     πₖ::Vector{T} # initial state distribution
     K::Int # number of states
     λ::Float64 # regularization parameter
+    num_features::Int # number of features
+    num_targets::Int # number of targets
 end
 
-function SwitchingGaussianRegression(; A::Matrix{Float64}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), K::Int, λ::Float64=0.0)
+"""
+    SwitchingGaussianRegression(; <keyword arguments>)
+
+Constructor for Switching Gaussian Regression Model.
+
+# Arguments
+- `num_features::Int`: Number of features.
+- `num_targets::Int`: Number of targets.
+- `A::Matrix{<:Real}`: Transition matrix.
+- `B::Vector{RegressionEmissions}`: Vector of Gaussian Regression Models.
+- `πₖ::Vector{Float64}`: Initial state distribution.
+- `K::Int`: Number of states.
+- `λ::Float64`: Regularization parameter for the regression models.
+
+# Examples
+```julia
+model = SwitchingGaussianRegression(num_features=2, num_targets=1, K=2)
+```
+"""
+function SwitchingGaussianRegression(; num_features::Int, num_targets::Int, A::Matrix{<:Real}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), K::Int, λ::Float64=0.0)
     # if A matrix is not passed, initialize using Dirichlet 
     isempty(A) ? A = initialize_transition_matrix(K) : nothing
     # if B vector is not passed, initialize using Gaussian Regression
-    isempty(B) ? B = [RegressionEmissions(GaussianRegression(;λ=λ)) for k in 1:K] : nothing
+    isempty(B) ? B = [RegressionEmissions(GaussianRegression(num_features=num_features, num_targets=num_targets, λ=λ)) for k in 1:K] : nothing
     # if πₖ vector is not passed, initialize using Dirichlet
     isempty(πₖ) ? πₖ = initialize_state_distribution(K) : nothing
     # return model
-    return SwitchingGaussianRegression(A, B, πₖ, K, λ)
+    return SwitchingGaussianRegression(A, B, πₖ, K, λ, num_features, num_targets)
+end
+
+"""
+    sample(model::SwitchingGaussianRegression, X::Matrix{<:Real})
+
+Sample from the model. 
+
+# Arguments
+- `model::SwitchingGaussianRegression`: Switching gaussian regression model.
+- `X::Matrix{<:Real}`: Matrix of features.
+
+# Returns
+- `y::Matrix{<:Real}`: Matrix of samples.
+- `z::Matrix{<:Real}`: Matrix of states. Each row is a one-hot encoding of the state at that time point.
+"""
+function sample(model::SwitchingGaussianRegression, X::Matrix{<:Real})
+    # sample from the model
+    y = zeros(Float64, size(X, 1), model.num_targets)
+    z = zeros(Float64, size(X, 1), model.K)
+    # sample initial state
+    state = rand(Categorical(model.πₖ))
+    # sample from the model
+    for t in 1:size(X, 1)
+        # sample from the regression model
+        x_data = reshape(X[t, :], 1, :)
+        y[t, :] = sample(model.B[state].regression, x_data)[1, :]
+        z[t, state] = 1
+
+        # sample next state
+        state = rand(Categorical(model.A[state, :]))
+    end
+    return y, z
 end
 
 """
@@ -41,21 +96,39 @@ Struct representing a Bernoulli hmm-glm model. This model is specifically a Hidd
 as a time-dependent mixture of Bernoulli regression models. This is similar to how a vanilla HMM is a time-dependent mixture of Bernoulli distributions. Thus,
 at each time point we can assess the most likely state and the most likely regression model given the data.
 
-Args:
-    A::Matrix{T}: Transition matrix
-    B::Vector{RegressionEmissions}: Vector of Bernoulli Regression Models
-    πₖ::Vector{T}: initial state distribution
-    K::Int: number of states
+# Arguments
+- `A::Matrix{T}`: Transition matrix.
+- `B::Vector{RegressionEmissions}`: Vector of Bernoulli Regression Models.
+- `πₖ::Vector{T}`: Initial state distribution.
+- `K::Int`: Number of states.
+- `λ::Float64`: Regularization parameter for the regression models.
 """
 mutable struct SwitchingBernoulliRegression <: hmmglm
-    A::Matrix{Float64} # transition matrix
+    A::Matrix{<:Real} # transition matrix
     B::Vector{RegressionEmissions} # Vector of Bernoulli Regression Models
     πₖ::Vector{Float64} # initial state distribution
     K::Int # number of states
     λ::Float64 # regularization parameter
 end
 
-function SwitchingBernoulliRegression(; A::Matrix{Float64}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), K::Int, λ::Float64=0.0)
+"""
+    SwitchingBernoulliRegression(; <keyword arguments>)
+
+Constructor for Switching Bernoulli Regression Model.
+
+# Arguments
+- `A::Matrix{<:Real}`: Transition matrix.
+- `B::Vector{RegressionEmissions}`: Vector of Bernoulli Regression Models.
+- `πₖ::Vector{Float64}`: Initial state distribution.
+- `K::Int`: Number of states.
+- `λ::Float64`: Regularization parameter for the regression models.
+
+# Examples
+```julia
+model = SwitchingBernoulliRegression(K=2)
+```
+"""
+function SwitchingBernoulliRegression(; A::Matrix{<:Real}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), K::Int, λ::Float64=0.0)
     # if A matrix is not passed, initialize using Dirichlet 
     isempty(A) ? A = initialize_transition_matrix(K) : nothing
     # if B vector is not passed, initialize using Gaussian Regression
@@ -73,21 +146,39 @@ Struct representing a Poisson hmm-glm model. This model is specifically a Hidden
 as a time-dependent mixture of Poisson regression models. This is similar to how a vanilla HMM is a time-dependent mixture of Poisson distributions. Thus,
 at each time point we can assess the most likely state and the most likely regression model given the data.
 
-Args:
-    A::Matrix{T}: Transition matrix
-    B::Vector{RegressionEmissions}: Vector of Poisson Regression Models
-    πₖ::Vector{T}: initial state distribution
-    K::Int: number of states
+# Arguments
+- `A::Matrix{T}`: Transition matrix.
+- `B::Vector{RegressionEmissions}`: Vector of Poisson Regression Models.
+- `πₖ::Vector{T}`: Initial state distribution.
+- `K::Int`: Number of states.
+- `λ::Float64`: Regularization parameter for the regression models.
 """
 mutable struct SwitchingPoissonRegression <: hmmglm
-    A::Matrix{Float64} # transition matrix
+    A::Matrix{<:Real} # transition matrix
     B::Vector{RegressionEmissions} # Vector of Poisson Regression Models
     πₖ::Vector{Float64} # initial state distribution
     K::Int # number of states
     λ::Float64 # regularization parameter
 end
 
-function SwitchingPoissonRegression(; A::Matrix{Float64}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), K::Int, λ::Float64=0.0)
+"""
+    SwitchingPoissonRegression(; <keyword arguments>)
+
+Constructor for Switching Poisson Regression Model.
+
+# Arguments
+- `A::Matrix{<:Real}`: Transition matrix.
+- `B::Vector{RegressionEmissions}`: Vector of Poisson Regression Models.
+- `πₖ::Vector{Float64}`: Initial state distribution.
+- `K::Int`: Number of states.
+- `λ::Float64`: Regularization parameter for the regression models.
+
+# Examples
+```julia
+model = SwitchingPoissonRegression(K=2)
+```
+"""
+function SwitchingPoissonRegression(; A::Matrix{<:Real}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), K::Int, λ::Float64=0.0)
     # if A matrix is not passed, initialize using Dirichlet 
     isempty(A) ? A = initialize_transition_matrix(K) : nothing
     # if B vector is not passed, initialize using Gaussian Regression
@@ -98,23 +189,26 @@ function SwitchingPoissonRegression(; A::Matrix{Float64}=Matrix{Float64}(undef, 
     return SwitchingPoissonRegression(A, B, πₖ, K, λ)
 end
 
-function update_regression!(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64}, w::Matrix{Float64}=ones(length(y), model.K))
+function update_regression!(model::hmmglm, X::Matrix{<:Real}, y::Union{Vector{Float64}, Matrix{<:Real}}, w::Matrix{<:Real}=ones(size(y, 1), model.K))
    # update regression models 
+
     @threads for k in 1:model.K
         update_emissions_model!(model.B[k], X, y, w[:, k])
     end
+
 end
 
-function initialize_regression!(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64})
+function initialize_regression!(model::hmmglm, X::Matrix{<:Real}, y::Union{Vector{Float64}, Matrix{<:Real}})
     # first fit the regression models to all of the data unweighted
     update_regression!(model, X, y)
+
     # add white noise to the beta coefficients
     @threads for k in 1:model.K
-        model.B[k].regression.β += randn(length(model.B[k].regression.β))
+        model.B[k].regression.β += randn(size(model.B[k].regression.β))
     end
 end
 
-function forward(hmm::hmmglm, X::Matrix{Float64}, y::Vector{Float64})
+function forward(hmm::hmmglm, X::Matrix{<:Real}, y::Vector{Float64})
     T = length(y)
     K = size(hmm.A, 1)  # Number of states
     # Initialize an α-matrix 
@@ -137,7 +231,30 @@ function forward(hmm::hmmglm, X::Matrix{Float64}, y::Vector{Float64})
     return α
 end
 
-function backward(hmm::hmmglm,  X::Matrix{Float64}, y::Vector{Float64})
+function forward(hmm::hmmglm, X::Matrix{<:Real}, y::Matrix{<:Real})
+    T = size(y, 1)
+    K = size(hmm.A, 1)  # Number of states
+    # Initialize an α-matrix 
+    α = zeros(Float64, T, K)
+    # Calculate α₁
+    @threads for k in 1:K
+        α[1, k] = log(hmm.πₖ[k]) + loglikelihood(hmm.B[k], row_matrix(X[1, :]), row_matrix(y[1, :]))
+    end
+    # Now perform the rest of the forward algorithm for t=2 to T
+    for t in 2:T
+        @threads for k in 1:K
+            values_to_sum = Float64[]
+            for i in 1:K
+                push!(values_to_sum, log(hmm.A[i, k]) + α[t-1, i])
+            end
+            log_sum_alpha_a = logsumexp(values_to_sum)
+            α[t, k] = log_sum_alpha_a + loglikelihood(hmm.B[k], row_matrix(X[t, :]), row_matrix(y[t, :]))
+        end
+    end
+    return α
+end
+
+function backward(hmm::hmmglm,  X::Matrix{<:Real}, y::Vector{Float64})
     T = length(y)
     K = size(hmm.A, 1)  # Number of states
 
@@ -160,7 +277,30 @@ function backward(hmm::hmmglm,  X::Matrix{Float64}, y::Vector{Float64})
     return β
 end
 
-function calculate_ξ(hmm::hmmglm, α::Matrix{Float64}, β::Matrix{Float64}, X::Matrix{Float64}, y::Vector{Float64})
+function backward(hmm::hmmglm,  X::Matrix{<:Real}, y::Matrix{<:Real})
+    T = size(y, 1)
+    K = size(hmm.A, 1)  # Number of states
+
+    # Initialize a β matrix
+    β = zeros(Float64, T, K)
+
+    # Set last β values. In log-space, 0 corresponds to a value of 1 in the original space.
+    β[T, :] .= 0  # log(1) = 0
+
+    # Calculate β, starting from T-1 and going backward to 1
+    for t in T-1:-1:1
+        @threads for i in 1:K
+            values_to_sum = Float64[]
+            for j in 1:K
+                push!(values_to_sum, log(hmm.A[i, j]) + loglikelihood(hmm.B[j], row_matrix(X[t+1, :]), row_matrix(y[t+1, :])) + β[t+1, j])
+            end
+            β[t, i] = logsumexp(values_to_sum)
+        end
+    end
+    return β
+end
+
+function calculate_ξ(hmm::hmmglm, α::Matrix{<:Real}, β::Matrix{<:Real}, X::Matrix{<:Real}, y::Vector{Float64})
     T = length(y)
     K = size(hmm.A, 1)
     ξ = zeros(Float64, T-1, K, K)
@@ -178,7 +318,25 @@ function calculate_ξ(hmm::hmmglm, α::Matrix{Float64}, β::Matrix{Float64}, X::
     return ξ
 end
 
-function E_step(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64})
+function calculate_ξ(hmm::hmmglm, α::Matrix{<:Real}, β::Matrix{<:Real}, X::Matrix{<:Real}, y::Matrix{<:Real})
+    T = size(y, 1)
+    K = size(hmm.A, 1)
+    ξ = zeros(Float64, T-1, K, K)
+    for t in 1:T-1
+        # Array to store the unnormalized ξ values
+        log_ξ_unnormalized = zeros(Float64, K, K)
+        @threads for i in 1:K
+            for j in 1:K
+                log_ξ_unnormalized[i, j] = α[t, i] + log(hmm.A[i, j]) + loglikelihood(hmm.B[j], row_matrix(X[t+1, :]), row_matrix(y[t+1, :])) + β[t+1, j]
+            end
+        end
+        # Normalize the ξ values using log-sum-exp operation
+        ξ[t, :, :] .= log_ξ_unnormalized .- logsumexp(log_ξ_unnormalized)
+    end
+    return ξ
+end
+
+function E_step(model::hmmglm, X::Matrix{<:Real}, y::Union{Vector{Float64}, Matrix{<:Real}})
     # run forward-backward algorithm
     α = forward(model, X, y)
     β = backward(model, X, y)
@@ -187,7 +345,7 @@ function E_step(model::hmmglm, X::Matrix{Float64}, y::Vector{Float64})
     return γ, ξ, α, β
 end
 
-function M_step!(model::hmmglm, γ::Matrix{Float64}, ξ::Array{Float64, 3}, X::Matrix{Float64}, y::Vector{Float64})
+function M_step!(model::hmmglm, γ::Matrix{<:Real}, ξ::Array{Float64, 3}, X::Matrix{<:Real}, y::Union{Vector{Float64}, Matrix{<:Real}})
     # update initial state distribution
     update_initial_state_distribution!(model, γ)   
     # update transition matrix
@@ -196,9 +354,35 @@ function M_step!(model::hmmglm, γ::Matrix{Float64}, ξ::Array{Float64, 3}, X::M
     update_regression!(model, X, y, exp.(γ)) 
 end
 
-function fit!(model::hmmglm, X::Matrix{Float64}, y::Union{Vector{T}, BitVector}, max_iter::Int=100, tol::Float64=1e-6, initialize::Bool=true) where T<: Real
+"""
+    fit!(model::hmmglm, X::Matrix{<:Real}, y::Union{Vector{T}, BitVector, Matrix{<:Real}}, max_iter::Int=100, tol::Float64=1e-6, initialize::Bool=true) where T<: Real
+
+Fits a Switching Regression Model (hmmglm) using the EM algorithm.
+
+# Arguments
+- `model::hmmglm`: Markov Regression model.
+- `X::Matrix{<:Real}`: Matrix of features. Each row is a feature vector. First row is timestep 1.
+- `y::Union{Vector{T}, BitVector, Matrix{<:Real}}`: Vector of targets or matrix of targets. For matrix y: Each row is a target vector. First row is timestep 1.
+- `max_iter::Int=100`: Maximum number of iterations.
+- `tol::Float64=1e-6`: Tolerance for convergence.
+- `initialize=True`: Whether to initialize the regression models.
+
+# Returns
+- `lls::Vector{Float64}`: Vector of log-likelihoods at each iteration.
+
+# Examples
+```julia
+X = randn(100, 2)
+y = randn(100)
+model = SwitchingGaussianRegression(num_features=2, num_targets=1, K=2)
+lls = fit!(model, X, y)
+```
+"""
+function fit!(model::hmmglm, X::Matrix{<:Real}, y::Union{Vector{T}, BitVector, Matrix{<:Real}}, max_iter::Int=100, tol::Float64=1e-6, initialize::Bool=true) where T<: Real
     # convert y to Float64
-    y = convert(Vector{Float64}, y)
+    if typeof(y) == BitVector
+        y = convert(Vector{Float64}, y)
+    end
     # initialize regression models
     if initialize
         initialize_regression!(model, X, y)
@@ -228,7 +412,29 @@ function fit!(model::hmmglm, X::Matrix{Float64}, y::Union{Vector{T}, BitVector},
     return lls
 end
 
-function viterbi(hmm::hmmglm, X::Matrix{Float64}, y::Vector{Float64})
+"""
+    viterbi(hmm::hmmglm, X::Matrix{<:Real}, y::Vector{Float64})
+
+Viterbi algorithm for Switching Regression models.
+
+# Arguments
+- `hmm::hmmglm`: Switching Regression model.
+- `X::Matrix{<:Real}`: Matrix of features. Each row is a feature vector.
+- `y::Vector{Float64}`: Vector of targets.
+
+# Returns
+- `best_path::Vector{Int}`: Vector of most likely states.
+
+# Examples
+```julia
+X = randn(100, 2)
+y = randn(100)
+model = SwitchingGaussianRegression(num_features=2, num_targets=1, K=2)
+lls = fit!(model, X, y)
+best_path = viterbi(model, X, y)
+```
+"""
+function viterbi(hmm::hmmglm, X::Matrix{<:Real}, y::Vector{Float64})
     T = length(y)
     K = size(hmm.A, 1)  # Number of states
 
@@ -264,3 +470,5 @@ function viterbi(hmm::hmmglm, X::Matrix{Float64}, y::Vector{Float64})
     end
     return reverse(best_path)
 end
+
+
