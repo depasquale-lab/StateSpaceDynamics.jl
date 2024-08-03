@@ -25,35 +25,35 @@ end
 
 function test_regression_emissions()
     # generate synthetic data
-    X = hcat(ones(1000), randn(1000, 2))
+    Φ = hcat(ones(1000), randn(1000, 2))
     true_β = [0.5, -1.2, 2.3]
     true_σ² = 0.5
     # gaussian glm response
-    y = X * true_β + rand(Normal(0., sqrt(true_σ²)), 1000)
+    y = Φ * true_β + rand(Normal(0., sqrt(true_σ²)), 1000)
     # poisson glm response
     true_poisson_model = PoissonRegression(true_β, input_dim=2)
-    y_poisson = SSM.sample(true_poisson_model, X)
+    y_poisson = SSM.sample(true_poisson_model, Φ)
     # bernoulli glm response
     true_bernoulli_model = BernoulliRegression(true_β, input_dim=2)
-    y_bernoulli = SSM.sample(true_bernoulli_model, X)
+    y_bernoulli = SSM.sample(true_bernoulli_model, Φ)
 
     # initialize emission models
     gaussian_emission = RegressionEmissions(GaussianRegression(input_dim=3, output_dim=1; include_intercept=false))
     poisson_emission = RegressionEmissions(PoissonRegression(input_dim=3; include_intercept=false))
     bernoulli_emission = RegressionEmissions(BernoulliRegression(input_dim=3; include_intercept=false))
     # update emission models
-    SSM.update_emissions_model!(gaussian_emission, X, reshape(y, 1000, 1))
-    SSM.update_emissions_model!(poisson_emission, X, y_poisson)
-    SSM.update_emissions_model!(bernoulli_emission, X, y_bernoulli)
+    SSM.update_emissions_model!(gaussian_emission, Φ, reshape(y, 1000, 1))
+    SSM.update_emissions_model!(poisson_emission, Φ, y_poisson)
+    SSM.update_emissions_model!(bernoulli_emission, Φ, y_bernoulli)
     # check if parameters are updated correctly
     @test isapprox(gaussian_emission.regression.β, reshape(true_β, 3, 1), atol=0.5)
     @test isapprox(gaussian_emission.regression.Σ, reshape([true_σ²], 1, 1), atol=0.1)
     @test isapprox(poisson_emission.regression.β, true_β, atol=0.5)
     @test isapprox(bernoulli_emission.regression.β, true_β, atol=0.5)
     # test the loglikelihood
-    # ll_gaussian = SSM.loglikelihood(gaussian_emission, X[1, :], y[1])
-    # ll_poisson = SSM.loglikelihood(poisson_emission, X[1, :], y_poisson[1])
-    # ll_bernoulli = SSM.loglikelihood(bernoulli_emission, X[1, :], y_bernoulli[1])
+    # ll_gaussian = SSM.loglikelihood(gaussian_emission, Φ[1, :], y[1])
+    # ll_poisson = SSM.loglikelihood(poisson_emission, Φ[1, :], y_poisson[1])
+    # ll_bernoulli = SSM.loglikelihood(bernoulli_emission, Φ[1, :], y_bernoulli[1])
     # @test ll_gaussian < 0
     # @test ll_poisson < 0
     # @test ll_bernoulli < 0

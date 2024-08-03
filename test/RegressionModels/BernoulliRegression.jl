@@ -1,18 +1,18 @@
 function BernoulliRegression_simulation(n::Int)
     # Generate synthetic data
-    X = randn(n, 2)
+    Φ = randn(n, 2)
     β = [3, 1, 0.5]
     true_model = BernoulliRegression(β, input_dim=2)
-    y = SSM.sample(true_model, X)
+    y = SSM.sample(true_model, Φ)
 
-    return true_model, X, y
+    return true_model, Φ, y
 end
 
 # check loglikelihood is negative
 function test_BernoulliRegression_loglikelihood()
     n = 1000
-    true_model, X, y = BernoulliRegression_simulation(n)
-    @test SSM.loglikelihood(true_model, X, y) < 0
+    true_model, Φ, y = BernoulliRegression_simulation(n)
+    @test SSM.loglikelihood(true_model, Φ, y) < 0
 end
 
 # check model shape and value from constructor
@@ -35,31 +35,31 @@ end
 # check the objective_grad! is close to numerical gradient
 function test_BernoulliRegression_objective_gradient()
     n = 1000
-    true_model, X, y = BernoulliRegression_simulation(n)
+    true_model, Φ, y = BernoulliRegression_simulation(n)
 
 
     est_model = BernoulliRegression(input_dim=2)
     
 
     # test if analytical gradient is close to numerical gradient
-    objective = define_objective(est_model, X, y)
-    objective_grad! = define_objective_gradient(est_model, X, y)
+    objective = define_objective(est_model, Φ, y)
+    objective_grad! = define_objective_gradient(est_model, Φ, y)
     test_gradient(objective, objective_grad!, ones(3, 2))
 
 
 
     # now do the same with Weights
     weights = rand(1000)
-    objective = define_objective(est_model, X, y, weights)
-    objective_grad! = define_objective_gradient(est_model, X, y, weights)
+    objective = define_objective(est_model, Φ, y, weights)
+    objective_grad! = define_objective_gradient(est_model, Φ, y, weights)
     test_gradient(objective, objective_grad!, ones(3, 2))
 
 
 
     # finally test when λ is not 0
     est_model.λ = 0.1
-    objective = define_objective(est_model, X, y)
-    objective_grad! = define_objective_gradient(est_model, X, y)
+    objective = define_objective(est_model, Φ, y)
+    objective_grad! = define_objective_gradient(est_model, Φ, y)
     test_gradient(objective, objective_grad!, ones(3, 2))
 end
 
@@ -67,14 +67,14 @@ end
 function test_BernoulliRegression_standard_fit()
     # Generate synthetic data
     n = 5000
-    true_model, X, y = BernoulliRegression_simulation(n)
+    true_model, Φ, y = BernoulliRegression_simulation(n)
 
     # Initialize and fit the model
     est_model = BernoulliRegression(input_dim=2)
-    fit!(est_model, X, y)
+    fit!(est_model, Φ, y)
 
     # confirm that the fitted model has a higher loglikelihood than the true model
-    @test SSM.loglikelihood(est_model, X, y) >= SSM.loglikelihood(true_model, X, y)
+    @test SSM.loglikelihood(est_model, Φ, y) >= SSM.loglikelihood(true_model, Φ, y)
 
     # confirm that the fitted model has similar β values to the true model
     @test isapprox(est_model.β, true_model.β, atol=0.5)
@@ -86,21 +86,21 @@ function test_BernoulliRegression_regularized_fit()
 
     # Generate synthetic data
     n = 1000
-    true_model, X, y = BernoulliRegression_simulation(n)
+    true_model, Φ, y = BernoulliRegression_simulation(n)
 
     # Initialize and fit an *unregularized* model
     est_model = BernoulliRegression(input_dim=2)
-    fit!(est_model, X, y)
+    fit!(est_model, Φ, y)
 
     # Initialize and fit a regularized model
     regularized_est_model = BernoulliRegression(input_dim=2, λ=λ)
-    fit!(regularized_est_model, X, y)
+    fit!(regularized_est_model, Φ, y)
 
 
     # confirm that the regularized model is not too much worse
     @test isapprox(
-        SSM.loglikelihood(regularized_est_model, X, y), 
-        SSM.loglikelihood(est_model, X, y), 
+        SSM.loglikelihood(regularized_est_model, Φ, y), 
+        SSM.loglikelihood(est_model, Φ, y), 
         atol=0.1
         )
 
@@ -133,7 +133,7 @@ end
 
 
 # function test_BernoulliRegression_fit()
-#     est_model, X, y, true_model = BernoulliRegression_simulation()
+#     est_model, Φ, y, true_model = BernoulliRegression_simulation()
 
 #     # Check if the fitted coefficients are reasonable
 #     @test length(est_model.β) == 3
@@ -141,14 +141,14 @@ end
 # end
 
 # function test_BernoulliRegression_loglikelihood()
-#     est_model, X, y, true_model = BernoulliRegression_simulation()
+#     est_model, Φ, y, true_model = BernoulliRegression_simulation()
     
 #     # Check log likelihood
-#     loglik = SSM.loglikelihood(est_model, X, y)
+#     loglik = SSM.loglikelihood(est_model, Φ, y)
 #     @test loglik < 0
 
 #     #test loglikelihood on a single point
-#     loglik = SSM.loglikelihood(est_model, X[1, :], y[1])
+#     loglik = SSM.loglikelihood(est_model, Φ[1, :], y[1])
 #     @test loglik < 0
 # end
 
@@ -158,37 +158,37 @@ end
 # end
 
 # function test_BernoulliRegression_intercept()
-#     est_model, X, y, true_model = BernoulliRegression_simulation(include_intercept=false)
+#     est_model, Φ, y, true_model = BernoulliRegression_simulation(include_intercept=false)
 
 #     # Check if the fitted coefficients are reasonable
 #     @test length(est_model.β) == 2
 # end
 
 # function test_Bernoulli_ll_gradient()
-#     _, X, y, true_model = BernoulliRegression_simulation(include_intercept=false)
+#     _, Φ, y, true_model = BernoulliRegression_simulation(include_intercept=false)
 
 
 #     # initialize model
 #     est_model = BernoulliRegression()
 
 
-#     function objective(model, X, y, w)
-#         return -SSM.loglikelihood(model, X, y, w) + (model.λ * sum(model.β.^2))
+#     function objective(model, Φ, y, w)
+#         return -SSM.loglikelihood(model, Φ, y, w) + (model.λ * sum(model.β.^2))
 #     end
 
-#     function objective_wrt_β(model, X, y, w=ones(size(y,1)))
+#     function objective_wrt_β(model, Φ, y, w=ones(size(y,1)))
 #         function change_β(β)
 #             model.β = β
-#             return objective(model, X, y, w)
+#             return objective(model, Φ, y, w)
 #         end
 #         return change_β
 #     end 
 
 #     # numerical gradient
-#     grad = ForwardDiff.gradient(objective_wrt_β(est_model, X, y), [0., 0., 0.])
+#     grad = ForwardDiff.gradient(objective_wrt_β(est_model, Φ, y), [0., 0., 0.])
 #     # analytic gradient
 #     est_model.β = [0., 0., 0.]
-#     grad_analytic = SSM.gradient!([0., 0., 0.], est_model, X, y)
+#     grad_analytic = SSM.gradient!([0., 0., 0.], est_model, Φ, y)
 #     # compare
 #     @test isapprox(grad, grad_analytic, atol=1e-6)
 
@@ -196,10 +196,10 @@ end
 #     # now do the same with Weights
 #     weights = rand(1000)
 #     # numerical gradient
-#     grad = ForwardDiff.gradient(objective_wrt_β(est_model, X, y, weights), [0., 0., 0.])
+#     grad = ForwardDiff.gradient(objective_wrt_β(est_model, Φ, y, weights), [0., 0., 0.])
 #     # analytic gradient
 #     est_model.β = [0., 0., 0.]
-#     grad_analytic = SSM.gradient!([0., 0., 0.], est_model, X, y, weights)
+#     grad_analytic = SSM.gradient!([0., 0., 0.], est_model, Φ, y, weights)
 #     # compare
 #     @test isapprox(grad, grad_analytic, atol=1e-6)
 
@@ -209,10 +209,10 @@ end
 #     est_model.β = rand(3)
 
 #     # numerical gradient
-#     grad = ForwardDiff.gradient(objective_wrt_β(est_model, X, y), [0., 0., 0.])
+#     grad = ForwardDiff.gradient(objective_wrt_β(est_model, Φ, y), [0., 0., 0.])
 #     # analytic gradient
 #     est_model.β = [0., 0., 0.]
-#     grad_analytic = SSM.gradient!([0., 0., 0.], est_model, X, y)
+#     grad_analytic = SSM.gradient!([0., 0., 0.], est_model, Φ, y)
 #     # compare
 #     @test isapprox(grad, grad_analytic, atol=1e-6)
 # end

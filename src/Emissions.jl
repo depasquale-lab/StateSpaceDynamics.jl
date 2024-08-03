@@ -98,33 +98,33 @@ mutable struct RegressionEmissions <: EmissionsModel
 end
 
 # loglikelihood of the regression model.
-function loglikelihood(emission::RegressionEmissions, X::Vector{Float64}, y::Float64)
-    loglikelihood(emission.regression, X, y)
+function loglikelihood(emission::RegressionEmissions, Φ::Vector{Float64}, y::Float64)
+    loglikelihood(emission.regression, Φ, y)
 end
 
 # loglikelihood of the regression model.
-function loglikelihood(emission::RegressionEmissions, X::Matrix{<:Real}, y::Matrix{<:Real})
-    loglikelihood(emission.regression, X, y)
+function loglikelihood(emission::RegressionEmissions, Φ::Matrix{<:Real}, y::Matrix{<:Real})
+    loglikelihood(emission.regression, Φ, y)
 end
 
 
 # Update the parameters of the regression model, e.g. the betas.
-function update_emissions_model!(emission::RegressionEmissions, X::Matrix{<:Real}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
-    fit!(emission.regression, X, y, w)
+function update_emissions_model!(emission::RegressionEmissions, Φ::Matrix{<:Real}, y::Vector{Float64}, w::Vector{Float64}=ones(length(y)))
+    fit!(emission.regression, Φ, y, w)
 end
 
 
 
 
 # Update the parameters of the regression model, e.g. the betas.
-function update_emissions_model!(emission::RegressionEmissions, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+function update_emissions_model!(emission::RegressionEmissions, Φ::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
 
-    # confirm dimensions of X and y are correct
-    @assert size(X, 1) == size(y, 1) "Number of rows (number of observations) in X and y must be equal."
+    # confirm dimensions of Φ and y are correct
+    @assert size(Φ, 1) == size(y, 1) "Number of rows (number of observations) in Φ and y must be equal."
 
     # confirm the size of w is correct
     @assert length(w) == size(y, 1) "Length of w must be equal to the number of observations in y."
 
 
-    fit!(emission.regression, X, y, w)
+    fit!(emission.regression, Φ, y, w)
 end
