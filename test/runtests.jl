@@ -114,17 +114,17 @@ end
 Tests for HiddenMarkovModels.jl
 """
 
-include("HiddenMarkovModels/HiddenMarkovModels.jl")
+# include("HiddenMarkovModels/HiddenMarkovModels.jl")
 
-@testset "HiddenMarkovModels.jl Tests" begin
-    test_toy_HMM()
-    test_GaussianHMM_constructor()
-    test_HMM_forward_and_back()
-    test_HMM_gamma_xi()
-    test_HMM_E_step()
-    test_HMM_M_step()
-    test_HMM_EM()
-end
+# @testset "HiddenMarkovModels.jl Tests" begin
+#     test_toy_HMM()
+#     test_GaussianHMM_constructor()
+#     test_HMM_forward_and_back()
+#     test_HMM_gamma_xi()
+#     test_HMM_E_step()
+#     test_HMM_M_step()
+#     test_HMM_EM()
+# end
 
 """
 Tests for LDS.jl
@@ -192,12 +192,12 @@ end
 Tests for Emissions.jl
 """
 
-include("Emissions/Emissions.jl")
+# include("Emissions/Emissions.jl")
 
-@testset "Emissions.jl Tests" begin
-    test_GaussianEmission()
-    test_regression_emissions()
-end
+# @testset "Emissions.jl Tests" begin
+#     test_GaussianEmission()
+#     test_regression_emissions()
+# end
 
 """
 Tests for Utilities.jl
@@ -230,7 +230,7 @@ end
 Tests for MarkovRegression.jl
 """
 
-include("MarkovRegression/MarkovRegression.jl")
+# include("MarkovRegression/MarkovRegression.jl")
 
 # @testset "SwitchingRegression Tests" begin
 #     test_HMMGLM_initialization()

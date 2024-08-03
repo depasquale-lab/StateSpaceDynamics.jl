@@ -14,10 +14,16 @@ Abstract type for Mixture Models. I.e. GMM's, etc.
 abstract type MixtureModel end
 
 """
-Abstract type for Emissions Models. I.e. Poisson, Gaussian, etc.
+Abstract type for Basic Models. I.e. Poisson, Gaussian, etc.
 """
 
-abstract type EmissionsModel end
+abstract type BasicModel end
+
+"""
+Abstract type for Regression Models. I.e. GaussianRegression, BernoulliRegression, etc.
+"""
+
+abstract type RegressionModel end
 
 """
 Abstract type for Markov Models. I.e. HMM's, Markov Regressions, etc.

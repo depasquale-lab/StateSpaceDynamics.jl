@@ -3,13 +3,6 @@ export GaussianRegression, BernoulliRegression, PoissonRegression, AutoRegressio
 # below used in notebooks and unit tests
 export define_objective, define_objective_gradient
 
-# temporary exports
-export Regression
-
-
-# abstract regression type
-abstract type Regression end
-
 """
     GaussianRegression(β::Matrix{<:Real}, Σ::Matrix{<:Real}, input_dim::Int, output_dim::Int, include_intercept::Bool, λ::Float64)
 
@@ -34,7 +27,7 @@ model = GaussianRegression(ones(3, 1), ones(1, 1), input_dim=2, output_dim=1)
 model = GaussianRegression(ones(2,1), ones(1, 1), input_dim=2, output_dim=1, include_intercept=false, λ=0.1)
 ```
 """
-mutable struct GaussianRegression <: Regression
+mutable struct GaussianRegression <: RegressionModel
     input_dim::Int
     output_dim::Int
     β::Matrix{<:Real} # coefficient matrix of the model. Shape input_dim by output_dim. Column one is coefficients for target one, etc. The first row are the intercept terms, if included. 
@@ -306,7 +299,7 @@ model = BernoulliRegression(include_intercept=false, λ=0.1)
 model = BernoulliRegression([0.1, 0.2], true, 0.1)
 ```
 """
-mutable struct BernoulliRegression <: Regression
+mutable struct BernoulliRegression <: RegressionModel
     input_dim::Int
     β::Vector{<:Real}
     include_intercept::Bool
@@ -475,7 +468,7 @@ function fit!(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real},
 end
     
 """
-    mutable struct PoissonRegression <: Regression
+    mutable struct PoissonRegression <: RegressionModel
 
 # Fields
 - `β::Vector{Float64}`: Coefficients of the regression model
@@ -492,7 +485,7 @@ model = PoissonRegression(include_intercept=false, λ=0.1)
 model = PoissonRegression([0.1, 0.2], true, 0.1)
 ```
 """
-mutable struct PoissonRegression <: Regression
+mutable struct PoissonRegression <: RegressionModel
     input_dim::Int
     β::Vector{<:Real}
     include_intercept::Bool
@@ -699,7 +692,7 @@ end
 
 
 
-mutable struct AutoRegression <: Regression
+mutable struct AutoRegression <: RegressionModel
     data_dim::Int
     order::Int
     innerGaussianRegression::GaussianRegression
