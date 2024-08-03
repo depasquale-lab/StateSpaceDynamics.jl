@@ -41,7 +41,6 @@ mutable struct GaussianRegression <: RegressionModel
         else
             new(input_dim, output_dim, zeros(input_dim, output_dim), Matrix{Float64}(I, output_dim, output_dim), include_intercept, λ)
         end
-
     end
     
     function GaussianRegression(β::Matrix{<:Real}, Σ::Matrix{<:Real}; input_dim::Int, output_dim::Int, include_intercept::Bool = true, λ::Float64=0.0)
