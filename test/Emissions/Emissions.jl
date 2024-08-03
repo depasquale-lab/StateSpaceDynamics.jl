@@ -31,16 +31,16 @@ function test_regression_emissions()
     # gaussian glm response
     y = X * true_β + rand(Normal(0., sqrt(true_σ²)), 1000)
     # poisson glm response
-    true_poisson_model = PoissonRegression(true_β, true)
+    true_poisson_model = PoissonRegression(true_β, input_dim=2)
     y_poisson = SSM.sample(true_poisson_model, X)
     # bernoulli glm response
     true_bernoulli_model = BernoulliRegression(true_β, input_dim=2)
     y_bernoulli = SSM.sample(true_bernoulli_model, X)
 
     # initialize emission models
-    gaussian_emission = RegressionEmissions(GaussianRegression(input_dim=3, output_dim=1;include_intercept=false))
-    poisson_emission = RegressionEmissions(PoissonRegression(;include_intercept=false))
-    bernoulli_emission = RegressionEmissions(BernoulliRegression(input_dim=3;include_intercept=false))
+    gaussian_emission = RegressionEmissions(GaussianRegression(input_dim=3, output_dim=1; include_intercept=false))
+    poisson_emission = RegressionEmissions(PoissonRegression(input_dim=3; include_intercept=false))
+    bernoulli_emission = RegressionEmissions(BernoulliRegression(input_dim=3; include_intercept=false))
     # update emission models
     SSM.update_emissions_model!(gaussian_emission, X, reshape(y, 1000, 1))
     SSM.update_emissions_model!(poisson_emission, X, y_poisson)

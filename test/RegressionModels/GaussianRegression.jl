@@ -50,7 +50,7 @@ function test_GaussianRegression_constructor()
 end
 
 
-# check surrogate_loglikelihood_gradient is close to numerical gradient
+# check the objective_grad! is close to numerical gradient
 function test_GaussianRegression_objective_gradient()
     n = 1000
     true_model, X, y = GaussianRegression_simulation(n)
@@ -82,13 +82,13 @@ function test_GaussianRegression_objective_gradient()
 end
 
 # check that a fitted model has a higher loglikelihood than the true model
-function test_GaussianRegression_standard_fit(;include_intercept::Bool=true)
+function test_GaussianRegression_standard_fit()
     # Generate synthetic data
     n = 1000
     true_model, X, y = GaussianRegression_simulation(n)
 
     # Initialize and fit the model
-    est_model = GaussianRegression(input_dim=2, output_dim=2, include_intercept=include_intercept)
+    est_model = GaussianRegression(input_dim=2, output_dim=2)
     fit!(est_model, X, y)
 
     # confirm that the fitted model has a higher loglikelihood than the true model
@@ -103,7 +103,7 @@ function test_GaussianRegression_standard_fit(;include_intercept::Bool=true)
 end
 
 # check that a regularized model has β values closer to a normal gaussian and the model doesn't perform too much worse
-function test_GaussianRegression_regularized_fit(;include_intercept::Bool=true)
+function test_GaussianRegression_regularized_fit()
     λ = 0.1
 
     # Generate synthetic data
@@ -111,11 +111,11 @@ function test_GaussianRegression_regularized_fit(;include_intercept::Bool=true)
     true_model, X, y = GaussianRegression_simulation(n)
 
     # Initialize and fit an *unregularized* model
-    est_model = GaussianRegression(input_dim=2, output_dim=2, include_intercept=true)
+    est_model = GaussianRegression(input_dim=2, output_dim=2)
     fit!(est_model, X, y)
 
     # Initialize and fit a regularized model
-    regularized_est_model = GaussianRegression(input_dim=2, output_dim=2, include_intercept=true, λ=λ)
+    regularized_est_model = GaussianRegression(input_dim=2, output_dim=2, λ=λ)
     fit!(regularized_est_model, X, y)
 
 
@@ -126,8 +126,9 @@ function test_GaussianRegression_regularized_fit(;include_intercept::Bool=true)
         atol=0.1
         )
 
-    # confirm that the regularized model has smaller absolute values for beta
-    @test all(abs.(regularized_est_model.β) .<= abs.(est_model.β))
+    # confirm thet the regularized model's parameters are closer to standard normal Distributions
+    θ_prior = MvNormal(zeros(3), Matrix{Float64}(I, 3, 3))
+    @test logpdf(θ_prior, regularized_est_model.β) > logpdf(θ_prior, est_model.β)
 
     # confirm that the fitted model's Σ values are good
     @test isapprox(regularized_est_model.Σ, true_model.Σ, atol=0.1)

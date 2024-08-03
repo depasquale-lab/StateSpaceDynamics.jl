@@ -6,6 +6,7 @@ using Random
 using StatsFuns
 using SpecialFunctions
 using Test
+using Base.Iterators: flatten
 
 Random.seed!(1234)
 
@@ -170,11 +171,11 @@ end
 include("RegressionModels/PoissonRegression.jl")
 
 @testset "PoissonRegression Tests" begin
-    test_PoissonRegression_fit()
     test_PoissonRegression_loglikelihood()
-    test_PoissonRegression_empty_model()
-    test_PoissonRegression_intercept()
-    test_Poisson_ll_gradient()
+    test_PoissonRegression_constructor()
+    test_PoissonRegression_objective_gradient()
+    test_PoissonRegression_standard_fit()
+    test_PoissonRegression_regularized_fit()
 end
 
 include("RegressionModels/AutoRegression.jl")

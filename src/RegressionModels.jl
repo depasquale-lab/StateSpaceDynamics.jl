@@ -273,16 +273,15 @@ function fit!(model::GaussianRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w
     # confirm the size of w is correct
     @assert length(w) == size(y, 1) "Length of w must be equal to the number of observations in y."
     
-
+    # minimize objective
     objective = define_objective(model, X, y, w)
     objective_grad! = define_objective_gradient(model, X, y, w)
 
 
     result = optimize(objective, objective_grad!, model.β, LBFGS())
+
     # update parameters
     model.β = result.minimizer
-
-    
     update_variance!(model, X, y, w)
 end
 
@@ -344,6 +343,7 @@ function sample(model::BernoulliRegression, X::Matrix{<:Real})
     end
 
     y = rand.(Bernoulli.(logistic.(X * model.β)))
+
     # convert y 
     y = reshape(y, :, 1)
     y = Float64.(y)
@@ -464,13 +464,12 @@ fit!(model, X, y, w)
 ```
 """
 function fit!(model::BernoulliRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
-    # convert y if necessary
-    # y = convert(Vector{Float64}, y)
     # minimize objective
     objective = define_objective(model, X, y, w)
     objective_grad! = define_objective_gradient(model, X, y, w)
-    #objective_grad!(β, g) = gradient!(g, BernoulliRegression(β, input_dim=model.input_dim, λ=model.λ), X, y, w) # troubleshoot this
+
     result = optimize(objective, objective_grad!, model.β, LBFGS())
+
     # update parameters
     model.β = result.minimizer
 end
@@ -494,18 +493,29 @@ model = PoissonRegression([0.1, 0.2], true, 0.1)
 ```
 """
 mutable struct PoissonRegression <: Regression
+    input_dim::Int
     β::Vector{<:Real}
     include_intercept::Bool
     λ::Float64
     # Empty constructor
-    function PoissonRegression(; include_intercept::Bool = true, λ::Float64=0.0) 
+    function PoissonRegression(; input_dim::Int, include_intercept::Bool = true, λ::Float64=0.0) 
         @assert λ >= 0.0 "Regularization parameter must be non-negative."
-        new(Vector{Float64}(), include_intercept, λ)
+        if include_intercept
+            new(input_dim, zeros(input_dim + 1), include_intercept, λ)
+        else
+            new(input_dim, zeros(input_dim), include_intercept, λ)
+        end
     end
     # Parametric Constructor
-    function PoissonRegression(β::Vector{<:Real}, include_intercept::Bool, λ::Float64=0.0)
+    function PoissonRegression(β::Vector{<:Real}; input_dim::Int, include_intercept::Bool = true, λ::Float64=0.0)
         @assert λ >= 0.0 "Regularization parameter must be non-negative."
-        new(β, include_intercept, λ)
+        if include_intercept
+            @assert size(β, 1) == input_dim + 1
+        else
+            @assert size(β, 1) == input_dim
+        end
+
+        new(input_dim, β, include_intercept, λ)
     end
 end
 
@@ -553,45 +563,65 @@ function loglikelihood(model::PoissonRegression, X::Matrix{<:Real}, y::Matrix{<:
     if model.include_intercept && size(X, 2) == length(model.β) - 1
         X = hcat(ones(size(X, 1)), X)
     end
+
     # calculate log likelihood
     λ = exp.(X * model.β)
-    # convert y if necessary
-    # y = convert(Vector{Float64}, y)
+
     return sum(w .* (y .* log.(λ) .- λ .- loggamma.(Int.(y) .+ 1)))
 end
 
-"""
-    loglikelihood(model::PoissonRegression, X::Vector{Float64}, y::Union{Float64, Int64}, w::Float64=1.0)
 
-Calculate the log-likelihood of a single observation of a Poisson regression model.
+function define_objective(model::PoissonRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+    # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
 
-# Arguments
-- `model::PoissonRegression`: Poisson regression model
-- `X::Vector{Float64}`: Design vector
-- `y::Union{Float64, Int64}`: Response value
-- `w::Float64`: Weight for the observation
+    # confirm dimensions of X and y are correct
+    @assert size(X, 1) == size(y, 1) "Number of rows (number of observations) in X and y must be equal."
+    @assert size(y, 2) == 1 "PoissonRegression Y data should be a single column."
+    @assert size(X, 2) == model.input_dim "Number of columns in X must be equal to the number of features in the model."
 
-# Examples
-```julia
-model = PoissonRegression()
-X = rand(2)
-y = rand(Poisson(1))
-loglikelihood(model, X, y)
-```
-"""
-function loglikelihood(model::PoissonRegression, X::Vector{Float64}, y::Union{Float64, Int64}, w::Float64=1.0)
-    # confirm that the model has been fit
-    @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # add intercept if specified
-    if model.include_intercept && length(X) == length(model.β) - 1
-        X = vcat(1.0, X)
+    if model.include_intercept
+        X = hcat(ones(size(X, 1)), X)
     end
-    # calculate log likelihood
-    λ = exp.(X' * model.β)
-    # convert y if necessary
-    y = convert(Float64, y)
-    return sum(w .* (y .* log.(λ) .- λ .- log.(factorial.(Int.(y))))) 
+
+    function objective(β)
+        # calculate the rate
+        rate = exp.(X * β)
+
+        val = -sum(w .* (y .* log.(rate) .- rate .- loggamma.(Int.(y) .+ 1))) + (model.λ * sum(β.^2))
+
+        return val / size(X, 1)
+    end
+
+    return objective
 end
+
+function define_objective_gradient(model::PoissonRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+    # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
+
+    # confirm dimensions of X and y are correct
+    @assert size(X, 1) == size(y, 1) "Number of rows (number of observations) in X and y must be equal."
+    @assert size(X, 2) == model.input_dim "Number of columns in X must be equal to the number of features in the model."
+
+    # confirm the size of w is correct
+    @assert length(w) == size(y, 1) "Length of w must be equal to the number of observations in y."
+
+    # add intercept if specified
+    if model.include_intercept
+        X = hcat(ones(size(X, 1)), X)
+    end
+
+    function objective_gradient!(G, β)
+        # calculate the rate
+        rate = exp.(X * β)
+
+        G .= (-X' * (Diagonal(w) * (y .- rate)) + (model.λ * 2 * β)) / size(X, 1)
+    end
+    
+    return objective_gradient!
+end
+
+
 
 """
     gradient!(grad::Vector{Float64}, model::PoissonRegression, X::Matrix{<:Real}, y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(y)))
@@ -655,20 +685,12 @@ fit!(model, X, y, w)
 ```
 """
 function fit!(model::PoissonRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
-    # add intercept if specified
-    if model.include_intercept
-        X = hcat(ones(size(X, 1)), X)
-    end
-    # get number of parameters
-    p = size(X, 2)
-    # initialize parameters
-    model.β = rand(p)
-    # convert y if necessary
-    # y = convert(Vector{Float64}, y)
     # minimize objective
-    objective(β) = -loglikelihood(PoissonRegression(β, true, model.λ), X, y, w) + (model.λ * sum(β.^2))
-    objective_grad!(β, g) = gradient!(g, PoissonRegression(β, true, model.λ), X, y, w)
-    result = optimize(objective, model.β, LBFGS())
+    objective = define_objective(model, X, y, w)
+    objective_grad! = define_objective_gradient(model, X, y, w)
+
+    result = optimize(objective, objective_grad!, model.β, LBFGS())
+
     # update parameters
     model.β = result.minimizer
 end

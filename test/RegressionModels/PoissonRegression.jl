@@ -1,107 +1,110 @@
-function test_PoissonRegression_fit()
+function PoissonRegression_simulation(n::Int)
     # Generate synthetic data
-    X = randn(1000, 2)
-    β=[0.5, -1.2, 2.3]
-    true_model = PoissonRegression(β, true)
+    X = randn(n, 2)
+    β = [0.5, -1.2, 2.3]
+    true_model = PoissonRegression(β, input_dim=2)
     y = SSM.sample(true_model, X)
 
-    # Initialize and fit the model
-    est_model = PoissonRegression()
-    fit!(est_model, X, y)
-
-    # Check if the fitted coefficients are reasonable
-    @test length(est_model.β) == 3
-    @test isapprox(est_model.β, true_model.β, atol=0.5)
+    return true_model, X, y
 end
 
+# check loglikelihood is negative
 function test_PoissonRegression_loglikelihood()
-    # Generate synthetic data
-    X = randn(1000, 2)
-    β=[0.5, -1.2, 2.3]
-    true_model = PoissonRegression(β, true)
-    y = SSM.sample(true_model, X)
+    n = 1000
+    true_model, X, y = PoissonRegression_simulation(n)
+    @test SSM.loglikelihood(true_model, X, y) < 0
+end
 
-    # Initialize and fit the model
-    est_model = PoissonRegression()
-    fit!(est_model, X, y)
+# check model shape and value from constructor
+function test_PoissonRegression_constructor()
+    # test parameter shapes
+    model = PoissonRegression(input_dim=3)
+    @test size(model.β, 1) == 4
 
-    # Check if the fitted coefficients are reasonable
-    @test length(est_model.β) == 3
-    @test isapprox(est_model.β, true_model.β, atol=0.5)
+    model = PoissonRegression(input_dim=3, include_intercept=false)
+    @test size(model.β, 1) == 3
+
+    # test default values
+    model = PoissonRegression(input_dim=3)
+    @test model.λ == 0.0
+    @test model.include_intercept == true
+    @test model.β == zeros(4)
+end
+
+# check the objective_grad! is close to numerical gradient
+function test_PoissonRegression_objective_gradient()
+    n = 1000
+    true_model, X, y = PoissonRegression_simulation(n)
+
+
+    est_model = PoissonRegression(input_dim=2)
     
-    # Check log likelihood
-    loglik = SSM.loglikelihood(est_model, X, y)
-    @test loglik < 0
 
-    #test loglikelihood on a single point
-    loglik = SSM.loglikelihood(est_model, X[1, :], y[1])
-    @test loglik < 0
-end
+    # test if analytical gradient is close to numerical gradient
+    objective = define_objective(est_model, X, y)
+    objective_grad! = define_objective_gradient(est_model, X, y)
+    test_gradient(objective, objective_grad!, ones(3, 2))
 
-function test_PoissonRegression_empty_model()
-    model = PoissonRegression()
-    @test isempty(model.β)
-end
-
-function test_PoissonRegression_intercept()
-    # Generate synthetic data
-    X = randn(1000, 2)
-    β=[0.5, -1.2, 2.3]
-    true_model = PoissonRegression(β, true)
-    y = SSM.sample(true_model, X)
-
-    # Initialize and fit the model without intercept 
-    est_model = PoissonRegression(include_intercept=false)
-    fit!(est_model, X, y)
-
-    # Check if the fitted coefficients are reasonable
-    @test length(est_model.β) == 2
-end
-
-function test_Poisson_ll_gradient()
-    # Generate synthetic data
-    X = randn(1000, 2)
-    β=[0.5, -1.2, 2.3]
-    true_model = PoissonRegression(β, true)
-    y = SSM.sample(true_model, X)
-
-
-    # initialize model
-    est_model = PoissonRegression()
-    est_model.β = [0., 0., 0.]
-
-
-    function objective(β, X, w)
-        temp_model = PoissonRegression()
-        temp_model.β = β
-        temp_model.λ = est_model.λ
-        return -SSM.loglikelihood(temp_model, X, y, w) + (temp_model.λ * sum(temp_model.β.^2))
-    end
-
-
-    grad = ForwardDiff.gradient(x -> objective(x, X, ones(1000)), est_model.β)
-
-
-    # calculate the gradient manually
-    grad_analytic = SSM.gradient!([0., 0., 0.], est_model, X, y)
-
-
-    # check if the gradients are close
-    @test isapprox(grad, grad_analytic, atol=1e-6)
 
 
     # now do the same with Weights
     weights = rand(1000)
-    grad = ForwardDiff.gradient(x -> objective(x, X, weights), est_model.β)
-    grad_analytic = SSM.gradient!([0., 0., 0.], est_model, X, y, weights)
-    @test isapprox(grad, grad_analytic, atol=1e-6)
+    objective = define_objective(est_model, X, y, weights)
+    objective_grad! = define_objective_gradient(est_model, X, y, weights)
+    test_gradient(objective, objective_grad!, ones(3, 2))
+
 
 
     # finally test when λ is not 0
-    est_model = PoissonRegression(λ=0.1)
-    est_model.β = rand(3)
+    est_model.λ = 0.1
+    objective = define_objective(est_model, X, y)
+    objective_grad! = define_objective_gradient(est_model, X, y)
+    test_gradient(objective, objective_grad!, ones(3, 2))
+end
 
-    grad = ForwardDiff.gradient(x -> objective(x, X, ones(1000)), est_model.β)
-    grad_analytic = SSM.gradient!([0., 0., 0.], est_model, X, y)
-    @test isapprox(grad, grad_analytic, atol=1e-6)
+# check that a fitted model has a higher loglikelihood than the true model
+function test_PoissonRegression_standard_fit()
+    # Generate synthetic data
+    n = 5000
+    true_model, X, y = PoissonRegression_simulation(n)
+
+    # Initialize and fit the model
+    est_model = PoissonRegression(input_dim=2)
+    fit!(est_model, X, y)
+
+    # confirm that the fitted model has a higher loglikelihood than the true model
+    @test SSM.loglikelihood(est_model, X, y) >= SSM.loglikelihood(true_model, X, y)
+
+    # confirm that the fitted model has similar β values to the true model
+    @test isapprox(est_model.β, true_model.β, atol=0.5)
+end
+
+# check that a regularized model has β values closer to a normal gaussian and the model doesn't perform too much worse
+function test_PoissonRegression_regularized_fit()
+    λ = 0.1
+
+    # Generate synthetic data
+    n = 1000
+    true_model, X, y = PoissonRegression_simulation(n)
+
+    # Initialize and fit an *unregularized* model
+    est_model = PoissonRegression(input_dim=2)
+    fit!(est_model, X, y)
+
+    # Initialize and fit a regularized model
+    regularized_est_model = PoissonRegression(input_dim=2, λ=λ)
+    fit!(regularized_est_model, X, y)
+
+
+    # confirm that the regularized model is not too much worse
+    @test isapprox(
+        SSM.loglikelihood(regularized_est_model, X, y), 
+        SSM.loglikelihood(est_model, X, y), 
+        atol=0.1
+        )
+
+    # confirm thet the regularized model's parameters are closer to standard normal Distributions
+    θ_prior = MvNormal(zeros(3), Matrix{Float64}(I, 3, 3))
+    @test logpdf(θ_prior, regularized_est_model.β) > logpdf(θ_prior, est_model.β)
+
 end
