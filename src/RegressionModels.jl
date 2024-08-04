@@ -743,6 +743,34 @@ mutable struct AutoRegression <: RegressionModel
     innerGaussianRegression::GaussianRegression
 end
 
+# define getters for innerGaussianRegression fields
+function Base.getproperty(model::AutoRegression, sym::Symbol)
+    if sym === :β
+        return model.innerGaussianRegression.β
+    elseif sym === :Σ
+        return model.innerGaussianRegression.Σ
+    elseif sym === :include_intercept
+        return model.innerGaussianRegression.include_intercept
+    elseif sym === :λ
+        return model.innerGaussianRegression.λ
+    else # fallback to getfield
+        return getfield(model, sym)
+    end
+end
+
+# define setters for innerGaussianRegression fields
+function Base.setproperty!(model::AutoRegression, sym::Symbol, value)
+    if sym === :β
+        model.innerGaussianRegression.β = value
+    elseif sym === :Σ
+        model.innerGaussianRegression.Σ = value
+    elseif sym === :λ
+        model.innerGaussianRegression.λ = value
+    else # fallback to setfield!
+        setfield!(model, sym, value)
+    end
+end
+
 function validate_model(model::AutoRegression)
     @assert model.innerGaussianRegression.input_dim == model.data_dim * model.order
     @assert model.innerGaussianRegression.output_dim == model.data_dim
