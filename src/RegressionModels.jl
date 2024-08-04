@@ -85,9 +85,9 @@ Y = sample(model, Φ)
 ```
 """
 function sample(model::GaussianRegression, Φ::Matrix{<:Real})
-    # confirm that the model has been fit
-    @assert !all(model.β .== 0) "Coefficient matrix is all zeros. Did you forget to initialize?"
-    @assert isposdef(model.Σ) "Covariance matrix is not positive definite. Did you forget to initialize?"
+    # confirm that the model has valid parameters
+    validate_model(model)
+
     # add intercept if specified
     if model.include_intercept
         Φ = hcat(ones(size(Φ, 1)), Φ)
@@ -116,6 +116,9 @@ loglikelihood(model, Φ, Y)
 ```
 """
 function loglikelihood(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
+    # confirm that the model has valid parameters
+    validate_model(model)
+
     # confirm dimensions of Φ and Y are correct
     @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
     @assert size(Y, 2) == model.output_dim "Number of columns in Y must be equal to the number of targets in the model."
@@ -216,7 +219,6 @@ update_variance!(model, Φ, Y)
 ```
 """
 function update_variance!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    # WARNING: asserts may slow down computation. Remove later?
 
     # confirm dimensions of Φ and Y are correct
     @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
@@ -265,6 +267,9 @@ fit!(model, Φ, Y)
 ```
 """
 function fit!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    # confirm that the model has valid parameters
+    validate_model(model)
+
     # confirm dimensions of Φ and Y are correct
     @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
     @assert size(Y, 2) == model.output_dim "Number of columns in Y must be equal to the number of targets in the model."
@@ -283,6 +288,9 @@ function fit!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, 
     # update parameters
     model.β = result.minimizer
     update_variance!(model, Φ, Y, w)
+
+    # confirm that the model has valid parameters
+    validate_model(model)
 end
 
 
@@ -342,6 +350,9 @@ end
 
 
 function sample(model::BernoulliRegression, Φ::Matrix{<:Real})
+    # confirm that the model has valid parameters
+    validate_model(model)
+
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # add intercept if specified
@@ -378,8 +389,9 @@ loglikelihood(model, Φ, Y)
 ```
 """
 function loglikelihood(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    # confirm that the model has been fit
-    @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
+    # confirm that the model has valid parameters
+    validate_model(model)
+
     # add intercept if specified and not already included
     if model.include_intercept && size(Φ, 2) == length(model.β) - 1 
         Φ = hcat(ones(size(Φ, 1)), Φ)
@@ -471,6 +483,9 @@ fit!(model, Φ, Y, w)
 ```
 """
 function fit!(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    # confirm that the model has valid parameters
+    validate_model(model)
+
     # minimize objective
     objective = define_objective(model, Φ, Y, w)
     objective_grad! = define_objective_gradient(model, Φ, Y, w)
@@ -479,6 +494,9 @@ function fit!(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real},
 
     # update parameters
     model.β = result.minimizer
+
+    # confirm that the model has valid parameters
+    validate_model(model)
 end
     
 """
@@ -531,8 +549,9 @@ end
 
 
 function sample(model::PoissonRegression, Φ::Matrix{<:Real})
-    # confirm that the model has been fit
-    @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
+    # confirm that the model has valid parameters
+    validate_model(model)
+
     # add intercept if specified
     if model.include_intercept && size(Φ, 2) == length(model.β) - 1
         Φ = hcat(ones(size(Φ, 1)), Φ)
@@ -567,6 +586,9 @@ loglikelihood(model, Φ, Y)
 ```
 """
 function loglikelihood(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    # confirm that the model has valid parameters
+    validate_model(model)
+
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # add intercept if specified
@@ -695,6 +717,9 @@ fit!(model, Φ, Y, w)
 ```
 """
 function fit!(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    # confirm that the model has valid parameters
+    validate_model(model)
+
     # minimize objective
     objective = define_objective(model, Φ, Y, w)
     objective_grad! = define_objective_gradient(model, Φ, Y, w)
@@ -703,6 +728,9 @@ function fit!(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w
 
     # update parameters
     model.β = result.minimizer
+
+    # confirm that the model has valid parameters
+    validate_model(model)
 end
 
 
