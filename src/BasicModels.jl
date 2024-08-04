@@ -7,12 +7,25 @@ mutable struct Gaussian <: BasicModel
     data_dim::Int # dimension of the data
     μ::Vector{<:Real}  # mean 
     Σ::Matrix{<:Real}  # covariance matrix
+end
 
-    function Gaussian(; data_dim::Int, μ::Vector{<:Real}=zeros(data_dim), Σ::Matrix{<:Real}=Matrix{Float64}(I, data_dim, data_dim))
-        @assert size(Σ) == (data_dim, data_dim) "Σ must be of size (data_dim, data_dim)"
-        @assert length(μ) == data_dim "μ vector must be of length data_dim"
-        new(data_dim, μ, Σ)
-    end
+function validate_model(model::Gaussian)
+    @assert size(model.μ, 1) == model.data_dim
+
+    @assert size(model.Σ) == (model.data_dim, model.data_dim)
+    @assert valid_Σ(model.Σ)
+end
+
+function Gaussian(; 
+    data_dim::Int, 
+    μ::Vector{<:Real}=zeros(data_dim), 
+    Σ::Matrix{<:Real}=Matrix{Float64}(I, data_dim, data_dim))
+    
+    model = Gaussian(data_dim, μ, Σ)
+    
+    validate_model(model)
+
+    return model
 end
 
 function sample(model::Gaussian, n::Int)

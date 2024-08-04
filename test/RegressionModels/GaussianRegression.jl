@@ -5,7 +5,7 @@ function GaussianRegression_simulation(n::Int)
     β = [3 3;
         1 0.5;
         0.5 1]
-    true_model = GaussianRegression(β, Σ, input_dim=2, output_dim=2)
+    true_model = GaussianRegression(β=β, Σ=Σ, input_dim=2, output_dim=2)
     Y = SSM.sample(true_model, Φ)
 
     return true_model, Φ, Y

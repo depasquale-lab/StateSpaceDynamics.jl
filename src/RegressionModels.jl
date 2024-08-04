@@ -34,27 +34,35 @@ mutable struct GaussianRegression <: RegressionModel
     Σ::Matrix{<:Real} # covariance matrix of the model 
     include_intercept::Bool # whether to include an intercept term; if true, the first column of β is assumed to be the intercept/bias
     λ::Float64 # regularization parameter
-  
-    function GaussianRegression(; input_dim::Int, output_dim::Int, include_intercept::Bool = true, λ::Float64=0.0)
-        if include_intercept
-            new(input_dim, output_dim, zeros(input_dim + 1, output_dim), Matrix{Float64}(I, output_dim, output_dim), include_intercept, λ)
-        else
-            new(input_dim, output_dim, zeros(input_dim, output_dim), Matrix{Float64}(I, output_dim, output_dim), include_intercept, λ)
-        end
+end
+
+
+function validate_model(model::GaussianRegression)
+    if model.include_intercept
+        @assert size(model.β) == (model.input_dim + 1, model.output_dim) "β must be of size (input_dim + 1, output_dim) if an intercept/bias is included."
+    else
+        @assert size(model.β) == (model.input_dim, model.output_dim)
     end
+
+    @assert size(model.Σ) == (model.output_dim, model.output_dim)
+    @assert valid_Σ(model.Σ)
+    @assert model.λ >= 0.0
+end
+
+
+function GaussianRegression(; 
+    input_dim::Int, 
+    output_dim::Int, 
+    include_intercept::Bool = true, 
+    β::Matrix{<:Real} = if include_intercept zeros(input_dim + 1, output_dim) else zeros(input_dim, output_dim) end,
+    Σ::Matrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim),
+    λ::Float64 = 0.0)
+
+    new_model = GaussianRegression(input_dim, output_dim, β, Σ, include_intercept, λ)
+
+    validate_model(new_model)
     
-    function GaussianRegression(β::Matrix{<:Real}, Σ::Matrix{<:Real}; input_dim::Int, output_dim::Int, include_intercept::Bool = true, λ::Float64=0.0)
-        if include_intercept
-            @assert size(β) == (input_dim + 1, output_dim)
-        else
-            @assert size(β) == (input_dim, output_dim)
-        end
-
-        
-        @assert size(Σ) == (output_dim, output_dim)
-
-        new(input_dim, output_dim, β, Σ, include_intercept, λ)
-    end
+    return new_model
 end
 
 """
