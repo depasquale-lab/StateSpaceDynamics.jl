@@ -311,27 +311,34 @@ mutable struct BernoulliRegression <: RegressionModel
     β::Vector{<:Real}
     include_intercept::Bool
     λ::Float64
-    # Empty constructor
-    function BernoulliRegression(; input_dim::Int, include_intercept::Bool = true, λ::Float64=0.0) 
-        @assert λ >= 0.0 "Regularization parameter must be non-negative."
-        if include_intercept
-            new(input_dim, zeros(input_dim + 1), include_intercept, λ)
-        else
-            new(input_dim, zeros(input_dim), include_intercept, λ)
-        end
-    end
-    # Parametric Constructor
-    function BernoulliRegression(β::Vector{<:Real}; input_dim::Int, include_intercept::Bool = true, λ::Float64=0.0)
-        @assert λ >= 0.0 "Regularization parameter must be non-negative."
-        if include_intercept
-            @assert size(β, 1) == input_dim + 1
-        else
-            @assert size(β, 1) == input_dim
-        end
-
-        new(input_dim, β, include_intercept, λ)
-    end
 end
+
+
+function validate_model(model::BernoulliRegression)
+    if model.include_intercept
+        @assert size(model.β, 1) == model.input_dim + 1 "β must be of size (input_dim + 1) if an intercept/bias is included."
+    else
+        @assert size(model.β, 1) == model.input_dim
+    end
+
+    @assert model.λ >= 0.0
+end
+
+function BernoulliRegression(; 
+    input_dim::Int, 
+    include_intercept::Bool = true, 
+    β::Vector{<:Real} = if include_intercept zeros(input_dim + 1) else zeros(input_dim) end,
+    λ::Float64 = 0.0)
+
+    new_model = BernoulliRegression(input_dim, β, include_intercept, λ)
+
+    validate_model(new_model)
+    
+    return new_model
+end
+
+
+
 
 
 function sample(model::BernoulliRegression, Φ::Matrix{<:Real})
@@ -497,26 +504,29 @@ mutable struct PoissonRegression <: RegressionModel
     β::Vector{<:Real}
     include_intercept::Bool
     λ::Float64
-    # Empty constructor
-    function PoissonRegression(; input_dim::Int, include_intercept::Bool = true, λ::Float64=0.0) 
-        @assert λ >= 0.0 "Regularization parameter must be non-negative."
-        if include_intercept
-            new(input_dim, zeros(input_dim + 1), include_intercept, λ)
-        else
-            new(input_dim, zeros(input_dim), include_intercept, λ)
-        end
-    end
-    # Parametric Constructor
-    function PoissonRegression(β::Vector{<:Real}; input_dim::Int, include_intercept::Bool = true, λ::Float64=0.0)
-        @assert λ >= 0.0 "Regularization parameter must be non-negative."
-        if include_intercept
-            @assert size(β, 1) == input_dim + 1
-        else
-            @assert size(β, 1) == input_dim
-        end
+end
 
-        new(input_dim, β, include_intercept, λ)
+function validate_model(model::PoissonRegression)
+    if model.include_intercept
+        @assert size(model.β, 1) == model.input_dim + 1 "β must be of size (input_dim + 1) if an intercept/bias is included."
+    else
+        @assert size(model.β, 1) == model.input_dim
     end
+
+    @assert model.λ >= 0.0
+end
+
+function PoissonRegression(; 
+    input_dim::Int, 
+    include_intercept::Bool = true, 
+    β::Vector{<:Real} = if include_intercept zeros(input_dim + 1) else zeros(input_dim) end,
+    λ::Float64 = 0.0)
+
+    new_model = PoissonRegression(input_dim, β, include_intercept, λ)
+
+    validate_model(new_model)
+    
+    return new_model
 end
 
 

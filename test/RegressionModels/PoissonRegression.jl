@@ -2,7 +2,7 @@ function PoissonRegression_simulation(n::Int)
     # Generate synthetic data
     Φ = randn(n, 2)
     β = [0.5, -1.2, 2.3]
-    true_model = PoissonRegression(β, input_dim=2)
+    true_model = PoissonRegression(β=β, input_dim=2)
     Y = SSM.sample(true_model, Φ)
 
     return true_model, Φ, Y

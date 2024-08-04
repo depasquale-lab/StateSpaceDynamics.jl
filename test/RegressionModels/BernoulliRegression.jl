@@ -2,7 +2,7 @@ function BernoulliRegression_simulation(n::Int)
     # Generate synthetic data
     Φ = randn(n, 2)
     β = [3, 1, 0.5]
-    true_model = BernoulliRegression(β, input_dim=2)
+    true_model = BernoulliRegression(β=β, input_dim=2)
     Y = SSM.sample(true_model, Φ)
 
     return true_model, Φ, Y
