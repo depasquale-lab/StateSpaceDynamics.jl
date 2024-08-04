@@ -2,13 +2,11 @@ function AutoRegression_simulation(n::Int)
     data_dim = 2
     order = 1
 
-    true_model = AutoRegression(data_dim = data_dim, order = order, include_intercept = false)
-
     # make a rotation matrix for pi/20 radians
     θ = π/20
-    R = [cos(θ) -sin(θ); sin(θ) cos(θ)]
+    β = [cos(θ) -sin(θ); sin(θ) cos(θ)]
 
-    set_params!(true_model, βs = [R*1], Σ = Matrix{Float64}(I, data_dim, data_dim))
+    true_model = AutoRegression(order=order, data_dim=data_dim, β=β, include_intercept=false)
 
     Y_prev = randn(order, data_dim)
     Y = SSM.sample(true_model, Y_prev, n)

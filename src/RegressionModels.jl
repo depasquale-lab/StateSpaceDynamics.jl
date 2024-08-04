@@ -741,16 +741,36 @@ mutable struct AutoRegression <: RegressionModel
     data_dim::Int
     order::Int
     innerGaussianRegression::GaussianRegression
+end
 
-    function AutoRegression(; data_dim::Int, order::Int, include_intercept::Bool = true, λ::Float64=0.0)
-        innerGaussianRegression = GaussianRegression(input_dim = data_dim * order, output_dim = data_dim, include_intercept = include_intercept, λ = λ)
-        new(data_dim, order, innerGaussianRegression)
-    end
+function validate_model(model::AutoRegression)
+    @assert model.innerGaussianRegression.input_dim == model.data_dim * model.order
+    @assert model.innerGaussianRegression.output_dim == model.data_dim
 
-    function AutoRegression(β::Matrix{<:Real}, Σ::Matrix{<:Real}; data_dim::Int, order::Int, include_intercept::Bool = true, λ::Float64=0.0)
-        innerGaussianRegression = GaussianRegression(β, Σ, input_dim = data_dim * order, output_dim = data_dim, include_intercept = include_intercept, λ = λ)
-        new(data_dim, order, innerGaussianRegression)
-    end
+    validate_model(model.innerGaussianRegression)
+end
+
+function AutoRegression(; 
+    data_dim::Int, 
+    order::Int, 
+    include_intercept::Bool = true, 
+    β::Matrix{<:Real} = if include_intercept zeros(data_dim * order + 1, data_dim) else zeros(data_dim * order, data_dim) end,
+    Σ::Matrix{<:Real} = Matrix{Float64}(I, data_dim, data_dim),
+    λ::Float64=0.0)
+
+    innerGaussianRegression = GaussianRegression(
+        input_dim=data_dim * order, 
+        output_dim=data_dim, 
+        β=β,
+        Σ=Σ,
+        include_intercept=include_intercept, 
+        λ=λ)
+
+    model = AutoRegression(data_dim, order, innerGaussianRegression)
+
+    validate_model(model)
+
+    return model
 end
 
 function AR_to_Gaussian_data(Y_prev::Matrix{<:Real})
@@ -783,30 +803,6 @@ function AR_to_Gaussian_data(Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
     return Φ_gaussian
 end
 
-# setting Vector{Matrix{Float64}} to Vector{Matrix{<:Real}} throws an error for some reason...
-function set_params!(model::AutoRegression; βs::Vector{Matrix{Float64}} = Vector{Matrix{Float64}}(), intercept::Vector{<:Real} = Vector{Float64}(), Σ::Matrix{<:Real} = Matrix{Float64}())
-    if length(βs) != 0
-        @assert length(βs) == model.order
-
-        if model.innerGaussianRegression.include_intercept
-            model.innerGaussianRegression.β[2:end, :] = vcat([βs[i] for i in 1:length(βs)]...)
-        else
-            model.innerGaussianRegression.β = vcat([βs[i] for i in 1:length(βs)]...)
-        end
-    end
-
-    # check if intercept is empty
-    if length(intercept) != 0
-        @assert length(intercept) == model.data_dim
-        @assert model.innerGaussianRegression.include_intercept
-        model.innerGaussianRegression.β[1, :] = intercept
-    end
-
-    if size(Σ) != (0, 0)
-        @assert size(Σ) == (model.data_dim, model.data_dim)
-        model.innerGaussianRegression.Σ = Σ
-    end
-end
 
 function sample(model::AutoRegression, Y_prev::Matrix{<:Real})
     Φ_gaussian = AR_to_Gaussian_data(Y_prev)
@@ -814,6 +810,9 @@ function sample(model::AutoRegression, Y_prev::Matrix{<:Real})
 end
 
 function sample(model::AutoRegression, Y_prev::Matrix{<:Real}, n::Int)
+    # confirm that the model has valid parameters
+    validate_model(model)
+
     Y = zeros(n, model.data_dim)
 
     for i in 1:n
@@ -832,6 +831,9 @@ function sample(model::AutoRegression, Y_prev::Matrix{<:Real}, n::Int)
 end
 
 function loglikelihood(model::AutoRegression, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
+    # confirm that the model has valid parameters
+    validate_model(model)
+
     Φ_gaussian = AR_to_Gaussian_data(Y_prev, Y)
 
     return loglikelihood(model.innerGaussianRegression, Φ_gaussian, Y)
@@ -839,7 +841,13 @@ end
 
 
 function fit!(model::AutoRegression, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
+    # confirm that the model has valid parameters
+    validate_model(model)
+
     Φ_gaussian = AR_to_Gaussian_data(Y_prev, Y)
 
-    return fit!(model.innerGaussianRegression, Φ_gaussian, Y)
+    fit!(model.innerGaussianRegression, Φ_gaussian, Y)
+
+    # confirm that the model has valid parameters
+    validate_model(model)
 end
