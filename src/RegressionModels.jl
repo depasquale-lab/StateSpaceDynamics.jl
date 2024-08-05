@@ -49,6 +49,21 @@ function validate_model(model::GaussianRegression)
     @assert model.λ >= 0.0
 end
 
+function validate_data(model::GaussianRegression, Φ=nothing, Y=nothing, w=nothing)
+    if !isnothing(Φ)
+        @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the input dimension of the model."
+    end
+    if !isnothing(Y)
+        @assert size(Y, 2) == model.output_dim "Number of columns in Y must be equal to the output dimension of the model."
+    end
+    if !isnothing(w)
+        @assert length(w) == size(Y, 1) "Length of w must be equal to the number of observations in Y."
+    end
+    if !isnothing(Φ) && !isnothing(Y)
+        @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
+    end
+end
+
 
 function GaussianRegression(; 
     input_dim::Int, 
@@ -88,6 +103,8 @@ function sample(model::GaussianRegression, Φ::Matrix{<:Real})
     # confirm that the model has valid parameters
     validate_model(model)
 
+    validate_data(model, Φ)
+
     # add intercept if specified
     if model.include_intercept
         Φ = hcat(ones(size(Φ, 1)), Φ)
@@ -115,14 +132,11 @@ Y = reshape(Y, 100, 1)
 loglikelihood(model, Φ, Y)
 ```
 """
-function loglikelihood(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
+function loglikelihood(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}; observation_wise::Bool=false)
     # confirm that the model has valid parameters
     validate_model(model)
 
-    # confirm dimensions of Φ and Y are correct
-    @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
-    @assert size(Y, 2) == model.output_dim "Number of columns in Y must be equal to the number of targets in the model."
-    @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the number of features in the model."
+    validate_data(model, Φ, Y)
 
 
 
@@ -137,20 +151,26 @@ function loglikelihood(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{
     # calculate log likelihood
     residuals = Y - Φ * model.β
 
-    log_likelihood = -0.5 * size(Φ, 1) * size(Φ, 2) * log(2π) - 0.5 * size(Φ, 1) * logdet(model.Σ) - 0.5 * sum(residuals .* (Σ_inv * residuals')')
+    if !observation_wise
+        loglikelihood = -0.5 * size(Φ, 1) * size(Φ, 2) * log(2π) - 0.5 * size(Φ, 1) * logdet(model.Σ) - 0.5 * sum(residuals .* (Σ_inv * residuals')')
+        return loglikelihood
+    else 
+        obs_wise_loglikelihood = zeros(size(Φ, 1))
 
-    return log_likelihood
+        # calculate observation wise loglikelihood (a vector of loglikelihoods for each observation)
+        @threads for i in 1:size(Φ, 1)
+            obs_wise_loglikelihood[i] = -0.5 * size(Φ, 2) * log(2π) - 0.5 * logdet(model.Σ) - 0.5 * sum(residuals[i, :] .* (Σ_inv * residuals[i, :]))
+        end
+
+        return obs_wise_loglikelihood
+    end
 end
 
 
-
+# assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
 function define_objective(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
 
-    # confirm dimensions of Φ and Y are correct
-    @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
-    @assert size(Y, 2) == model.output_dim "Number of columns in Y must be equal to the number of targets in the model."
-    @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the number of features in the model."
+    validate_data(model, Φ, Y, w)
 
     # add intercept if specified
     if model.include_intercept
@@ -173,15 +193,7 @@ end
 
 
 function define_objective_gradient(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
-
-    # confirm dimensions of Φ and Y are correct
-    @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
-    @assert size(Y, 2) == model.output_dim "Number of columns in Y must be equal to the number of targets in the model."
-    @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the number of features in the model."
-
-    # confirm the size of w is correct
-    @assert length(w) == size(Y, 1) "Length of w must be equal to the number of observations in Y."
+    validate_data(model, Φ, Y, w)
 
     # add intercept if specified
     if model.include_intercept
@@ -219,14 +231,10 @@ update_variance!(model, Φ, Y)
 ```
 """
 function update_variance!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    # confirm that the model has valid parameters
+    validate_model(model)
 
-    # confirm dimensions of Φ and Y are correct
-    @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
-    @assert size(Y, 2) == model.output_dim "Number of columns in Y must be equal to the number of targets in the model."
-    @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the number of features in the model."
-
-    # confirm the size of w is correct
-    @assert length(w) == size(Y, 1) "Length of w must be equal to the number of observations in Y."
+    validate_data(model, Φ, Y, w)
 
 
     # add intercept if specified
@@ -269,11 +277,7 @@ fit!(model, Φ, Y)
 function fit!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # confirm that the model has valid parameters
     validate_model(model)
-
-    # confirm dimensions of Φ and Y are correct
-    @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
-    @assert size(Y, 2) == model.output_dim "Number of columns in Y must be equal to the number of targets in the model."
-    @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the number of features in the model."
+    validate_data(model, Φ, Y, w)
 
     # confirm the size of w is correct
     @assert length(w) == size(Y, 1) "Length of w must be equal to the number of observations in Y."
@@ -332,6 +336,21 @@ function validate_model(model::BernoulliRegression)
     @assert model.λ >= 0.0
 end
 
+function validate_data(model::BernoulliRegression, Φ=nothing, Y=nothing, w=nothing)
+    if !isnothing(Φ)
+        @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the input dimension of the model."
+    end
+    if !isnothing(Y)
+        @assert size(Y, 2) == 1 "BernoulliRegression Y data should be a single column."
+    end
+    if !isnothing(w)
+        @assert length(w) == size(Y, 1) "Length of w must be equal to the number of observations in Y."
+    end
+    if !isnothing(Φ) && !isnothing(Y)
+        @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
+    end
+end
+
 function BernoulliRegression(; 
     input_dim::Int, 
     include_intercept::Bool = true, 
@@ -352,6 +371,7 @@ end
 function sample(model::BernoulliRegression, Φ::Matrix{<:Real})
     # confirm that the model has valid parameters
     validate_model(model)
+    validate_data(model, Φ)
 
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
@@ -388,28 +408,33 @@ Y = rand(Bool, 100)
 loglikelihood(model, Φ, Y)
 ```
 """
-function loglikelihood(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+function loglikelihood(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)); observation_wise::Bool=false)
     # confirm that the model has valid parameters
     validate_model(model)
+    validate_data(model, Φ, Y, w)
 
     # add intercept if specified and not already included
     if model.include_intercept && size(Φ, 2) == length(model.β) - 1 
         Φ = hcat(ones(size(Φ, 1)), Φ)
     end
+
     # calculate log likelihood
     p = logistic.(Φ * model.β)
-    
-    return sum(w .* (Y .* log.(p) .+ (1 .- Y) .* log.(1 .- p)))
+
+    obs_wise_loglikelihood = w .* (Y .* log.(p) .+ (1 .- Y) .* log.(1 .- p))
+
+    if !observation_wise
+        
+        return sum(obs_wise_loglikelihood)
+    else
+        return obs_wise_loglikelihood
+    end
 end
 
 
 function define_objective(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    # assume covariance is the identitY, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
-
-    # confirm dimensions of Φ and Y are correct
-    @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
-    @assert size(Y, 2) == 1 "BernoulliRegression Y data should be a single column."
-    @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the number of features in the model."
+    validate_model(model)
+    validate_data(model, Φ, Y, w)
 
     # add intercept if specified
     if model.include_intercept
@@ -430,14 +455,8 @@ end
 
 
 function define_objective_gradient(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
-
-    # confirm dimensions of Φ and Y are correct
-    @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
-    @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the number of features in the model."
-
-    # confirm the size of w is correct
-    @assert length(w) == size(Y, 1) "Length of w must be equal to the number of observations in Y."
+    validate_model(model)
+    validate_data(model, Φ, Y, w)
 
     # add intercept if specified
     if model.include_intercept
@@ -485,6 +504,7 @@ fit!(model, Φ, Y, w)
 function fit!(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # confirm that the model has valid parameters
     validate_model(model)
+    validate_data(model, Φ, Y, w)
 
     # minimize objective
     objective = define_objective(model, Φ, Y, w)
@@ -534,6 +554,21 @@ function validate_model(model::PoissonRegression)
     @assert model.λ >= 0.0
 end
 
+function validate_data(model::PoissonRegression, Φ=nothing, Y=nothing, w=nothing)
+    if !isnothing(Φ)
+        @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the input dimension of the model."
+    end
+    if !isnothing(Y)
+        @assert size(Y, 2) == 1 "PoissonRegression Y data should be a single column."
+    end
+    if !isnothing(w)
+        @assert length(w) == size(Y, 1) "Length of w must be equal to the number of observations in Y."
+    end
+    if !isnothing(Φ) && !isnothing(Y)
+        @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
+    end
+end
+
 function PoissonRegression(; 
     input_dim::Int, 
     include_intercept::Bool = true, 
@@ -551,6 +586,7 @@ end
 function sample(model::PoissonRegression, Φ::Matrix{<:Real})
     # confirm that the model has valid parameters
     validate_model(model)
+    validate_data(model, Φ)
 
     # add intercept if specified
     if model.include_intercept && size(Φ, 2) == length(model.β) - 1
@@ -585,9 +621,10 @@ Y = rand(Poisson(1), 100)
 loglikelihood(model, Φ, Y)
 ```
 """
-function loglikelihood(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+function loglikelihood(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)); observation_wise::Bool=false)
     # confirm that the model has valid parameters
     validate_model(model)
+    validate_data(model, Φ, Y, w)
 
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
@@ -599,17 +636,19 @@ function loglikelihood(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<
     # calculate log likelihood
     λ = exp.(Φ * model.β)
 
-    return sum(w .* (Y .* log.(λ) .- λ .- loggamma.(Int.(Y) .+ 1)))
+    obs_wise_loglikelihood = w .* (Y .* log.(λ) .- λ .- loggamma.(Int.(Y) .+ 1))
+
+    if !observation_wise
+        return sum(obs_wise_loglikelihood)
+    else
+        return obs_wise_loglikelihood
+    end
 end
 
 
 function define_objective(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
-
-    # confirm dimensions of Φ and Y are correct
-    @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
-    @assert size(Y, 2) == 1 "PoissonRegression Y data should be a single column."
-    @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the number of features in the model."
+    validate_model(model)
+    validate_data(model, Φ, Y, w)
 
     # add intercept if specified
     if model.include_intercept
@@ -629,14 +668,8 @@ function define_objective(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matri
 end
 
 function define_objective_gradient(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
-
-    # confirm dimensions of Φ and Y are correct
-    @assert size(Φ, 1) == size(Y, 1) "Number of rows (number of observations) in Φ and Y must be equal."
-    @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the number of features in the model."
-
-    # confirm the size of w is correct
-    @assert length(w) == size(Y, 1) "Length of w must be equal to the number of observations in Y."
+    validate_model(model)
+    validate_data(model, Φ, Y, w)
 
     # add intercept if specified
     if model.include_intercept
@@ -719,6 +752,7 @@ fit!(model, Φ, Y, w)
 function fit!(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # confirm that the model has valid parameters
     validate_model(model)
+    validate_data(model, Φ, Y, w)
 
     # minimize objective
     objective = define_objective(model, Φ, Y, w)
@@ -776,6 +810,19 @@ function validate_model(model::AutoRegression)
     @assert model.innerGaussianRegression.output_dim == model.data_dim
 
     validate_model(model.innerGaussianRegression)
+end
+
+function validate_data(model::AutoRegression, Y_prev=nothing, Y=nothing, w=nothing)
+    if !isnothing(Y_prev)
+        @assert size(Y_prev, 2) == model.data_dim "Number of columns in Y_prev must be equal to the data dimension of the model."
+        @assert size(Y_prev, 1) == model.order "Number of rows in Y_prev must be equal to the order of the model."
+    end
+    if !isnothing(Y)
+        @assert size(Y, 2) == model.data_dim "Number of columns in Y must be equal to the data dimension of the model."
+    end
+    if !isnothing(w)
+        @assert length(w) == size(Y, 1) "Length of w must be equal to the number of observations in Y."
+    end
 end
 
 function AutoRegression(; 
@@ -840,6 +887,7 @@ end
 function sample(model::AutoRegression, Y_prev::Matrix{<:Real}, n::Int)
     # confirm that the model has valid parameters
     validate_model(model)
+    validate_data(model, Y_prev)
 
     Y = zeros(n, model.data_dim)
 
@@ -858,23 +906,25 @@ function sample(model::AutoRegression, Y_prev::Matrix{<:Real}, n::Int)
     return Y
 end
 
-function loglikelihood(model::AutoRegression, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
+function loglikelihood(model::AutoRegression, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}; observation_wise::Bool=false)
     # confirm that the model has valid parameters
     validate_model(model)
+    validate_data(model, Y_prev, Y)
 
     Φ_gaussian = AR_to_Gaussian_data(Y_prev, Y)
 
-    return loglikelihood(model.innerGaussianRegression, Φ_gaussian, Y)
+    return loglikelihood(model.innerGaussianRegression, Φ_gaussian, Y; observation_wise=observation_wise)
 end
 
 
-function fit!(model::AutoRegression, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
+function fit!(model::AutoRegression, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # confirm that the model has valid parameters
     validate_model(model)
+    validate_data(model, Y_prev, Y, w)
 
     Φ_gaussian = AR_to_Gaussian_data(Y_prev, Y)
 
-    fit!(model.innerGaussianRegression, Φ_gaussian, Y)
+    fit!(model.innerGaussianRegression, Φ_gaussian, Y, w)
 
     # confirm that the model has valid parameters
     validate_model(model)

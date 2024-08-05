@@ -614,13 +614,3 @@ end
 mutable struct fLDS <: DynamicalSystem
     #TODO: Implement fLDS
 end
-
-# SLDS Definition
-mutable struct SLDS <: AbstractHMM
-    #TODO: Implement SLDS
-end
-
-#rSLDS Definition
-mutable struct rSLDS <: AbstractHMM
-    #TODO: Implement rSLDS
-end
