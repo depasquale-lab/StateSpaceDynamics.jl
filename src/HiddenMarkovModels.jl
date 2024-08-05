@@ -10,8 +10,10 @@ end
 function validate_model(model::HiddenMarkovModel)
     # check that the transition matrix is the proper shape
     @assert size(model.A) == (model.K, model.K)
+    @assert isapprox(sum(model.A, dims=2), ones(model.K))
     # check that the initial state distribution is the same length as the number of states
     @assert model.K == length(model.πₖ)
+    @assert sum(model.πₖ) ≈ 1.0
     # check that the number of states is equal to the number of emission models
     @assert model.K == length(model.B)
     # check that all emission model are the same type
@@ -255,8 +257,6 @@ function fit!(model::HiddenMarkovModel, data...; max_iters::Int=100, tol::Float6
     # confirm data is in the correct format
     validate_data(model, data...)
 
-    T = number_of_observations(model, data)
-
     log_likelihood = -Inf
     # Initialize progress bar
     p = Progress(max_iters; dt=1, desc="Computing Baum-Welch...",)
@@ -266,7 +266,7 @@ function fit!(model::HiddenMarkovModel, data...; max_iters::Int=100, tol::Float6
         # E-Step
         γ, ξ, α, β = E_step(model, data)
         # Compute and update the log-likelihood
-        log_likelihood_current = logsumexp(α[T, :])
+        log_likelihood_current = logsumexp(α[end, :])
         #println(log_likelihood_current)
         if abs(log_likelihood_current - log_likelihood) < tol
             finish!(p)
