@@ -1,4 +1,103 @@
-export HiddenMarkovModel, fit!
+export HiddenMarkovModel, valid_emission, fit!, sample, loglikelihood
+
+# for unit tests
+export E_step
+
+
+
+# Please ensure all criteria are met before adding a Model to valid_emission_models:
+#
+# 1. fit!(), loglikelihood(), and sample() must allow for solely *positional* arguments (no keyword arguments required). 
+    # The following calls must be valid:
+        # fit!(model, data...) 
+        # loglikelihood(model, data...) 
+        # sample(model, data...)
+#
+# 2. fit!(model, data...; w=<weights here>) must fit the model using the weights provided (by maximizing the weighted loglikelihood).
+# 3. loglikelihood(model, data...; w=<weights here>) must return a Vector{Float64} of the loglikelihood of each observation.
+# 4. **IMPLEMENT IN THIS FILE**:
+    # TimeSeries(model, sample(model, data...; n=<number of samples>)) must return a TimeSeries object of n samples.
+    # revert_TimeSeries(model, time_series) must return the time_series data converted back to the original sample() format (the inverse of TimeSeries(model, samples)).
+
+valid_emission_models = [
+        Gaussian,
+        GaussianRegression,
+        PoissonRegression,
+        BernoulliRegression,
+        AutoRegression,
+    ]
+
+
+
+
+function validate_emission(model::Model)
+    @assert typeof(model) in valid_emission_models "$(typeof(model)) is not a valid emission model."
+end
+
+mutable struct TimeSeries <: Model
+    data::Vector{Any}
+end
+
+Base.getindex(series::TimeSeries, i::Int) = series.data[i]
+Base.setindex!(series::TimeSeries, v, i::Int) = (series.data[i] = v)
+
+
+
+
+
+function TimeSeries(model::Gaussian, samples::Matrix{<:Real})
+    return TimeSeries([samples[i, :] for i in 1:size(samples, 1)])
+end
+
+function revert_TimeSeries(model::Gaussian, time_series::TimeSeries)
+    return permutedims(hcat(time_series.data...), (2,1))
+end
+
+
+
+function TimeSeries(model::GaussianRegression, samples::Matrix{<:Real})
+    return TimeSeries([samples[i, :] for i in 1:size(samples, 1)])
+end
+
+function revert_TimeSeries(model::GaussianRegression, time_series::TimeSeries)
+    return permutedims(hcat(time_series.data...), (2,1))
+end
+
+
+
+function TimeSeries(model::AutoRegression, samples::Matrix{<:Real})
+    return TimeSeries([samples[i, :] for i in 1:size(samples, 1)])
+end
+
+function revert_TimeSeries(model::AutoRegression, time_series::TimeSeries)
+    return permutedims(hcat(time_series.data...), (2,1))
+end
+
+
+
+function TimeSeries(model::PoissonRegression, samples::Vector{<:Real})
+    return TimeSeries(samples)
+end
+
+function revert_TimeSeries(model::PoissonRegression, time_series::TimeSeries)
+    return time_series.data
+end
+
+
+
+function TimeSeries(model::BernoulliRegression, samples::Vector{<:Real})
+    return TimeSeries(samples)
+end
+
+function revert_TimeSeries(model::BernoulliRegression, time_series::TimeSeries)
+    return time_series.data
+end
+
+
+
+
+
+
 
 mutable struct HiddenMarkovModel <: Model
     A::Matrix{<:Real} # transition matrix
@@ -18,6 +117,8 @@ function validate_model(model::HiddenMarkovModel)
     @assert model.K == length(model.B)
     # check that all emission model are the same type
     @assert all([model.B[1] isa typeof(model.B[i]) for i in 2:length(model.B)])
+    # check that the emission model type is supported
+    validate_emission(model.B[1])
 
     # check that all emission models are valid
     for i in 1:length(model.B)
@@ -68,29 +169,34 @@ function sample(model::HiddenMarkovModel, data...; time_steps::Int)
 
     # sample all observations for every state
     # not most efficient, but allows for general "data" object
-    possible_observations = Vector{Matrix{Float64}}()
+
+    possible_observations = Array{TimeSeries}(undef, model.K)
 
     for k in 1:model.K
-        push!(possible_observations, sample(model.B[k], data...; n=time_steps))
+        kth_time_series = TimeSeries(model.B[k], sample(model.B[k], data...; n=time_steps))
+        possible_observations[k] = kth_time_series
     end
 
 
     # Initialize the state sequence
     state_sequence = zeros(Int, time_steps)
     # Initialize the observation sequence
-    observation_sequence = zeros(Float64, time_steps, size(possible_observations[1], 2))
+    observation_sequence = possible_observations[1]
 
     # Sample the initial state
     state_sequence[1] = rand(Categorical(model.πₖ))
-    observation_sequence[1, :] = sample(model.B[state_sequence[1]], data...)
+
+    println("type of emission 1: ", typeof(model.B[1]))
+    println("data vector: ", data)
+    observation_sequence[1] = possible_observations[state_sequence[1]][1]
 
     # Sample the rest of the states and observations
     for t in 2:time_steps
         state_sequence[t] = rand(Categorical(model.A[state_sequence[t-1], :]))
-        observation_sequence[t, :] = possible_observations[state_sequence[t]][t, :]
+        observation_sequence[t] = possible_observations[state_sequence[t]][t]
     end
 
-    return state_sequence, observation_sequence
+    return state_sequence, revert_TimeSeries(model.B[1], observation_sequence)
 end
 
 function loglikelihood(model::HiddenMarkovModel, data...; observation_wise::Bool=false)
@@ -257,7 +363,7 @@ function fit!(model::HiddenMarkovModel, data...; max_iters::Int=100, tol::Float6
         γ, ξ, α, β = E_step(model, data)
         # Compute and update the log-likelihood
         log_likelihood_current = logsumexp(α[end, :])
-        #println(log_likelihood_current)
+        println(log_likelihood_current)
         if abs(log_likelihood_current - log_likelihood) < tol
             finish!(p)
             break
