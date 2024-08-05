@@ -1,4 +1,4 @@
-export Gaussian
+export Gaussian, fit!, sample, loglikelihood
 
 """
 Gaussian: Struct representing a basic Gaussian model.

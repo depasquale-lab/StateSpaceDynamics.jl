@@ -44,11 +44,9 @@ end
 
 function HiddenMarkovModel(; 
     K::Int,
-    emission::Model,
+    B::Vector{<:Model},
     A::Matrix{<:Real} = initialize_transition_matrix(K), 
     πₖ::Vector{Float64} = initialize_state_distribution(K))
-
-    B = [deepcopy(emission) for _ in 1:K]
 
     model = HiddenMarkovModel(A, B, πₖ, K)
 
@@ -100,9 +98,33 @@ function sample(model::HiddenMarkovModel, data...; n::Int=number_of_observations
     return state_sequence, observation_sequence
 end
 
+function loglikelihood(model::HiddenMarkovModel, data...; observation_wise::Bool=false)
+    # confirm model is valid
+    validate_model(model)
+
+    # confirm data is in the correct format
+    validate_data(model, data...)
+
+    T = number_of_observations(model, data)
+
+    # Calculate observation wise likelihoods for all states
+    loglikelihoods_state_1 = loglikelihood(model.B[1], data..., observation_wise=true)
+    loglikelihoods = zeros(model.K, length(loglikelihoods_state_1))
+    loglikelihoods[1, :] = loglikelihoods_state_1
+
+    @threads for k in 2:model.K
+        loglikelihoods[k, :] = loglikelihood(model.B[k], data..., observation_wise=true)
+    end
+
+    α = forward(model, loglikelihoods)
+    return logsumexp(α[T, :])
+end
 
 
-function forward(model::HiddenMarkovModel, data, loglikelihoods::Matrix{<:Real}, T::Int)
+
+function forward(model::HiddenMarkovModel, loglikelihoods::Matrix{<:Real})
+    T = size(loglikelihoods, 2)
+
     # Initialize an α-matrix 
     α = zeros(T, model.K)
 
@@ -124,7 +146,9 @@ function forward(model::HiddenMarkovModel, data, loglikelihoods::Matrix{<:Real},
     return α
 end
 
-function backward(model::HiddenMarkovModel, data, loglikelihoods::Matrix{<:Real}, T::Int)
+function backward(model::HiddenMarkovModel, loglikelihoods::Matrix{<:Real})
+    T = size(loglikelihoods, 2)
+
     # Initialize a β matrix
     β = zeros(Float64, T, model.K)
 
@@ -171,17 +195,20 @@ function calculate_ξ(model::HiddenMarkovModel, α::Matrix{<:Real}, β::Matrix{<
 end
 
 
-function E_step(model::HiddenMarkovModel, data, T::Int)
+function E_step(model::HiddenMarkovModel, data)
     # run forward-backward algorithm
 
     # Calculate observation wise likelihoods for all states
-    loglikelihoods = zeros(model.K, T)
-    @threads for k in 1:K
+    loglikelihoods_state_1 = loglikelihood(model.B[1], data..., observation_wise=true)
+    loglikelihoods = zeros(model.K, length(loglikelihoods_state_1))
+    loglikelihoods[1, :] = loglikelihoods_state_1
+
+    @threads for k in 2:model.K
         loglikelihoods[k, :] = loglikelihood(model.B[k], data..., observation_wise=true)
     end
 
-    α = forward(model, data, loglikelihoods, T)
-    β = backward(model, data, loglikelihoods, T)
+    α = forward(model, loglikelihoods)
+    β = backward(model, loglikelihoods)
     γ = calculate_γ(model, α, β)
     ξ = calculate_ξ(model, α, β, loglikelihoods)
     return γ, ξ, α, β
@@ -206,12 +233,12 @@ function update_emissions!(model::HiddenMarkovModel, data, w::Matrix{<:Real})
     # update regression models 
  
      @threads for k in 1:model.K
-         fit!(model.B[k], data..., weights=w[:, k])
+         fit!(model.B[k], data..., w[:, k])
      end
  
  end
 
-function M_step!(model::HiddenMarkovModel, γ::Matrix{<:Real}, ξ::Array{Float64, 3}, data, T::Int)
+function M_step!(model::HiddenMarkovModel, γ::Matrix{<:Real}, ξ::Array{Float64, 3}, data)
     # update initial state distribution
     update_initial_state_distribution!(model, γ)   
     # update transition matrix
@@ -237,10 +264,10 @@ function fit!(model::HiddenMarkovModel, data...; max_iters::Int=100, tol::Float6
         # Update the progress bar
         next!(p; showvalues = [(:iteration, iter), (:log_likelihood, log_likelihood)])
         # E-Step
-        γ, ξ, α, β = E_step(model, data, T)
+        γ, ξ, α, β = E_step(model, data)
         # Compute and update the log-likelihood
         log_likelihood_current = logsumexp(α[T, :])
-        println(log_likelihood_current)
+        #println(log_likelihood_current)
         if abs(log_likelihood_current - log_likelihood) < tol
             finish!(p)
             break
@@ -248,7 +275,7 @@ function fit!(model::HiddenMarkovModel, data...; max_iters::Int=100, tol::Float6
             log_likelihood = log_likelihood_current
         end
         # M-Step
-        M_step!(model, γ, ξ, data, T)
+        M_step!(model, γ, ξ, data)
     end
 
 
