@@ -63,9 +63,7 @@ function number_of_observations(model::HiddenMarkovModel, data)
 end
 
 
-function sample(model::HiddenMarkovModel, data...; n::Int=number_of_observations(model, data))
-    T = n
-
+function sample(model::HiddenMarkovModel, data...; time_steps::Int=number_of_observations(model, data))
     # confirm model is valid
     validate_model(model)
 
@@ -78,21 +76,21 @@ function sample(model::HiddenMarkovModel, data...; n::Int=number_of_observations
     possible_observations = Vector{Matrix{Float64}}()
 
     for k in 1:model.K
-        push!(possible_observations, sample(model.B[k], data...; n=n))
+        push!(possible_observations, sample(model.B[k], data...; n=time_steps))
     end
 
 
     # Initialize the state sequence
-    state_sequence = zeros(Int, T)
+    state_sequence = zeros(Int, time_steps)
     # Initialize the observation sequence
-    observation_sequence = zeros(Float64, T, size(possible_observations[1], 2))
+    observation_sequence = zeros(Float64, time_steps, size(possible_observations[1], 2))
 
     # Sample the initial state
     state_sequence[1] = rand(Categorical(model.πₖ))
     observation_sequence[1, :] = sample(model.B[state_sequence[1]], data...)
 
     # Sample the rest of the states and observations
-    for t in 2:T
+    for t in 2:time_steps
         state_sequence[t] = rand(Categorical(model.A[state_sequence[t-1], :]))
         observation_sequence[t, :] = possible_observations[state_sequence[t]][t, :]
     end
@@ -107,7 +105,7 @@ function loglikelihood(model::HiddenMarkovModel, data...; observation_wise::Bool
     # confirm data is in the correct format
     validate_data(model, data...)
 
-    T = number_of_observations(model, data)
+    time_steps = number_of_observations(model, data)
 
     # Calculate observation wise likelihoods for all states
     loglikelihoods_state_1 = loglikelihood(model.B[1], data..., observation_wise=true)
@@ -119,23 +117,23 @@ function loglikelihood(model::HiddenMarkovModel, data...; observation_wise::Bool
     end
 
     α = forward(model, loglikelihoods)
-    return logsumexp(α[T, :])
+    return logsumexp(α[end, :])
 end
 
 
 
 function forward(model::HiddenMarkovModel, loglikelihoods::Matrix{<:Real})
-    T = size(loglikelihoods, 2)
+    time_steps = size(loglikelihoods, 2)
 
     # Initialize an α-matrix 
-    α = zeros(T, model.K)
+    α = zeros(time_steps, model.K)
 
     # Calculate α₁
     @threads for k in 1:model.K
         α[1, k] = log(model.πₖ[k]) + loglikelihoods[k, 1]
     end
-    # Now perform the rest of the forward algorithm for t=2 to T
-    for t in 2:T
+    # Now perform the rest of the forward algorithm for t=2 to time_steps
+    for t in 2:time_steps
         @threads for k in 1:model.K
             values_to_sum = Float64[]
             for i in 1:model.K
@@ -149,16 +147,16 @@ function forward(model::HiddenMarkovModel, loglikelihoods::Matrix{<:Real})
 end
 
 function backward(model::HiddenMarkovModel, loglikelihoods::Matrix{<:Real})
-    T = size(loglikelihoods, 2)
+    time_steps = size(loglikelihoods, 2)
 
     # Initialize a β matrix
-    β = zeros(Float64, T, model.K)
+    β = zeros(Float64, time_steps, model.K)
 
     # Set last β values. In log-space, 0 corresponds to a value of 1 in the original space.
-    β[T, :] .= 0  # log(1) = 0
+    β[end, :] .= 0  # log(1) = 0
 
-    # Calculate β, starting from T-1 and going backward to 1
-    for t in T-1:-1:1
+    # Calculate β, starting from time_steps-1 and going backward to 1
+    for t in time_steps-1:-1:1
         @threads for i in 1:model.K
             values_to_sum = Float64[]
             for j in 1:model.K
@@ -171,18 +169,18 @@ function backward(model::HiddenMarkovModel, loglikelihoods::Matrix{<:Real})
 end
 
 function calculate_γ(model::HiddenMarkovModel, α::Matrix{<:Real}, β::Matrix{<:Real})
-    T = size(α, 1)
+    time_steps = size(α, 1)
     γ = α .+ β
-    @threads for t in 1:T
+    @threads for t in 1:time_steps
         γ[t, :] .-= logsumexp(γ[t, :])
     end
     return γ
 end
 
 function calculate_ξ(model::HiddenMarkovModel, α::Matrix{<:Real}, β::Matrix{<:Real}, loglikelihoods::Matrix{<:Real})
-    T = size(α, 1)
-    ξ = zeros(Float64, T-1, model.K, model.K)
-    for t in 1:T-1
+    time_steps = size(α, 1)
+    ξ = zeros(Float64, time_steps-1, model.K, model.K)
+    for t in 1:time_steps-1
         # Array to store the unnormalized ξ values
         log_ξ_unnormalized = zeros(Float64, model.K, model.K)
         @threads for i in 1:model.K
@@ -222,11 +220,10 @@ function update_initial_state_distribution!(model::HiddenMarkovModel, γ::Matrix
 end
 
 function update_transition_matrix!(model::HiddenMarkovModel, γ::Matrix{<:Real}, ξ::Array{Float64, 3})
-    T = size(γ, 1)
     # Update transition probabilities
     @threads for i in 1:model.K
         for j in 1:model.K
-            model.A[i, j] = exp(logsumexp(ξ[:, i, j]) - logsumexp(γ[1:T-1, i]))
+            model.A[i, j] = exp(logsumexp(ξ[:, i, j]) - logsumexp(γ[1:end-1, i]))
         end
     end
 end
