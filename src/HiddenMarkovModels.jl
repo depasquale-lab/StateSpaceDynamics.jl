@@ -57,13 +57,8 @@ function HiddenMarkovModel(;
     return model
 end
 
-# not most efficient method. in future, could set up a more direct mapping by emission type.
-function number_of_observations(model::HiddenMarkovModel, data)
-    return length(loglikelihood(model.B[1], data..., observation_wise=true))
-end
 
-
-function sample(model::HiddenMarkovModel, data...; time_steps::Int=number_of_observations(model, data))
+function sample(model::HiddenMarkovModel, data...; time_steps::Int)
     # confirm model is valid
     validate_model(model)
 
@@ -104,8 +99,6 @@ function loglikelihood(model::HiddenMarkovModel, data...; observation_wise::Bool
 
     # confirm data is in the correct format
     validate_data(model, data...)
-
-    time_steps = number_of_observations(model, data)
 
     # Calculate observation wise likelihoods for all states
     loglikelihoods_state_1 = loglikelihood(model.B[1], data..., observation_wise=true)

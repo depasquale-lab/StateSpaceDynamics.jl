@@ -1,29 +1,38 @@
-function HiddenMarkovModel_simulation(n::Int)
-    Φ = randn(n, 2)
+function HiddenMarkovModel_simulation(time_steps::Int)
+    Φ = randn(time_steps, 2)
     Σ = [0.1 0.05;
             0.05 0.1]
-    β = [3 3;
+    β = [10 -10;
         1 0.5;
         0.5 1]
-    true_model = GaussianRegression(β=β, Σ=Σ, input_dim=2, output_dim=2)
-    Y = SSM.sample(true_model, Φ)
+
+    emmission_1 = GaussianRegression(input_dim=2, output_dim=2)
+    emmission_2 = GaussianRegression(β=β, Σ=Σ, input_dim=2, output_dim=2)
+
+    true_model = HiddenMarkovModel(K=2, B=[emmission_1, emmission_2])
+
+    Y = SSM.sample(true_model, Φ, time_steps=time_steps)
 
     return true_model, Φ, Y
 end
 
 function test_HiddenMarkovModel_E_step()
-    model, data = HiddenMarkovModel_simulation()
-    α = SSM.forward(model, data)
+    time_steps = 1000
+    model, data... = HiddenMarkovModel_simulation(time_steps)
+
+    γ, ξ, α, β = E_step(model, data)
+
+    # test α
     @test size(α) == (size(data, 1), model.K)
 
-    β = SSM.backward(model, data)
+    # test β
     @test size(β) == (size(data, 1), model.K)
 
-    γ = SSM.calculate_γ(hmm, α, β)
+    # test γ
     @test size(γ) == (size(data, 1), hmm.K)
     @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(exp.(γ), dims=2))
 
-    ξ = SSM.calculate_ξ(hmm, α, β, data)
+    # test ξ
     @test size(ξ) == (size(data, 1) - 1, hmm.K, hmm.K)
     @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(exp.(ξ), dims=(2, 3)))
 end
