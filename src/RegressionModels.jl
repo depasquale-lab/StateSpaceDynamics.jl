@@ -99,7 +99,7 @@ model = GaussianRegression(input_dim=2, output_dim=1)
 Y = sample(model, Φ)
 ```
 """
-function sample(model::GaussianRegression, Φ::Matrix{<:Real})
+function sample(model::GaussianRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
     # confirm that the model has valid parameters
     validate_model(model)
 
@@ -368,7 +368,7 @@ end
 
 
 
-function sample(model::BernoulliRegression, Φ::Matrix{<:Real})
+function sample(model::BernoulliRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
     # confirm that the model has valid parameters
     validate_model(model)
     validate_data(model, Φ)
@@ -583,7 +583,7 @@ function PoissonRegression(;
 end
 
 
-function sample(model::PoissonRegression, Φ::Matrix{<:Real})
+function sample(model::PoissonRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
     # confirm that the model has valid parameters
     validate_model(model)
     validate_data(model, Φ)
@@ -879,12 +879,12 @@ function AR_to_Gaussian_data(Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
 end
 
 
-function sample(model::AutoRegression, Y_prev::Matrix{<:Real})
+function _sample(model::AutoRegression, Y_prev::Matrix{<:Real})
     Φ_gaussian = AR_to_Gaussian_data(Y_prev)
     return sample(model.innerGaussianRegression, Φ_gaussian)
 end
 
-function sample(model::AutoRegression, Y_prev::Matrix{<:Real}, n::Int)
+function sample(model::AutoRegression, Y_prev::Matrix{<:Real}; n::Int=1)
     # confirm that the model has valid parameters
     validate_model(model)
     validate_data(model, Y_prev)
@@ -892,7 +892,7 @@ function sample(model::AutoRegression, Y_prev::Matrix{<:Real}, n::Int)
     Y = zeros(n, model.data_dim)
 
     for i in 1:n
-        Y[i, :] = sample(model, Y_prev)
+        Y[i, :] = _sample(model, Y_prev)
 
         old_part = Y_prev[2:end, :]
         new_part = Y[i, :]

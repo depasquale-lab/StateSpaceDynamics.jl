@@ -20,7 +20,7 @@ include("Utilities.jl")
 include("RegressionModels.jl")
 include("LDS.jl")
 #include("Emissions.jl")
-#include("HiddenMarkovModels.jl")
+include("HiddenMarkovModels.jl")
 #include("MarkovRegression.jl")
 include("BasicModels.jl")
 

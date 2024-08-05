@@ -37,7 +37,7 @@ function Gaussian(;
     return model
 end
 
-function sample(model::Gaussian, n::Int)
+function sample(model::Gaussian; n::Int=1)
     validate_model(model)
 
     # confirm that Σ is valid

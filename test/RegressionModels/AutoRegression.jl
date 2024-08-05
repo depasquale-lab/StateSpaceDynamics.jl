@@ -9,7 +9,7 @@ function AutoRegression_simulation(n::Int)
     true_model = AutoRegression(order=order, data_dim=data_dim, β=β, include_intercept=false)
 
     Y_prev = randn(order, data_dim)
-    Y = SSM.sample(true_model, Y_prev, n)
+    Y = SSM.sample(true_model, Y_prev, n=n)
 
     return true_model, Y_prev, Y
 end
