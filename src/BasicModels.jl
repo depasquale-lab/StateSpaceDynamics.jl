@@ -97,5 +97,7 @@ function fit!(model::Gaussian, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y
     model.μ = new_mean
     model.Σ = new_covariance
 
+    validate_model(model)
+
     return model
 end

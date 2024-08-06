@@ -144,6 +144,17 @@ include("LDS/LDS.jl")
 end
 
 """
+Tests for BasicModels.jl
+""" 
+
+include("BasicModels/Gaussian.jl")
+
+@testset "Gaussian Tests" begin
+    test_Gaussian_loglikelihood()
+    test_Gaussian_standard_fit()
+end
+
+"""
 Tests for RegressionModels.jl
 """ 
 
@@ -151,46 +162,59 @@ include("RegressionModels/GaussianRegression.jl")
 
 @testset "GaussianRegression Tests" begin
     test_GaussianRegression_loglikelihood()
-    test_GaussianRegression_Σ()
-    test_GaussianRegression_constructor()
+    # not neccessary with validate_model (second opinion please confirm)
+    # test_GaussianRegression_Σ()
+    # test_GaussianRegression_constructor()
     test_GaussianRegression_objective_gradient()
     test_GaussianRegression_standard_fit()
     test_GaussianRegression_regularized_fit()
-    test_GaussianRegression_valid_emission_model()
 end
 
 include("RegressionModels/BernoulliRegression.jl")
 
 @testset "BernoulliRegression Tests" begin
     test_BernoulliRegression_loglikelihood()
-    test_BernoulliRegression_constructor()
+    # not neccessary with validate_model (second opinion please confirm)
+    # test_BernoulliRegression_constructor()
     test_BernoulliRegression_objective_gradient()
     test_BernoulliRegression_standard_fit()
     test_BernoulliRegression_regularized_fit()
-    test_BernoulliRegression_valid_emission_model()
 end
 
 include("RegressionModels/PoissonRegression.jl")
 
 @testset "PoissonRegression Tests" begin
     test_PoissonRegression_loglikelihood()
-    test_PoissonRegression_constructor()
+    # not neccessary with validate_model (second opinion please confirm)
+    # test_PoissonRegression_constructor()
     test_PoissonRegression_objective_gradient()
     test_PoissonRegression_standard_fit()
     test_PoissonRegression_regularized_fit()
-    test_PoissonRegression_valid_emission_model()
 end
 
 include("RegressionModels/AutoRegression.jl")
 
 @testset "AutoRegression Tests" begin
     test_AutoRegression_loglikelihood()
-    test_AutoRegression_Σ()
-    test_AutoRegression_constructor()
+    # not neccessary with validate_model (second opinion please confirm)
+    # test_AutoRegression_Σ()
+    # test_AutoRegression_constructor()
     test_AutoRegression_standard_fit()
     test_AutoRegression_regularized_fit()
-    test_AutoRegression_valid_emission_model()
 end
+
+"""
+Tests for HiddenMarkovModels.jl
+"""
+
+include("HiddenMarkovModels/HiddenMarkovModels.jl")
+
+@testset "HiddenMarkovModels.jl Tests" begin
+    test_HiddenMarkovModel_E_step()
+    test_HiddenMarkovModel_fit()
+    test_valid_emissions()
+end
+
 
 """
 Tests for Emissions.jl

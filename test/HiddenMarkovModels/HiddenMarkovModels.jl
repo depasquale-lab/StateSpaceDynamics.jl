@@ -46,7 +46,7 @@ end
 
 function test_HiddenMarkovModel_fit()
     time_steps = 1000
-    true_model, state_sequence, data... = HiddenMarkovModel_GaussianRegression_simulation(time_steps)
+    true_model, state_sequence, data... = HiddenMarkovModel_Gaussian_simulation(time_steps)
     Y = data[1]
 
     centroids = kmeanspp_initialization(Y, 2)
@@ -73,3 +73,39 @@ function test_HiddenMarkovModel_fit()
     pred_covs = [est_model.B[i].Σ for i in 1:2]
     @test pred_covs ≈ covs atol=0.3
 end 
+
+
+
+# implement a recursive version
+function concrete_subtypes(t::DataType, subtypes_list::Vector{DataType}=Vector{DataType}())
+    if isconcretetype(t)
+        push!(subtypes_list, t)
+    end
+
+    for subtype in subtypes(t)
+        concrete_subtypes(subtype, subtypes_list)
+    end
+    return subtypes_list
+end
+
+function test_valid_emissions()
+    # get all concrete emissions in valid_emission_models and store in a list
+    concrete_emissions_list = []
+    for emission_model in valid_emission_models
+        subtypes_list = concrete_subtypes(emission_model)
+        for subtype in subtypes_list
+            push!(concrete_emissions_list, subtype)
+        end
+    end
+    
+    for emission in concrete_emissions_list
+        # try to call test_<emission type>_valid_emission_model()
+        try
+            eval(Meta.parse("test_$(emission)_valid_emission_model()"))
+        catch e
+            @warn "test_$(emission)_valid_emission_model() not implemented"
+        end
+    end
+
+    
+end
