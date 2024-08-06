@@ -134,3 +134,33 @@ function test_GaussianRegression_regularized_fit()
     @test isapprox(regularized_est_model.Σ, true_model.Σ, atol=0.1)
     @test valid_Σ(regularized_est_model.Σ)
 end
+
+# check that the model is a valid emission model
+
+# Please ensure all criteria are met for any new emission model:
+# 1. loglikelihood(model, data...; observation_wise=true) must return a Vector{Float64} of the loglikelihood of each observation.
+# 2. fit!(model, data..., <weights here>) must fit the model using the weights provided (by maximizing the weighted loglikelihood).
+# 3. TimeSeries(model, sample(model, data...; n=<number of samples>)) must return a TimeSeries object of n samples.
+# 4. revert_TimeSeries(model, time_series) must return the time_series data converted back to the original sample() format (the inverse of TimeSeries(model, samples)).
+function test_GaussianRegression_valid_emission_model()
+    n = 1000
+    true_model, Φ, Y = GaussianRegression_simulation(n)
+
+    # Criteria 1
+    loglikelihoods = SSM.loglikelihood(true_model, Φ, Y, observation_wise=true)
+    @test length(loglikelihoods) == n
+
+    # Criteria 2
+    weights = rand(n)
+    est_model = GaussianRegression(input_dim=2, output_dim=2)
+    fit!(est_model, Φ, Y, weights)
+
+    # Criteria 3
+    Y_new = SSM.sample(est_model, Φ, n=100)
+    time_series = SSM.TimeSeries(est_model, Y_new)
+    @test typeof(time_series) == TimeSeries
+
+    # Criteria 4
+    @test SSM.revert_TimeSeries(est_model, time_series) == Y_new
+   
+end

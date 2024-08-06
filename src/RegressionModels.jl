@@ -112,6 +112,14 @@ function sample(model::GaussianRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1
     return Φ * model.β + rand(MvNormal(zeros(model.output_dim), model.Σ), size(Φ, 1))'
 end
 
+function TimeSeries(model::GaussianRegression, samples::Matrix{<:Real})
+    return TimeSeries([samples[i, :] for i in 1:size(samples, 1)])
+end
+
+function revert_TimeSeries(model::GaussianRegression, time_series::TimeSeries)
+    return permutedims(hcat(time_series.data...), (2,1))
+end
+
 
 """
     loglikelihood(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
@@ -389,6 +397,14 @@ function sample(model::BernoulliRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 
     return Y
 end
 
+function TimeSeries(model::BernoulliRegression, samples::Matrix{<:Real})
+    return TimeSeries(reshape(samples, :))
+end
+
+function revert_TimeSeries(model::BernoulliRegression, time_series::TimeSeries)
+    return reshape(time_series.data, :, 1)
+end
+
 """
     loglikelihood(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Union{Vector{Float64}, BitVector}, w::Vector{Float64}=ones(length(Y))
 
@@ -600,6 +616,14 @@ function sample(model::PoissonRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1)
     Y = Float64.(Y)
 
     return Y
+end
+
+function TimeSeries(model::PoissonRegression, samples::Matrix{<:Real})
+    return TimeSeries(reshape(samples, :))
+end
+
+function revert_TimeSeries(model::PoissonRegression, time_series::TimeSeries)
+    return reshape(time_series.data, :, 1)
 end
 
 """
@@ -904,6 +928,14 @@ function sample(model::AutoRegression, Y_prev::Matrix{<:Real}; n::Int=1)
     end
     
     return Y
+end
+
+function TimeSeries(model::AutoRegression, samples::Matrix{<:Real})
+    return TimeSeries([samples[i, :] for i in 1:size(samples, 1)])
+end
+
+function revert_TimeSeries(model::AutoRegression, time_series::TimeSeries)
+    return permutedims(hcat(time_series.data...), (2,1))
 end
 
 function loglikelihood(model::AutoRegression, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}; observation_wise::Bool=false)

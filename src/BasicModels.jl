@@ -48,6 +48,14 @@ function sample(model::Gaussian; n::Int=1)
     return Matrix(raw_samples')
 end
 
+function TimeSeries(model::Gaussian, samples::Matrix{<:Real})
+    return TimeSeries([samples[i, :] for i in 1:size(samples, 1)])
+end
+
+function revert_TimeSeries(model::Gaussian, time_series::TimeSeries)
+    return permutedims(hcat(time_series.data...), (2,1))
+end
+
 function loglikelihood(model::Gaussian, Y::Matrix{<:Real}; observation_wise::Bool=false)
     validate_model(model)
     validate_data(model, Y)

@@ -156,6 +156,7 @@ include("RegressionModels/GaussianRegression.jl")
     test_GaussianRegression_objective_gradient()
     test_GaussianRegression_standard_fit()
     test_GaussianRegression_regularized_fit()
+    test_GaussianRegression_valid_emission_model()
 end
 
 include("RegressionModels/BernoulliRegression.jl")
@@ -166,6 +167,7 @@ include("RegressionModels/BernoulliRegression.jl")
     test_BernoulliRegression_objective_gradient()
     test_BernoulliRegression_standard_fit()
     test_BernoulliRegression_regularized_fit()
+    test_BernoulliRegression_valid_emission_model()
 end
 
 include("RegressionModels/PoissonRegression.jl")
@@ -176,6 +178,7 @@ include("RegressionModels/PoissonRegression.jl")
     test_PoissonRegression_objective_gradient()
     test_PoissonRegression_standard_fit()
     test_PoissonRegression_regularized_fit()
+    test_PoissonRegression_valid_emission_model()
 end
 
 include("RegressionModels/AutoRegression.jl")
@@ -186,6 +189,7 @@ include("RegressionModels/AutoRegression.jl")
     test_AutoRegression_constructor()
     test_AutoRegression_standard_fit()
     test_AutoRegression_regularized_fit()
+    test_AutoRegression_valid_emission_model()
 end
 
 """

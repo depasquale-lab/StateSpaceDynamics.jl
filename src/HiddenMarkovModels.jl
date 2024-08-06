@@ -1,102 +1,33 @@
 export HiddenMarkovModel, valid_emission, fit!, sample, loglikelihood
 
 # for unit tests
-export E_step
+export E_step, revert_TimeSeries, validate_model, validate_data, valid_emission_models
 
 
 
-# Please ensure all criteria are met before adding a Model to valid_emission_models:
-#
-# 1. fit!(), loglikelihood(), and sample() must allow for solely *positional* arguments (no keyword arguments required). 
-    # The following calls must be valid:
-        # fit!(model, data...) 
-        # loglikelihood(model, data...) 
-        # sample(model, data...)
-#
-# 2. fit!(model, data...; w=<weights here>) must fit the model using the weights provided (by maximizing the weighted loglikelihood).
-# 3. loglikelihood(model, data...; w=<weights here>) must return a Vector{Float64} of the loglikelihood of each observation.
-# 4. **IMPLEMENT IN THIS FILE**:
-    # TimeSeries(model, sample(model, data...; n=<number of samples>)) must return a TimeSeries object of n samples.
-    # revert_TimeSeries(model, time_series) must return the time_series data converted back to the original sample() format (the inverse of TimeSeries(model, samples)).
+# Please ensure all criteria are met for any new emission model:
+# 1. fit!(model, data..., <weights here>) must fit the model using the weights provided (by maximizing the weighted loglikelihood).
+# 2. loglikelihood(model, data...; observation_wise=true) must return a Vector{Float64} of the loglikelihood of each observation.
+# 3. TimeSeries(model, sample(model, data...; n=<number of samples>)) must return a TimeSeries object of n samples.
+# 4. revert_TimeSeries(model, time_series) must return the time_series data converted back to the original sample() format (the inverse of TimeSeries(model, samples)).
 
 valid_emission_models = [
-        Gaussian,
-        GaussianRegression,
-        PoissonRegression,
-        BernoulliRegression,
-        AutoRegression,
+        BasicModel,
+        RegressionModel,
     ]
 
 
-
-
 function validate_emission(model::Model)
-    @assert typeof(model) in valid_emission_models "$(typeof(model)) is not a valid emission model."
+
+    validated = false
+    for valid_model in valid_emission_models
+        if isa(model, valid_model)
+            validated = true
+            break
+        end
+    end
+    @assert validated "$(typeof(model)) is not a valid emission model."
 end
-
-mutable struct TimeSeries <: Model
-    data::Vector{Any}
-end
-
-Base.getindex(series::TimeSeries, i::Int) = series.data[i]
-Base.setindex!(series::TimeSeries, v, i::Int) = (series.data[i] = v)
-
-
-
-
-
-function TimeSeries(model::Gaussian, samples::Matrix{<:Real})
-    return TimeSeries([samples[i, :] for i in 1:size(samples, 1)])
-end
-
-function revert_TimeSeries(model::Gaussian, time_series::TimeSeries)
-    return permutedims(hcat(time_series.data...), (2,1))
-end
-
-
-
-function TimeSeries(model::GaussianRegression, samples::Matrix{<:Real})
-    return TimeSeries([samples[i, :] for i in 1:size(samples, 1)])
-end
-
-function revert_TimeSeries(model::GaussianRegression, time_series::TimeSeries)
-    return permutedims(hcat(time_series.data...), (2,1))
-end
-
-
-
-function TimeSeries(model::AutoRegression, samples::Matrix{<:Real})
-    return TimeSeries([samples[i, :] for i in 1:size(samples, 1)])
-end
-
-function revert_TimeSeries(model::AutoRegression, time_series::TimeSeries)
-    return permutedims(hcat(time_series.data...), (2,1))
-end
-
-
-
-function TimeSeries(model::PoissonRegression, samples::Vector{<:Real})
-    return TimeSeries(samples)
-end
-
-function revert_TimeSeries(model::PoissonRegression, time_series::TimeSeries)
-    return time_series.data
-end
-
-
-
-function TimeSeries(model::BernoulliRegression, samples::Vector{<:Real})
-    return TimeSeries(samples)
-end
-
-function revert_TimeSeries(model::BernoulliRegression, time_series::TimeSeries)
-    return time_series.data
-end
-
-
-
-
-
 
 
 mutable struct HiddenMarkovModel <: Model

@@ -1,4 +1,4 @@
-function HiddenMarkovModel_GaussianRegression_simulation(time_steps::Int)
+function HiddenMarkovModel_Gaussian_simulation(time_steps::Int)
 
     emission_model1 = Gaussian(data_dim=2)
     emission_model2 = Gaussian(data_dim=2, μ=[10.0, -10.0])
@@ -12,7 +12,7 @@ end
 
 function test_HiddenMarkovModel_E_step()
     time_steps = 1000
-    true_model, state_sequence, data... = HiddenMarkovModel_GaussianRegression_simulation(time_steps)
+    true_model, state_sequence, data... = HiddenMarkovModel_Gaussian_simulation(time_steps)
     Y = data[1]
 
     centroids = kmeanspp_initialization(Y, 2)
@@ -68,7 +68,8 @@ function test_HiddenMarkovModel_fit()
     covs = [true_model.B[i].Σ for i in 1:2]
 
     pred_means = [est_model.B[i].μ for i in 1:2]
-    @test sort(pred_means) ≈ sort(means) atol=0.1
+    # 0.2 because it checks norms of the vectors
+    @test sort(pred_means) ≈ sort(means) atol=0.2
     pred_covs = [est_model.B[i].Σ for i in 1:2]
     @test pred_covs ≈ covs atol=0.3
 end 
