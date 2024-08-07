@@ -48,12 +48,15 @@ function sample(model::Gaussian; n::Int=1)
     return Matrix(raw_samples')
 end
 
-function TimeSeries(model::Gaussian, samples::Matrix{<:Real})
-    return TimeSeries([samples[i, :] for i in 1:size(samples, 1)])
-end
+function sample(model::Gaussian, observation_sequence::Matrix{<:Real})
+    validate_model(model)
 
-function revert_TimeSeries(model::Gaussian, time_series::TimeSeries)
-    return permutedims(hcat(time_series.data...), (2,1))
+    # confirm that Σ is valid
+    @assert valid_Σ(model.Σ) "Σ must be positive definite and hermitian"
+
+    raw_samples = rand(MvNormal(model.μ, model.Σ), n)    
+
+    return vcat(observation_sequence, Matrix(raw_samples'))
 end
 
 function loglikelihood(model::Gaussian, Y::Matrix{<:Real}; observation_wise::Bool=false)

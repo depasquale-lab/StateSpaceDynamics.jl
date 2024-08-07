@@ -36,12 +36,3 @@ abstract type RegressionModel <: Model end
 Abstract type for Dynamical Systems. I.e. LDS, etc.
 """
 abstract type DynamicalSystem <: Model end
-
-"""
-Concrete struct for time series data.
-"""
-mutable struct TimeSeries <: Model
-    data::Vector{Any}
-end
-Base.getindex(series::TimeSeries, i::Int) = series.data[i]
-Base.setindex!(series::TimeSeries, v, i::Int) = (series.data[i] = v)

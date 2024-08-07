@@ -116,12 +116,14 @@ function sample(model::GaussianRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1
     return Φ * model.β + rand(MvNormal(zeros(model.output_dim), model.Σ), size(Φ, 1))'
 end
 
-function TimeSeries(model::GaussianRegression, samples::Matrix{<:Real})
-    return TimeSeries([samples[i, :] for i in 1:size(samples, 1)])
-end
+# custom sampling function for the HMM. Returns observation_sequence with new observation appended to bottom.
+function sample(model::GaussianRegression, observation_sequence::Matrix{<:Real}, Φ::Matrix{<:Real})
+    # find the number of observations in the observation sequence
+    t = size(observation_sequence, 1) + 1
+    # get the n+1th observation
+    new_observation = sample(model, Φ[t:t, :], n=1)
 
-function revert_TimeSeries(model::GaussianRegression, time_series::TimeSeries)
-    return permutedims(hcat(time_series.data...), (2,1))
+    return vcat(observation_sequence, new_observation)
 end
 
 
@@ -262,6 +264,9 @@ function update_variance!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matr
 
     # ensure rounding errors are not causing the covariance matrix to be non-positive definite
     model.Σ = stabilize_covariance_matrix(model.Σ)
+
+    # print the covariance matrix
+    println("Covariance matrix: ", model.Σ)
 
    
     
@@ -405,12 +410,14 @@ function sample(model::BernoulliRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 
     return Y
 end
 
-function TimeSeries(model::BernoulliRegression, samples::Matrix{<:Real})
-    return TimeSeries(reshape(samples, :))
-end
+# custom sampling function for the HMM. Returns observation_sequence with new observation appended to bottom.
+function sample(model::BernoulliRegression, observation_sequence::Matrix{<:Real}, Φ::Matrix{<:Real})
+    # find the number of observations in the observation sequence
+    t = size(observation_sequence, 1) + 1
+    # get the n+1th observation
+    new_observation = sample(model, Φ[t:t, :], n=1)
 
-function revert_TimeSeries(model::BernoulliRegression, time_series::TimeSeries)
-    return reshape(time_series.data, :, 1)
+    return vcat(observation_sequence, new_observation)
 end
 
 """
@@ -630,12 +637,14 @@ function sample(model::PoissonRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1)
     return Y
 end
 
-function TimeSeries(model::PoissonRegression, samples::Matrix{<:Real})
-    return TimeSeries(reshape(samples, :))
-end
+# custom sampling function for the HMM. Returns observation_sequence with new observation appended to bottom.
+function sample(model::PoissonRegression, observation_sequence::Matrix{<:Real}, Φ::Matrix{<:Real})
+    # find the number of observations in the observation sequence
+    t = size(observation_sequence, 1) + 1
+    # get the n+1th observation
+    new_observation = sample(model, Φ[t:t, :], n=1)
 
-function revert_TimeSeries(model::PoissonRegression, time_series::TimeSeries)
-    return reshape(time_series.data, :, 1)
+    return vcat(observation_sequence, new_observation)
 end
 
 """
@@ -942,13 +951,17 @@ function sample(model::AutoRegression, Y_prev::Matrix{<:Real}; n::Int=1)
     return Y
 end
 
-function TimeSeries(model::AutoRegression, samples::Matrix{<:Real})
-    return TimeSeries([samples[i, :] for i in 1:size(samples, 1)])
+# custom sampling function for the HMM. Returns observation_sequence with new observation appended to bottom.
+function sample(model::AutoRegression, observation_sequence::Matrix{<:Real}, Y_prev::Matrix{<:Real})
+
+    full_sequence = vcat(Y_prev, observation_sequence)
+
+    # get the n+1th observation
+    new_observation = sample(model, full_sequence[end-model.order+1:end, :], n=1)
+
+    return vcat(observation_sequence, new_observation)
 end
 
-function revert_TimeSeries(model::AutoRegression, time_series::TimeSeries)
-    return permutedims(hcat(time_series.data...), (2,1))
-end
 
 function loglikelihood(model::AutoRegression, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}; observation_wise::Bool=false)
     # confirm that the model has valid parameters

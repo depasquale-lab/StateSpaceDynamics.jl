@@ -24,6 +24,7 @@ include("LDS.jl")
 include("BasicModels.jl")
 
 include("MixtureModels.jl")
+include("CompositeModel.jl")
 include("Optimization.jl")
 include("Preprocessing.jl")
 

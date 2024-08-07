@@ -18,6 +18,11 @@ valid_emission_models = [
 
 
 function validate_emission(model::Model)
+    if model isa CompositeModel
+        for submodel in model.models
+            validate_emission(submodel)
+        end
+    end
 
     validated = false
     for valid_model in valid_emission_models
@@ -90,7 +95,7 @@ function HiddenMarkovModel(;
 end
 
 
-function sample(model::HiddenMarkovModel, data...; time_steps::Int)
+function sample(model::HiddenMarkovModel, data...; n::Int)
     # confirm model is valid
     validate_model(model)
 
@@ -98,36 +103,16 @@ function sample(model::HiddenMarkovModel, data...; time_steps::Int)
     validate_data(model, data...)
 
 
-    # sample all observations for every state
-    # not most efficient, but allows for general "data" object
+    state_sequence = [rand(Categorical(model.πₖ))]
+    observation_sequence = sample(model.B[state_sequence[1]], data...; n=1)
 
-    possible_observations = Array{TimeSeries}(undef, model.K)
-
-    for k in 1:model.K
-        kth_time_series = TimeSeries(model.B[k], sample(model.B[k], data...; n=time_steps))
-        possible_observations[k] = kth_time_series
+    for i in 2:n
+        # sample the next state
+        push!(state_sequence, rand(Categorical(model.A[state_sequence[end], :])))
+        observation_sequence = sample(model.B[state_sequence[i]], observation_sequence, data...)
     end
 
-
-    # Initialize the state sequence
-    state_sequence = zeros(Int, time_steps)
-    # Initialize the observation sequence
-    observation_sequence = possible_observations[1]
-
-    # Sample the initial state
-    state_sequence[1] = rand(Categorical(model.πₖ))
-
-    println("type of emission 1: ", typeof(model.B[1]))
-    println("data vector: ", data)
-    observation_sequence[1] = possible_observations[state_sequence[1]][1]
-
-    # Sample the rest of the states and observations
-    for t in 2:time_steps
-        state_sequence[t] = rand(Categorical(model.A[state_sequence[t-1], :]))
-        observation_sequence[t] = possible_observations[state_sequence[t]][t]
-    end
-
-    return state_sequence, revert_TimeSeries(model.B[1], observation_sequence)
+    return state_sequence, observation_sequence
 end
 
 function loglikelihood(model::HiddenMarkovModel, data...; observation_wise::Bool=false)
