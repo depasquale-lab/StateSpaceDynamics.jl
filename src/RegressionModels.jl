@@ -100,6 +100,10 @@ Y = sample(model, Φ)
 ```
 """
 function sample(model::GaussianRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
+    @assert n <= size(Φ, 1) "n must be less than or equal to the number of observations in Φ."
+    # cut the length of Φ to n
+    Φ = Φ[1:n, :]
+
     # confirm that the model has valid parameters
     validate_model(model)
 
@@ -377,6 +381,10 @@ end
 
 
 function sample(model::BernoulliRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
+    @assert n <= size(Φ, 1) "n must be less than or equal to the number of observations in Φ."
+    # cut the length of Φ to n
+    Φ = Φ[1:n, :]
+
     # confirm that the model has valid parameters
     validate_model(model)
     validate_data(model, Φ)
@@ -600,6 +608,10 @@ end
 
 
 function sample(model::PoissonRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
+    @assert n <= size(Φ, 1) "n must be less than or equal to the number of observations in Φ."
+    # cut the length of Φ to n
+    Φ = Φ[1:n, :]
+
     # confirm that the model has valid parameters
     validate_model(model)
     validate_data(model, Φ)
