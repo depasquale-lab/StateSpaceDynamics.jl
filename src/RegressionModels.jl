@@ -817,7 +817,7 @@ end
 
 
 mutable struct AutoRegression <: RegressionModel
-    data_dim::Int
+    output_dim::Int
     order::Int
     innerGaussianRegression::GaussianRegression
 end
@@ -851,19 +851,19 @@ function Base.setproperty!(model::AutoRegression, sym::Symbol, value)
 end
 
 function validate_model(model::AutoRegression)
-    @assert model.innerGaussianRegression.input_dim == model.data_dim * model.order
-    @assert model.innerGaussianRegression.output_dim == model.data_dim
+    @assert model.innerGaussianRegression.input_dim == model.output_dim * model.order
+    @assert model.innerGaussianRegression.output_dim == model.output_dim
 
     validate_model(model.innerGaussianRegression)
 end
 
 function validate_data(model::AutoRegression, Y_prev=nothing, Y=nothing, w=nothing)
     if !isnothing(Y_prev)
-        @assert size(Y_prev, 2) == model.data_dim "Number of columns in Y_prev must be equal to the data dimension of the model."
+        @assert size(Y_prev, 2) == model.output_dim "Number of columns in Y_prev must be equal to the data dimension of the model."
         @assert size(Y_prev, 1) == model.order "Number of rows in Y_prev must be equal to the order of the model."
     end
     if !isnothing(Y)
-        @assert size(Y, 2) == model.data_dim "Number of columns in Y must be equal to the data dimension of the model."
+        @assert size(Y, 2) == model.output_dim "Number of columns in Y must be equal to the data dimension of the model."
     end
     if !isnothing(w)
         @assert length(w) == size(Y, 1) "Length of w must be equal to the number of observations in Y."
@@ -871,22 +871,22 @@ function validate_data(model::AutoRegression, Y_prev=nothing, Y=nothing, w=nothi
 end
 
 function AutoRegression(; 
-    data_dim::Int, 
+    output_dim::Int, 
     order::Int, 
     include_intercept::Bool = true, 
-    β::Matrix{<:Real} = if include_intercept zeros(data_dim * order + 1, data_dim) else zeros(data_dim * order, data_dim) end,
-    Σ::Matrix{<:Real} = Matrix{Float64}(I, data_dim, data_dim),
+    β::Matrix{<:Real} = if include_intercept zeros(output_dim * order + 1, output_dim) else zeros(output_dim * order, output_dim) end,
+    Σ::Matrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim),
     λ::Float64=0.0)
 
     innerGaussianRegression = GaussianRegression(
-        input_dim=data_dim * order, 
-        output_dim=data_dim, 
+        input_dim=output_dim * order, 
+        output_dim=output_dim, 
         β=β,
         Σ=Σ,
         include_intercept=include_intercept, 
         λ=λ)
 
-    model = AutoRegression(data_dim, order, innerGaussianRegression)
+    model = AutoRegression(output_dim, order, innerGaussianRegression)
 
     validate_model(model)
 
@@ -903,8 +903,8 @@ end
 
 function AR_to_Gaussian_data(Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
     order = size(Y_prev, 1)
-    data_dim = size(Y_prev, 2)
-    Φ_gaussian = zeros(size(Y, 1), data_dim * order)
+    output_dim = size(Y_prev, 2)
+    Φ_gaussian = zeros(size(Y, 1), output_dim * order)
 
     for i in 1:size(Y, 1)
         Φ_gaussian[i, :] = AR_to_Gaussian_data(Y_prev)
@@ -913,8 +913,8 @@ function AR_to_Gaussian_data(Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
         old_part = Y_prev[2:end, :]
         new_part = Y[i, :]
 
-        old_part = reshape(old_part, order - 1, data_dim)
-        new_part = reshape(new_part, 1, data_dim)
+        old_part = reshape(old_part, order - 1, output_dim)
+        new_part = reshape(new_part, 1, output_dim)
 
         Y_prev = vcat(old_part, new_part)
     end
@@ -934,7 +934,7 @@ function sample(model::AutoRegression, Y_prev::Matrix{<:Real}; n::Int=1)
     validate_model(model)
     validate_data(model, Y_prev)
 
-    Y = zeros(n, model.data_dim)
+    Y = zeros(n, model.output_dim)
 
     for i in 1:n
         Y[i, :] = _sample(model, Y_prev)
@@ -942,8 +942,8 @@ function sample(model::AutoRegression, Y_prev::Matrix{<:Real}; n::Int=1)
         old_part = Y_prev[2:end, :]
         new_part = Y[i, :]
 
-        old_part = reshape(old_part, model.order - 1, model.data_dim)
-        new_part = reshape(new_part, 1, model.data_dim)
+        old_part = reshape(old_part, model.order - 1, model.output_dim)
+        new_part = reshape(new_part, 1, model.output_dim)
 
         Y_prev = vcat(old_part, new_part)
     end

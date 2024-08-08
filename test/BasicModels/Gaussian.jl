@@ -1,5 +1,5 @@
 function Gaussian_simulation(n::Int)
-    true_model = Gaussian(data_dim=2)
+    true_model = Gaussian(output_dim=2)
     true_model.μ = [3.0, -2.0]
     true_model.Σ = [0.8 0.1; 0.1 2.0]
 
@@ -33,7 +33,7 @@ function test_Gaussian_standard_fit()
     true_model, Y = Gaussian_simulation(n)
 
     # Initialize and fit the model
-    est_model = Gaussian(data_dim=2)
+    est_model = Gaussian(output_dim=2)
     fit!(est_model, Y)
 
     # confirm that the fitted model has a higher loglikelihood than the true model
@@ -64,7 +64,7 @@ function test_Gaussian_valid_emission_model()
 
     # Criteria 2
     weights = rand(n)
-    est_model = Gaussian(data_dim=2)
+    est_model = Gaussian(output_dim=2)
     fit!(est_model, Y, weights)
 
     # Criteria 3

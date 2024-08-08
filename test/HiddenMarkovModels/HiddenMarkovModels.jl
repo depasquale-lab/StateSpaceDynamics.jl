@@ -1,7 +1,7 @@
 function HiddenMarkovModel_Gaussian_simulation(time_steps::Int)
 
-    emission_model1 = Gaussian(data_dim=2)
-    emission_model2 = Gaussian(data_dim=2, μ=[10.0, -10.0])
+    emission_model1 = Gaussian(output_dim=2)
+    emission_model2 = Gaussian(output_dim=2, μ=[10.0, -10.0])
 
     true_model = HiddenMarkovModel(K=2, B=[emission_model1, emission_model2])
 
@@ -18,8 +18,8 @@ function test_HiddenMarkovModel_E_step()
     centroids = kmeanspp_initialization(Y, 2)
 
 
-    emission_1 = Gaussian(data_dim=2, μ=centroids[:, 1])
-    emission_2 = Gaussian(data_dim=2, μ=centroids[:, 2])
+    emission_1 = Gaussian(output_dim=2, μ=centroids[:, 1])
+    emission_2 = Gaussian(output_dim=2, μ=centroids[:, 2])
 
     est_model = HiddenMarkovModel(
         K=2, 
@@ -52,8 +52,8 @@ function test_HiddenMarkovModel_fit()
     centroids = kmeanspp_initialization(Y, 2)
 
 
-    emission_1 = Gaussian(data_dim=2, μ=centroids[:, 1])
-    emission_2 = Gaussian(data_dim=2, μ=centroids[:, 2])
+    emission_1 = Gaussian(output_dim=2, μ=centroids[:, 1])
+    emission_2 = Gaussian(output_dim=2, μ=centroids[:, 2])
 
     est_model = HiddenMarkovModel(
         K=2, 

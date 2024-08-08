@@ -4,21 +4,21 @@ export Gaussian, fit!, sample, loglikelihood
 Gaussian: Struct representing a basic Gaussian model.
 """
 mutable struct Gaussian <: BasicModel
-    data_dim::Int # dimension of the data
+    output_dim::Int # dimension of the data
     μ::Vector{<:Real}  # mean 
     Σ::Matrix{<:Real}  # covariance matrix
 end
 
 function validate_model(model::Gaussian)
-    @assert size(model.μ, 1) == model.data_dim
+    @assert size(model.μ, 1) == model.output_dim
 
-    @assert size(model.Σ) == (model.data_dim, model.data_dim)
+    @assert size(model.Σ) == (model.output_dim, model.output_dim)
     @assert valid_Σ(model.Σ)
 end
 
 function validate_data(model::Gaussian, Y=nothing, w=nothing)
     if !isnothing(Y)
-        @assert size(Y, 2) == model.data_dim
+        @assert size(Y, 2) == model.output_dim
     end
     if !isnothing(Y) && !isnothing(w)
         @assert length(w) == size(Y, 1)
@@ -26,11 +26,11 @@ function validate_data(model::Gaussian, Y=nothing, w=nothing)
 end
 
 function Gaussian(; 
-    data_dim::Int, 
-    μ::Vector{<:Real}=zeros(data_dim), 
-    Σ::Matrix{<:Real}=Matrix{Float64}(I, data_dim, data_dim))
+    output_dim::Int, 
+    μ::Vector{<:Real}=zeros(output_dim), 
+    Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim))
     
-    model = Gaussian(data_dim, μ, Σ)
+    model = Gaussian(output_dim, μ, Σ)
     
     validate_model(model)
 
@@ -40,9 +40,6 @@ end
 function sample(model::Gaussian; n::Int=1)
     validate_model(model)
 
-    # confirm that Σ is valid
-    @assert valid_Σ(model.Σ) "Σ must be positive definite and hermitian"
-
     raw_samples = rand(MvNormal(model.μ, model.Σ), n)    
 
     return Matrix(raw_samples')
@@ -50,9 +47,6 @@ end
 
 function hmm_sample(model::Gaussian, observation_sequence::Matrix{<:Real})
     validate_model(model)
-
-    # confirm that Σ is valid
-    @assert valid_Σ(model.Σ) "Σ must be positive definite and hermitian"
 
     raw_samples = rand(MvNormal(model.μ, model.Σ), 1)    
 

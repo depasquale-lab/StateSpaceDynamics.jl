@@ -14,6 +14,7 @@ export E_step, revert_TimeSeries, validate_model, validate_data, valid_emission_
 valid_emission_models = [
         BasicModel,
         RegressionModel,
+        EmissionModel,
     ]
 
 
