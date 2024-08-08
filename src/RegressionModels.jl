@@ -117,7 +117,7 @@ function sample(model::GaussianRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1
 end
 
 # custom sampling function for the HMM. Returns observation_sequence with new observation appended to bottom.
-function sample(model::GaussianRegression, observation_sequence::Matrix{<:Real}, Φ::Matrix{<:Real})
+function hmm_sample(model::GaussianRegression, observation_sequence::Matrix{<:Real}, Φ::Matrix{<:Real})
     # find the number of observations in the observation sequence
     t = size(observation_sequence, 1) + 1
     # get the n+1th observation
@@ -411,7 +411,7 @@ function sample(model::BernoulliRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 
 end
 
 # custom sampling function for the HMM. Returns observation_sequence with new observation appended to bottom.
-function sample(model::BernoulliRegression, observation_sequence::Matrix{<:Real}, Φ::Matrix{<:Real})
+function hmm_sample(model::BernoulliRegression, observation_sequence::Matrix{<:Real}, Φ::Matrix{<:Real})
     # find the number of observations in the observation sequence
     t = size(observation_sequence, 1) + 1
     # get the n+1th observation
@@ -638,7 +638,7 @@ function sample(model::PoissonRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1)
 end
 
 # custom sampling function for the HMM. Returns observation_sequence with new observation appended to bottom.
-function sample(model::PoissonRegression, observation_sequence::Matrix{<:Real}, Φ::Matrix{<:Real})
+function hmm_sample(model::PoissonRegression, observation_sequence::Matrix{<:Real}, Φ::Matrix{<:Real})
     # find the number of observations in the observation sequence
     t = size(observation_sequence, 1) + 1
     # get the n+1th observation
@@ -952,7 +952,7 @@ function sample(model::AutoRegression, Y_prev::Matrix{<:Real}; n::Int=1)
 end
 
 # custom sampling function for the HMM. Returns observation_sequence with new observation appended to bottom.
-function sample(model::AutoRegression, observation_sequence::Matrix{<:Real}, Y_prev::Matrix{<:Real})
+function hmm_sample(model::AutoRegression, observation_sequence::Matrix{<:Real}, Y_prev::Matrix{<:Real})
 
     full_sequence = vcat(Y_prev, observation_sequence)
 

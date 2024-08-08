@@ -18,13 +18,15 @@ valid_emission_models = [
 
 
 function validate_emission(model::Model)
+    validated = false
+
     if model isa CompositeModel
-        for submodel in model.models
+        for submodel in model.components
             validate_emission(submodel)
         end
+        validated = true
     end
 
-    validated = false
     for valid_model in valid_emission_models
         if isa(model, valid_model)
             validated = true
@@ -109,13 +111,13 @@ function sample(model::HiddenMarkovModel, data...; n::Int)
     for i in 2:n
         # sample the next state
         push!(state_sequence, rand(Categorical(model.A[state_sequence[end], :])))
-        observation_sequence = sample(model.B[state_sequence[i]], observation_sequence, data...)
+        observation_sequence = hmm_sample(model.B[state_sequence[i]], observation_sequence, data...)
     end
 
     return state_sequence, observation_sequence
 end
 
-function loglikelihood(model::HiddenMarkovModel, data...; observation_wise::Bool=false)
+function loglikelihood(model::HiddenMarkovModel, data...)
     # confirm model is valid
     validate_model(model)
 

@@ -5,7 +5,7 @@ function HiddenMarkovModel_Gaussian_simulation(time_steps::Int)
 
     true_model = HiddenMarkovModel(K=2, B=[emission_model1, emission_model2])
 
-    state_sequence, Y = SSM.sample(true_model, time_steps=time_steps)
+    state_sequence, Y = SSM.sample(true_model, n=time_steps)
 
     return true_model, state_sequence, Y
 end

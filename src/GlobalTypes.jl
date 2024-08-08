@@ -36,3 +36,9 @@ abstract type RegressionModel <: Model end
 Abstract type for Dynamical Systems. I.e. LDS, etc.
 """
 abstract type DynamicalSystem <: Model end
+
+"""
+Abstract type for emission models. I.e. Gaussian, Poisson, Regressions, etc.
+"""
+
+abstract type EmissionModel <: Model end
