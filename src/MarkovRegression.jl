@@ -218,7 +218,7 @@ function M_step!(model::hmmglm, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Fl
     γ_exp = [exp.(γ_trial) for γ_trial in γ]
     #BDD change
     #update_regression!(model, X, y, γ_exp)
-    update_regression!(model, vcat(X...), vcat(y...), vcat(γ_exp...))
+    # update_regression!(model, vcat(X...), vcat(y...), vcat(γ_exp...))
 end
 
 function fit!(model::hmmglm, X::Matrix{Float64}, y::Union{Vector{T}, BitVector}, max_iter::Int=100, tol::Float64=1e-6, initialize::Bool=true) where T<: Real
@@ -258,7 +258,13 @@ end
 
 function fit!(model::hmmglm, X::Vector{Matrix{Float64}}, y::Vector{Vector{Float64}}, max_iter::Int=100, tol::Float64=1e-6, initialize::Bool=true)
     # Randomly Initialize the regression models
-    random_initialization!(model, X)
+    if initialize
+        print("Initializing")
+        random_initialization!(model, X)
+    else
+        print("not initializing betas")
+    end
+
     # Initialize log likelihood
     lls = [-Inf]
     prev_ll = -Inf
@@ -279,7 +285,8 @@ function fit!(model::hmmglm, X::Vector{Matrix{Float64}}, y::Vector{Vector{Float6
         # Log-likelihood
         ll = sum(map(α -> SSM.logsumexp(α[end, :]), α))
         push!(lls, ll)
-        println("Log-Lieklihood at iter $i: $ll")
+        println("Log-Likelihood at iter $i: $ll")
+
         # M-Step
         M_step!(model, γ, ξ, X, y)
 

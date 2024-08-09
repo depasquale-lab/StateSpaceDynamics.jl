@@ -47,10 +47,26 @@ function initialize_transition_matrix(K::Int)
     return A
 end
 
+# function initialize_transition_matrix(K::Int)
+#     # initialize a transition matrix
+#     println("Custom initial trans matrix")
+#     A = zeros(Float64, K, K)
+#     A = [0.999 0.001; 0.001 0.999]
+
+#     return A
+# end
+
+
 function initialize_state_distribution(K::Int)
     # initialize a state distribution
     return rand(Dirichlet(ones(K)))
 end
+
+# function initialize_state_distribution(K::Int)
+#     # initialize a state distribution
+#     return [0.999; 0.001]
+# end
+
 
 function forward(hmm::AbstractHMM, data::Y) where Y <: AbstractArray
     T = size(data, 1)
@@ -130,20 +146,33 @@ function update_initial_state_distribution!(hmm::AbstractHMM, γ::Matrix{Float64
     hmm.πₖ .= exp.(γ[1, :])
 end
 
+# function update_initial_state_distribution!(hmm::AbstractHMM, γ::Vector{Matrix{Float64}})
+#     # Update initial state probabilities for trialized data
+#     #num_states = size(γ[1], 2)
+#     num_trials = length(γ)
+#     #running_π = zeros(Float64, num_states)
+#     hmm.πₖ = mean([exp.(γ[i][1, :]) for i in 1:num_trials])
+
+
+# end
+
 function update_initial_state_distribution!(hmm::AbstractHMM, γ::Vector{Matrix{Float64}})
     # Update initial state probabilities for trialized data
     #num_states = size(γ[1], 2)
     num_trials = length(γ)
     #running_π = zeros(Float64, num_states)
     hmm.πₖ = mean([exp.(γ[i][1, :]) for i in 1:num_trials])
+    
+    if hmm.πₖ[1] < 1e-8
+        hmm.πₖ = [0; 1]
+    end
 
-    #for trial_index in 1:num_trials
-    #    trial = γ[trial_index]
-    #    trial_initial_prob = exp.(trial[1, :])
-    #    running_π .+= (trial_initial_prob ./ num_trials)
-    #end
-    #hmm.πₖ .= running_π
+    if hmm.πₖ[2] < 1e-8
+        hmm.πₖ = [1; 0]
+    end
+
 end
+
 
 function update_transition_matrix!(hmm::AbstractHMM, γ::Matrix{Float64}, ξ::Array{Float64, 3})
     K = size(hmm.A, 1)
@@ -178,6 +207,16 @@ function update_transition_matrix!(hmm::AbstractHMM, γ::Vector{Matrix{Float64}}
 end
 =#
 
+
+# Function to generate Dirichlet priors
+function dirichlet_prior(alpha_self::Float64, alpha_other::Float64, K::Int)
+    alpha = fill(alpha_other, K, K)
+    for i in 1:K
+        alpha[i, i] = alpha_self
+    end
+    return alpha
+end
+
 function update_transition_matrix!(hmm::AbstractHMM, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Float64, 3}})
     # Update transition matrix for trialized data
     K = size(hmm.A, 1)
@@ -186,13 +225,46 @@ function update_transition_matrix!(hmm::AbstractHMM, γ::Vector{Matrix{Float64}}
     E = vcat(ξ...)
     G = vcat([γ[i][1:size(γ[i], 1)-1, :] for i in 1:num_trials]...)
 
+    # Get Dirichlet priors
+    alpha_self = 1.0
+    alpha_other = 0.0
+    alpha = dirichlet_prior(alpha_self, alpha_other, K)
+    println(alpha)
+
     @threads for i in 1:K
         for j in 1:K
+            # Update with transition counts and Dirichlet prior
             hmm.A[i, j] = exp(logsumexp(E[:, i, j]) - logsumexp(G[:, i]))
         end
     end
 
+    hmm.A = hmm.A + alpha
+
+    for i in 1:K
+        hmm.A[i, :] /= sum(hmm.A[i, :])
+    end
+
 end
+
+
+"""
+this update transition is the one that works
+"""
+# function update_transition_matrix!(hmm::AbstractHMM, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Float64, 3}})
+#     # Update transition matrix for trialized data
+#     K = size(hmm.A, 1)
+#     num_trials = length(γ)
+
+#     E = vcat(ξ...)
+#     G = vcat([γ[i][1:size(γ[i], 1)-1, :] for i in 1:num_trials]...)
+
+#     @threads for i in 1:K
+#         for j in 1:K
+#             hmm.A[i, j] = exp(logsumexp(E[:, i, j]) - logsumexp(G[:, i]))
+#         end
+#     end
+
+# end
 
 function update_emission_models!(hmm::AbstractHMM, γ::Matrix{Float64}, data::Matrix{Float64})
     K = size(hmm.B, 1)

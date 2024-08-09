@@ -28,7 +28,7 @@ mutable struct GaussianRegression <: Regression
     include_intercept::Bool # whether to include an intercept term
     λ::Float64 # regularization parameter
   
-    function GaussianRegression(; include_intercept::Bool = true, λ::Float64=0.0)
+    function GaussianRegression(; include_intercept::Bool = true, λ::Float64=0.0)  # intercept here
         @assert λ >= 0.0 "Regularization parameter must be non-negative."
         new(Vector{Float64}(), 0.0, include_intercept, λ)
     end
