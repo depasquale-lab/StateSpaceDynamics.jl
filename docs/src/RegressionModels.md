@@ -1,4 +1,7 @@
 # Regression Models
+```@meta
+CollapsedDocStrings = true
+```
 
 The following Regression Models are common Generalized Linear Models (GLM) with their corresponding canonical links.
 
@@ -7,23 +10,31 @@ The following Regression Models are common Generalized Linear Models (GLM) with 
 ## Gaussian Regression
 ```@docs
 GaussianRegression
-loglikelihood(model::GaussianRegression, X::Matrix{Float64}, y::Matrix{Float64})
-fit!(model::GaussianRegression, X::Matrix{Float64}, y::Matrix{Float64}, w::Vector{Float64}=ones(size(y, 1)))
-sample(model::GaussianRegression, X::Matrix{Float64})
+sample(model::GaussianRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
+loglikelihood(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
+fit!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 ```
 
 ## Bernoulli Regression
 ```@docs
 BernoulliRegression
-loglikelihood(model::BernoulliRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, Vector{Int64}, BitVector}, w::Vector{Float64}=ones(length(y)))
-loglikelihood(model::BernoulliRegression, X::Vector{Float64}, y::Union{Float64, Bool, Int64}, w::Float64=1.0)
-fit!(model::BernoulliRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, Vector{Int64}, BitVector}, w::Vector{Float64}=ones(length(y)))
+sample(model::BernoulliRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
+loglikelihood(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+fit!(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 ```
 
 ## Poisson Regression
 ```@docs
 PoissonRegression
-loglikelihood(model::PoissonRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(y)))
-loglikelihood(model::PoissonRegression, X::Vector{Float64}, y::Union{Float64, Int64}, w::Float64=1.0)
-fit!(model::PoissonRegression, X::Matrix{Float64}, y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(y)))
+sample(model::PoissonRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
+loglikelihood(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+fit!(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+```
+
+## Auto Regression
+```@docs
+AutoRegression
+sample(model::AutoRegression, Y_prev::Matrix{<:Real}; n::Int=1)
+loglikelihood(model::AutoRegression, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
+fit!(model::AutoRegression, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 ```

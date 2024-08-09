@@ -5,27 +5,23 @@ export define_objective, define_objective_gradient
 export getproperty, setproperty!
 
 """
-    GaussianRegression(β::Matrix{<:Real}, Σ::Matrix{<:Real}, input_dim::Int, output_dim::Int, include_intercept::Bool, λ::Float64)
+    GaussianRegression
 
-A struct representing a Gaussian regression model.
+A Gaussian regression model.
 
 # Fields
-- `β::Matrix{<:Real}`: Coefficients of the regression model. Has shape (input_dim, output_dim). Column one is coefficients for target one, etc. The first row is the intercept term, if included.
-- `Σ::Matrix{<:Real}`: Covariance matrix of the model.
-- `input_dim::Int`: Number of features in the model.
-- `output_dim::Int`: Number of targets in the model.
-- `include_intercept::Bool`: Whether to include an intercept term in the model.
-- `λ::Float64`: Regularization parameter for the model.
-
-# Constructors
-- `GaussianRegression(; input_dim::Int, output_dim::Int, include_intercept::Bool=true, λ::Float64=0.0)`
-- `GaussianRegression(β::Matrix{<:Real}, Σ::Matrix{<:Real}; input_dim::Int, output_dim::Int, include_intercept::Bool=true, λ::Float64=0.0)`
+- `input_dim::Int`: Dimension of the input data.
+- `output_dim::Int`: Dimension of the output data.
+- `include_intercept::Bool = true`: Whether to include an intercept term; if true, the first column of β is assumed to be the intercept/bias.
+- `β::Matrix{<:Real} = if include_intercept zeros(input_dim + 1, output_dim) else zeros(input_dim, output_dim) end`: Coefficient matrix of the model. Shape input_dim by output_dim. The first row are the intercept terms, if included.
+- `Σ::Matrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim)`: Covariance matrix of the model.
+- `λ::Float64 = 0.0`: Regularization parameter.
 
 # Examples
-```julia
-model = GaussianRegression(input_dim=2, output_dim=1)
-model = GaussianRegression(ones(3, 1), ones(1, 1), input_dim=2, output_dim=1)
-model = GaussianRegression(ones(2,1), ones(1, 1), input_dim=2, output_dim=1, include_intercept=false, λ=0.1)
+```jldoctest; output = false, filter = r"(?s).*" => s""
+β = rand(3, 1)
+model = GaussianRegression(input_dim=2, output_dim=1, β=β)
+# output
 ```
 """
 mutable struct GaussianRegression <: RegressionModel
@@ -82,23 +78,24 @@ function GaussianRegression(;
 end
 
 """
-    sample(model::GaussianRegression, Φ::Matrix{<:Real}) 
+    sample(model::GaussianRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
 
-Sample from a Gaussian regression model.
+Generate `n` samples from a Gaussian regression model. Returns a matrix of size `(n, output_dim)`.
 
 # Arguments
 - `model::GaussianRegression`: Gaussian regression model.
-- `Φ::Matrix{<:Real}`: Design matrix. Each row is an observation.
+- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
+- `n::Int=size(Φ, 1)`: Number of samples to generate.
 
 # Returns
-- `Y::Matrix{<:Real}`: Sampled response matrix. Each row is a sample.
+- `Y::Matrix{<:Real}`: Matrix of samples of shape `(n, output_dim)`.
 
 # Examples
-```julia
+```jldoctest; output = false, filter = r"(?s).*" => s""
 model = GaussianRegression(input_dim=2, output_dim=1)
 Φ = rand(100, 2)
 Y = sample(model, Φ)
-```
+# output
 """
 function sample(model::GaussianRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
     @assert n <= size(Φ, 1) "n must be less than or equal to the number of observations in Φ."
@@ -117,15 +114,6 @@ function sample(model::GaussianRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1
     return Φ * model.β + rand(MvNormal(zeros(model.output_dim), model.Σ), size(Φ, 1))'
 end
 
-# custom sampling function for the HMM. Returns observation_sequence with new observation appended to bottom.
-function hmm_sample(model::GaussianRegression, observation_sequence::Matrix{<:Real}, Φ::Matrix{<:Real})
-    # find the number of observations in the observation sequence
-    t = size(observation_sequence, 1) + 1
-    # get the n+1th observation
-    new_observation = sample(model, Φ[t:t, :], n=1)
-
-    return vcat(observation_sequence, new_observation)
-end
 
 
 """
@@ -135,19 +123,19 @@ Calculate the log-likelihood of a Gaussian regression model.
 
 # Arguments
 - `model::GaussianRegression`: Gaussian regression model.
-- `Φ::Matrix{<:Real}`: Design matrix. Each row is an observation.
-- `Y::Matrix{<:Real}`: Response matrix. Each row is a response vector.
+- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`. 
+- `Y::Matrix{<:Real}`: Response matrix of shape `(n, output_dim)`.
 
 # Examples
-```julia
+```jldoctest; output = false, filter = r"(?s).*" => s""
 model = GaussianRegression(input_dim=2, output_dim=1)
 Φ = rand(100, 2)
-Y = Φ * [0.1, 0.2] + 0.1 * randn(100)
-Y = reshape(Y, 100, 1)
+Y = sample(model, Φ)
 loglikelihood(model, Φ, Y)
+# output
 ```
 """
-function loglikelihood(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}; observation_wise::Bool=false)
+function loglikelihood(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
     # confirm that the model has valid parameters
     validate_model(model)
 
@@ -166,19 +154,9 @@ function loglikelihood(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{
     # calculate log likelihood
     residuals = Y - Φ * model.β
 
-    if !observation_wise
-        loglikelihood = -0.5 * size(Φ, 1) * size(Φ, 2) * log(2π) - 0.5 * size(Φ, 1) * logdet(model.Σ) - 0.5 * sum(residuals .* (Σ_inv * residuals')')
-        return loglikelihood
-    else 
-        obs_wise_loglikelihood = zeros(size(Φ, 1))
 
-        # calculate observation wise loglikelihood (a vector of loglikelihoods for each observation)
-        @threads for i in 1:size(Φ, 1)
-            obs_wise_loglikelihood[i] = -0.5 * size(Φ, 2) * log(2π) - 0.5 * logdet(model.Σ) - 0.5 * sum(residuals[i, :] .* (Σ_inv * residuals[i, :]))
-        end
-
-        return obs_wise_loglikelihood
-    end
+    loglikelihood = -0.5 * size(Φ, 1) * size(Φ, 2) * log(2π) - 0.5 * size(Φ, 1) * logdet(model.Σ) - 0.5 * sum(residuals .* (Σ_inv * residuals')')
+    return loglikelihood
 end
 
 
@@ -225,26 +203,7 @@ function define_objective_gradient(model::GaussianRegression, Φ::Matrix{<:Real}
     return objective_gradient!
 end
 
-"""
-    update_variance!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
-Update the (weighted) variance of a Gaussian regression model. Uses the biased estimator.
-
-# Arguments
-- `model::GaussianRegression`: Gaussian regression model.
-- `Φ::Matrix{<:Real}`: Design matrix. Each row is an observation.
-- `Y::Vector{Float64}`: Response vector. Each row is a response vector.
-- `w::Vector{Float64}`: Weights for the observations.
-
-# Examples
-```julia
-model = GaussianRegression(input_dim=2, output_dim=1)
-Φ = rand(100, 2)
-Y = Φ * [0.1, 0.2] + 0.1 * randn(100)
-Y = reshape(Y, 100, 1)
-update_variance!(model, Φ, Y)
-```
-"""
 function update_variance!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
 
@@ -270,20 +229,27 @@ end
 """
     fit!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
-Fit a Gaussian regression model using maximum likelihood estimation.
+Fit a Gaussian regression model using maximum likelihood estimation and OLS.
 
 # Arguments
 - `model::GaussianRegression`: Gaussian regression model.
-- `Φ::Matrix{<:Real}`: Design matrix. Each row is an observation.
-- `Y::Matrix{<:Real}`: Response matrix. Each row is a response vector.
-- `w::Vector{Float64}`: Weights for the observations.
+- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
+- `Y::Matrix{<:Real}`: Response matrix of shape `(n, output_dim)`.
+- `w::Vector{Float64}`: Weights of the data points. Should be a vector of size `n`.
 
 # Examples
-```julia
-model = GaussianRegression(input_dim=2, output_dim=1)
+```jldoctest; output = true
+true_model = GaussianRegression(input_dim=2, output_dim=1)
 Φ = rand(100, 2)
-Y = rand(100, 1)
-fit!(model, Φ, Y)
+Y = sample(true_model, Φ)
+
+est_model = GaussianRegression(input_dim=2, output_dim=1)
+fit!(est_model, Φ, Y)
+
+loglikelihood(est_model, Φ, Y) > loglikelihood(true_model, Φ, Y)
+
+# output
+true
 ```
 """
 function fit!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
@@ -310,24 +276,21 @@ function fit!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, 
 end
 
 
-
 """
-    BernoulliRegression(β::Vector{Float64}, include_intercept::Bool, λ::Float64=0.0)
+    BernoulliRegression
+
+A Bernoulli regression model.
 
 # Fields
-- `β::Vector{Float64}`: Coefficients of the regression model.
-- `include_intercept::Bool`: Whether to include an intercept term in the model.
-- `λ::Float64`: Regularization parameter for the model.
-
-# Constructors
-- `BernoulliRegression(; include_intercept::Bool = true, λ::Float64=0.0)`
-- `BernoulliRegression(β::Vector{Float64}, include_intercept::Bool, λ::Float64=0.0)`
+- `input_dim::Int`: Dimension of the input data.
+- `include_intercept::Bool = true`: Whether to include an intercept term.
+- `β::Vector{<:Real} = if include_intercept zeros(input_dim + 1) else zeros(input_dim) end`: Coefficients of the model. The first element is the intercept term, if included.
+- `λ::Float64 = 0.0`: Regularization parameter.
 
 # Examples
-```julia
-model = BernoulliRegression()
-model = BernoulliRegression(include_intercept=false, λ=0.1)
-model = BernoulliRegression([0.1, 0.2], true, 0.1)
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = BernoulliRegression(input_dim=2)
+# output
 ```
 """
 mutable struct BernoulliRegression <: RegressionModel
@@ -379,7 +342,27 @@ end
 
 
 
+"""
+    sample(model::BernoulliRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
 
+Generate `n` samples from a Bernoulli regression model. Returns a matrix of size `(n, 1)`.
+
+# Arguments
+- `model::BernoulliRegression`: Bernoulli regression model.
+- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
+- `n::Int=size(Φ, 1)`: Number of samples to generate.
+
+# Returns
+- `Y::Matrix{<:Real}`: Matrix of samples of shape `(n, 1)`.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = BernoulliRegression(input_dim=2)
+Φ = rand(100, 2)
+Y = sample(model, Φ)
+# output
+```
+"""
 function sample(model::BernoulliRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
     @assert n <= size(Φ, 1) "n must be less than or equal to the number of observations in Φ."
     # cut the length of Φ to n
@@ -405,33 +388,28 @@ function sample(model::BernoulliRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 
     return Y
 end
 
-# custom sampling function for the HMM. Returns observation_sequence with new observation appended to bottom.
-function hmm_sample(model::BernoulliRegression, observation_sequence::Matrix{<:Real}, Φ::Matrix{<:Real})
-    # find the number of observations in the observation sequence
-    t = size(observation_sequence, 1) + 1
-    # get the n+1th observation
-    new_observation = sample(model, Φ[t:t, :], n=1)
-
-    return vcat(observation_sequence, new_observation)
-end
 
 """
-    loglikelihood(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Union{Vector{Float64}, BitVector}, w::Vector{Float64}=ones(length(Y))
+    loglikelihood(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
 Calculate the log-likelihood of a Bernoulli regression model.
 
 # Arguments
 - `model::BernoulliRegression`: Bernoulli regression model.
-- `Φ::Matrix{<:Real}`: Design matrix.
-- `Y::Union{Vector{Float64}, BitVector}`: Response vector.
-- `w::Vector{Float64}`: Weights for the observations.
+- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
+- `Y::Matrix{<:Real}`: Response matrix of shape `(n, 1)`.
+- `w::Vector{Float64}`: Weights of the data points. Should be a vector of size `n`.
+
+# Returns
+- `loglikelihood::Float64`: Log-likelihood of the model.
 
 # Examples
-```julia
-model = BernoulliRegression()
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = BernoulliRegression(input_dim=2)
 Φ = rand(100, 2)
-Y = rand(Bool, 100)
+Y = sample(model, Φ)
 loglikelihood(model, Φ, Y)
+# output
 ```
 """
 function loglikelihood(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)); observation_wise::Bool=false)
@@ -449,12 +427,8 @@ function loglikelihood(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix
 
     obs_wise_loglikelihood = w .* (Y .* log.(p) .+ (1 .- Y) .* log.(1 .- p))
 
-    if !observation_wise
         
-        return sum(obs_wise_loglikelihood)
-    else
-        return obs_wise_loglikelihood
-    end
+    return sum(obs_wise_loglikelihood)
 end
 
 
@@ -501,30 +475,30 @@ end
 
 
 
-
 """
-    fit!(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Union{Vector{Float64}, BitVector}, w::Vector{Float64}=ones(length(Y))
+    fit!(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
 Fit a Bernoulli regression model using maximum likelihood estimation.
 
 # Arguments
 - `model::BernoulliRegression`: Bernoulli regression model.
-- `Φ::Matrix{<:Real}`: Design matrix.
-- `Y::Union{Vector{Float64}, BitVector}`: Response vector.
-- `w::Vector{Float64}`: Weights for the observations.
+- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
+- `Y::Matrix{<:Real}`: Response matrix of shape `(n, 1)`.
+- `w::Vector{Float64}`: Weights of the data points. Should be a vector of size `n`.
 
 # Examples
-```julia
-model = BernoulliRegression()
+```jldoctest; output = true
+true_model = BernoulliRegression(input_dim=2)
 Φ = rand(100, 2)
-Y = rand(Bool, 100)
-fit!(model, Φ, Y)
+Y = sample(true_model, Φ)
 
-model = BernoulliRegression()
-Φ = rand(100, 2)
-Y = rand(Bool, 100)
-w = rand(100)
-fit!(model, Φ, Y, w)
+est_model = BernoulliRegression(input_dim=2)
+fit!(est_model, Φ, Y)
+
+loglikelihood(est_model, Φ, Y) > loglikelihood(true_model, Φ, Y)
+
+# output
+true
 ```
 """
 function fit!(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
@@ -546,21 +520,20 @@ function fit!(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real},
 end
     
 """
-    mutable struct PoissonRegression <: RegressionModel
+    PoissonRegression
+
+A Poisson regression model.
 
 # Fields
-- `β::Vector{Float64}`: Coefficients of the regression model
-- `include_intercept::Bool`: Whether to include an intercept term in the model
-
-# Constructors
-- `PoissonRegression(; include_intercept::Bool = true, λ::Float64=0.0)`
-- `PoissonRegression(β::Vector{Float64}, include_intercept::Bool, λ::Float64=0.0)`
+- `input_dim::Int`: Dimension of the input data.
+- `include_intercept::Bool = true`: Whether to include an intercept term.
+- `β::Vector{<:Real} = if include_intercept zeros(input_dim + 1) else zeros(input_dim) end`: Coefficients of the model. The first element is the intercept term, if included.
+- `λ::Float64 = 0.0`: Regularization parameter.
 
 # Examples
-```julia
-model = PoissonRegression()
-model = PoissonRegression(include_intercept=false, λ=0.1)
-model = PoissonRegression([0.1, 0.2], true, 0.1)
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = PoissonRegression(input_dim=2)
+# output
 ```
 """
 mutable struct PoissonRegression <: RegressionModel
@@ -608,7 +581,27 @@ function PoissonRegression(;
     return new_model
 end
 
+"""
+    sample(model::PoissonRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
 
+Generate `n` samples from a Poisson regression model. Returns a matrix of size `(n, 1)`.
+
+# Arguments
+- `model::PoissonRegression`: Poisson regression model.
+- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
+- `n::Int=size(Φ, 1)`: Number of samples to generate.
+
+# Returns
+- `Y::Matrix{<:Real}`: Matrix of samples of shape `(n, 1)`.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = PoissonRegression(input_dim=2)
+Φ = rand(100, 2)
+Y = sample(model, Φ)
+# output
+```
+"""
 function sample(model::PoissonRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
     @assert n <= size(Φ, 1) "n must be less than or equal to the number of observations in Φ."
     # cut the length of Φ to n
@@ -642,23 +635,28 @@ function hmm_sample(model::PoissonRegression, observation_sequence::Matrix{<:Rea
     return vcat(observation_sequence, new_observation)
 end
 
+
 """
-    loglikelihood(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(Y)))
+    loglikelihood(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
 Calculate the log-likelihood of a Poisson regression model.
 
 # Arguments
-- `model::PoissonRegression`: Poisson regression model
-- `Φ::Matrix{<:Real}`: Design matrix
-- `Y::Union{Vector{Float64}, Vector{Int64}}`: Response vector
-- `w::Vector{Float64}`: Weights for the observations
+- `model::PoissonRegression`: Poisson regression model.
+- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
+- `Y::Matrix{<:Real}`: Response matrix of shape `(n, 1)`.
+- `w::Vector{Float64}`: Weights of the data points. Should be a vector of size `n`.
+
+# Returns
+- `loglikelihood::Float64`: Log-likelihood of the model.
 
 # Examples
-```julia
-model = PoissonRegression()
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = PoissonRegression(input_dim=2)
 Φ = rand(100, 2)
-Y = rand(Poisson(1), 100)
+Y = sample(model, Φ)
 loglikelihood(model, Φ, Y)
+# output
 ```
 """
 function loglikelihood(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)); observation_wise::Bool=false)
@@ -728,27 +726,7 @@ end
 
 
 
-"""
-    gradient!(grad::Vector{Float64}, model::PoissonRegression, Φ::Matrix{<:Real}, Y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(Y)))
 
-Calculate the gradient of the negative log-likelihood function for a Poisson regression model.
-
-# Arguments
-- `grad::Vector{Float64}`: Gradient of the negative log-likelihood function
-- `model::PoissonRegression`: Poisson regression model
-- `Φ::Matrix{<:Real}`: Design matrix
-- `Y::Union{Vector{Float64}, Vector{Int64}}`: Response vector
-- `w::Vector{Float64}`: Weights for the observations
-
-# Examples
-```julia
-model = PoissonRegression()
-Φ = rand(100, 2)
-Y = rand(Poisson(1), 100)
-G = zeros(2)
-gradient!(G, model, Φ, Y)
-```
-"""
 function gradient!(grad::Vector{Float64}, model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y,1)))
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
@@ -765,28 +743,29 @@ function gradient!(grad::Vector{Float64}, model::PoissonRegression, Φ::Matrix{<
 end
 
 """
-    fit!(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Union{Vector{Float64}, Vector{Int64}}, w::Vector{Float64}=ones(length(Y)))
+    fit!(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
 Fit a Poisson regression model using maximum likelihood estimation.
 
 # Arguments
-- `model::PoissonRegression`: Poisson regression model
-- `Φ::Matrix{<:Real}`: Design matrix
-- `Y::Union{Vector{Float64}, Vector{Int64}}`: Response vector
-- `w::Vector{Float64}`: Weights for the observations
+- `model::PoissonRegression`: Poisson regression model.
+- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
+- `Y::Matrix{<:Real}`: Response matrix of shape `(n, 1)`.
+- `w::Vector{Float64}`: Weights of the data points. Should be a vector of size `n`.
 
 # Examples
-```julia
-model = PoissonRegression()
+```jldoctest; output = true
+true_model = PoissonRegression(input_dim=2)
 Φ = rand(100, 2)
-Y = rand(Poisson(1), 100)
-fit!(model, Φ, Y)
+Y = sample(true_model, Φ)
 
-model = PoissonRegression()
-Φ = rand(100, 2)
-Y = rand(Poisson(1), 100)
-w = rand(100)
-fit!(model, Φ, Y, w)
+est_model = PoissonRegression(input_dim=2)
+fit!(est_model, Φ, Y)
+
+loglikelihood(est_model, Φ, Y) > loglikelihood(true_model, Φ, Y)
+
+# output
+true
 ```
 """
 function fit!(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
@@ -810,7 +789,26 @@ end
 
 
 
+"""
+    AutoRegression
 
+An autoregressive model.
+
+# Fields
+- `output_dim::Int`: Dimension of the output data.
+- `order::Int`: Order of the autoregressive model.
+- `include_intercept::Bool = true`: Whether to include an intercept term. If true, the row of `β` is the intercept terms.
+- `β::Matrix{<:Real} = if include_intercept zeros(output_dim * order + 1, output_dim) else zeros(output_dim * order, output_dim) end`: Coefficients of the model. The top `output_dim`x`output_dim` block is coefficients for the first order, the next `output_dim`x`output_dim` block is coefficients for the second order, and so on.
+- `Σ::Matrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim)`: Covariance matrix of the model.
+- `λ::Float64 = 0.0`: Regularization parameter.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+β = [0 0; 1.0 0.0; 0.0 1.0; 1.0 0.0; 0.0 1.0]
+model = AutoRegression(output_dim=2, order=2, β=β)
+# output
+```
+"""
 mutable struct AutoRegression <: RegressionModel
     output_dim::Int
     order::Int
@@ -924,6 +922,28 @@ function _sample(model::AutoRegression, Y_prev::Matrix{<:Real})
     return sample(model.innerGaussianRegression, Φ_gaussian)
 end
 
+
+""" 
+    sample(model::AutoRegression, Y_prev::Matrix{<:Real}; n::Int=1)
+
+Generate `n` samples from an autoregressive model. Returns a matrix of size `(n, output_dim)`.
+
+# Arguments
+- `model::AutoRegression`: Autoregressive model.
+- `Y_prev::Matrix{<:Real}`: Matrix of shape `(order, output_dim)` containing the previous samples.
+- `n::Int=1`: Number of samples to generate.
+
+# Returns
+- `Y::Matrix{<:Real}`: Matrix of samples of shape `(n, output_dim)`.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = AutoRegression(output_dim=2, order=2)
+Y_prev = rand(2, 2)
+Y = sample(model, Y_prev, n=10)
+# output
+```
+"""
 function sample(model::AutoRegression, Y_prev::Matrix{<:Real}; n::Int=1)
     # confirm that the model has valid parameters
     validate_model(model)
@@ -957,18 +977,65 @@ function hmm_sample(model::AutoRegression, observation_sequence::Matrix{<:Real},
     return vcat(observation_sequence, new_observation)
 end
 
+"""
+    loglikelihood(model::AutoRegression, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
 
-function loglikelihood(model::AutoRegression, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}; observation_wise::Bool=false)
+Calculate the log-likelihood of an autoregressive model.
+
+# Arguments
+- `model::AutoRegression`: Autoregressive model.
+- `Y_prev::Matrix{<:Real}`: Matrix of shape `(order, output_dim)` containing the previous samples.
+- `Y::Matrix{<:Real}`: Matrix of shape `(n, output_dim)` containing the current samples.
+
+# Returns
+- `loglikelihood::Float64`: Log-likelihood of the model.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = AutoRegression(output_dim=2, order=2)
+Y_prev = rand(2, 2)
+Y = sample(model, Y_prev, n=10)
+
+loglikelihood(model, Y_prev, Y)
+# output
+```
+"""
+function loglikelihood(model::AutoRegression, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
     # confirm that the model has valid parameters
     validate_model(model)
     validate_data(model, Y_prev, Y)
 
     Φ_gaussian = AR_to_Gaussian_data(Y_prev, Y)
 
-    return loglikelihood(model.innerGaussianRegression, Φ_gaussian, Y; observation_wise=observation_wise)
+    return loglikelihood(model.innerGaussianRegression, Φ_gaussian, Y)
 end
 
+"""
+    fit!(model::AutoRegression, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
+Fit an autoregressive model using maximum likelihood estimation.
+
+# Arguments
+- `model::AutoRegression`: Autoregressive model.
+- `Y_prev::Matrix{<:Real}`: Matrix of shape `(order, output_dim)` containing the previous samples.
+- `Y::Matrix{<:Real}`: Matrix of shape `(n, output_dim)` containing the current samples.
+- `w::Vector{Float64}`: Weights of the data points. Should be a vector of size `n`.
+
+# Examples
+```jldoctest; output = true
+true_model = AutoRegression(output_dim=2, order=2)
+Y_prev = rand(2, 2)
+Y = sample(true_model, Y_prev, n=10)
+
+est_model = AutoRegression(output_dim=2, order=2)
+fit!(est_model, Y_prev, Y)
+
+loglikelihood(est_model, Y_prev, Y) > loglikelihood(true_model, Y_prev, Y)
+
+# output
+true
+```
+"""
 function fit!(model::AutoRegression, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # confirm that the model has valid parameters
     validate_model(model)

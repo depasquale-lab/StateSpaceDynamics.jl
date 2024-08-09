@@ -17,22 +17,20 @@ using Base.Threads
 
 include("GlobalTypes.jl")
 include("Utilities.jl")
-include("RegressionModels.jl")
+
 include("LDS.jl")
-#include("Emissions.jl")
+
 #include("MarkovRegression.jl")
+
 include("BasicModels.jl")
+include("RegressionModels.jl")
 include("CompositeModel.jl")
-
 include("EmissionModels.jl")
-
 include("MixtureModels.jl")
+include("HiddenMarkovModels.jl")
 
 include("Optimization.jl")
 include("Preprocessing.jl")
-
-include("HiddenMarkovModels.jl")
-
 
 
 end

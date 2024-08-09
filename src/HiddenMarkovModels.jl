@@ -15,7 +15,28 @@ export class_probabilities
 
 
 
+"""
+    HiddenMarkovModel
 
+A Hidden Markov Model (HMM) with custom emissions.
+
+# Fields
+- `K::Int`: Number of states.
+- `B::Vector=Vector()`: Vector of emission models.
+- `emission=nothing`: If B is missing emissions, clones of this model will be used to fill in the rest.
+- `A::Matrix{<:Real}`: Transition matrix.
+- `πₖ::Vector{Float64}`: Initial state distribution.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+emission_1 = Gaussian(output_dim=2)
+emission_2 = Gaussian(output_dim=2)
+model = HiddenMarkovModel(K=2, B=[emission_1, emission_2])
+
+model = HiddenMarkovModel(K=2, emission=Gaussian(output_dim=2))
+# output
+```
+"""
 mutable struct HiddenMarkovModel <: Model
     A::Matrix{<:Real} # transition matrix
     B::Vector{EmissionModel} # Vector of emission Models
@@ -61,6 +82,35 @@ function initialize_state_distribution(K::Int)
     return rand(Dirichlet(ones(K)))
 end
 
+
+"""
+    weighted_initialization(model::HiddenMarkovModel, data...)
+
+    Initialize the matrix with our custom weighted initialization method. Assigns responsibilities randomly, fits the emission models, and sets the transition matrix and initial state distribution to uniform priors.
+
+# Arguments
+- `model::HiddenMarkovModel`: The HiddenMarkovModel to initialize.
+- `data...`: The data to fit the emission models.
+
+# Examples
+```jldoctest; output = true
+μ = [3.0, 4.0]
+emission_1 = Gaussian(output_dim=2, μ=μ)
+μ = [-5.0, 2.0]
+emission_2 = Gaussian(output_dim=2, μ=μ)
+
+true_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2])
+states, Y = sample(true_model, n=100)
+
+est_model = HiddenMarkovModel(K=2, emission=Gaussian(output_dim=2))
+weighted_initialization(est_model, Y)
+fit!(est_model, Y)
+
+loglikelihood(est_model, Y) > loglikelihood(true_model, Y)
+# output
+true
+```
+"""
 function weighted_initialization(model::HiddenMarkovModel, data...)
     validate_model(model)
     validate_data(model, data...)
@@ -110,7 +160,31 @@ function HiddenMarkovModel(;
     return model
 end
 
+"""
+    sample(model::HiddenMarkovModel, data...; n::Int)
 
+Generate `n` samples from a Hidden Markov Model. Returns a tuple of the state sequence and the observation sequence.
+
+# Arguments
+- `model::HiddenMarkovModel`: The Hidden Markov Model to sample from.
+- `data...`: The data to fit the Hidden Markov Model. Requires the same format as the emission model.
+- `n::Int`: The number of samples to generate.
+
+# Returns
+- `state_sequence::Vector{Int}`: The state sequence, where each element is an integer 1:K.
+- `observation_sequence::Matrix{Float64}`: The observation sequence. This takes the form of the emission model's output.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = HiddenMarkovModel(K=2, emission=Gaussian(output_dim=2))
+states, Y = sample(model, n=10)
+
+model = HiddenMarkovModel(K=2, emission=GaussianRegression(input_dim=2, output_dim=2))
+Φ = randn(100, 2)
+states, Y = sample(model, Φ, n=10)
+# output
+```
+"""
 function sample(model::HiddenMarkovModel, data...; n::Int)
     # confirm model is valid
     validate_model(model)
@@ -131,6 +205,26 @@ function sample(model::HiddenMarkovModel, data...; n::Int)
     return state_sequence, observation_sequence
 end
 
+"""
+    loglikelihood(model::HiddenMarkovModel, data...)
+
+Calculate the log likelihood of the data given the Hidden Markov Model.
+
+# Arguments
+- `model::HiddenMarkovModel`: The Hidden Markov Model to calculate the log likelihood for.
+- `data...`: The data to calculate the log likelihood for. Requires the same format as the emission model.
+
+# Returns
+- `loglikelihood::Float64`: The log likelihood of the data given the Hidden Markov Model.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = HiddenMarkovModel(K=2, emission=Gaussian(output_dim=2))
+states, Y = sample(model, n=10)
+loglikelihood(model, Y)
+# output
+```
+"""
 function loglikelihood(model::HiddenMarkovModel, data...)
     # confirm model is valid
     validate_model(model)
@@ -277,7 +371,36 @@ function M_step!(model::HiddenMarkovModel, γ::Matrix{<:Real}, ξ::Array{Float64
     update_emissions!(model, data, exp.(γ)) 
 end
 
+"""
+    fit!(model::HiddenMarkovModel, data...; max_iters::Int=100, tol::Float64=1e-6)
 
+Fit the Hidden Markov Model using the EM algorithm.
+
+# Arguments
+- `model::HiddenMarkovModel`: The Hidden Markov Model to fit.
+- `data...`: The data to fit the Hidden Markov Model. Requires the same format as the emission model.
+- `max_iters::Int=100`: The maximum number of iterations to run the EM algorithm.
+- `tol::Float64=1e-6`: When the log likelihood is improving by less than this value, the algorithm will stop.
+
+# Examples
+```jldoctest; output = true
+μ = [3.0, 4.0]
+emission_1 = Gaussian(output_dim=2, μ=μ)
+μ = [-5.0, 2.0]
+emission_2 = Gaussian(output_dim=2, μ=μ)
+
+true_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2])
+states, Y = sample(true_model, n=100)
+
+est_model = HiddenMarkovModel(K=2, emission=Gaussian(output_dim=2))
+weighted_initialization(est_model, Y)
+fit!(est_model, Y)
+
+loglikelihood(est_model, Y) > loglikelihood(true_model, Y)
+# output
+true
+```
+"""
 function fit!(model::HiddenMarkovModel, data...; max_iters::Int=100, tol::Float64=1e-6)
     # confirm model is valid
     validate_model(model)
@@ -311,7 +434,27 @@ function fit!(model::HiddenMarkovModel, data...; max_iters::Int=100, tol::Float6
     validate_model(model)
 end
 
+"""
+    class_probabilities(model::HiddenMarkovModel, data...)
 
+Calculate the class probabilities for each observation. Returns a matrix of size `(T, K)` where `K` is the number of states and `T` is the number of observations.
+
+# Arguments
+- `model::HiddenMarkovModel`: The Hidden Markov Model to calculate the class probabilities for.
+- `data...`: The data to calculate the class probabilities for. Requires the same format as the emission model loglikelihood() function.
+
+# Returns
+- `class_probabilities::Matrix{Float64}`: The class probabilities for each observation. Of shape `(T, K)`. Each row of the Matrix sums to 1.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+
+model = HiddenMarkovModel(K=2, emission=Gaussian(output_dim=2))
+states, Y = sample(model, n=10)
+class_probabilities(model, Y)
+# output
+```
+"""
 function class_probabilities(model::HiddenMarkovModel, data...)
     γ, ξ, α, β = E_step(model, data)
     return exp.(γ)

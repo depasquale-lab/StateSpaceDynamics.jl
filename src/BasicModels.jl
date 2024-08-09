@@ -1,7 +1,22 @@
 export Gaussian, fit!, sample, loglikelihood
 
 """
-Gaussian: Struct representing a basic Gaussian model.
+    Gaussian
+
+A multidimensional Gaussian model with a mean and covariance matrix.
+
+# Fields
+- `output_dim::Int`: Dimension of the data.
+- `μ::Vector{<:Real}=zeros(output_dim)`: Mean of the Gaussian.
+- `Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim)`: Covariance matrix of the Gaussian.
+
+```jldoctest; output = false
+Gaussian(output_dim=2)
+
+# output
+
+Gaussian(2, [0.0, 0.0], [1.0 0.0; 0.0 1.0])
+```
 """
 mutable struct Gaussian <: BasicModel
     output_dim::Int # dimension of the data
@@ -37,6 +52,22 @@ function Gaussian(;
     return model
 end
 
+"""
+    sample(model::Gaussian; n::Int=1)
+
+Generate `n` samples from a Gaussian model. Returns a matrix of size `(n, output_dim)`.
+
+# Examples
+```jldoctest; output = false
+model = Gaussian(output_dim=2)
+samples = sample(model, n=3)
+
+println(size(samples))
+
+# output
+(3, 2)
+```
+"""
 function sample(model::Gaussian; n::Int=1)
     validate_model(model)
 
@@ -45,6 +76,21 @@ function sample(model::Gaussian; n::Int=1)
     return Matrix(raw_samples')
 end
 
+
+"""
+    loglikelihood(model::Gaussian, Y::Matrix{<:Real})
+
+Calculate the log likelihood of the data `Y` given the Gaussian model. The data `Y` is assumed to be a matrix of size `(n, output_dim)`.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = Gaussian(output_dim=2)
+Y = sample(model, n=3)
+loglikelihood(model, Y)
+
+# output
+```
+"""
 function loglikelihood(model::Gaussian, Y::Matrix{<:Real})
     validate_model(model)
     validate_data(model, Y)
@@ -60,6 +106,27 @@ function loglikelihood(model::Gaussian, Y::Matrix{<:Real})
     return loglikelihood
 end
 
+"""
+    fit!(model::Gaussian, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+
+Fit a Gaussian model to the data `Y`. 
+
+# Arguments
+- `model::Gaussian`: Gaussian model to fit.
+- `Y::Matrix{<:Real}`: Data to fit the model to. Should be a matrix of size `(n, output_dim)`.
+- `w::Vector{Float64}=ones(size(Y, 1))`: Weights for the data. Should be a vector of size `n`.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+true_model = Gaussian(output_dim=2)
+Y = sample(true_model, n=3)
+
+est_model = Gaussian(output_dim=2)
+fit!(est_model, Y)
+
+# output
+```
+"""
 function fit!(model::Gaussian, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     validate_model(model)
     validate_data(model, Y, w)

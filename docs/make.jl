@@ -1,23 +1,26 @@
 using Documenter
-using Revise
 using SSM
 
 root = joinpath(dirname(pathof(SSM)), "..", "docs")
 
 println("working dir: ", pwd())
 
-entr(["./docs/src"], [SSM]) do
-    makedocs(
-        root = root, 
-        sitename="SSM Julia",
-        pages=[
-            "Home" => "index.md",
-            "getting_started.md",
-            "Models" => [
-                "MixtureModels.md",
-                "RegressionModels.md",
-                "HiddenMarkovModels.md",
-                "LDS.md",
-                ],
-            ])
-end
+DocMeta.setdocmeta!(SSM, :DocTestSetup, :(using SSM); recursive=true)
+
+
+makedocs(
+    root = root, 
+    sitename="SSM Julia",
+    modules = [SSM],
+    pages=[
+        "Home" => "index.md",
+        "getting_started.md",
+        "Models" => [
+            "BasicModels.md",
+            "RegressionModels.md",
+            "HiddenMarkovModels.md",
+            "MixtureModels.md",
+            "LDS.md",
+            ],
+        "Misc" => "Misc.md",
+        ])
