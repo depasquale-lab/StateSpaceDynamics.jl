@@ -28,6 +28,27 @@ function validate_data(model::EmissionModel, data...)
 end
 
 
+"""
+Every emission model must implement the following functions:
+
+- emission_sample(model::EmissionModel, data...; observation_sequence)
+    The point of this function is to iteratively sample from the emission model through repeated calls of the form:
+    `
+    observation_sequence = emission_sample(model, data...)
+    observation_sequence = emission_sample(model, data..., observation_sequence=observation_sequence)
+    observation_sequence = emission_sample(model, data..., observation_sequence=observation_sequence)
+    observation_sequence = emission_sample(model, data..., observation_sequence=observation_sequence)
+    `
+    Et cetera.
+
+    NOTE: The observation_sequence argument is optional, and when it is not passed in, the function should return a NEW observation sequence with one observation.
+- emission_loglikelihood(model::EmissionModel, data...)
+    This function should return a vector of loglikelihoods for each observation in the data.
+- emission_fit!(model::EmissionModel, data..., weights)
+    This function should fit the model to the data, with weights for each observation.
+
+Make sure to add any new emission models to the Emission function at the end of this file!!
+"""
 
 
 

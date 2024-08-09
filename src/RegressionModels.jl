@@ -967,6 +967,7 @@ function sample(model::AutoRegression, Y_prev::Matrix{<:Real}; n::Int=1)
 end
 
 # custom sampling function for the HMM. Returns observation_sequence with new observation appended to bottom.
+# not used. emission_sample() has replaced this.
 function hmm_sample(model::AutoRegression, observation_sequence::Matrix{<:Real}, Y_prev::Matrix{<:Real})
 
     full_sequence = vcat(Y_prev, observation_sequence)
