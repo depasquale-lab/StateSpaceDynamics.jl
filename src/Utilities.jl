@@ -1,6 +1,12 @@
 export kmeanspp_initialization, kmeans_clustering, PPCA, fit!, block_tridgm, interleave_reshape, block_tridiagonal_inverse
+export row_matrix, stabilize_covariance_matrix
 
 # Matrix utilities
+
+"""Vector to Row Matrix"""
+function row_matrix(x::AbstractVector)
+    return reshape(x, 1, length(x))
+end
 
 """Block Tridiagonal Inverse"""
 function block_tridiagonal_inverse(A, B, C)
@@ -9,7 +15,7 @@ function block_tridiagonal_inverse(A, B, C)
     # Initialize Di and Ei arrays
     D = Array{AbstractMatrix}(undef, n+1)
     E = Array{AbstractMatrix}(undef, n+1)
-    λii = Array{AbstractMatrix}(undef, n)
+    λii = Array{Float64}(undef, n, block_size, block_size)
 
     # Add a zero matrix to the subdiagonal and superdiagonal
     pushfirst!(A, zeros(block_size, block_size))
@@ -18,22 +24,23 @@ function block_tridiagonal_inverse(A, B, C)
     # Initial conditions
     D[1] = zeros(block_size, block_size)
     E[n+1] = zeros(block_size, block_size)
+
  
     # Forward sweep for D
     for i in 1:n
-        D[i+1] = inv(B[i] - A[i] * D[i]) * C[i]
+        D[i+1] = (B[i] - A[i] * D[i]) \ C[i]
     end
   
     # Backward sweep for E
     for i in n:-1:1
-        E[i] = inv(B[i] - C[i]*E[i+1]) * A[i]
+        E[i] = (B[i] - C[i]*E[i+1]) \ A[i]
     end
 
     # Compute the inverses of the diagonal blocks λii
     for i in 1:n
-        term1 = (I - E[i+1]*D[i+1])
+        term1 = (I - D[i+1]*E[i+1])
         term2 = (B[i] - A[i]*D[i])
-        λii[i] = inv(term1)*inv(term2)
+        λii[i, :, :] = pinv(term1) * pinv(term2)
     end
 
     return λii
@@ -47,13 +54,7 @@ function interleave_reshape(data::AbstractArray, t::Int, d::Int)
     if l != (t * d)
         error("The length of data must be equivalent to  t * d")
     end
-    # create a matrix of zeros
-    X = zeros(t, d)
-    # loop through the data and reshape
-    for i in 1:d
-        X[:, i] = data[i:d:l]
-    end
-    # return the reshaped matrix
+    X = permutedims(reshape(data', d, t))
     return X
 end
 
@@ -115,7 +116,7 @@ function euclidean_distance(a::AbstractVector{Float64}, b::AbstractVector{Float6
 end
 
 """KMeans++ Initialization"""
-function kmeanspp_initialization(data::Matrix{Float64}, k_means::Int)
+function kmeanspp_initialization(data::Matrix{<:Real}, k_means::Int)
     N, D = size(data)
     centroids = zeros(D, k_means)
     rand_idx = rand(1:N)
@@ -141,7 +142,7 @@ function kmeanspp_initialization(data::Vector{Float64}, k_means::Int)
 end
 
 """KMeans Clustering Initialization"""
-function kmeans_clustering(data::Matrix{Float64}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6)
+function kmeans_clustering(data::Matrix{<:Real}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6)
     N, _ = size(data)
     centroids = kmeanspp_initialization(data, k_means)  # Assuming you have this function defined
     labels = zeros(Int, N)
@@ -190,4 +191,16 @@ function ensure_positive_definite(A::Matrix{T}) where T
     # Reconstruct the matrix with the clipped eigenvalues
     A_posdef = V * Diagonal(λ_clipped) * V'
     return A_posdef
+end
+
+function stabilize_covariance_matrix(Σ::Matrix{<:Real})
+    # check if the covariance is symmetric. If not, make it symmetric
+    if !ishermitian(Σ)
+        Σ = (Σ + Σ') * 0.5
+    end
+    # check if matrix is posdef. If not, add a small value to the diagonal (sometimes an emission only models one observation and the covariance matrix is singular)
+    if !isposdef(Σ)
+        Σ = Σ + 1e-12 * I
+    end
+    return Σ
 end

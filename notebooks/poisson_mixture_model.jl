@@ -119,7 +119,7 @@ begin
 	data_dim = 2
 	μ₁, μ₂ = [0.1, 0.3], [-1.2, 2.2]
 	Σ₁, Σ₂ = [1 0.2; 0.2 1], [1 0.9; 0.9 1]
-
+	
 
 	gmmIdeal = SSM.GaussianMixtureModel(k, data_dim)
 	gmmIdeal.μₖ[1, :] = μ₁
@@ -130,7 +130,7 @@ begin
 
 
 	data = SSM.sample(gmmIdeal, 1000)
-
+	
 
 	gmmEstimate = SSM.GaussianMixtureModel(k, data_dim)
 

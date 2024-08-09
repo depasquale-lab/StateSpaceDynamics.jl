@@ -7,8 +7,8 @@ using InteractiveUtils
 # ╔═╡ 53c96240-c044-11ee-2f83-e93206e06ac6
 begin
 	using Pkg
-	Pkg.activate("/Users/ryansenne/Documents/Github/SSM")
-	include("/Users/ryansenne/Documents/Github/SSM//src/SSM.jl")
+	Pkg.activate("/Users/ryansenne/Documents/GitHub/ssm_julia")
+	include("/Users/ryansenne/Documents/GitHub/ssm_julia//src/SSM.jl")
 	using .SSM
 	using LinearAlgebra
 	using Distributions
@@ -119,12 +119,12 @@ begin
 	A = [1 1; -β (1 - α)]
 	H = reshape([1., 0.], 1, 2)
 	Q = 0.01 * I(2)
-	R = [1]
+	R = [1.;;]
 	x₀ = [1, -1]
 	P₀ = 0.01 * I(2)
 
 	# set up a LDS object
-	spring_LDS = SSM.LDS(A, H, nothing, Q, R, x₀, P₀, nothing, 1, 2, fill(false, 7))
+	spring_LDS = SSM.LDS(;A=A, H=H, Q=Q, R=R, x0=x₀, p0=P₀, obs_dim=1, latent_dim=2, fit_bool=fill(false, 7))
 
 	# now we can filter our observations
 	x_filtered, p_filtered = SSM.KalmanFilter(spring_LDS, observation_sequence)
@@ -166,7 +166,7 @@ $p(x_t|y_{1:T})$
 # ╔═╡ 43b64fbd-62ad-42a4-9905-1062eeec4001
 begin
 	# we already set up parameters from the previous example, the usage is very similar to the Kalman Filter.
-	x_smooth, p_smooth = SSM.KalmanSmoother(spring_LDS, observation_sequence, "RTS") 
+	x_smooth, p_smooth = SSM.KalmanSmoother(spring_LDS, observation_sequence, "Direct") 
 end
 
 # ╔═╡ 93a7e46f-a8e3-4bba-9e01-30b194b653f6
@@ -184,12 +184,6 @@ begin
 	plot!(x_smooth[:, 2], ribbon=vel_bounds_smooth, label="Smoothed Velocity", linewidth=:3)
 	plot(smooth_1, smooth_2, layout=l2)
 end
-
-# ╔═╡ 00800593-d432-420e-9e15-fd40fd7de7ee
-
-
-# ╔═╡ bdaa735a-7490-4ddd-931b-f01e1382e740
-
 
 # ╔═╡ 1a173cad-acec-4358-8147-8119ce6b7449
 begin
@@ -218,6 +212,4 @@ end
 # ╠═4ea51161-6402-46dc-9222-b687a59cf424
 # ╠═43b64fbd-62ad-42a4-9905-1062eeec4001
 # ╠═93a7e46f-a8e3-4bba-9e01-30b194b653f6
-# ╠═00800593-d432-420e-9e15-fd40fd7de7ee
-# ╠═bdaa735a-7490-4ddd-931b-f01e1382e740
 # ╠═1a173cad-acec-4358-8147-8119ce6b7449
