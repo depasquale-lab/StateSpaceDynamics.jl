@@ -86,7 +86,7 @@ end
 """
     weighted_initialization(model::HiddenMarkovModel, data...)
 
-    Initialize the matrix with our custom weighted initialization method. Assigns responsibilities randomly, fits the emission models, and sets the transition matrix and initial state distribution to uniform priors.
+Initialize the matrix with our custom weighted initialization method. Assigns responsibilities randomly, fits the emission models, and sets the transition matrix and initial state distribution to uniform priors.
 
 # Arguments
 - `model::HiddenMarkovModel`: The HiddenMarkovModel to initialize.
@@ -100,7 +100,7 @@ emission_1 = Gaussian(output_dim=2, μ=μ)
 emission_2 = Gaussian(output_dim=2, μ=μ)
 
 true_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2])
-states, Y = sample(true_model, n=100)
+states, Y = sample(true_model, n=1000)
 
 est_model = HiddenMarkovModel(K=2, emission=Gaussian(output_dim=2))
 weighted_initialization(est_model, Y)
@@ -177,7 +177,7 @@ Generate `n` samples from a Hidden Markov Model. Returns a tuple of the state se
 # Examples
 ```jldoctest; output = false, filter = r"(?s).*" => s""
 model = HiddenMarkovModel(K=2, emission=Gaussian(output_dim=2))
-states, Y = sample(model, n=10)
+states, Y = sample(model, n=1000)
 
 model = HiddenMarkovModel(K=2, emission=GaussianRegression(input_dim=2, output_dim=2))
 Φ = randn(100, 2)
@@ -390,7 +390,7 @@ emission_1 = Gaussian(output_dim=2, μ=μ)
 emission_2 = Gaussian(output_dim=2, μ=μ)
 
 true_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2])
-states, Y = sample(true_model, n=100)
+states, Y = sample(true_model, n=1000)
 
 est_model = HiddenMarkovModel(K=2, emission=Gaussian(output_dim=2))
 weighted_initialization(est_model, Y)
@@ -463,7 +463,28 @@ end
 
 
 
+"""
+    viterbi(model::HiddenMarkovModel, data...)
 
+Calculate the most likely sequence of states given the data.
+
+# Arguments
+- `model::HiddenMarkovModel`: The Hidden Markov Model to calculate the most likely sequence of states for.
+- `data...`: The data to calculate the most likely sequence of states for. Requires the same format as the emission model's loglikelihood() function.
+
+# Returns
+- `best_path::Vector{Int}`: The most likely sequence of states.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+emission_1 = Gaussian(output_dim=2, μ=[3.0, 4.0])
+emission_2 = Gaussian(output_dim=2, μ=[-5.0, 2.0])
+model = HiddenMarkovModel(K=2, B=[emission_1, emission_2])
+states, Y = sample(model, n=100)
+state_sequence = viterbi(model, Y)
+# output
+```
+"""
 function viterbi(model::HiddenMarkovModel, data...)
     # Calculate observation wise likelihoods for all states
     loglikelihoods_state_1 = emission_loglikelihood(model.B[1], data...)
