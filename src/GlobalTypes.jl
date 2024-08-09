@@ -2,7 +2,7 @@
 The purpose of this file is to provide a common place for all global types to be defined. This is to avoid circular dependencies between files.
 """
 
-export Model, RegressionModel, BasicModel, MixtureModel, EmissionsModel, AbstractHMM, DynamicalSystem, TimeSeries
+export Model, RegressionModel, BasicModel, MixtureModel, EmissionsModel, AbstractHMM, DynamicalSystem, EmissionModel
 
 
 # Create abstract types here 

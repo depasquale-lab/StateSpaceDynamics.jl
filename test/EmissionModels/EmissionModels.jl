@@ -1,26 +1,49 @@
+function GaussianEmission_simulation(n::Int)
+    emission_1 = Gaussian(output_dim=2)
+    emission_1.μ = [3.0, -2.0]
+    emission_1.Σ = [0.8 0.1; 0.1 2.0]
+
+    emission_2 = Gaussian(output_dim=2)
+    emission_2.μ = [10.0, -10.0]
+    emission_2.Σ = [0.8 0.1; 0.1 2.0]
+
+    true_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2])
+    true_model.πₖ = [1.0, 0]  
+
+    # sample data
+    state_sequence, Y = SSM.sample(true_model, n=n)
+
+    return true_model, state_sequence, Y
+end
+
 function test_GaussianEmission()
-    # Initialize Gaussian Emission Model
-    gaussian_emission = GaussianEmission([0.0, 0.0], [1.0 0.0; 0.0 1.0])
-    # Check if parameters are initialized correctly
-    @test gaussian_emission.μ == [0.0, 0.0]
-    @test gaussian_emission.Σ == [1.0 0.0; 0.0 1.0]
-    # Generate random data
-    data = randn(100, 2)
-    # Calculate log-likelihood
-    ll = SSM.loglikelihood(gaussian_emission, data[1, :])
-    # Check if log-likelihood is a scalar
-    @test size(ll) == ()
-    # Log-likelihood should be a negative float
-    @test ll < 0.0
-    # Check sample emission
-    sample = SSM.sample_emission(gaussian_emission)
-    @test length(sample) == 2
-    # Update emission model
-    γ = ones(100)
-    SSM.updateEmissionModel!(gaussian_emission, data, γ)
-    # Check if parameters are updated correctly
-    @test gaussian_emission.μ ≈ mean(data, dims=1)'
-    @test gaussian_emission.Σ ≈ cov(data, corrected=false)
+    n = 5000
+    true_model, state_sequence, Y = GaussianEmission_simulation(n)
+
+    em_1 = Gaussian(output_dim=2)
+    em_2 = Gaussian(output_dim=2)
+    est_model = HiddenMarkovModel(K=2, B=[em_1, em_2])
+
+    est_model.πₖ = [1.0, 0]
+
+    fit!(est_model, Y)
+
+    # confirm that the fitted model has a higher loglikelihood than the true model
+    @test SSM.loglikelihood(est_model, Y) >= SSM.loglikelihood(true_model, Y)
+
+    pred_means = [est_model.B[i].μ for i in 1:2]
+    means = [true_model.B[i].μ for i in 1:2]
+
+    # check if the means are close, one by one, with atol 0.2
+    @test pred_means[1] ≈ means[1] atol=0.2
+    @test pred_means[2] ≈ means[2] atol=0.2
+
+    pred_covs = [est_model.B[i].Σ for i in 1:2]
+    covs = [true_model.B[i].Σ for i in 1:2]
+    
+    # check if the covariances are close, one by one, with atol 0.2
+    @test pred_covs[1] ≈ covs[1] atol=0.2
+    @test pred_covs[2] ≈ covs[2] atol=0.2
 end
 
 function test_regression_emissions()

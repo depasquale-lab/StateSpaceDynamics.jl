@@ -39,7 +39,7 @@ function test_Gaussian_standard_fit()
     # confirm that the fitted model has a higher loglikelihood than the true model
     @test SSM.loglikelihood(est_model, Y) >= SSM.loglikelihood(true_model, Y)
 
-    # confirm that the fitted model has similar β values to the true model
+    # confirm that the fitted model has similar μ values to the true model
     @test isapprox(est_model.μ, true_model.μ, atol=0.1)
 
     # confirm that the fitted model's Σ values are good

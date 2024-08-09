@@ -22,11 +22,12 @@ include("LDS.jl")
 #include("Emissions.jl")
 #include("MarkovRegression.jl")
 include("BasicModels.jl")
+include("CompositeModel.jl")
 
 include("EmissionModels.jl")
 
 include("MixtureModels.jl")
-include("CompositeModel.jl")
+
 include("Optimization.jl")
 include("Preprocessing.jl")
 

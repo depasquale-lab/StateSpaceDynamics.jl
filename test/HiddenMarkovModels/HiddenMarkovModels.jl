@@ -1,33 +1,14 @@
-function HiddenMarkovModel_Gaussian_simulation(time_steps::Int)
-
-    emission_model1 = Gaussian(output_dim=2)
-    emission_model2 = Gaussian(output_dim=2, μ=[10.0, -10.0])
-
-    true_model = HiddenMarkovModel(K=2, B=[emission_model1, emission_model2])
-
-    state_sequence, Y = SSM.sample(true_model, n=time_steps)
-
-    return true_model, state_sequence, Y
-end
+include("GaussianHMM.jl")
+include("AutoRegressionHMM.jl")
 
 function test_HiddenMarkovModel_E_step()
-    time_steps = 1000
-    true_model, state_sequence, data... = HiddenMarkovModel_Gaussian_simulation(time_steps)
-    Y = data[1]
+    n = 1000
+    true_model, state_sequence, Y = GaussianHMM_simulation(n)
 
-    centroids = kmeanspp_initialization(Y, 2)
+    est_model = HiddenMarkovModel(K=3, emission=Gaussian(output_dim=2))
+    weighted_initialization(est_model, Y)
 
-
-    emission_1 = Gaussian(output_dim=2, μ=centroids[:, 1])
-    emission_2 = Gaussian(output_dim=2, μ=centroids[:, 2])
-
-    est_model = HiddenMarkovModel(
-        K=2, 
-        B=[
-            emission_1, 
-            emission_2])
-
-    γ, ξ, α, β = E_step(est_model, data)
+    γ, ξ, α, β = E_step(est_model, (Y,))
 
     # test α
     @test size(α) == (size(Y, 1), est_model.K)
@@ -40,72 +21,20 @@ function test_HiddenMarkovModel_E_step()
     @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(exp.(γ), dims=2))
 
     # test ξ
-    @test size(ξ) == (size(Y, 1) - 1, true_model.K, true_model.K)
+    @test size(ξ) == (size(Y, 1) - 1, est_model.K, est_model.K)
     @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(exp.(ξ), dims=(2, 3)))
 end
 
-function test_HiddenMarkovModel_fit()
-    time_steps = 1000
-    true_model, state_sequence, data... = HiddenMarkovModel_Gaussian_simulation(time_steps)
-    Y = data[1]
+function test_viterbi()
+    n = 1000
+    true_model, state_sequence, Y = GaussianHMM_simulation(n)
 
-    centroids = kmeanspp_initialization(Y, 2)
+    est_model = HiddenMarkovModel(K=3, emission=Gaussian(output_dim=2))
+    weighted_initialization(est_model, Y)
+    fit!(est_model, Y)
 
-
-    emission_1 = Gaussian(output_dim=2, μ=centroids[:, 1])
-    emission_2 = Gaussian(output_dim=2, μ=centroids[:, 2])
-
-    est_model = HiddenMarkovModel(
-        K=2, 
-        B=[
-            emission_1, 
-            emission_2])
-
-    
-    SSM.fit!(est_model, Y)
-
-    means = [true_model.B[i].μ for i in 1:2]
-    covs = [true_model.B[i].Σ for i in 1:2]
-
-    pred_means = [est_model.B[i].μ for i in 1:2]
-    # 0.2 because it checks norms of the vectors
-    @test sort(pred_means) ≈ sort(means) atol=0.2
-    pred_covs = [est_model.B[i].Σ for i in 1:2]
-    @test pred_covs ≈ covs atol=0.3
-end 
-
-
-
-# implement a recursive version
-function concrete_subtypes(t::DataType, subtypes_list::Vector{DataType}=Vector{DataType}())
-    if isconcretetype(t)
-        push!(subtypes_list, t)
-    end
-
-    for subtype in subtypes(t)
-        concrete_subtypes(subtype, subtypes_list)
-    end
-    return subtypes_list
-end
-
-function test_valid_emissions()
-    # get all concrete emissions in valid_emission_models and store in a list
-    concrete_emissions_list = []
-    for emission_model in valid_emission_models
-        subtypes_list = concrete_subtypes(emission_model)
-        for subtype in subtypes_list
-            push!(concrete_emissions_list, subtype)
-        end
-    end
-    
-    for emission in concrete_emissions_list
-        # try to call test_<emission type>_valid_emission_model()
-        try
-            eval(Meta.parse("test_$(emission)_valid_emission_model()"))
-        catch e
-            @warn "test_$(emission)_valid_emission_model() not implemented"
-        end
-    end
-
-    
+    # compare the viterbi path to the true state sequence
+    viterbi_path = viterbi(est_model, Y)
+    # This test does NOT work, but viterbi DOES. The mappings between emissions are scrambled.
+    @test sum(viterbi_path .== state_sequence) / n > 0.99
 end

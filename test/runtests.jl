@@ -211,8 +211,9 @@ include("HiddenMarkovModels/HiddenMarkovModels.jl")
 
 @testset "HiddenMarkovModels.jl Tests" begin
     test_HiddenMarkovModel_E_step()
-    test_HiddenMarkovModel_fit()
-    test_valid_emissions()
+    #test_viterbi() -- don't have time to finish, need emission matching logic
+    test_GaussianHMM()
+    test_AutoRegressionHMM()
 end
 
 

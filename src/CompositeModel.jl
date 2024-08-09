@@ -43,16 +43,6 @@ function sample(model::CompositeModel, input_data::Vector{}=[() for i in 1:lengt
     return observations_vector
 end
 
-function hmm_sample(model::CompositeModel, observation_sequence::Vector{}, input_data::Vector{})
-    validate_model(model)
-
-    for i in 1:length(model.components)
-        observation_sequence[i] = (hmm_sample(model.components[i], observation_sequence[i]..., input_data[i]...), )
-    end 
-
-    return observation_sequence
-end
-
 
 function loglikelihood(model::CompositeModel, input_data::Vector{}, output_data::Vector{}; observation_wise::Bool=false)
     validate_model(model)
@@ -77,10 +67,17 @@ end
 
 
 function fit!(model::CompositeModel, input_data::Vector{}, output_data::Vector{}, w::Vector{Float64}=Vector{Float64}())
-    validate_model(model)
-    validate_data(model, input_data, output_data, w)
+    # the other fit! functions will validate model and data
 
     for i in 1:length(model.components)
         fit!(model.components[i], input_data[i]..., output_data[i]..., w)
+    end
+end
+
+function fit!(model::CompositeModel, output_data::Vector{}, w::Vector{Float64}=Vector{Float64}())
+    # the other fit! functions will validate model and data
+
+    for i in 1:length(model.components)
+        fit!(model.components[i], output_data[i]..., w)
     end
 end

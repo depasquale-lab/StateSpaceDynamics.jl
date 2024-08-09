@@ -1,7 +1,9 @@
-export HiddenMarkovModel, valid_emission, fit!, sample, loglikelihood
+export HiddenMarkovModel, valid_emission, fit!, sample, loglikelihood, viterbi
+export weighted_initialization
 
 # for unit tests
-export E_step, revert_TimeSeries, validate_model, validate_data, valid_emission_models
+export E_step, validate_model, validate_data, valid_emission_models
+export class_probabilities
 
 
 
@@ -11,36 +13,12 @@ export E_step, revert_TimeSeries, validate_model, validate_data, valid_emission_
 # 3. TimeSeries(model, sample(model, data...; n=<number of samples>)) must return a TimeSeries object of n samples.
 # 4. revert_TimeSeries(model, time_series) must return the time_series data converted back to the original sample() format (the inverse of TimeSeries(model, samples)).
 
-valid_emission_models = [
-        BasicModel,
-        RegressionModel,
-        EmissionModel,
-    ]
 
-
-function validate_emission(model::Model)
-    validated = false
-
-    if model isa CompositeModel
-        for submodel in model.components
-            validate_emission(submodel)
-        end
-        validated = true
-    end
-
-    for valid_model in valid_emission_models
-        if isa(model, valid_model)
-            validated = true
-            break
-        end
-    end
-    @assert validated "$(typeof(model)) is not a valid emission model."
-end
 
 
 mutable struct HiddenMarkovModel <: Model
     A::Matrix{<:Real} # transition matrix
-    B::Vector{Model} # Vector of emission Models
+    B::Vector{EmissionModel} # Vector of emission Models
     πₖ::Vector{Float64} # initial state distribution
     K::Int # number of states
 end
@@ -55,9 +33,8 @@ function validate_model(model::HiddenMarkovModel)
     # check that the number of states is equal to the number of emission models
     @assert model.K == length(model.B)
     # check that all emission model are the same type
-    @assert all([model.B[1] isa typeof(model.B[i]) for i in 2:length(model.B)])
-    # check that the emission model type is supported
-    validate_emission(model.B[1])
+    @assert all([model.B[i] isa EmissionModel for i in 1:length(model.B)])
+
 
     # check that all emission models are valid
     for i in 1:length(model.B)
@@ -84,13 +61,49 @@ function initialize_state_distribution(K::Int)
     return rand(Dirichlet(ones(K)))
 end
 
+function weighted_initialization(model::HiddenMarkovModel, data...)
+    validate_model(model)
+    validate_data(model, data...)
+
+    # get the proper shape for class probabilities
+    responsibilities = class_probabilities(model, data...)
+
+    # replace each row in responsibilities with rand(Dirichlet(ones(K)))
+    for i in 1:size(responsibilities, 1)
+        responsibilities[i, :] = rand(Dirichlet(ones(model.K)))
+    end
+
+    # train each emission model with their randomized responsibilities
+    for i in 1:model.K
+        emission_fit!(model.B[i], data..., responsibilities[:, i])
+    end
+
+    # set the transition matrix to a uniform prior
+    model.A = ones(Float64, model.K, model.K) / model.K
+
+    # set the initial state distribution to a uniform prior
+    model.πₖ = ones(Float64, model.K) / model.K
+end
+
+
 function HiddenMarkovModel(; 
     K::Int,
-    B::Vector{<:Model},
+    B::Vector=Vector(),
+    emission=nothing,
     A::Matrix{<:Real} = initialize_transition_matrix(K), 
     πₖ::Vector{Float64} = initialize_state_distribution(K))
 
-    model = HiddenMarkovModel(A, B, πₖ, K)
+    # if B does not have all K emission models, then fill in the rest with deep copies of "emission"
+    if !isnothing(emission) && length(B) < K
+        for i in length(B)+1:K
+            push!(B, deepcopy(emission))
+        end
+    end
+
+
+    emission_models = Emission.(B)
+
+    model = HiddenMarkovModel(A, emission_models, πₖ, K)
 
     validate_model(model)
     
@@ -107,12 +120,12 @@ function sample(model::HiddenMarkovModel, data...; n::Int)
 
 
     state_sequence = [rand(Categorical(model.πₖ))]
-    observation_sequence = sample(model.B[state_sequence[1]], data...; n=1)
+    observation_sequence = emission_sample(model.B[state_sequence[1]], data...)
 
     for i in 2:n
         # sample the next state
         push!(state_sequence, rand(Categorical(model.A[state_sequence[end], :])))
-        observation_sequence = hmm_sample(model.B[state_sequence[i]], observation_sequence, data...)
+        observation_sequence = emission_sample(model.B[state_sequence[i]], data...; observation_sequence=observation_sequence)
     end
 
     return state_sequence, observation_sequence
@@ -126,12 +139,12 @@ function loglikelihood(model::HiddenMarkovModel, data...)
     validate_data(model, data...)
 
     # Calculate observation wise likelihoods for all states
-    loglikelihoods_state_1 = loglikelihood(model.B[1], data..., observation_wise=true)
+    loglikelihoods_state_1 = emission_loglikelihood(model.B[1], data...)
     loglikelihoods = zeros(model.K, length(loglikelihoods_state_1))
     loglikelihoods[1, :] = loglikelihoods_state_1
 
     @threads for k in 2:model.K
-        loglikelihoods[k, :] = loglikelihood(model.B[k], data..., observation_wise=true)
+        loglikelihoods[k, :] = emission_loglikelihood(model.B[k], data...)
     end
 
     α = forward(model, loglikelihoods)
@@ -217,12 +230,12 @@ function E_step(model::HiddenMarkovModel, data)
     # run forward-backward algorithm
 
     # Calculate observation wise likelihoods for all states
-    loglikelihoods_state_1 = loglikelihood(model.B[1], data..., observation_wise=true)
+    loglikelihoods_state_1 = emission_loglikelihood(model.B[1], data...)
     loglikelihoods = zeros(model.K, length(loglikelihoods_state_1))
     loglikelihoods[1, :] = loglikelihoods_state_1
 
     @threads for k in 2:model.K
-        loglikelihoods[k, :] = loglikelihood(model.B[k], data..., observation_wise=true)
+        loglikelihoods[k, :] = emission_loglikelihood(model.B[k], data...)
     end
 
     α = forward(model, loglikelihoods)
@@ -250,7 +263,7 @@ function update_emissions!(model::HiddenMarkovModel, data, w::Matrix{<:Real})
     # update regression models 
  
      @threads for k in 1:model.K
-         fit!(model.B[k], data..., w[:, k])
+         emission_fit!(model.B[k], data..., w[:, k])
      end
  
  end
@@ -274,7 +287,7 @@ function fit!(model::HiddenMarkovModel, data...; max_iters::Int=100, tol::Float6
 
     log_likelihood = -Inf
     # Initialize progress bar
-    p = Progress(max_iters; dt=1, desc="Computing Baum-Welch...",)
+    p = Progress(max_iters; dt=1, desc="Running EM algorithm...",)
     for iter in 1:max_iters
         # Update the progress bar
         next!(p; showvalues = [(:iteration, iter), (:log_likelihood, log_likelihood)])
@@ -282,7 +295,7 @@ function fit!(model::HiddenMarkovModel, data...; max_iters::Int=100, tol::Float6
         γ, ξ, α, β = E_step(model, data)
         # Compute and update the log-likelihood
         log_likelihood_current = logsumexp(α[end, :])
-        println(log_likelihood_current)
+        #println("iter $(iter) loglikelihood: ", log_likelihood_current)
         if abs(log_likelihood_current - log_likelihood) < tol
             finish!(p)
             break
@@ -296,4 +309,60 @@ function fit!(model::HiddenMarkovModel, data...; max_iters::Int=100, tol::Float6
 
     # confirm model is valid
     validate_model(model)
+end
+
+
+function class_probabilities(model::HiddenMarkovModel, data...)
+    γ, ξ, α, β = E_step(model, data)
+    return exp.(γ)
+end
+
+
+
+
+
+function viterbi(model::HiddenMarkovModel, data...)
+    # Calculate observation wise likelihoods for all states
+    loglikelihoods_state_1 = emission_loglikelihood(model.B[1], data...)
+    loglikelihoods = zeros(model.K, length(loglikelihoods_state_1))
+    loglikelihoods[1, :] = loglikelihoods_state_1
+
+    @threads for k in 2:model.K
+        loglikelihoods[k, :] = emission_loglikelihood(model.B[k], data...)
+    end
+
+    T = length(loglikelihoods_state_1)
+    K = size(model.A, 1)  # Number of states
+
+    # Step 1: Initialization
+    viterbi = zeros(Float64, T, K)
+    backpointer = zeros(Int, T, K)
+    for i in 1:K
+        viterbi[1, i] = log(model.πₖ[i]) + loglikelihoods[i, 1]
+        backpointer[1, i] = 0
+    end
+
+    # Step 2: Recursion
+    for t in 2:T
+        for j in 1:K
+            max_prob, max_state = -Inf, 0
+            for i in 1:K
+                prob = viterbi[t-1, i] + log(model.A[i, j]) + loglikelihoods[j, t]
+                if prob > max_prob
+                    max_prob = prob
+                    max_state = i
+                end
+            end
+            viterbi[t, j] = max_prob
+            backpointer[t, j] = max_state
+        end
+    end
+
+    # Step 3: Termination
+    best_path_prob, best_last_state = findmax(viterbi[T, :])
+    best_path = [best_last_state]
+    for t in T:-1:2
+        push!(best_path, backpointer[t, best_path[end]])
+    end
+    return reverse(best_path)
 end

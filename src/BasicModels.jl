@@ -45,15 +45,7 @@ function sample(model::Gaussian; n::Int=1)
     return Matrix(raw_samples')
 end
 
-function hmm_sample(model::Gaussian, observation_sequence::Matrix{<:Real})
-    validate_model(model)
-
-    raw_samples = rand(MvNormal(model.μ, model.Σ), 1)    
-
-    return vcat(observation_sequence, Matrix(raw_samples'))
-end
-
-function loglikelihood(model::Gaussian, Y::Matrix{<:Real}; observation_wise::Bool=false)
+function loglikelihood(model::Gaussian, Y::Matrix{<:Real})
     validate_model(model)
     validate_data(model, Y)
 
@@ -63,19 +55,9 @@ function loglikelihood(model::Gaussian, Y::Matrix{<:Real}; observation_wise::Boo
     # calculate log likelihood
     residuals = broadcast(-, Y, model.μ')
 
-    if !observation_wise
-        loglikelihood = -0.5 * size(Y, 1) * size(Y, 2) * log(2π) - 0.5 * size(Y, 1) * logdet(model.Σ) - 0.5 * sum(residuals .* (Σ_inv * residuals')')
-        return loglikelihood
-    else 
-        obs_wise_loglikelihood = zeros(size(Y, 1))
 
-        # calculate observation wise loglikelihood (a vector of loglikelihoods for each observation)
-        @threads for i in 1:size(Y, 1)
-            obs_wise_loglikelihood[i] = -0.5 * size(Y, 2) * log(2π) - 0.5 * logdet(model.Σ) - 0.5 * sum(residuals[i, :] .* (Σ_inv * residuals[i, :]))
-        end
-
-        return obs_wise_loglikelihood
-    end
+    loglikelihood = -0.5 * size(Y, 1) * size(Y, 2) * log(2π) - 0.5 * size(Y, 1) * logdet(model.Σ) - 0.5 * sum(residuals .* (Σ_inv * residuals')')
+    return loglikelihood
 end
 
 function fit!(model::Gaussian, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))

@@ -1,7 +1,8 @@
-export GaussianRegression, BernoulliRegression, PoissonRegression, AutoRegression, fit!, loglikelihood, least_squares, update_variance!, sample, set_params!
+export GaussianRegression, BernoulliRegression, PoissonRegression, AutoRegression, fit!, loglikelihood, least_squares, update_variance!, sample
 
 # below used in notebooks and unit tests
 export define_objective, define_objective_gradient
+export getproperty, setproperty!
 
 """
     GaussianRegression(β::Matrix{<:Real}, Σ::Matrix{<:Real}, input_dim::Int, output_dim::Int, include_intercept::Bool, λ::Float64)
@@ -245,10 +246,6 @@ update_variance!(model, Φ, Y)
 ```
 """
 function update_variance!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    # confirm that the model has valid parameters
-    validate_model(model)
-
-    validate_data(model, Φ, Y, w)
 
 
     # add intercept if specified
@@ -265,8 +262,6 @@ function update_variance!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matr
     # ensure rounding errors are not causing the covariance matrix to be non-positive definite
     model.Σ = stabilize_covariance_matrix(model.Σ)
 
-    # print the covariance matrix
-    println("Covariance matrix: ", model.Σ)
 
    
     
@@ -860,7 +855,7 @@ end
 function validate_data(model::AutoRegression, Y_prev=nothing, Y=nothing, w=nothing)
     if !isnothing(Y_prev)
         @assert size(Y_prev, 2) == model.output_dim "Number of columns in Y_prev must be equal to the data dimension of the model."
-        @assert size(Y_prev, 1) == model.order "Number of rows in Y_prev must be equal to the order of the model."
+        @assert size(Y_prev, 1) == model.order "Number of rows in Y_prev must be equal to the order of the model. Got: rows=$(size(Y_prev, 1)) and order=$(model.order)"
     end
     if !isnothing(Y)
         @assert size(Y, 2) == model.output_dim "Number of columns in Y must be equal to the data dimension of the model."
