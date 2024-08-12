@@ -191,7 +191,7 @@ end
 
 function update_regression!(model::hmmglm, X::Matrix{<:Real}, y::Union{Vector{Float64}, Matrix{<:Real}}, w::Matrix{<:Real}=ones(size(y, 1), model.K))
    # update regression models 
-
+    println("In update regression")
     @threads for k in 1:model.K
         update_emissions_model!(model.B[k], X, y, w[:, k])
     end
@@ -205,19 +205,6 @@ function initialize_regression!(model::hmmglm, X::Matrix{<:Real}, y::Union{Vecto
     # add white noise to the beta coefficients
     @threads for k in 1:model.K
         model.B[k].regression.β += randn(size(model.B[k].regression.β))
-    end
-end
-
-function random_initialization!(model::hmmglm, X::Vector{Matrix{Float64}})
-    # Find number of parameters
-    p = size(X[1], 2)
-    if model.B[1].regression.include_intercept
-        p+=1
-    end
-    # Randomly initialize regression models
-    @threads for k in 1:model.K
-        model.B[k].regression.β = randn(p)
-        model.B[k].regression.σ² = 1.0
     end
 end
 
@@ -367,16 +354,14 @@ function M_step!(model::hmmglm, γ::Matrix{<:Real}, ξ::Array{Float64, 3}, X::Ma
     update_regression!(model, X, y, exp.(γ)) 
 end
 
-function M_step!(model::hmmglm, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Float64, 3}}, X::Vector{Matrix{Float64}}, y::Vector{Vector{Float64}})
+function M_step!(model::hmmglm, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Float64, 3}}, X::Vector{Matrix{Float64}}, y::Union{Vector{Vector{Float64}}, Vector{Matrix{Float64}}})
     # Update initial state distribution
     update_initial_state_distribution!(model, γ)
     # Update transition matrix
     update_transition_matrix!(model, γ, ξ)
     # Update regression models
     γ_exp = [exp.(γ_trial) for γ_trial in γ]
-    #BDD change
-    #update_regression!(model, X, y, γ_exp)
-    # update_regression!(model, vcat(X...), vcat(y...), vcat(γ_exp...))
+    update_regression!(model, vcat(X...), vcat(y...), vcat(γ_exp...))
 end
 
 """
@@ -422,9 +407,6 @@ function fit!(model::hmmglm, X::Matrix{<:Real}, y::Union{Vector{T}, BitVector, M
         γ, ξ, α, _ = E_step(model, X, y)
         # Log-likelihood
         ll = logsumexp(α[end, :])
-        if isnan(ll)
-            println("nan in ll")
-        end
         push!(lls, ll)
         println("Log-Likelihood at iter $i: $ll")
         # M-step
@@ -440,26 +422,16 @@ function fit!(model::hmmglm, X::Matrix{<:Real}, y::Union{Vector{T}, BitVector, M
     return lls
 end
 
-function fit!(model::hmmglm, X::Vector{Matrix{Float64}}, y::Vector{Vector{Float64}}, max_iter::Int=100, tol::Float64=1e-6, initialize::Bool=true)
+
+function fit!(model::hmmglm, X::Vector{Matrix{Float64}}, y::Vector{Matrix{Float64}}, max_iter::Int=100, tol::Float64=1e-6, initialize::Bool=true)
     # Randomly Initialize the regression models
     if initialize
-        print("Initializing")
-        random_initialization!(model, X)
-    else
-        print("not initializing betas")
+        initialize_regression!(model, vcat(X...), vcat(y...))
     end
 
     # Initialize log likelihood
     lls = [-Inf]
     prev_ll = -Inf
-
-    # Storage for parameter tracking
-    A_stor = Vector{Matrix{Float64}}()
-    π_stor = Vector{Vector{Float64}}()
-    β1_stor = Vector{Vector{Float64}}()
-    β2_stor = Vector{Vector{Float64}}()
-    σ1_stor = Vector{Float64}()
-    σ2_stor = Vector{Float64}()
 
     # Expectation-Maximization
     for i in 1:max_iter
@@ -474,23 +446,15 @@ function fit!(model::hmmglm, X::Vector{Matrix{Float64}}, y::Vector{Vector{Float6
         # M-Step
         M_step!(model, γ, ξ, X, y)
 
-        # Track parameters
-        push!(A_stor, deepcopy(model.A))
-        push!(π_stor, deepcopy(model.πₖ))
-        push!(β1_stor, deepcopy(model.B[1].regression.β))
-        push!(β2_stor, deepcopy(model.B[2].regression.β))
-        push!(σ1_stor, deepcopy(model.B[1].regression.σ²))
-        push!(σ2_stor, deepcopy(model.B[2].regression.σ²))
-
         # check for convergence
         if i > 1
             if abs(ll - prev_ll) < tol
-                return lls, A_stor, π_stor, β1_stor, β2_stor, σ1_stor, σ2_stor
+                return lls
             end
         end
         prev_ll = ll 
     end
-    return lls, A_stor, π_stor, β1_stor, β2_stor, σ1_stor, σ2_stor
+    return lls
 end
 
 """
