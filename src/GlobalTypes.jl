@@ -27,6 +27,9 @@ abstract type AbstractHMM end
 """
 Abstract type for Dynamical Systems. I.e. LDS, etc.
 """
+# Abstract types
+abstract type AbstractStateModel end
+abstract type AbstractObservationModel end
 abstract type DynamicalSystem end
 
 # smoothing methods for sufficient statistic calculation disambiguation, see LDS.jl

@@ -163,6 +163,9 @@ fit!(ppca, rand(10, 2))
 ```
 """
 function fit!(ppca::ProbabilisticPCA, X::Matrix{Float64}, max_iters::Int=100, tol::Float64=1e-6)
+    # initialize the μ if not done 
+    ppca.μ = mean(X, dims=1)
+    # initiliaze the log-likelihood
     lls = []
     prev_ll = -Inf  
     prog = Progress(max_iters; desc="Fitting Probabilistic PCA...")

@@ -1,14 +1,12 @@
-
-"""Linear Dynamical Systems Models e.g. the Kalman Filter, (recurrent) Switching Linear Dynamical Systems, etc."""
-
 # export statement
 export LDS, KalmanFilter, KalmanSmoother, loglikelihood, PoissonLDS
 export RTSSmoother, DirectSmoother, KalmanSmoother, KalmanFilterEM!, loglikelihood, marginal_loglikelihood
 
+
 """
     LDS
 
-A Linear Dynamical System (LDS) is a model that describes the evolution of a latent state variable xₜ and an observed variable yₜ. The model is defined by the following equations:
+A Linear Dynamical System (LDS) is a model that describes the evolution of a Gaussian latent state variable xₜ and a Gaussian observed variable yₜ. The model is defined by the following equations:
     
         xₜ = A * xₜ₋₁ + B * uₜ + wₜ
         yₜ = H * xₜ + vₜ
@@ -365,7 +363,7 @@ function _sufficient_statistics(smoother::DirectSmoothing, μ::Matrix{<:Real}, P
         E_z[t, :] = μ[t, :]
         E_zz[t, :, :] = P[t, :, :] + (μ[t, :] * μ[t, :]')
         if t > 1
-            E_zz_prev[t, :, :] = Ptt1[t, :, :]' + (μ[t, :] * μ[t-1, :]')
+            E_zz_prev[t, :, :] = Ptt1[t, :, :] + (μ[t, :] * μ[t-1, :]')
         end
     end
     return E_z, E_zz, E_zz_prev
@@ -831,7 +829,7 @@ function PoissonLDS(;
     A = isempty(A) ? 0.1 * rand(latent_dim, latent_dim) : A
     C = isempty(C) ? 0.1 * rand(obs_dim, latent_dim) : C
     Q = isempty(Q) ? convert(Matrix{Float64}, 0.01 * I(latent_dim)) : Q
-    D = isempty(D) ? -abs(rand()) * I(obs_dim) : D
+    D = isempty(D) ? convert(Matrix{Float64}, -abs(rand()) * I(obs_dim)) : D
     log_d = isempty(log_d) ? abs.(rand(obs_dim)) : log_d
     b = isempty(b) ? Matrix{Float64}(undef, 0, latent_dim) : b
     x0 = isempty(x0) ? rand(latent_dim) : x0
@@ -1101,7 +1099,6 @@ function directsmooth(plds::PoissonLDS, y::Matrix{<:Real})
         x₀[t, :] = plds.A * x₀[t-1, :] + plds.b[t, :]
     end
     # create wrappers for the log-posterior, gradient, and hessian
-
     function nlp(vec_x::Vector{<:Real})
         # reshape X
         x = SSM.interleave_reshape(vec_x, T, plds.latent_dim)
@@ -1291,7 +1288,7 @@ function sufficient_statistics(μ::Array{<:Real}, P::Array{<:Real}, P_tt1::Array
             E_z[k, t, :] = μ[k, t, :]
             E_zz[k, t, :, :] = P[k, t, :, :] + (μ[k, t, :] * μ[k, t, :]')
             if t > 1
-                E_zz_prev[k, t, :, :] = (P_tt1[k, t, :, :]') + (μ[k, t, :] * μ[k, t-1, :]')
+                E_zz_prev[k, t, :, :] = P_tt1[k, t, :, :] + (μ[k, t, :] * μ[k, t-1, :]')
             end
         end
     end
