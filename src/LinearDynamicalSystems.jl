@@ -470,6 +470,11 @@ function smooth(lds::LinearDynamicalSystem{S,O}, y::Matrix{T}) where {T<:Real, S
     H, main, super, sub = Hessian(lds, y)
     p_smooth, inverse_offdiag = block_tridiagonal_inverse(-sub, -main, -super)
 
+    # Enforce symmetry of p_smooth
+    for i in 1:time_steps
+        p_smooth[i, :, :] = 0.5 * (p_smooth[i, :, :] + p_smooth[i, :, :]')
+    end
+
     # Concatenate a zero matrix to the inverse off diagonal
     inverse_offdiag = cat(dims=1, zeros(T, 1, D, D), inverse_offdiag)
 
@@ -500,27 +505,31 @@ Calculate the state component of the Q-function for the EM algorithm in a Linear
 - If Q and P0 are provided as Cholesky factors, they will be converted to full matrices.
 """
 function Q_state(A::Matrix{<:Real}, Q::AbstractMatrix{<:Real}, P0::AbstractMatrix{<:Real}, 
-                 x0::Vector{<:Real}, E_z::Matrix{<:Real}, E_zz::Array{<:Real, 3}, E_zz_prev::Array{<:Real, 3})
+    x0::Vector{<:Real}, E_z::Matrix{<:Real}, E_zz::Array{<:Real, 3}, E_zz_prev::Array{<:Real, 3})
 
     # Calculate the inverses
     Q_inv = pinv(Q)
     P0_inv = pinv(P0)
-    
+
+    # Get dimensions
+    state_dim = size(A, 1)
+    T_step = size(E_z, 1)
+
     # Initialize Q_val
     Q_val = 0.0
-    
+
     # Calculate the Q-function for the first time step
-    Q_val += -0.5 * (logdet(P0) + tr(P0_inv * (E_zz[1, :, :] - (E_z[1, :] * x0') - (x0 * E_z[1, :]') + (x0 * x0'))))
-    
+    Q_val += -0.5 * (state_dim * log(2π) + logdet(P0) + tr(P0_inv * (E_zz[1, :, :] - (E_z[1, :] * x0') - (x0 * E_z[1, :]') + (x0 * x0'))))
+
     # Calculate the Q-function for the state model
-    for t in 2:size(E_z, 1)
+    for t in 2:T_step
         term1 = E_zz[t, :, :]
         term2 = A * E_zz_prev[t, :, :]'
         term3 = E_zz_prev[t, :, :] * A'
         term4 = A * E_zz[t-1, :, :] * A'
-        Q_val += -0.5 * (logdet(Q) + tr(Q_inv * (term1 - term2 - term3 + term4)))
+        Q_val += -0.5 * (state_dim * log(2π) + logdet(Q) + tr(Q_inv * (term1 - term2 - term3 + term4)))
     end
-    
+
     return Q_val
 end
 
@@ -543,23 +552,27 @@ Calculate the observation component of the Q-function for the EM algorithm in a 
 - If R is provided as a Cholesky factor, it will be converted to a full matrix.
 """
 function Q_obs(H::Matrix{<:Real}, R::AbstractMatrix{<:Real}, E_z::Matrix{<:Real}, 
-               E_zz::Array{<:Real, 3}, y::Matrix{<:Real})
-    
+    E_zz::Array{<:Real, 3}, y::Matrix{<:Real})
+
     # Calculate the inverse
     R_inv = pinv(R)
-    
+
+    # Get dimensions
+    obs_dim = size(H, 1)
+    T_step = size(E_z, 1)
+
     # Initialize Q_val
     Q_val = 0.0
-    
+
     # Calculate the Q-function for the observation model
-    for t in 1:size(E_z, 1)
+    for t in 1:T_step
         term1 = y[t, :] * y[t, :]'
         term2 = H * (E_z[t, :] * y[t, :]')
         term3 = (y[t, :] * E_z[t, :]') * H'
         term4 = H * E_zz[t, :, :] * H'
-        Q_val += -0.5 * (logdet(R) + tr(R_inv * (term1 - term2 - term3 + term4)))
+        Q_val += -0.5 * (obs_dim * log(2π) + logdet(R) + tr(R_inv * (term1 - term2 - term3 + term4)))
     end
-    
+
     return Q_val
 end
 
@@ -688,10 +701,22 @@ Perform the E-step of the EM algorithm for a Linear Dynamical System.
 """
 function estep(lds::LinearDynamicalSystem{S,O}, y::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
     # First smooth the data
-    x, p_smooth, inverse_offdiag = smooth(lds, y)
+    x_smooth, p_smooth, inverse_offdiag = smooth(lds, y)
+
     # Compute sufficient statistics
-    E_z, E_zz, E_zz_prev = sufficient_statistics(x, p_smooth, inverse_offdiag)
-    return E_z, E_zz, E_zz_prev
+    E_z, E_zz, E_zz_prev = sufficient_statistics(x_smooth, p_smooth, inverse_offdiag)
+
+    # Calculate the marginal likelihood
+    A, Q, x0, P0 = lds.state_model.A, lds.state_model.Q, lds.state_model.x0, lds.state_model.P0
+    C, R = lds.obs_model.C, lds.obs_model.R
+    
+    Q_val = SSM.Q_function(A, Q, C, R, P0, x0, E_z, E_zz, E_zz_prev, y)
+    
+    # Calculate the entropy of q(z)
+    entropy = sum(gaussianentropy(Matrix(p_smooth[i, :, :])) for i in axes(p_smooth, 1))
+    ml = Q_val - entropy
+
+    return E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml
 end
 
 
@@ -912,30 +937,25 @@ function fit!(lds::LinearDynamicalSystem{S,O}, y::Matrix{T};
     # Run EM
     for i in 1:max_iter
         # E-step
-        E_z, E_zz, E_zz_prev = estep(lds, y)
+        E_z, E_zz, E_zz_prev, _, _, ml = estep(lds, y)
         
         # M-step
         mstep!(lds, E_z, E_zz, E_zz_prev, y)
 
-        # Calculate the marginal likelihood
-        A, Q, x0, P0 = lds.state_model.A, lds.state_model.Q, lds.state_model.x0, lds.state_model.P0
-        C, R = lds.obs_model.C, lds.obs_model.R
-
-        Q_val = SSM.Q_function(A, Q, C, R, P0, x0, E_z, E_zz, E_zz_prev, y)
         
         # Update the log-likelihood vector
-        push!(mls, Q_val)
+        push!(mls, ml)
         
         # Update the progress bar
         next!(prog)
         
         # Check convergence
-        if abs(Q_val - prev_ml) < tol
+        if abs(ml - prev_ml) < tol
             finish!(prog)
             return mls
         end
         
-        prev_ml = Q_val
+        prev_ml = ml
     end
     
     # Finish the progress bar if max_iter is reached

@@ -255,6 +255,11 @@ function DirectSmoother(l::LDS, y::Matrix{<:Real})
     H, main, super, sub = SSM.Hessian(l, y)
     p_smooth, inverse_offdiag = SSM.block_tridiagonal_inverse(-sub, -main, -super)
 
+    # enforce symmetry for p_smooth
+    for t in axes(p_smooth, 1)
+        p_smooth[t, :, :] = (p_smooth[t, :, :] + p_smooth[t, :, :]') / 2
+    end
+
     # concatenate a zero matrix to the inverse off diagonal to match the dimensions of the posterior covariance
     inverse_offdiag = cat(zeros(1, l.latent_dim, l.latent_dim), inverse_offdiag, dims=1)
 

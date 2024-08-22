@@ -224,3 +224,9 @@ function stabilize_covariance_matrix(Σ::Matrix{<:Real})
     end
     return Σ
 end
+
+function gaussianentropy(Σ::Matrix{<:Real})
+    # Compute the entropy of a multivariate Gaussian with covariance Σ
+    D = size(Σ, 1)
+    return 0.5 * (D * (log(2π) + 1) + logdet(Σ))
+end
