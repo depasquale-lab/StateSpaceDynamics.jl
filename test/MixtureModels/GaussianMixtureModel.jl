@@ -35,7 +35,7 @@ function testGaussianMixtureModel_MStep(gmm::GaussianMixtureModel, data::Union{M
     class_probabilities = SSM.E_Step(gmm, data)
 
     # Run MStep
-    SSM.M_Step!(gmm, data, class_probabilities)
+    StateSpaceDynamics.M_Step!(gmm, data, class_probabilities)
 
     test_GaussianMixtureModel_properties(gmm, k, data_dim)
 end
