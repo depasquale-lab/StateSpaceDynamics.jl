@@ -6,6 +6,10 @@ tags:
 authors:
   - name: Ryan Senne
     affiliation: "1"
+  - name: Carson Loughridge
+    affiliation: "1"
+  - name: Zach Loschinsky
+    affiliation: "1"
   - name: Brian D. DePasquale
     orcid: 0000-0003-4508-0537
     affiliation: "1"
