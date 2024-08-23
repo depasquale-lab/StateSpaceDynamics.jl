@@ -1,7 +1,7 @@
 function test_euclidean_distance()
     x = [1.0, 2.0, 3.0]
     y = [4.0, 5.0, 6.0]
-    @test SSM.euclidean_distance(x, y) == sqrt(27.0)
+    @test StateSpaceDynamics.euclidean_distance(x, y) == sqrt(27.0)
 end
 
 function test_kmeanspp_initialization()
