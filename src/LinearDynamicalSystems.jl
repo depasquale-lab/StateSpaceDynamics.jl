@@ -105,36 +105,28 @@ Represents the observation model of a Linear Dynamical System with Poisson obser
 
 # Fields
 - `C::Matrix{T}`: Observation matrix
-- `D::Matrix{T}`: History control matrix
 - `log_d::Vector{T}`: Mean firing rate vector (log space)
-- `refractory_period::Int`: Refractory period
 """
 struct PoissonObservationModel{T<:Real} <: AbstractObservationModel
     C::Matrix{T}
-    D::Matrix{T}
     log_d::Vector{T}
-    refractory_period::Int
 end
 
 
 """
-    PoissonObservationModel(; C, D, log_d, refractory_period, obs_dim, latent_dim)
+    PoissonObservationModel(; C, log_d, obs_dim, latent_dim)
 
 Construct a PoissonObservationModel with the given parameters or random initializations.
 
 # Arguments
 - `C::Matrix{T}=Matrix{T}(undef, 0, 0)`: Observation matrix
-- `D::Matrix{T}=Matrix{T}(undef, 0, 0)`: History control matrix
 - `log_d::Vector{T}=Vector{T}(undef, 0)`: Mean firing rate vector (log space)
-- `refractory_period::Int=1`: Refractory period
 - `obs_dim::Int`: Dimension of the observations (required if any matrix is not provided)
 - `latent_dim::Int`: Dimension of the latent state (required if C is not provided)
 """
 function PoissonObservationModel(;
     C::Matrix{T}=Matrix{T}(undef, 0, 0),
-    D::Matrix{T}=Matrix{T}(undef, 0, 0),
     log_d::Vector{T}=Vector{T}(undef, 0),
-    refractory_period::Int=1,
     obs_dim::Int=0,
     latent_dim::Int=0
 ) where T<:Real
@@ -215,41 +207,45 @@ end
 
 
 """
-    sample(lds::LinearDynamicalSystem{S,O}, T::Int) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+    sample(lds::LinearDynamicalSystem{S,O}, T_steps::Int, n_trials::Int) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
 
-Sample from a Linear Dynamical System (LDS) model.
+Sample from a Linear Dynamical System (LDS) model for multiple trials.
 
 # Arguments
 - `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System model.
-- `T::Int`: The number of time steps to sample.
+- `T_steps::Int`: The number of time steps to sample for each trial.
+- `n_trials::Int`: The number of trials to sample.=
 
 # Returns
-- `x::Matrix{T}`: The latent state variables.
-- `y::Matrix{T}`: The observed data.
+- `x::Array{T, 3}`: The latent state variables. Dimensions: (n_trials, T_steps, latent_dim)
+- `y::Array{T, 3}`: The observed data. Dimensions: (n_trials, T_steps, obs_dim)
 
 # Examples
 ```julia
 lds = GaussianLDS(obs_dim=4, latent_dim=3)
-x, y = sample(lds, 100)
+x, y = sample(lds, 10, 100)  # 10 trials, 100 time steps each
 ```
 """
-function sample(lds::LinearDynamicalSystem{S,O}, T_steps::Int) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+function sample(lds::LinearDynamicalSystem{S,O}, T_steps::Int, n_trials::Int) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
     # Extract model components
     A, Q, x0, P0 = lds.state_model.A, lds.state_model.Q, lds.state_model.x0, lds.state_model.P0
     C, R = lds.obs_model.C, lds.obs_model.R
 
     # Initialize arrays
-    x = Matrix{T}(undef, T_steps, lds.latent_dim)
-    y = Matrix{T}(undef, T_steps, lds.obs_dim)
+    x = Array{T, 3}(undef, n_trials, T_steps, lds.latent_dim)
+    y = Array{T, 3}(undef, n_trials, T_steps, lds.obs_dim)
 
-    # Sample the initial state
-    x[1, :] = rand(MvNormal(x0, P0))
-    y[1, :] = rand(MvNormal(C * x[1, :], R))
+    # Sample for each trial
+    for trial in 1:n_trials
+        # Sample the initial state
+        x[trial, 1, :] = rand(MvNormal(x0, P0))
+        y[trial, 1, :] = rand(MvNormal(C * x[trial, 1, :], R))
 
-    # Sample the rest of the states
-    for t in 2:T_steps
-        x[t, :] = rand(MvNormal(A * x[t-1, :], Q))
-        y[t, :] = rand(MvNormal(C * x[t, :], R))
+        # Sample the rest of the states
+        for t in 2:T_steps
+            x[trial, t, :] = rand(MvNormal(A * x[trial, t-1, :], Q))
+            y[trial, t, :] = rand(MvNormal(C * x[trial, t, :], R))
+        end
     end
 
     return x, y
@@ -478,10 +474,55 @@ function smooth(lds::LinearDynamicalSystem{S,O}, y::Matrix{T}) where {T<:Real, S
     # Concatenate a zero matrix to the inverse off diagonal
     inverse_offdiag = cat(dims=1, zeros(T, 1, D, D), inverse_offdiag)
 
-    # Calculate Q-function
-    # Q_val = SSM.Q(lds, x, p_smooth, inverse_offdiag, y)
-
     return x, p_smooth, inverse_offdiag
+end
+
+
+"""
+    smooth(lds::LinearDynamicalSystem{S,O}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+
+This function performs direct smoothing for a linear dynamical system (LDS) given the system parameters and the observed data for multiple trials.
+
+# Arguments
+- `lds::LinearDynamicalSystem{S,O}`: The LDS object representing the system parameters.
+- `y::Array{T,3}`: The observed data array with dimensions (n_trials, time_steps, obs_dim).
+
+# Returns
+- `x::Array{T,3}`: The optimal state estimates with dimensions (n_trials, time_steps, latent_dim).
+- `p_smooth::Array{T,4}`: The posterior covariance matrices with dimensions (n_trials, time_steps, latent_dim, latent_dim).
+- `inverse_offdiag::Array{T,4}`: The inverse off-diagonal matrices with dimensions (n_trials, time_steps, latent_dim, latent_dim).
+
+# Example
+```julia
+lds = GaussianLDS(obs_dim=4, latent_dim=3)
+y = randn(5, 100, 4)  # 5 trials, 100 time steps, 4 observed dimensions
+x, p_smooth, inverse_offdiag = smooth(lds, y)
+```
+"""
+function smooth(lds::LinearDynamicalSystem{S,O}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+    n_trials, time_steps, _ = size(y)
+    latent_dim = lds.latent_dim
+
+    # Initialize arrays to store results for all trials
+    x_all = Array{T,3}(undef, n_trials, time_steps, latent_dim)
+    p_smooth_all = Array{T,4}(undef, n_trials, time_steps, latent_dim, latent_dim)
+    inverse_offdiag_all = Array{T,4}(undef, n_trials, time_steps, latent_dim, latent_dim)
+
+    # Process each trial
+    for trial in 1:n_trials
+        # Extract data for the current trial
+        y_trial = y[trial, :, :]
+
+        # Call the single-trial smooth function
+        x, p_smooth, inverse_offdiag = smooth(lds, y_trial)
+
+        # Store results for this trial
+        x_all[trial, :, :] = x
+        p_smooth_all[trial, :, :, :] = p_smooth
+        inverse_offdiag_all[trial, :, :, :] = inverse_offdiag
+    end
+
+    return x_all, p_smooth_all, inverse_offdiag_all
 end
 
 """
@@ -643,248 +684,325 @@ end
 
 
 """
-    sufficient_statistics(x_smooth::Matrix{T}, p_smooth::Array{T,3}, p_smooth_t1::Array{T,3}) where T <: Real
+    sufficient_statistics(x_smooth::Array{T,3}, p_smooth::Array{T,4}, p_smooth_t1::Array{T,4}) where T <: Real
 
 Compute sufficient statistics for the EM algorithm in a Linear Dynamical System.
 
 # Arguments
-- `x_smooth::Matrix{T}`: Smoothed state estimates, size (T_steps, state_dim)
-- `p_smooth::Array{T,3}`: Smoothed state covariances, size (T_steps, state_dim, state_dim)
-- `p_smooth_t1::Array{T,3}`: Lag-one covariance smoother, size (T_steps, state_dim, state_dim)
+- `x_smooth::Array{T,3}`: Smoothed state estimates, size (n_trials, T_steps, state_dim)
+- `p_smooth::Array{T,4}`: Smoothed state covariances, size (n_trials, T_steps, state_dim, state_dim)
+- `p_smooth_t1::Array{T,4}`: Lag-one covariance smoother, size (n_trials, T_steps, state_dim, state_dim)
 
 # Returns
-- `E_z::Matrix{T}`: Expected latent states, size (T_steps, state_dim)
-- `E_zz::Array{T,3}`: Expected z_t * z_t', size (T_steps, state_dim, state_dim)
-- `E_zz_prev::Array{T,3}`: Expected z_t * z_{t-1}', size (T_steps, state_dim, state_dim)
+- `E_z::Array{T,3}`: Expected latent states, size (n_trials, T_steps, state_dim)
+- `E_zz::Array{T,4}`: Expected z_t * z_t', size (n_trials, T_steps, state_dim, state_dim)
+- `E_zz_prev::Array{T,4}`: Expected z_t * z_{t-1}', size (n_trials, T_steps, state_dim, state_dim)
 
 # Note
-- The function computes the expected values.
+- The function computes the expected values for all trials.
+- For single-trial data, use inputs with n_trials = 1.
 """
-function sufficient_statistics(x_smooth::Matrix{T}, p_smooth::Array{T,3}, p_smooth_t1::Array{T,3}) where T <: Real
-
-    # Get dims
-    T_step, state_dim = size(x_smooth)
-
-    # Pre-allocate the expected values
-    E_z = zeros(T, T_step, state_dim)
-    E_zz = zeros(T, T_step, state_dim, state_dim)
-    E_zz_prev = zeros(T, T_step, state_dim, state_dim)
-    # Compute the expected values and update sums
-    for t in 1:T_step
-        E_z[t, :] = x_smooth[t, :]
-        E_zz[t, :, :] = p_smooth[t, :, :] + x_smooth[t, :] * x_smooth[t, :]'
-        if t > 1
-            E_zz_prev[t, :, :] = p_smooth_t1[t, :, :] + x_smooth[t, :] * x_smooth[t-1, :]'
-        end
-    end
+function sufficient_statistics(x_smooth::Array{T,3}, p_smooth::Array{T,4}, p_smooth_t1::Array{T,4}) where T <: Real
+    n_trials, T_steps, _ = size(x_smooth)
     
+    E_z = copy(x_smooth)
+    E_zz = similar(p_smooth)
+    E_zz_prev = similar(p_smooth)
+
+    for trial in 1:n_trials
+        for t in 1:T_steps
+            E_zz[trial, t, :, :] = p_smooth[trial, t, :, :] + x_smooth[trial, t, :] * x_smooth[trial, t, :]'
+            if t > 1
+                E_zz_prev[trial, t, :, :] = p_smooth_t1[trial, t, :, :] + x_smooth[trial, t, :] * x_smooth[trial, t-1, :]'
+            end
+        end
+        # Set the first time step of E_zz_prev to zeros for each trial
+        E_zz_prev[trial, 1, :, :] .= 0
+    end
+
     return E_z, E_zz, E_zz_prev
 end
 
 """
-    estep(lds::LinearDynamicalSystem{S,O}, y::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+    estep(lds::LinearDynamicalSystem{S,O}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
 
-Perform the E-step of the EM algorithm for a Linear Dynamical System.
+Perform the E-step of the EM algorithm for a Linear Dynamical System, treating all input as multi-trial.
 
 # Arguments
 - `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System struct
-- `y::Matrix{T}`: Observed data, size (T_steps, obs_dim)
+- `y::Array{T,3}`: Observed data, size (n_trials, T_steps, obs_dim)
+    Note: For single-trial data, use y[1:1, :, :] to create a 3D array with n_trials = 1
 
 # Returns
-- `E_z::Matrix{T}`: Expected latent states, size (T_steps, state_dim)
-- `E_zz::Array{T,3}`: Expected z_t * z_t', size (T_steps, state_dim, state_dim)
-- `E_zz_prev::Array{T,3}`: Expected z_t * z_{t-1}', size (T_steps, state_dim, state_dim)
-- `ml::T`: Marginal likelihood (log-likelihood) of the data
+- `E_z::Array{T,3}`: Expected latent states, size (n_trials, T_steps, state_dim)
+- `E_zz::Array{T,4}`: Expected z_t * z_t', size (n_trials, T_steps, state_dim, state_dim)
+- `E_zz_prev::Array{T,4}`: Expected z_t * z_{t-1}', size (n_trials, T_steps, state_dim, state_dim)
+- `x_smooth::Array{T,3}`: Smoothed state estimates, size (n_trials, T_steps, state_dim)
+- `p_smooth::Array{T,4}`: Smoothed state covariances, size (n_trials, T_steps, state_dim, state_dim)
+- `ml::T`: Total marginal likelihood (log-likelihood) of the data across all trials
 
 # Note
 - This function first smooths the data using the `smooth` function, then computes sufficient statistics.
+- It treats all input as multi-trial, with single-trial being a special case where n_trials = 1.
 """
-function estep(lds::LinearDynamicalSystem{S,O}, y::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
-    # First smooth the data
+function estep(lds::LinearDynamicalSystem{S,O}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+    n_trials, T_steps, obs_dim = size(y)
+
+    # Smooth the data
     x_smooth, p_smooth, inverse_offdiag = smooth(lds, y)
 
     # Compute sufficient statistics
     E_z, E_zz, E_zz_prev = sufficient_statistics(x_smooth, p_smooth, inverse_offdiag)
 
-    # Calculate the marginal likelihood
+    # Calculate the total marginal likelihood across all trials
+    ml_total = calculate_marginal_likelihood(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
+
+    return E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total
+end
+
+# Helper function to calculate marginal likelihood for all trials
+function calculate_marginal_likelihood(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}, E_zz_prev::Array{T,4}, p_smooth::Array{T,4}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
     A, Q, x0, P0 = lds.state_model.A, lds.state_model.Q, lds.state_model.x0, lds.state_model.P0
     C, R = lds.obs_model.C, lds.obs_model.R
     
-    Q_val = SSM.Q_function(A, Q, C, R, P0, x0, E_z, E_zz, E_zz_prev, y)
-    
-    # Calculate the entropy of q(z)
-    entropy = sum(gaussianentropy(Matrix(p_smooth[i, :, :])) for i in axes(p_smooth, 1))
-    ml = Q_val - entropy
+    n_trials = size(y, 1)
+    ml_total = 0.0
 
-    return E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml
+    for trial in 1:n_trials
+        Q_val = SSM.Q_function(A, Q, C, R, P0, x0, E_z[trial,:,:], E_zz[trial,:,:,:], E_zz_prev[trial,:,:,:], y[trial,:,:])
+        
+        # Calculate the entropy of q(z) for this trial
+        entropy = sum(gaussianentropy(Matrix(p_smooth[trial,t,:,:])) for t in axes(p_smooth, 2))
+        ml_total += Q_val - entropy
+    end
+
+    return ml_total
 end
 
 
 """
-    update_initial_state_mean!(lds::LinearDynamicalSystem{S,O}, E_z::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+    update_initial_state_mean!(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
 
-Update the initial state mean of the Linear Dynamical System.
+Update the initial state mean of the Linear Dynamical System using the average across all trials.
 
 # Arguments
 - `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System struct
-- `E_z::Matrix{T}`: Expected latent states, size (T_steps, state_dim)
+- `E_z::Array{T,3}`: Expected latent states, size (n_trials, T_steps, state_dim)
 
 # Note
 - This function modifies `lds` in-place.
 - The update is only performed if `lds.fit_bool[1]` is true.
+- The initial state mean is computed as the average of the first time step across all trials.
 """
-function update_initial_state_mean!(lds::LinearDynamicalSystem{S,O}, E_z::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+function update_initial_state_mean!(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
     if lds.fit_bool[1]
-        lds.state_model.x0 = E_z[1, :]
+        lds.state_model.x0 = vec(mean(E_z[:, 1, :], dims=1))
     end
 end
 
 """
-    update_initial_state_covariance!(lds::LinearDynamicalSystem{S,O}, E_z::Matrix{T}, E_zz::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+    update_initial_state_covariance!(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
 
-Update the initial state covariance of the Linear Dynamical System.
+Update the initial state covariance of the Linear Dynamical System using the average across all trials.
 
 # Arguments
 - `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System struct
-- `E_z::Matrix{T}`: Expected latent states, size (T_steps, state_dim)
-- `E_zz::Array{T,3}`: Expected z_t * z_t', size (T_steps, state_dim, state_dim)
+- `E_z::Array{T,3}`: Expected latent states, size (n_trials, T_steps, state_dim)
+- `E_zz::Array{T,4}`: Expected z_t * z_t', size (n_trials, T_steps, state_dim, state_dim)
 
 # Note
 - This function modifies `lds` in-place.
 - The update is only performed if `lds.fit_bool[2]` is true.
+- The initial state covariance is computed as the average of the first time step across all trials.
 """
-function update_initial_state_covariance!(lds::LinearDynamicalSystem{S,O}, E_z::Matrix{T}, E_zz::Array{T, 3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+function update_initial_state_covariance!(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
     if lds.fit_bool[2]
-        lds.state_model.P0 = E_zz[1, :, :] - (E_z[1, :] * E_z[1, :]')
+        # Dims and pre-allocate
+        n_trials = size(E_z, 1)
+        state_dim = size(E_z, 3)
+        p0_new = zeros(T, state_dim, state_dim)
+
+        # Calculate the sum of E_zz[1,:,:] across all trials
+        for trial in 1:n_trials
+            p0_new += E_zz[trial, 1, :, :] - (lds.state_model.x0 * lds.state_model.x0')
+        end
+
+        # Average across all trials
+        p0_new = p0_new ./ n_trials
+        
+        # Enforce symmetry
+        lds.state_model.P0 = 0.5 * (p0_new + p0_new')
     end
 end
 
 """
-    update_A!(lds::LinearDynamicalSystem{S,O}, S00::Matrix{T}, S01::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+    update_A!(lds::LinearDynamicalSystem{S,O}, E_zz::Array{T, 4}, E_zz_prev::Array{T, 4}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
 
 Update the transition matrix A of the Linear Dynamical System.
 
 # Arguments
 - `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System struct
-- `S00::Matrix{T}`: Sum of E_zz[1:end-1,:,:] across time, size (state_dim, state_dim)
-- `S01::Matrix{T}`: Sum of E_zz_prev[2:end,:,:] across time, size (state_dim, state_dim)
+- `E_zz::Array{T, 4}`: Expected z_t * z_t', size (n_trials, T_steps, state_dim, state_dim)
+- `E_zz_prev::Array{T, 4}`: Expected z_t * z_{t-1}', size (n_trials, T_steps, state_dim, state_dim)
 
 # Note
 - This function modifies `lds` in-place.
 - The update is only performed if `lds.fit_bool[3]` is true.
 """
-function update_A!(lds::LinearDynamicalSystem{S,O}, E_zz::Array{T, 3}, E_zz_prev::Array{T, 3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
-    # update the transition matrix
+function update_A!(lds::LinearDynamicalSystem{S,O}, E_zz::Array{T, 4}, E_zz_prev::Array{T, 4}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
     if lds.fit_bool[3]
-        lds.state_model.A = dropdims(sum(E_zz_prev, dims=1), dims=1) * pinv(dropdims(sum(E_zz[1:end-1, :, :], dims=1), dims=1))
+        _, _, state_dim, _ = size(E_zz)
+        
+        # Calculate the sums across all trials and time steps
+        S00 = sum(E_zz[:, 1:end-1, :, :], dims=(1,2))[1, 1, :, :]
+        S01 = sum(E_zz_prev, dims=(1,2))[1, 1, :, :]
+        
+        # Reshape to 2D matrices
+        S00 = reshape(S00, state_dim, state_dim)
+        S01 = reshape(S01, state_dim, state_dim)
+        
+        # Solve the linear system
+        lds.state_model.A = S01' / S00
     end
 end
 
 """
-    update_Q!(lds::LinearDynamicalSystem{S,O}, S00::Matrix{T}, S01::Matrix{T}, S11::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+    update_Q!(lds::LinearDynamicalSystem{S,O}, E_zz::Array{T, 4}, E_zz_prev::Array{T, 4}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
 
 Update the process noise covariance matrix Q of the Linear Dynamical System.
 
 # Arguments
 - `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System struct
-- `S00::Matrix{T}`: Sum of E_zz[1:end-1,:,:] across time, size (state_dim, state_dim)
-- `S01::Matrix{T}`: Sum of E_zz_prev[2:end,:,:] across time, size (state_dim, state_dim)
-- `S11::Matrix{T}`: Sum of E_zz[2:end,:,:] across time, size (state_dim, state_dim)
+- `E_zz::Array{T, 4}`: Expected z_t * z_t', size (n_trials, T_steps, state_dim, state_dim)
+- `E_zz_prev::Array{T, 4}`: Expected z_t * z_{t-1}', size (n_trials, T_steps, state_dim, state_dim)
 
 # Note
 - This function modifies `lds` in-place.
 - The update is only performed if `lds.fit_bool[4]` is true.
+- The result is averaged across all trials.
 """
-function update_Q!(lds::LinearDynamicalSystem{S,O}, E_zz::Array{T, 3}, E_zz_prev::Array{T, 3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+function update_Q!(lds::LinearDynamicalSystem{S,O}, E_zz::Array{T, 4}, E_zz_prev::Array{T, 4}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
     if lds.fit_bool[4]
-        N = size(E_zz, 1)
+        n_trials, T_steps, state_dim, _ = size(E_zz)
+        
         # Initialize Q_new
-        Q_new = zeros(size(lds.state_model.A))
-        # Calculate the sum of expectations
-        sum_expectations = zeros(size(lds.state_model.A))
-        for n in 2:N
-            sum_expectations += E_zz[n, :, :] - (E_zz_prev[n, :, :] * lds.state_model.A') - (lds.state_model.A * E_zz_prev[n, :, :]') + (lds.state_model.A * E_zz[n-1, :, :] * lds.state_model.A')
+        Q_new = zeros(T, state_dim, state_dim)
+        
+        for trial in 1:n_trials
+            sum_expectations = zeros(T, state_dim, state_dim)
+            for t in 2:T_steps
+                sum_expectations += E_zz[trial, t, :, :] - 
+                                    (E_zz_prev[trial, t, :, :] * lds.state_model.A') - 
+                                    (lds.state_model.A * E_zz_prev[trial, t, :, :]') + 
+                                    (lds.state_model.A * E_zz[trial, t-1, :, :] * lds.state_model.A')
+            end
+            Q_new += (1 / (T_steps - 1)) * sum_expectations
         end
-        # Finalize Q_new calculation
-        Q_new = (1 / (N - 1)) * sum_expectations
+        
+        # Average across trials
+        Q_new = Q_new / n_trials
+        
+        # Ensure symmetry
         lds.state_model.Q = 0.5 * (Q_new + Q_new')
     end
 end
 
 """
-    update_C!(lds::LinearDynamicalSystem{S,O}, S_yz::Matrix{T}, S_zz::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+    update_C!(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
 
-Update the observation matrix H of the Linear Dynamical System.
+Update the observation matrix C of the Linear Dynamical System.
 
 # Arguments
 - `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System struct
-- `S_yz::Matrix{T}`: Sum of y[t, :] * E_z[t, :]' across time, size (obs_dim, state_dim)
-- `S_zz::Matrix{T}`: Sum of E_zz across time, size (state_dim, state_dim)
+- `E_z::Array{T,3}`: Expected latent states, size (n_trials, T_steps, state_dim)
+- `E_zz::Array{T,4}`: Expected z_t * z_t', size (n_trials, T_steps, state_dim, state_dim)
+- `y::Array{T,3}`: Observed data, size (n_trials, T_steps, obs_dim)
 
 # Note
 - This function modifies `lds` in-place.
 - The update is only performed if `lds.fit_bool[5]` is true.
+- The result is averaged across all trials.
 """
-function update_C!(lds::LinearDynamicalSystem{S,O}, E_z::Matrix{T}, E_zz::Array{T, 3}, y::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
-    # update the observation matrix
+function update_C!(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
     if lds.fit_bool[5]
-        T_steps = size(E_z, 1)
-        sum_1 = sum(y[t, :] * E_z[t, :]' for t in 1:T_steps)
-        sum_2 = sum(E_zz[t, :, :] for t in 1:T_steps)
-        lds.obs_model.C = sum_1 * pinv(sum_2)
+        n_trials, T_steps, _ = size(y)
+        
+        sum_yz = zeros(T, size(lds.obs_model.C))
+        sum_zz = zeros(T, size(E_zz)[3:4])
+        
+        for trial in 1:n_trials
+            for t in 1:T_steps
+                sum_yz += y[trial, t, :] * E_z[trial, t, :]'
+                sum_zz += E_zz[trial, t, :, :]
+            end
+        end
+        
+        lds.obs_model.C = sum_yz / sum_zz
     end
 end
 
 
 """
-    update_R!(lds::LinearDynamicalSystem{S,O}, S_yy::Matrix{T}, S_yz::Matrix{T}, S_zz::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+    update_R!(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
 
 Update the observation noise covariance matrix R of the Linear Dynamical System.
 
 # Arguments
 - `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System struct
-- `S_yy::Matrix{T}`: Sum of y[t, :] * y[t, :]' across time, size (obs_dim, obs_dim)
-- `S_yz::Matrix{T}`: Sum of y[t, :] * E_z[t, :]' across time, size (obs_dim, state_dim)
-- `S_zz::Matrix{T}`: Sum of E_zz across time, size (state_dim, state_dim)
+- `E_z::Array{T,3}`: Expected latent states, size (n_trials, T_steps, state_dim)
+- `E_zz::Array{T,4}`: Expected z_t * z_t', size (n_trials, T_steps, state_dim, state_dim)
+- `y::Array{T,3}`: Observed data, size (n_trials, T_steps, obs_dim)
 
 # Note
 - This function modifies `lds` in-place.
 - The update is only performed if `lds.fit_bool[6]` is true.
+- The result is averaged across all trials.
 """
-function update_R!(lds::LinearDynamicalSystem{S,O}, E_z::Matrix{T}, E_zz::Array{T, 3}, y::Matrix{T} ) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+function update_R!(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
     if lds.fit_bool[6]
-        N = size(E_z, 1)
-        # Initialize the update matrix
-        update_matrix = zeros(size(lds.obs_model.C))
-        # Calculate the sum of terms
-        sum_terms = zeros(size(lds.obs_model.C))
-        for n in 1:N
-            sum_terms += (y[n, :] * y[n, :]') - (lds.obs_model.C * (y[n, :] * E_z[n, :]')') - ((y[n, :] * E_z[n, :]') * lds.obs_model.C') + (lds.obs_model.C * E_zz[n, :, :] * lds.obs_model.C')
+        n_trials, T_steps, obs_dim = size(y)
+        
+        R_new = zeros(T, obs_dim, obs_dim)
+        
+        for trial in 1:n_trials
+            for t in 1:T_steps
+                yt = y[trial, t, :]
+                zt = E_z[trial, t, :]
+                Zt = E_zz[trial, t, :, :]
+                
+                R_new += (yt * yt') - (lds.obs_model.C * (yt * zt')') - 
+                         ((yt * zt') * lds.obs_model.C') + 
+                         (lds.obs_model.C * Zt * lds.obs_model.C')
+            end
         end
-        # Finalize the update matrix calculation
-        update_matrix = (1 / N) * sum_terms
-        lds.obs_model.R = 0.5 * (update_matrix + update_matrix')
+        
+        # Average across all trials and time steps
+        R_new = R_new / (n_trials * T_steps)
+        
+        # Ensure symmetry
+        lds.obs_model.R = 0.5 * (R_new + R_new')
     end
 end
 
 """
-    mstep!(lds::LinearDynamicalSystem{S,O}, E_z::Matrix{T}, E_zz::Array{T,3}, E_zz_prev::Array{T,3}, y::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+    mstep!(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}, E_zz_prev::Array{T,4}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
 
-Perform the M-step of the EM algorithm for a Linear Dynamical System.
+Perform the M-step of the EM algorithm for a Linear Dynamical System with multi-trial data.
 
 # Arguments
 - `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System struct
-- `E_z::Matrix{T}`: Expected latent states, size (T_steps, state_dim)
-- `E_zz::Array{T,3}`: Expected z_t * z_t', size (T_steps, state_dim, state_dim)
-- `E_zz_prev::Array{T,3}`: Expected z_t * z_{t-1}', size (T_steps, state_dim, state_dim)
-- `y::Matrix{T}`: Observed data, size (T_steps, obs_dim)
+- `E_z::Array{T,3}`: Expected latent states, size (n_trials, T_steps, state_dim)
+- `E_zz::Array{T,4}`: Expected z_t * z_t', size (n_trials, T_steps, state_dim, state_dim)
+- `E_zz_prev::Array{T,4}`: Expected z_t * z_{t-1}', size (n_trials, T_steps, state_dim, state_dim)
+- `y::Array{T,3}`: Observed data, size (n_trials, T_steps, obs_dim)
 
 # Note
 - This function modifies `lds` in-place by updating all model parameters.
 - Updates are performed only for parameters where the corresponding `fit_bool` is true.
+- All update functions now handle multi-trial data.
 """
-function mstep!(lds::LinearDynamicalSystem{S,O}, E_z::Matrix{T}, E_zz::Array{T,3}, E_zz_prev::Array{T,3}, y::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
-      # Update parameters
+function mstep!(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}, E_zz_prev::Array{T,4}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+    # Update parameters
     update_initial_state_mean!(lds, E_z)
     update_initial_state_covariance!(lds, E_z, E_zz)
     update_A!(lds, E_zz, E_zz_prev)
@@ -919,7 +1037,7 @@ Fit a Linear Dynamical System using the Expectation-Maximization (EM) algorithm 
 - The function stops when the change in log-likelihood is less than `tol` or `max_iter` is reached.
 - A progress bar is displayed during the fitting process.
 """
-function fit!(lds::LinearDynamicalSystem{S,O}, y::Matrix{T}; 
+function fit!(lds::LinearDynamicalSystem{S,O}, y::Array{T, 3}; 
               max_iter::Int=1000, 
               tol::Real=1e-12, 
               ) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
@@ -987,24 +1105,66 @@ function PoissonLDS(;
     A::Matrix{T}=Matrix{Float64}(undef, 0, 0),
     C::Matrix{T}=Matrix{Float64}(undef, 0, 0),
     Q::Matrix{T}=Matrix{Float64}(undef, 0, 0),
-    D::Matrix{T}=Matrix{Float64}(undef, 0, 0),
     log_d::Vector{T}=Vector{Float64}(undef, 0),
     x0::Vector{T}=Vector{Float64}(undef, 0),
     P0::Matrix{T}=Matrix{Float64}(undef, 0, 0),
-    refractory_period::Int=1,
-    fit_bool::Vector{Bool}=fill(true, 7),
+    fit_bool::Vector{Bool}=fill(true, 6),
     obs_dim::Int=0,
     latent_dim::Int=0
 ) where T<:Real
     if latent_dim == 0 && (isempty(A) || isempty(Q) || isempty(x0) || isempty(P0) || isempty(C))
         error("Must provide latent_dim if A, Q, x0, P0, or C is not provided")
     end
-    if obs_dim == 0 && (isempty(C) || isempty(D) || isempty(log_d))
-        error("Must provide obs_dim if C, D, or log_d is not provided")
+    if obs_dim == 0 && (isempty(C) || isempty(log_d))
+        error("Must provide obs_dim if C, or log_d is not provided")
     end
 
     state_model = GaussianStateModel(A=A, Q=Q, x0=x0, P0=P0, latent_dim=latent_dim)
-    obs_model = PoissonObservationModel(C=C, D=D, log_d=log_d, refractory_period=refractory_period, obs_dim=obs_dim, latent_dim=latent_dim)
+    obs_model = PoissonObservationModel(C=C, log_d=log_d, obs_dim=obs_dim, latent_dim=latent_dim)
     LinearDynamicalSystem(state_model, obs_model, latent_dim, obs_dim, fit_bool)
 end
+
+"""
+    sample(lds::LinearDynamicalSystem{S,O}, T_steps::Int, n_trials::Int) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
+
+Sample from a Linear Dynamical System (LDS) model for multiple trials.
+
+# Arguments
+- `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System model.
+- `T_steps::Int`: The number of time steps to sample for each trial.
+- `n_trials::Int`: The number of trials to sample.
+
+# Returns
+- `x::Array{T, 3}`: The latent state variables. Dimensions: (n_trials, T_steps, latent_dim)
+- `y::Array{T, 3}`: The observed data. Dimensions: (n_trials, T_steps, obs_dim)
+
+# Examples
+```julia
+lds = PoissonLDS(obs_dim=4, latent_dim=3)
+x, y = sample(lds, 100, 10)  # 10 trials, 100 time steps each
+```
+"""
+function sample(plds::LinearDynamicalSystem{S,O}, T_steps::Int, n_trials::Int) where {S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
+    # Convert log_d to d i.e. non-log space
+    d = exp.(plds.log_d)
+    # Pre-allocate arrays
+    x = zeros(n_trials, T_steps, plds.latent_dim)
+    y = zeros(n_trials, T_steps, plds.obs_dim)
+    
+    for k in 1:n_trials
+        # Sample the initial stated
+        x[k, 1, :] = rand(MvNormal(plds.x0, plds.p0))
+        y[k, 1, :] = rand.(Poisson.(exp.(plds.C * x[k, 1, :] + d)))
+        # Sample the rest of the states
+        for t in 2:T_steps
+            s = max(1, t - plds.refractory_period)
+            spikes = sum(y[k, s:t-1, :], dims=1)'
+            x[k, t, :] = rand(MvNormal((plds.A * x[k, t-1, :]) + plds.b[t, :], plds.Q))
+            y[k, t, :] = rand.(Poisson.(exp.((plds.C * x[k, t, :]) + (plds.D * spikes) + d)))
+        end
+    end
+    return x, y
+end
+
+
 
