@@ -1,4 +1,4 @@
-module SSM
+module StateSpaceDynamics
 
 using Distributions
 using ForwardDiff
