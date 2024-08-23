@@ -1,4 +1,4 @@
-using SSM
+using StateSpaceDynamics
 using Distributions
 using ForwardDiff
 using LinearAlgebra
