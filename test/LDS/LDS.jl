@@ -85,7 +85,7 @@ function test_LDS_E_Step()
     # Create the Kalman filter parameter vector
     kf = LDS(;A=A, H=H, Q=Q, R=R, x0=x0, p0=p0, obs_dim=2, latent_dim=2, fit_bool=Vector([true, true, true, true, true, true, true]))
     # run the E_Step
-    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.E_Step(kf, x_noisy')
+    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = StateSpaceDynamics.E_Step(kf, x_noisy')
     # check dimensions
     @test size(x_smooth) == (length(t), 2)
     @test size(p_smooth) == (length(t), 2, 2)
@@ -99,9 +99,9 @@ function test_LDS_M_Step!()
     # Create the Kalman filter parameter vector
     kf = LDS(;A=A, H=H, Q=Q, R=R, x0=x0, p0=p0, obs_dim=2, latent_dim=2, fit_bool=Vector([true, true, true, true, true, true, true]))
     # run the E_Step
-    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.E_Step(kf, x_noisy')
+    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = StateSpaceDynamics.E_Step(kf, x_noisy')
     # run the M_Step
-    SSM.M_Step!(kf, E_z, E_zz, E_zz_prev, x_noisy')
+    StateSpaceDynamics.M_Step!(kf, E_z, E_zz, E_zz_prev, x_noisy')
     # check if the parameters are updated
     @test kf.A !== A
     @test kf.H !== H
@@ -121,7 +121,7 @@ function test_LDS_EM()
     # run the EM
     for i in 1:10
         ml_prev = -Inf
-        l, ml = SSM.KalmanFilterEM!(kf, x_noisy', 1)
+        l, ml = StateSpaceDynamics.KalmanFilterEM!(kf, x_noisy', 1)
         @test ml > ml_prev
         ml_prev = ml
     end
@@ -157,11 +157,11 @@ function test_LDS_gradient()
     # create kalman filter object
     kf = LDS(;A=A, H=H, Q=Q, R=R, x0=x0, p0=p0, obs_dim=2, latent_dim=2, fit_bool=Vector([true, true, true, true, true, true, true]))
     # calcualte the gradient
-    grad = SSM.Gradient(kf, x_noisy', zeros(size(x_noisy')))
+    grad = StateSpaceDynamics.Gradient(kf, x_noisy', zeros(size(x_noisy')))
     # check dimensions
     @test size(grad) == (length(t), kf.obs_dim)
     # calculate the gradient using autodiff
-    obj(x) = x -> SSM.loglikelihood(x, kf, x_noisy')
+    obj(x) = x -> StateSpaceDynamics.loglikelihood(x, kf, x_noisy')
     grad_auto = ForwardDiff.gradient(obj(x), zeros(size(x_noisy')))
     # check if the gradients are the same
     @test isapprox(grad, grad_auto, atol=1e-6)
@@ -171,7 +171,7 @@ function test_LDS_Hessian()
     # create kalman filter object
     kf = LDS(;A=A, H=H, Q=Q, R=R, x0=x0, p0=p0, obs_dim=2, latent_dim=2, fit_bool=Vector([true, true, true, true, true, true, true]))
     # calcualte the Hessian
-    hess, main, super, sub = SSM.Hessian(kf, x_noisy[:, 1:3]') # only look at first three observations as hessian is expensive to calculate using autodiff
+    hess, main, super, sub = StateSpaceDynamics.Hessian(kf, x_noisy[:, 1:3]') # only look at first three observations as hessian is expensive to calculate using autodiff
 
     # check lengths of main, super, and sub diagonals
     @test typeof(main) == Vector{Matrix{Float64}}
@@ -188,7 +188,7 @@ function test_LDS_Hessian()
     function log_likelihood(x::AbstractArray, l::LDS, y::AbstractArray)
         # this wrapper function just makes it so we can pass a D x T array and not a T x D array. Otherwise the Hessian is out of order.
         x = x'
-        ll = SSM.loglikelihood(x, l, y)
+        ll = StateSpaceDynamics.loglikelihood(x, l, y)
         return ll  # Negate the log-likelihood
     end
     obj(x) = x -> log_likelihood(x, kf, zeros(size(x_noisy[:, 1:3]')))

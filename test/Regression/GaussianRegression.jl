@@ -43,11 +43,11 @@ function test_GaussianRegression_loglikelihood()
     model, X, y, true_β, true_covariance, n = GaussianRegression_simulation()
     
     # Check log likelihood
-    loglik = SSM.loglikelihood(model, X, y)
+    loglik = StateSpaceDynamics.loglikelihood(model, X, y)
     @test loglik < 0
 
     # test loglikelihood on a single point
-    loglik = SSM.loglikelihood(model, reshape(X[1, :], 1, :), reshape(y[1,:], 1, :))
+    loglik = StateSpaceDynamics.loglikelihood(model, reshape(X[1, :], 1, :), reshape(y[1,:], 1, :))
     @test loglik < 0
 end
 
@@ -93,7 +93,7 @@ function test_Gaussian_ll_gradient()
     grad = ForwardDiff.gradient(β -> objective(β, w, model), model.β)
     # calculate the gradient manually
     grad_analytic = ones(size(model.β))
-    SSM.surrogate_loglikelihood_gradient!(grad_analytic, model, X[:,2:end], y)
+    StateSpaceDynamics.surrogate_loglikelihood_gradient!(grad_analytic, model, X[:,2:end], y)
 
     # check if the gradients are close
     @test isapprox(grad, grad_analytic, atol=1e-6)
@@ -109,7 +109,7 @@ function test_Gaussian_ll_gradient()
 
     # calculate the gradient manually
     grad_analytic = ones(size(model.β))
-    SSM.surrogate_loglikelihood_gradient!(grad_analytic, model, X[:,2:end], y, w)
+    StateSpaceDynamics.surrogate_loglikelihood_gradient!(grad_analytic, model, X[:,2:end], y, w)
 
     # check if the gradients are close
     @test isapprox(grad, grad_analytic, atol=1e-6)
@@ -126,7 +126,7 @@ function test_Gaussian_ll_gradient()
 
     # calculate the gradient manually
     grad_analytic = ones(size(model.β))
-    SSM.surrogate_loglikelihood_gradient!(grad_analytic, model, X[:,2:end], y, w)
+    StateSpaceDynamics.surrogate_loglikelihood_gradient!(grad_analytic, model, X[:,2:end], y, w)
 
     # check if the gradients are close
     @test isapprox(grad, grad_analytic, atol=1e-6)
