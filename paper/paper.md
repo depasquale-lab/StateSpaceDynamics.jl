@@ -1,5 +1,5 @@
 ---
-title: 'SSM: A Julia codebase for fitting hierarchical state space models'
+title: 'StateSpaceDynamics.jl: A Julia package for probabilistic state space models (SSMs)'
 tags:
   - State space models
   - Julia
@@ -24,11 +24,11 @@ bibliography: paper.bib
 
 # Summary
 
-Here, we introduce ``SSM.jl``.
+Here, we introduce ``StateSpaceDynamics.jl``.
 
 # Statement of need
 
-`SSM` [@PySSM2022] is awesome but its it python.
+`SSM`[@PySSM2022] is awesome but its it python. `HiddenMarkovModels.jl` is ok but XXX. `StateSpaceModels.jl` is ok but XXX. 
 
 # Package design
 
@@ -40,7 +40,7 @@ Here, we introduce ``SSM.jl``.
 
 # Conclusion
 
-``SSM`` is publicly available under the [GNU license](https://github.com/rsenne/ssm_julia/blob/main/LICENSE) at <https://github.com/rsenne/ssm_julia>.
+``StateSpaceDynamics.jl`` is publicly available under the [GNU license](https://github.com/rsenne/ssm_julia/blob/main/LICENSE) at <https://github.com/rsenne/ssm_julia>.
 
 # Author contributions
 
