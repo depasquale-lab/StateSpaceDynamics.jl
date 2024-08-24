@@ -773,7 +773,7 @@ function calculate_marginal_likelihood(lds::LinearDynamicalSystem{S,O}, E_z::Arr
         
         # Calculate the entropy of q(z) for this trial
         entropy = sum(gaussianentropy(Matrix(p_smooth[trial,t,:,:])) for t in axes(p_smooth, 2))
-        ml_total += Q_val - entropy
+        ml_total += Q_val #- entropy
     end
 
     return ml_total
@@ -852,17 +852,18 @@ Update the transition matrix A of the Linear Dynamical System.
 function update_A!(lds::LinearDynamicalSystem{S,O}, E_zz::Array{T, 4}, E_zz_prev::Array{T, 4}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
     if lds.fit_bool[3]
         _, _, state_dim, _ = size(E_zz)
+        # pre-allocate new A
+        A_new = zeros(state_dim, state_dim)
         
-        # Calculate the sums across all trials and time steps
-        S00 = sum(E_zz[:, 1:end-1, :, :], dims=(1,2))[1, 1, :, :]
-        S01 = sum(E_zz_prev, dims=(1,2))[1, 1, :, :]
-        
-        # Reshape to 2D matrices
-        S00 = reshape(S00, state_dim, state_dim)
-        S01 = reshape(S01, state_dim, state_dim)
-        
-        # Solve the linear system
-        lds.state_model.A = S01' / S00
+        # Calculate and sum A across trials
+        for trial in axes(E_zz, 1)
+            E_zz_sum = dropdims(sum(E_zz[trial, 2:end, :, :], dims=1), dims=1)
+            E_zz_prev_sum = dropdims(sum(E_zz_prev[trial, :, :, :], dims=1), dims=1)
+            A_new += (E_zz_sum' \ E_zz_prev_sum')'
+        end
+
+        # Average across all trials
+        A_new = A_new ./ size(E_zz, 1)
     end
 end
 
@@ -896,11 +897,11 @@ function update_Q!(lds::LinearDynamicalSystem{S,O}, E_zz::Array{T, 4}, E_zz_prev
                                     (lds.state_model.A * E_zz_prev[trial, t, :, :]') + 
                                     (lds.state_model.A * E_zz[trial, t-1, :, :] * lds.state_model.A')
             end
-            Q_new += (1 / (T_steps - 1)) * sum_expectations
+            Q_new += sum_expectations
         end
         
         # Average across trials
-        Q_new = Q_new / n_trials
+        Q_new = Q_new / (n_trials * (T_steps - 1))
         
         # Ensure symmetry
         lds.state_model.Q = 0.5 * (Q_new + Q_new')
@@ -1144,7 +1145,7 @@ lds = PoissonLDS(obs_dim=4, latent_dim=3)
 x, y = sample(lds, 100, 10)  # 10 trials, 100 time steps each
 ```
 """
-function sample(plds::LinearDynamicalSystem{S,O}, T_steps::Int, n_trials::Int) where {S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
+function sample(plds::LinearDynamicalSystem{S,O}, T_steps::Int, n_trials::Int) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
     # Convert log_d to d i.e. non-log space
     d = exp.(plds.log_d)
     # Pre-allocate arrays
@@ -1157,14 +1158,138 @@ function sample(plds::LinearDynamicalSystem{S,O}, T_steps::Int, n_trials::Int) w
         y[k, 1, :] = rand.(Poisson.(exp.(plds.C * x[k, 1, :] + d)))
         # Sample the rest of the states
         for t in 2:T_steps
-            s = max(1, t - plds.refractory_period)
-            spikes = sum(y[k, s:t-1, :], dims=1)'
-            x[k, t, :] = rand(MvNormal((plds.A * x[k, t-1, :]) + plds.b[t, :], plds.Q))
-            y[k, t, :] = rand.(Poisson.(exp.((plds.C * x[k, t, :]) + (plds.D * spikes) + d)))
+            x[k, t, :] = rand(MvNormal((plds.A * x[k, t-1, :]), plds.Q))
+            y[k, t, :] = rand.(Poisson.(exp.((plds.C * x[k, t, :]) + d)))
         end
     end
     return x, y
 end
 
+"""
+    loglikelihood(x::Matrix{T}, lds::LinearDynamicalSystem{S,O}, y::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
+
+Calculate the complete-data log-likelihood of a Poisson Linear Dynamical System model for a single trial. 
+
+# Arguments
+- `x::Matrix{T}`: The latent state variables. Dimensions: (T_steps, latent_dim)
+- `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System model.
+- `y::Matrix{T}`: The observed data. Dimensions: (T_steps, obs_dim)
+
+# Returns
+- `ll::T`: The log-likelihood value.
+
+# Examples
+```julia
+lds = PoissonLDS(obs_dim=4, latent_dim=3)
+x, y = sample(lds, 100, 1)  # 1 trial, 100 time steps
+ll = loglikelihood(x, lds, y)
+```
+"""
+function loglikelihood(x::Matrix{T}, lds::LinearDynamicalSystem{S,O}, y::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
+        
+    # Convert the log firing rate to firing rate
+        d = exp.(lds.obs_model.log_d)
+        T_steps = size(y, 1)
+
+        # pre compute matrix inverses
+        inv_p0 = pinv(plds.state_model.p0)
+        inv_Q = pinv(plds.state_model.Q)
+
+        # Get the number of time steps
+        pygivenx = zeros(T_steps)
+
+        # Calculate p(yₜ|xₜ)
+        @threads for t in 1:T_steps
+            temp = (plds.obs_model.C * x[t, :] .+ d)
+            pygivenx[t] = (y[t, :]' * temp) - sum(exp.(temp))
+        end
+        pygivenx_sum = sum(pygivenx)
+
+        # Calculate p(x₁)
+        px1 = -0.5 * (x[1, :] .- plds.state_model.x0)' * inv_p0 * (x[1, :] .- plds.state_model.x0)
+
+        # Calculate p(xₜ|xₜ₋₁)
+        pxtgivenxt1 = zeros(T-1)
+        @threads for t in 2:T
+            temp = (x[t, :] .- (plds.state_model.A * x[t-1, :]))
+            pxtgivenxt1[t-1] = -0.5 * temp' * inv_Q * temp
+        end
+        pxtgivenxt1_sum = sum(pxtgivenxt1)
+
+        # Return the log-posterior
+
+        return pygivenx_sum + px1 + pxtgivenxt1_sum
+    end
 
 
+"""
+    loglikelihood(x::Array{T, 3}, lds::LinearDynamicalSystem{S,O}, y::Array{T, 3}) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
+
+Calculate the complete-data log-likelihood of a Poisson Linear Dynamical System model for multiple trials.
+
+# Arguments
+- `x::Array{T, 3}`: The latent state variables. Dimensions: (n_trials, T_steps, latent_dim)
+- `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System model.
+- `y::Array{T, 3}`: The observed data. Dimensions: (n_trials, T_steps, obs_dim)
+
+# Returns
+- `ll::T`: The log-likelihood value.
+
+# Examples
+```julia
+lds = PoissonLDS(obs_dim=4, latent_dim=3)
+x, y = sample(lds, 100, 10)  # 10 trials, 100 time steps each
+ll = loglikelihood(x, lds, y)
+```
+"""
+function loglikelihood(x::Array{T, 3}, plds::LinearDynamicalSystem{O, S}, y::Array{T, 3}) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
+    # Calculate the log-likelihood over all trials
+    ll = zeros(size(y, 1))
+    Threads.@threads for n in axes(y, 1)
+        ll[n] = loglikelihood(x[n, :, :], plds, y[n, :, :])
+    end
+    return sum(ll)
+end
+
+"""
+    Q_observation_model(C::Matrix{<:Real}, D::Matrix{<:Real}, log_d::Vector{<:Real}, E_z::Array{<:Real}, E_zz::Array{<:Real}, y::Array{<:Real})
+
+Calculate the Q-function for the observation model.
+
+# Arguments
+- `C::Matrix{<:Real}`: The observation matrix.
+- `log_d::Vector{<:Real}`: The mean firing rate vector in log space.
+- `E_z::Array{<:Real}`: The expected latent states.
+- `E_zz::Array{<:Real}`: The expected latent states x the latent states.
+- `y::Array{<:Real}`: The observed data.
+
+# Returns
+- `Float64`: The Q-function for the observation model.
+"""
+function Q_observation_model(C::Matrix{<:Real}, log_d::Vector{<:Real}, E_z::Array{<:Real}, P_smooth::Array{<:Real}, y::Array{<:Real})
+    # Re-parametrize log_d
+    d = exp.(log_d)
+    # Compute Q
+    Q_val = 0.0
+    trials = size(E_z, 1)
+    time_steps = size(E_z, 2)
+    # calculate CC term
+    CC = zeros(size(C, 1), size(C, 2)^2)
+    for i in axes(C, 1)
+        CC[i, :] .= vec(C[i, :] * C[i, :]')
+    end
+    # sum over trials
+    for k in 1:trials
+        # sum over time-points
+        for t in 1:time_steps
+            # Mean term
+            h = (C * E_z[k, t, :]) + d
+            # calculate rho
+            ρ = 0.5 * CC * vec(P_smooth[k, t, :, :])
+            ŷ = exp.(h + ρ)
+            # calculate the Q-value
+            Q_val += sum((y[k, t, :] .* h) - ŷ)
+        end
+    end
+    return Q_val
+end

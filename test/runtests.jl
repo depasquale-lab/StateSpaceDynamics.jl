@@ -130,21 +130,33 @@ include("LDS/LDS.jl")
     test_EM_numeric_Direct()
 end
 
+"""
+Tests for LinearDynamicalSystems.jl
+"""
 
-include("PLDS/PLDS.jl")
+include("LinearDynamicalSystems/LinearDynamicalSystems.jl")
 
-@testset "PLDS Tests" begin
-    test_PLDS_constructor_with_params()
-    test_PLDS_constructor_without_params()
-    test_countspikes()
-    test_logposterior()
-    test_gradient_plds()
-    test_hessian_plds()
-    test_direct_smoother()
+@testset "LinearDynamicalSystems Tests" begin
+    test_lds_with_params()
+    test_lds_without_params()
+    test_Gradient()
     test_smooth()
-    test_analytical_parameter_updates()
-    test_direct_smoother()
 end
+
+#include("PLDS/PLDS.jl")
+
+# @testset "PLDS Tests" begin
+#     test_PLDS_constructor_with_params()
+#     test_PLDS_constructor_without_params()
+#     test_countspikes()
+#     test_logposterior()
+#     test_gradient_plds()
+#     test_hessian_plds()
+#     test_direct_smoother()
+#     test_smooth()
+#     test_analytical_parameter_updates()
+#     test_direct_smoother()
+# end
 
 """
 Tests for Regression.jl
