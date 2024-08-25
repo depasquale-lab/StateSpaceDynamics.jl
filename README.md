@@ -1,7 +1,7 @@
 # StateSpaceDynamics.jl: A Julia package for probabilistic state space models (SSMs)
 
 [![SSM-CI](https://github.com/rsenne/ssm_julia/actions/workflows/run_tests.yaml/badge.svg)](https://github.com/rsenne/ssm_julia/actions/workflows/run_tests.yaml)
-[![codecov](https://codecov.io/gh/rsenne/ssm_julia/graph/badge.svg?token=EQ6B9RJBQ8)](https://codecov.io/gh/rsenne/ssm_julia)
+[![codecov](https://codecov.io/gh/rsenne/ssm_julia/graph/badge.svg?token=EQ6B9RJBQ8)](https://codecov.io/gh/depasquale-lab/StateSpaceDynamics.jl)
 
 This package implements a number of state-space models in julia. It take inspiration from the [SSM package](https://github.com/lindermanlab/ssm) written in python from the Linderman Lab. Currently, the following models are implemented:
 
