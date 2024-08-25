@@ -28,7 +28,7 @@ We introduce ``StateSpaceDynamics.jl``.
 
 # Statement of need
 
-`SSM` [@PySSM2022] is awesome but its in python. `HiddenMarkovModels.jl` [@HMMjl2024] is awesome but XXX. `StateSpaceModels.jl` [@SSMjl2024] is awesome but XXX. `StateSpaceLearning.jl` [@SSLjl2024] is awesome but XXX.
+`SSM` [@PySSM2022] is awesome but its in python. `HiddenMarkovModels.jl` [@HMMjl2024; @Dalle2024] is awesome but XXX. `StateSpaceModels.jl` [@SSMjl2024] is awesome but XXX. `StateSpaceLearning.jl` [@SSLjl2024] is awesome but XXX.
 
 # Package design
 
