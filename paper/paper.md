@@ -24,11 +24,11 @@ bibliography: paper.bib
 
 # Summary
 
-Here, we introduce ``StateSpaceDynamics.jl``.
+We introduce ``StateSpaceDynamics.jl``.
 
 # Statement of need
 
-`SSM`[@PySSM2022] is awesome but its it python. `HiddenMarkovModels.jl` is ok but XXX. `StateSpaceModels.jl` is ok but XXX. 
+`SSM` [@PySSM2022] is awesome but its in python. `HiddenMarkovModels.jl` [@HMMjl2024] is awesome but XXX. `StateSpaceModels.jl` [@SSMjl2024] is awesome but XXX. `StateSpaceLearning.jl` [@SSLjl2024] is awesome but XXX.
 
 # Package design
 
@@ -44,10 +44,10 @@ Here, we introduce ``StateSpaceDynamics.jl``.
 
 # Author contributions
 
-RS did XXX. BDD did XXX.
+RS did XXX. BD did XXX.
 
 # Acknowledgements
 
-This work was supported by the BME Department at BU.
+This work was supported by the Biomedical Engineering Department at Boston University.
 
 # References
