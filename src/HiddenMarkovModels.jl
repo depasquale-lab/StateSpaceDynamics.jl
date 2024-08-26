@@ -13,6 +13,8 @@ export class_probabilities
 # 3. TimeSeries(model, sample(model, data...; n=<number of samples>)) must return a TimeSeries object of n samples.
 # 4. revert_TimeSeries(model, time_series) must return the time_series data converted back to the original sample() format (the inverse of TimeSeries(model, samples)).
 
+# 3 and 4 appear to be replaced by emission_sample
+
 
 
 """
