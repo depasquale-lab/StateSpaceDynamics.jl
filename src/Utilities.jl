@@ -208,3 +208,25 @@ end
 function valid_Σ(Σ::Matrix{<:Real})
     return ishermitian(Σ) && isposdef(Σ)
 end
+
+"""
+Overload getproperty and setproperty behavior for EmissionModel to give the appearance that all properties of the 
+inner_model are also properties of the EmissionModel.
+"""
+# define getters for inner_model fields
+function Base.getproperty(model::EmissionModel, sym::Symbol)
+    if sym === :inner_model
+        return getfield(model, sym)
+    else # fallback to getfield
+        return getproperty(model.inner_model, sym)
+    end
+end
+
+# define setters for inner_model fields
+function Base.setproperty!(model::EmissionModel, sym::Symbol, value)
+    if sym === :inner_model
+        setfield!(model, sym, value)
+    else # fallback to setfield!
+        setproperty!(model.inner_model, sym, value)
+    end
+end

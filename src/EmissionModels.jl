@@ -1,32 +1,6 @@
 export Emission, getproperty, setproperty!
 export GaussianEmission, validate_data, emission_sample, emission_loglikelihood, emission_fit!
 
-# define getters for inner_model fields
-function Base.getproperty(model::EmissionModel, sym::Symbol)
-    if sym === :inner_model
-        return getfield(model, sym)
-    else # fallback to getfield
-        return getproperty(model.inner_model, sym)
-    end
-end
-
-# define setters for inner_model fields
-function Base.setproperty!(model::EmissionModel, sym::Symbol, value)
-    if sym === :inner_model
-        setfield!(model, sym, value)
-    else # fallback to setfield!
-        setproperty!(model.inner_model, sym, value)
-    end
-end
-
-function validate_model(model::EmissionModel)
-    validate_model(model.inner_model)
-end
-
-function validate_data(model::EmissionModel, data...)
-    validate_data(model.inner_model, data...)
-end
-
 
 """
 Every emission model must implement the following functions:
@@ -51,6 +25,9 @@ Make sure to add any new emission models to the Emission function at the end of 
 """
 
 
+"""
+Gaussian Emission
+"""
 
 mutable struct GaussianEmission <: EmissionModel
     inner_model:: Gaussian
@@ -88,7 +65,18 @@ function emission_fit!(model::GaussianEmission, Y::Matrix{<:Real}, w::Vector{Flo
     fit!(model.inner_model, Y, w)
 end
 
+function GaussianHMM(; K::Int, output_dim::Int, A::Matrix{<:Real}=initialize_transition_matrix(K), πₖ::Vector{Float64}=initialize_state_distribution(K))
+    # Create emission models
+    emissions = [Gaussian(output_dim=output_dim) for _ in 1:K]
+    # Return constructed GaussianHMM
+    return HiddenMarkovModel(K=K, B=emissions, A=A, πₖ=πₖ)
+end
 
+
+
+"""
+Gaussian Regression
+"""
 
 mutable struct GaussianRegressionEmission <: EmissionModel
     inner_model:: GaussianRegression
@@ -128,6 +116,32 @@ function emission_fit!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y:
 end
 
 
+function SwitchingGaussianRegression(; 
+    K::Int,
+    input_dim::Int,
+    output_dim::Int,
+    include_intercept::Bool = true,
+    β::Matrix{<:Real} = if include_intercept
+        zeros(input_dim + 1, output_dim)
+    else
+        zeros(input_dim, output_dim)
+    end,
+    Σ::Matrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim),
+    λ::Float64 = 0.0,
+    A::Matrix{<:Real} = initialize_transition_matrix(K),
+    πₖ::Vector{Float64} = initialize_state_distribution(K)
+)
+    # Create emission models
+    emissions = [GaussianRegression(input_dim=input_dim, output_dim=output_dim, include_intercept=include_intercept, β=β, Σ=Σ, λ=λ) for _ in 1:K]
+
+    # Return the HiddenMarkovModel
+    return HiddenMarkovModel(K=K, B=emissions, A=A, πₖ=πₖ)
+end
+
+"""
+Bernoulli Regression
+"""
+
 mutable struct BernoulliRegressionEmission <: EmissionModel
     inner_model:: BernoulliRegression
 end
@@ -164,7 +178,25 @@ function emission_fit!(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y
     fit!(model.inner_model, Φ, Y, w)
 end
 
+function SwitchingBernoulliRegression(; 
+    K::Int,
+    input_dim::Int,
+    include_intercept::Bool=true,
+    β::Vector{<:Real} = if include_intercept zeros(input_dim + 1) else zeros(input_dim) end,
+    λ::Float64 = 0.0,
+    A::Matrix{<:Real} = initialize_transition_matrix(K),
+    πₖ::Vector{Float64} = initialize_state_distribution(K)
+)
+    # Create emission models
+    emissions = [BernoulliRegression(input_dim=input_dim, include_intercept=include_intercept, β=β, λ=λ) for _ in 1:K]
+    # Return the HiddenMarkovModel
+    return HiddenMarkovModel(K=K, B=emissions, A=A, πₖ=πₖ)
+end
 
+
+"""
+AutoRegression
+"""
 
 mutable struct AutoRegressionEmission <: EmissionModel
     inner_model:: AutoRegression
@@ -197,8 +229,27 @@ function emission_fit!(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y:
     fit!(model.inner_model, Y_prev, Y, w)
 end
 
+function SwitchingAutoRegression(; 
+    K::Int,
+    output_dim::Int, 
+    order::Int, 
+    include_intercept::Bool = true, 
+    β::Matrix{<:Real} = if include_intercept zeros(output_dim * order + 1, output_dim) else zeros(output_dim * order, output_dim) end,
+    Σ::Matrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim),
+    λ::Float64=0.0,
+    A::Matrix{<:Real} = initialize_transition_matrix(K),
+    πₖ::Vector{Float64} = initialize_state_distribution(K)
+)
+    # Create the emissions
+    emissions = [AutoRegression(output_dim=output_dim, order=order, include_intercept=include_intercept, β=β, Σ=Σ, λ=λ) for _ in 1:K]
+    # Return the HiddenMarkovModel
+    return HiddenMarkovModel(K=K, B=emissions, A=A, πₖ=πₖ)
+end
 
 
+"""
+Composite Model
+"""
 
 mutable struct CompositeModelEmission <: EmissionModel
     inner_model:: CompositeModel
@@ -250,13 +301,23 @@ function emission_fit!(model::CompositeModelEmission, input_data::Vector{}, outp
     end
 end
 
+"""
+Validation Functions
+"""
+
+function validate_model(model::EmissionModel)
+    validate_model(model.inner_model)
+end
 
 
+function validate_data(model::EmissionModel, data...)
+    validate_data(model.inner_model, data...)
+end
 
 
-
-
-
+"""
+Emission handler
+"""
 function Emission(model::Model)
     if model isa Gaussian
         return GaussianEmission(model)
