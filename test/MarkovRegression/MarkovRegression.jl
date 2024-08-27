@@ -1,4 +1,4 @@
-function test_hmmglm_properties(model::SSM.hmmglm)
+function test_hmmglm_properties(model::StateSpaceDynamics.hmmglm)
     # test basic properties of the model
     @test size(model.A) == (model.K, model.K)
     @test length(model.B) == model.K

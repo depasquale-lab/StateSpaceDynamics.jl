@@ -1,4 +1,4 @@
-module SSM
+module StateSpaceDynamics
 
 using Distributions
 using ForwardDiff
@@ -31,6 +31,5 @@ include("HiddenMarkovModels.jl")
 
 include("Optimization.jl")
 include("Preprocessing.jl")
-
 
 end
