@@ -230,3 +230,24 @@ function Base.setproperty!(model::EmissionModel, sym::Symbol, value)
         setproperty!(model.inner_model, sym, value)
     end
 end
+
+# Function for stacking data... in prep for the trialized M_step!()
+function stack_tuples(d)
+    # Determine the number of tuples and number of elements in each tuple
+    num_tuples = length(d)
+    num_elements = length(d[1])
+    
+    # Initialize an array to store the stacked matrices
+    stacked_matrices = Vector{Matrix{Float64}}(undef, num_elements)
+    
+    # Stack matrices for each position in the tuple
+    for i in 1:num_elements
+        # Extract all matrices at the i-th position from each tuple
+        matrices_to_stack = [d[j][i] for j in 1:num_tuples]
+        # Vertically concatenate the collected matrices
+        stacked_matrices[i] = vcat(matrices_to_stack...)
+    end
+    
+    # Return the stacked matrices as a tuple
+    return tuple(stacked_matrices...)
+end

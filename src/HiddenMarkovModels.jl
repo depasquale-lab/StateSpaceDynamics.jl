@@ -373,6 +373,39 @@ function M_step!(model::HiddenMarkovModel, γ::Matrix{<:Real}, ξ::Array{Float64
     update_emissions!(model, data, exp.(γ)) 
 end
 
+# Trialized versions of functions
+function M_step!(model::HiddenMarkovModel, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Float64, 3}}, data)
+    # update initial state distribution
+    update_initial_state_distribution!(model, γ)   
+    # update transition matrix
+    update_transition_matrix!(model, γ, ξ)
+    # update regression models
+    γ_exp = [exp.(γ_trial) for γ_trial in γ]
+    update_emissions!(model, data, vcat(γ_exp...)) 
+end
+
+function update_initial_state_distribution!(model::HiddenMarkovModel, γ::Vector{Matrix{Float64}})
+    # Update initial state probabilities for trialized data
+    num_trials = length(γ)
+    model.πₖ = mean([exp.(γ[i][1, :]) for i in 1:num_trials])
+end
+
+function update_transition_matrix!(model::HiddenMarkovModel, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Float64, 3}})
+    # Update transition matrix for trialized data
+    K = size(model.A, 1)
+    num_trials = length(γ)
+
+    E = vcat(ξ...)
+    G = vcat([γ[i][1:size(γ[i], 1)-1, :] for i in 1:num_trials]...)
+
+    @threads for i in 1:K
+        for j in 1:K
+            model.A[i, j] = exp(logsumexp(E[:, i, j]) - logsumexp(G[:, i]))
+        end
+    end
+end
+
+
 """
     fit!(model::HiddenMarkovModel, data...; max_iters::Int=100, tol::Float64=1e-6)
 
@@ -403,38 +436,94 @@ loglikelihood(est_model, Y) > loglikelihood(true_model, Y)
 true
 ```
 """
-function fit!(model::HiddenMarkovModel, data...; max_iters::Int=100, tol::Float64=1e-6)
-    # confirm model is valid
-    validate_model(model)
+function fit!(model::HiddenMarkovModel, data...; max_iters::Int=100, tol::Float64=1e-6, trials::Bool=false)
+    lls = [-Inf]
 
-    # confirm data is in the correct format
-    validate_data(model, data...)
+    if trials == false
+        # confirm model is valid
+        validate_model(model)
 
-    log_likelihood = -Inf
-    # Initialize progress bar
-    p = Progress(max_iters; dt=1, desc="Running EM algorithm...",)
-    for iter in 1:max_iters
-        # Update the progress bar
-        next!(p; showvalues = [(:iteration, iter), (:log_likelihood, log_likelihood)])
-        # E-Step
-        γ, ξ, α, β = E_step(model, data)
-        # Compute and update the log-likelihood
-        log_likelihood_current = logsumexp(α[end, :])
-        #println("iter $(iter) loglikelihood: ", log_likelihood_current)
-        if abs(log_likelihood_current - log_likelihood) < tol
-            finish!(p)
-            break
-        else
-            log_likelihood = log_likelihood_current
+        # confirm data is in the correct format
+        validate_data(model, data...)
+
+        log_likelihood = -Inf
+        # Initialize progress bar
+        p = Progress(max_iters; dt=1, desc="Running EM algorithm...",)
+        for iter in 1:max_iters
+            # Update the progress bar
+            next!(p; showvalues = [(:iteration, iter), (:log_likelihood, log_likelihood)])
+            # E-Step
+            γ, ξ, α, β = E_step(model, data)
+            # Compute and update the log-likelihood
+            log_likelihood_current = logsumexp(α[end, :])
+            push!(lls, log_likelihood_current)
+            #println("iter $(iter) loglikelihood: ", log_likelihood_current)
+            if abs(log_likelihood_current - log_likelihood) < tol
+                finish!(p)
+                break
+            else
+                log_likelihood = log_likelihood_current
+            end
+            # M-Step
+            M_step!(model, γ, ξ, data)
         end
-        # M-Step
-        M_step!(model, γ, ξ, data)
+
+        # confirm model is valid
+        validate_model(model)
+
     end
 
 
-    # confirm model is valid
-    validate_model(model)
+    if trials == true
+        # Validate the model
+        validate_model(model)
+
+        # Validate the data
+        for matrices in zip(data...)  # If data... is [A1 A2] [B1 B2] then matrices is [A1 B1] [A2 B2]
+            validate_data(model, matrices...)  # you get one matrices tuple for each trial, then splat it into the next function
+        end
+
+        # Initialize log_likelihood
+        log_likelihood = -Inf
+
+        # Collect the zipped data into a vector of tuples
+        zipped_matrices = collect(zip(data...))
+        p = Progress(max_iters; dt=1, desc="Running EM algorithm...",)
+        for iter in 1:max_iters
+            next!(p; showvalues = [(:iteration, iter), (:log_likelihood, log_likelihood)])
+            # E_step
+            output = E_step.(Ref(model), zipped_matrices)
+            γ, ξ, α, β = map(x-> x[1], output), map(x-> x[2], output), map(x-> x[3], output), map(x-> x[4], output)
+            
+            # Calculate log_likelihood
+            log_likelihood_current = sum(map(α -> logsumexp(α[end, :]), α))
+            push!(lls, log_likelihood_current)
+            # Check for convergence
+            if abs(log_likelihood_current - log_likelihood) < tol
+                finish!(p)
+                break
+            else
+                log_likelihood = log_likelihood_current
+            end
+            
+            # Get data trial tuples stacked for M_step!()
+            stacked_data = stack_tuples(zipped_matrices)
+
+            # M_step
+            M_step!(model, γ, ξ, stacked_data)
+
+        end
+        validate_model(model)
+    end
+
+    return lls
 end
+
+
+"""
+Fit function for HMMs when data has multiple trials of observations
+"""
+
 
 """
     class_probabilities(model::HiddenMarkovModel, data...)

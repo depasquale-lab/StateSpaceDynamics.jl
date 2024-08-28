@@ -26,14 +26,37 @@ Make sure to add any new emission models to the Emission function at the end of 
 
 
 """
-Gaussian Emission
-"""
+    GaussianEmission <: EmissionModel
 
+A mutable struct representing a Gaussian emission model, which wraps around a `Gaussian` model.
+
+# Fields
+- `inner_model::Gaussian`: The underlying Gaussian model used for the emissions.
+"""
 mutable struct GaussianEmission <: EmissionModel
     inner_model:: Gaussian
 end
 
 
+"""
+    emission_sample(model::GaussianEmission; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim))
+
+Generate a sample from the given Gaussian emission model and append it to the provided observation sequence.
+
+# Arguments
+- `model::GaussianEmission`: The Gaussian emission model to sample from.
+- `observation_sequence::Matrix{<:Real}`: The sequence of observations to which the new sample will be appended (defaults to an empty matrix with the same output dimension as the model).
+
+# Returns
+- `Matrix{Float64}`: The updated observation sequence with the new sample appended.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = GaussianEmission(Gaussian(output_dim=2))
+sequence = emission_sample(model)
+sequence = emission_sample(model, observation_sequence=sequence)
+# output
+"""
 function emission_sample(model::GaussianEmission; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim))
     validate_model(model)
 
@@ -42,6 +65,26 @@ function emission_sample(model::GaussianEmission; observation_sequence::Matrix{<
     return vcat(observation_sequence, Matrix(raw_samples'))
 end
 
+
+"""
+    emission_loglikelihood(model::GaussianEmission, Y::Matrix{<:Real})
+
+Calculate the log likelihood of the data `Y` given the Gaussian emission model.
+
+# Arguments
+- `model::GaussianEmission`: The Gaussian emission model for which to calculate the log likelihood.
+- `Y::Matrix{<:Real}`: The data matrix, where each row represents an observation.
+
+# Returns
+- `Vector{Float64}`: A vector of log likelihoods, one for each observation in the data.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = GaussianEmission(Gaussian(output_dim=2))
+Y = randn(10, 2)  # Observations x Features
+loglikelihoods = SSD.emission_loglikelihood(model, Y)
+# output
+"""
 function emission_loglikelihood(model::GaussianEmission, Y::Matrix{<:Real})
     validate_model(model)
     validate_data(model, Y)
@@ -61,10 +104,52 @@ function emission_loglikelihood(model::GaussianEmission, Y::Matrix{<:Real})
     return observation_wise_loglikelihood
 end
 
+
+"""
+    emission_fit!(model::GaussianEmission, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+
+Call the fit!() function in BasicModels.jl to fit the Gaussian emission model to the data `Y` using the provided weights `w`.
+
+# Arguments
+- `model::GaussianEmission`: The Gaussian emission model to be fit.
+- `Y::Matrix{<:Real}`: The data matrix (Observations x Features)
+- `w::Vector{Float64}`: A vector of weights corresponding to each observation (defaults to a vector of ones).
+
+# Returns
+- `Nothing`: The function modifies the model in place.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = GaussianEmission(Gaussian(output_dim=2))
+Y = randn(10, 2)
+emission_fit!(model, Y)
+# output
+"""
 function emission_fit!(model::GaussianEmission, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     fit!(model.inner_model, Y, w)
 end
 
+
+"""
+    GaussianHMM(; K::Int, output_dim::Int, A::Matrix{<:Real}=initialize_transition_matrix(K), πₖ::Vector{Float64}=initialize_state_distribution(K))
+
+Create a Hidden Markov Model with Gaussian Emissions
+
+# Arguments
+- `K::Int`: The number of hidden states
+- `output_dim::Int`: The dimensionality of the observation
+- `A::Matrix{<:Real}=initialize_transition_matrix(K)`: The transition matrix of the HMM (defaults to random initialization)
+- `πₖ::Vector{Float64}=initialize_state_distribution(K)`: The initial state distribution of the HMM (defaults to random initialization)
+
+# Returns
+- `::HiddenMarkovModel`: Hidden Markov Model Object with Gaussian Emissions
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = GaussianHMM(K=2, output_dim=5)
+# output
+```
+"""
 function GaussianHMM(; K::Int, output_dim::Int, A::Matrix{<:Real}=initialize_transition_matrix(K), πₖ::Vector{Float64}=initialize_state_distribution(K))
     # Create emission models
     emissions = [Gaussian(output_dim=output_dim) for _ in 1:K]
@@ -73,16 +158,40 @@ function GaussianHMM(; K::Int, output_dim::Int, A::Matrix{<:Real}=initialize_tra
 end
 
 
-
 """
-Gaussian Regression
-"""
+    GaussianRegressionEmission <: EmissionModel
 
+A mutable struct representing a Gaussian regression emission model, which wraps around a `GaussianRegression` model.
+
+# Fields
+- `inner_model::GaussianRegression`: The underlying Gaussian regression model used for the emissions.
+"""
 mutable struct GaussianRegressionEmission <: EmissionModel
     inner_model:: GaussianRegression
 end
 
-# custom sampling function for the HMM. Returns observation_sequence with new observation appended to bottom.
+
+"""
+    emission_sample(model::GaussianRegressionEmission, Φ::Matrix{<:Real}; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim))
+
+Generate a sample from the given Gaussian regression emission model using the input features `Φ`, and append it to the provided observation sequence.
+
+# Arguments
+- `model::GaussianRegressionEmission`: The Gaussian regression emission model to sample from.
+- `Φ::Matrix{<:Real}`: The input features matrix (Observations x Features).
+- `observation_sequence::Matrix{<:Real}`: The sequence of observations to which the new sample will be appended (defaults to an empty matrix with the same output dimension as the model).
+
+# Returns
+- `Matrix{Float64}`: The updated observation sequence with the new sample appended.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = GaussianRegressionEmission(GaussianRegression(input_dim=3, output_dim=2))
+Φ = randn(10, 3)
+sequence = emission_sample(model, Φ)
+sequence = emission_sample(model, Φ, observation_sequence=sequence)
+# output
+"""
 function emission_sample(model::GaussianRegressionEmission, Φ::Matrix{<:Real}; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim))
     validate_model(model)
     validate_data(model, Φ)
@@ -96,6 +205,27 @@ function emission_sample(model::GaussianRegressionEmission, Φ::Matrix{<:Real}; 
 end
 
 
+"""
+    emission_loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
+
+Calculate the log likelihood of the data `Y` given the Gaussian regression emission model and the input features `Φ`.
+
+# Arguments
+- `model::GaussianRegressionEmission`: The Gaussian regression emission model for which to calculate the log likelihood.
+- `Φ::Matrix{<:Real}`: The input features matrix (Observations x Features).
+- `Y::Matrix{<:Real}`: The data matrix (Observations x Features).
+
+# Returns
+- `Vector{Float64}`: A vector of log likelihoods, one for each observation in the data.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = GaussianRegressionEmission(GaussianRegression(input_dim=3, output_dim=2))
+Φ = randn(10, 3)
+Y = randn(10, 2)
+loglikelihoods = emission_loglikelihood(model, Φ, Y)
+# output
+"""
 function emission_loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
     validate_model(model)
     validate_data(model, Φ, Y)
@@ -111,11 +241,71 @@ function emission_loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:
     return observation_wise_loglikelihood
 end
 
+
+"""
+    emission_fit!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+
+Call the fit!() function in RegressionModels.jl to fit the Gaussian regression emission model to the data `Y` using the input features `Φ` and the provided weights `w`.
+
+# Arguments
+- `model::GaussianRegressionEmission`: The Gaussian regression emission model to be fitted.
+- `Φ::Matrix{<:Real}`: The input features matrix (Observations x Features).
+- `Y::Matrix{<:Real}`: The data matrix (Observations x Features).
+- `w::Vector{Float64}`: A vector of weights corresponding to each observation (defaults to a vector of ones).
+
+# Returns
+- `Nothing`: The function modifies the model in place.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = GaussianRegressionEmission(GaussianRegression(input_dim=3, output_dim=2))
+Φ = randn(10, 3)
+Y = randn(10, 2)
+emission_fit!(model, Φ, Y)
+# output
+"""
 function emission_fit!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     fit!(model.inner_model, Φ, Y, w)
 end
 
 
+"""
+    SwitchingGaussianRegression(; 
+        K::Int,
+        input_dim::Int,
+        output_dim::Int,
+        include_intercept::Bool = true,
+        β::Matrix{<:Real} = if include_intercept
+            zeros(input_dim + 1, output_dim)
+        else
+            zeros(input_dim, output_dim)
+        end,
+        Σ::Matrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim),
+        λ::Float64 = 0.0,
+        A::Matrix{<:Real} = initialize_transition_matrix(K),
+        πₖ::Vector{Float64} = initialize_state_distribution(K)
+    )
+
+Create a Switching Gaussian Regression Model
+
+# Arguments
+- `K::Int`: The number of hidden states.
+- `input_dim::Int`: The dimensionality of the input features.
+- `output_dim::Int`: The dimensionality of the output predictions.
+- `include_intercept::Bool`: Whether to include an intercept in the regression model (default is `true`).
+- `β::Matrix{<:Real}`: The regression coefficients (defaults to zeros based on `input_dim` and `output_dim`).
+- `Σ::Matrix{<:Real}`: The covariance matrix of the Gaussian emissions (defaults to an identity matrix).
+- `λ::Float64`: The regularization parameter for the regression (default is `0.0`).
+- `A::Matrix{<:Real}`: The transition matrix of the Hidden Markov Model (defaults to random initialization).
+- `πₖ::Vector{Float64}`: The initial state distribution of the Hidden Markov Model (defaults to random initialization).
+
+# Returns
+- `::HiddenMarkovModel`: A Switching Gaussian Regression Model
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = SwitchingGaussianRegression(K=2, input_dim=5, output_dim=10)
+# output
+"""
 function SwitchingGaussianRegression(; 
     K::Int,
     input_dim::Int,
@@ -138,14 +328,41 @@ function SwitchingGaussianRegression(;
     return HiddenMarkovModel(K=K, B=emissions, A=A, πₖ=πₖ)
 end
 
-"""
-Bernoulli Regression
-"""
 
+"""
+    BernoulliRegressionEmission <: EmissionModel
+
+A mutable struct representing a Bernoulli regression emission model, which wraps around a `BernoulliRegression` model.
+
+# Fields
+- `inner_model::BernoulliRegression`: The underlying Bernoulli regression model used for the emissions.
+"""
 mutable struct BernoulliRegressionEmission <: EmissionModel
     inner_model:: BernoulliRegression
 end
 
+
+"""
+    emission_sample(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, 1))
+
+Generate a sample from the given Bernoulli regression emission model using the input features `Φ`, and append it to the provided observation sequence.
+
+# Arguments
+- `model::BernoulliRegressionEmission`: The Bernoulli regression emission model to sample from.
+- `Φ::Matrix{<:Real}`: The input features matrix (Observations x Features).
+- `observation_sequence::Matrix{<:Real}`: The sequence of observations to which the new sample will be appended (defaults to an empty matrix).
+
+# Returns
+- `Matrix{Float64}`: The updated observation sequence with the new sample appended.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = BernoulliRegressionEmission(BernoulliRegression(input_dim=3))
+Φ = randn(10, 3)
+sequence = emission_sample(model, Φ)
+sequence = emission_sample(model, Φ, observation_sequence=sequence)
+# output
+"""
 function emission_sample(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}; observation_sequence::Matrix{<:Real} = Matrix{Float64}(undef, 0, 1))
     # find the number of observations in the observation sequence
     t = size(observation_sequence, 1) + 1
@@ -155,6 +372,29 @@ function emission_sample(model::BernoulliRegressionEmission, Φ::Matrix{<:Real};
     return vcat(observation_sequence, new_observation)
 end
 
+
+"""
+    emission_loglikelihood(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+
+Calculate the log likelihood of the data `Y` given the Bernoulli regression emission model and the input features `Φ`. Optionally, a vector of weights `w` can be provided.
+
+# Arguments
+- `model::BernoulliRegressionEmission`: The Bernoulli regression emission model for which to calculate the log likelihood.
+- `Φ::Matrix{<:Real}`: The input features matrix (Observations x Features).
+- `Y::Matrix{<:Real}`: The data matrix (Observations x Features).
+- `w::Vector{Float64}`: A vector of weights corresponding to each observation (defaults to a vector of ones).
+
+# Returns
+- `Vector{Float64}`: A vector of log likelihoods, one for each observation in the data.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = BernoulliRegressionEmission(BernoulliRegression(input_dim=3))
+Φ = randn(10, 3)
+Y = rand(Bool, 10, 1)
+loglikelihoods = emission_loglikelihood(model, Φ, Y)
+# output
+"""
 function emission_loglikelihood(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # confirm that the model has valid parameters
     validate_model(model)
@@ -174,10 +414,56 @@ function emission_loglikelihood(model::BernoulliRegressionEmission, Φ::Matrix{<
     return obs_wise_loglikelihood
 end
 
+
+"""
+    emission_fit!(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+
+Calls fit!() function in RegressionModels.jl to fit the Bernoulli regression emission model to the data `Y` using the input features `Φ` and the provided weights `w`.
+
+# Arguments
+- `model::BernoulliRegressionEmission`: The Bernoulli regression emission model to be fitted.
+- `Φ::Matrix{<:Real}`: The input features matrix (Observations x Features).
+- `Y::Matrix{<:Real}`: The data matrix (Observations x Features).
+- `w::Vector{Float64}`: A vector of weights corresponding to each observation (defaults to a vector of ones).
+
+# Returns
+- `Nothing`: The function modifies the model in place.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = BernoulliRegressionEmission(BernoulliRegression(input_dim=3))
+Φ = randn(10, 3)
+Y = rand(Bool, 10, 1)
+emission_fit!(model, Φ, Y)
+# output
+"""
 function emission_fit!(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     fit!(model.inner_model, Φ, Y, w)
 end
 
+
+"""
+    SwitchingBernoulliRegression(; K::Int, input_dim::Int, include_intercept::Bool=true, β::Vector{<:Real}=if include_intercept zeros(input_dim + 1) else zeros(input_dim) end, λ::Float64=0.0, A::Matrix{<:Real}=initialize_transition_matrix(K), πₖ::Vector{Float64}=initialize_state_distribution(K))
+
+Create a Switching Bernoulli Regression Model
+
+# Arguments
+- `K::Int`: The number of hidden states.
+- `input_dim::Int`: The dimensionality of the input data.
+- `include_intercept::Bool=true`: Whether to include an intercept in the regression model (defaults to true).
+- `β::Vector{<:Real}`: The regression coefficients (defaults to zeros). 
+- `λ::Float64=0.0`: Regularization parameter for the regression (defaults to zero).
+- `A::Matrix{<:Real}=initialize_transition_matrix(K)`: The transition matrix of the HMM (defaults to random initialization).
+- `πₖ::Vector{Float64}=initialize_state_distribution(K)`: The initial state distribution of the HMM (defaults to random initialization).
+
+# Returns
+- `::HiddenMarkovModel`: A Switching Bernoulli Regression Model
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = SwitchingBernoulliRegression(K=2, input_dim=5)
+# output
+"""
 function SwitchingBernoulliRegression(; 
     K::Int,
     input_dim::Int,
@@ -195,13 +481,39 @@ end
 
 
 """
-AutoRegression
-"""
+    AutoRegressionEmission <: EmissionModel
 
+A mutable struct representing an autoregressive emission model, which wraps around an `AutoRegression` model.
+
+# Fields
+- `inner_model::AutoRegression`: The underlying autoregressive model used for the emissions.
+"""
 mutable struct AutoRegressionEmission <: EmissionModel
     inner_model:: AutoRegression
 end
 
+
+"""
+    emission_sample(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim))
+
+Generate a sample from the given autoregressive emission model using the previous observations `Y_prev`, and append it to the provided observation sequence.
+
+# Arguments
+- `model::AutoRegressionEmission`: The autoregressive emission model to sample from.
+- `Y_prev::Matrix{<:Real}`: The matrix of previous observations, where each row represents an observation.
+- `observation_sequence::Matrix{<:Real}`: The sequence of observations to which the new sample will be appended (defaults to an empty matrix with appropriate dimensions).
+
+# Returns
+- `Matrix{Float64}`: The updated observation sequence with the new sample appended.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = AutoRegressionEmission(AutoRegression(output_dim=2, order=3))
+Y_prev = randn(10, 2)
+sequence = emission_sample(model, Y_prev)
+sequence = emission_sample(model, Y_prev, observation_sequence=sequence)
+# output
+"""
 function emission_sample(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim))
 
     full_sequence = vcat(Y_prev, observation_sequence)
@@ -212,6 +524,28 @@ function emission_sample(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}; 
     return vcat(observation_sequence, new_observation)
 end
 
+
+"""
+    emission_loglikelihood(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
+
+Calculate the log likelihood of the data `Y` given the autoregressive emission model and the previous observations `Y_prev`.
+
+# Arguments
+- `model::AutoRegressionEmission`: The autoregressive emission model for which to calculate the log likelihood.
+- `Y_prev::Matrix{<:Real}`: The matrix of previous observations, where each row represents an observation.
+- `Y::Matrix{<:Real}`: The data matrix, where each row represents an observation.
+
+# Returns
+- `Vector{Float64}`: A vector of log likelihoods, one for each observation in the data.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = AutoRegressionEmission(AutoRegression(output_dim=2, order=10))
+Y_prev = randn(10, 2)
+Y = randn(10, 2)
+loglikelihoods = emission_loglikelihood(model, Y_prev, Y)
+# output
+"""
 function emission_loglikelihood(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
     # confirm that the model has valid parameters
     validate_model(model)
@@ -225,10 +559,57 @@ function emission_loglikelihood(model::AutoRegressionEmission, Y_prev::Matrix{<:
     return emission_loglikelihood(innerGaussianRegression_emission, Φ_gaussian, Y)
 end
 
+
+"""
+    emission_fit!(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+
+Calls to fit!() function in RegressionModels.jl to fit the autoregressive emission model to the data `Y` using the previous observations `Y_prev` and the provided weights `w`.
+
+# Arguments
+- `model::AutoRegressionEmission`: The autoregressive emission model to be fitted.
+- `Y_prev::Matrix{<:Real}`: The matrix of previous observations, where each row represents an observation.
+- `Y::Matrix{<:Real}`: The data matrix, where each row represents an observation.
+- `w::Vector{Float64}`: A vector of weights corresponding to each observation (defaults to a vector of ones).
+
+# Returns
+- `Nothing`: The function modifies the model in place.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = AutoRegressionEmission(AutoRegression(output_dim=2, order=10))
+Y_prev = randn(10, 2)
+Y = randn(10, 2)
+emission_fit!(model, Y_prev, Y)
+# output
+"""
 function emission_fit!(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     fit!(model.inner_model, Y_prev, Y, w)
 end
 
+"""
+    SwitchingAutoRegression(; K::Int, output_dim::Int, order::Int, include_intercept::Bool=true, β::Matrix{<:Real}=if include_intercept zeros(output_dim * order + 1, output_dim) else zeros(output_dim * order, output_dim) end, Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim), λ::Float64=0.0, A::Matrix{<:Real}=initialize_transition_matrix(K), πₖ::Vector{Float64}=initialize_state_distribution(K))
+
+Create a Switching AutoRegression Model
+
+# Arguments
+- `K::Int`: The number of hidden states.
+- `output_dim::Int`: The dimensionality of the output data.
+- `order::Int`: The order of the autoregressive model.
+- `include_intercept::Bool=true`: Whether to include an intercept in the regression model.
+- `β::Matrix{<:Real}`: The autoregressive coefficients (defaults to zeros).
+- `Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim)`: The covariance matrix for the autoregressive model (defaults to an identity matrix).
+- `λ::Float64=0.0`: Regularization parameter for the regression (defaults to zero).
+- `A::Matrix{<:Real}=initialize_transition_matrix(K)`: The transition matrix of the HMM (Defaults to a random initialization). 
+- `πₖ::Vector{Float64}=initialize_state_distribution(K)`: The initial state distribution of the HMM (Defaults to a random initialization).
+
+# Returns
+- `::HiddenMarkovModel`: A Switching AutoRegression Model
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = SwitchingAutoRegression(K=3, output_dim=2, order=2)
+# output
+"""
 function SwitchingAutoRegression(; 
     K::Int,
     output_dim::Int, 
@@ -248,17 +629,32 @@ end
 
 
 """
-Composite Model
-"""
+    CompositeModelEmission <: EmissionModel
 
+A mutable struct representing a composite emission model that combines multiple emission models.
+
+# Fields
+- `inner_model::CompositeModel`: The underlying composite model used for the emissions.
+"""
 mutable struct CompositeModelEmission <: EmissionModel
     inner_model:: CompositeModel
 end
 
+
+"""
+    validate_model(model::CompositeModelEmission)
+
+Validate that the `CompositeModelEmission` and all its component emission models are correctly set up.
+
+# Arguments
+- `model::CompositeModelEmission`: The composite emission model to validate.
+
+# Returns
+- `Nothing`: This function does not return a value but throws an error if any component is not a valid emission model.
+"""
 function validate_model(model::CompositeModelEmission)
     validate_model(model.inner_model)
 
-    # check that all components are valid emission models
     for component in model.components
         if !(component isa EmissionModel)
             throw(ArgumentError("The model $(typeof(component)) is not a valid emission model."))

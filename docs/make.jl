@@ -1,17 +1,17 @@
 using Documenter
-using SSM
+using StateSpaceDynamics
 
-root = joinpath(dirname(pathof(SSM)), "..", "docs")
+root = joinpath(dirname(pathof(StateSpaceDynamics)), "..", "docs")
 
 println("working dir: ", pwd())
 
-DocMeta.setdocmeta!(SSM, :DocTestSetup, :(using SSM); recursive=true)
+DocMeta.setdocmeta!(StateSpaceDynamics, :DocTestSetup, :(using StateSpaceDynamics); recursive=true)
 
 
 makedocs(
     root = root, 
-    sitename="SSM Julia",
-    modules = [SSM],
+    sitename="StateSpaceDynamics Julia",
+    modules = [StateSpaceDynamics],
     pages=[
         "Home" => "index.md",
         "getting_started.md",
