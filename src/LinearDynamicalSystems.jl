@@ -265,7 +265,7 @@ Calculate the complete-data log-likelihood of a linear dynamical system (LDS) gi
 # Returns
 - `ll::T`: The complete-data log-likelihood of the LDS.
 """
-function loglikelihood(x::AbstractMatrix{T}, lds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+function loglikelihood(x::AbstractMatrix{T}, lds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{U}) where {T<:Real, U<:Real, S<:GaussianStateModel{<:Real}, O<:GaussianObservationModel{<:Real}}
     T_steps = size(y, 1)
    
     # Extract model components
@@ -457,7 +457,7 @@ function smooth(lds::LinearDynamicalSystem{S,O}, y::Matrix{T}) where {T<:Real, S
     end
 
     # Set up the optimization problem
-    res = optimize(nll, g!, h!, X₀, Newton())
+    res = optimize(nll, g!, h!, X₀, Newton(), Optim.Options(g_tol=1e-14))
 
     # get the optimal state
     x = SSM.interleave_reshape(res.minimizer, time_steps, D)
@@ -746,8 +746,6 @@ Perform the E-step of the EM algorithm for a Linear Dynamical System, treating a
 - It treats all input as multi-trial, with single-trial being a special case where n_trials = 1.
 """
 function estep(lds::LinearDynamicalSystem{S,O}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
-    n_trials, T_steps, obs_dim = size(y)
-
     # Smooth the data
     x_smooth, p_smooth, inverse_offdiag = smooth(lds, y)
 

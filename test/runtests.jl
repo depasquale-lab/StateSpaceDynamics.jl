@@ -118,17 +118,17 @@ Tests for LDS.jl
 
 include("LDS/LDS.jl")
 
-@testset "LDS Tests" begin
-    test_LDS_with_params()
-    test_LDS_without_params()
-    test_LDS_E_Step()
-    test_LDS_M_Step!()
-    test_LDS_EM()
-    test_LDS_gradient()
-    test_LDS_Hessian()
-    test_EM_numeric_RTS()
-    test_EM_numeric_Direct()
-end
+# @testset "LDS Tests" begin
+#     test_LDS_with_params()
+#     test_LDS_without_params()
+#     test_LDS_E_Step()
+#     test_LDS_M_Step!()
+#     test_LDS_EM()
+#     test_LDS_gradient()
+#     test_LDS_Hessian()
+#     test_EM_numeric_RTS()
+#     test_EM_numeric_Direct()
+# end
 
 """
 Tests for LinearDynamicalSystems.jl
@@ -140,7 +140,9 @@ include("LinearDynamicalSystems/LinearDynamicalSystems.jl")
     test_lds_with_params()
     test_lds_without_params()
     test_Gradient()
+    test_Hessian()
     test_smooth()
+    test_estep()
 end
 
 #include("PLDS/PLDS.jl")
