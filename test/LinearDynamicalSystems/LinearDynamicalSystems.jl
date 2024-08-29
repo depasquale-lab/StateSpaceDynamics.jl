@@ -16,8 +16,8 @@ C = Matrix{Float64}(I(2))  # Observation matrix (assuming direct observation)
 observation_noise_std = 0.5
 R = Matrix{Float64}((observation_noise_std^2) * I(2))  # Observation noise covariance
 
-function toy_lds()
-    lds = GaussianLDS(;A=A, C=C, Q=Q, R=R, x0=x0, P0=P0, obs_dim=2, latent_dim=2)
+function toy_lds(fit_bool=[true, true, true, true, true, true])
+    lds = GaussianLDS(;A=A, C=C, Q=Q, R=R, x0=x0, P0=P0, obs_dim=2, latent_dim=2, fit_bool=fit_bool)
 
     # sample data
     T = 100
@@ -148,6 +148,68 @@ function test_estep()
     @test size(p_smooth) == (n_trials, n_tsteps, lds.latent_dim, lds.latent_dim)
     @test isa(ml_total, Float64)
 end
+
+function test_initial_observaton_parameter_updates()
+    lds, x, y = toy_lds([true, true, false, false, false, false])
+
+    # run the E_Step
+    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = SSM.estep(lds, y)
+    
+    # optimize the x0 and p0 entries using autograd
+    function obj(x0::AbstractVector, P0_sqrt::AbstractMatrix, lds)
+        A, Q = lds.state_model.A, lds.state_model.Q
+        P0 = P0_sqrt * P0_sqrt'
+        Q_val = 0.0
+        for i in axes(E_z, 1)
+            Q_val += SSM.Q_state(A, Q, P0, x0, E_z[i, :, :], E_zz[1, :, :, :], E_zz_prev[1, :, :, :])
+        end
+        return -Q_val
+    end
+
+    P0_sqrt = Matrix(cholesky(lds.state_model.P0).U)
+
+    x0_opt = optimize(x0 -> obj(x0, P0_sqrt, lds), lds.state_model.x0, LBFGS(), Optim.Options(g_abstol=1e-12)).minimizer
+    P0_opt = optimize(P0_sqrt -> obj(x0_opt, P0_sqrt, lds), P0_sqrt, LBFGS(), Optim.Options(g_abstol=1e-12)).minimizer
+
+    # update the initial state and covariance
+    SSM.mstep!(lds, E_z, E_zz, E_zz_prev, y)
+
+    @test isapprox(lds.state_model.x0, x0_opt, atol=1e-6)
+    @test isapprox(lds.state_model.P0, P0_opt * P0_opt', atol=1e-6)
+end
+
+function test_state_model_parameter_updates()
+    lds, x, y = toy_lds([false, false, true, true, false, false])
+
+    # run the E_Step
+    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = SSM.estep(lds, y)
+
+    # optimize the A and Q entries using autograd
+    function obj(A::AbstractMatrix, Q_sqrt::AbstractMatrix, lds)
+        Q = Q_sqrt * Q_sqrt'
+        Q_val = 0.0
+        for i in axes(E_z, 1)
+            Q_val += SSM.Q_state(A, Q, lds.state_model.P0, lds.state_model.x0, E_z[i, :, :], E_zz[1, :, :, :], E_zz_prev[1, :, :, :])
+        end
+        return -Q_val
+    end
+
+    Q_sqrt = Matrix(cholesky(lds.state_model.Q).U)
+
+    A_opt = optimize(A -> obj(A, Q_sqrt, lds), lds.state_model.A, LBFGS(), Optim.Options(g_abstol=1e-12)).minimizer
+    Q_opt = optimize(Q_sqrt -> obj(A_opt, Q_sqrt, lds), Q_sqrt, LBFGS(), Optim.Options(g_abstol=1e-12)).minimizer
+
+    # update the state model
+    SSM.mstep!(lds, E_z, E_zz, E_zz_prev, y)
+
+    @test isapprox(lds.state_model.A, A_opt, atol=1e-6)
+    @test isapprox(lds.state_model.Q, Q_opt * Q_opt', atol=1e-6)
+
+end
+
+
+
+
 
 
 

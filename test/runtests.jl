@@ -143,6 +143,8 @@ include("LinearDynamicalSystems/LinearDynamicalSystems.jl")
     test_Hessian()
     test_smooth()
     test_estep()
+    test_initial_observaton_parameter_updates()
+    test_state_model_parameter_updates()
 end
 
 #include("PLDS/PLDS.jl")

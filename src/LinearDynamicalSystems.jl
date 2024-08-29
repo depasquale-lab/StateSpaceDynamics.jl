@@ -553,14 +553,13 @@ function Q_state(A::Matrix{<:Real}, Q::AbstractMatrix{<:Real}, P0::AbstractMatri
     P0_inv = pinv(P0)
 
     # Get dimensions
-    state_dim = size(A, 1)
     T_step = size(E_z, 1)
 
     # Initialize Q_val
     Q_val = 0.0
 
     # Calculate the Q-function for the first time step
-    Q_val += -0.5 * (state_dim * log(2π) + logdet(P0) + tr(P0_inv * (E_zz[1, :, :] - (E_z[1, :] * x0') - (x0 * E_z[1, :]') + (x0 * x0'))))
+    Q_val += -0.5 * (logdet(P0) + tr(P0_inv * (E_zz[1, :, :] - (E_z[1, :] * x0') - (x0 * E_z[1, :]') + (x0 * x0'))))
 
     # Calculate the Q-function for the state model
     for t in 2:T_step
@@ -568,7 +567,7 @@ function Q_state(A::Matrix{<:Real}, Q::AbstractMatrix{<:Real}, P0::AbstractMatri
         term2 = A * E_zz_prev[t, :, :]'
         term3 = E_zz_prev[t, :, :] * A'
         term4 = A * E_zz[t-1, :, :] * A'
-        Q_val += -0.5 * (state_dim * log(2π) + logdet(Q) + tr(Q_inv * (term1 - term2 - term3 + term4)))
+        Q_val += -0.5 * (logdet(Q) + tr(Q_inv * (term1 - term2 - term3 + term4)))
     end
 
     return Q_val
@@ -794,7 +793,12 @@ Update the initial state mean of the Linear Dynamical System using the average a
 """
 function update_initial_state_mean!(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
     if lds.fit_bool[1]
-        lds.state_model.x0 = vec(mean(E_z[:, 1, :], dims=1))
+        x0_new = zeros(lds.latent_dim)
+        for i in axes(E_z, 1)
+            x0_new += E_z[i, 1, :]
+        end
+        x0_new = x0_new ./ size(E_z, 1)
+        lds.state_model.x0 .= x0_new
     end
 end
 
@@ -850,18 +854,18 @@ Update the transition matrix A of the Linear Dynamical System.
 function update_A!(lds::LinearDynamicalSystem{S,O}, E_zz::Array{T, 4}, E_zz_prev::Array{T, 4}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
     if lds.fit_bool[3]
         _, _, state_dim, _ = size(E_zz)
-        # pre-allocate new A
-        A_new = zeros(state_dim, state_dim)
         
         # Calculate and sum A across trials
+        E_zz_sum = zeros(state_dim, state_dim)
+        E_zz_prev_sum = zeros(state_dim, state_dim)
         for trial in axes(E_zz, 1)
-            E_zz_sum = dropdims(sum(E_zz[trial, 2:end, :, :], dims=1), dims=1)
-            E_zz_prev_sum = dropdims(sum(E_zz_prev[trial, :, :, :], dims=1), dims=1)
-            A_new += (E_zz_sum' \ E_zz_prev_sum')'
+            E_zz_sum += dropdims(sum(E_zz[trial, 1:end-1, :, :], dims=1), dims=1)
+            E_zz_prev_sum += dropdims(sum(E_zz_prev[trial, :, :, :], dims=1), dims=1)
         end
 
-        # Average across all trials
-        A_new = A_new ./ size(E_zz, 1)
+        # Average across trials
+        lds.state_model.A = E_zz_prev_sum / E_zz_sum
+
     end
 end
 
