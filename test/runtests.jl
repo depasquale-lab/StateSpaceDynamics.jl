@@ -145,6 +145,7 @@ include("LinearDynamicalSystems/LinearDynamicalSystems.jl")
     test_estep()
     test_initial_observaton_parameter_updates()
     test_state_model_parameter_updates()
+    test_obs_model_params_updates()
 end
 
 #include("PLDS/PLDS.jl")

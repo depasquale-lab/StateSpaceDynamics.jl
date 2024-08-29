@@ -207,8 +207,63 @@ function test_state_model_parameter_updates()
 
 end
 
+function test_obs_model_params_updates()
+    lds, x, y = toy_lds([false, false, false, false, true, true])
+
+    # run the E_Step
+    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = SSM.estep(lds, y)
+
+    # optimize the C and R entries using autograd
+    function obj(C::AbstractMatrix, R_sqrt::AbstractMatrix, lds)
+        R = R_sqrt * R_sqrt'
+        Q_val = 0.0
+        for i in axes(E_z, 1)
+            Q_val += SSM.Q_obs(C, R, E_z[i, :, :], E_zz[1, :, :, :], y[i, :, :])
+        end
+        return -Q_val
+    end
+
+    R_sqrt = Matrix(cholesky(lds.obs_model.R).U)
+
+    C_opt = optimize(C -> obj(C, R_sqrt, lds), lds.obs_model.C, LBFGS(), Optim.Options(g_abstol=1e-12)).minimizer
+    R_opt = optimize(R_sqrt -> obj(C_opt, R_sqrt, lds), R_sqrt, LBFGS(), Optim.Options(g_abstol=1e-12)).minimizer
+
+    # update the observation model
+    SSM.mstep!(lds, E_z, E_zz, E_zz_prev, y)
+
+    @test isapprox(lds.obs_model.C, C_opt, atol=1e-6)
+    @test isapprox(lds.obs_model.R, R_opt * R_opt', atol=1e-6)
+end
 
 
+function test_EM()
+    lds, x, y = toy_lds()
+
+    #save old params
+    A, Q, C, R, x0, P0 = lds.state_model.A, lds.state_model.Q, lds.obs_model.C, lds.obs_model.R, lds.state_model.x0, lds.state_model.P0
+
+    # run em 3 times, check params change each time
+    for i in 1:3
+        SSM.fit!(lds, y, 1)
+        A_new, Q_new, C_new, R_new, x0_new, P0_new = lds.state_model.A, lds.state_model.Q, lds.obs_model.C, lds.obs_model.R, lds.state_model.x0, lds.state_model.P0
+
+        @test A != A_new
+        @test Q != Q_new
+        @test C != C_new
+        @test R != R_new
+        @test x0 != x0_new
+        @test P0 != P0_new
+
+        A, Q, C, R, x0, P0 = A_new, Q_new, C_new, R_new, x0_new, P0_new
+    end
+
+    # run the EM algorithm for many iterations
+    ml_total = fit!(lds, y, 1000)
+
+    # test that the ml is increasing
+    @test all(diff(ml_total) .>= 0)
+
+end
 
 
 
