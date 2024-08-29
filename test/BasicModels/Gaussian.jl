@@ -4,7 +4,7 @@ function Gaussian_simulation(n::Int)
     true_model.Σ = [0.8 0.1; 0.1 2.0]
 
     # sample data
-    Y = SSM.sample(true_model, n=n)
+    Y = StateSpaceDynamics.sample(true_model, n=n)
 
     return true_model, Y
 end
@@ -13,7 +13,7 @@ end
 function test_Gaussian_loglikelihood()
     n = 1000
     true_model, Y = Gaussian_simulation(n)
-    @test SSM.loglikelihood(true_model, Y) < 0
+    @test StateSpaceDynamics.loglikelihood(true_model, Y) < 0
 end
 
 
@@ -37,7 +37,7 @@ function test_Gaussian_standard_fit()
     fit!(est_model, Y)
 
     # confirm that the fitted model has a higher loglikelihood than the true model
-    @test SSM.loglikelihood(est_model, Y) >= SSM.loglikelihood(true_model, Y)
+    @test StateSpaceDynamics.loglikelihood(est_model, Y) >= StateSpaceDynamics.loglikelihood(true_model, Y)
 
     # confirm that the fitted model has similar μ values to the true model
     @test isapprox(est_model.μ, true_model.μ, atol=0.1)
@@ -59,7 +59,7 @@ function test_Gaussian_valid_emission_model()
     true_model, Y = Gaussian_simulation(n)
 
     # Criteria 1
-    loglikelihoods = SSM.loglikelihood(true_model, Y, observation_wise=true)
+    loglikelihoods = StateSpaceDynamics.loglikelihood(true_model, Y, observation_wise=true)
     @test length(loglikelihoods) == n
 
     # Criteria 2
@@ -68,11 +68,11 @@ function test_Gaussian_valid_emission_model()
     fit!(est_model, Y, weights)
 
     # Criteria 3
-    Y_new = SSM.sample(est_model, n=100)
-    time_series = SSM.TimeSeries(est_model, Y_new)
+    Y_new = StateSpaceDynamics.sample(est_model, n=100)
+    time_series = StateSpaceDynamics.TimeSeries(est_model, Y_new)
     @test typeof(time_series) == TimeSeries
 
     # Criteria 4
-    @test SSM.revert_TimeSeries(est_model, time_series) == Y_new
+    @test StateSpaceDynamics.revert_TimeSeries(est_model, time_series) == Y_new
    
 end

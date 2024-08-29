@@ -7,11 +7,26 @@ using StatsFuns
 using SpecialFunctions
 using Test
 using Base.Iterators: flatten
+using Documenter
 
 Random.seed!(1234)
 
 include("helper_functions.jl")
 
+"""
+Tests for HiddenMarkovModels.jl
+"""
+
+include("HiddenMarkovModels/HiddenMarkovModels.jl")
+
+@testset "HiddenMarkovModels.jl Tests" begin
+    test_HiddenMarkovModel_E_step()
+    #test_viterbi() -- don't have time to finish, need emission matching logic
+    test_GaussianHMM()
+    test_AutoRegressionHMM()
+    test_trialized_GaussianHMM()
+    test_trialized_SwitchingGaussianRegression()
+end
 
 """
 Tests for MixtureModels.jl
@@ -19,6 +34,7 @@ Tests for MixtureModels.jl
 
 include("MixtureModels/GaussianMixtureModel.jl")
 include("MixtureModels/PoissonMixtureModel.jl")
+
 
 @testset "MixtureModels.jl Tests" begin
     # Test GaussianMixtureModel
@@ -111,22 +127,6 @@ include("MixtureModels/PoissonMixtureModel.jl")
 end
 
 """
-Tests for HiddenMarkovModels.jl
-"""
-
-# include("HiddenMarkovModels/HiddenMarkovModels.jl")
-
-# @testset "HiddenMarkovModels.jl Tests" begin
-#     test_toy_HMM()
-#     test_GaussianHMM_constructor()
-#     test_HMM_forward_and_back()
-#     test_HMM_gamma_xi()
-#     test_HMM_E_step()
-#     test_HMM_M_step()
-#     test_HMM_EM()
-# end
-
-"""
 Tests for LDS.jl
 """
 
@@ -204,20 +204,6 @@ include("RegressionModels/AutoRegression.jl")
 end
 
 """
-Tests for HiddenMarkovModels.jl
-"""
-
-include("HiddenMarkovModels/HiddenMarkovModels.jl")
-
-@testset "HiddenMarkovModels.jl Tests" begin
-    test_HiddenMarkovModel_E_step()
-    #test_viterbi() -- don't have time to finish, need emission matching logic
-    test_GaussianHMM()
-    test_AutoRegressionHMM()
-end
-
-
-"""
 Tests for Emissions.jl
 """
 
@@ -253,14 +239,4 @@ include("Preprocessing/Preprocessing.jl")
     test_PPCA_without_params()
     test_PPCA_E_and_M_Step()
     test_PPCA_fit()
-end
-
-"""
-Tests for MarkovRegression.jl
-"""
-
-# include("MarkovRegression/MarkovRegression.jl")
-
-@testset "SwitchingRegression Tests" begin
-    test_HMMGLM_initialization()
 end

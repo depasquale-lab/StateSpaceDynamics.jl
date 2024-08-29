@@ -24,7 +24,7 @@ function AutoRegressionHMM_simulation(n::Int)
     Y_prev = reshape([1.0, 0.0], 1, :)
 
     # sample data
-    states, Y = SSM.sample(true_model, Y_prev, n=n)
+    states, Y = StateSpaceDynamics.sample(true_model, Y_prev, n=n)
 
     return true_model, Y_prev, Y
 end

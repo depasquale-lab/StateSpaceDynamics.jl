@@ -9,7 +9,7 @@ function AutoRegression_simulation(n::Int)
     true_model = AutoRegression(order=order, output_dim=output_dim, β=β, include_intercept=false)
 
     Y_prev = randn(order, output_dim)
-    Y = SSM.sample(true_model, Y_prev, n=n)
+    Y = StateSpaceDynamics.sample(true_model, Y_prev, n=n)
 
     return true_model, Y_prev, Y
 end
@@ -18,7 +18,7 @@ end
 function test_AutoRegression_loglikelihood()
     n = 1000
     true_model, Y_prev, Y = AutoRegression_simulation(n)
-    @test SSM.loglikelihood(true_model, Y_prev, Y) < 0
+    @test StateSpaceDynamics.loglikelihood(true_model, Y_prev, Y) < 0
 end
 
 # check covariance matrix is positive definite and hermitian
@@ -66,7 +66,7 @@ function test_AutoRegression_standard_fit()
     fit!(est_model, Φ, Y)
 
     # confirm that the fitted model has a higher loglikelihood than the true model
-    @test SSM.loglikelihood(est_model, Φ, Y) >= SSM.loglikelihood(true_model, Φ, Y)
+    @test StateSpaceDynamics.loglikelihood(est_model, Φ, Y) >= StateSpaceDynamics.loglikelihood(true_model, Φ, Y)
 
     # confirm that the fitted model has similar β values to the true model
     @test isapprox(est_model.innerGaussianRegression.β, true_model.innerGaussianRegression.β, atol=0.1)
@@ -95,8 +95,8 @@ function test_AutoRegression_regularized_fit()
 
     # confirm that the regularized model is not too much worse
     @test isapprox(
-        SSM.loglikelihood(regularized_est_model, Φ, Y), 
-        SSM.loglikelihood(est_model, Φ, Y), 
+        StateSpaceDynamics.loglikelihood(regularized_est_model, Φ, Y), 
+        StateSpaceDynamics.loglikelihood(est_model, Φ, Y), 
         atol=0.1
         )
 
@@ -126,7 +126,7 @@ function test_AutoRegression_valid_emission_model()
     true_model, Φ, Y = AutoRegression_simulation(n)
 
     # Criteria 1
-    loglikelihoods = SSM.loglikelihood(true_model, Φ, Y, observation_wise=true)
+    loglikelihoods = StateSpaceDynamics.loglikelihood(true_model, Φ, Y, observation_wise=true)
     @test length(loglikelihoods) == n
 
     # Criteria 2
@@ -135,11 +135,11 @@ function test_AutoRegression_valid_emission_model()
     fit!(est_model, Φ, Y, weights)
 
     # Criteria 3
-    Y_new = SSM.sample(est_model, Φ, n=100)
-    time_series = SSM.TimeSeries(est_model, Y_new)
+    Y_new = StateSpaceDynamics.sample(est_model, Φ, n=100)
+    time_series = StateSpaceDynamics.TimeSeries(est_model, Y_new)
     @test typeof(time_series) == TimeSeries
 
     # Criteria 4
-    @test SSM.revert_TimeSeries(est_model, time_series) == Y_new
+    @test StateSpaceDynamics.revert_TimeSeries(est_model, time_series) == Y_new
    
 end

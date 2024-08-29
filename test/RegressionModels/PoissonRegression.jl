@@ -3,7 +3,7 @@ function PoissonRegression_simulation(n::Int)
     Φ = randn(n, 2)
     β = [0.5, -1.2, 2.3]
     true_model = PoissonRegression(β=β, input_dim=2)
-    Y = SSM.sample(true_model, Φ)
+    Y = StateSpaceDynamics.sample(true_model, Φ)
 
     return true_model, Φ, Y
 end
@@ -12,7 +12,7 @@ end
 function test_PoissonRegression_loglikelihood()
     n = 1000
     true_model, Φ, Y = PoissonRegression_simulation(n)
-    @test SSM.loglikelihood(true_model, Φ, Y) < 0
+    @test StateSpaceDynamics.loglikelihood(true_model, Φ, Y) < 0
 end
 
 # check model shape and value from constructor
@@ -73,7 +73,7 @@ function test_PoissonRegression_standard_fit()
     fit!(est_model, Φ, Y)
 
     # confirm that the fitted model has a higher loglikelihood than the true model
-    @test SSM.loglikelihood(est_model, Φ, Y) >= SSM.loglikelihood(true_model, Φ, Y)
+    @test StateSpaceDynamics.loglikelihood(est_model, Φ, Y) >= StateSpaceDynamics.loglikelihood(true_model, Φ, Y)
 
     # confirm that the fitted model has similar β values to the true model
     @test isapprox(est_model.β, true_model.β, atol=0.5)
@@ -98,8 +98,8 @@ function test_PoissonRegression_regularized_fit()
 
     # confirm that the regularized model is not too much worse
     @test isapprox(
-        SSM.loglikelihood(regularized_est_model, Φ, Y), 
-        SSM.loglikelihood(est_model, Φ, Y), 
+        StateSpaceDynamics.loglikelihood(regularized_est_model, Φ, Y), 
+        StateSpaceDynamics.loglikelihood(est_model, Φ, Y), 
         atol=0.1
         )
 
@@ -123,7 +123,7 @@ function test_PoissonRegression_valid_emission_model()
     true_model, Φ, Y = PoissonRegression_simulation(n)
 
     # Criteria 1
-    loglikelihoods = SSM.loglikelihood(true_model, Φ, Y, observation_wise=true)
+    loglikelihoods = StateSpaceDynamics.loglikelihood(true_model, Φ, Y, observation_wise=true)
     @test length(loglikelihoods) == n
 
     # Criteria 2
@@ -132,11 +132,11 @@ function test_PoissonRegression_valid_emission_model()
     fit!(est_model, Φ, Y, weights)
 
     # Criteria 3
-    Y_new = SSM.sample(est_model, Φ, n=100)
-    time_series = SSM.TimeSeries(est_model, Y_new)
+    Y_new = StateSpaceDynamics.sample(est_model, Φ, n=100)
+    time_series = StateSpaceDynamics.TimeSeries(est_model, Y_new)
     @test typeof(time_series) == TimeSeries
 
     # Criteria 4
-    @test SSM.revert_TimeSeries(est_model, time_series) == Y_new
+    @test StateSpaceDynamics.revert_TimeSeries(est_model, time_series) == Y_new
    
 end
