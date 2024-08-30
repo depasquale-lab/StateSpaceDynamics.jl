@@ -82,3 +82,65 @@ function test_trialized_GaussianHMM()
     @test isapprox(est_model.B[2].Σ, true_model.B[2].Σ, atol=0.1) || isapprox(est_model.B[2].Σ, true_model.B[1].Σ, atol=0.1)
 
 end
+
+function test_trialized_SwitchingGaussianRegression()
+    # Create a true underlying model
+    model = SwitchingGaussianRegression(K=2, input_dim=1, output_dim=1)
+    model.B[1].β = [2; 5;;]
+    model.B[2].β = [-2; -3;;]
+
+    # Define initial state probabilities (π) and transition matrix (A)
+    initial_probs = [0.6, 0.4]  # Probability to start in state 1 or state 2
+    transition_matrix = [0.9 0.1; 0.4 0.6]  # State transition probabilities
+
+    n = 100 # Number of samples per trial
+    num_trials = 50  # Number of trials
+
+    # Vectors to store generated data
+    trial_inputs = Vector{Matrix{Float64}}(undef, num_trials)
+    trial_labels = Vector{Vector{Int}}(undef, num_trials)
+    trial_outputs = Vector{Matrix{Float64}}(undef, num_trials)
+
+
+
+    # Generate trials
+    for trial in 1:num_trials
+        # Random input data
+        x_data = randn(n, 1)  # Random input data for this trial
+        trial_inputs[trial] = x_data
+
+        # Generate state sequence
+        state_sequence = sample_states(n, initial_probs, transition_matrix)
+        trial_labels[trial] = state_sequence
+
+        # Generate output data based on state and linear relationships
+        y_data = zeros(n, 1)
+        for i in 1:n
+            if state_sequence[i] == 1
+                y_data[i] = model.B[1].β[2] * x_data[i] + model.B[1].β[1]  # y = 2x + 5
+            else
+                y_data[i] = model.B[2].β[2] * x_data[i] + model.B[2].β[1]  # y = -2x - 3
+            end
+        end
+        trial_outputs[trial] = y_data
+    end
+
+    # Create new model and fit the data
+    est_model = SwitchingGaussianRegression(K=2, input_dim=1, output_dim=1)
+    ll = fit!(est_model, trial_inputs, trial_outputs, trials=true)
+
+    # Run tests to assess model fit
+    @test isapprox(est_model.B[1].β, model.B[1].β, atol=0.01) || isapprox(est_model.B[1].β, model.B[2].β, atol=0.01)
+    @test isapprox(est_model.B[2].β, model.B[2].β, atol=0.01) || isapprox(est_model.B[2].β, model.B[1].β, atol=0.01)
+end
+
+
+# Function to sample from initial state and transition matrix
+function sample_states(num_samples, initial_probs, transition_matrix)
+    states = Vector{Int}(undef, num_samples)
+    states[1] = rand(Categorical(initial_probs))  # Initial state
+    for i in 2:num_samples
+        states[i] = rand(Categorical(transition_matrix[states[i - 1], :]))  # State transitions
+    end
+    return states
+end

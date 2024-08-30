@@ -1,6 +1,6 @@
 export Emission, getproperty, setproperty!
 export GaussianEmission, validate_data, emission_sample, emission_loglikelihood, emission_fit!
-
+export SwitchingGaussianRegression, SwitchingBernoulliRegressionm, SwitchingAutoRegression, GaussianHMM
 
 """
 Every emission model must implement the following functions:
