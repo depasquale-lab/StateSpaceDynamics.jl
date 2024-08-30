@@ -11,10 +11,10 @@ x0 = [0.0; 1.0]
 t = 0:dt:T
 # Define the LDS model parameters
 H = I(2)  # Observation matrix (assuming direct observation)
-Q = 0.00001 * I(2)  # Process noise covariance
+Q = 0.1 * I(2)  # Process noise covariance
 observation_noise_std = 0.5
 R = (observation_noise_std^2) * I(2)  # Observation noise covariance
-p0 = 0.1*I(2)  # Initial state covariance
+p0 = 0.25*I(2)  # Initial state covariance
 x0 = [0.0; 1.0]  # Initial state mean
 # Generate true data
 x = zeros(2, length(t))

@@ -118,34 +118,50 @@ Tests for LDS.jl
 
 include("LDS/LDS.jl")
 
-# @testset "LDS Tests" begin
-#     test_LDS_with_params()
-#     test_LDS_without_params()
-#     test_LDS_E_Step()
-#     test_LDS_M_Step!()
-#     test_LDS_EM()
-#     test_LDS_gradient()
-#     test_LDS_Hessian()
-#     test_EM_numeric_RTS()
-#     test_EM_numeric_Direct()
-# end
+@testset "LDS Tests" begin
+    test_LDS_with_params()
+    test_LDS_without_params()
+    test_LDS_E_Step()
+    test_LDS_M_Step!()
+    test_LDS_EM()
+    test_LDS_gradient()
+    test_LDS_Hessian()
+    test_EM_numeric_RTS()
+    test_EM_numeric_Direct()
+end
 
 """
-Tests for LinearDynamicalSystems.jl
+Tests for GaussianLDS.jl
 """
 
-include("LinearDynamicalSystems/LinearDynamicalSystems.jl")
+include("GaussianLDS/GaussianLDS.jl")
 
-@testset "LinearDynamicalSystems Tests" begin
+@testset "GaussianLDS Tests" begin
     test_lds_with_params()
     test_lds_without_params()
     test_Gradient()
     test_Hessian()
     test_smooth()
     test_estep()
+    # test when ntrials=1
     test_initial_observaton_parameter_updates()
     test_state_model_parameter_updates()
     test_obs_model_params_updates()
+    # test when ntrials>1
+#     test_initial_observaton_parameter_updates(3)
+#     test_state_model_parameter_updates(3)
+#     test_obs_model_params_updates(3)
+end
+
+"""
+Tests for PoissonLDS.jl
+"""
+
+include("PoissonLDS/PoissonLDS.jl")
+
+@testset "PoissonLDS Tests" begin
+    test_PoissonLDS_with_params()
+    test_poisson_lds_without_params()
 end
 
 #include("PLDS/PLDS.jl")

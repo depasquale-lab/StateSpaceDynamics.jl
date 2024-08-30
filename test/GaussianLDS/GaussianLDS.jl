@@ -16,12 +16,12 @@ C = Matrix{Float64}(I(2))  # Observation matrix (assuming direct observation)
 observation_noise_std = 0.5
 R = Matrix{Float64}((observation_noise_std^2) * I(2))  # Observation noise covariance
 
-function toy_lds(fit_bool=[true, true, true, true, true, true])
+function toy_lds(ntrials::Int=1, fit_bool::Vector{Bool}=[true, true, true, true, true, true])
     lds = GaussianLDS(;A=A, C=C, Q=Q, R=R, x0=x0, P0=P0, obs_dim=2, latent_dim=2, fit_bool=fit_bool)
 
     # sample data
     T = 100
-    x, y = SSM.sample(lds, T, 1) # 100 timepoints, 1 trials
+    x, y = SSM.sample(lds, T, ntrials) # 100 timepoints, 1 trials
 
     return lds, x, y
 end
@@ -149,8 +149,8 @@ function test_estep()
     @test isa(ml_total, Float64)
 end
 
-function test_initial_observaton_parameter_updates()
-    lds, x, y = toy_lds([true, true, false, false, false, false])
+function test_initial_observaton_parameter_updates(ntrials::Int=1)
+    lds, x, y = toy_lds(ntrials, [true, true, false, false, false, false])
 
     # run the E_Step
     E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = SSM.estep(lds, y)
@@ -169,7 +169,7 @@ function test_initial_observaton_parameter_updates()
     P0_sqrt = Matrix(cholesky(lds.state_model.P0).U)
 
     x0_opt = optimize(x0 -> obj(x0, P0_sqrt, lds), lds.state_model.x0, LBFGS(), Optim.Options(g_abstol=1e-12)).minimizer
-    P0_opt = optimize(P0_sqrt -> obj(x0_opt, P0_sqrt, lds), P0_sqrt, LBFGS(), Optim.Options(g_abstol=1e-12)).minimizer
+    P0_opt = optimize(P0_ -> obj(x0_opt, P0_, lds), P0_sqrt, LBFGS(), Optim.Options(g_abstol=1e-12)).minimizer
 
     # update the initial state and covariance
     SSM.mstep!(lds, E_z, E_zz, E_zz_prev, y)
@@ -178,8 +178,8 @@ function test_initial_observaton_parameter_updates()
     @test isapprox(lds.state_model.P0, P0_opt * P0_opt', atol=1e-6)
 end
 
-function test_state_model_parameter_updates()
-    lds, x, y = toy_lds([false, false, true, true, false, false])
+function test_state_model_parameter_updates(ntrials::Int=1)
+    lds, x, y = toy_lds(ntrials, [false, false, true, true, false, false])
 
     # run the E_Step
     E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = SSM.estep(lds, y)
@@ -207,8 +207,8 @@ function test_state_model_parameter_updates()
 
 end
 
-function test_obs_model_params_updates()
-    lds, x, y = toy_lds([false, false, false, false, true, true])
+function test_obs_model_params_updates(ntrials::Int=1)
+    lds, x, y = toy_lds(ntrials, [false, false, false, false, true, true])
 
     # run the E_Step
     E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = SSM.estep(lds, y)

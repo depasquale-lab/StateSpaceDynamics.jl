@@ -19,7 +19,6 @@ mutable struct GaussianStateModel{T<:Real} <: AbstractStateModel
     P0::Matrix{T}
 end
 
-
 """
     GaussianStateModel(; A, Q, x0, P0, latent_dim)
 
@@ -51,7 +50,6 @@ function GaussianStateModel(;
     GaussianStateModel{T}(A, Q, x0, P0)
 end
 
-
 """
     GaussianObservationModel{T<:Real} <: AbstractObservationModel
 
@@ -65,7 +63,6 @@ mutable struct GaussianObservationModel{T<:Real} <: AbstractObservationModel
     C::Matrix{T}
     R::Matrix{T}
 end
-
 
 """
     GaussianObservationModel(; C, R, obs_dim, latent_dim)
@@ -97,7 +94,6 @@ function GaussianObservationModel(;
     GaussianObservationModel{T}(C, R)
 end
 
-
 """
     PoissonObservationModel{T<:Real} <: AbstractObservationModel
 
@@ -111,7 +107,6 @@ struct PoissonObservationModel{T<:Real} <: AbstractObservationModel
     C::Matrix{T}
     log_d::Vector{T}
 end
-
 
 """
     PoissonObservationModel(; C, log_d, obs_dim, latent_dim)
@@ -138,12 +133,10 @@ function PoissonObservationModel(;
     end
 
     C = isempty(C) ? randn(T, obs_dim, latent_dim) : C
-    D = isempty(D) ? -abs.(randn(T, obs_dim, obs_dim)) : D
     log_d = isempty(log_d) ? randn(T, obs_dim) : log_d
 
-    PoissonObservationModel{T}(C, D, log_d, refractory_period)
+    PoissonObservationModel{T}(C, log_d)
 end
-
 
 """
     LinearDynamicalSystem{S<:AbstractStateModel, O<:AbstractObservationModel}
@@ -164,7 +157,6 @@ struct LinearDynamicalSystem{S<:AbstractStateModel, O<:AbstractObservationModel}
     obs_dim::Int
     fit_bool::Vector{Bool}
 end
-
 
 """
     GaussianLDS(; A, C, Q, R, x0, P0, fit_bool, obs_dim, latent_dim)
@@ -250,7 +242,6 @@ function sample(lds::LinearDynamicalSystem{S,O}, T_steps::Int, n_trials::Int) wh
 
     return x, y
 end
-
 
 """
     loglikelihood(x::AbstractMatrix{T}, lds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
@@ -858,6 +849,7 @@ function update_A!(lds::LinearDynamicalSystem{S,O}, E_zz::Array{T, 4}, E_zz_prev
         # Calculate and sum A across trials
         E_zz_sum = zeros(state_dim, state_dim)
         E_zz_prev_sum = zeros(state_dim, state_dim)
+
         for trial in axes(E_zz, 1)
             E_zz_sum += dropdims(sum(E_zz[trial, 1:end-1, :, :], dims=1), dims=1)
             E_zz_prev_sum += dropdims(sum(E_zz_prev[trial, :, :, :], dims=1), dims=1)
@@ -1087,7 +1079,7 @@ end
 
 
 """
-    PoissonLDS(; A, C, Q, D, log_d, x0, P0, refractory_period, fit_bool, obs_dim, latent_dim)
+    PoissonLDS(; A, C, Q, log_d, x0, P0, refractory_period, fit_bool, obs_dim, latent_dim)
 
 Construct a Linear Dynamical System with Gaussian state and Poisson observation models.
 
@@ -1095,7 +1087,6 @@ Construct a Linear Dynamical System with Gaussian state and Poisson observation 
 - `A::Matrix{T}=Matrix{T}(undef, 0, 0)`: Transition matrix
 - `C::Matrix{T}=Matrix{T}(undef, 0, 0)`: Observation matrix
 - `Q::Matrix{T}=Matrix{T}(undef, 0, 0)`: Process noise covariance
-- `D::Matrix{T}=Matrix{T}(undef, 0, 0)`: History control matrix
 - `log_d::Vector{T}=Vector{T}(undef, 0)`: Mean firing rate vector (log space)
 - `x0::Vector{T}=Vector{T}(undef, 0)`: Initial state
 - `P0::Matrix{T}=Matrix{T}(undef, 0, 0)`: Initial state covariance
@@ -1130,7 +1121,7 @@ end
 """
     sample(lds::LinearDynamicalSystem{S,O}, T_steps::Int, n_trials::Int) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
 
-Sample from a Linear Dynamical System (LDS) model for multiple trials.
+Sample from a Poisson Linear Dynamical System (LDS) model for multiple trials.
 
 # Arguments
 - `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System model.
@@ -1139,31 +1130,39 @@ Sample from a Linear Dynamical System (LDS) model for multiple trials.
 
 # Returns
 - `x::Array{T, 3}`: The latent state variables. Dimensions: (n_trials, T_steps, latent_dim)
-- `y::Array{T, 3}`: The observed data. Dimensions: (n_trials, T_steps, obs_dim)
+- `y::Array{Int, 3}`: The observed data. Dimensions: (n_trials, T_steps, obs_dim)
 
 # Examples
 ```julia
-lds = PoissonLDS(obs_dim=4, latent_dim=3)
+lds = LinearDynamicalSystem(obs_dim=4, latent_dim=3)
 x, y = sample(lds, 100, 10)  # 10 trials, 100 time steps each
 ```
 """
-function sample(plds::LinearDynamicalSystem{S,O}, T_steps::Int, n_trials::Int) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
+function sample(lds::LinearDynamicalSystem{S,O}, T_steps::Int, n_trials::Int) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
+    # Extract model components
+    A, Q = lds.state_model.A, lds.state_model.Q
+    C, log_d = lds.obs_model.C, lds.obs_model.log_d
+    x0, P0 = lds.state_model.x0, lds.state_model.P0
+
     # Convert log_d to d i.e. non-log space
-    d = exp.(plds.log_d)
+    d = exp.(log_d)
+
     # Pre-allocate arrays
-    x = zeros(n_trials, T_steps, plds.latent_dim)
-    y = zeros(n_trials, T_steps, plds.obs_dim)
-    
+    x = zeros(T, n_trials, T_steps, lds.latent_dim)
+    y = zeros(T, n_trials, T_steps, lds.obs_dim)
+   
     for k in 1:n_trials
-        # Sample the initial stated
-        x[k, 1, :] = rand(MvNormal(plds.x0, plds.p0))
-        y[k, 1, :] = rand.(Poisson.(exp.(plds.C * x[k, 1, :] + d)))
+        # Sample the initial state
+        x[k, 1, :] = rand(MvNormal(x0, P0))
+        y[k, 1, :] = rand.(Poisson.(exp.(C * x[k, 1, :] .+ d)))
+
         # Sample the rest of the states
         for t in 2:T_steps
-            x[k, t, :] = rand(MvNormal((plds.A * x[k, t-1, :]), plds.Q))
-            y[k, t, :] = rand.(Poisson.(exp.((plds.C * x[k, t, :]) + d)))
+            x[k, t, :] = rand(MvNormal(A * x[k, t-1, :], Q))
+            y[k, t, :] = rand.(Poisson.(exp.(C * x[k, t, :] + d)))
         end
     end
+
     return x, y
 end
 
@@ -1254,6 +1253,148 @@ function loglikelihood(x::Array{T, 3}, plds::LinearDynamicalSystem{O, S}, y::Arr
 end
 
 """
+    Gradient(lds::LinearDynamicalSystem{S,O}, y::Matrix{T}, x::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
+
+Calculate the gradient of the log-likelihood of a Poisson Linear Dynamical System model for a single trial.
+
+# Arguments
+- `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System model.
+- `y::Matrix{T}`: The observed data. Dimensions: (T_steps, obs_dim)
+- `x::Matrix{T}`: The latent state variables. Dimensions: (T_steps, latent_dim)
+
+# Returns
+- `grad::Matrix{T}`: The gradient of the log-likelihood. Dimensions: (T_steps, latent_dim)
+
+# Note
+The gradient is computed with respect to the latent states x. Each row of the returned gradient
+corresponds to the gradient for a single time step.
+"""
+function Gradient(lds::LinearDynamicalSystem{S,O}, y::Matrix{T}, x::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
+    # Extract model parameters
+    A, Q = lds.state_model.A, lds.state_model.Q
+    C, log_d = lds.obs_model.C, lds.obs_model.log_d
+    x0, P0 = lds.state_model.x0, lds.state_model.P0
+
+    # Convert log_d to d (non-log space)
+    d = exp.(log_d)
+
+    # Get number of time steps
+    T_steps = size(y, 1)
+
+    # Precompute matrix inverses
+    inv_P0 = pinv(P0)
+    inv_Q = pinv(Q)
+
+    # Pre-allocate gradient
+    grad = zeros(T_steps, lds.latent_dim)
+
+    # Calculate gradient for each time step
+    for t in 1:T_steps
+        # Common term for all time steps
+        common_term = (y[t, :]' * C)' - C' * exp.(C * x[t, :] .+ d)
+
+        if t == 1
+            # First time step
+            grad[t, :] = common_term + A' * inv_Q * (x[2, :] - A * x[1, :]) - inv_P0 * (x[1, :] - x0)
+        elseif t == T_steps
+            # Last time step
+            grad[t, :] = common_term - inv_Q * (x[t, :] - A * x[t-1, :])
+        else
+            # Intermediate time steps
+            grad[t, :] = common_term + A' * inv_Q * (x[t+1, :] - A * x[t, :]) - inv_Q * (x[t, :] - A * x[t-1, :])
+        end
+    end
+
+    return grad
+end
+
+"""
+    Hessian(lds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{T}, x::AbstractMatrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
+
+Calculate the Hessian matrix of the log-likelihood for a Poisson Linear Dynamical System.
+
+This function computes the Hessian matrix, which represents the second-order partial derivatives
+of the log-likelihood with respect to the latent states. The Hessian is useful for optimization
+algorithms and for computing the Fisher information matrix.
+
+# Arguments
+- `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System with Poisson observations.
+- `y::AbstractMatrix{T}`: The observed data. Dimensions: (T_steps, obs_dim)
+- `x::AbstractMatrix{T}`: The current estimate of latent states. Dimensions: (T_steps, latent_dim)
+
+# Returns
+- `H::Matrix{T}`: The full Hessian matrix.
+- `H_diag::Vector{Matrix{T}}`: The main diagonal blocks of the Hessian.
+- `H_super::Vector{Matrix{T}}`: The super-diagonal blocks of the Hessian.
+- `H_sub::Vector{Matrix{T}}`: The sub-diagonal blocks of the Hessian.
+
+# Note
+The function exploits the block tridiagonal structure of the Hessian for efficiency.
+The returned full Hessian `H` and its components can be used for various purposes,
+such as Newton's method in optimization or for computing confidence intervals.
+
+"""
+function Hessian(lds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{T}, x::AbstractMatrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
+    # Extract model components
+    A, Q = lds.state_model.A, lds.state_model.Q
+    C, log_d = lds.obs_model.C, lds.obs_model.log_d
+    x0, P0 = lds.state_model.x0, lds.state_model.P0
+
+    # Convert log_d to d i.e. non-log space
+    d = exp.(log_d)
+
+    # Pre-compute a few things
+    T_steps, _ = size(y)
+    inv_Q = pinv(Q)
+    inv_P0 = pinv(P0)
+
+    # Calculate super and sub diagonals
+    H_sub_entry = inv_Q * A
+    H_super_entry = Matrix(H_sub_entry')
+
+    H_sub = Vector{typeof(H_sub_entry)}(undef, T_steps-1)
+    H_super = Vector{typeof(H_super_entry)}(undef, T_steps-1)
+
+    Threads.@threads for i in 1:T_steps-1
+        H_sub[i] = H_sub_entry
+        H_super[i] = H_super_entry
+    end
+
+    # Pre-compute common terms
+    xt_given_xt_1 = -inv_Q
+    xt1_given_xt = -A' * inv_Q * A
+    x_t = -inv_P0
+
+    # Helper function to calculate the Poisson Hessian term
+    function calculate_poisson_hess(C::Matrix{T}, λ::Vector{T}) where T<:Real
+        hess = zeros(T, size(C, 2), size(C, 2))
+        for i in 1:size(C, 1)
+            hess -= λ[i] * C[i, :] * C[i, :]'
+        end
+        return hess
+    end
+
+    # Calculate the main diagonal
+    H_diag = Vector{Matrix{T}}(undef, T_steps)
+
+    Threads.@threads for t in 1:T_steps
+        λ = exp.(C * x[t, :] .+ d)
+        if t == 1
+            H_diag[t] = x_t + xt1_given_xt + calculate_poisson_hess(C, λ)
+        elseif t == T_steps
+            H_diag[t] = xt_given_xt_1 + calculate_poisson_hess(C, λ)
+        else
+            H_diag[t] = xt_given_xt_1 + xt1_given_xt + calculate_poisson_hess(C, λ)
+        end
+    end
+
+    # Construct full Hessian
+    H = block_tridgm(H_diag, H_super, H_sub)
+
+    return H, H_diag, H_super, H_sub
+end
+
+"""
     Q_observation_model(C::Matrix{<:Real}, D::Matrix{<:Real}, log_d::Vector{<:Real}, E_z::Array{<:Real}, E_zz::Array{<:Real}, y::Array{<:Real})
 
 Calculate the Q-function for the observation model.
@@ -1294,4 +1435,141 @@ function Q_observation_model(C::Matrix{<:Real}, log_d::Vector{<:Real}, E_z::Arra
         end
     end
     return Q_val
+end
+
+"""
+    Q_function(A::Matrix{T}, Q::Matrix{T}, C::Matrix{T}, log_d::Vector{T}, x0::Vector{T}, P0::Matrix{T}, E_z::Matrix{T}, E_zz::Array{T, 3}, E_zz_prev::Array{T, 3}, P_smooth::Array{T, 3}, y::Matrix{T})
+
+Calculate the Q-function for the Linear Dynamical System.
+
+# Arguments
+- `A::Matrix{T}`: The transition matrix.
+- `Q::Matrix{T}`: The process noise covariance matrix.
+- `C::Matrix{T}`: The observation matrix.
+- `log_d::Vector{T}`: The mean firing rate vector in log space.
+- `x0::Vector{T}`: The initial state mean.
+- `P0::Matrix{T}`: The initial state covariance matrix.
+- `E_z::Matrix{T}`: The expected latent states.
+- `E_zz::Array{T, 3}`: The expected latent states x the latent states.
+- `E_zz_prev::Array{T, 3}`: The expected latent states x the previous latent states.
+- `P_smooth::Array{T, 3}`: The smoothed state covariances.
+- `y::Matrix{T}`: The observed data.
+
+# Returns
+- `Float64`: The Q-function for the Linear Dynamical System.
+"""
+function Q_function(A::Matrix{T}, Q::Matrix{T}, C::Matrix{T}, log_d::Vector{T}, x0::Vector{T}, P0::Matrix{T}, E_z::Matrix{T}, E_zz::Array{T, 3}, E_zz_prev::Array{T, 3}, P_smooth::Array{T, 3}, y::Matrix{T}) where T<:Real
+    # Calculate the Q-function for the state model
+    Q_state = SSM.Q_state(A, Q, P0, x0, E_z, E_zz, E_zz_prev)
+    # Calculate the Q-function for the observation model
+    Q_obs = Q_observation_model(C, log_d, E_z, P_smooth, y)
+    return Q_state + Q_obs
+end
+
+
+"""
+    smooth(lds::LinearDynamicalSystem{S,O}, y::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
+
+Perform smoothing for a Poisson Linear Dynamical System (LDS).
+
+# Arguments
+
+- `lds::LinearDynamicalSystem{S,O}`: The Poisson Linear Dynamical System model.
+- `y::Matrix{T}`: The observed data. Dimensions: (T_steps, obs_dim)
+
+# Returns
+- `x::Matrix{T}`: The smoothed state estimates. Dimensions: (T_steps, latent_dim)
+- `p_smooth::Array{T, 3}`: The smoothed state covariances. Dimensions: (T_steps, latent_dim, latent_dim)
+- `inverse_offdiag::Array{T, 3}`: The inverse off-diagonal matrices. Dimensions: (T_steps, latent_dim, latent_dim)
+
+# Note
+This function uses Newton's method for optimization and computes the Hessian
+and gradient specifically for the Poisson observation model.
+"""
+function smooth(lds::LinearDynamicalSystem{S,O}, y::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
+    # Get the length of Y and latent dimension
+    time_steps, _ = size(y)
+    D = lds.latent_dim
+
+    # Create starting point for the optimization
+    X₀ = zeros(T, time_steps * D)
+
+    # Create wrappers for the loglikelihood, gradient, and hessian
+    function nll(vec_x::Vector{T})
+        x = SSM.interleave_reshape(vec_x, time_steps, D)
+        return -loglikelihood(lds, x, y)
+    end
+
+    function g!(g::Vector{T}, vec_x::Vector{T})
+        x = SSM.interleave_reshape(vec_x, time_steps, D)
+        grad = Gradient(lds, y, x)
+        g .= vec(permutedims(-grad))
+    end
+
+    function h!(h::Matrix{T}, vec_x::Vector{T})
+        x = SSM.interleave_reshape(vec_x, time_steps, D)
+        H, _, _, _ = Hessian(lds, y, x)
+        h .= -H
+    end
+
+    # Set up the optimization problem
+    res = optimize(nll, g!, h!, X₀, Newton())
+
+    # Get the optimal state
+    x = SSM.interleave_reshape(res.minimizer, time_steps, D)
+
+    # Get covariances and nearest-neighbor second moments
+    H, main, super, sub = Hessian(lds, y, x)
+    p_smooth, inverse_offdiag = block_tridiagonal_inverse(-sub, -main, -super)
+
+    # Enforce symmetry of p_smooth
+    for i in 1:time_steps
+        p_smooth[i, :, :] = 0.5 * (p_smooth[i, :, :] + p_smooth[i, :, :]')
+    end
+
+    # Concatenate a zero matrix to the inverse off diagonal
+    inverse_offdiag = cat(dims=1, zeros(T, 1, D, D), inverse_offdiag)
+
+    return x, p_smooth, inverse_offdiag
+end
+
+"""
+    smooth(lds::LinearDynamicalSystem{S,O}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
+
+Smooth the latent states for each trial of a Poisson Linear Dynamical System (PLDS) model.
+
+# Arguments
+- `lds::LinearDynamicalSystem{S,O}`: The Poisson Linear Dynamical System model.
+- `y::Array{T,3}`: The observed data for each trial. Dimensions: (n_trials, T_steps, obs_dim)
+
+# Returns
+- `x_smooth::Array{T,3}`: The smoothed latent states for each trial. Dimensions: (n_trials, T_steps, latent_dim)
+- `p_smooth::Array{T,4}`: The smoothed covariance matrices for each trial. Dimensions: (n_trials, T_steps, latent_dim, latent_dim)
+- `p_tt1::Array{T,4}`: The lag-one covariance smoother for each trial. Dimensions: (n_trials, T_steps, latent_dim, latent_dim)
+
+# Note
+This function applies smoothing to each trial independently using the `smooth` function for a single trial.
+"""
+function smooth(lds::LinearDynamicalSystem{S,O}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
+    # Get dimensions
+    n_trials, T_steps, obs_dim = size(y)
+    latent_dim = lds.latent_dim
+
+    # Pre-allocate arrays for results
+    x_smooth = zeros(T, n_trials, T_steps, latent_dim)
+    p_smooth = zeros(T, n_trials, T_steps, latent_dim, latent_dim)
+    p_tt1 = zeros(T, n_trials, T_steps, latent_dim, latent_dim)
+
+    # Smooth the latent states for each trial
+    for k in 1:n_trials
+        # Smooth the latent states for a single trial
+        x_sm, p_sm, p_prev = smooth(lds, y[k, :, :])
+        
+        # Store the results
+        x_smooth[k, :, :] = x_sm
+        p_smooth[k, :, :, :] = p_sm
+        p_tt1[k, :, :, :] = p_prev
+    end
+
+    return x_smooth, p_smooth, p_tt1
 end
