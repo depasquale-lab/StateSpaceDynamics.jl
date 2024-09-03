@@ -743,28 +743,69 @@ function estep(lds::LinearDynamicalSystem{S,O}, y::Array{T,3}) where {T<:Real, S
     E_z, E_zz, E_zz_prev = sufficient_statistics(x_smooth, p_smooth, inverse_offdiag)
 
     # Calculate the total marginal likelihood across all trials
-    ml_total = calculate_marginal_likelihood(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
+    ml_total = calculate_elbo(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
 
     return E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total
 end
 
-# Helper function to calculate marginal likelihood for all trials
-function calculate_marginal_likelihood(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}, E_zz_prev::Array{T,4}, p_smooth::Array{T,4}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+"""
+    calculate_elbo(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}, E_zz_prev::Array{T,4}, p_smooth::Array{T,4}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:AbstractObservationModel{T}}
+
+Calculate the Evidence Lower Bound (ELBO) for a Linear Dynamical System.
+
+# Arguments
+- `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System struct
+- `E_z::Array{T,3}`: Expected latent states, size (n_trials, T_steps, state_dim)
+- `E_zz::Array{T,4}`: Expected z_t * z_t', size (n_trials, T_steps, state_dim, state_dim)
+- `E_zz_prev::Array{T,4}`: Expected z_t * z_{t-1}', size (n_trials, T_steps, state_dim, state_dim)
+- `p_smooth::Array{T,4}`: Smoothed state covariances, size (n_trials, T_steps, state_dim, state_dim)
+- `y::Array{T,3}`: Observed data, size (n_trials, T_steps, obs_dim)
+
+# Returns
+- `elbo::T`: The Evidence Lower Bound (ELBO) for the LDS.
+
+# Note
+- For a GaussianLDS the ELBO is equivalent to the total marginal likelihood.
+"""
+function calculate_elbo(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}, E_zz_prev::Array{T,4}, p_smooth::Array{T,4}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:AbstractObservationModel{T}}
     A, Q, x0, P0 = lds.state_model.A, lds.state_model.Q, lds.state_model.x0, lds.state_model.P0
     C, R = lds.obs_model.C, lds.obs_model.R
     
     n_trials = size(y, 1)
-    ml_total = 0.0
+    elbo = 0.0
 
     for trial in 1:n_trials
         Q_val = SSM.Q_function(A, Q, C, R, P0, x0, E_z[trial,:,:], E_zz[trial,:,:,:], E_zz_prev[trial,:,:,:], y[trial,:,:])
         
         # Calculate the entropy of q(z) for this trial
         entropy = sum(gaussianentropy(Matrix(p_smooth[trial,t,:,:])) for t in axes(p_smooth, 2))
-        ml_total += Q_val #- entropy
+        elbo += Q_val - entropy
     end
 
-    return ml_total
+    return elbo
+end
+
+
+"""
+    update_initial_state_mean!(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+
+Update the initial state mean of the Linear Dynamical System using the average across all trials.
+O}, E_z::Array{T,3}, E_zz::Array{T,4}, E_zz_prev::Array{T,4}, p_smooth::Array{T,4}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+    A, Q, x0, P0 = lds.state_model.A, lds.state_model.Q, lds.state_model.x0, lds.state_model.P0
+    C, R = lds.obs_model.C, lds.obs_model.R
+    
+    n_trials = size(y, 1)
+    elbo = 0.0
+
+    for trial in 1:n_trials
+        Q_val = SSM.Q_function(A, Q, C, R, P0, x0, E_z[trial,:,:], E_zz[trial,:,:,:], E_zz_prev[trial,:,:,:], y[trial,:,:])
+        
+        # Calculate the entropy of q(z) for this trial
+        entropy = sum(gaussianentropy(Matrix(p_smooth[trial,t,:,:])) for t in axes(p_smooth, 2))
+        elbo += Q_val - entropy
+    end
+
+    return elbo
 end
 
 
@@ -875,7 +916,6 @@ Update the process noise covariance matrix Q of the Linear Dynamical System.
 - This function modifies `lds` in-place.
 - The update is only performed if `lds.fit_bool[4]` is true.
 - The result is averaged across all trials.
-"""
 function update_Q!(lds::LinearDynamicalSystem{S,O}, E_zz::Array{T, 4}, E_zz_prev::Array{T, 4}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
     if lds.fit_bool[4]
         n_trials, T_steps, state_dim, _ = size(E_zz)
@@ -1186,14 +1226,14 @@ x, y = sample(lds, 100, 1)  # 1 trial, 100 time steps
 ll = loglikelihood(x, lds, y)
 ```
 """
-function loglikelihood(x::Matrix{T}, lds::LinearDynamicalSystem{S,O}, y::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
+function loglikelihood(x::Matrix{T}, plds::LinearDynamicalSystem{S,O}, y::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
         
     # Convert the log firing rate to firing rate
-        d = exp.(lds.obs_model.log_d)
+        d = exp.(plds.obs_model.log_d)
         T_steps = size(y, 1)
 
         # pre compute matrix inverses
-        inv_p0 = pinv(plds.state_model.p0)
+        inv_p0 = pinv(plds.state_model.P0)
         inv_Q = pinv(plds.state_model.Q)
 
         # Get the number of time steps
@@ -1210,8 +1250,8 @@ function loglikelihood(x::Matrix{T}, lds::LinearDynamicalSystem{S,O}, y::Matrix{
         px1 = -0.5 * (x[1, :] .- plds.state_model.x0)' * inv_p0 * (x[1, :] .- plds.state_model.x0)
 
         # Calculate p(xₜ|xₜ₋₁)
-        pxtgivenxt1 = zeros(T-1)
-        @threads for t in 2:T
+        pxtgivenxt1 = zeros(T_steps-1)
+        @threads for t in 2:T_steps
             temp = (x[t, :] .- (plds.state_model.A * x[t-1, :]))
             pxtgivenxt1[t-1] = -0.5 * temp' * inv_Q * temp
         end
@@ -1497,7 +1537,7 @@ function smooth(lds::LinearDynamicalSystem{S,O}, y::Matrix{T}) where {T<:Real, S
     # Create wrappers for the loglikelihood, gradient, and hessian
     function nll(vec_x::Vector{T})
         x = SSM.interleave_reshape(vec_x, time_steps, D)
-        return -loglikelihood(lds, x, y)
+        return -loglikelihood(x, lds, y)
     end
 
     function g!(g::Vector{T}, vec_x::Vector{T})
@@ -1573,3 +1613,4 @@ function smooth(lds::LinearDynamicalSystem{S,O}, y::Array{T,3}) where {T<:Real, 
 
     return x_smooth, p_smooth, p_tt1
 end
+
