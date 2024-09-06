@@ -84,7 +84,7 @@ function LDS(;
 end
 
 """
-Initiliazes the parameters of the LDS (the observation matrix and the initial state values, i.e., H and x0), model using PPCA.
+Initializes the parameters of the LDS (the observation matrix and the initial state values, i.e., H and x0), model using PPCA.
 
 Args:
     l: LDS struct
