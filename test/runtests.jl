@@ -162,6 +162,7 @@ include("PoissonLDS/PoissonLDS.jl")
 @testset "PoissonLDS Tests" begin
     test_PoissonLDS_with_params()
     test_poisson_lds_without_params()
+    test_Gradient()
 end
 
 #include("PLDS/PLDS.jl")

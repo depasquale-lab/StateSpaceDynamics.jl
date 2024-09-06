@@ -54,3 +54,19 @@ function test_poisson_lds_without_params()
     @test !isempty(poisson_lds.state_model.P0)
     @test !isempty(poisson_lds.obs_model.log_d)
 end
+
+function test_Gradient()
+    plds, x, y = toy_PoissonLDS()
+
+    # for each trial check the gradient
+    for i in axes(y, 1)
+        # numerically calculate the gradient
+        f = latents -> SSM.loglikelihood(latents, plds, y[i, :, :])
+        grad_numerical = ForwardDiff.gradient(f, x[i, :, :])
+
+        # calculate the gradient
+        grad = SSM.Gradient(plds, y[i, :, :], x[i, :, :])
+
+        @test norm(grad - grad_numerical) < 1e-10
+    end
+end
