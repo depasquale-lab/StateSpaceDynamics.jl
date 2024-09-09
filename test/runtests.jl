@@ -168,20 +168,20 @@ include("LinearDynamicalSystems//PoissonLDS.jl")
     test_parameter_gradient()
 end
 
-#include("PLDS/PLDS.jl")
+include("PLDS/PLDS.jl")
 
-# @testset "PLDS Tests" begin
-#     test_PLDS_constructor_with_params()
-#     test_PLDS_constructor_without_params()
-#     test_countspikes()
-#     test_logposterior()
-#     test_gradient_plds()
-#     test_hessian_plds()
-#     test_direct_smoother()
-#     test_smooth()
-#     test_analytical_parameter_updates()
-#     test_direct_smoother()
-# end
+@testset "PLDS Tests" begin
+    test_PLDS_constructor_with_params()
+    test_PLDS_constructor_without_params()
+    test_countspikes()
+    test_logposterior()
+    test_gradient_plds()
+    test_hessian_plds()
+    test_direct_smoother()
+    test_smooth()
+    test_analytical_parameter_updates()
+    test_direct_smoother()
+end
 
 """
 Tests for Regression.jl

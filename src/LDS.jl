@@ -1,5 +1,5 @@
 # export statement
-export LDS, KalmanFilter, KalmanSmoother, loglikelihood, PoissonLDS
+export LDS, KalmanFilter, KalmanSmoother, loglikelihood, PLDS
 export RTSSmoother, DirectSmoother, KalmanSmoother, KalmanFilterEM!, loglikelihood, marginal_loglikelihood
 
 
@@ -746,7 +746,7 @@ function sample(l::LDS, T::Int)
 end
 
 """
-    mutable struct PoissonLDS <: DynamicalSystem
+    mutable struct PLDS <: DynamicalSystem
 
 A Poisson Linear Dynamical System (PLDS).
 
@@ -763,7 +763,7 @@ A Poisson Linear Dynamical System (PLDS).
 - `latent_dim:: Int`: Latent Dimension
 - `fit_bool:: Vector{Bool}`: Vector of booleans indicating which parameters to fit.
 """
-mutable struct PoissonLDS <: DynamicalSystem
+mutable struct PLDS <: DynamicalSystem
     A:: AbstractMatrix{<:Real} # Transition Matrix
     C:: AbstractMatrix{<:Real} # Observation Matrix
     Q:: AbstractMatrix{<:Real} # Process Noise Covariance
@@ -779,7 +779,7 @@ mutable struct PoissonLDS <: DynamicalSystem
 end
 
 """
-    PoissonLDS(A, C, Q, D, d, x₀, p₀, obs_dim, latent_dim, fit_bool)
+    PLDS(A, C, Q, D, d, x₀, p₀, obs_dim, latent_dim, fit_bool)
 
 A Poisson Linear Dynamical System (PLDS).
 
@@ -814,9 +814,9 @@ obs_dim = 4
 latent_dim = 3
 fit_bool = fill(true, 7)
 
-plds = PoissonLDS(A, C, Q, D, d, x₀, p₀, refractory_period, obs_dim, latent_dim, fit_bool)
+plds = PLDS(A, C, Q, D, d, x₀, p₀, refractory_period, obs_dim, latent_dim, fit_bool)
 """
-function PoissonLDS(;
+function PLDS(;
     A::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
     C::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
     Q::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
@@ -849,10 +849,10 @@ function PoissonLDS(;
         error("Latent dimension must be specified.")
     end
 
-    PoissonLDS(A, C, Q, D, log_d, b, x0, p0, refractory_period, obs_dim, latent_dim, fit_bool)
+    PLDS(A, C, Q, D, log_d, b, x0, p0, refractory_period, obs_dim, latent_dim, fit_bool)
 end
 
-function logposterior_nonthreaded(x::AbstractMatrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real}) 
+function logposterior_nonthreaded(x::AbstractMatrix{<:Real}, plds::PLDS, y::Matrix{<:Real}) 
     # Re-parameterize log_d
     d = exp.(plds.log_d)
     # Calculate the log-posterior
@@ -879,13 +879,13 @@ function logposterior_nonthreaded(x::AbstractMatrix{<:Real}, plds::PoissonLDS, y
 end
 
 """
-    logposterior(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
+    logposterior(x::Matrix{<:Real}, plds::PLDS, y::Matrix{<:Real})
 
 Calculate the log-posterior of a Poisson Linear Dynamical System (PLDS) given the observed data.
 
 # Arguments
 - `x::Matrix{<:Real}`: The latent state variables of the PLDS.
-- `plds::PoissonLDS`: The Poisson Linear Dynamical System model.
+- `plds::PLDS`: The Poisson Linear Dynamical System model.
 - `y::Matrix{<:Real}`: The observed data.
 
 # Returns
@@ -895,7 +895,7 @@ Calculate the log-posterior of a Poisson Linear Dynamical System (PLDS) given th
 ```julia
 ```
 """
-function logposterior(x::AbstractMatrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
+function logposterior(x::AbstractMatrix{<:Real}, plds::PLDS, y::Matrix{<:Real})
     # Convert the log firing rate to firing rate
     d = exp.(plds.log_d)
     T = size(y, 1)
@@ -925,13 +925,13 @@ function logposterior(x::AbstractMatrix{<:Real}, plds::PoissonLDS, y::Matrix{<:R
 end
 
 """
-    loglikelihood(x::Array{<:Real}, plds::PoissonLDS, y::Array{<:Real})
+    loglikelihood(x::Array{<:Real}, plds::PLDS, y::Array{<:Real})
 
 Calculate the complete-data log-likelihood of the observed data given the latent states and the Poisson LDS model.
 
 # Arguments
 - `x::Array{<:Real}`: The latent states of the Poisson LDS model.
-- `plds::PoissonLDS`: The Poisson LDS model.
+- `plds::PLDS`: The Poisson LDS model.
 - `y::Array{<:Real}`: The observed data.
 
 # Returns
@@ -939,7 +939,7 @@ Calculate the complete-data log-likelihood of the observed data given the latent
 
 # Example
 """
-function loglikelihood(x::Array{<:Real}, plds::PoissonLDS, y::Array{<:Real})
+function loglikelihood(x::Array{<:Real}, plds::PLDS, y::Array{<:Real})
     # confirm the driving inputs are initialized
     if isempty(plds.b)
         plds.b = zeros(size(x, 2), size(x, 3))
@@ -1059,12 +1059,12 @@ function Q_observation_model(C::Matrix{<:Real}, D::Matrix{<:Real}, log_d::Vector
 end
 
 """
-    Q_function(plds::PoissonLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, y::Array{<:Real})
+    Q_function(plds::PLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, y::Array{<:Real})
 
 Calculate the Q-function of the Poisson Linear Dynamical System (PLDS) model.
 
 # Arguments
-- `plds::PoissonLDS`: The Poisson Linear Dynamical System model.
+- `plds::PLDS`: The Poisson Linear Dynamical System model.
 - `E_z::Array{<:Real}`: The expected latent states.
 - `E_zz::Array{<:Real}`: The expected latent states x the latent states.
 - `E_zz_prev::Array{<:Real}`: The expected latent states x the latent states at the previous time step.
@@ -1073,7 +1073,7 @@ Calculate the Q-function of the Poisson Linear Dynamical System (PLDS) model.
 # Returns
 - `Float64`: The Q-function of the PLDS model.
 """
-function Q_function(plds::PoissonLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, y::Array{<:Real})
+function Q_function(plds::PLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, y::Array{<:Real})
     # reparametrize the covariance matrices
     sqrt_Q = Matrix(cholesky(plds.Q).L)
     sqrt_p0 = Matrix(cholesky(plds.p0).L)
@@ -1083,18 +1083,18 @@ function Q_function(plds::PoissonLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, E
 end
 
 """
-    directsmooth(plds::PoissonLDS, y::Matrix{<:Real})
+    directsmooth(plds::PLDS, y::Matrix{<:Real})
 
 Perform direct smoothing on a Poisson linear dynamical system (PLDS) given the observations `y`.
 
 # Arguments
-- `plds::PoissonLDS`: The Poisson linear dynamical system.
+- `plds::PLDS`: The Poisson linear dynamical system.
 - `y::Matrix{<:Real}`: The observations matrix.
 
 # Returns
 - `x::Matrix{Float64}`: The smoothed latent states matrix.
 """
-function directsmooth(plds::PoissonLDS, y::Matrix{<:Real})
+function directsmooth(plds::PLDS, y::Matrix{<:Real})
     # get the length of the observations
     T = size(y, 1)
     # generate a set of initial latent states that we can pass to a newton step, use dynamic model to generate
@@ -1143,12 +1143,12 @@ function directsmooth(plds::PoissonLDS, y::Matrix{<:Real})
 end
 
 """
-    smooth(plds::PoissonLDS, y::Array{<:Real})
+    smooth(plds::PLDS, y::Array{<:Real})
 
 Smooths the latent states for each trial of a Poisson linear dynamical system (PLDS) model.
 
 # Arguments
-- `plds::PoissonLDS`: The Poisson linear dynamical system model.
+- `plds::PLDS`: The Poisson linear dynamical system model.
 - `y::Array{<:Real}`: The observed data for each trial.
 
 # Returns
@@ -1156,7 +1156,7 @@ Smooths the latent states for each trial of a Poisson linear dynamical system (P
 - `p_smooth::Array`: The smoothed covariance matrices for each trial.
 
 """
-function smooth(plds::PoissonLDS, y::Array{<:Real})
+function smooth(plds::PLDS, y::Array{<:Real})
     if isempty(plds.b)
         plds.b = zeros(size(y, 2), plds.latent_dim)
     end
@@ -1176,13 +1176,13 @@ function smooth(plds::PoissonLDS, y::Array{<:Real})
 end
 
 """
-    Gradient(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
+    Gradient(x::Matrix{<:Real}, plds::PLDS, y::Matrix{<:Real})
 
 Calculate the gradient of the log-likelihood with respect to the latent states.
 
 # Arguments
 - `x::Matrix{<:Real}`: Matrix of latent states.
-- `plds::PoissonLDS`: PoissonLDS object containing model parameters.
+- `plds::PLDS`: PLDS object containing model parameters.
 - `y::Matrix{<:Real}`: Matrix of observed data.
 
 # Returns
@@ -1190,7 +1190,7 @@ Calculate the gradient of the log-likelihood with respect to the latent states.
 
 # Example
 """
-function Gradient(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
+function Gradient(x::Matrix{<:Real}, plds::PLDS, y::Matrix{<:Real})
     # convert log_d to d i.e. non-log space
     d = exp.(plds.log_d)
     # calculate the gradient of the log-likelihood with respect to the latent states
@@ -1214,13 +1214,13 @@ function Gradient(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
 end
 
 """
-    Hessian(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
+    Hessian(x::Matrix{<:Real}, plds::PLDS, y::Matrix{<:Real})
 
 Compute the Hessian matrix for a Poisson linear dynamical system (PLDS) model w.r.t. the latent state.
 
 # Arguments
 - `x::Matrix{<:Real}`: The latent state matrix of shape `(T, n)`, where `T` is the number of time steps and `n` is the dimensionality of the latent state.
-- `plds::PoissonLDS`: The Poisson linear dynamical system model.
+- `plds::PLDS`: The Poisson linear dynamical system model.
 - `y::Matrix{<:Real}`: The observed data matrix of shape `(T, m)`, where `m` is the dimensionality of the observed data.
 
 # Returns
@@ -1229,7 +1229,7 @@ Compute the Hessian matrix for a Poisson linear dynamical system (PLDS) model w.
 - `H_super::Vector`: The super-diagonal entries of the Hessian matrix.
 - `H_sub::Vector`: The sub-diagonal entries of the Hessian matrix.
 """
-function Hessian(x::Matrix{<:Real}, plds::PoissonLDS, y::Matrix{<:Real})
+function Hessian(x::Matrix{<:Real}, plds::PLDS, y::Matrix{<:Real})
     # convert log_d to d i.e. non-log space
     d = exp.(plds.log_d)
     # pre-compute a few things
@@ -1301,19 +1301,19 @@ function sufficient_statistics(μ::Array{<:Real}, P::Array{<:Real}, P_tt1::Array
 end
 
 """
-    E_Step(plds::PoissonLDS, y::Array{<:Real})
+    E_Step(plds::PLDS, y::Array{<:Real})
 
 Perform the E-step of the Poisson Linear Dynamical System (PLDS) algorithm.
 
 # Arguments
-- `plds::PoissonLDS`: The Poisson Linear Dynamical System model.
+- `plds::PLDS`: The Poisson Linear Dynamical System model.
 - `y::Array{<:Real}`: The observed data.
 
 # Returns
 - `x_smooth`: The smoothed latent states.
 - `p_smooth`: The smoothed latent state covariances.
 """
-function E_Step(plds::PoissonLDS, y::Array{<:Real})
+function E_Step(plds::PLDS, y::Array{<:Real})
     # smooth the observations
     x_smooth, p_smooth, p_tt1 = smooth(plds, y)
     # calculate sufficient statistics for all trials
@@ -1322,19 +1322,19 @@ function E_Step(plds::PoissonLDS, y::Array{<:Real})
 end
 
 """
-    update_x0!(plds::PoissonLDS, x_smooth::Array{<:Real})
+    update_x0!(plds::PLDS, x_smooth::Array{<:Real})
 
 Update the initial state of a Poisson Linear Dynamical System (PLDS) model.
 
 # Arguments
-- `plds::PoissonLDS`: The PLDS model to update.
+- `plds::PLDS`: The PLDS model to update.
 - `x_smooth::Array{<:Real}`: The smoothed latents.
 
 # Details
 - If `plds.fit_bool[1]` is `true`, the initial state `plds.x0` is updated by summing all of the initial states of the smoothed latents and dividing by the number of trials.
 
 """
-function update_initial_state_mean!(plds::PoissonLDS, E_z::Array{<:Real})
+function update_initial_state_mean!(plds::PLDS, E_z::Array{<:Real})
     # update the initial state
     if plds.fit_bool[1]
        # sum all of the initial states of the smoothed latents and divide by the number of trials
@@ -1343,23 +1343,23 @@ function update_initial_state_mean!(plds::PoissonLDS, E_z::Array{<:Real})
 end
 
 """
-update_initial_state_covariance!(plds::PoissonLDS, E_zz::Array{<:Real}, E_z::Array{<:Real})
+update_initial_state_covariance!(plds::PLDS, E_zz::Array{<:Real}, E_z::Array{<:Real})
 
-Update the initial covariance matrix `p0` of a `PoissonLDS` model.
+Update the initial covariance matrix `p0` of a `PLDS` model.
 
 # Arguments
-- `plds::PoissonLDS`: The PoissonLDS model to update.
+- `plds::PLDS`: The PLDS model to update.
 - `E_zz::Array{<:Real}`: The expected value of the outer product of the latent variables.
 - `E_z::Array{<:Real}`: The expected value of the latent variables.
 
 # Details
-This function updates the initial covariance matrix `p0` of a `PoissonLDS` model based on the expected values of the latent variables. The update is performed only if the `fit_bool[2]` flag is set to `true`.
+This function updates the initial covariance matrix `p0` of a `PLDS` model based on the expected values of the latent variables. The update is performed only if the `fit_bool[2]` flag is set to `true`.
 
 The initial covariance matrix `p0` is calculated for each trial by subtracting the outer product of the expected value of the latent variables from the expected value of the outer product of the latent variables. The resulting covariance matrices are then summed and divided by the number of trials to obtain the updated `p0` matrix.
 
 # Example
 """
-function update_initial_state_covariance!(plds::PoissonLDS, E_zz::Array{<:Real}, E_z::Array{<:Real})
+function update_initial_state_covariance!(plds::PLDS, E_zz::Array{<:Real}, E_z::Array{<:Real})
     # update the initial covariance
     if plds.fit_bool[2]
         # get number of trials
@@ -1389,12 +1389,12 @@ function calculate_A(E_zz::Array{<:Real}, E_zz_prev::Array{<:Real})
 end
 
 """
-    update_A_plds!(plds::PoissonLDS, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real})
+    update_A_plds!(plds::PLDS, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real})
 
 Update the transition matrix `A` of a Poisson Linear Dynamical System (PLDS) model.
 
 # Arguments
-- `plds::PoissonLDS`: The PLDS model object.
+- `plds::PLDS`: The PLDS model object.
 - `E_zz::Array{<:Real}`: The expected value of the latent state `z` at time `t` given the observations up to time `t`.
 - `E_zz_prev::Array{<:Real}`: The expected value of the latent state `z` at time `t-1` given the observations up to time `t-1`.
 
@@ -1403,7 +1403,7 @@ This function updates the transition matrix `A` of the PLDS model by estimating 
 
 # Example
 """
-function update_A_plds!(plds::PoissonLDS, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real})
+function update_A_plds!(plds::PLDS, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real})
     # update the transition matrix
     if plds.fit_bool[3]
         # get estimates of A for each trial
@@ -1417,12 +1417,12 @@ function update_A_plds!(plds::PoissonLDS, E_zz::Array{<:Real}, E_zz_prev::Array{
 end
 
 """
-    update_Q_plds!(plds::PoissonLDS, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real})
+    update_Q_plds!(plds::PLDS, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real})
 
 Update the process noise covariance matrix Q for a Poisson Linear Dynamical System (PLDS).
 
 # Arguments
-- `plds::PoissonLDS`: The Poisson Linear Dynamical System object.
+- `plds::PLDS`: The Poisson Linear Dynamical System object.
 - `E_zz::Array{<:Real}`: The expected value of the latent variable z multiplied by its transpose, for the current time step.
 - `E_zz_prev::Array{<:Real}`: The expected value of the latent variable z multiplied by its transpose, for the previous time step.
 
@@ -1431,7 +1431,7 @@ This function updates the process noise covariance matrix Q for the PLDS. It cal
 
 # Example
 """
-function update_Q_plds!(plds::PoissonLDS, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real})
+function update_Q_plds!(plds::PLDS, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real})
     # update the process noise covariance matrix
     if plds.fit_bool[4]
         # get estimates of Q for each trial
@@ -1447,12 +1447,12 @@ function update_Q_plds!(plds::PoissonLDS, E_zz::Array{<:Real}, E_zz_prev::Array{
 end
 
 """
-    update_b!(plds::PoissonLDS, x_smooth::Array{<:Real})
+    update_b!(plds::PLDS, x_smooth::Array{<:Real})
 
 Update the latent state input `b` in a Poisson linear dynamical system (PLDS) model.
 
 # Arguments
-- `plds::PoissonLDS`: The Poisson linear dynamical system model.
+- `plds::PLDS`: The Poisson linear dynamical system model.
 - `x_smooth::Array{<:Real}`: The smoothed latent state trajectory.
 
 # Details
@@ -1463,7 +1463,7 @@ Update the latent state input `b` in a Poisson linear dynamical system (PLDS) mo
 
 # Examples
 """
-function update_b!(plds::PoissonLDS, x_smooth::Array{<:Real})
+function update_b!(plds::PLDS, x_smooth::Array{<:Real})
     # update the latent state input
     if plds.fit_bool[5]
         # create an array of latent state inputs for each trial
@@ -1478,7 +1478,7 @@ function update_b!(plds::PoissonLDS, x_smooth::Array{<:Real})
     end
 end
 
-function update_observation_model!(plds::PoissonLDS, E_z::Array{<:Real}, P_smooth::Array{<:Real}, y::Array{<:Real})
+function update_observation_model!(plds::PLDS, E_z::Array{<:Real}, P_smooth::Array{<:Real}, y::Array{<:Real})
     # update the observation model parameters: C, D, and d
     if plds.fit_bool[6]
         # flatten the parameters so we can pass them to the optimizer as a single vector
@@ -1506,7 +1506,7 @@ function update_observation_model!(plds::PoissonLDS, E_z::Array{<:Real}, P_smoot
     end
 end
 
-function M_Step!(plds::PoissonLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, p_smooth::Array{<:Real}, y::Array{<:Real})
+function M_Step!(plds::PLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, p_smooth::Array{<:Real}, y::Array{<:Real})
     # update the parameters
     update_initial_state_mean!(plds, E_z)
     update_initial_state_covariance!(plds, E_zz, E_z)
@@ -1516,12 +1516,12 @@ function M_Step!(plds::PoissonLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, E_zz
     update_observation_model!(plds, E_z, p_smooth, y)
 end
 
-function fit!(plds::PoissonLDS, y::Array{<:Real}, max_iter::Int=100, tol::Float64=1e-3)
+function fit!(plds::PLDS, y::Array{<:Real}, max_iter::Int=100, tol::Float64=1e-3)
     # create a variable to store the log-likelihood
     ec_lls = []
     ll_prev = -Inf
     # create a progress bar
-    prog = Progress(max_iter; desc="Fitting PoissonLDS via LaPlace EM: ")
+    prog = Progress(max_iter; desc="Fitting PLDS via LaPlace EM: ")
     # iterate through the EM algorithm
     for i in 1:max_iter
         # E-step
@@ -1577,12 +1577,12 @@ function countspikes(y::Matrix{<:Real}, window::Int=1)
 end
 
 """
-    sample(plds::PoissonLDS, T::Int, K::Int)
+    sample(plds::PLDS, T::Int, K::Int)
 
 Sample from a Poisson Linear Dynamical System (PLDS) model.
 
 # Arguments
-- `plds::PoissonLDS`: The Poisson Linear Dynamical System model.
+- `plds::PLDS`: The Poisson Linear Dynamical System model.
 - `T::Int64`: The number of time steps to sample.
 - `k::Int64`: The number of trials to sample.
 
@@ -1592,7 +1592,7 @@ Sample from a Poisson Linear Dynamical System (PLDS) model.
 
 # Examples
 """
-function sample(plds::PoissonLDS, T::Int64, K::Int64)
+function sample(plds::PLDS, T::Int64, K::Int64)
     # Convert log_d to d i.e. non-log space
     d = exp.(plds.log_d)
     # Pre-allocate arrays

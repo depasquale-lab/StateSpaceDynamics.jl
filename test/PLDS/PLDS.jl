@@ -10,7 +10,7 @@ function toy_PoissonLDS()
     D = Matrix(Diagonal([0., 0., 0.]))
     b = ones(T, 2) * 0.0
 
-    plds = PoissonLDS(A=A, C=C, Q=Q, D=D, b=b, log_d=log_d, x0=x0, p0=p0, refractory_period=1, obs_dim=3, latent_dim=2)
+    plds = PLDS(A=A, C=C, Q=Q, D=D, b=b, log_d=log_d, x0=x0, p0=p0, refractory_period=1, obs_dim=3, latent_dim=2)
     # sample data
     x, y = SSM.sample(plds, T, 3)
     return plds, x, y
@@ -32,7 +32,7 @@ function test_PLDS_constructor_with_params()
     fit_bool=Vector([true, true, true, true, true, true])
 
     # create the PLDS model
-    plds = PoissonLDS(;A=A, C=C, Q=Q, D=D, log_d=log_d, x0=x0, p0=p0, refractory_period=refrac, obs_dim=obs_dim, latent_dim=latent_dim, fit_bool=fit_bool)
+    plds = PLDS(;A=A, C=C, Q=Q, D=D, log_d=log_d, x0=x0, p0=p0, refractory_period=refrac, obs_dim=obs_dim, latent_dim=latent_dim, fit_bool=fit_bool)
 
     # test model
     @test plds.A == A
@@ -49,7 +49,7 @@ end
 
 function test_PLDS_constructor_without_params()
     # create the PLDS model
-    plds = PoissonLDS(;obs_dim=10, latent_dim=5)
+    plds = PLDS(;obs_dim=10, latent_dim=5)
 
     # test parameters are not empty
     @test !isempty(plds.A)
@@ -90,7 +90,7 @@ end
 
 function test_logposterior()
     # create a plds model
-    plds = PoissonLDS(;obs_dim=10, latent_dim=5)
+    plds = PLDS(;obs_dim=10, latent_dim=5)
     # create some observations
     obs = rand(Bool, 100, 10)
     # create latent state
@@ -105,7 +105,7 @@ end
 
 function test_gradient_plds()
     # create a plds model
-    plds = PoissonLDS(;obs_dim=10, latent_dim=5)
+    plds = PLDS(;obs_dim=10, latent_dim=5)
     # create some observations
     obs = rand(Bool, 3, 10)
     # create initial latent state for gradient calculation
@@ -124,7 +124,7 @@ end
 
 function test_hessian_plds()
     # create a plds model
-    plds = PoissonLDS(;obs_dim=10, latent_dim=5)
+    plds = PLDS(;obs_dim=10, latent_dim=5)
     # create some observations
     obs = rand(Bool, 3, 10)
     # create initial latent state for hessian calculation
@@ -149,7 +149,7 @@ end
 
 function test_direct_smoother()
     # create a plds model
-    plds = PoissonLDS(;obs_dim=10, latent_dim=5)
+    plds = PLDS(;obs_dim=10, latent_dim=5)
     # create some observations
     obs = rand(Bool, 10, 10)
     # create inputs
@@ -175,7 +175,7 @@ function test_analytical_parameter_updates()
     # create a dummy data
     dummy_plds, x, y = toy_PoissonLDS()
     # now create a random plds model
-    plds = PoissonLDS(;obs_dim=3, latent_dim=2)
+    plds = PLDS(;obs_dim=3, latent_dim=2)
     # save the old parameters from the model
     A = copy(plds.A)
     Q = copy(plds.Q)

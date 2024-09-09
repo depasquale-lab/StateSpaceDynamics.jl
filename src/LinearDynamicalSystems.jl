@@ -1,4 +1,4 @@
-export GaussianLDS, sample, smooth
+export GaussianLDS, PoissonLDS, sample, smooth
 
 
 """

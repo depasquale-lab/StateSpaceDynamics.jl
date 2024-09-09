@@ -1,7 +1,7 @@
 # SSM (Statespace Models) _in julia_
 
 [![SSM-CI](https://github.com/rsenne/ssm_julia/actions/workflows/run_tests.yaml/badge.svg)](https://github.com/rsenne/ssm_julia/actions/workflows/run_tests.yaml)
-[![codecov](https://codecov.io/gh/rsenne/ssm_julia/graph/badge.svg?token=EQ6B9RJBQ8)](https://codecov.io/gh/rsenne/ssm_julia)
+[![codecov](https://codecov.io/github/depasquale-lab/StateSpaceDynamics.jl/graph/badge.svg?token=EQ6B9RJBQ8)](https://codecov.io/github/depasquale-lab/StateSpaceDynamics.jl)
 
 This package implements a number of state-space models in julia. It take inspiration from the [SSM package](https://github.com/lindermanlab/ssm) written in python from the Linderman Lab. Currently, the following models are implemented:
 
@@ -19,7 +19,7 @@ This package implements a number of state-space models in julia. It take inspira
   - [ ] Autoregressive HMMs (ARHMM)
 - [x] Linear Dynamical Systems
   - [x] Gaussian Linear Dynamical Systems (Kalman Filter)
-  - [ ] Poisson Linear Dynamical Systems (PLDS)
+  - [x] Poisson Linear Dynamical Systems (PLDS)
   - [ ] PFLDS
   - [ ] Switching Linear Dynamical Systems (SLDS)
   - [ ] Recurrent Switching Linear Dynamical Systems (rSLDS)
