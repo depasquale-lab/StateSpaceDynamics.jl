@@ -1,4 +1,4 @@
-export GaussianLDS, PoissonLDS, sample, smooth
+export GaussianLDS, sample, smooth
 
 
 """
@@ -632,43 +632,6 @@ function Q_function(A::Matrix{<:Real}, Q::AbstractMatrix{<:Real}, H::Matrix{<:Re
            E_zz_prev::Array{<:Real, 3}, y::Matrix{<:Real})
     Q_val_state = Q_state(A, Q, P0, x0, E_z, E_zz, E_zz_prev)
     Q_val_obs = Q_obs(H, R, E_z, E_zz, y)
-    return Q_val_state + Q_val_obs
-end
-
-"""
-    Q(lds::LinearDynamicalSystem{S,O}, E_z, E_zz, E_zz_prev, y) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
-
-Calculate the Q-function for the EM algorithm using a LinearDynamicalSystem struct.
-
-# Arguments
-- `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System struct containing model parameters.
-- `E_z::Matrix{T}`: The expected latent states, size (T_steps, latent_dim).
-- `E_zz::Array{T, 3}`: The expected value of z_t * z_t', size (T_steps, latent_dim, latent_dim).
-- `E_zz_prev::Array{T, 3}`: The expected value of z_t * z_{t-1}', size (T_steps, latent_dim, latent_dim).
-- `y::Matrix{T}`: The observed data, size (T_steps, obs_dim).
-
-# Returns
-- `Q_val::T`: The complete Q-function value.
-
-# Note
-- This function assumes that the covariance matrices in the LDS struct are full matrices and converts them to Cholesky factors before calculation.
-- The type parameter T is inferred from the input types.
-"""
-function Q_function(lds::LinearDynamicalSystem{S,O}, E_z::Matrix{T}, E_zz::Array{T, 3}, E_zz_prev::Array{T, 3}, y::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
-    # Extract model components
-    A, Q = lds.state_model.A, lds.state_model.Q
-    H, R = lds.obs_model.C, lds.obs_model.R
-    x0, P0 = lds.state_model.x0, lds.state_model.P0
-    
-    # Re-parameterize the covariance matrices of the LDS model
-    Q_chol = Matrix(cholesky(Q).L)
-    R_chol = Matrix(cholesky(R).L)
-    P0_chol = Matrix(cholesky(P0).L)
-    
-    # Calculate the Q-function
-    Q_val_state = Q_state(A, Q_chol, P0_chol, x0, E_z, E_zz, E_zz_prev)
-    Q_val_obs = Q_obs(H, R_chol, E_z, E_zz, y)
-    
     return Q_val_state + Q_val_obs
 end
 

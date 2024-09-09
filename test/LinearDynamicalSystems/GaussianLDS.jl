@@ -161,7 +161,7 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
         P0 = P0_sqrt * P0_sqrt'
         Q_val = 0.0
         for i in axes(E_z, 1)
-            Q_val += SSM.Q_state(A, Q, P0, x0, E_z[i, :, :], E_zz[1, :, :, :], E_zz_prev[1, :, :, :])
+            Q_val += SSM.Q_state(A, Q, P0, x0, E_z[i, :, :], E_zz[i, :, :, :], E_zz_prev[i, :, :, :])
         end
         return -Q_val
     end
@@ -169,7 +169,7 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
     P0_sqrt = Matrix(cholesky(lds.state_model.P0).U)
 
     x0_opt = optimize(x0 -> obj(x0, P0_sqrt, lds), lds.state_model.x0, LBFGS(), Optim.Options(g_abstol=1e-12)).minimizer
-    P0_opt = optimize(P0_ -> obj(x0_opt, P0_, lds), P0_sqrt, LBFGS(), Optim.Options(g_abstol=1e-12)).minimizer
+    P0_opt = optimize(P0_ -> obj(x0_opt, P0_, lds),  P0_sqrt, LBFGS()).minimizer
 
     # update the initial state and covariance
     SSM.mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
@@ -189,7 +189,7 @@ function test_state_model_parameter_updates(ntrials::Int=1)
         Q = Q_sqrt * Q_sqrt'
         Q_val = 0.0
         for i in axes(E_z, 1)
-            Q_val += SSM.Q_state(A, Q, lds.state_model.P0, lds.state_model.x0, E_z[i, :, :], E_zz[1, :, :, :], E_zz_prev[1, :, :, :])
+            Q_val += SSM.Q_state(A, Q, lds.state_model.P0, lds.state_model.x0, E_z[i, :, :], E_zz[i, :, :, :], E_zz_prev[i, :, :, :])
         end
         return -Q_val
     end
@@ -218,7 +218,7 @@ function test_obs_model_params_updates(ntrials::Int=1)
         R = R_sqrt * R_sqrt'
         Q_val = 0.0
         for i in axes(E_z, 1)
-            Q_val += SSM.Q_obs(C, R, E_z[i, :, :], E_zz[1, :, :, :], y[i, :, :])
+            Q_val += SSM.Q_obs(C, R, E_z[i, :, :], E_zz[i, :, :, :], y[i, :, :])
         end
         return -Q_val
     end
