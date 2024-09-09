@@ -743,9 +743,9 @@ function estep(lds::LinearDynamicalSystem{S,O}, y::Array{T,3}) where {T<:Real, S
     E_z, E_zz, E_zz_prev = sufficient_statistics(x_smooth, p_smooth, inverse_offdiag)
 
     # Calculate the total marginal likelihood across all trials
-    ml_total = calculate_elbo(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
+    #ml_total = calculate_elbo(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
 
-    return E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total
+    return E_z, E_zz, E_zz_prev, x_smooth, p_smooth #, ml_total
 end
 
 """
@@ -1450,31 +1450,38 @@ Calculate the Q-function for the observation model.
 # Returns
 - `Float64`: The Q-function for the observation model.
 """
-function Q_observation_model(C::Matrix{<:Real}, log_d::Vector{<:Real}, E_z::Array{<:Real}, P_smooth::Array{<:Real}, y::Array{<:Real})
+function Q_observation_model(C::AbstractMatrix{T}, log_d::AbstractVector{T}, E_z::AbstractArray{U, 3}, P_smooth::AbstractArray{U, 4}, y::Array{U, 3}) where {T<:Real, U<:Real}
     # Re-parametrize log_d
     d = exp.(log_d)
+    
     # Compute Q
-    Q_val = 0.0
+    Q_val = zero(T)
     trials = size(E_z, 1)
     time_steps = size(E_z, 2)
+    
     # calculate CC term
-    CC = zeros(size(C, 1), size(C, 2)^2)
+    CC = zeros(T, size(C, 1), size(C, 2)^2)
     for i in axes(C, 1)
         CC[i, :] .= vec(C[i, :] * C[i, :]')
     end
+    
     # sum over trials
     for k in 1:trials
         # sum over time-points
         for t in 1:time_steps
             # Mean term
-            h = (C * E_z[k, t, :]) + d
+            h = (C * E_z[k, t, :]) .+ d
+            
             # calculate rho
-            ρ = 0.5 * CC * vec(P_smooth[k, t, :, :])
-            ŷ = exp.(h + ρ)
+            ρ = T(0.5) .* CC * vec(P_smooth[k, t, :, :])
+            
+            ŷ = exp.(h .+ ρ)
+            
             # calculate the Q-value
-            Q_val += sum((y[k, t, :] .* h) - ŷ)
+            Q_val += sum((y[k, t, :] .* h) .- ŷ)
         end
     end
+    
     return Q_val
 end
 
@@ -1628,9 +1635,60 @@ function smooth(lds::LinearDynamicalSystem{S,O}, y::Array{T,3}) where {T<:Real, 
 end
 
 """
-    update_observation_model!(lds::LinearDynamicalSystem{S,O}, E_z::Array{T, 3}, P_smooth::Array{T, 4}, y::Array{T, 3}) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
+    gradient_observation_model!(grad::AbstractVector{T}, C::AbstractMatrix{T}, log_d::AbstractVector{T}, E_z::AbstractArray{T}, P_smooth::AbstractArray{T}, y::Array{T}) where T<:Real
 
-Update the observation model parameters of a Poisson Linear Dynamical System.
+Compute the gradient of the Q-function with respect to the observation model parameters (C and log_d) for a Poisson Linear Dynamical System.
+
+# Arguments
+- `grad::AbstractVector{T}`: Pre-allocated vector to store the computed gradient.
+- `C::AbstractMatrix{T}`: The observation matrix. Dimensions: (obs_dim, latent_dim)
+- `log_d::AbstractVector{T}`: The log of the baseline firing rates. Dimensions: (obs_dim,)
+- `E_z::AbstractArray{T}`: The expected latent states. Dimensions: (trials, time_steps, latent_dim)
+- `P_smooth::AbstractArray{T}`: The smoothed state covariances. Dimensions: (trials, time_steps, latent_dim, latent_dim)
+- `y::Array{T}`: The observed data. Dimensions: (trials, time_steps, obs_dim)
+
+# Note
+This function modifies `grad` in-place. The gradient is computed for the negative Q-function,
+as we're minimizing -Q in optimization routines.
+"""
+function gradient_observation_model!(grad::AbstractVector{T}, C::AbstractMatrix{T}, log_d::AbstractVector{T}, E_z::AbstractArray{T}, P_smooth::AbstractArray{T}, y::Array{T}) where T<:Real
+    d = exp.(log_d)
+    obs_dim, latent_dim = size(C)
+    trials, time_steps, _ = size(E_z)
+
+    fill!(grad, zero(T))
+
+    for k in 1:trials
+        for t in 1:time_steps
+            z_t = E_z[k, t, :]
+            P_t = P_smooth[k, t, :, :]
+            y_t = y[k, t, :]
+
+            h = C * z_t .+ d
+            ρ = T(0.5) .* [sum(C[i, :] .* (P_t * C[i, :])) for i in 1:obs_dim]
+            λ = exp.(h .+ ρ)
+
+            # Gradient w.r.t. C (flattened in column-major order)
+            for i in 1:obs_dim
+                for j in 1:latent_dim
+                    idx = (j-1)*obs_dim + i
+                    grad[idx] += y_t[i] * z_t[j] - λ[i] * (z_t[j] + sum(C[i, :] .* P_t[:, j]))
+                end
+            end
+
+            # Gradient w.r.t. log_d (with scaling factor)
+            grad[end-obs_dim+1:end] .+= (y_t .- λ) .* d
+        end
+    end
+
+    # Negate the gradient because we're minimizing -Q
+    grad .*= -1
+end
+
+"""
+    update_observation_model!(plds::LinearDynamicalSystem{S,O}, E_z::Array{T, 3}, P_smooth::Array{T, 4}, y::Array{T, 3}) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
+
+Update the observation model parameters of a Poisson Linear Dynamical System using gradient-based optimization.
 
 # Arguments
 - `plds::LinearDynamicalSystem{S,O}`: The Poisson Linear Dynamical System model.
@@ -1639,32 +1697,32 @@ Update the observation model parameters of a Poisson Linear Dynamical System.
 - `y::Array{T, 3}`: The observed data. Dimensions: (n_trials, T_steps, obs_dim)
 
 # Note
-This function modifies `lds` in-place by updating the observation model parameters.
+This function modifies `plds` in-place by updating the observation model parameters (C and log_d).
+The optimization is performed only if `plds.fit_bool[5]` is true.
 """
 function update_observation_model!(plds::LinearDynamicalSystem{S,O}, E_z::Array{T, 3}, P_smooth::Array{T, 4}, y::Array{T, 3}) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
-    # Update the observation model parameters
     if plds.fit_bool[5]
-        # flatten the parameters so we can pass them to the optimizer as a single vector
         params = vcat(vec(plds.obs_model.C), plds.obs_model.log_d)
-        # create a helper function that takes a vector of the observation model parameters
-        function f(params::Vector{<:Real}, E_z::Array{<:Real}, P_smooth::Array{<:Real}, y::Array{<:Real})
-
-            # Split params into C and log_d
-            C_size = plds.obs_dim  
-            log_d = params[end-C_size+1:end]  
-            C = reshape(params[1:end-C_size], C_size, :)  # Reshape the remaining params into C
         
-            # Call Q_observation_model with the new C and log_d, and other unchanged parameters
-            Q_val = Q_observation_model(C, log_d, E_z, P_smooth, y)
-        
-            return -Q_val
+        function f(params::Vector{T})
+            C_size = plds.obs_dim * plds.latent_dim
+            log_d = params[end-plds.obs_dim+1:end]
+            C = reshape(params[1:C_size], plds.obs_dim, plds.latent_dim)
+            return -Q_observation_model(C, log_d, E_z, P_smooth, y)
         end
-        # # create gradient function
-        # g! = (g, params) -> grad!(g, params, x_smooth, y, plds)
-        # optimize
-        result = optimize(params -> f(params, E_z, P_smooth, y), params, LBFGS())
-        # update the parameters
-        plds.obs_model.C = reshape(result.minimizer[1:plds.obs_dim * plds.latent_dim], plds.obs_dim, plds.latent_dim)
+        
+        function g!(grad::Vector{T}, params::Vector{T})
+            C_size = plds.obs_dim * plds.latent_dim
+            log_d = params[end-plds.obs_dim+1:end]
+            C = reshape(params[1:C_size], plds.obs_dim, plds.latent_dim)
+            gradient_observation_model!(grad, C, log_d, E_z, P_smooth, y)
+        end
+        
+        result = optimize(f, g!, params, LBFGS())
+        
+        # Update the parameters
+        C_size = plds.obs_dim * plds.latent_dim
+        plds.obs_model.C = reshape(result.minimizer[1:C_size], plds.obs_dim, plds.latent_dim)
         plds.obs_model.log_d = result.minimizer[end-plds.obs_dim+1:end]
     end
 end
