@@ -149,7 +149,7 @@ function test_estep()
     @test isa(ml_total, Float64)
 end
 
-function test_initial_observaton_parameter_updates(ntrials::Int=1)
+function test_initial_observation_parameter_updates(ntrials::Int=1)
     lds, x, y = toy_lds(ntrials, [true, true, false, false, false, false])
 
     # run the E_Step
@@ -172,7 +172,7 @@ function test_initial_observaton_parameter_updates(ntrials::Int=1)
     P0_opt = optimize(P0_ -> obj(x0_opt, P0_, lds), P0_sqrt, LBFGS(), Optim.Options(g_abstol=1e-12)).minimizer
 
     # update the initial state and covariance
-    SSM.mstep!(lds, E_z, E_zz, E_zz_prev, y)
+    SSM.mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
 
     @test isapprox(lds.state_model.x0, x0_opt, atol=1e-6)
     @test isapprox(lds.state_model.P0, P0_opt * P0_opt', atol=1e-6)
@@ -200,7 +200,7 @@ function test_state_model_parameter_updates(ntrials::Int=1)
     Q_opt = optimize(Q_sqrt -> obj(A_opt, Q_sqrt, lds), Q_sqrt, LBFGS(), Optim.Options(g_abstol=1e-12)).minimizer
 
     # update the state model
-    SSM.mstep!(lds, E_z, E_zz, E_zz_prev, y)
+    SSM.mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
 
     @test isapprox(lds.state_model.A, A_opt, atol=1e-6)
     @test isapprox(lds.state_model.Q, Q_opt * Q_opt', atol=1e-6)
@@ -229,7 +229,7 @@ function test_obs_model_params_updates(ntrials::Int=1)
     R_opt = optimize(R_sqrt -> obj(C_opt, R_sqrt, lds), R_sqrt, LBFGS(), Optim.Options(g_abstol=1e-12)).minimizer
 
     # update the observation model
-    SSM.mstep!(lds, E_z, E_zz, E_zz_prev, y)
+    SSM.mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
 
     @test isapprox(lds.obs_model.C, C_opt, atol=1e-6)
     @test isapprox(lds.obs_model.R, R_opt * R_opt', atol=1e-6)

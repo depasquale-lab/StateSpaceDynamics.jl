@@ -144,11 +144,11 @@ include("LinearDynamicalSystems//GaussianLDS.jl")
     test_smooth()
     test_estep()
     # test when ntrials=1
-    test_initial_observaton_parameter_updates()
+    test_initial_observation_parameter_updates()
     test_state_model_parameter_updates()
     test_obs_model_params_updates()
     # test when ntrials>1
-#     test_initial_observaton_parameter_updates(3)
+#     test_initial_observation_parameter_updates(3)
 #     test_state_model_parameter_updates(3)
 #     test_obs_model_params_updates(3)
 end
