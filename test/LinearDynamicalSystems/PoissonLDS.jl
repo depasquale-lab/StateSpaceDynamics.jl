@@ -58,6 +58,7 @@ end
 function test_Gradient()
     plds, x, y = toy_PoissonLDS()
 
+
     # for each trial check the gradient
     for i in axes(y, 1)
         # numerically calculate the gradient
@@ -68,5 +69,53 @@ function test_Gradient()
         grad = SSM.Gradient(plds, y[i, :, :], x[i, :, :])
 
         @test norm(grad - grad_numerical) < 1e-10
+    end
+end
+
+function test_Hessian()
+    plds, x, y = toy_PoissonLDS()
+
+    # create function that allows that we cna pass the latents to the loglikelihood transposed
+    function log_likelihood(x::AbstractArray, plds, y::AbstractArray)
+        x = permutedims(x)
+        return SSM.loglikelihood(x, plds, y)
+    end
+    
+        # check hessian for each trial
+        for i in axes(y, 1)
+            hess, main, super, sub = SSM.Hessian(plds, y[i, 1:3, :], x[i, 1:3, :])
+            @test size(hess) == (plds.latent_dim * 3, plds.latent_dim * 3)
+            @test size(main) == (3,)
+            @test size(super) == (2,)
+            @test size(sub) == (2,)
+
+            # calcualte hess using autodiff now
+            obj = latents -> log_likelihood(latents, plds, y[i, 1:3, :])
+            hess_numerical = ForwardDiff.hessian(obj, permutedims(x[i, 1:3, :]))
+            @test norm(hess_numerical - hess) < 1e-10
+        end
+    end
+
+function test_smooth()
+    plds, x, y = toy_PoissonLDS()
+
+    # smooth data
+    x_smooth, p_smooth, inverseoffdiag = SSM.smooth(plds, y)
+
+    nTrials = size(y, 1)
+    nTsteps = size(y, 2)
+
+    @test size(x_smooth) == size(x)
+    @test size(p_smooth) == (nTrials, nTsteps, plds.latent_dim, plds.latent_dim)
+    @test size(inverseoffdiag) == (nTrials, nTsteps, plds.latent_dim, plds.latent_dim)
+
+    # test gradient is zero
+    for i in axes(y, 1)
+        # may as well test the gradient here too 
+        f = latents -> SSM.loglikelihood(latents, plds, y[i, :, :])
+        grad_numerical = ForwardDiff.gradient(f, x_smooth[i, :, :])
+        grad_analytical = SSM.Gradient(plds, y[i, :, :], x_smooth[i, :, :])
+
+        @test norm(grad_numerical - grad_analytical) < 1e-10
     end
 end

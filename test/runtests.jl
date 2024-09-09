@@ -134,7 +134,7 @@ end
 Tests for GaussianLDS.jl
 """
 
-include("GaussianLDS/GaussianLDS.jl")
+include("LinearDynamicalSystems//GaussianLDS.jl")
 
 @testset "GaussianLDS Tests" begin
     test_lds_with_params()
@@ -157,12 +157,15 @@ end
 Tests for PoissonLDS.jl
 """
 
-include("PoissonLDS/PoissonLDS.jl")
+include("LinearDynamicalSystems//PoissonLDS.jl")
 
 @testset "PoissonLDS Tests" begin
     test_PoissonLDS_with_params()
     test_poisson_lds_without_params()
     test_Gradient()
+    test_Hessian()
+    test_smooth()
+    
 end
 
 #include("PLDS/PLDS.jl")

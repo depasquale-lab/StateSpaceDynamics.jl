@@ -765,7 +765,7 @@ Calculate the Evidence Lower Bound (ELBO) for a Linear Dynamical System.
 - `elbo::T`: The Evidence Lower Bound (ELBO) for the LDS.
 
 # Note
-- For a GaussianLDS the ELBO is equivalent to the total marginal likelihood.
+- For a GaussianLDS the ELBO is equivalent to the total marginal likelihood
 """
 function calculate_elbo(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}, E_zz_prev::Array{T,4}, p_smooth::Array{T,4}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:AbstractObservationModel{T}}
     A, Q, x0, P0 = lds.state_model.A, lds.state_model.Q, lds.state_model.x0, lds.state_model.P0
