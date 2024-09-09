@@ -119,3 +119,33 @@ function test_smooth()
         @test norm(grad_numerical - grad_analytical) < 1e-10
     end
 end
+
+function test_parameter_gradient()
+    plds, x, y = toy_PoissonLDS()
+
+    # run estep
+    E_z, E_zz, E_zz_prev, x_smooth, P_smooth, elbo = SSM.estep(plds, y)
+
+    # params
+    C, log_d = plds.obs_model.C, plds.obs_model.log_d
+    params = vcat(vec(C), log_d)
+
+    # get analytical gradient
+    grad_analytical = SSM.gradient_observation_model!(zeros(length(params)), C, log_d, E_z, P_smooth, y)
+
+    # get numerical gradient
+    function f(params::AbstractVector{<:Real})
+        C_size = plds.obs_dim * plds.latent_dim
+        log_d = params[end-plds.obs_dim+1:end]
+        C = reshape(params[1:C_size], plds.obs_dim, plds.latent_dim)
+        return -SSM.Q_observation_model(C, log_d, E_z, P_smooth, y)
+    end
+
+    
+    grad = ForwardDiff.gradient(f, params)
+
+
+
+    @test isapprox(grad, grad_analytical, rtol=1e-5, atol=1e-5)
+
+end

@@ -743,9 +743,9 @@ function estep(lds::LinearDynamicalSystem{S,O}, y::Array{T,3}) where {T<:Real, S
     E_z, E_zz, E_zz_prev = sufficient_statistics(x_smooth, p_smooth, inverse_offdiag)
 
     # Calculate the total marginal likelihood across all trials
-    #ml_total = calculate_elbo(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
+    ml_total = calculate_elbo(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
 
-    return E_z, E_zz, E_zz_prev, x_smooth, p_smooth #, ml_total
+    return E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total
 end
 
 """
@@ -767,7 +767,7 @@ Calculate the Evidence Lower Bound (ELBO) for a Linear Dynamical System.
 # Note
 - For a GaussianLDS the ELBO is equivalent to the total marginal likelihood
 """
-function calculate_elbo(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}, E_zz_prev::Array{T,4}, p_smooth::Array{T,4}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:AbstractObservationModel{T}}
+function calculate_elbo(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}, E_zz_prev::Array{T,4}, p_smooth::Array{T,4}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
     A, Q, x0, P0 = lds.state_model.A, lds.state_model.Q, lds.state_model.x0, lds.state_model.P0
     C, R = lds.obs_model.C, lds.obs_model.R
     
@@ -997,7 +997,7 @@ function update_R!(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array
 end
 
 """
-    mstep!(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}, E_zz_prev::Array{T,4}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+    mstep!(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}, E_zz_prev::Array{T,4}, p_smooth::Array{T, 4}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
 
 Perform the M-step of the EM algorithm for a Linear Dynamical System with multi-trial data.
 
@@ -1006,14 +1006,16 @@ Perform the M-step of the EM algorithm for a Linear Dynamical System with multi-
 - `E_z::Array{T,3}`: Expected latent states, size (n_trials, T_steps, state_dim)
 - `E_zz::Array{T,4}`: Expected z_t * z_t', size (n_trials, T_steps, state_dim, state_dim)
 - `E_zz_prev::Array{T,4}`: Expected z_t * z_{t-1}', size (n_trials, T_steps, state_dim, state_dim)
+- `p_smooth::Array{T,4}`: Smoothed state covariances, size (n_trials, T_steps, state_dim, state_dim) (not used)
 - `y::Array{T,3}`: Observed data, size (n_trials, T_steps, obs_dim)
 
 # Note
 - This function modifies `lds` in-place by updating all model parameters.
 - Updates are performed only for parameters where the corresponding `fit_bool` is true.
 - All update functions now handle multi-trial data.
+- P_smooth is required but not used in the M-step so that the function signature matches the PoissonLDS version.
 """
-function mstep!(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}, E_zz_prev::Array{T,4}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+function mstep!(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}, E_zz_prev::Array{T,4}, p_smooth::Array{T, 4}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
     # Update parameters
     update_initial_state_mean!(lds, E_z)
     update_initial_state_covariance!(lds, E_z, E_zz)
@@ -1052,7 +1054,7 @@ Fit a Linear Dynamical System using the Expectation-Maximization (EM) algorithm 
 function fit!(lds::LinearDynamicalSystem{S,O}, y::Array{T, 3}; 
               max_iter::Int=1000, 
               tol::Real=1e-12, 
-              ) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+              ) where {T<:Real, S<:GaussianStateModel{T}, O<:AbstractObservationModel{T}}
     
     # Initialize log-likelihood
     prev_ml = -T(Inf)
@@ -1062,16 +1064,21 @@ function fit!(lds::LinearDynamicalSystem{S,O}, y::Array{T, 3};
     sizehint!(mls, max_iter)  # Pre-allocate for efficiency
     
     # Initialize progress bar
-    prog = Progress(max_iter; desc="Fitting LDS via EM...", output=stderr)
+    if O <: GaussianObservationModel
+        prog = Progress(max_iter; desc="Fitting LDS via EM...", output=stderr)
+    elseif O <: PoissonObservationModel
+        prog = Progress(max_iter; desc="Fitting Poisson LDS via LaplaceEM...", output=stderr)
+    else 
+        error("Unknown LDS model type")
+    end
     
     # Run EM
     for i in 1:max_iter
         # E-step
-        E_z, E_zz, E_zz_prev, _, _, ml = estep(lds, y)
+        E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml = estep(lds, y)
         
         # M-step
-        mstep!(lds, E_z, E_zz, E_zz_prev, y)
-
+        mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
         
         # Update the log-likelihood vector
         push!(mls, ml)
@@ -1197,7 +1204,7 @@ Calculate the complete-data log-likelihood of a Poisson Linear Dynamical System 
 - `ll::T`: The log-likelihood value.
 
 # Examples
-```julia
+```juliaestep!
 lds = PoissonLDS(obs_dim=4, latent_dim=3)
 x, y = sample(lds, 100, 1)  # 1 trial, 100 time steps
 ll = loglikelihood(x, lds, y)
@@ -1506,7 +1513,7 @@ Calculate the Q-function for the Linear Dynamical System.
 # Returns
 - `Float64`: The Q-function for the Linear Dynamical System.
 """
-function Q_function(A::Matrix{T}, Q::Matrix{T}, C::Matrix{T}, log_d::Vector{T}, x0::Vector{T}, P0::Matrix{T}, E_z::Matrix{T}, E_zz::Array{T, 3}, E_zz_prev::Array{T, 3}, P_smooth::Array{T, 3}, y::Matrix{T}) where T<:Real
+function Q_function(A::Matrix{T}, Q::Matrix{T}, C::Matrix{T}, log_d::Vector{T}, x0::Vector{T}, P0::Matrix{T}, E_z::Array{T, 3}, E_zz::Array{T, 4}, E_zz_prev::Array{T, 4}, P_smooth::Array{T, 4}, y::Array{T, 3}) where T<:Real
     # Calculate the Q-function for the state model
     Q_state = SSM.Q_state(A, Q, P0, x0, E_z, E_zz, E_zz_prev)
     # Calculate the Q-function for the observation model
@@ -1514,16 +1521,54 @@ function Q_function(A::Matrix{T}, Q::Matrix{T}, C::Matrix{T}, log_d::Vector{T}, 
     return Q_state + Q_obs
 end
 
-function calculate_elbo(plds::LinearDynamicalSystem{S,O}, E_z::Array{T, 3}, E_zz::Array{T, 4}, E_zz_prev::Array{T, 4}, P_smooth::Array{T, 3}, y::Array{T, 3}) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
-    # set up parameters
+"""
+    calculate_elbo(plds::LinearDynamicalSystem{S,O}, E_z::Array{T, 3}, E_zz::Array{T, 4}, 
+                   E_zz_prev::Array{T, 4}, P_smooth::Array{T, 4}, y::Array{T, 3}) where 
+                   {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
+
+Calculate the Evidence Lower Bound (ELBO) for a Poisson Linear Dynamical System (PLDS).
+
+# Arguments
+- `plds::LinearDynamicalSystem{S,O}`: The PLDS model.
+- `E_z::Array{T, 3}`: Expected values of latent states. Dimensions: (trials, time steps, state dimension).
+- `E_zz::Array{T, 4}`: Expected values of latent state outer products. Dimensions: (trials, time steps, state dimension, state dimension).
+- `E_zz_prev::Array{T, 4}`: Expected values of latent state outer products with previous time step. Dimensions: (trials, time steps-1, state dimension, state dimension).
+- `P_smooth::Array{T, 4}`: Smoothed covariance matrices. Dimensions: (trials, time steps, state dimension, state dimension).
+- `y::Array{T, 3}`: Observed data. Dimensions: (trials, time steps, observation dimension).
+
+# Returns
+- `elbo::Float64`: The calculated Evidence Lower Bound.
+
+# Description
+This function computes the ELBO for a PLDS model, which consists of two main components:
+1. The expected complete log-likelihood (ECLL), calculated using the Q_function.
+2. The entropy of the variational distribution, calculated using gaussian entropy.
+
+The ELBO is then computed as: ELBO = ECLL - Entropy.
+
+# Note
+Ensure that the dimensions of input arrays match the expected dimensions as described in the arguments section.
+"""
+function calculate_elbo(plds::LinearDynamicalSystem{S,O}, E_z::Array{T, 3}, E_zz::Array{T, 4}, 
+                        E_zz_prev::Array{T, 4}, P_smooth::Array{T, 4}, y::Array{T, 3}) where 
+                        {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
+    # Set up parameters
     A, Q, x0, p0 = plds.state_model.A, plds.state_model.Q, plds.state_model.x0, plds.state_model.P0
     C, log_d = plds.obs_model.C, plds.obs_model.log_d
-    # calculate the expected complete log-likelihood
+
+    # Calculate the expected complete log-likelihood
     ecll = Q_function(A, Q, C, log_d, x0, p0, E_z, E_zz, E_zz_prev, P_smooth, y)
-    # calculate the entropy across all trials and timepoints
-    entropy_vals = mapslices(slice -> SSM.gaussianentropy(slice), E_z, dims=(1, 2))
-    entropy = sum(entropy_vals)
-    # return the elbo
+
+    # Calculate the entropy across all trials and timepoints
+    entropy = 0.0
+    for trial in 1:size(E_z, 1)
+        for tStep in 1:size(E_z, 2)
+            cov_matrix = P_smooth[trial, tStep, :, :] # Extract covariance matrix
+            entropy += SSM.gaussianentropy(cov_matrix)
+        end
+    end
+
+    # Return the ELBO
     return ecll - entropy
 end
 
@@ -1726,7 +1771,6 @@ function update_observation_model!(plds::LinearDynamicalSystem{S,O}, E_z::Array{
         plds.obs_model.log_d = result.minimizer[end-plds.obs_dim+1:end]
     end
 end
-
 
 """
     mstep!(plds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}, E_zz_Prev{T,4}, p_smooth{T,4}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}

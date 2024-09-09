@@ -165,7 +165,7 @@ include("LinearDynamicalSystems//PoissonLDS.jl")
     test_Gradient()
     test_Hessian()
     test_smooth()
-    
+    test_parameter_gradient()
 end
 
 #include("PLDS/PLDS.jl")
