@@ -86,8 +86,10 @@ end
 function test_trialized_SwitchingGaussianRegression()
     # Create a true underlying model
     model = SwitchingGaussianRegression(K=2, input_dim=1, output_dim=1)
-    model.B[1].β = [2; 5;;]
-    model.B[2].β = [-2; -3;;]
+    model.B[1].β = [100; 100;;]
+    model.B[2].β = [-100; -100;;]
+    model.B[1].Σ = [2.0;;]
+    model.B[2].Σ = [3.0;;]
 
     # Define initial state probabilities (π) and transition matrix (A)
     initial_probs = [0.6, 0.4]  # Probability to start in state 1 or state 2
@@ -95,6 +97,8 @@ function test_trialized_SwitchingGaussianRegression()
 
     n = 100 # Number of samples per trial
     num_trials = 50  # Number of trials
+    n1_std = 1.0
+    n2_std = 0.5
 
     # Vectors to store generated data
     trial_inputs = Vector{Matrix{Float64}}(undef, num_trials)
@@ -117,9 +121,9 @@ function test_trialized_SwitchingGaussianRegression()
         y_data = zeros(n, 1)
         for i in 1:n
             if state_sequence[i] == 1
-                y_data[i] = model.B[1].β[2] * x_data[i] + model.B[1].β[1]  # y = 2x + 5
+                y_data[i] = (model.B[1].β[2] * x_data[i] + model.B[1].β[1]) + (randn() * n1_std)
             else
-                y_data[i] = model.B[2].β[2] * x_data[i] + model.B[2].β[1]  # y = -2x - 3
+                y_data[i] = (model.B[2].β[2] * x_data[i] + model.B[2].β[1]) + (randn() * n2_std)
             end
         end
         trial_outputs[trial] = y_data
@@ -127,11 +131,13 @@ function test_trialized_SwitchingGaussianRegression()
 
     # Create new model and fit the data
     est_model = SwitchingGaussianRegression(K=2, input_dim=1, output_dim=1)
-    ll = fit!(est_model, trial_inputs, trial_outputs, trials=true)
+    ll = fit!(est_model, trial_inputs, trial_outputs, trials=true, max_iters=200)
 
     # Run tests to assess model fit
-    @test isapprox(est_model.B[1].β, model.B[1].β, atol=0.01) || isapprox(est_model.B[1].β, model.B[2].β, atol=0.01)
-    @test isapprox(est_model.B[2].β, model.B[2].β, atol=0.01) || isapprox(est_model.B[2].β, model.B[1].β, atol=0.01)
+    @test isapprox(est_model.B[1].β, model.B[1].β, atol=0.1) || isapprox(est_model.B[1].β, model.B[2].β, atol=0.1)
+    @test isapprox(est_model.B[2].β, model.B[2].β, atol=0.1) || isapprox(est_model.B[2].β, model.B[1].β, atol=0.1)
+    # @test isapprox(est_model.B[1].Σ, model.B[1].Σ, atol=0.1) || isapprox(est_model.B[1].Σ, model.B[2].Σ, atol=0.1)
+    # @test isapprox(est_model.B[2].Σ, model.B[2].Σ, atol=0.1) || isapprox(est_model.B[2].Σ, model.B[1].Σ, atol=0.1)
 end
 
 

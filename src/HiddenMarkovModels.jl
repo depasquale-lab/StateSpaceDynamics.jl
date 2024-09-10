@@ -521,11 +521,6 @@ end
 
 
 """
-Fit function for HMMs when data has multiple trials of observations
-"""
-
-
-"""
     class_probabilities(model::HiddenMarkovModel, data...)
 
 Calculate the class probabilities for each observation. Returns a matrix of size `(T, K)` where `K` is the number of states and `T` is the number of observations.
