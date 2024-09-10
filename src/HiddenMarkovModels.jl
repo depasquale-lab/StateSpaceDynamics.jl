@@ -5,18 +5,6 @@ export weighted_initialization
 export E_step, validate_model, validate_data, valid_emission_models
 export class_probabilities
 
-
-
-# Please ensure all criteria are met for any new emission model:
-# 1. fit!(model, data..., <weights here>) must fit the model using the weights provided (by maximizing the weighted loglikelihood).
-# 2. loglikelihood(model, data...; observation_wise=true) must return a Vector{Float64} of the loglikelihood of each observation.
-# 3. TimeSeries(model, sample(model, data...; n=<number of samples>)) must return a TimeSeries object of n samples.
-# 4. revert_TimeSeries(model, time_series) must return the time_series data converted back to the original sample() format (the inverse of TimeSeries(model, samples)).
-
-# 3 and 4 appear to be replaced by emission_sample
-
-
-
 """
     HiddenMarkovModel
 
@@ -407,13 +395,14 @@ end
 
 
 """
-    fit!(model::HiddenMarkovModel, data...; max_iters::Int=100, tol::Float64=1e-6)
+    fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Real}, Nothing}=nothing; max_iters::Int=100, tol::Float64=1e-6)
 
 Fit the Hidden Markov Model using the EM algorithm.
 
 # Arguments
 - `model::HiddenMarkovModel`: The Hidden Markov Model to fit.
-- `data...`: The data to fit the Hidden Markov Model. Requires the same format as the emission model.
+- `Y::Matrix{<:Real}`: The emission data.
+- `X::Union{Matrix{<:Real}, Nothing}=nothing`: Optional input data for fitting Switching Regression Models
 - `max_iters::Int=100`: The maximum number of iterations to run the EM algorithm.
 - `tol::Float64=1e-6`: When the log likelihood is improving by less than this value, the algorithm will stop.
 
@@ -436,85 +425,143 @@ loglikelihood(est_model, Y) > loglikelihood(true_model, Y)
 true
 ```
 """
-function fit!(model::HiddenMarkovModel, data...; max_iters::Int=100, tol::Float64=1e-6, trials::Bool=false)
+function fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Real}, Nothing}=nothing; max_iters::Int=100, tol::Float64=1e-6)
+    println("New Function in use...")
     lls = [-Inf]
 
-    if trials == false
-        # confirm model is valid
-        validate_model(model)
+    data = X === nothing ? (Y,) : (X, Y)
+    # confirm model is valid
+    validate_model(model)
 
-        # confirm data is in the correct format
-        validate_data(model, data...)
+    # confirm data is in the correct format
+    validate_data(model, data...)
 
-        log_likelihood = -Inf
-        # Initialize progress bar
-        p = Progress(max_iters; dt=1, desc="Running EM algorithm...",)
-        for iter in 1:max_iters
-            # Update the progress bar
-            next!(p; showvalues = [(:iteration, iter), (:log_likelihood, log_likelihood)])
-            # E-Step
-            γ, ξ, α, β = E_step(model, data)
-            # Compute and update the log-likelihood
-            log_likelihood_current = logsumexp(α[end, :])
-            push!(lls, log_likelihood_current)
-            #println("iter $(iter) loglikelihood: ", log_likelihood_current)
-            if abs(log_likelihood_current - log_likelihood) < tol
-                finish!(p)
-                break
-            else
-                log_likelihood = log_likelihood_current
-            end
-            # M-Step
-            M_step!(model, γ, ξ, data)
+    log_likelihood = -Inf
+    # Initialize progress bar
+    p = Progress(max_iters; dt=1, desc="Running EM algorithm...",)
+    for iter in 1:max_iters
+        # Update the progress bar
+        next!(p; showvalues = [(:iteration, iter), (:log_likelihood, log_likelihood)])
+        # E-Step
+        γ, ξ, α, β = E_step(model, data)
+        # Compute and update the log-likelihood
+        log_likelihood_current = logsumexp(α[end, :])
+        push!(lls, log_likelihood_current)
+        #println("iter $(iter) loglikelihood: ", log_likelihood_current)
+        if abs(log_likelihood_current - log_likelihood) < tol
+            finish!(p)
+            break
+        else
+            log_likelihood = log_likelihood_current
         end
-
-        # confirm model is valid
-        validate_model(model)
-
+        # M-Step
+        M_step!(model, γ, ξ, data)
     end
 
+    # confirm model is valid
+    validate_model(model)
 
-    if trials == true
-        # Validate the model
-        validate_model(model)
+    return lls
+end
 
-        # Validate the data
-        for matrices in zip(data...)  # If data... is [A1 A2] [B1 B2] then matrices is [A1 B1] [A2 B2]
-            validate_data(model, matrices...)  # you get one matrices tuple for each trial, then splat it into the next function
-        end
 
-        # Initialize log_likelihood
-        log_likelihood = -Inf
+"""
+    fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Real}, Nothing}=nothing; max_iters::Int=100, tol::Float64=1e-6)
 
-        # Collect the zipped data into a vector of tuples
-        zipped_matrices = collect(zip(data...))
-        p = Progress(max_iters; dt=1, desc="Running EM algorithm...",)
-        for iter in 1:max_iters
-            next!(p; showvalues = [(:iteration, iter), (:log_likelihood, log_likelihood)])
-            # E_step
-            output = E_step.(Ref(model), zipped_matrices)
-            γ, ξ, α, β = map(x-> x[1], output), map(x-> x[2], output), map(x-> x[3], output), map(x-> x[4], output)
-            
-            # Calculate log_likelihood
-            log_likelihood_current = sum(map(α -> logsumexp(α[end, :]), α))
-            push!(lls, log_likelihood_current)
-            # Check for convergence
-            if abs(log_likelihood_current - log_likelihood) < tol
-                finish!(p)
-                break
-            else
-                log_likelihood = log_likelihood_current
-            end
-            
-            # Get data trial tuples stacked for M_step!()
-            stacked_data = stack_tuples(zipped_matrices)
+Fit the Hidden Markov Model to multiple trials of data using the EM algorithm.
 
-            # M_step
-            M_step!(model, γ, ξ, stacked_data)
+# Arguments
+- `model::HiddenMarkovModel`: The Hidden Markov Model to fit.
+- `Y::Vector{<:Matrix{<:Real}}`: The trialized emission data.
+- `X::Union{Vector{<:Matrix{<:Real}}, Nothing}=nothing`: Optional input data for fitting Switching Regression Models
+- `max_iters::Int=100`: The maximum number of iterations to run the EM algorithm.
+- `tol::Float64=1e-6`: When the log likelihood is improving by less than this value, the algorithm will stop.
 
-        end
-        validate_model(model)
+# Examples
+```jldoctest; output = true
+# Create Guassian Emission Models
+output_dim = 2
+μ = [0.0, 0.0]
+Σ = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
+emission_1 = GaussianEmission(Gaussian(output_dim=output_dim, μ=μ, Σ=Σ))
+
+μ = [2.0, 1.0]
+Σ = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
+emission_2 = GaussianEmission(Gaussian(μ=μ, Σ=Σ, output_dim=output_dim))
+
+# Create GaussianHMM
+true_model = GaussianHMM(K=2, output_dim=2)
+true_model.B[1] = emission_1
+true_model.B[2] = emission_2
+true_model.A = [0.9 0.1; 0.8 0.2]
+
+n = 10  # Number of samples per trial
+num_trials = 3  # Number of trials
+trial_inputs = Vector{Matrix{Float64}}(undef, num_trials)  # Vector to store data matrices
+trial_labels = Vector{Vector{Int}}(undef, num_trials)  # Vector to store label vectors
+trial_outputs = Vector{Matrix{Float64}}(undef, num_trials)
+
+for i in 1:num_trials
+    true_labels, data = sample(true_model, n=n)  # Generate data and labels
+    trial_labels[i] = true_labels  # Store labels for the ith trial
+    trial_inputs[i] = data  # Store data matrix for the ith trial
+
+    true_labels, data = sample(true_model, n=n)  # Generate data and labels
+    trial_outputs[i] = data  # Store data matrix for the ith trial
+end
+
+# Fit trialized model
+test_model = GaussianHMM(K=2, output_dim=2)
+ll = fit!(test_model, trial_inputs)
+
+# output
+true
+```
+"""
+function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}}, X::Union{Vector{<:Matrix{<:Real}}, Nothing}=nothing; max_iters::Int=100, tol::Float64=1e-6)
+    println("Using new GLM function")
+    lls = [-Inf]
+    data = X === nothing ? (Y,) : (X, Y)
+
+    # Validate the model
+    validate_model(model)
+
+    # Validate the data
+    for matrices in zip(data...)  # If data... is [A1 A2] [B1 B2] then matrices is [A1 B1] [A2 B2]
+        validate_data(model, matrices...)  # you get one matrices tuple for each trial, then splat it into the next function
     end
+
+    # Initialize log_likelihood
+    log_likelihood = -Inf
+
+    # Collect the zipped data into a vector of tuples
+    zipped_matrices = collect(zip(data...))
+    p = Progress(max_iters; dt=1, desc="Running EM algorithm...",)
+    for iter in 1:max_iters
+        next!(p; showvalues = [(:iteration, iter), (:log_likelihood, log_likelihood)])
+        # E_step
+        output = E_step.(Ref(model), zipped_matrices)
+        γ, ξ, α, β = map(x-> x[1], output), map(x-> x[2], output), map(x-> x[3], output), map(x-> x[4], output)
+        
+        # Calculate log_likelihood
+        log_likelihood_current = sum(map(α -> logsumexp(α[end, :]), α))
+        push!(lls, log_likelihood_current)
+        # Check for convergence
+        if abs(log_likelihood_current - log_likelihood) < tol
+            finish!(p)
+            break
+        else
+            log_likelihood = log_likelihood_current
+        end
+        
+        # Get data trial tuples stacked for M_step!()
+        stacked_data = stack_tuples(zipped_matrices)
+
+        # M_step
+        M_step!(model, γ, ξ, stacked_data)
+
+    end
+    validate_model(model)
 
     return lls
 end

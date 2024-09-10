@@ -72,7 +72,7 @@ function test_trialized_GaussianHMM()
 
     # Fit a model to the trialized synthetic data
     est_model = StateSpaceDynamics.GaussianHMM(K=2, output_dim=2)
-    lls = fit!(est_model, Y, trials=true, max_iters=100)
+    lls = fit!(est_model, Y, max_iters=100)
 
     # Test that model output is correct
     # @test StateSpaceDynamics.loglikelihood(est_model, Y) >= StateSpaceDynamics.loglikelihood(true_model, Y)
@@ -131,7 +131,7 @@ function test_trialized_SwitchingGaussianRegression()
 
     # Create new model and fit the data
     est_model = SwitchingGaussianRegression(K=2, input_dim=1, output_dim=1)
-    ll = fit!(est_model, trial_inputs, trial_outputs, trials=true, max_iters=200)
+    ll = fit!(est_model, trial_outputs, trial_inputs, max_iters=200)
 
     # Run tests to assess model fit
     @test isapprox(est_model.B[1].β, model.B[1].β, atol=0.1) || isapprox(est_model.B[1].β, model.B[2].β, atol=0.1)
