@@ -37,14 +37,14 @@ function test_PPCA_E_and_M_Step()
     μ = mean(X, dims=1)
     ppca.μ = μ
     # run E-step
-    E_z, E_zz = SSM.E_Step(ppca, X)
+    E_z, E_zz = StateSpaceDynamics.E_Step(ppca, X)
     # check dimensions
     @test size(E_z) == (100, 2)
     @test size(E_zz) == (100, 2, 2)
     # run M-step, but first save the old parameters
     W_old = ppca.W
     σ²_old = ppca.σ²
-    SSM.M_Step!(ppca, X, E_z, E_zz)
+    StateSpaceDynamics.M_Step!(ppca, X, E_z, E_zz)
     # check if the parameters are updated
     @test ppca.W !== W_old
     @test ppca.σ² !== σ²_old
@@ -67,6 +67,6 @@ function test_PPCA_fit()
     # check loglikelihood only increases
     @test all(diff(ll) .> 0)
     # also check that the loglikelihood is a scalar
-    ll = SSM.loglikelihood(ppca, X)
+    ll = StateSpaceDynamics.loglikelihood(ppca, X)
     @test size(ll) == ()
 end
