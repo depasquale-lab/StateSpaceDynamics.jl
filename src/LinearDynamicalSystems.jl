@@ -1,4 +1,4 @@
-export GaussianLDS, sample, smooth
+export GaussianLDS, PoissonLDS, sample, smooth, fit!
 
 
 """
@@ -431,18 +431,18 @@ function smooth(lds::LinearDynamicalSystem{S,O}, y::Matrix{T}) where {T<:Real, S
 
     # Create wrappers for the loglikelihood, gradient, and hessian
     function nll(vec_x::Vector{T})
-        x = SSM.interleave_reshape(vec_x, time_steps, D)
+        x = StateSpaceDynamics.interleave_reshape(vec_x, time_steps, D)
         return -loglikelihood(x, lds, y)
     end
 
     function g!(g::Vector{T}, vec_x::Vector{T})
-        x = SSM.interleave_reshape(vec_x, time_steps, D)
+        x = StateSpaceDynamics.interleave_reshape(vec_x, time_steps, D)
         grad = Gradient(lds, y, x)
         g .= vec(permutedims(-grad))
     end
 
     function h!(h::Matrix{T}, vec_x::Vector{T})
-        x = SSM.interleave_reshape(vec_x, time_steps, D)
+        x = StateSpaceDynamics.interleave_reshape(vec_x, time_steps, D)
         H, *, *, _ = Hessian(lds, y)
         h .= -H
     end
@@ -451,7 +451,7 @@ function smooth(lds::LinearDynamicalSystem{S,O}, y::Matrix{T}) where {T<:Real, S
     res = optimize(nll, g!, h!, X₀, Newton(), Optim.Options(g_tol=1e-14))
 
     # get the optimal state
-    x = SSM.interleave_reshape(res.minimizer, time_steps, D)
+    x = StateSpaceDynamics.interleave_reshape(res.minimizer, time_steps, D)
 
     # Get covariances and nearest-neighbor second moments
     H, main, super, sub = Hessian(lds, y)
@@ -738,7 +738,7 @@ function calculate_elbo(lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::
     elbo = 0.0
 
     for trial in 1:n_trials
-        Q_val = SSM.Q_function(A, Q, C, R, P0, x0, E_z[trial,:,:], E_zz[trial,:,:,:], E_zz_prev[trial,:,:,:], y[trial,:,:])
+        Q_val = StateSpaceDynamics.Q_function(A, Q, C, R, P0, x0, E_z[trial,:,:], E_zz[trial,:,:,:], E_zz_prev[trial,:,:,:], y[trial,:,:])
         
         # Calculate the entropy of q(z) for this trial
         entropy = sum(gaussianentropy(Matrix(p_smooth[trial,t,:,:])) for t in axes(p_smooth, 2))
@@ -1478,7 +1478,7 @@ Calculate the Q-function for the Linear Dynamical System.
 """
 function Q_function(A::Matrix{T}, Q::Matrix{T}, C::Matrix{T}, log_d::Vector{T}, x0::Vector{T}, P0::Matrix{T}, E_z::Array{T, 3}, E_zz::Array{T, 4}, E_zz_prev::Array{T, 4}, P_smooth::Array{T, 4}, y::Array{T, 3}) where T<:Real
     # Calculate the Q-function for the state model
-    Q_state = SSM.Q_state(A, Q, P0, x0, E_z, E_zz, E_zz_prev)
+    Q_state = StateSpaceDynamics.Q_state(A, Q, P0, x0, E_z, E_zz, E_zz_prev)
     # Calculate the Q-function for the observation model
     Q_obs = Q_observation_model(C, log_d, E_z, P_smooth, y)
     return Q_state + Q_obs
@@ -1527,7 +1527,7 @@ function calculate_elbo(plds::LinearDynamicalSystem{S,O}, E_z::Array{T, 3}, E_zz
     for trial in 1:size(E_z, 1)
         for tStep in 1:size(E_z, 2)
             cov_matrix = P_smooth[trial, tStep, :, :] # Extract covariance matrix
-            entropy += SSM.gaussianentropy(cov_matrix)
+            entropy += StateSpaceDynamics.gaussianentropy(cov_matrix)
         end
     end
 
@@ -1564,18 +1564,18 @@ function smooth(lds::LinearDynamicalSystem{S,O}, y::Matrix{T}) where {T<:Real, S
 
     # Create wrappers for the loglikelihood, gradient, and hessian
     function nll(vec_x::Vector{T})
-        x = SSM.interleave_reshape(vec_x, time_steps, D)
+        x = StateSpaceDynamics.interleave_reshape(vec_x, time_steps, D)
         return -loglikelihood(x, lds, y)
     end
 
     function g!(g::Vector{T}, vec_x::Vector{T})
-        x = SSM.interleave_reshape(vec_x, time_steps, D)
+        x = StateSpaceDynamics.interleave_reshape(vec_x, time_steps, D)
         grad = Gradient(lds, y, x)
         g .= vec(permutedims(-grad))
     end
 
     function h!(h::Matrix{T}, vec_x::Vector{T})
-        x = SSM.interleave_reshape(vec_x, time_steps, D)
+        x = StateSpaceDynamics.interleave_reshape(vec_x, time_steps, D)
         H, _, _, _ = Hessian(lds, y, x)
         h .= -H
     end
@@ -1584,7 +1584,7 @@ function smooth(lds::LinearDynamicalSystem{S,O}, y::Matrix{T}) where {T<:Real, S
     res = optimize(nll, g!, h!, X₀, Newton())
 
     # Get the optimal state
-    x = SSM.interleave_reshape(res.minimizer, time_steps, D)
+    x = StateSpaceDynamics.interleave_reshape(res.minimizer, time_steps, D)
 
     # Get covariances and nearest-neighbor second moments
     H, main, super, sub = Hessian(lds, y, x)

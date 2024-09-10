@@ -21,16 +21,16 @@ function toy_lds(ntrials::Int=1, fit_bool::Vector{Bool}=[true, true, true, true,
 
     # sample data
     T = 100
-    x, y = SSM.sample(lds, T, ntrials) # 100 timepoints, 1 trials
+    x, y = StateSpaceDynamics.sample(lds, T, ntrials) # 100 timepoints, 1 trials
 
     return lds, x, y
 end
 
 function test_lds_properties(lds)
     # check state and observation model are of correct type
-    @test isa(lds.state_model, SSM.GaussianStateModel)
-    @test isa(lds.obs_model, SSM.GaussianObservationModel)
-    @test isa(lds, SSM.LinearDynamicalSystem)
+    @test isa(lds.state_model, StateSpaceDynamics.GaussianStateModel)
+    @test isa(lds.obs_model, StateSpaceDynamics.GaussianObservationModel)
+    @test isa(lds, StateSpaceDynamics.LinearDynamicalSystem)
 
     # check model param dimensions
     @test size(lds.state_model.A) == (lds.latent_dim,  lds.latent_dim)
@@ -76,11 +76,11 @@ function test_Gradient()
     for i in axes(y, 1)
 
         # numerically calculate the gradient
-        f = latents -> SSM.loglikelihood(latents, lds, y[i, :, :])
+        f = latents -> StateSpaceDynamics.loglikelihood(latents, lds, y[i, :, :])
         grad_numerical = ForwardDiff.gradient(f, x[i, :, :])
 
         # analytical gradient
-        grad_analytical = SSM.Gradient(lds, y[i, :, :], x[i, :, :])
+        grad_analytical = StateSpaceDynamics.Gradient(lds, y[i, :, :], x[i, :, :])
         @test norm(grad_numerical - grad_analytical) < 1e-12
     end
 end
@@ -90,12 +90,12 @@ function test_Hessian()
 
     function log_likelihood(x::AbstractArray, lds, y::AbstractArray)
         x = permutedims(x)
-        return SSM.loglikelihood(x, lds, y)
+        return StateSpaceDynamics.loglikelihood(x, lds, y)
     end
 
     # for each trial check the Hessian
     for i in axes(y, 1)
-        hess, main, super, sub = SSM.Hessian(lds, y[i, 1:3, :])
+        hess, main, super, sub = StateSpaceDynamics.Hessian(lds, y[i, 1:3, :])
         @test size(hess) == (3*lds.latent_dim, 3*lds.latent_dim)
         @test size(main) == (3,)
         @test size(super) == (2,)
@@ -122,9 +122,9 @@ function test_smooth()
     # test gradient is zero
     for i in axes(y, 1)
         # may as well test the gradient here too 
-        f = latents -> SSM.loglikelihood(latents, lds, y[i, :, :])
+        f = latents -> StateSpaceDynamics.loglikelihood(latents, lds, y[i, :, :])
         grad_numerical = ForwardDiff.gradient(f, x_smooth[i, :, :])
-        grad_analytical = SSM.Gradient(lds, y[i, :, :], x_smooth[i, :, :])
+        grad_analytical = StateSpaceDynamics.Gradient(lds, y[i, :, :], x_smooth[i, :, :])
 
         @test norm(grad_numerical - grad_analytical) < 1e-12
         @test maximum(abs.(grad_analytical)) < 1e-8
@@ -136,7 +136,7 @@ function test_estep()
     lds, x, y = toy_lds()
 
     # run the E_Step
-    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = SSM.estep(lds, y)
+    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(lds, y)
 
     n_trials = size(y, 1)
     n_tsteps = size(y, 2)
@@ -153,7 +153,7 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
     lds, x, y = toy_lds(ntrials, [true, true, false, false, false, false])
 
     # run the E_Step
-    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = SSM.estep(lds, y)
+    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(lds, y)
     
     # optimize the x0 and p0 entries using autograd
     function obj(x0::AbstractVector, P0_sqrt::AbstractMatrix, lds)
@@ -161,7 +161,7 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
         P0 = P0_sqrt * P0_sqrt'
         Q_val = 0.0
         for i in axes(E_z, 1)
-            Q_val += SSM.Q_state(A, Q, P0, x0, E_z[i, :, :], E_zz[i, :, :, :], E_zz_prev[i, :, :, :])
+            Q_val += StateSpaceDynamics.Q_state(A, Q, P0, x0, E_z[i, :, :], E_zz[i, :, :, :], E_zz_prev[i, :, :, :])
         end
         return -Q_val
     end
@@ -172,7 +172,7 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
     P0_opt = optimize(P0_ -> obj(x0_opt, P0_, lds),  P0_sqrt, LBFGS()).minimizer
 
     # update the initial state and covariance
-    SSM.mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
+    StateSpaceDynamics.mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
 
     @test isapprox(lds.state_model.x0, x0_opt, atol=1e-6)
     @test isapprox(lds.state_model.P0, P0_opt * P0_opt', atol=1e-6)
@@ -182,14 +182,14 @@ function test_state_model_parameter_updates(ntrials::Int=1)
     lds, x, y = toy_lds(ntrials, [false, false, true, true, false, false])
 
     # run the E_Step
-    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = SSM.estep(lds, y)
+    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(lds, y)
 
     # optimize the A and Q entries using autograd
     function obj(A::AbstractMatrix, Q_sqrt::AbstractMatrix, lds)
         Q = Q_sqrt * Q_sqrt'
         Q_val = 0.0
         for i in axes(E_z, 1)
-            Q_val += SSM.Q_state(A, Q, lds.state_model.P0, lds.state_model.x0, E_z[i, :, :], E_zz[i, :, :, :], E_zz_prev[i, :, :, :])
+            Q_val += StateSpaceDynamics.Q_state(A, Q, lds.state_model.P0, lds.state_model.x0, E_z[i, :, :], E_zz[i, :, :, :], E_zz_prev[i, :, :, :])
         end
         return -Q_val
     end
@@ -200,7 +200,7 @@ function test_state_model_parameter_updates(ntrials::Int=1)
     Q_opt = optimize(Q_sqrt -> obj(A_opt, Q_sqrt, lds), Q_sqrt, LBFGS(), Optim.Options(g_abstol=1e-12)).minimizer
 
     # update the state model
-    SSM.mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
+    StateSpaceDynamics.mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
 
     @test isapprox(lds.state_model.A, A_opt, atol=1e-6)
     @test isapprox(lds.state_model.Q, Q_opt * Q_opt', atol=1e-6)
@@ -211,14 +211,14 @@ function test_obs_model_params_updates(ntrials::Int=1)
     lds, x, y = toy_lds(ntrials, [false, false, false, false, true, true])
 
     # run the E_Step
-    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = SSM.estep(lds, y)
+    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(lds, y)
 
     # optimize the C and R entries using autograd
     function obj(C::AbstractMatrix, R_sqrt::AbstractMatrix, lds)
         R = R_sqrt * R_sqrt'
         Q_val = 0.0
         for i in axes(E_z, 1)
-            Q_val += SSM.Q_obs(C, R, E_z[i, :, :], E_zz[i, :, :, :], y[i, :, :])
+            Q_val += StateSpaceDynamics.Q_obs(C, R, E_z[i, :, :], E_zz[i, :, :, :], y[i, :, :])
         end
         return -Q_val
     end
@@ -229,7 +229,7 @@ function test_obs_model_params_updates(ntrials::Int=1)
     R_opt = optimize(R_sqrt -> obj(C_opt, R_sqrt, lds), R_sqrt, LBFGS(), Optim.Options(g_abstol=1e-12)).minimizer
 
     # update the observation model
-    SSM.mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
+    StateSpaceDynamics.mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
 
     @test isapprox(lds.obs_model.C, C_opt, atol=1e-6)
     @test isapprox(lds.obs_model.R, R_opt * R_opt', atol=1e-6)
@@ -244,7 +244,7 @@ function test_EM()
 
     # run em 3 times, check params change each time
     for i in 1:3
-        SSM.fit!(lds, y, 1)
+        StateSpaceDynamics.fit!(lds, y, 1)
         A_new, Q_new, C_new, R_new, x0_new, P0_new = lds.state_model.A, lds.state_model.Q, lds.obs_model.C, lds.obs_model.R, lds.state_model.x0, lds.state_model.P0
 
         @test A != A_new

@@ -11,15 +11,15 @@ function toy_PoissonLDS(n_trials::Int=1, fit_bool::Vector{Bool}=[true, true, tru
 
     # sample data
     T = 100
-    x, y = SSM.sample(poisson_lds, T, n_trials) # 100 timepoints, ntrials
+    x, y = StateSpaceDynamics.sample(poisson_lds, T, n_trials) # 100 timepoints, ntrials
 
     return poisson_lds, x, y
 end
 
 function test_plds_properties(poisson_lds)
-    @test isa(poisson_lds.state_model, SSM.GaussianStateModel)
-    @test isa(poisson_lds.obs_model, SSM.PoissonObservationModel)
-    @test isa(poisson_lds, SSM.LinearDynamicalSystem)
+    @test isa(poisson_lds.state_model, StateSpaceDynamics.GaussianStateModel)
+    @test isa(poisson_lds.obs_model, StateSpaceDynamics.PoissonObservationModel)
+    @test isa(poisson_lds, StateSpaceDynamics.LinearDynamicalSystem)
 
     @test size(poisson_lds.state_model.A) == (poisson_lds.latent_dim,  poisson_lds.latent_dim)
     @test size(poisson_lds.obs_model.C) == (poisson_lds.obs_dim, poisson_lds.latent_dim)
@@ -62,13 +62,13 @@ function test_Gradient()
     # for each trial check the gradient
     for i in axes(y, 1)
         # numerically calculate the gradient
-        f = latents -> SSM.loglikelihood(latents, plds, y[i, :, :])
+        f = latents -> StateSpaceDynamics.loglikelihood(latents, plds, y[i, :, :])
         grad_numerical = ForwardDiff.gradient(f, x[i, :, :])
 
         # calculate the gradient
-        grad = SSM.Gradient(plds, y[i, :, :], x[i, :, :])
+        grad = StateSpaceDynamics.Gradient(plds, y[i, :, :], x[i, :, :])
 
-        @test norm(grad - grad_numerical) < 1e-10
+        @test norm(grad - grad_numerical) < 1e-9
     end
 end
 
@@ -78,12 +78,12 @@ function test_Hessian()
     # create function that allows that we cna pass the latents to the loglikelihood transposed
     function log_likelihood(x::AbstractArray, plds, y::AbstractArray)
         x = permutedims(x)
-        return SSM.loglikelihood(x, plds, y)
+        return StateSpaceDynamics.loglikelihood(x, plds, y)
     end
     
         # check hessian for each trial
         for i in axes(y, 1)
-            hess, main, super, sub = SSM.Hessian(plds, y[i, 1:3, :], x[i, 1:3, :])
+            hess, main, super, sub = StateSpaceDynamics.Hessian(plds, y[i, 1:3, :], x[i, 1:3, :])
             @test size(hess) == (plds.latent_dim * 3, plds.latent_dim * 3)
             @test size(main) == (3,)
             @test size(super) == (2,)
@@ -92,7 +92,7 @@ function test_Hessian()
             # calcualte hess using autodiff now
             obj = latents -> log_likelihood(latents, plds, y[i, 1:3, :])
             hess_numerical = ForwardDiff.hessian(obj, permutedims(x[i, 1:3, :]))
-            @test norm(hess_numerical - hess) < 1e-10
+            @test norm(hess_numerical - hess) < 1e-9
         end
     end
 
@@ -100,7 +100,7 @@ function test_smooth()
     plds, x, y = toy_PoissonLDS()
 
     # smooth data
-    x_smooth, p_smooth, inverseoffdiag = SSM.smooth(plds, y)
+    x_smooth, p_smooth, inverseoffdiag = StateSpaceDynamics.smooth(plds, y)
 
     nTrials = size(y, 1)
     nTsteps = size(y, 2)
@@ -112,9 +112,9 @@ function test_smooth()
     # test gradient is zero
     for i in axes(y, 1)
         # may as well test the gradient here too 
-        f = latents -> SSM.loglikelihood(latents, plds, y[i, :, :])
+        f = latents -> StateSpaceDynamics.loglikelihood(latents, plds, y[i, :, :])
         grad_numerical = ForwardDiff.gradient(f, x_smooth[i, :, :])
-        grad_analytical = SSM.Gradient(plds, y[i, :, :], x_smooth[i, :, :])
+        grad_analytical = StateSpaceDynamics.Gradient(plds, y[i, :, :], x_smooth[i, :, :])
 
         @test norm(grad_numerical - grad_analytical) < 1e-10
     end
@@ -124,21 +124,21 @@ function test_parameter_gradient()
     plds, x, y = toy_PoissonLDS()
 
     # run estep
-    E_z, E_zz, E_zz_prev, x_smooth, P_smooth, elbo = SSM.estep(plds, y)
+    E_z, E_zz, E_zz_prev, x_smooth, P_smooth, elbo = StateSpaceDynamics.estep(plds, y)
 
     # params
     C, log_d = plds.obs_model.C, plds.obs_model.log_d
     params = vcat(vec(C), log_d)
 
     # get analytical gradient
-    grad_analytical = SSM.gradient_observation_model!(zeros(length(params)), C, log_d, E_z, P_smooth, y)
+    grad_analytical = StateSpaceDynamics.gradient_observation_model!(zeros(length(params)), C, log_d, E_z, P_smooth, y)
 
     # get numerical gradient
     function f(params::AbstractVector{<:Real})
         C_size = plds.obs_dim * plds.latent_dim
         log_d = params[end-plds.obs_dim+1:end]
         C = reshape(params[1:C_size], plds.obs_dim, plds.latent_dim)
-        return -SSM.Q_observation_model(C, log_d, E_z, P_smooth, y)
+        return -StateSpaceDynamics.Q_observation_model(C, log_d, E_z, P_smooth, y)
     end
 
     

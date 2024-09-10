@@ -12,7 +12,7 @@ function toy_PoissonLDS()
 
     plds = PLDS(A=A, C=C, Q=Q, D=D, b=b, log_d=log_d, x0=x0, p0=p0, refractory_period=1, obs_dim=3, latent_dim=2)
     # sample data
-    x, y = SSM.sample(plds, T, 3)
+    x, y = StateSpaceDynamics.sample(plds, T, 3)
     return plds, x, y
 end
 
@@ -79,11 +79,11 @@ function test_countspikes()
     # create a set of observations that is a matrix of spikes/events
     obs = [0 0 1; 1 1 1; 0 1 0]
     # count the spikes when window=1
-    count = SSM.countspikes(obs, 1)
+    count = StateSpaceDynamics.countspikes(obs, 1)
     # check the count
     @test count == [0 0 0; 0 0 1; 1 1 1]
     # count spikes when window=2
-    count_2 = SSM.countspikes(obs, 2)
+    count_2 = StateSpaceDynamics.countspikes(obs, 2)
     # check the count
     @test count_2 == [0 0 0; 0 0 1; 1 1 2]
 end
@@ -98,7 +98,7 @@ function test_logposterior()
     b = randn(100, 5)
     plds.b = b
     # calculate the log posterior
-    logpost = SSM.logposterior(x, plds, obs)
+    logpost = StateSpaceDynamics.logposterior(x, plds, obs)
     # check the dimensions
     @test logpost isa Float64
 end
@@ -113,11 +113,11 @@ function test_gradient_plds()
     b = zeros(3, 5)
     plds.b = b
     # calculate the gradient
-    grad = SSM.Gradient(x, plds, obs)
+    grad = StateSpaceDynamics.Gradient(x, plds, obs)
     # check the dimensions
     @test size(grad) == (3, 5)
     # check the gradients using autodiff
-    obj = x -> SSM.logposterior_nonthreaded(x, plds, obs)
+    obj = x -> StateSpaceDynamics.logposterior_nonthreaded(x, plds, obs)
     grad_autodiff = ForwardDiff.gradient(obj, x)
     @test grad ≈ grad_autodiff atol=1e-12
 end
@@ -132,7 +132,7 @@ function test_hessian_plds()
     b = zeros(3, 5)
     plds.b = b
     # calculate the hessian
-    hess, main, super, sub = SSM.Hessian(x, plds, obs)
+    hess, main, super, sub = StateSpaceDynamics.Hessian(x, plds, obs)
     # check the dimensions
     @test length(main) == 3
     @test length(super) == 2
@@ -140,8 +140,8 @@ function test_hessian_plds()
     @test size(hess) == (15, 15)
     # check the hessian using autodiff
     function obj_logposterior(x::Vector)
-        x = SSM.interleave_reshape(x, 3, 5)
-        return SSM.logposterior_nonthreaded(x, plds, obs)
+        x = StateSpaceDynamics.interleave_reshape(x, 3, 5)
+        return StateSpaceDynamics.logposterior_nonthreaded(x, plds, obs)
     end
     hess_autodiff = ForwardDiff.hessian(obj_logposterior, reshape(x', 15))
     @test hess ≈ hess_autodiff atol=1e-12
@@ -156,7 +156,7 @@ function test_direct_smoother()
     b = rand(10, 5)
     plds.b = b
     # run the direct smoother
-    x_smooth, p_smooth = SSM.directsmooth(plds, obs)
+    x_smooth, p_smooth = StateSpaceDynamics.directsmooth(plds, obs)
     # check the dimensions
     @test size(x_smooth) == (10, 5)
     @test size(p_smooth) == (10, 5, 5)
@@ -165,7 +165,7 @@ end
 function test_smooth()
     plds, x, y = toy_PoissonLDS()
     # run the smoother
-    x_smooth, p_smooth = SSM.smooth(plds, y)
+    x_smooth, p_smooth = StateSpaceDynamics.smooth(plds, y)
     # check the dimensions
     @test size(x_smooth) == (3, 100, 2)
     @test size(p_smooth) == (3, 100, 2, 2)
@@ -182,31 +182,31 @@ function test_analytical_parameter_updates()
     x0 = copy(plds.x0)
     p0 = copy(plds.p0)
     # run E-Step
-    E_z, E_zz, E_zz_prev, x_sm, p_sm = SSM.E_Step(plds, y)
+    E_z, E_zz, E_zz_prev, x_sm, p_sm = StateSpaceDynamics.E_Step(plds, y)
 
     # optimize x0 
-    opt_x0 = x0 -> -SSM.Q_initial_obs(x0, plds.p0, E_z, E_zz)
+    opt_x0 = x0 -> -StateSpaceDynamics.Q_initial_obs(x0, plds.p0, E_z, E_zz)
     result_x0 = optimize(opt_x0, plds.x0, LBFGS())
-    @test isapprox(result_x0.minimizer, SSM.update_initial_state_mean!(plds, E_z))
+    @test isapprox(result_x0.minimizer, StateSpaceDynamics.update_initial_state_mean!(plds, E_z))
     plds.x0 = result_x0.minimizer
 
     # optimize p0
-    opt_p0 = p0 -> -SSM.Q_initial_obs(plds.x0, p0, E_z, E_zz)
+    opt_p0 = p0 -> -StateSpaceDynamics.Q_initial_obs(plds.x0, p0, E_z, E_zz)
     result_p0 = optimize(opt_p0, plds.p0, LBFGS(), Optim.Options(g_abstol=1e-12))
-    @test isapprox(result_p0.minimizer * result_p0.minimizer', SSM.update_initial_state_covariance!(plds, E_zz, E_z), atol=1e-3)
+    @test isapprox(result_p0.minimizer * result_p0.minimizer', StateSpaceDynamics.update_initial_state_covariance!(plds, E_zz, E_z), atol=1e-3)
 
     Q_l = Matrix(cholesky(Q).L)
     # optimize A and Q
-    opt_A = A -> -SSM.Q_state_model(A, Q_l, E_zz, E_zz_prev)
+    opt_A = A -> -StateSpaceDynamics.Q_state_model(A, Q_l, E_zz, E_zz_prev)
     result_A = optimize(opt_A, rand(plds.latent_dim, plds.latent_dim), LBFGS(), Optim.Options(g_abstol=1e-16))
-    println("Difference between analytical and numerical results:", result_A.minimizer - SSM.update_A_plds!(plds, E_zz, E_zz_prev))
-    @test_broken isapprox(result_A.minimizer, SSM.update_A_plds!(plds, E_zz, E_zz_prev), atol=1e-5)
+    println("Difference between analytical and numerical results:", result_A.minimizer - StateSpaceDynamics.update_A_plds!(plds, E_zz, E_zz_prev))
+    @test_broken isapprox(result_A.minimizer, StateSpaceDynamics.update_A_plds!(plds, E_zz, E_zz_prev), atol=1e-5)
 
     # update the model before update Q
     plds.A = result_A.minimizer
     # optimize Q now
-    opt_Q = Q -> -SSM.Q_state_model(plds.A, Q, E_zz, E_zz_prev)
+    opt_Q = Q -> -StateSpaceDynamics.Q_state_model(plds.A, Q, E_zz, E_zz_prev)
     result_Q = optimize(opt_Q, Q_l, LBFGS(), Optim.Options(g_abstol=1e-12))
 
-    @test isapprox(result_Q.minimizer * result_Q.minimizer', SSM.update_Q_plds!(plds, E_zz, E_zz_prev), atol=1e-6)
+    @test isapprox(result_Q.minimizer * result_Q.minimizer', StateSpaceDynamics.update_Q_plds!(plds, E_zz, E_zz_prev), atol=1e-6)
 end

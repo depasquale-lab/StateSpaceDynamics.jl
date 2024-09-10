@@ -26,7 +26,7 @@ A Linear Dynamical System (LDS) is a model that describes the evolution of a Gau
 
 # Examples
 ```julia
-using SSM
+using StateSpaceDynamics
 
 # Create an LDS model
 l = LDS(obs_dim=2, latent_dim=2)
@@ -222,25 +222,25 @@ function DirectSmoother(l::LDS, y::Matrix{<:Real})
     
     function nll(vec_x::Vector{<:Real})
         # reshape the vector to a matrix
-        x = SSM.interleave_reshape(vec_x, T, D)
+        x = StateSpaceDynamics.interleave_reshape(vec_x, T, D)
         # compute the negative loglikelihood
         return -loglikelihood(x, l, y)
     end
 
     function g!(g::Vector{<:Real}, vec_x::Vector{<:Real})
         # reshape the vector to a matrix
-        x = SSM.interleave_reshape(vec_x, T, D)
+        x = StateSpaceDynamics.interleave_reshape(vec_x, T, D)
         # compute the gradient
-        grad = SSM.Gradient(l, y, x)
+        grad = StateSpaceDynamics.Gradient(l, y, x)
         # reshape the gradient to a vector
         g .= vec(permutedims(-grad))
     end
 
     function h!(h::Matrix{<:Real}, vec_x::Vector{<:Real})
         # reshape the vector to a matrix
-        x = SSM.interleave_reshape(vec_x, T, D)
+        x = StateSpaceDynamics.interleave_reshape(vec_x, T, D)
         # compute the hessian
-        H, _, _, _ = SSM.Hessian(l, y)
+        H, _, _, _ = StateSpaceDynamics.Hessian(l, y)
         # reshape the hessian to a matrix
         h .= -H
     end
@@ -249,11 +249,11 @@ function DirectSmoother(l::LDS, y::Matrix{<:Real})
     res = optimize(nll, g!, h!, X₀, Newton())
 
     # get the optimal state
-    x = SSM.interleave_reshape(res.minimizer, T, D)
+    x = StateSpaceDynamics.interleave_reshape(res.minimizer, T, D)
 
     # get covariances and nearest-neighbor second moments
-    H, main, super, sub = SSM.Hessian(l, y)
-    p_smooth, inverse_offdiag = SSM.block_tridiagonal_inverse(-sub, -main, -super)
+    H, main, super, sub = StateSpaceDynamics.Hessian(l, y)
+    p_smooth, inverse_offdiag = StateSpaceDynamics.block_tridiagonal_inverse(-sub, -main, -super)
 
     # enforce symmetry for p_smooth
     for t in axes(p_smooth, 1)
@@ -264,7 +264,7 @@ function DirectSmoother(l::LDS, y::Matrix{<:Real})
     inverse_offdiag = cat(zeros(1, l.latent_dim, l.latent_dim), inverse_offdiag, dims=1)
 
     # finally clacualte Q-function
-    Q_val = SSM.Q(l, x, p_smooth, inverse_offdiag, y)
+    Q_val = StateSpaceDynamics.Q(l, x, p_smooth, inverse_offdiag, y)
 
     return x, p_smooth, inverse_offdiag, Q_val
 end
@@ -1043,7 +1043,7 @@ function Q_observation_model(C::Matrix{<:Real}, D::Matrix{<:Real}, log_d::Vector
     end
     # sum over trials
     for k in 1:trials
-        #spikes = SSM.countspikes(y[k, :, :])
+        #spikes = StateSpaceDynamics.countspikes(y[k, :, :])
         # sum over time-points
         for t in 1:time_steps
             # Mean term
@@ -1106,23 +1106,23 @@ function directsmooth(plds::PLDS, y::Matrix{<:Real})
     # create wrappers for the log-posterior, gradient, and hessian
     function nlp(vec_x::Vector{<:Real})
         # reshape X
-        x = SSM.interleave_reshape(vec_x, T, plds.latent_dim)
+        x = StateSpaceDynamics.interleave_reshape(vec_x, T, plds.latent_dim)
         return -logposterior(x, plds, y)
     end
 
     function g!(G::Vector{<:Real}, vec_x::Vector{<:Real})
         # reshape X
-        x = SSM.interleave_reshape(vec_x, T, plds.latent_dim)
+        x = StateSpaceDynamics.interleave_reshape(vec_x, T, plds.latent_dim)
         # calculate the gradient
-        grad = SSM.Gradient(x, plds, y)
+        grad = StateSpaceDynamics.Gradient(x, plds, y)
         G .= vec(permutedims(-grad))
     end
 
     function h!(H::Matrix{<:Real}, vec_x::Vector{<:Real})
         # reshape X
-        x = SSM.interleave_reshape(vec_x, T, plds.latent_dim)
+        x = StateSpaceDynamics.interleave_reshape(vec_x, T, plds.latent_dim)
         # Calcualte Hessian
-        hess, _, _, _ = SSM.Hessian(x, plds, y)
+        hess, _, _, _ = StateSpaceDynamics.Hessian(x, plds, y)
         H .= hess
     end
 
@@ -1130,11 +1130,11 @@ function directsmooth(plds::PLDS, y::Matrix{<:Real})
     res = optimize(nlp, g!, h!, vec(x₀), Newton())
 
     # reshape the solution
-    x = SSM.interleave_reshape(res.minimizer, T, plds.latent_dim)
+    x = StateSpaceDynamics.interleave_reshape(res.minimizer, T, plds.latent_dim)
 
     # get smoothed covariances and nearest-neighbor second moments
-    H, main, super, sub = SSM.Hessian(x, plds, y)
-    p_smooth, p_tt1 = SSM.block_tridiagonal_inverse(-sub, -main, -super)
+    H, main, super, sub = StateSpaceDynamics.Hessian(x, plds, y)
+    p_smooth, p_tt1 = StateSpaceDynamics.block_tridiagonal_inverse(-sub, -main, -super)
 
     # add a matrix of zeros so dimensionality agrees later on
     p_tt1 = cat(reshape(zeros(plds.latent_dim, plds.latent_dim), 1, plds.latent_dim, plds.latent_dim), p_tt1, dims=1)
@@ -1236,7 +1236,7 @@ function Hessian(x::Matrix{<:Real}, plds::PLDS, y::Matrix{<:Real})
     T = size(y, 1)
     inv_Q = inv(plds.Q)
     inv_p0 = inv(plds.p0)
-    s = SSM.countspikes(y, plds.refractory_period)
+    s = StateSpaceDynamics.countspikes(y, plds.refractory_period)
 
     # calculate super and sub diagonals
     H_sub_entry = inv_Q * plds.A

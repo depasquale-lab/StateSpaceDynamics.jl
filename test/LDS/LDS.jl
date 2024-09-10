@@ -87,7 +87,7 @@ function test_LDS_E_Step()
     # Create the Kalman filter parameter vector
     kf = LDS(;A=A, H=H, Q=Q, R=R, x0=x0, p0=p0, obs_dim=2, latent_dim=2, fit_bool=Vector([true, true, true, true, true, true, true]))
     # run the E_Step
-    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = StateSpaceDynamics.E_Step(kf, x_noisy')
+    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = StateSpaceDynamics.E_Step(kf, x_noisy)
     # check dimensions
     @test size(x_smooth) == (length(t), 2)
     @test size(p_smooth) == (length(t), 2, 2)
@@ -101,9 +101,9 @@ function test_LDS_M_Step!()
     # Create the Kalman filter parameter vector
     kf = LDS(;A=A, H=H, Q=Q, R=R, x0=x0, p0=p0, obs_dim=2, latent_dim=2, fit_bool=Vector([true, true, true, true, true, true, true]))
     # run the E_Step
-    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = StateSpaceDynamics.E_Step(kf, x_noisy')
+    x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = StateSpaceDynamics.E_Step(kf, x_noisy)
     # run the M_Step
-    StateSpaceDynamics.M_Step!(kf, E_z, E_zz, E_zz_prev, x_noisy')
+    StateSpaceDynamics.M_Step!(kf, E_z, E_zz, E_zz_prev, x_noisy)
     # check if the parameters are updated
     @test kf.A !== A
     @test kf.H !== H
@@ -156,12 +156,12 @@ function test_LDS_gradient()
     # create kalman filter object
     kf = LDS(;A=A, H=H, Q=Q, R=R, x0=x0, p0=p0, obs_dim=2, latent_dim=2, fit_bool=Vector([true, true, true, true, true, true, true]))
     # calcualte the gradient
-    grad = StateSpaceDynamics.Gradient(kf, x_noisy', zeros(size(x_noisy')))
+    grad = StateSpaceDynamics.Gradient(kf, x_noisy, zeros(size(x_noisy)))
     # check dimensions
     @test size(grad) == (length(t), kf.obs_dim)
     # calculate the gradient using autodiff
-    obj(x) = x -> StateSpaceDynamics.loglikelihood(x, kf, x_noisy')
-    grad_auto = ForwardDiff.gradient(obj(x), zeros(size(x_noisy')))
+    obj(x) = x -> StateSpaceDynamics.loglikelihood(x, kf, x_noisy)
+    grad_auto = ForwardDiff.gradient(obj(x), zeros(size(x_noisy)))
     # check if the gradients are the same
     @test isapprox(grad, grad_auto, atol=1e-6)
 end
@@ -170,7 +170,7 @@ function test_LDS_Hessian()
     # create kalman filter object
     kf = LDS(;A=A, H=H, Q=Q, R=R, x0=x0, p0=p0, obs_dim=2, latent_dim=2, fit_bool=Vector([true, true, true, true, true, true, true]))
     # calcualte the Hessian
-    hess, main, super, sub = StateSpaceDynamics.Hessian(kf, x_noisy[:, 1:3]') # only look at first three observations as hessian is expensive to calculate using autodiff
+    hess, main, super, sub = StateSpaceDynamics.Hessian(kf, x_noisy[1:3, :]) # only look at first three observations as hessian is expensive to calculate using autodiff
 
     # check lengths of main, super, and sub diagonals
     @test typeof(main) == Vector{Matrix{Float64}}
@@ -204,35 +204,35 @@ function test_EM_numeric_RTS()
     # set up an optimization problem for three iterations
     for i in 1:1
         # smooth observations
-        x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.E_Step(kf, x_noisy)
+        x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = StateSpaceDynamics.E_Step(kf, x_noisy)
         # optimize kf_prime
-        SSM.KalmanFilterEM!(kf_prime, x_noisy, 1)
+        StateSpaceDynamics.KalmanFilterEM!(kf_prime, x_noisy, 1)
 
         # optimize x0 and p0 first of kf
-        res_1 = optimize(x0 -> -SSM.Q(kf.A, kf.Q, kf.H, kf.R, kf.p0, x0, E_z, E_zz, E_zz_prev, x_noisy), kf.x0, LBFGS())
+        res_1 = optimize(x0 -> -StateSpaceDynamics.Q(kf.A, kf.Q, kf.H, kf.R, kf.p0, x0, E_z, E_zz, E_zz_prev, x_noisy), kf.x0, LBFGS())
         # test the optimization
         @test isapprox(res_1.minimizer, kf_prime.x0; atol=1e-6)
         kf.x0 = res_1.minimizer
 
         # optimize p0
-        res_2 = optimize(p0 -> -SSM.Q(kf.A, kf.Q, kf.H, kf.R, p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.p0, LBFGS())
+        res_2 = optimize(p0 -> -StateSpaceDynamics.Q(kf.A, kf.Q, kf.H, kf.R, p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.p0, LBFGS())
         @test isapprox(res_2.minimizer * res_2.minimizer', kf_prime.p0; atol=1e-6)
 
         # now update A and Q
-        res_3 = optimize(A -> -SSM.Q(A, kf.Q, kf.H, kf.R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.A, LBFGS())
+        res_3 = optimize(A -> -StateSpaceDynamics.Q(A, kf.Q, kf.H, kf.R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.A, LBFGS())
         # test if A is updated
         @test isapprox(res_3.minimizer, kf_prime.A; atol=1e-6)
         kf.A = res_3.minimizer
-        res_4 = optimize(Q -> -SSM.Q(kf.A, Q, kf.H, kf.R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.Q, LBFGS())
+        res_4 = optimize(Q -> -StateSpaceDynamics.Q(kf.A, Q, kf.H, kf.R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.Q, LBFGS())
         # test if Q is updated
         @test isapprox(res_4.minimizer * res_4.minimizer', kf_prime.Q; atol=1e-6)
 
         # now update H and R
-        res_5 = optimize(H -> -SSM.Q(kf.A, kf.Q, H, kf.R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.H, LBFGS())
+        res_5 = optimize(H -> -StateSpaceDynamics.Q(kf.A, kf.Q, H, kf.R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.H, LBFGS())
         # test if H is updated
         @test isapprox(res_5.minimizer, kf_prime.H; atol=1e-6)
         kf.H = res_5.minimizer
-        res_6 = optimize(R -> -SSM.Q(kf.A, kf.Q, kf.H, R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.R, LBFGS())
+        res_6 = optimize(R -> -StateSpaceDynamics.Q(kf.A, kf.Q, kf.H, R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.R, LBFGS())
         # test if R is updated
         @test isapprox(res_6.minimizer * res_6.minimizer', kf_prime.R; atol=1e-6)
     end
@@ -246,35 +246,35 @@ function test_EM_numeric_Direct()
     # set up an optimziation problem for three iterations
     for i in 1:1
         # smooth observations
-        x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = SSM.E_Step(kf, x_noisy, SSM.DirectSmoothing())
+        x_smooth, p_smooth, E_z, E_zz, E_zz_prev, ml = StateSpaceDynamics.E_Step(kf, x_noisy, StateSpaceDynamics.DirectSmoothing())
         # optimize kf_prime
-        SSM.KalmanFilterEM!(kf_prime, x_noisy, 1, 1e-12, SSM.DirectSmoothing())
+        StateSpaceDynamics.KalmanFilterEM!(kf_prime, x_noisy, 1, 1e-12, StateSpaceDynamics.DirectSmoothing())
 
         # optimize x0 and p0 first of kf
-        res_1 = optimize(x0 -> -SSM.Q(kf.A, kf.Q, kf.H, kf.R, kf.p0, x0, E_z, E_zz, E_zz_prev, x_noisy), kf.x0, LBFGS())
+        res_1 = optimize(x0 -> -StateSpaceDynamics.Q(kf.A, kf.Q, kf.H, kf.R, kf.p0, x0, E_z, E_zz, E_zz_prev, x_noisy), kf.x0, LBFGS())
         # test the optimization
         @test isapprox(res_1.minimizer, kf_prime.x0; atol=1e-6)
         kf.x0 = res_1.minimizer
 
         # optimize p0
-        res_2 = optimize(p0 -> -SSM.Q(kf.A, kf.Q, kf.H, kf.R, p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.p0, LBFGS())
+        res_2 = optimize(p0 -> -StateSpaceDynamics.Q(kf.A, kf.Q, kf.H, kf.R, p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.p0, LBFGS())
         @test isapprox(res_2.minimizer * res_2.minimizer', kf_prime.p0; atol=1e-6)
 
         # now update A and Q
-        res_3 = optimize(A -> -SSM.Q(A, kf.Q, kf.H, kf.R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.A, LBFGS())
+        res_3 = optimize(A -> -StateSpaceDynamics.Q(A, kf.Q, kf.H, kf.R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.A, LBFGS())
         # test if A is updated
         @test isapprox(res_3.minimizer, kf_prime.A; atol=1e-6)
         kf.A = res_3.minimizer
-        res_4 = optimize(Q -> -SSM.Q(kf.A, Q, kf.H, kf.R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.Q, LBFGS())
+        res_4 = optimize(Q -> -StateSpaceDynamics.Q(kf.A, Q, kf.H, kf.R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.Q, LBFGS())
         # test if Q is updated
         @test isapprox(res_4.minimizer * res_4.minimizer', kf_prime.Q; atol=1e-6)
 
         # now update H and R
-        res_5 = optimize(H -> -SSM.Q(kf.A, kf.Q, H, kf.R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.H, LBFGS())
+        res_5 = optimize(H -> -StateSpaceDynamics.Q(kf.A, kf.Q, H, kf.R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.H, LBFGS())
         # test if H is updated
         @test isapprox(res_5.minimizer, kf_prime.H; atol=1e-6)
         kf.H = res_5.minimizer
-        res_6 = optimize(R -> -SSM.Q(kf.A, kf.Q, kf.H, R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.R, LBFGS())
+        res_6 = optimize(R -> -StateSpaceDynamics.Q(kf.A, kf.Q, kf.H, R, kf.p0, kf.x0, E_z, E_zz, E_zz_prev, x_noisy), kf.R, LBFGS())
         # test if R is updated
         @test isapprox(res_6.minimizer * res_6.minimizer', kf_prime.R; atol=1e-6)
     end
