@@ -1,4 +1,4 @@
-export GaussianRegression, BernoulliRegression, PoissonRegression, fit!, loglikelihood, least_squares, update_variance!, predict
+export GaussianRegression, BernoulliRegression, PoissonRegression, fit!, loglikelihood, update_variance!, predict
 
 # below used in notebooks and unit tests
 export surrogate_loglikelihood, surrogate_loglikelihood_gradient!

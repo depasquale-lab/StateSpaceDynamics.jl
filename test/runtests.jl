@@ -7,6 +7,15 @@ using Random
 using StatsFuns
 using SpecialFunctions
 using Test
+using Aqua
+
+"""
+Aqua Tests
+"""
+
+@testset "Aqua Tests" begin
+    Aqua.test_all(StateSpaceDynamics)
+end
 
 """
 Tests for MixtureModels.jl

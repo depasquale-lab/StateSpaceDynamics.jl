@@ -3,9 +3,7 @@ module StateSpaceDynamics
 using Distributions
 using ForwardDiff
 using LinearAlgebra
-using Logging
 using Optim
-using Plots
 using ProgressMeter
 using Random
 using SparseArrays

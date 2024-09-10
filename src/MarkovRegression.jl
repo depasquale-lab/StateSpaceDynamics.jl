@@ -378,7 +378,7 @@ model = SwitchingGaussianRegression(num_features=2, num_targets=1, K=2)
 lls = fit!(model, X, y)
 ```
 """
-function fit!(model::hmmglm, X::Matrix{<:Real}, y::Union{Vector{T}, BitVector, Matrix{<:Real}}, max_iter::Int=100, tol::Float64=1e-6, initialize::Bool=true) where T<: Real
+function fit!(model::hmmglm, X::Matrix{<:Real}, y::Union{Vector{<:Real}, BitVector, Matrix{<:Real}}, max_iter::Int=100, tol::Float64=1e-6, initialize::Bool=true)
     # convert y to Float64
     if typeof(y) == BitVector
         y = convert(Vector{Float64}, y)
