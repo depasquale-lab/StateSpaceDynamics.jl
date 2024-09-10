@@ -1,4 +1,4 @@
-# Make sure you have added the dev version of SSM julia to the local project env using "dev /path/to/ssm_julia" in the package manager REPL
+# Make sure you have added the dev version of StateSpaceDynamics julia to the local project env using "dev /path/to/ssm_julia" in the package manager REPL
 
 # using Pkg
 # Pkg.activate(".")
@@ -9,7 +9,7 @@
 # using Distributions
 
 # using Revise
-# using SSM
+# using StateSpaceDynamics
 
 
 # Function to generate a random rotation matrix

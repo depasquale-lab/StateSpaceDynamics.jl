@@ -51,9 +51,9 @@ function test_regression_emissions()
     @test isapprox(poisson_emission.regression.β, true_β, atol=0.5)
     @test isapprox(bernoulli_emission.regression.β, true_β, atol=0.5)
     # test the loglikelihood
-    # ll_gaussian = SSM.loglikelihood(gaussian_emission, X[1, :], y[1])
-    # ll_poisson = SSM.loglikelihood(poisson_emission, X[1, :], y_poisson[1])
-    # ll_bernoulli = SSM.loglikelihood(bernoulli_emission, X[1, :], y_bernoulli[1])
+    # ll_gaussian = StateSpaceDynamics.loglikelihood(gaussian_emission, X[1, :], y[1])
+    # ll_poisson = StateSpaceDynamics.loglikelihood(poisson_emission, X[1, :], y_poisson[1])
+    # ll_bernoulli = StateSpaceDynamics.loglikelihood(bernoulli_emission, X[1, :], y_bernoulli[1])
     # @test ll_gaussian < 0
     # @test ll_poisson < 0
     # @test ll_bernoulli < 0

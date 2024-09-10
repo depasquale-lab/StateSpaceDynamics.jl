@@ -553,8 +553,8 @@ function fit!(model::BernoulliRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, 
     # convert y if necessary
     # y = convert(Vector{Float64}, y)
     # minimize objective
-    obj = β -> -SSM.loglikelihood(SSM.BernoulliRegression(β, model.include_intercept, model.λ), X, y, w) + (model.λ * sum(β.^2))
-    g! = (g, β) -> SSM.gradient!(g, BernoulliRegression(β, model.include_intercept, model.λ), X, y, w)
+    obj = β -> -StateSpaceDynamics.loglikelihood(StateSpaceDynamics.BernoulliRegression(β, model.include_intercept, model.λ), X, y, w) + (model.λ * sum(β.^2))
+    g! = (g, β) -> StateSpaceDynamics.gradient!(g, BernoulliRegression(β, model.include_intercept, model.λ), X, y, w)
     result = optimize(obj, g!, model.β, LBFGS())
     # update parameters
     model.β = result.minimizer
@@ -751,8 +751,8 @@ function fit!(model::PoissonRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w:
     # convert y if necessary
     # y = convert(Vector{Float64}, y)
     # minimize objective
-    obj = β -> -SSM.loglikelihood(SSM.PoissonRegression(β, model.include_intercept, model.λ), X, y, w) + (model.λ * sum(β.^2))
-    g! = (g, β) -> SSM.gradient!(g, PoissonRegression(β, model.include_intercept, model.λ), X, y, w)
+    obj = β -> -StateSpaceDynamics.loglikelihood(StateSpaceDynamics.PoissonRegression(β, model.include_intercept, model.λ), X, y, w) + (model.λ * sum(β.^2))
+    g! = (g, β) -> StateSpaceDynamics.gradient!(g, PoissonRegression(β, model.include_intercept, model.λ), X, y, w)
     result = optimize(obj, g!, model.β, LBFGS())
     # update parameters
     model.β = result.minimizer
