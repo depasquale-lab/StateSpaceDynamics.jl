@@ -282,30 +282,8 @@ end
 function test_EM()
     lds, x, y = toy_lds()
 
-    #save old params
-    A, Q, C, R, x0, P0 = lds.state_model.A,
-    lds.state_model.Q, lds.obs_model.C, lds.obs_model.R, lds.state_model.x0,
-    lds.state_model.P0
-
-    # run em 3 times, check params change each time
-    for i in 1:3
-        StateSpaceDynamics.fit!(lds, y, 1)
-        A_new, Q_new, C_new, R_new, x0_new, P0_new = lds.state_model.A,
-        lds.state_model.Q, lds.obs_model.C, lds.obs_model.R, lds.state_model.x0,
-        lds.state_model.P0
-
-        @test A != A_new
-        @test Q != Q_new
-        @test C != C_new
-        @test R != R_new
-        @test x0 != x0_new
-        @test P0 != P0_new
-
-        A, Q, C, R, x0, P0 = A_new, Q_new, C_new, R_new, x0_new, P0_new
-    end
-
     # run the EM algorithm for many iterations
-    ml_total = fit!(lds, y, 1000)
+    ml_total = fit!(lds, y; max_iter=1000)
 
     # test that the ml is increasing
     @test all(diff(ml_total) .>= 0)

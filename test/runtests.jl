@@ -10,19 +10,11 @@ using Test
 using Aqua
 
 """
-Aqua Tests
-"""
-
-@testset "Aqua Tests" begin
-    # excluding ambiguities that the actual package does not have--i.e exclude checks for dependencies for now
-    Aqua.test_all(StateSpaceDynamics; ambiguities=false)
-end
-
-"""
 Package Wide Tests
 """
 
 @testset "Package Wide Tests" begin
+    Aqua.test_all(StateSpaceDynamics; ambiguities=false)
     @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
 end
 
@@ -151,20 +143,28 @@ Tests for GaussianLDS.jl
 include("LinearDynamicalSystems//GaussianLDS.jl")
 
 @testset "GaussianLDS Tests" begin
-    test_lds_with_params()
-    test_lds_without_params()
-    test_Gradient()
-    test_Hessian()
-    test_smooth()
-    test_estep()
-    # test when ntrials=1
-    test_initial_observation_parameter_updates()
-    test_state_model_parameter_updates()
-    test_obs_model_params_updates()
-    # test when ntrials>1
-    test_initial_observation_parameter_updates(3)
-    test_state_model_parameter_updates(3)
-    test_obs_model_params_updates(3)
+    @testset "Constructor Tests" begin
+        test_lds_with_params()
+        test_lds_without_params()
+    end
+    @testset "Smoother tests" begin
+        test_Gradient()
+        test_Hessian()
+        test_smooth()
+    end
+    @testset "EM tests" begin
+        test_estep()
+        # test when ntrials=1
+        test_initial_observation_parameter_updates()
+        test_state_model_parameter_updates()
+        test_obs_model_params_updates()
+        # test when ntrials>1
+        test_initial_observation_parameter_updates(3)
+        test_state_model_parameter_updates(3)
+        test_obs_model_params_updates(3)
+        # test fit method
+        test_EM()
+    end
 end
 
 """
@@ -180,6 +180,14 @@ include("LinearDynamicalSystems//PoissonLDS.jl")
     test_Hessian()
     test_smooth()
     test_parameter_gradient()
+    # test when ntrials=1
+    test_initial_observation_parameter_updates()
+    test_state_model_parameter_updates()
+    # test when n_trials>1
+    test_initial_observation_parameter_updates(3)
+    test_state_model_parameter_updates(3)
+    # test fit method
+    test_EM()
 end
 
 include("PLDS/PLDS.jl")

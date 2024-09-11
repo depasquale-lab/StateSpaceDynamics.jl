@@ -33,11 +33,11 @@ using LinearAlgebra
 
 # initial conditions
 x0 = [1.0, -1.0] # initial state
-Q0 = Matrix(Diagonal([0.1, 0.1])) # initial state covariance
+P0 = Matrix(Diagonal([0.1, 0.1])) # initial state covariance
 
 # state model parameters
 A = [cos(0.1) -sin(0.1); sin(0.1) cos(0.1)] # transition matrix
-Q = Q = Matrix(Diagonal([0.01, 0.01])) # process noise
+Q = Matrix(Diagonal([0.01, 0.01])) # process noise
 
 # observation model parameters
 C = [1.2 1.2; 1.2 1.2; 1.2 1.2] # observation matrix
@@ -47,7 +47,7 @@ log_d = log.([0.1, 0.1, 0.1]) # log of the natural parameters of the Poisson dis
 tSteps = 100
 trials = 10
 
-true_plds = PoissonLDS(;A=A, Q=Q, C=C, log_d=log_d, x0=x0, P0=p0, obs_dim=3, latent_dim=2)
+true_plds = PoissonLDS(;A=A, Q=Q, C=C, log_d=log_d, x0=x0, P0=P0, obs_dim=3, latent_dim=2)
 latents, observations = sample(true_plds, tSteps, trials)
 
 # fit the model 

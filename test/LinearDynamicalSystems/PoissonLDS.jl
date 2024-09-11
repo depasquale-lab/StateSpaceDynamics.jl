@@ -155,3 +155,91 @@ function test_parameter_gradient()
 
     @test isapprox(grad, grad_analytical, rtol=1e-5, atol=1e-5)
 end
+
+function test_initial_observation_parameter_updates(ntrials::Int=1)
+    plds, x, y = toy_PoissonLDS(ntrials, [true, true, false, false, false, false])
+
+    # run the E_Step
+    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(plds, y)
+
+    # optimize the x0 and p0 entries using autograd
+    function obj(x0::AbstractVector, P0_sqrt::AbstractMatrix, plds)
+        A, Q = plds.state_model.A, plds.state_model.Q
+        P0 = P0_sqrt * P0_sqrt'
+        Q_val = 0.0
+        for i in axes(E_z, 1)
+            Q_val += StateSpaceDynamics.Q_state(
+                A, Q, P0, x0, E_z[i, :, :], E_zz[i, :, :, :], E_zz_prev[i, :, :, :]
+            )
+        end
+        return -Q_val
+    end
+
+    P0_sqrt = Matrix(cholesky(plds.state_model.P0).U)
+
+    x0_opt =
+        optimize(
+            x0 -> obj(x0, P0_sqrt, plds),
+            plds.state_model.x0,
+            LBFGS(),
+            Optim.Options(; g_abstol=1e-12),
+        ).minimizer
+    P0_opt = optimize(P0_ -> obj(x0_opt, P0_, plds), P0_sqrt, LBFGS()).minimizer
+
+    # update the initial state and covariance
+    StateSpaceDynamics.mstep!(plds, E_z, E_zz, E_zz_prev, p_smooth, y)
+
+    @test isapprox(plds.state_model.x0, x0_opt, atol=1e-6)
+    @test isapprox(plds.state_model.P0, P0_opt * P0_opt', atol=1e-6)
+end
+
+
+function test_state_model_parameter_updates(ntrials::Int=1)
+    plds, x, y = toy_PoissonLDS(ntrials, [false, false, true, true, false, false])
+
+    # run the E_Step
+    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(plds, y)
+
+    # optimize the A and Q entries using autograd
+    function obj(A::AbstractMatrix, Q_sqrt::AbstractMatrix, plds)
+        Q = Q_sqrt * Q_sqrt'
+        Q_val = StateSpaceDynamics.Q_state(A, Q, plds.state_model.P0, plds.state_model.x0, E_z, E_zz, E_zz_prev)
+        return -Q_val
+    end
+
+    Q_sqrt = Matrix(cholesky(plds.state_model.Q).U)
+
+    A_opt =
+        optimize(
+            A -> obj(A, Q_sqrt, plds),
+            plds.state_model.A,
+            LBFGS(),
+            Optim.Options(; g_abstol=1e-12),
+        ).minimizer
+    Q_opt =
+        optimize(
+            Q_sqrt -> obj(A_opt, Q_sqrt, plds),
+            Q_sqrt,
+            LBFGS(),
+            Optim.Options(; g_abstol=1e-12),
+        ).minimizer
+
+    # update the state model
+    StateSpaceDynamics.mstep!(plds, E_z, E_zz, E_zz_prev, p_smooth, y)
+
+    @test isapprox(plds.state_model.A, A_opt, atol=1e-6)
+    @test isapprox(plds.state_model.Q, Q_opt * Q_opt', atol=1e-6)
+end
+
+function test_EM()
+    # generate fake data
+    plds, x, y = toy_PoissonLDS()
+    
+    # create a new plds model with random parameters
+    plds_new = PoissonLDS(; obs_dim=3, latent_dim=2)
+    elbo = fit!(plds_new, y; max_iter=1000)
+
+    # check that the ELBO increases over the whole algorithm, we cannot use monotonicity as a check as we are using Laplace EM.
+    @test elbo[end] > elbo[1]
+end
+
