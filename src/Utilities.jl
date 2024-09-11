@@ -4,12 +4,39 @@ export row_matrix, stabilize_covariance_matrix
 
 # Matrix utilities
 
-"""Vector to Row Matrix"""
+"""
+    row_matrix(x::AbstractVector)
+
+Convert a vector to a row matrix.
+
+# Arguments
+- `x::AbstractVector`: The input vector.
+
+# Returns
+- A row matrix (1 × n) containing the elements of `x`.
+"""
 function row_matrix(x::AbstractVector)
     return reshape(x, 1, length(x))
 end
 
-"""Block Tridiagonal Inverse"""
+"""
+    block_tridiagonal_inverse(A, B, C)
+
+Compute the inverse of a block tridiagonal matrix.
+
+# Arguments
+- `A`: Lower diagonal blocks.
+- `B`: Main diagonal blocks.
+- `C`: Upper diagonal blocks.
+
+# Returns
+- `λii`: Diagonal blocks of the inverse.
+- `λij`: Off-diagonal blocks of the inverse.
+
+# Notes: This implementation is from the paper:
+
+An Accelerated Lambda Iteration Method for Multilevel Radiative Transfer” Rybicki, G.B., and Hummer, D.G., Astronomy and Astrophysics, 245, 171–181 (1991), Appendix B.
+"""
 function block_tridiagonal_inverse(A, B, C)
     n = length(B)
     block_size = size(B[1], 1)
@@ -52,6 +79,22 @@ function block_tridiagonal_inverse(A, B, C)
     return λii, -λij
 end
 
+"""
+    interleave_reshape(data::AbstractArray, t::Int, d::Int)
+
+Reshape a vector into a matrix by interleaving its elements.
+
+# Arguments
+- `data::AbstractArray`: The input vector to be reshaped.
+- `t::Int`: The number of rows in the output matrix.
+- `d::Int`: The number of columns in the output matrix.
+
+# Returns
+- A reshaped matrix of size `t × d`.
+
+# Throws
+- `ErrorException` if the length of `data` is not equal to `t * d`.
+"""
 function interleave_reshape(data::AbstractArray, t::Int, d::Int)
     # get length of data 
     l = size(data, 1)
@@ -69,7 +112,22 @@ function interleave_reshape(data::AbstractArray, t::Int, d::Int)
     return X
 end
 
-"""Convenience function to construct a block tridiagonal matrix from three vectors of matrices"""
+"""
+    block_tridgm(main_diag::Vector{Matrix{T}}, upper_diag::Vector{Matrix{T}}, lower_diag::Vector{Matrix{T}}) where {T<:Real}
+
+Construct a block tridiagonal matrix from three vectors of matrices.
+
+# Arguments
+- `main_diag::Vector{Matrix{T}}`: Vector of matrices for the main diagonal.
+- `upper_diag::Vector{Matrix{T}}`: Vector of matrices for the upper diagonal.
+- `lower_diag::Vector{Matrix{T}}`: Vector of matrices for the lower diagonal.
+
+# Returns
+- A sparse matrix representing the block tridiagonal matrix.
+
+# Throws
+- `ErrorException` if the lengths of `upper_diag` and `lower_diag` are not one less than the length of `main_diag`.
+"""
 function block_tridgm(
     main_diag::Vector{Matrix{T}},
     upper_diag::Vector{Matrix{T}},
@@ -128,12 +186,34 @@ function block_tridgm(
 end
 
 # Initialization utilities
-"""Euclidean Distance for two points"""
+"""
+    euclidean_distance(a::AbstractVector{Float64}, b::AbstractVector{Float64})
+
+Calculate the Euclidean distance between two points.
+
+# Arguments
+- `a::AbstractVector{Float64}`: The first point.
+- `b::AbstractVector{Float64}`: The second point.
+
+# Returns
+- The Euclidean distance between `a` and `b`.
+"""
 function euclidean_distance(a::AbstractVector{Float64}, b::AbstractVector{Float64})
     return sqrt(sum((a .- b) .^ 2))
 end
 
-"""KMeans++ Initialization"""
+"""
+    kmeanspp_initialization(data::Matrix{<:Real}, k_means::Int)
+
+Perform K-means++ initialization for cluster centroids.
+
+# Arguments
+- `data::Matrix{<:Real}`: The input data matrix where each row is a data point.
+- `k_means::Int`: The number of clusters.
+
+# Returns
+- A matrix of initial centroids for K-means clustering.
+"""
 function kmeanspp_initialization(data::Matrix{<:Real}, k_means::Int)
     N, D = size(data)
     centroids = zeros(D, k_means)
@@ -154,14 +234,39 @@ function kmeanspp_initialization(data::Matrix{<:Real}, k_means::Int)
     return centroids
 end
 
-"""K++ Initialization for Vector input"""
+
+"""
+    kmeanspp_initialization(data::Vector{Float64}, k_means::Int)
+
+Perform K-means++ initialization for cluster centroids on vector data.
+
+# Arguments
+- `data::Vector{Float64}`: The input data vector.
+- `k_means::Int`: The number of clusters.
+
+# Returns
+- A matrix of initial centroids for K-means clustering.
+"""
 function kmeanspp_initialization(data::Vector{Float64}, k_means::Int)
     # reshape data
     data = reshape(data, length(data), 1)
     return kmeanspp_initialization(data, k_means)
 end
 
-"""KMeans Clustering Initialization"""
+"""
+    kmeans_clustering(data::Matrix{<:Real}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6)
+
+Perform K-means clustering on the input data.
+
+# Arguments
+- `data::Matrix{<:Real}`: The input data matrix where each row is a data point.
+- `k_means::Int`: The number of clusters.
+- `max_iters::Int=100`: Maximum number of iterations.
+- `tol::Float64=1e-6`: Convergence tolerance.
+
+# Returns
+- A tuple containing the final centroids and cluster labels for each data point.
+"""
 function kmeans_clustering(
     data::Matrix{<:Real}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6
 )
@@ -199,7 +304,20 @@ function kmeans_clustering(
     return centroids, labels
 end
 
-"""KMeans Clustering Initialization for Vector input"""
+"""
+    kmeans_clustering(data::Vector{Float64}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6)
+
+Perform K-means clustering on vector data.
+
+# Arguments
+- `data::Vector{Float64}`: The input data vector.
+- `k_means::Int`: The number of clusters.
+- `max_iters::Int=100`: Maximum number of iterations.
+- `tol::Float64=1e-6`: Convergence tolerance.
+
+# Returns
+- A tuple containing the final centroids and cluster labels for each data point.
+"""
 function kmeans_clustering(
     data::Vector{Float64}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6
 )
@@ -208,7 +326,17 @@ function kmeans_clustering(
     return kmeans_clustering(data, k_means, max_iters, tol)
 end
 
-"""Calculates the logistic function in a numerically stable way"""
+"""
+    logistic(x::Real)
+
+Calculate the logistic function in a numerically stable way.
+
+# Arguments
+- `x::Real`: The input value.
+
+# Returns
+- The result of the logistic function applied to `x`.
+"""
 function logistic(x::Real)
     if x > 0
         return 1 / (1 + exp(-x))
@@ -218,7 +346,18 @@ function logistic(x::Real)
     end
 end
 
-# Miscellaneous utilities
+
+"""
+    ensure_positive_definite(A::Matrix{T}) where {T}
+
+Ensure that a matrix is positive definite by adjusting its eigenvalues.
+
+# Arguments
+- `A::Matrix{T}`: The input matrix.
+
+# Returns
+- A positive definite matrix derived from `A`.
+"""
 function ensure_positive_definite(A::Matrix{T}) where {T}
     # Perform eigenvalue decomposition
     eigen_decomp = eigen(Symmetric(A))  # Ensure A is treated as symmetric
@@ -232,6 +371,17 @@ function ensure_positive_definite(A::Matrix{T}) where {T}
     return A_posdef
 end
 
+"""
+    stabilize_covariance_matrix(Σ::Matrix{<:Real})
+
+Stabilize a covariance matrix by ensuring it is symmetric and positive definite.
+
+# Arguments
+- `Σ::Matrix{<:Real}`: The input covariance matrix.
+
+# Returns
+- A stabilized version of the input covariance matrix.
+"""
 function stabilize_covariance_matrix(Σ::Matrix{<:Real})
     # check if the covariance is symmetric. If not, make it symmetric
     if !ishermitian(Σ)
@@ -244,6 +394,17 @@ function stabilize_covariance_matrix(Σ::Matrix{<:Real})
     return Σ
 end
 
+"""
+    gaussianentropy(Σ::Matrix{<:Real})
+
+Compute the entropy of a multivariate Gaussian distribution with covariance Σ.
+
+# Arguments
+- `Σ::Matrix{<:Real}`: The covariance matrix of the Gaussian distribution.
+
+# Returns
+- The entropy of the Gaussian distribution.
+"""
 function gaussianentropy(Σ::Matrix{<:Real})
     # Compute the entropy of a multivariate Gaussian with covariance Σ
     D = size(Σ, 1)
