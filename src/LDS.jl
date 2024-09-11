@@ -1359,7 +1359,7 @@ The initial covariance matrix `p0` is calculated for each trial by subtracting t
 
 # Example
 """
-function update_initial_state_covariance!(plds::PLDS, E_zz::Array{<:Real}, E_z::Array{<:Real})
+function update_initial_state_covariance!(plds::PLDS, E_zz::Array{<:Real, 3}, E_z::Array{<:Real, 3})
     # update the initial covariance
     if plds.fit_bool[2]
         # get number of trials

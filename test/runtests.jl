@@ -14,7 +14,18 @@ Aqua Tests
 """
 
 @testset "Aqua Tests" begin
-    Aqua.test_all(StateSpaceDynamics)
+    # excluding ambiguities that the actual package does not have--i.e exclude checks for dependencies for now
+    Aqua.test_all(StateSpaceDynamics;
+    ambiguities=false
+    )
+end
+
+"""
+Package Wide Tests
+"""
+
+@testset "Package Wide Tests" begin
+    @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
 end
 
 """
