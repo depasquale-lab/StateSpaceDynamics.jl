@@ -481,7 +481,7 @@ function smooth(
     end
 
     # Concatenate a zero matrix to the inverse off diagonal
-    inverse_offdiag = cat(; dims=1, zeros(T, 1, D, D), inverse_offdiag)
+    inverse_offdiag = cat(zeros(T, 1, D, D), inverse_offdiag; dims=1)
 
     return x, p_smooth, inverse_offdiag
 end
@@ -1742,7 +1742,7 @@ function smooth(
     end
 
     # Concatenate a zero matrix to the inverse off diagonal
-    inverse_offdiag = cat(; dims=1, zeros(T, 1, D, D), inverse_offdiag)
+    inverse_offdiag = cat(zeros(T, 1, D, D), inverse_offdiag; dims=1)
 
     return x, p_smooth, inverse_offdiag
 end
