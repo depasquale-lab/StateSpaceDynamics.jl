@@ -6,8 +6,12 @@ Q = Matrix(Diagonal([0.1, 0.1]))
 C = [0.6 0.6; 0.6 0.6; 0.6 0.6] .* 2
 log_d = log.([0.1, 0.1, 0.1])
 
-function toy_PoissonLDS(n_trials::Int=1, fit_bool::Vector{Bool}=[true, true, true, true, true, true])
-    poisson_lds = PoissonLDS(;A=A, C=C, Q=Q, x0=x0, P0=p0, log_d=log_d, obs_dim=3, latent_dim=2, fit_bool=fit_bool)
+function toy_PoissonLDS(
+    n_trials::Int=1, fit_bool::Vector{Bool}=[true, true, true, true, true, true]
+)
+    poisson_lds = PoissonLDS(;
+        A=A, C=C, Q=Q, x0=x0, P0=p0, log_d=log_d, obs_dim=3, latent_dim=2, fit_bool=fit_bool
+    )
 
     # sample data
     T = 100
@@ -21,11 +25,14 @@ function test_plds_properties(poisson_lds)
     @test isa(poisson_lds.obs_model, StateSpaceDynamics.PoissonObservationModel)
     @test isa(poisson_lds, StateSpaceDynamics.LinearDynamicalSystem)
 
-    @test size(poisson_lds.state_model.A) == (poisson_lds.latent_dim,  poisson_lds.latent_dim)
+    @test size(poisson_lds.state_model.A) ==
+        (poisson_lds.latent_dim, poisson_lds.latent_dim)
     @test size(poisson_lds.obs_model.C) == (poisson_lds.obs_dim, poisson_lds.latent_dim)
-    @test size(poisson_lds.state_model.Q) == (poisson_lds.latent_dim, poisson_lds.latent_dim)
+    @test size(poisson_lds.state_model.Q) ==
+        (poisson_lds.latent_dim, poisson_lds.latent_dim)
     @test size(poisson_lds.state_model.x0) == (poisson_lds.latent_dim,)
-    @test size(poisson_lds.state_model.P0) == (poisson_lds.latent_dim, poisson_lds.latent_dim)
+    @test size(poisson_lds.state_model.P0) ==
+        (poisson_lds.latent_dim, poisson_lds.latent_dim)
     @test size(poisson_lds.obs_model.log_d) == (poisson_lds.obs_dim,)
 end
 
@@ -44,7 +51,7 @@ function test_PoissonLDS_with_params()
 end
 
 function test_poisson_lds_without_params()
-    poisson_lds = PoissonLDS(obs_dim=3, latent_dim=2)
+    poisson_lds = PoissonLDS(; obs_dim=3, latent_dim=2)
     test_plds_properties(poisson_lds)
 
     @test !isempty(poisson_lds.state_model.A)
@@ -57,7 +64,6 @@ end
 
 function test_Gradient()
     plds, x, y = toy_PoissonLDS()
-
 
     # for each trial check the gradient
     for i in axes(y, 1)
@@ -80,21 +86,23 @@ function test_Hessian()
         x = permutedims(x)
         return StateSpaceDynamics.loglikelihood(x, plds, y)
     end
-    
-        # check hessian for each trial
-        for i in axes(y, 1)
-            hess, main, super, sub = StateSpaceDynamics.Hessian(plds, y[i, 1:3, :], x[i, 1:3, :])
-            @test size(hess) == (plds.latent_dim * 3, plds.latent_dim * 3)
-            @test size(main) == (3,)
-            @test size(super) == (2,)
-            @test size(sub) == (2,)
 
-            # calcualte hess using autodiff now
-            obj = latents -> log_likelihood(latents, plds, y[i, 1:3, :])
-            hess_numerical = ForwardDiff.hessian(obj, permutedims(x[i, 1:3, :]))
-            @test norm(hess_numerical - hess) < 1e-9
-        end
+    # check hessian for each trial
+    for i in axes(y, 1)
+        hess, main, super, sub = StateSpaceDynamics.Hessian(
+            plds, y[i, 1:3, :], x[i, 1:3, :]
+        )
+        @test size(hess) == (plds.latent_dim * 3, plds.latent_dim * 3)
+        @test size(main) == (3,)
+        @test size(super) == (2,)
+        @test size(sub) == (2,)
+
+        # calcualte hess using autodiff now
+        obj = latents -> log_likelihood(latents, plds, y[i, 1:3, :])
+        hess_numerical = ForwardDiff.hessian(obj, permutedims(x[i, 1:3, :]))
+        @test norm(hess_numerical - hess) < 1e-9
     end
+end
 
 function test_smooth()
     plds, x, y = toy_PoissonLDS()
@@ -131,21 +139,19 @@ function test_parameter_gradient()
     params = vcat(vec(C), log_d)
 
     # get analytical gradient
-    grad_analytical = StateSpaceDynamics.gradient_observation_model!(zeros(length(params)), C, log_d, E_z, P_smooth, y)
+    grad_analytical = StateSpaceDynamics.gradient_observation_model!(
+        zeros(length(params)), C, log_d, E_z, P_smooth, y
+    )
 
     # get numerical gradient
     function f(params::AbstractVector{<:Real})
         C_size = plds.obs_dim * plds.latent_dim
-        log_d = params[end-plds.obs_dim+1:end]
+        log_d = params[(end - plds.obs_dim + 1):end]
         C = reshape(params[1:C_size], plds.obs_dim, plds.latent_dim)
         return -StateSpaceDynamics.Q_observation_model(C, log_d, E_z, P_smooth, y)
     end
 
-    
     grad = ForwardDiff.gradient(f, params)
 
-
-
     @test isapprox(grad, grad_analytical, rtol=1e-5, atol=1e-5)
-
 end

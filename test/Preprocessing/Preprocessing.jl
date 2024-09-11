@@ -4,7 +4,7 @@ function test_PPCA_with_params()
     σ² = 0.5
     # create "data"
     X = randn(100, 3)
-    μ = mean(X, dims=1)
+    μ = mean(X; dims=1)
     # create PPCA object
     ppca = ProbabilisticPCA(W, σ², μ, 2, 3, Matrix{Float64}(undef, 0, 0))
     # Check if parameters are set correctly
@@ -18,7 +18,7 @@ end
 
 function test_PPCA_without_params()
     # create ppca object
-    ppca = ProbabilisticPCA(;k=2, D=3)
+    ppca = ProbabilisticPCA(; k=2, D=3)
     # Check if parameters are set correctly
     @test size(ppca.W) == (3, 2)
     @test ppca.σ² > 0
@@ -30,11 +30,11 @@ end
 
 function test_PPCA_E_and_M_Step()
     # create ppca object
-    ppca = ProbabilisticPCA(;k=2, D=3)
+    ppca = ProbabilisticPCA(; k=2, D=3)
     # create data
     X = randn(100, 3)
     # assign μ, normally fit! does this
-    μ = mean(X, dims=1)
+    μ = mean(X; dims=1)
     ppca.μ = μ
     # run E-step
     E_z, E_zz = StateSpaceDynamics.E_Step(ppca, X)
@@ -53,10 +53,10 @@ end
 
 function test_PPCA_fit()
     # create ppca object
-    ppca = ProbabilisticPCA(;k=2, D=3)
+    ppca = ProbabilisticPCA(; k=2, D=3)
     # create data
     X = randn(100, 3)
-    ppca.μ = mean(X, dims=1)
+    ppca.μ = mean(X; dims=1)
     # fit the model
     ll = fit!(ppca, X)
     # check if the parameters are updated

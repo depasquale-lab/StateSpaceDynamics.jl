@@ -15,9 +15,7 @@ Aqua Tests
 
 @testset "Aqua Tests" begin
     # excluding ambiguities that the actual package does not have--i.e exclude checks for dependencies for now
-    Aqua.test_all(StateSpaceDynamics;
-    ambiguities=false
-    )
+    Aqua.test_all(StateSpaceDynamics; ambiguities=false)
 end
 
 """
@@ -57,17 +55,14 @@ include("MixtureModels/PoissonMixtureModel.jl")
     # Construct gmm
     vector_gmm = GaussianMixtureModel(k, data_dim)
     # Generate sample data
-    vector_data = randn(1000,)
+    vector_data = randn(1000)
     # Test constructor method of GaussianMixtureModel
     test_GaussianMixtureModel_properties(vector_gmm, k, data_dim)
 
     # Test EM methods of the GaussianMixtureModels
 
     # Paired data and GaussianMixtureModels to test
-    tester_set = [
-        (standard_gmm, standard_data), 
-        (vector_gmm, vector_data),
-        ]
+    tester_set = [(standard_gmm, standard_data), (vector_gmm, vector_data)]
 
     for (gmm, data) in tester_set
         k = gmm.k
@@ -85,24 +80,24 @@ include("MixtureModels/PoissonMixtureModel.jl")
         gmm = GaussianMixtureModel(k, data_dim)
         test_log_likelihood(gmm, data)
     end
-  
+
     # Test PoissonMixtureModel
     k = 3  # Number of clusters
-    
+
     # Simulate some Poisson-distributed data using the sample function
     # First, define a temporary PMM for sampling purposes
     temp_pmm = PoissonMixtureModel(k)
     temp_pmm.λₖ = [5.0, 10.0, 15.0]  # Assign some λ values for generating data
-    temp_pmm.πₖ = [1/3, 1/3, 1/3]  # Equal mixing coefficients for simplicity
+    temp_pmm.πₖ = [1 / 3, 1 / 3, 1 / 3]  # Equal mixing coefficients for simplicity
     data = StateSpaceDynamics.sample(temp_pmm, 300)  # Generate sample data
-    
+
     standard_pmm = PoissonMixtureModel(k)
-    
+
     # Conduct tests
     test_PoissonMixtureModel_properties(standard_pmm, k)
-    
+
     tester_set = [(standard_pmm, data)]
-    
+
     for (pmm, data) in tester_set
         pmm = PoissonMixtureModel(k)
         testPoissonMixtureModel_EStep(pmm, data)
@@ -134,7 +129,6 @@ end
 """
 Tests for LDS.jl
 """
-
 
 include("LDS/LDS.jl")
 
@@ -205,7 +199,7 @@ end
 
 """
 Tests for Regression.jl
-""" 
+"""
 
 include("Regression/GaussianRegression.jl")
 

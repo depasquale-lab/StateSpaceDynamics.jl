@@ -1,7 +1,7 @@
 # export statement
 export LDS, KalmanFilter, KalmanSmoother, loglikelihood, PLDS
-export RTSSmoother, DirectSmoother, KalmanSmoother, KalmanFilterEM!, loglikelihood, marginal_loglikelihood
-
+export RTSSmoother,
+    DirectSmoother, KalmanSmoother, KalmanFilterEM!, loglikelihood, marginal_loglikelihood
 
 """
     LDS
@@ -46,7 +46,7 @@ mutable struct LDS <: DynamicalSystem
     fit_bool::Vector{Bool} # Vector of booleans indicating which parameters to fit
 end
 
-function LDS(; 
+function LDS(;
     A::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
     H::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
     B::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
@@ -57,7 +57,7 @@ function LDS(;
     inputs::AbstractMatrix{<:Real}=Matrix{Float64}(undef, 0, 0),
     obs_dim::Int,
     latent_dim::Int,
-    fit_bool::Vector{Bool}=fill(true, 7)
+    fit_bool::Vector{Bool}=fill(true, 7),
 )
     A = isempty(A) ? rand(latent_dim, latent_dim) : A
     H = isempty(H) ? rand(obs_dim, latent_dim) : H
@@ -67,7 +67,7 @@ function LDS(;
     x0 = isempty(x0) ? rand(latent_dim) : x0
     p0 = isempty(p0) ? Matrix{Float64}(I(latent_dim)) : p0
     inputs = isempty(inputs) ? zeros(1, 1) : inputs
-    
+
     # Ensure obs_dim and latent_dim are assigned values
     if obs_dim === nothing
         error("You must supply the dimension of the observations.")
@@ -101,7 +101,7 @@ function pca_init!(l::LDS, y::AbstractArray)
     # set the parameters
     l.H = ppca.W
     # set the initial state by projecting the first observation onto the latent space
-    l.x0 = ppca.z[1, :]
+    return l.x0 = ppca.z[1, :]
 end
 
 """
@@ -130,7 +130,7 @@ function KalmanFilter(l::LDS, y::AbstractArray)
     ml = 0.0
     # Now perform the Kalman Filter
     for t in 1:T
-        if t==1
+        if t == 1
             # Initialize the first state
             x_pred[1, :] = l.x0
             p_pred[1, :, :] = l.p0
@@ -138,8 +138,8 @@ function KalmanFilter(l::LDS, y::AbstractArray)
             p_filt[1, :, :] = l.p0
         else
             # Prediction step
-            x_pred[t, :] = l.A * x_filt[t-1, :]
-            p_pred[t, :, :] = (l.A * p_filt[t-1, :, :] * l.A') + l.Q
+            x_pred[t, :] = l.A * x_filt[t - 1, :]
+            p_pred[t, :, :] = (l.A * p_filt[t - 1, :, :] * l.A') + l.Q
         end
         # Compute the Kalman gain, innovation, and innovation covariance
         v[t, :, :] = y[t, :] - (l.H * x_pred[t, :])
@@ -169,29 +169,31 @@ TBC
 function RTSSmoother(l::LDS, y::AbstractArray)
     # Forward pass (Kalman Filter)
     x_filt, p_filt, x_pred, p_pred, v, s, K, ml = KalmanFilter(l, y)
-    
+
     # Pre-allocate smoother arrays
     T, n = size(x_filt)
     x_smooth = similar(x_filt)
     p_smooth = similar(p_filt)
     J = similar(p_filt)
-    
+
     # Backward pass
     x_smooth[T, :] = x_filt[T, :]
     p_smooth[T, :, :] = p_filt[T, :, :]
-    
-    for t in T-1:-1:1
+
+    for t in (T - 1):-1:1
         # Compute the smoother gain
-        J[t, :, :] = p_filt[t, :, :] * l.A' / p_pred[t+1, :, :]
+        J[t, :, :] = p_filt[t, :, :] * l.A' / p_pred[t + 1, :, :]
         # Update smoothed estimates
-        x_smooth[t, :] = x_filt[t, :] + J[t, :, :] * (x_smooth[t+1, :] - l.A * x_filt[t, :])
+        x_smooth[t, :] =
+            x_filt[t, :] + J[t, :, :] * (x_smooth[t + 1, :] - l.A * x_filt[t, :])
         # Update smoothed covariance
-        p_smooth[t, :, :] = p_filt[t, :, :] + 
-                            J[t, :, :] * (p_smooth[t+1, :, :] - p_pred[t+1, :, :]) * J[t, :, :]'
+        p_smooth[t, :, :] =
+            p_filt[t, :, :] +
+            J[t, :, :] * (p_smooth[t + 1, :, :] - p_pred[t + 1, :, :]) * J[t, :, :]'
         # Enforce symmetry
         p_smooth[t, :, :] = (p_smooth[t, :, :] + p_smooth[t, :, :]') / 2
     end
-    
+
     return x_smooth, p_smooth, J, ml
 end
 
@@ -217,9 +219,9 @@ function DirectSmoother(l::LDS, y::Matrix{<:Real})
     T = size(y, 1)
     D = l.latent_dim
     # create starting point for the optimization, as the likelihood is quadratic we can just use zeros
-    X₀ = zeros(T*D)
+    X₀ = zeros(T * D)
     # create wrappers for the loglikelihood, gradient, and hessian
-    
+
     function nll(vec_x::Vector{<:Real})
         # reshape the vector to a matrix
         x = StateSpaceDynamics.interleave_reshape(vec_x, T, D)
@@ -233,7 +235,7 @@ function DirectSmoother(l::LDS, y::Matrix{<:Real})
         # compute the gradient
         grad = StateSpaceDynamics.Gradient(l, y, x)
         # reshape the gradient to a vector
-        g .= vec(permutedims(-grad))
+        return g .= vec(permutedims(-grad))
     end
 
     function h!(h::Matrix{<:Real}, vec_x::Vector{<:Real})
@@ -242,7 +244,7 @@ function DirectSmoother(l::LDS, y::Matrix{<:Real})
         # compute the hessian
         H, _, _, _ = StateSpaceDynamics.Hessian(l, y)
         # reshape the hessian to a matrix
-        h .= -H
+        return h .= -H
     end
 
     # set up the optimization problem
@@ -253,7 +255,9 @@ function DirectSmoother(l::LDS, y::Matrix{<:Real})
 
     # get covariances and nearest-neighbor second moments
     H, main, super, sub = StateSpaceDynamics.Hessian(l, y)
-    p_smooth, inverse_offdiag = StateSpaceDynamics.block_tridiagonal_inverse(-sub, -main, -super)
+    p_smooth, inverse_offdiag = StateSpaceDynamics.block_tridiagonal_inverse(
+        -sub, -main, -super
+    )
 
     # enforce symmetry for p_smooth
     for t in axes(p_smooth, 1)
@@ -261,7 +265,7 @@ function DirectSmoother(l::LDS, y::Matrix{<:Real})
     end
 
     # concatenate a zero matrix to the inverse off diagonal to match the dimensions of the posterior covariance
-    inverse_offdiag = cat(zeros(1, l.latent_dim, l.latent_dim), inverse_offdiag, dims=1)
+    inverse_offdiag = cat(zeros(1, l.latent_dim, l.latent_dim), inverse_offdiag; dims=1)
 
     # finally clacualte Q-function
     Q_val = StateSpaceDynamics.Q(l, x, p_smooth, inverse_offdiag, y)
@@ -281,7 +285,6 @@ function _smooth(l::LDS, y::AbstractArray, ::DirectSmoothing)
     return DirectSmoother(l, y)
 end
 
-
 """
     sufficient_statistics(smoothing_method, μ, P, J_or_Ptt1)
 
@@ -297,10 +300,14 @@ Compute the sufficient statistics for a given smoothing method.
 - The computed sufficient statistics. See the specific implementation for details.
 
 """
-function sufficient_statistics(smoothing_method::SmoothingMethod, μ::Matrix{<:Real}, P::Array{<:Real}, J_or_Ptt1::Array{<:Real})
+function sufficient_statistics(
+    smoothing_method::SmoothingMethod,
+    μ::Matrix{<:Real},
+    P::Array{<:Real},
+    J_or_Ptt1::Array{<:Real},
+)
     return _sufficient_statistics(smoothing_method, μ, P, J_or_Ptt1)
 end
-
 
 """
     _sufficient_statistics(RTSSmoothing, μ::Matrix{<:Real}, P::Array{<:Real}, J::Array{<:Real})
@@ -324,7 +331,9 @@ This function computes the following statistics:
 - `E_zz`: The expected value of the outer product of the latent states.
 - `E_zz_prev`: The expected value of the outer product of the current and previous latent states.
 """
-function _sufficient_statistics(smoother::RTSSmoothing, μ::Matrix{<:Real}, P::Array{<:Real}, J::Array{<:Real})
+function _sufficient_statistics(
+    smoother::RTSSmoothing, μ::Matrix{<:Real}, P::Array{<:Real}, J::Array{<:Real}
+)
     T = size(μ, 1)
     # Initialize sufficient statistics
     E_z = zeros(T, size(μ, 2))
@@ -335,7 +344,7 @@ function _sufficient_statistics(smoother::RTSSmoothing, μ::Matrix{<:Real}, P::A
         E_z[t, :] = μ[t, :]
         E_zz[t, :, :] = P[t, :, :] + (μ[t, :] * μ[t, :]')
         if t > 1
-            E_zz_prev[t, :, :] =  (P[t, :, :] * J[t-1, :, :]') + (μ[t, :] * μ[t-1, :]')
+            E_zz_prev[t, :, :] = (P[t, :, :] * J[t - 1, :, :]') + (μ[t, :] * μ[t - 1, :]')
         end
     end
     return E_z, E_zz, E_zz_prev
@@ -357,7 +366,9 @@ Compute the sufficient statistics for a linear dynamical system.
 - `E_zz`: The expected values of the outer product of the latent variables.
 - `E_zz_prev`: The expected values of the outer product of the current and previous latent variables.
 """
-function _sufficient_statistics(smoother::DirectSmoothing, μ::Matrix{<:Real}, P::Array{<:Real}, Ptt1::Array{<:Real})
+function _sufficient_statistics(
+    smoother::DirectSmoothing, μ::Matrix{<:Real}, P::Array{<:Real}, Ptt1::Array{<:Real}
+)
     T = size(μ, 1)
     # Initialize sufficient statistics
     E_z = zeros(T, size(μ, 2))
@@ -368,7 +379,7 @@ function _sufficient_statistics(smoother::DirectSmoothing, μ::Matrix{<:Real}, P
         E_z[t, :] = μ[t, :]
         E_zz[t, :, :] = P[t, :, :] + (μ[t, :] * μ[t, :]')
         if t > 1
-            E_zz_prev[t, :, :] = Ptt1[t, :, :] + (μ[t, :] * μ[t-1, :]')
+            E_zz_prev[t, :, :] = Ptt1[t, :, :] + (μ[t, :] * μ[t - 1, :]')
         end
     end
     return E_z, E_zz, E_zz_prev
@@ -384,22 +395,26 @@ end
 
 function update_initial_state_mean!(l::DynamicalSystem, E_z::AbstractArray)
     # update the state mean
-    if l.fit_bool[1] 
+    if l.fit_bool[1]
         l.x0 = E_z[1, :]
     end
 end
 
-function update_initial_state_covariance!(l::DynamicalSystem, E_z::Matrix{<:Real}, E_zz::Array{<:Real})
+function update_initial_state_covariance!(
+    l::DynamicalSystem, E_z::Matrix{<:Real}, E_zz::Array{<:Real}
+)
     # update the state covariance
     if l.fit_bool[2]
-        l.p0 = E_zz[1, :, :] - (E_z[1, :] * E_z[1, :]') 
+        l.p0 = E_zz[1, :, :] - (E_z[1, :] * E_z[1, :]')
     end
 end
 
 function update_A!(l::DynamicalSystem, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real})
     # update the transition matrix
     if l.fit_bool[3]
-        l.A = dropdims(sum(E_zz_prev, dims=1), dims=1) * pinv(dropdims(sum(E_zz[1:end-1, :, :], dims=1), dims=1))
+        l.A =
+            dropdims(sum(E_zz_prev; dims=1); dims=1) *
+            pinv(dropdims(sum(E_zz[1:(end - 1), :, :]; dims=1); dims=1))
     end
 end
 
@@ -411,7 +426,9 @@ function update_Q!(l::DynamicalSystem, E_zz::Array{<:Real}, E_zz_prev::Array{<:R
         # Calculate the sum of expectations
         sum_expectations = zeros(size(l.A))
         for n in 2:N
-            sum_expectations += E_zz[n, :, :] - (E_zz_prev[n, :, :] * l.A') - (l.A * E_zz_prev[n, :, :]') + (l.A * E_zz[n-1, :, :] * l.A')
+            sum_expectations +=
+                E_zz[n, :, :] - (E_zz_prev[n, :, :] * l.A') - (l.A * E_zz_prev[n, :, :]') +
+                (l.A * E_zz[n - 1, :, :] * l.A')
         end
         # Finalize Q_new calculation
         Q_new = (1 / (N - 1)) * sum_expectations
@@ -437,7 +454,9 @@ function update_R!(l::LDS, E_z::AbstractArray, E_zz::AbstractArray, y::AbstractA
         # Calculate the sum of terms
         sum_terms = zeros(size(l.H))
         for n in 1:N
-            sum_terms += (y[n, :] * y[n, :]') - (l.H * (y[n, :] * E_z[n, :]')') - ((y[n, :] * E_z[n, :]') * l.H') + (l.H * E_zz[n, :, :] * l.H')
+            sum_terms +=
+                (y[n, :] * y[n, :]') - (l.H * (y[n, :] * E_z[n, :]')') -
+                ((y[n, :] * E_z[n, :]') * l.H') + (l.H * E_zz[n, :, :] * l.H')
         end
         # Finalize the update matrix calculation
         update_matrix = (1 / N) * sum_terms
@@ -445,17 +464,29 @@ function update_R!(l::LDS, E_z::AbstractArray, E_zz::AbstractArray, y::AbstractA
     end
 end
 
-function M_Step!(l::LDS, E_z::Matrix{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, y_n::AbstractMatrix{<:Real})
+function M_Step!(
+    l::LDS,
+    E_z::Matrix{<:Real},
+    E_zz::Array{<:Real},
+    E_zz_prev::Array{<:Real},
+    y_n::AbstractMatrix{<:Real},
+)
     # update the parameters
     update_initial_state_mean!(l, E_z)
     update_initial_state_covariance!(l, E_z, E_zz)
     update_A!(l, E_zz, E_zz_prev)
     update_Q!(l, E_zz, E_zz_prev)
     update_H!(l, E_z, E_zz, y_n)
-    update_R!(l, E_z, E_zz, y_n)
+    return update_R!(l, E_z, E_zz, y_n)
 end
 
-function KalmanFilterEM!(l::LDS, y::AbstractArray, max_iter::Int=1000, tol::Float64=1e-12, smoother::SmoothingMethod=RTSSmoothing())
+function KalmanFilterEM!(
+    l::LDS,
+    y::AbstractArray,
+    max_iter::Int=1000,
+    tol::Float64=1e-12,
+    smoother::SmoothingMethod=RTSSmoothing(),
+)
     # Initialize log-likelihood
     prev_ml = -Inf
     # Create a list to store the log-likelihood
@@ -505,27 +536,27 @@ function Hessian(l::LDS, y::AbstractArray)
     inv_R = pinv(l.R)
     inv_Q = pinv(l.Q)
     inv_p0 = pinv(l.p0)
-    
+
     # super and sub diagonals
     H_sub_entry = inv_Q * l.A
     H_super_entry = Matrix(H_sub_entry')
 
-    H_sub = Vector{Matrix{Float64}}(undef, T-1)
-    H_super = Vector{Matrix{Float64}}(undef, T-1)
+    H_sub = Vector{Matrix{Float64}}(undef, T - 1)
+    H_super = Vector{Matrix{Float64}}(undef, T - 1)
 
-    Threads.@threads for i in 1:T-1
+    Threads.@threads for i in 1:(T - 1)
         H_sub[i] = H_sub_entry
         H_super[i] = H_super_entry
     end
 
     # main diagonal
-    yt_given_xt = - l.H' * inv_R * l.H
-    xt_given_xt_1 = - inv_Q
-    xt1_given_xt = - l.A' * inv_Q * l.A
-    x_t = - inv_p0
+    yt_given_xt = -l.H' * inv_R * l.H
+    xt_given_xt_1 = -inv_Q
+    xt1_given_xt = -l.A' * inv_Q * l.A
+    x_t = -inv_p0
 
     H_diag = Vector{Matrix{Float64}}(undef, T)
-    Threads.@threads for i in 2:T-1
+    Threads.@threads for i in 2:(T - 1)
         H_diag[i] = yt_given_xt + xt_given_xt_1 + xt1_given_xt
     end
 
@@ -535,7 +566,6 @@ function Hessian(l::LDS, y::AbstractArray)
 
     return block_tridgm(H_diag, H_super, H_sub), H_diag, H_super, H_sub
 end
-
 
 """
 Constructs the gradient of the loglikelihood of the LDS model given a set of observations. This is used for the direct optimization of the loglikelihood.
@@ -558,13 +588,19 @@ function Gradient(l::LDS, y::AbstractArray, x::AbstractArray)
     # calculate the gradient
     grad = zeros(T, l.latent_dim)
     # calculate the gradient for the first time step
-    grad[1, :] = (l.A' * inv_Q * (x[2, :] - l.A * x[1, :])) + (l.H' * inv_R * (y[1, :] - l.H * x[1, :])) - (inv_p0 * (x[1, :] - l.x0))
+    grad[1, :] =
+        (l.A' * inv_Q * (x[2, :] - l.A * x[1, :])) +
+        (l.H' * inv_R * (y[1, :] - l.H * x[1, :])) - (inv_p0 * (x[1, :] - l.x0))
     # calulate the gradient up until the last time step
-    Threads.@threads for t in 2:T-1
-        grad[t, :] = (l.H' * inv_R * (y[t, :] - l.H * x[t, :])) - (inv_Q * (x[t, :] - l.A * x[t-1, :])) + (l.A' * inv_Q * (x[t+1, :] - l.A * x[t, :]))
+    Threads.@threads for t in 2:(T - 1)
+        grad[t, :] =
+            (l.H' * inv_R * (y[t, :] - l.H * x[t, :])) -
+            (inv_Q * (x[t, :] - l.A * x[t - 1, :])) +
+            (l.A' * inv_Q * (x[t + 1, :] - l.A * x[t, :]))
     end
     # calculate the gradient for the last time step
-    grad[T, :] = (l.H' * inv_R * (y[T, :] - l.H * x[T, :])) - (inv_Q * (x[T, :] - l.A * x[T-1, :]))
+    grad[T, :] =
+        (l.H' * inv_R * (y[T, :] - l.H * x[T, :])) - (inv_Q * (x[T, :] - l.A * x[T - 1, :]))
     # return a reshaped gradient so that we can match up the dimensions with the Hessian
     return grad
 end
@@ -591,7 +627,18 @@ Calculate the Q-function of the EM algorithm for an LDS model i.e. the expected 
 
 # Examples
 """
-function Q(A::Matrix{<:Real}, Q::AbstractMatrix{<:Real}, H::Matrix{<:Real}, R::AbstractMatrix{<:Real}, P0::AbstractMatrix{<:Real}, x0::Vector{<:Real}, E_z::Matrix{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, y::Matrix{<:Real})
+function Q(
+    A::Matrix{<:Real},
+    Q::AbstractMatrix{<:Real},
+    H::Matrix{<:Real},
+    R::AbstractMatrix{<:Real},
+    P0::AbstractMatrix{<:Real},
+    x0::Vector{<:Real},
+    E_z::Matrix{<:Real},
+    E_zz::Array{<:Real},
+    E_zz_prev::Array{<:Real},
+    y::Matrix{<:Real},
+)
     # Convert Q, R, and P0 to proper matrices
     Q = Q * Q'
     R = R * R'
@@ -603,14 +650,20 @@ function Q(A::Matrix{<:Real}, Q::AbstractMatrix{<:Real}, H::Matrix{<:Real}, R::A
     # Calculate the Q-function
     Q_val = 0.0
     # Calculate the Q-function for the first time step
-    Q_val += -0.5 * (logdet(P0) + tr(P0_inv * (E_zz[1, :, :] - (E_z[1, :] * x0') - (x0 * E_z[1, :]') + (x0 * x0'))))
+    Q_val +=
+        -0.5 * (
+            logdet(P0) + tr(
+                P0_inv *
+                (E_zz[1, :, :] - (E_z[1, :] * x0') - (x0 * E_z[1, :]') + (x0 * x0')),
+            )
+        )
     # Calculate the Q-function for the state model
     for t in axes(E_z, 1)[2:end] # skip the first time step
         # Individual terms
         term1 = E_zz[t, :, :]
         term2 = A * E_zz_prev[t, :, :]'
         term3 = E_zz_prev[t, :, :] * A'
-        term4 = A * E_zz[t-1, :, :] * A'
+        term4 = A * E_zz[t - 1, :, :] * A'
         # Calculate the Q-value
         q_val = -0.5 * (logdet(Q) + tr(Q_inv * (term1 - term2 - term3 + term4)))
         Q_val += q_val
@@ -644,7 +697,13 @@ Calculate the Q-function of the EM algorithm for an LDS model i.e. the expected 
 # Returns
 - `Float64`: The Q-function of the EM algorithm.
 """
-function Q(l::LDS, E_z::Matrix{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, y::Matrix{<:Real})
+function Q(
+    l::LDS,
+    E_z::Matrix{<:Real},
+    E_zz::Array{<:Real},
+    E_zz_prev::Array{<:Real},
+    y::Matrix{<:Real},
+)
     # Re-parameterize the covariance matrices of the LDS model
     Q_chol = Matrix(cholesky(l.Q).L)
     R_chol = Matrix(cholesky(l.R).L)
@@ -678,12 +737,12 @@ function loglikelihood(x::AbstractArray, l::LDS, y::AbstractArray)
     for t in 1:T
         if t > 1
             # add p(pₜ|pₜ₋₁)
-            ll += (x[t, :]-l.A*x[t-1, :])' * inv_Q * (x[t, :]-l.A*x[t-1, :])
+            ll += (x[t, :] - l.A * x[t - 1, :])' * inv_Q * (x[t, :] - l.A * x[t - 1, :])
         end
         # add p(yₜ|pₜ)
-        ll += (y[t, :]-l.H*x[t, :])' * inv_R * (y[t, :]-l.H*x[t, :])
+        ll += (y[t, :] - l.H * x[t, :])' * inv_R * (y[t, :] - l.H * x[t, :])
     end
-    
+
     return -0.5 * ll
 end
 
@@ -701,9 +760,8 @@ Compute the marginal log-likelihood of the observed data given the parameters of
 - `Float64`: The marginal log-likelihood of the observed data.
 """
 function marginal_loglikelihood(l::LDS, v::AbstractArray, s::AbstractArray)
-    return (-0.5) * ((v' * pinv(s) * v) + logdet(s) + l.obs_dim*log(2*pi))
+    return (-0.5) * ((v' * pinv(s) * v) + logdet(s) + l.obs_dim * log(2 * pi))
 end
-
 
 """
     sample(l::LDS, T::Int)
@@ -739,7 +797,7 @@ function sample(l::LDS, T::Int)
     y[1, :] = rand(MvNormal(l.H * x[1, :], l.R))
     # Sample the rest of the states
     for t in 2:T
-        x[t, :] = rand(MvNormal(l.A * x[t-1, :], l.Q))
+        x[t, :] = rand(MvNormal(l.A * x[t - 1, :], l.Q))
         y[t, :] = rand(MvNormal(l.H * x[t, :], l.R))
     end
     return x, y
@@ -764,18 +822,18 @@ A Poisson Linear Dynamical System (PLDS).
 - `fit_bool:: Vector{Bool}`: Vector of booleans indicating which parameters to fit.
 """
 mutable struct PLDS <: DynamicalSystem
-    A:: AbstractMatrix{<:Real} # Transition Matrix
-    C:: AbstractMatrix{<:Real} # Observation Matrix
-    Q:: AbstractMatrix{<:Real} # Process Noise Covariance
-    D:: AbstractMatrix{<:Real} # History Control Matrix
-    log_d:: AbstractVector{<:Real} # Mean Firing Rate Vector
-    b:: AbstractArray{<:Real} # Latent State Input
-    x0:: AbstractVector{<:Real} # Initial State
-    p0:: AbstractMatrix{<:Real} # Initial Covariance
-    refractory_period:: Int # Refractory Period
-    obs_dim:: Int # Observation Dimension
-    latent_dim:: Int # Latent Dimension
-    fit_bool:: Vector{Bool} # Vector of booleans indicating which parameters to fit
+    A::AbstractMatrix{<:Real} # Transition Matrix
+    C::AbstractMatrix{<:Real} # Observation Matrix
+    Q::AbstractMatrix{<:Real} # Process Noise Covariance
+    D::AbstractMatrix{<:Real} # History Control Matrix
+    log_d::AbstractVector{<:Real} # Mean Firing Rate Vector
+    b::AbstractArray{<:Real} # Latent State Input
+    x0::AbstractVector{<:Real} # Initial State
+    p0::AbstractMatrix{<:Real} # Initial Covariance
+    refractory_period::Int # Refractory Period
+    obs_dim::Int # Observation Dimension
+    latent_dim::Int # Latent Dimension
+    fit_bool::Vector{Bool} # Vector of booleans indicating which parameters to fit
 end
 
 """
@@ -828,7 +886,8 @@ function PLDS(;
     refractory_period::Int=1,
     obs_dim::Int,
     latent_dim::Int,
-    fit_bool::Vector{Bool}=fill(true, 6))
+    fit_bool::Vector{Bool}=fill(true, 6),
+)
 
     # Initialize missing parameters
     A = isempty(A) ? 0.1 * rand(latent_dim, latent_dim) : A
@@ -841,7 +900,7 @@ function PLDS(;
     p0 = isempty(p0) ? convert(Matrix{Float64}, I(latent_dim)) : p0
 
     # Check that the observation dimension and latent dimension are specified
-    if obs_dim === nothing 
+    if obs_dim === nothing
         error("Observation dimension must be specified.")
     end
 
@@ -849,10 +908,12 @@ function PLDS(;
         error("Latent dimension must be specified.")
     end
 
-    PLDS(A, C, Q, D, log_d, b, x0, p0, refractory_period, obs_dim, latent_dim, fit_bool)
+    return PLDS(
+        A, C, Q, D, log_d, b, x0, p0, refractory_period, obs_dim, latent_dim, fit_bool
+    )
 end
 
-function logposterior_nonthreaded(x::AbstractMatrix{<:Real}, plds::PLDS, y::Matrix{<:Real}) 
+function logposterior_nonthreaded(x::AbstractMatrix{<:Real}, plds::PLDS, y::Matrix{<:Real})
     # Re-parameterize log_d
     d = exp.(plds.log_d)
     # Calculate the log-posterior
@@ -865,14 +926,20 @@ function logposterior_nonthreaded(x::AbstractMatrix{<:Real}, plds::PLDS, y::Matr
     # calculate the first term
     pygivenx = 0.0
     for t in 1:T
-        pygivenx += (y[t, :]' * ((plds.C * x[t, :]) + (plds.D * s[t, :]) + d)) - sum(exp.((plds.C * x[t, :]) + (plds.D * s[t, :]) + d))
+        pygivenx +=
+            (y[t, :]' * ((plds.C * x[t, :]) + (plds.D * s[t, :]) + d)) -
+            sum(exp.((plds.C * x[t, :]) + (plds.D * s[t, :]) + d))
     end
     # calculate the second term
     px1 = -0.5 * (x[1, :] - plds.x0)' * inv_p0 * (x[1, :] - plds.x0)
     # calculate the last term
     pxtgivenxt1 = 0.0
     for t in 2:T
-        pxtgivenxt1 += -0.5 * (x[t, :] - ((plds.A * x[t-1, :]) + plds.b[t, :]))' * inv_Q * (x[t, :] - ((plds.A * x[t-1, :]) + plds.b[t, :])) 
+        pxtgivenxt1 +=
+            -0.5 *
+            (x[t, :] - ((plds.A * x[t - 1, :]) + plds.b[t, :]))' *
+            inv_Q *
+            (x[t, :] - ((plds.A * x[t - 1, :]) + plds.b[t, :]))
     end
     # sum the terms
     return pygivenx + px1 + pxtgivenxt1
@@ -914,10 +981,10 @@ function logposterior(x::AbstractMatrix{<:Real}, plds::PLDS, y::Matrix{<:Real})
     # Calculate p(x₁)
     px1 = -0.5 * (x[1, :] .- plds.x0)' * inv_p0 * (x[1, :] .- plds.x0)
     # Calculate p(xₜ|xₜ₋₁)
-    pxtgivenxt1 = zeros(T-1)
+    pxtgivenxt1 = zeros(T - 1)
     @threads for t in 2:T
-        temp = (x[t, :] .- (plds.A * x[t-1, :] .+ plds.b[t, :]))
-        pxtgivenxt1[t-1] = -0.5 * temp' * inv_Q * temp
+        temp = (x[t, :] .- (plds.A * x[t - 1, :] .+ plds.b[t, :]))
+        pxtgivenxt1[t - 1] = -0.5 * temp' * inv_Q * temp
     end
     pxtgivenxt1_sum = sum(pxtgivenxt1)
     # Return the log-posterior
@@ -966,18 +1033,27 @@ Calculate the Q-function for the initial observation.
 # Returns
 - `Float64`: The Q-function for the initial observation.
 """
-function Q_initial_obs(x0::Vector{<:Real}, sqrt_p0::Matrix{<:Real}, E_z::Array{<:Real}, E_zz::Array{<:Real})
+function Q_initial_obs(
+    x0::Vector{<:Real}, sqrt_p0::Matrix{<:Real}, E_z::Array{<:Real}, E_zz::Array{<:Real}
+)
     # reparametrize p0
     p0 = sqrt_p0 * sqrt_p0'
     # Compute Q
     Q_val = 0.0
     trials = size(E_z, 1)
     for k in 1:trials
-        Q_val += -0.5 * (logdet(p0) + tr(pinv(p0) * (E_zz[k, 1, :, :] - (E_z[k, 1, :] * x0') - (x0 * E_z[k, 1, :]') + (x0 * x0'))))
+        Q_val +=
+            -0.5 * (
+                logdet(p0) + tr(
+                    pinv(p0) * (
+                        E_zz[k, 1, :, :] - (E_z[k, 1, :] * x0') - (x0 * E_z[k, 1, :]') +
+                        (x0 * x0')
+                    ),
+                )
+            )
     end
     return Q_val
 end
-
 
 """
     Q_state_model(A::Matrix{<:Real}, sqrt_Q::Matrix{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real})
@@ -993,7 +1069,9 @@ Calculate the Q-function for the state model.
 # Returns
 - `Float64`: The Q-function for the state model.
 """
-function Q_state_model(A::Matrix{<:Real}, sqrt_Q::Matrix{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real})
+function Q_state_model(
+    A::Matrix{<:Real}, sqrt_Q::Matrix{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}
+)
     # reparametrize Q
     Q = sqrt_Q * sqrt_Q'
     Q_inv = pinv(Q)
@@ -1006,7 +1084,7 @@ function Q_state_model(A::Matrix{<:Real}, sqrt_Q::Matrix{<:Real}, E_zz::Array{<:
             term1 = E_zz[k, t, :, :]
             term2 = A * E_zz_prev[k, t, :, :]'
             term3 = E_zz_prev[k, t, :, :] * A'
-            term4 = A * E_zz[k, t-1, :, :] * A'
+            term4 = A * E_zz[k, t - 1, :, :] * A'
             Q_val += -0.5 * (logdet(Q) + tr(Q_inv * (term1 - term2 - term3 + term4)))
         end
     end
@@ -1029,7 +1107,14 @@ Calculate the Q-function for the observation model.
 # Returns
 - `Float64`: The Q-function for the observation model.
 """
-function Q_observation_model(C::Matrix{<:Real}, D::Matrix{<:Real}, log_d::Vector{<:Real}, E_z::Array{<:Real}, P_smooth::Array{<:Real}, y::Array{<:Real})
+function Q_observation_model(
+    C::Matrix{<:Real},
+    D::Matrix{<:Real},
+    log_d::Vector{<:Real},
+    E_z::Array{<:Real},
+    P_smooth::Array{<:Real},
+    y::Array{<:Real},
+)
     # Re-parametrize log_d
     d = exp.(log_d)
     # Compute Q
@@ -1073,12 +1158,21 @@ Calculate the Q-function of the Poisson Linear Dynamical System (PLDS) model.
 # Returns
 - `Float64`: The Q-function of the PLDS model.
 """
-function Q_function(plds::PLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, y::Array{<:Real})
+function Q_function(
+    plds::PLDS,
+    E_z::Array{<:Real},
+    E_zz::Array{<:Real},
+    E_zz_prev::Array{<:Real},
+    y::Array{<:Real},
+)
     # reparametrize the covariance matrices
     sqrt_Q = Matrix(cholesky(plds.Q).L)
     sqrt_p0 = Matrix(cholesky(plds.p0).L)
     # calculate the Q-function
-    Q_val = Q_initial_obs(plds.x0, sqrt_p0, E_z, E_zz) + Q_state_model(plds.A, sqrt_Q, E_zz, E_zz_prev) + Q_observation_model(plds.C, plds.D, plds.log_d, E_z, E_zz, y)
+    Q_val =
+        Q_initial_obs(plds.x0, sqrt_p0, E_z, E_zz) +
+        Q_state_model(plds.A, sqrt_Q, E_zz, E_zz_prev) +
+        Q_observation_model(plds.C, plds.D, plds.log_d, E_z, E_zz, y)
     return Q_val
 end
 
@@ -1101,7 +1195,7 @@ function directsmooth(plds::PLDS, y::Matrix{<:Real})
     x₀ = zeros(T, plds.latent_dim)
     x₀[1, :] = plds.x0
     for t in 2:T
-        x₀[t, :] = plds.A * x₀[t-1, :] + plds.b[t, :]
+        x₀[t, :] = plds.A * x₀[t - 1, :] + plds.b[t, :]
     end
     # create wrappers for the log-posterior, gradient, and hessian
     function nlp(vec_x::Vector{<:Real})
@@ -1115,7 +1209,7 @@ function directsmooth(plds::PLDS, y::Matrix{<:Real})
         x = StateSpaceDynamics.interleave_reshape(vec_x, T, plds.latent_dim)
         # calculate the gradient
         grad = StateSpaceDynamics.Gradient(x, plds, y)
-        G .= vec(permutedims(-grad))
+        return G .= vec(permutedims(-grad))
     end
 
     function h!(H::Matrix{<:Real}, vec_x::Vector{<:Real})
@@ -1123,7 +1217,7 @@ function directsmooth(plds::PLDS, y::Matrix{<:Real})
         x = StateSpaceDynamics.interleave_reshape(vec_x, T, plds.latent_dim)
         # Calcualte Hessian
         hess, _, _, _ = StateSpaceDynamics.Hessian(x, plds, y)
-        H .= hess
+        return H .= hess
     end
 
     # set up optimization problem
@@ -1137,7 +1231,13 @@ function directsmooth(plds::PLDS, y::Matrix{<:Real})
     p_smooth, p_tt1 = StateSpaceDynamics.block_tridiagonal_inverse(-sub, -main, -super)
 
     # add a matrix of zeros so dimensionality agrees later on
-    p_tt1 = cat(reshape(zeros(plds.latent_dim, plds.latent_dim), 1, plds.latent_dim, plds.latent_dim), p_tt1, dims=1)
+    p_tt1 = cat(
+        reshape(
+            zeros(plds.latent_dim, plds.latent_dim), 1, plds.latent_dim, plds.latent_dim
+        ),
+        p_tt1;
+        dims=1,
+    )
 
     return x, p_smooth, p_tt1
 end
@@ -1203,13 +1303,25 @@ function Gradient(x::Matrix{<:Real}, plds::PLDS, y::Matrix{<:Real})
     # calculate the gradient
     grad = zeros(T, plds.latent_dim)
     # calculate grad of first observation
-    grad[1, :] = ((y[1, :]' * plds.C)' - sum(plds.C' * exp.(plds.C * x[1, :] + d), dims=2)) + (plds.A' * inv_Q * (x[2, :] - (plds.A * x[1, :] + plds.b[1, :]))) - (inv_p0 * (x[1, :] - plds.x0))
+    grad[1, :] =
+        ((y[1, :]' * plds.C)' - sum(plds.C' * exp.(plds.C * x[1, :] + d); dims=2)) +
+        (plds.A' * inv_Q * (x[2, :] - (plds.A * x[1, :] + plds.b[1, :]))) -
+        (inv_p0 * (x[1, :] - plds.x0))
     # calculate grad of the rest of the observations
-    for t in 2:T-1
-        grad[t, :] = ((y[t, :]' * plds.C)' - sum(plds.C' * exp.(plds.C * x[t, :] + plds.D * s[t, :] + d), dims=2)) - (inv_Q * (x[t, :] - (plds.A * x[t-1, :] + plds.b[t, :]))) + (plds.A' * inv_Q * (x[t+1, :] - (plds.A * x[t, :] + plds.b[t+1, :])))
+    for t in 2:(T - 1)
+        grad[t, :] =
+            (
+                (y[t, :]' * plds.C)' -
+                sum(plds.C' * exp.(plds.C * x[t, :] + plds.D * s[t, :] + d); dims=2)
+            ) - (inv_Q * (x[t, :] - (plds.A * x[t - 1, :] + plds.b[t, :]))) +
+            (plds.A' * inv_Q * (x[t + 1, :] - (plds.A * x[t, :] + plds.b[t + 1, :])))
     end
     # calculate grad of the last observation
-    grad[T, :] = ((y[T, :]' * plds.C)' - sum(plds.C' * exp.(plds.C * x[T, :] + plds.D * s[T, :] + d), dims=2)) - (inv_Q * (x[T, :] - (plds.A * x[T-1, :] + plds.b[T, :])))
+    grad[T, :] =
+        (
+            (y[T, :]' * plds.C)' -
+            sum(plds.C' * exp.(plds.C * x[T, :] + plds.D * s[T, :] + d); dims=2)
+        ) - (inv_Q * (x[T, :] - (plds.A * x[T - 1, :] + plds.b[T, :])))
     return grad
 end
 
@@ -1241,19 +1353,19 @@ function Hessian(x::Matrix{<:Real}, plds::PLDS, y::Matrix{<:Real})
     # calculate super and sub diagonals
     H_sub_entry = inv_Q * plds.A
     H_super_entry = Matrix(H_sub_entry')
- 
-    H_sub = Vector{typeof(H_sub_entry)}(undef, T-1)
-    H_super = Vector{typeof(H_super_entry)}(undef, T-1)
- 
-    Threads.@threads for i in 1:T-1
+
+    H_sub = Vector{typeof(H_sub_entry)}(undef, T - 1)
+    H_super = Vector{typeof(H_super_entry)}(undef, T - 1)
+
+    Threads.@threads for i in 1:(T - 1)
         H_sub[i] = H_sub_entry
         H_super[i] = H_super_entry
     end
-     
-     # pre-compute common terms
-    xt_given_xt_1 = - inv_Q
-    xt1_given_xt = - plds.A' * inv_Q * plds.A
-    xt = - inv_p0
+
+    # pre-compute common terms
+    xt_given_xt_1 = -inv_Q
+    xt1_given_xt = -plds.A' * inv_Q * plds.A
+    xt = -inv_p0
 
     # calculate the main diagonal
     main = Vector{typeof(xt1_given_xt)}(undef, T)
@@ -1293,7 +1405,7 @@ function sufficient_statistics(μ::Array{<:Real}, P::Array{<:Real}, P_tt1::Array
             E_z[k, t, :] = μ[k, t, :]
             E_zz[k, t, :, :] = P[k, t, :, :] + (μ[k, t, :] * μ[k, t, :]')
             if t > 1
-                E_zz_prev[k, t, :, :] = P_tt1[k, t, :, :] + (μ[k, t, :] * μ[k, t-1, :]')
+                E_zz_prev[k, t, :, :] = P_tt1[k, t, :, :] + (μ[k, t, :] * μ[k, t - 1, :]')
             end
         end
     end
@@ -1337,8 +1449,8 @@ Update the initial state of a Poisson Linear Dynamical System (PLDS) model.
 function update_initial_state_mean!(plds::PLDS, E_z::Array{<:Real})
     # update the initial state
     if plds.fit_bool[1]
-       # sum all of the initial states of the smoothed latents and divide by the number of trials
-        plds.x0 = vec(sum(E_z[:, 1, :], dims=1)) / size(E_z, 1)
+        # sum all of the initial states of the smoothed latents and divide by the number of trials
+        plds.x0 = vec(sum(E_z[:, 1, :]; dims=1)) / size(E_z, 1)
     end
 end
 
@@ -1359,7 +1471,9 @@ The initial covariance matrix `p0` is calculated for each trial by subtracting t
 
 # Example
 """
-function update_initial_state_covariance!(plds::PLDS, E_zz::Array{<:Real, 3}, E_z::Array{<:Real, 3})
+function update_initial_state_covariance!(
+    plds::PLDS, E_zz::Array{<:Real,3}, E_z::Array{<:Real,3}
+)
     # update the initial covariance
     if plds.fit_bool[2]
         # get number of trials
@@ -1379,12 +1493,12 @@ end
 
 function calculate_A(E_zz::Array{<:Real}, E_zz_prev::Array{<:Real})
     # Sum along the first dimension and remove it
-    E_zz_sum = dropdims(sum(E_zz[1:end-1, :, :], dims=1), dims=1)
-    E_zz_prev_sum = dropdims(sum(E_zz_prev, dims=1), dims=1)
-    
+    E_zz_sum = dropdims(sum(E_zz[1:(end - 1), :, :]; dims=1); dims=1)
+    E_zz_prev_sum = dropdims(sum(E_zz_prev; dims=1); dims=1)
+
     # Solve the system E_zz_sum * A' = E_zz_prev_sum' and then transpose the result
     A = (E_zz_sum' \ E_zz_prev_sum')'
-    
+
     return A
 end
 
@@ -1440,7 +1554,7 @@ function update_Q_plds!(plds::PLDS, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real
             Q[n, :, :] = update_Q!(plds, E_zz[n, :, :, :], E_zz_prev[n, :, :, :])
         end
         # Average the estimates
-        Q = dropdims(sum(Q, dims=1), dims=1) / size(Q, 1)
+        Q = dropdims(sum(Q; dims=1); dims=1) / size(Q, 1)
         # make sure Q is symmetric
         plds.Q = (Q + Q') / 2
     end
@@ -1470,29 +1584,37 @@ function update_b!(plds::PLDS, x_smooth::Array{<:Real})
         b = zeros(size(x_smooth, 1), size(x_smooth, 2), size(x_smooth, 3))
         for n in 1:size(x_smooth, 1)
             for t in 2:size(x_smooth, 2)
-                b[n, t, :] = x_smooth[n, t, :] - (plds.A * x_smooth[n, t-1, :])
+                b[n, t, :] = x_smooth[n, t, :] - (plds.A * x_smooth[n, t - 1, :])
             end
         end
         # sum the latent state inputs and divide by the number of trials
-        plds.b = dropdims(sum(b, dims=1), dims=1) / size(b, 1)
+        plds.b = dropdims(sum(b; dims=1); dims=1) / size(b, 1)
     end
 end
 
-function update_observation_model!(plds::PLDS, E_z::Array{<:Real}, P_smooth::Array{<:Real}, y::Array{<:Real})
+function update_observation_model!(
+    plds::PLDS, E_z::Array{<:Real}, P_smooth::Array{<:Real}, y::Array{<:Real}
+)
     # update the observation model parameters: C, D, and d
     if plds.fit_bool[6]
         # flatten the parameters so we can pass them to the optimizer as a single vector
         params = vcat(vec(plds.C), plds.log_d)
         # create a helper function that takes a vector of the observation model parameters
-        function f(params::Vector{<:Real}, D::Matrix{<:Real}, E_z::Array{<:Real}, P_smooth::Array{<:Real}, y::Array{<:Real})
+        function f(
+            params::Vector{<:Real},
+            D::Matrix{<:Real},
+            E_z::Array{<:Real},
+            P_smooth::Array{<:Real},
+            y::Array{<:Real},
+        )
             # Split params into C and log_d
             C_size = size(D, 1)  # Assuming C has the same number of rows as D
-            log_d = params[end-size(D, 2)+1:end]  # Assuming log_d has the same length as the number of columns in D
-            C = reshape(params[1:end-size(D, 2)], C_size, :)  # Reshape the remaining params into C
-        
+            log_d = params[(end - size(D, 2) + 1):end]  # Assuming log_d has the same length as the number of columns in D
+            C = reshape(params[1:(end - size(D, 2))], C_size, :)  # Reshape the remaining params into C
+
             # Call Q_observation_model with the new C and log_d, and other unchanged parameters
             Q_val = Q_observation_model(C, D, log_d, E_z, P_smooth, y)
-        
+
             return -Q_val
         end
         # # create gradient function
@@ -1500,20 +1622,31 @@ function update_observation_model!(plds::PLDS, E_z::Array{<:Real}, P_smooth::Arr
         # optimize
         result = optimize(params -> f(params, plds.D, E_z, P_smooth, y), params, LBFGS())
         # update the parameters
-        plds.C = reshape(result.minimizer[1:plds.obs_dim * plds.latent_dim], plds.obs_dim, plds.latent_dim)
+        plds.C = reshape(
+            result.minimizer[1:(plds.obs_dim * plds.latent_dim)],
+            plds.obs_dim,
+            plds.latent_dim,
+        )
         # plds.D = reshape(result.minimizer[plds.obs_dim * plds.latent_dim + 1:plds.obs_dim * plds.latent_dim + plds.obs_dim * plds.obs_dim], plds.obs_dim, plds.obs_dim)
-        plds.log_d = result.minimizer[end-plds.obs_dim+1:end]
+        plds.log_d = result.minimizer[(end - plds.obs_dim + 1):end]
     end
 end
 
-function M_Step!(plds::PLDS, E_z::Array{<:Real}, E_zz::Array{<:Real}, E_zz_prev::Array{<:Real}, p_smooth::Array{<:Real}, y::Array{<:Real})
+function M_Step!(
+    plds::PLDS,
+    E_z::Array{<:Real},
+    E_zz::Array{<:Real},
+    E_zz_prev::Array{<:Real},
+    p_smooth::Array{<:Real},
+    y::Array{<:Real},
+)
     # update the parameters
     update_initial_state_mean!(plds, E_z)
     update_initial_state_covariance!(plds, E_zz, E_z)
     # update_b!(plds, x_smooth) # needs to be updated before A
     update_A_plds!(plds, E_zz, E_zz_prev)
     update_Q_plds!(plds, E_zz, E_zz_prev)
-    update_observation_model!(plds, E_z, p_smooth, y)
+    return update_observation_model!(plds, E_z, p_smooth, y)
 end
 
 function fit!(plds::PLDS, y::Array{<:Real}, max_iter::Int=100, tol::Float64=1e-3)
@@ -1560,19 +1693,19 @@ function countspikes(y::Matrix{<:Real}, window::Int=1)
     # Initialize the spike-count matrix
     s = zeros(T, D)
     # Compute the cumulative sum of the observation matrix along the first dimension (time)
-    cumsum_y = cumsum(y, dims=1)
-    
+    cumsum_y = cumsum(y; dims=1)
+
     # Loop over time points from 2 to T
     for t in 2:T
         if t - window <= 1
             # If the time window is less than or equal to 1, use the cumulative sum directly
-            s[t, :] = cumsum_y[t-1, :]
+            s[t, :] = cumsum_y[t - 1, :]
         else
             # Otherwise, calculate the sum of the window by subtracting cumulative sums
-            s[t, :] = cumsum_y[t-1, :] .- cumsum_y[t-window-1, :]
+            s[t, :] = cumsum_y[t - 1, :] .- cumsum_y[t - window - 1, :]
         end
     end
-    
+
     return s
 end
 
@@ -1598,7 +1731,7 @@ function sample(plds::PLDS, T::Int64, K::Int64)
     # Pre-allocate arrays
     x = zeros(K, T, plds.latent_dim)
     y = zeros(K, T, plds.obs_dim)
-    
+
     for k in 1:K
         # Sample the initial stated
         x[k, 1, :] = rand(MvNormal(plds.x0, plds.p0))
@@ -1606,12 +1739,11 @@ function sample(plds::PLDS, T::Int64, K::Int64)
         # Sample the rest of the states
         for t in 2:T
             s = max(1, t - plds.refractory_period)
-            spikes = sum(y[k, s:t-1, :], dims=1)'
-            x[k, t, :] = rand(MvNormal((plds.A * x[k, t-1, :]) + plds.b[t, :], plds.Q))
-            y[k, t, :] = rand.(Poisson.(exp.((plds.C * x[k, t, :]) + (plds.D * spikes) + d)))
+            spikes = sum(y[k, s:(t - 1), :]; dims=1)'
+            x[k, t, :] = rand(MvNormal((plds.A * x[k, t - 1, :]) + plds.b[t, :], plds.Q))
+            y[k, t, :] =
+                rand.(Poisson.(exp.((plds.C * x[k, t, :]) + (plds.D * spikes) + d)))
         end
     end
     return x, y
 end
-
-

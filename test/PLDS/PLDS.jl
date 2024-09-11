@@ -7,10 +7,22 @@ function toy_PoissonLDS()
     Q = Matrix(Diagonal([0.001, 0.001]))
     C = [0.5 0.5; 0.5 0.1; 0.1 0.1]
     log_d = [0.5, 0.5, 0.5]
-    D = Matrix(Diagonal([0., 0., 0.]))
+    D = Matrix(Diagonal([0.0, 0.0, 0.0]))
     b = ones(T, 2) * 0.0
 
-    plds = PLDS(A=A, C=C, Q=Q, D=D, b=b, log_d=log_d, x0=x0, p0=p0, refractory_period=1, obs_dim=3, latent_dim=2)
+    plds = PLDS(;
+        A=A,
+        C=C,
+        Q=Q,
+        D=D,
+        b=b,
+        log_d=log_d,
+        x0=x0,
+        p0=p0,
+        refractory_period=1,
+        obs_dim=3,
+        latent_dim=2,
+    )
     # sample data
     x, y = StateSpaceDynamics.sample(plds, T, 3)
     return plds, x, y
@@ -29,10 +41,22 @@ function test_PLDS_constructor_with_params()
     refrac = 1
     log_d = randn(obs_dim)
     D = randn(obs_dim, obs_dim)
-    fit_bool=Vector([true, true, true, true, true, true])
+    fit_bool = Vector([true, true, true, true, true, true])
 
     # create the PLDS model
-    plds = PLDS(;A=A, C=C, Q=Q, D=D, log_d=log_d, x0=x0, p0=p0, refractory_period=refrac, obs_dim=obs_dim, latent_dim=latent_dim, fit_bool=fit_bool)
+    plds = PLDS(;
+        A=A,
+        C=C,
+        Q=Q,
+        D=D,
+        log_d=log_d,
+        x0=x0,
+        p0=p0,
+        refractory_period=refrac,
+        obs_dim=obs_dim,
+        latent_dim=latent_dim,
+        fit_bool=fit_bool,
+    )
 
     # test model
     @test plds.A == A
@@ -49,7 +73,7 @@ end
 
 function test_PLDS_constructor_without_params()
     # create the PLDS model
-    plds = PLDS(;obs_dim=10, latent_dim=5)
+    plds = PLDS(; obs_dim=10, latent_dim=5)
 
     # test parameters are not empty
     @test !isempty(plds.A)
@@ -90,7 +114,7 @@ end
 
 function test_logposterior()
     # create a plds model
-    plds = PLDS(;obs_dim=10, latent_dim=5)
+    plds = PLDS(; obs_dim=10, latent_dim=5)
     # create some observations
     obs = rand(Bool, 100, 10)
     # create latent state
@@ -105,7 +129,7 @@ end
 
 function test_gradient_plds()
     # create a plds model
-    plds = PLDS(;obs_dim=10, latent_dim=5)
+    plds = PLDS(; obs_dim=10, latent_dim=5)
     # create some observations
     obs = rand(Bool, 3, 10)
     # create initial latent state for gradient calculation
@@ -119,12 +143,12 @@ function test_gradient_plds()
     # check the gradients using autodiff
     obj = x -> StateSpaceDynamics.logposterior_nonthreaded(x, plds, obs)
     grad_autodiff = ForwardDiff.gradient(obj, x)
-    @test grad ≈ grad_autodiff atol=1e-12
+    @test grad ≈ grad_autodiff atol = 1e-12
 end
 
 function test_hessian_plds()
     # create a plds model
-    plds = PLDS(;obs_dim=10, latent_dim=5)
+    plds = PLDS(; obs_dim=10, latent_dim=5)
     # create some observations
     obs = rand(Bool, 3, 10)
     # create initial latent state for hessian calculation
@@ -144,12 +168,12 @@ function test_hessian_plds()
         return StateSpaceDynamics.logposterior_nonthreaded(x, plds, obs)
     end
     hess_autodiff = ForwardDiff.hessian(obj_logposterior, reshape(x', 15))
-    @test hess ≈ hess_autodiff atol=1e-12
+    @test hess ≈ hess_autodiff atol = 1e-12
 end
 
 function test_direct_smoother()
     # create a plds model
-    plds = PLDS(;obs_dim=10, latent_dim=5)
+    plds = PLDS(; obs_dim=10, latent_dim=5)
     # create some observations
     obs = rand(Bool, 10, 10)
     # create inputs
@@ -175,7 +199,7 @@ function test_analytical_parameter_updates()
     # create a dummy data
     dummy_plds, x, y = toy_PoissonLDS()
     # now create a random plds model
-    plds = PLDS(;obs_dim=3, latent_dim=2)
+    plds = PLDS(; obs_dim=3, latent_dim=2)
     # save the old parameters from the model
     A = copy(plds.A)
     Q = copy(plds.Q)
@@ -187,26 +211,48 @@ function test_analytical_parameter_updates()
     # optimize x0 
     opt_x0 = x0 -> -StateSpaceDynamics.Q_initial_obs(x0, plds.p0, E_z, E_zz)
     result_x0 = optimize(opt_x0, plds.x0, LBFGS())
-    @test isapprox(result_x0.minimizer, StateSpaceDynamics.update_initial_state_mean!(plds, E_z))
+    @test isapprox(
+        result_x0.minimizer, StateSpaceDynamics.update_initial_state_mean!(plds, E_z)
+    )
     plds.x0 = result_x0.minimizer
 
     # optimize p0
     opt_p0 = p0 -> -StateSpaceDynamics.Q_initial_obs(plds.x0, p0, E_z, E_zz)
-    result_p0 = optimize(opt_p0, plds.p0, LBFGS(), Optim.Options(g_abstol=1e-12))
-    @test isapprox(result_p0.minimizer * result_p0.minimizer', StateSpaceDynamics.update_initial_state_covariance!(plds, E_zz, E_z), atol=1e-3)
+    result_p0 = optimize(opt_p0, plds.p0, LBFGS(), Optim.Options(; g_abstol=1e-12))
+    @test isapprox(
+        result_p0.minimizer * result_p0.minimizer',
+        StateSpaceDynamics.update_initial_state_covariance!(plds, E_zz, E_z),
+        atol=1e-3,
+    )
 
     Q_l = Matrix(cholesky(Q).L)
     # optimize A and Q
     opt_A = A -> -StateSpaceDynamics.Q_state_model(A, Q_l, E_zz, E_zz_prev)
-    result_A = optimize(opt_A, rand(plds.latent_dim, plds.latent_dim), LBFGS(), Optim.Options(g_abstol=1e-16))
-    println("Difference between analytical and numerical results:", result_A.minimizer - StateSpaceDynamics.update_A_plds!(plds, E_zz, E_zz_prev))
-    @test_broken isapprox(result_A.minimizer, StateSpaceDynamics.update_A_plds!(plds, E_zz, E_zz_prev), atol=1e-5)
+    result_A = optimize(
+        opt_A,
+        rand(plds.latent_dim, plds.latent_dim),
+        LBFGS(),
+        Optim.Options(; g_abstol=1e-16),
+    )
+    println(
+        "Difference between analytical and numerical results:",
+        result_A.minimizer - StateSpaceDynamics.update_A_plds!(plds, E_zz, E_zz_prev),
+    )
+    @test_broken isapprox(
+        result_A.minimizer,
+        StateSpaceDynamics.update_A_plds!(plds, E_zz, E_zz_prev),
+        atol=1e-5,
+    )
 
     # update the model before update Q
     plds.A = result_A.minimizer
     # optimize Q now
     opt_Q = Q -> -StateSpaceDynamics.Q_state_model(plds.A, Q, E_zz, E_zz_prev)
-    result_Q = optimize(opt_Q, Q_l, LBFGS(), Optim.Options(g_abstol=1e-12))
+    result_Q = optimize(opt_Q, Q_l, LBFGS(), Optim.Options(; g_abstol=1e-12))
 
-    @test isapprox(result_Q.minimizer * result_Q.minimizer', StateSpaceDynamics.update_Q_plds!(plds, E_zz, E_zz_prev), atol=1e-6)
+    @test isapprox(
+        result_Q.minimizer * result_Q.minimizer',
+        StateSpaceDynamics.update_Q_plds!(plds, E_zz, E_zz_prev),
+        atol=1e-6,
+    )
 end

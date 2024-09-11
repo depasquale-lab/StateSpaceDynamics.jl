@@ -1,4 +1,5 @@
-export kmeanspp_initialization, kmeans_clustering, fit!, block_tridgm, interleave_reshape, block_tridiagonal_inverse
+export kmeanspp_initialization,
+    kmeans_clustering, fit!, block_tridgm, interleave_reshape, block_tridiagonal_inverse
 export row_matrix, stabilize_covariance_matrix
 
 # Matrix utilities
@@ -13,39 +14,39 @@ function block_tridiagonal_inverse(A, B, C)
     n = length(B)
     block_size = size(B[1], 1)
     # Initialize Di and Ei arrays
-    D = Array{AbstractMatrix}(undef, n+1)
-    E = Array{AbstractMatrix}(undef, n+1)
+    D = Array{AbstractMatrix}(undef, n + 1)
+    E = Array{AbstractMatrix}(undef, n + 1)
     λii = Array{Float64}(undef, n, block_size, block_size)
-    λij = Array{Float64}(undef, n-1, block_size, block_size)
+    λij = Array{Float64}(undef, n - 1, block_size, block_size)
 
     # Add a zero matrix to the subdiagonal and superdiagonal
     pushfirst!(A, zeros(block_size, block_size))
     push!(C, zeros(block_size, block_size))
-    
+
     # Initial conditions
     D[1] = zeros(block_size, block_size)
-    E[n+1] = zeros(block_size, block_size)
+    E[n + 1] = zeros(block_size, block_size)
 
     # Forward sweep for D
     for i in 1:n
-        D[i+1] = (B[i] - A[i] * D[i]) \ C[i]
+        D[i + 1] = (B[i] - A[i] * D[i]) \ C[i]
     end
-  
+
     # Backward sweep for E
     for i in n:-1:1
-        E[i] = (B[i] - C[i]*E[i+1]) \ A[i]
+        E[i] = (B[i] - C[i] * E[i + 1]) \ A[i]
     end
 
     # Compute the inverses of the diagonal blocks λii
     for i in 1:n
-        term1 = (I - D[i+1]*E[i+1])
-        term2 = (B[i] - A[i]*D[i])
+        term1 = (I - D[i + 1] * E[i + 1])
+        term2 = (B[i] - A[i] * D[i])
         λii[i, :, :] = pinv(term1) * pinv(term2)
     end
-    
+
     # Compute the inverse of the diagonal blocks λij
     for i in 2:n
-        λij[i-1, :, :] = (E[i]*λii[i-1, :, :])
+        λij[i - 1, :, :] = (E[i] * λii[i - 1, :, :])
     end
 
     return λii, -λij
@@ -69,10 +70,17 @@ function interleave_reshape(data::AbstractArray, t::Int, d::Int)
 end
 
 """Convenience function to construct a block tridiagonal matrix from three vectors of matrices"""
-function block_tridgm(main_diag::Vector{Matrix{T}}, upper_diag::Vector{Matrix{T}}, lower_diag::Vector{Matrix{T}}) where T<:Real
+function block_tridgm(
+    main_diag::Vector{Matrix{T}},
+    upper_diag::Vector{Matrix{T}},
+    lower_diag::Vector{Matrix{T}},
+) where {T<:Real}
     # Check that the vectors have the correct lengths
-    if length(upper_diag) != length(main_diag) - 1 || length(lower_diag) != length(main_diag) - 1
-        error("The length of upper_diag and lower_diag must be one less than the length of main_diag")
+    if length(upper_diag) != length(main_diag) - 1 ||
+        length(lower_diag) != length(main_diag) - 1
+        error(
+            "The length of upper_diag and lower_diag must be one less than the length of main_diag",
+        )
     end
 
     # Determine the size of the blocks and the total matrix size
@@ -104,12 +112,12 @@ function block_tridgm(main_diag::Vector{Matrix{T}}, upper_diag::Vector{Matrix{T}
     end
 
     # Fill in the upper diagonal blocks
-    for i in 1:n-1
+    for i in 1:(n - 1)
         append_block(i, i + 1, upper_diag[i])
     end
 
     # Fill in the lower diagonal blocks
-    for i in 1:n-1
+    for i in 1:(n - 1)
         append_block(i + 1, i, lower_diag[i])
     end
 
@@ -122,7 +130,7 @@ end
 # Initialization utilities
 """Euclidean Distance for two points"""
 function euclidean_distance(a::AbstractVector{Float64}, b::AbstractVector{Float64})
-    return sqrt(sum((a .- b).^2))
+    return sqrt(sum((a .- b) .^ 2))
 end
 
 """KMeans++ Initialization"""
@@ -134,7 +142,9 @@ function kmeanspp_initialization(data::Matrix{<:Real}, k_means::Int)
     for k in 2:k_means
         dists = zeros(N)
         for i in 1:N
-            dists[i] = minimum([euclidean_distance(data[i, :], centroids[:, j]) for j in 1:(k-1)])
+            dists[i] = minimum([
+                euclidean_distance(data[i, :], centroids[:, j]) for j in 1:(k - 1)
+            ])
         end
         probs = dists .^ 2
         probs ./= sum(probs)
@@ -152,13 +162,18 @@ function kmeanspp_initialization(data::Vector{Float64}, k_means::Int)
 end
 
 """KMeans Clustering Initialization"""
-function kmeans_clustering(data::Matrix{<:Real}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6)
+function kmeans_clustering(
+    data::Matrix{<:Real}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6
+)
     N, _ = size(data)
     centroids = kmeanspp_initialization(data, k_means)  # Assuming you have this function defined
     labels = zeros(Int, N)
     for iter in 1:max_iters
         # Assign each data point to the nearest cluster
-        labels .= [argmin([euclidean_distance(x, c) for c in eachcol(centroids)]) for x in eachrow(data)]
+        labels .= [
+            argmin([euclidean_distance(x, c) for c in eachcol(centroids)]) for
+            x in eachrow(data)
+        ]
         # Cache old centroids for convergence check
         old_centroids = centroids
         # Update the centroids
@@ -169,12 +184,14 @@ function kmeans_clustering(data::Matrix{<:Real}, k_means::Int, max_iters::Int=10
                 # If a cluster has no points, reinitialize its centroid
                 new_centroids[:, k] = data[rand(1:N), :]
             else
-                new_centroids[:, k] = mean(points_in_cluster, dims=1)
+                new_centroids[:, k] = mean(points_in_cluster; dims=1)
             end
         end
         centroids .= new_centroids
         # Check for convergence
-        if maximum([euclidean_distance(centroids[:, i], old_centroids[:, i]) for i in 1:k_means]) < tol
+        if maximum([
+            euclidean_distance(centroids[:, i], old_centroids[:, i]) for i in 1:k_means
+        ]) < tol
             # println("Converged after $iter iterations")
             break
         end
@@ -183,7 +200,9 @@ function kmeans_clustering(data::Matrix{<:Real}, k_means::Int, max_iters::Int=10
 end
 
 """KMeans Clustering Initialization for Vector input"""
-function kmeans_clustering(data::Vector{Float64}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6)
+function kmeans_clustering(
+    data::Vector{Float64}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6
+)
     # reshape data
     data = reshape(data, length(data), 1)
     return kmeans_clustering(data, k_means, max_iters, tol)
@@ -200,7 +219,7 @@ function logistic(x::Real)
 end
 
 # Miscellaneous utilities
-function ensure_positive_definite(A::Matrix{T}) where T
+function ensure_positive_definite(A::Matrix{T}) where {T}
     # Perform eigenvalue decomposition
     eigen_decomp = eigen(Symmetric(A))  # Ensure A is treated as symmetric
     λ, V = eigen_decomp.values, eigen_decomp.vectors

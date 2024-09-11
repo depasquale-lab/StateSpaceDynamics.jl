@@ -4,20 +4,24 @@ l = 1.0 # length of pendulum
 dt = 0.01 # time step
 
 # Discrete-time dynamics
-A = [1.0 dt; -g/l*dt 1.0]
+A = [1.0 dt; -g / l*dt 1.0]
 Q = Matrix{Float64}(0.00001 * I(2))  # Process noise covariance
 
 # Initial state/ covariance
 x0 = [0.0; 1.0]
-P0 = Matrix{Float64}(0.1*I(2))  # Initial state covariance
+P0 = Matrix{Float64}(0.1 * I(2))  # Initial state covariance
 
 # Observation params 
 C = Matrix{Float64}(I(2))  # Observation matrix (assuming direct observation)
 observation_noise_std = 0.5
 R = Matrix{Float64}((observation_noise_std^2) * I(2))  # Observation noise covariance
 
-function toy_lds(ntrials::Int=1, fit_bool::Vector{Bool}=[true, true, true, true, true, true])
-    lds = GaussianLDS(;A=A, C=C, Q=Q, R=R, x0=x0, P0=P0, obs_dim=2, latent_dim=2, fit_bool=fit_bool)
+function toy_lds(
+    ntrials::Int=1, fit_bool::Vector{Bool}=[true, true, true, true, true, true]
+)
+    lds = GaussianLDS(;
+        A=A, C=C, Q=Q, R=R, x0=x0, P0=P0, obs_dim=2, latent_dim=2, fit_bool=fit_bool
+    )
 
     # sample data
     T = 100
@@ -33,13 +37,12 @@ function test_lds_properties(lds)
     @test isa(lds, StateSpaceDynamics.LinearDynamicalSystem)
 
     # check model param dimensions
-    @test size(lds.state_model.A) == (lds.latent_dim,  lds.latent_dim)
+    @test size(lds.state_model.A) == (lds.latent_dim, lds.latent_dim)
     @test size(lds.obs_model.C) == (lds.obs_dim, lds.latent_dim)
     @test size(lds.state_model.Q) == (lds.latent_dim, lds.latent_dim)
     @test size(lds.obs_model.R) == (lds.obs_dim, lds.obs_dim)
     @test size(lds.state_model.x0) == (lds.latent_dim,)
     @test size(lds.state_model.P0) == (lds.latent_dim, lds.latent_dim)
-
 end
 
 function test_lds_with_params()
@@ -58,7 +61,7 @@ function test_lds_with_params()
 end
 
 function test_lds_without_params()
-    lds = GaussianLDS(obs_dim=2, latent_dim=2)
+    lds = GaussianLDS(; obs_dim=2, latent_dim=2)
     test_lds_properties(lds)
 
     @test !isempty(lds.state_model.A)
@@ -71,7 +74,7 @@ end
 
 function test_Gradient()
     lds, x, y = toy_lds()
-    
+
     # for each trial check the gradient
     for i in axes(y, 1)
 
@@ -96,7 +99,7 @@ function test_Hessian()
     # for each trial check the Hessian
     for i in axes(y, 1)
         hess, main, super, sub = StateSpaceDynamics.Hessian(lds, y[i, 1:3, :])
-        @test size(hess) == (3*lds.latent_dim, 3*lds.latent_dim)
+        @test size(hess) == (3 * lds.latent_dim, 3 * lds.latent_dim)
         @test size(main) == (3,)
         @test size(super) == (2,)
         @test size(sub) == (2,)
@@ -154,22 +157,30 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
 
     # run the E_Step
     E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(lds, y)
-    
+
     # optimize the x0 and p0 entries using autograd
     function obj(x0::AbstractVector, P0_sqrt::AbstractMatrix, lds)
         A, Q = lds.state_model.A, lds.state_model.Q
         P0 = P0_sqrt * P0_sqrt'
         Q_val = 0.0
         for i in axes(E_z, 1)
-            Q_val += StateSpaceDynamics.Q_state(A, Q, P0, x0, E_z[i, :, :], E_zz[i, :, :, :], E_zz_prev[i, :, :, :])
+            Q_val += StateSpaceDynamics.Q_state(
+                A, Q, P0, x0, E_z[i, :, :], E_zz[i, :, :, :], E_zz_prev[i, :, :, :]
+            )
         end
         return -Q_val
     end
 
     P0_sqrt = Matrix(cholesky(lds.state_model.P0).U)
 
-    x0_opt = optimize(x0 -> obj(x0, P0_sqrt, lds), lds.state_model.x0, LBFGS(), Optim.Options(g_abstol=1e-12)).minimizer
-    P0_opt = optimize(P0_ -> obj(x0_opt, P0_, lds),  P0_sqrt, LBFGS()).minimizer
+    x0_opt =
+        optimize(
+            x0 -> obj(x0, P0_sqrt, lds),
+            lds.state_model.x0,
+            LBFGS(),
+            Optim.Options(; g_abstol=1e-12),
+        ).minimizer
+    P0_opt = optimize(P0_ -> obj(x0_opt, P0_, lds), P0_sqrt, LBFGS()).minimizer
 
     # update the initial state and covariance
     StateSpaceDynamics.mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
@@ -189,22 +200,41 @@ function test_state_model_parameter_updates(ntrials::Int=1)
         Q = Q_sqrt * Q_sqrt'
         Q_val = 0.0
         for i in axes(E_z, 1)
-            Q_val += StateSpaceDynamics.Q_state(A, Q, lds.state_model.P0, lds.state_model.x0, E_z[i, :, :], E_zz[i, :, :, :], E_zz_prev[i, :, :, :])
+            Q_val += StateSpaceDynamics.Q_state(
+                A,
+                Q,
+                lds.state_model.P0,
+                lds.state_model.x0,
+                E_z[i, :, :],
+                E_zz[i, :, :, :],
+                E_zz_prev[i, :, :, :],
+            )
         end
         return -Q_val
     end
 
     Q_sqrt = Matrix(cholesky(lds.state_model.Q).U)
 
-    A_opt = optimize(A -> obj(A, Q_sqrt, lds), lds.state_model.A, LBFGS(), Optim.Options(g_abstol=1e-12)).minimizer
-    Q_opt = optimize(Q_sqrt -> obj(A_opt, Q_sqrt, lds), Q_sqrt, LBFGS(), Optim.Options(g_abstol=1e-12)).minimizer
+    A_opt =
+        optimize(
+            A -> obj(A, Q_sqrt, lds),
+            lds.state_model.A,
+            LBFGS(),
+            Optim.Options(; g_abstol=1e-12),
+        ).minimizer
+    Q_opt =
+        optimize(
+            Q_sqrt -> obj(A_opt, Q_sqrt, lds),
+            Q_sqrt,
+            LBFGS(),
+            Optim.Options(; g_abstol=1e-12),
+        ).minimizer
 
     # update the state model
     StateSpaceDynamics.mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
 
     @test isapprox(lds.state_model.A, A_opt, atol=1e-6)
     @test isapprox(lds.state_model.Q, Q_opt * Q_opt', atol=1e-6)
-
 end
 
 function test_obs_model_params_updates(ntrials::Int=1)
@@ -218,15 +248,29 @@ function test_obs_model_params_updates(ntrials::Int=1)
         R = R_sqrt * R_sqrt'
         Q_val = 0.0
         for i in axes(E_z, 1)
-            Q_val += StateSpaceDynamics.Q_obs(C, R, E_z[i, :, :], E_zz[i, :, :, :], y[i, :, :])
+            Q_val += StateSpaceDynamics.Q_obs(
+                C, R, E_z[i, :, :], E_zz[i, :, :, :], y[i, :, :]
+            )
         end
         return -Q_val
     end
 
     R_sqrt = Matrix(cholesky(lds.obs_model.R).U)
 
-    C_opt = optimize(C -> obj(C, R_sqrt, lds), lds.obs_model.C, LBFGS(), Optim.Options(g_abstol=1e-12)).minimizer
-    R_opt = optimize(R_sqrt -> obj(C_opt, R_sqrt, lds), R_sqrt, LBFGS(), Optim.Options(g_abstol=1e-12)).minimizer
+    C_opt =
+        optimize(
+            C -> obj(C, R_sqrt, lds),
+            lds.obs_model.C,
+            LBFGS(),
+            Optim.Options(; g_abstol=1e-12),
+        ).minimizer
+    R_opt =
+        optimize(
+            R_sqrt -> obj(C_opt, R_sqrt, lds),
+            R_sqrt,
+            LBFGS(),
+            Optim.Options(; g_abstol=1e-12),
+        ).minimizer
 
     # update the observation model
     StateSpaceDynamics.mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
@@ -235,17 +279,20 @@ function test_obs_model_params_updates(ntrials::Int=1)
     @test isapprox(lds.obs_model.R, R_opt * R_opt', atol=1e-6)
 end
 
-
 function test_EM()
     lds, x, y = toy_lds()
 
     #save old params
-    A, Q, C, R, x0, P0 = lds.state_model.A, lds.state_model.Q, lds.obs_model.C, lds.obs_model.R, lds.state_model.x0, lds.state_model.P0
+    A, Q, C, R, x0, P0 = lds.state_model.A,
+    lds.state_model.Q, lds.obs_model.C, lds.obs_model.R, lds.state_model.x0,
+    lds.state_model.P0
 
     # run em 3 times, check params change each time
     for i in 1:3
         StateSpaceDynamics.fit!(lds, y, 1)
-        A_new, Q_new, C_new, R_new, x0_new, P0_new = lds.state_model.A, lds.state_model.Q, lds.obs_model.C, lds.obs_model.R, lds.state_model.x0, lds.state_model.P0
+        A_new, Q_new, C_new, R_new, x0_new, P0_new = lds.state_model.A,
+        lds.state_model.Q, lds.obs_model.C, lds.obs_model.R, lds.state_model.x0,
+        lds.state_model.P0
 
         @test A != A_new
         @test Q != Q_new
@@ -262,18 +309,4 @@ function test_EM()
 
     # test that the ml is increasing
     @test all(diff(ml_total) .>= 0)
-
 end
-
-
-
-
-        
-
-        
-
-
-
-
-
-

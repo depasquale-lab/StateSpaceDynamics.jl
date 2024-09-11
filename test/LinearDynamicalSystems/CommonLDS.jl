@@ -1,4 +1,10 @@
-function setup_lds(lds_type::Type, obs_dim::Int, latent_dim::Int, ntrials::Int=1, fit_bool::Vector{Bool}=[true, true, true, true, true, true])
+function setup_lds(
+    lds_type::Type,
+    obs_dim::Int,
+    latent_dim::Int,
+    ntrials::Int=1,
+    fit_bool::Vector{Bool}=[true, true, true, true, true, true],
+)
     # Consistent parameters across model types
     A = [cos(0.1) -sin(0.1); sin(0.1) cos(0.1)]
     Q = 0.1 * Matrix{Float64}(I(latent_dim))
@@ -7,11 +13,31 @@ function setup_lds(lds_type::Type, obs_dim::Int, latent_dim::Int, ntrials::Int=1
     if lds_type == GaussianLDS
         C = Matrix{Float64}(I(obs_dim))
         R = 0.1 * Matrix{Float64}(I(obs_dim))
-        lds = GaussianLDS(;A=A, C=C, Q=Q, R=R, x0=x0, P0=P0, obs_dim=obs_dim, latent_dim=latent_dim, fit_bool=fit_bool)
+        lds = GaussianLDS(;
+            A=A,
+            C=C,
+            Q=Q,
+            R=R,
+            x0=x0,
+            P0=P0,
+            obs_dim=obs_dim,
+            latent_dim=latent_dim,
+            fit_bool=fit_bool,
+        )
     elseif lds_type == PoissonLDS
         C = abs.(randn(obs_dim, latent_dim))
         log_d = log.(abs.(randn(obs_dim)))
-        lds = PoissonLDS(;A=A, C=C, Q=Q, log_d=log_d, x0=x0, P0=P0, obs_dim=obs_dim, latent_dim=latent_dim, fit_bool=fit_bool)
+        lds = PoissonLDS(;
+            A=A,
+            C=C,
+            Q=Q,
+            log_d=log_d,
+            x0=x0,
+            P0=P0,
+            obs_dim=obs_dim,
+            latent_dim=latent_dim,
+            fit_bool=fit_bool,
+        )
     else
         error("Unsupported LDS type")
     end
@@ -29,7 +55,7 @@ function test_lds_properties(lds, obs_dim, latent_dim)
     @test size(lds.state_model.x0) == (latent_dim,)
     @test size(lds.state_model.P0) == (latent_dim, latent_dim)
     @test size(lds.obs_model.C) == (obs_dim, latent_dim)
-    
+
     if isa(lds, GaussianLDS)
         @test isa(lds.obs_model, StateSpaceDynamics.GaussianObservationModel)
         @test size(lds.obs_model.R) == (obs_dim, obs_dim)
@@ -51,7 +77,7 @@ end
 function test_hessian(lds, x, y)
     for i in axes(y, 1)
         hess, main, super, sub = StateSpaceDynamics.Hessian(lds, y[i, 1:3, :])
-        @test size(hess) == (3*lds.latent_dim, 3*lds.latent_dim)
+        @test size(hess) == (3 * lds.latent_dim, 3 * lds.latent_dim)
         @test size(main) == (3,)
         @test size(super) == (2,)
         @test size(sub) == (2,)

@@ -2,8 +2,13 @@
 The purpose of this file is to provide a common place for all global types to be defined. This is to avoid circular dependencies between files.
 """
 
-export MixtureModel, EmissionsModel, AbstractHMM, DynamicalSystem, SmoothingMethod, RTSSmoothing, DirectSmoothing
-
+export MixtureModel,
+    EmissionsModel,
+    AbstractHMM,
+    DynamicalSystem,
+    SmoothingMethod,
+    RTSSmoothing,
+    DirectSmoothing
 
 # Create abstract types here 
 

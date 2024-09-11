@@ -8,10 +8,10 @@ function GaussianRegression_simulation()
     y = X * true_β + rand(MvNormal(zeros(1), true_covariance), n)'
 
     # Remove the intercept column
-    X = X[:, 2:end] 
-    
+    X = X[:, 2:end]
+
     # Initialize and fit the model
-    model = GaussianRegression(num_features=2, num_targets=1)
+    model = GaussianRegression(; num_features=2, num_targets=1)
     model.β = ones(3, 1)
     model.Σ = ones(1, 1)
     fit!(model, X, y)
@@ -21,7 +21,7 @@ end
 
 function test_GaussianRegression_fit()
     model, X, y, true_β, true_covariance, n = GaussianRegression_simulation()
-    
+
     # Check if the fitted coefficients are close to the true coefficients
     @test isapprox(model.β, true_β, atol=0.5)
     @test isposdef(model.Σ)
@@ -30,33 +30,33 @@ end
 
 function test_GaussianRegression_intercept()
     model, X, y, true_β, true_covariance, n = GaussianRegression_simulation()
-    
-    model = GaussianRegression(num_features=2, num_targets=1, include_intercept=false)
+
+    model = GaussianRegression(; num_features=2, num_targets=1, include_intercept=false)
     model.β = ones(2, 1)
     model.Σ = ones(1, 1)
     fit!(model, X, y)
     @test length(model.β) == 2
-    
 end
 
 function test_GaussianRegression_loglikelihood()
     model, X, y, true_β, true_covariance, n = GaussianRegression_simulation()
-    
+
     # Check log likelihood
     loglik = StateSpaceDynamics.loglikelihood(model, X, y)
     @test loglik < 0
 
     # test loglikelihood on a single point
-    loglik = StateSpaceDynamics.loglikelihood(model, reshape(X[1, :], 1, :), reshape(y[1,:], 1, :))
+    loglik = StateSpaceDynamics.loglikelihood(
+        model, reshape(X[1, :], 1, :), reshape(y[1, :], 1, :)
+    )
     @test loglik < 0
 end
 
 function test_GaussianRegression_default_model()
-    model = GaussianRegression(num_features=2, num_targets=1, include_intercept=false)
+    model = GaussianRegression(; num_features=2, num_targets=1, include_intercept=false)
     @test model.β == ones(2, 1)
     @test model.Σ == ones(1, 1)
 end
-
 
 function test_Gaussian_ll_gradient()
     # Generate synthetic data
@@ -67,9 +67,8 @@ function test_Gaussian_ll_gradient()
     true_covariance = reshape([0.25], 1, 1)
     y = X * true_β + rand(MvNormal(zeros(1), true_covariance), n)'
 
-    
     # Initialize model
-    model = GaussianRegression(num_features=2, num_targets=1)
+    model = GaussianRegression(; num_features=2, num_targets=1)
     model.β = ones(3, 1)
     model.Σ = ones(1, 1)
 
@@ -81,54 +80,51 @@ function test_Gaussian_ll_gradient()
         # reshape w for broadcasting
         w = reshape(w, (length(w), 1))
 
-        log_likelihood = -0.5 * sum(broadcast(*, w, residuals.^2)) - (model.λ * sum(β.^2))
+        log_likelihood =
+            -0.5 * sum(broadcast(*, w, residuals .^ 2)) - (model.λ * sum(β .^ 2))
 
-        
         return log_likelihood
     end
-
 
     w = ones(size(X, 1))
 
     grad = ForwardDiff.gradient(β -> objective(β, w, model), model.β)
     # calculate the gradient manually
     grad_analytic = ones(size(model.β))
-    StateSpaceDynamics.surrogate_loglikelihood_gradient!(grad_analytic, model, X[:,2:end], y)
+    StateSpaceDynamics.surrogate_loglikelihood_gradient!(
+        grad_analytic, model, X[:, 2:end], y
+    )
 
     # check if the gradients are close
     @test isapprox(grad, grad_analytic, atol=1e-6)
-
-
 
     # # now do the same with Weights
     w = rand(size(X, 1))
 
-
     grad = ForwardDiff.gradient(β -> objective(β, w, model), model.β)
-
 
     # calculate the gradient manually
     grad_analytic = ones(size(model.β))
-    StateSpaceDynamics.surrogate_loglikelihood_gradient!(grad_analytic, model, X[:,2:end], y, w)
+    StateSpaceDynamics.surrogate_loglikelihood_gradient!(
+        grad_analytic, model, X[:, 2:end], y, w
+    )
 
     # check if the gradients are close
     @test isapprox(grad, grad_analytic, atol=1e-6)
 
-
-
     # finally test when λ is not 0
-    model = GaussianRegression(num_features=2, num_targets=1, λ=0.1)
+    model = GaussianRegression(; num_features=2, num_targets=1, λ=0.1)
     model.β = ones(3, 1)
     model.Σ = ones(1, 1)
 
     grad = ForwardDiff.gradient(β -> objective(β, w, model), model.β)
 
-
     # calculate the gradient manually
     grad_analytic = ones(size(model.β))
-    StateSpaceDynamics.surrogate_loglikelihood_gradient!(grad_analytic, model, X[:,2:end], y, w)
+    StateSpaceDynamics.surrogate_loglikelihood_gradient!(
+        grad_analytic, model, X[:, 2:end], y, w
+    )
 
     # check if the gradients are close
     @test isapprox(grad, grad_analytic, atol=1e-6)
-
 end

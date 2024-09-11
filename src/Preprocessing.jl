@@ -19,7 +19,7 @@ mutable struct ProbabilisticPCA
     μ::Matrix{<:AbstractFloat} # mean of the data
     k::Int # number of latent dimensions
     D::Int # dimension of the data
-    z:: Matrix{<:AbstractFloat} # latent variables
+    z::Matrix{<:AbstractFloat} # latent variables
 end
 
 """
@@ -42,9 +42,15 @@ end
 # ppca = ProbabilisticPCA(W=rand(2, 1), σ²=0.1, μ=rand(2), k=1, D=2)
 # ```
 # """
-function ProbabilisticPCA(;W::Matrix{<:AbstractFloat}=Matrix{Float64}(undef, 0, 0), μ::Matrix{<:AbstractFloat}=Matrix{Float64}(undef, 0, 0), σ²::AbstractFloat=0.0, k::Int, D::Int)
+function ProbabilisticPCA(;
+    W::Matrix{<:AbstractFloat}=Matrix{Float64}(undef, 0, 0),
+    μ::Matrix{<:AbstractFloat}=Matrix{Float64}(undef, 0, 0),
+    σ²::AbstractFloat=0.0,
+    k::Int,
+    D::Int,
+)
     # if W is not provided, initialize it randomly
-    W = isempty(W) ? rand(D, k)/sqrt(k) : W
+    W = isempty(W) ? rand(D, k) / sqrt(k) : W
     # if σ² is not provided, initialize it randomly
     σ² = σ² === 0.0 ? abs(rand()) : σ²
     # add empty z
@@ -101,7 +107,9 @@ E_z, E_zz = E_Step(ppca, rand(10, 2))
 M_Step!(ppca, rand(10, 2), E_z, E_zzᵀ)
 ```
 """
-function M_Step!(ppca::ProbabilisticPCA, X::Matrix{<:Real}, E_z::AbstractArray, E_zz::AbstractArray)
+function M_Step!(
+    ppca::ProbabilisticPCA, X::Matrix{<:Real}, E_z::AbstractArray, E_zz::AbstractArray
+)
     # get dims
     N, D = size(X)
     # update W and σ²
@@ -110,11 +118,13 @@ function M_Step!(ppca::ProbabilisticPCA, X::Matrix{<:Real}, E_z::AbstractArray, 
     WW = ppca.W' * ppca.W
     for i in 1:N
         running_sum_W += (X[i, :] - ppca.μ') * E_z[i, :]'
-        running_sum_σ² += sum((X[i, :] - ppca.μ').^2) - sum((2 * E_z[i, :]' * ppca.W' * (X[i, :] - ppca.μ'))) + tr(E_zz[i, :, :] * WW)
+        running_sum_σ² +=
+            sum((X[i, :] - ppca.μ') .^ 2) -
+            sum((2 * E_z[i, :]' * ppca.W' * (X[i, :] - ppca.μ'))) + tr(E_zz[i, :, :] * WW)
     end
     ppca.z = E_z
-    ppca.W = running_sum_W * pinv(sum(E_zz, dims=1)[1, :, :])
-    ppca.σ² = running_sum_σ² / (N*D)
+    ppca.W = running_sum_W * pinv(sum(E_zz; dims=1)[1, :, :])
+    return ppca.σ² = running_sum_σ² / (N * D)
 end
 
 """
@@ -141,7 +151,7 @@ function loglikelihood(ppca::ProbabilisticPCA, X::Matrix{<:Real})
     X = X .- ppca.μ
     S = sum([X[i, :] * X[i, :]' for i in axes(X, 1)]) / N
     # calculate log-likelihood
-    ll = -(N/2) * (D * log(2*π) +logdet(C) + tr(pinv(C) * S))
+    ll = -(N / 2) * (D * log(2 * π) + logdet(C) + tr(pinv(C) * S))
     return ll
 end
 
@@ -162,30 +172,32 @@ ppca = ProbabilisticPCA(K=1, D=2)
 fit!(ppca, rand(10, 2))
 ```
 """
-function fit!(ppca::ProbabilisticPCA, X::Matrix{Float64}, max_iters::Int=100, tol::Float64=1e-6)
+function fit!(
+    ppca::ProbabilisticPCA, X::Matrix{Float64}, max_iters::Int=100, tol::Float64=1e-6
+)
     # initialize the μ if not done 
-    ppca.μ = mean(X, dims=1)
+    ppca.μ = mean(X; dims=1)
     # initiliaze the log-likelihood
     lls = []
-    prev_ll = -Inf  
+    prev_ll = -Inf
     prog = Progress(max_iters; desc="Fitting Probabilistic PCA...")
-    
+
     for i in 1:max_iters
         E_z, E_zz = E_Step(ppca, X)
         M_Step!(ppca, X, E_z, E_zz)
-        
+
         ll = loglikelihood(ppca, X)
         push!(lls, ll)
         next!(prog)
-        
+
         if abs(ll - prev_ll) < tol
             finish!(prog)
             return lls
         end
-        
+
         prev_ll = ll  # Update prev_ll for the next iteration
     end
-    
+
     finish!(prog)
     return lls
 end
