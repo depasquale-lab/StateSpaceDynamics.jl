@@ -7,8 +7,8 @@ root = joinpath(dirname(pathof(SSM)), "..", "docs")
 println("working dir: ", pwd())
 
 entr(["./docs/src"], [SSM]) do
-    makedocs(
-        root = root, 
+    makedocs(;
+        root=root,
         sitename="SSM Julia",
         pages=[
             "Home" => "index.md",
@@ -18,6 +18,7 @@ entr(["./docs/src"], [SSM]) do
                 "RegressionModels.md",
                 "HiddenMarkovModels.md",
                 "LDS.md",
-                ],
-            ])
+            ],
+        ],
+    )
 end

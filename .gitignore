@@ -6,4 +6,5 @@
 docs/build/
 Manifest.toml
 docs/Manifest.toml
+notebooks/Manifest.toml
 test/*/notebooks

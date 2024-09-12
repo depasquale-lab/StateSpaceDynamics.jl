@@ -6,18 +6,18 @@ using InteractiveUtils
 
 # ╔═╡ 53c96240-c044-11ee-2f83-e93206e06ac6
 begin
-	using Pkg
-	Pkg.activate("/Users/ryansenne/Documents/GitHub/ssm_julia")
-	include("/Users/ryansenne/Documents/GitHub/ssm_julia//src/SSM.jl")
-	using .SSM
-	using LinearAlgebra
-	using Distributions
-	using Random
-	using Plots
+    using Pkg
+    Pkg.activate("/Users/ryansenne/Documents/Github/ssm_julia")
+    include("/Users/ryansenne/Documents/Github/ssm_julia//src/SSM.jl")
+    using .SSM
+    using LinearAlgebra
+    using Distributions
+    using Random
+    using Plots
 end
 
 # ╔═╡ c3f10cbe-2505-47d3-a3de-340a8b7d63de
-md"""## Linear Dynamical System""" 
+md"""## Linear Dynamical System"""
 
 # ╔═╡ 2b64b709-ea92-49e8-8b47-218b4ecc56c7
 md"""The Linear Dynamical System is one of the most fundamental models in machine learning and statistics for sequential data analysis. Furthermore, along with the Hidden Markov Model, the LDS with Gaussian observations is of the simplest state-space models. Like the HMM, the LDS has the following graphical model structure:
@@ -47,38 +47,41 @@ $r_t \sim N(0, R)$
 
 # ╔═╡ 21dc64ac-c929-4eea-9568-8fbaef3e2e44
 begin
-	# function to simulate data from the above model
-	function simulate_LDS(T::Int, α::Float64, β::Float64, x₀::Vector{Float64}, Q::Matrix{Float64}, R::Float64)
-		# pre-allocate array
-		state = zeros(T, 2) # pos/velocity
-		observation = zeros(T, 1) # observations
-		observation[1] = x₀[1]
-		# set up parameters
-		A = [1 1; -β (1-α)]
-		state[1, :] = x₀
-		process_noise = MvNormal(zeros(2), Q)
-		observation_noise = Normal(0, R)
-		# simulate
-		for t in 2:T
-			state[t, :] = A * state[t-1, :] .+ rand(process_noise)
-			observation[t, :] = state[t] .+ rand(observation_noise, 1)
-		end
-		return state, observation
-	end
+    # function to simulate data from the above model
+    function simulate_LDS(
+        T::Int, α::Float64, β::Float64, x₀::Vector{Float64}, Q::Matrix{Float64}, R::Float64
+    )
+        # pre-allocate array
+        state = zeros(T, 2) # pos/velocity
+        observation = zeros(T, 1) # observations
+        observation[1] = x₀[1]
+        # set up parameters
+        A = [1 1; -β (1-α)]
+        state[1, :] = x₀
+        process_noise = MvNormal(zeros(2), Q)
+        observation_noise = Normal(0, R)
+        # simulate
+        for t in 2:T
+            state[t, :] = A * state[t - 1, :] .+ rand(process_noise)
+            observation[t, :] = state[t] .+ rand(observation_noise, 1)
+        end
+        return state, observation
+    end
 
-# simulate 1000 steps of this model
-state_sequence, observation_sequence = simulate_LDS(100, 0.9, 0.75, [1., -1], [0.01 0; 0 0.01], 1.)
-	
+    # simulate 1000 steps of this model
+    state_sequence, observation_sequence = simulate_LDS(
+        100, 0.9, 0.75, [1.0, -1], [0.01 0; 0 0.01], 1.0
+    )
 end
 
 # ╔═╡ dd275f99-1d29-4dbd-a804-7e64893074b0
 begin
-	# plot our latent states and what we actually observed
-	l = @layout [a; b; c]
-	p1 = plot(state_sequence[:, 2], linewidth=:3, labels="Velocity")
-	p2 = plot(state_sequence[:, 1], linewidth=:3, labels="Position")
-	p3 = plot(observation_sequence, linewidth=:3, labels="Noisy Position")
-	plot(p1, p2, p3, layout=l)
+    # plot our latent states and what we actually observed
+    l = @layout [a; b; c]
+    p1 = plot(state_sequence[:, 2]; linewidth=:3, labels="Velocity")
+    p2 = plot(state_sequence[:, 1]; linewidth=:3, labels="Position")
+    p3 = plot(observation_sequence; linewidth=:3, labels="Noisy Position")
+    plot(p1, p2, p3; layout=l)
 end
 
 # ╔═╡ 6fa55d13-f126-40f1-8b34-4221a70d36b3
@@ -113,38 +116,40 @@ It is worth examining this relation. What this means is that Bayesian Filtets, (
 
 # ╔═╡ 3ac3ee86-3426-4cf4-ba02-29d692348e9a
 begin
-	# set up parameters, we currently are assuming we know these, in practice we may know only a few, if any at all
-	β = 0.75
-	α = 0.9
-	A = [1 1; -β (1 - α)]
-	H = reshape([1., 0.], 1, 2)
-	Q = 0.01 * I(2)
-	R = [1.;;]
-	x₀ = [1, -1]
-	P₀ = 0.01 * I(2)
+    # set up parameters, we currently are assuming we know these, in practice we may know only a few, if any at all
+    β = 0.75
+    α = 0.9
+    A = [1 1; -β (1-α)]
+    H = reshape([1.0, 0.0], 1, 2)
+    Q = 0.01 * I(2)
+    R = [1.0;;]
+    x₀ = [1, -1]
+    P₀ = 0.01 * I(2)
 
-	# set up a LDS object
-	spring_LDS = SSM.LDS(;A=A, H=H, Q=Q, R=R, x0=x₀, p0=P₀, obs_dim=1, latent_dim=2, fit_bool=fill(false, 7))
+    # set up a LDS object
+    spring_LDS = SSM.LDS(;
+        A=A, H=H, Q=Q, R=R, x0=x₀, p0=P₀, obs_dim=1, latent_dim=2, fit_bool=fill(false, 7)
+    )
 
-	# now we can filter our observations
-	x_filtered, p_filtered = SSM.KalmanFilter(spring_LDS, observation_sequence)
+    # now we can filter our observations
+    x_filtered, p_filtered = SSM.KalmanFilter(spring_LDS, observation_sequence)
 end
 
 # ╔═╡ a28a94b6-e160-45e8-9762-80108aac176a
 begin
-	# generate confidence intervals for each t in T
-	filter_std_errors = [sqrt.(diag(p_filtered[t, :, :])) for t in 1:100]
+    # generate confidence intervals for each t in T
+    filter_std_errors = [sqrt.(diag(p_filtered[t, :, :])) for t in 1:100]
 
-	pos_bounds = [1.96 * std_err[1] for std_err in filter_std_errors]
-	vel_bounds = [1.96 * std_err[2] for std_err in filter_std_errors]
+    pos_bounds = [1.96 * std_err[1] for std_err in filter_std_errors]
+    vel_bounds = [1.96 * std_err[2] for std_err in filter_std_errors]
 
-	# plot the results
-	l2 = @layout [a; b]
-	filter_1 = plot(state_sequence[:, 1], label="True Position", linewidth=:3)
-	plot!(x_filtered[:, 1], ribbon=pos_bounds, label="Filtered Position", linewidth=:3)
-	filter_2 = plot(state_sequence[:, 2], label="True Velocity", linewidth=:3)
-	plot!(x_filtered[:, 2], ribbon=vel_bounds, label="Filtered Velocity", linewidth=:3)
-	plot(filter_1, filter_2, layout=l2)
+    # plot the results
+    l2 = @layout [a; b]
+    filter_1 = plot(state_sequence[:, 1]; label="True Position", linewidth=:3)
+    plot!(x_filtered[:, 1]; ribbon=pos_bounds, label="Filtered Position", linewidth=:3)
+    filter_2 = plot(state_sequence[:, 2]; label="True Velocity", linewidth=:3)
+    plot!(x_filtered[:, 2]; ribbon=vel_bounds, label="Filtered Velocity", linewidth=:3)
+    plot(filter_1, filter_2; layout=l2)
 end
 
 # ╔═╡ 43f18089-1ccb-4ecb-903e-3f252e7d6691
@@ -165,34 +170,101 @@ $p(x_t|y_{1:T})$
 
 # ╔═╡ 43b64fbd-62ad-42a4-9905-1062eeec4001
 begin
-	# we already set up parameters from the previous example, the usage is very similar to the Kalman Filter.
-	x_smooth, p_smooth = SSM.KalmanSmoother(spring_LDS, observation_sequence, "Direct") 
+    # we already set up parameters from the previous example, the usage is very similar to the Kalman Filter.
+    x_smooth, p_smooth, J, ml = SSM.KalmanSmoother(spring_LDS, observation_sequence, "RTS")
 end
 
 # ╔═╡ 93a7e46f-a8e3-4bba-9e01-30b194b653f6
 begin
-	# generate confidence intervals for each t in T
-	smoother_std_errors = [sqrt.(diag(p_smooth[t, :, :])) for t in 1:100]
+    # generate confidence intervals for each t in T
+    smoother_std_errors = [sqrt.(diag(p_smooth[t, :, :])) for t in 1:100]
 
-	pos_bounds_smooth = [1.96 * std_err[1] for std_err in smoother_std_errors]
-	vel_bounds_smooth = [1.96 * std_err[2] for std_err in smoother_std_errors]
+    pos_bounds_smooth = [1.96 * std_err[1] for std_err in smoother_std_errors]
+    vel_bounds_smooth = [1.96 * std_err[2] for std_err in smoother_std_errors]
 
-	# plot the results
-	smooth_1 = plot(state_sequence[:, 1], label="True Position", linewidth=:3)
-	plot!(x_smooth[:, 1], ribbon=pos_bounds_smooth, label="Smoothed Position", linewidth=:3)
-	smooth_2 = plot(state_sequence[:, 2], label="True Velocity", linewidth=:3)
-	plot!(x_smooth[:, 2], ribbon=vel_bounds_smooth, label="Smoothed Velocity", linewidth=:3)
-	plot(smooth_1, smooth_2, layout=l2)
+    # plot the results
+    smooth_1 = plot(state_sequence[:, 1]; label="True Position", linewidth=:3)
+    plot!(x_smooth[:, 1]; ribbon=pos_bounds_smooth, label="Smoothed Position", linewidth=:3)
+    smooth_2 = plot(state_sequence[:, 2]; label="True Velocity", linewidth=:3)
+    plot!(x_smooth[:, 2]; ribbon=vel_bounds_smooth, label="Smoothed Velocity", linewidth=:3)
+    plot(smooth_1, smooth_2; layout=l2)
 end
 
 # ╔═╡ 1a173cad-acec-4358-8147-8119ce6b7449
 begin
 
-	# set up a new LDS with no parameters (outside of the dimensionality) so that we can perform EM
-	modelless_spring = SSM.LDS(;obs_dim=1, latent_dim=2)
-	# perform EM
-	SSM.KalmanFilterEM!(modelless_spring, observation_sequence)
+    # set up a new LDS with no parameters (outside of the dimensionality) so that we can perform EM
+    modelless_spring = SSM.LDS(; obs_dim=1, latent_dim=2)
+    # perform EM
+    SSM.KalmanFilterEM!(modelless_spring, observation_sequence)
 end
+
+# ╔═╡ 04188c74-28fd-4cd3-a044-78a9c947617b
+begin
+    h, main, super, sub = SSM.Hessian(spring_LDS, observation_sequence[1:3, :])
+    covs = pinv(-Matrix(h))
+
+    ez, ezz, ezzprev = SSM.sufficient_statistics(J, p_smooth, x_smooth)
+end
+
+# ╔═╡ 37639417-ca1b-4e8a-8f7f-2d34ba5414b7
+covs
+
+# ╔═╡ 7422cfc2-653a-47c6-9190-762ee609eb55
+covs[3:4, 1:2] #+ (ez[2, :]*ez[1, :]')
+
+# ╔═╡ 008d32b0-146c-4aea-9d64-c924ae7680b6
+ezzprev[2, :, :]
+
+# ╔═╡ d832b593-c97a-4885-8657-6e18703095d1
+begin
+    """Block Tridiagonal Inverse"""
+    function block_tridiagonal_inverse(A, B, C)
+        n = length(B)
+        block_size = size(B[1], 1)
+        # Initialize Di and Ei arrays
+        D = Array{AbstractMatrix}(undef, n + 1)
+        E = Array{AbstractMatrix}(undef, n + 1)
+        λii = Array{Float64}(undef, n, block_size, block_size)
+        λij = Array{Float64}(undef, n - 1, block_size, block_size)
+
+        # Add a zero matrix to the subdiagonal and superdiagonal
+        pushfirst!(A, zeros(block_size, block_size))
+        push!(C, zeros(block_size, block_size))
+
+        # Initial conditions
+        D[1] = zeros(block_size, block_size)
+        E[n + 1] = zeros(block_size, block_size)
+
+        # Forward sweep for D
+        for i in 1:n
+            D[i + 1] = (B[i] - A[i] * D[i]) \ C[i]
+        end
+
+        # Backward sweep for E
+        for i in n:-1:1
+            E[i] = (B[i] - C[i] * E[i + 1]) \ A[i]
+        end
+
+        # Compute the inverses of the diagonal blocks λii
+        for i in 1:n
+            term1 = (I - D[i + 1] * E[i + 1])
+            term2 = (B[i] - A[i] * D[i])
+            λii[i, :, :] = pinv(term1) * pinv(term2)
+        end
+
+        for i in 2:n
+            λij[i - 1, :, :] = E[i] * λii[i - 1, :, :]
+        end
+
+        return λii, -λij
+    end
+
+    a, b = block_tridiagonal_inverse(-sub, -main, -super)
+end
+
+# ╔═╡ 2ee27c64-8cbf-4ca4-b77b-37023b66b954
+b[1, :, :]
 
 # ╔═╡ Cell order:
 # ╠═53c96240-c044-11ee-2f83-e93206e06ac6
@@ -213,3 +285,9 @@ end
 # ╠═43b64fbd-62ad-42a4-9905-1062eeec4001
 # ╠═93a7e46f-a8e3-4bba-9e01-30b194b653f6
 # ╠═1a173cad-acec-4358-8147-8119ce6b7449
+# ╠═04188c74-28fd-4cd3-a044-78a9c947617b
+# ╠═37639417-ca1b-4e8a-8f7f-2d34ba5414b7
+# ╠═7422cfc2-653a-47c6-9190-762ee609eb55
+# ╠═008d32b0-146c-4aea-9d64-c924ae7680b6
+# ╠═d832b593-c97a-4885-8657-6e18703095d1
+# ╠═2ee27c64-8cbf-4ca4-b77b-37023b66b954

@@ -1,8 +1,8 @@
-export GaussianRegression, BernoulliRegression, PoissonRegression, fit!, loglikelihood, least_squares, update_variance!, predict
+export GaussianRegression,
+    BernoulliRegression, PoissonRegression, fit!, loglikelihood, update_variance!, predict
 
 # below used in notebooks and unit tests
 export surrogate_loglikelihood, surrogate_loglikelihood_gradient!
-
 
 # abstract regression type
 abstract type Regression end
@@ -38,18 +38,34 @@ mutable struct GaussianRegression <: Regression
     Σ::Matrix{<:Real} # covariance matrix of the model 
     include_intercept::Bool # whether to include an intercept term; if true, the first column of β is assumed to be the intercept/bias
     λ::Float64 # regularization parameter
-  
-    function GaussianRegression(; num_features::Int, num_targets::Int, include_intercept::Bool = true, λ::Float64=0.0)
+
+    function GaussianRegression(;
+        num_features::Int, num_targets::Int, include_intercept::Bool=true, λ::Float64=0.0
+    )
         if include_intercept
             input_dim = num_features + 1
         else
             input_dim = num_features
         end
 
-        new(num_features, num_targets, ones(input_dim, num_targets), Matrix{Float64}(I, num_targets, num_targets), include_intercept, λ)
+        return new(
+            num_features,
+            num_targets,
+            ones(input_dim, num_targets),
+            Matrix{Float64}(I, num_targets, num_targets),
+            include_intercept,
+            λ,
+        )
     end
-    
-    function GaussianRegression(β::Matrix{<:Real}, Σ::Matrix{<:Real}; num_features::Int, num_targets::Int, include_intercept::Bool = true, λ::Float64=0.0)
+
+    function GaussianRegression(
+        β::Matrix{<:Real},
+        Σ::Matrix{<:Real};
+        num_features::Int,
+        num_targets::Int,
+        include_intercept::Bool=true,
+        λ::Float64=0.0,
+    )
         if include_intercept
             input_dim = num_features + 1
         else
@@ -59,7 +75,7 @@ mutable struct GaussianRegression <: Regression
         @assert size(β) == (input_dim, num_targets)
         @assert size(Σ) == (num_targets, num_targets)
 
-        new(num_features, num_targets, β, Σ, include_intercept, λ)
+        return new(num_features, num_targets, β, Σ, include_intercept, λ)
     end
 end
 
@@ -93,7 +109,6 @@ function sample(model::GaussianRegression, X::Matrix{<:Real})
     return X * model.β + rand(MvNormal(zeros(model.num_targets), model.Σ), size(X, 1))'
 end
 
-
 """
     loglikelihood(model::GaussianRegression, X::Matrix{<:Real}, y::Matrix{<:Real})
 
@@ -121,7 +136,7 @@ function loglikelihood(model::GaussianRegression, X::Matrix{<:Real}, y::Matrix{<
 
     # confirm that the model has been fit
     @assert !all(model.β .== 0) "Coefficient matrix is all zeros. Did you forget to initialize?"
-    
+
     @assert isposdef(model.Σ) "Covariance matrix is not positive definite. Did you forget to initialize?"
 
     # add intercept if specified
@@ -135,12 +150,13 @@ function loglikelihood(model::GaussianRegression, X::Matrix{<:Real}, y::Matrix{<
     # calculate log likelihood
     residuals = y - X * model.β
 
-    log_likelihood = -0.5 * size(X, 1) * size(X, 2) * log(2π) - 0.5 * size(X, 1) * logdet(model.Σ) - 0.5 * sum(residuals .* (Σ_inv * residuals')')
+    log_likelihood =
+        -0.5 * size(X, 1) * size(X, 2) * log(2π) - 0.5 * size(X, 1) * logdet(model.Σ) -
+        0.5 * sum(residuals .* (Σ_inv * residuals')')
 
     return log_likelihood
 end
 
-   
 """
     surrogate_loglikelihood(model::GaussianRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
 
@@ -168,7 +184,12 @@ w = rand(100)
 least_squares(model, X, y, w)
 ```
 """
-function surrogate_loglikelihood(model::GaussianRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+function surrogate_loglikelihood(
+    model::GaussianRegression,
+    X::Matrix{<:Real},
+    y::Matrix{<:Real},
+    w::Vector{Float64}=ones(size(y, 1)),
+)
     # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
 
     # confirm dimensions of X and y are correct
@@ -185,16 +206,14 @@ function surrogate_loglikelihood(model::GaussianRegression, X::Matrix{<:Real}, y
         X = hcat(ones(size(X, 1)), X)
     end
 
-
     # calculate log likelihood
     residuals = y - X * model.β
 
-
-        
     # reshape w for broadcasting
     w = reshape(w, (length(w), 1))
 
-    log_likelihood = -0.5 * sum(broadcast(*, w, residuals.^2)) - (model.λ * sum(model.β.^2))
+    log_likelihood =
+        -0.5 * sum(broadcast(*, w, residuals .^ 2)) - (model.λ * sum(model.β .^ 2))
 
     return log_likelihood
 end
@@ -214,7 +233,13 @@ G = zeros(3, 1)
 surrogate_loglikelihood_gradient!(G, model, X, y)
 ```
 """
-function surrogate_loglikelihood_gradient!(G::Matrix{<:Real}, model::GaussianRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+function surrogate_loglikelihood_gradient!(
+    G::Matrix{<:Real},
+    model::GaussianRegression,
+    X::Matrix{<:Real},
+    y::Matrix{<:Real},
+    w::Vector{Float64}=ones(size(y, 1)),
+)
     # WARNING: asserts may slow down computation. Remove later?
 
     # confirm dimensions of X and y are correct
@@ -234,15 +259,10 @@ function surrogate_loglikelihood_gradient!(G::Matrix{<:Real}, model::GaussianReg
         X = hcat(ones(size(X, 1)), X)
     end
 
-
     # calculate log likelihood
     residuals = y - X * model.β
 
-    
-    G .=  X' * Diagonal(w) * residuals - (2*model.λ*model.β)
-    
-    
-
+    return G .= X' * Diagonal(w) * residuals - (2 * model.λ * model.β)
 end
 
 """
@@ -265,7 +285,12 @@ y = reshape(y, 100, 1)
 update_variance!(model, X, y)
 ```
 """
-function update_variance!(model::GaussianRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+function update_variance!(
+    model::GaussianRegression,
+    X::Matrix{<:Real},
+    y::Matrix{<:Real},
+    w::Vector{Float64}=ones(size(y, 1)),
+)
     # WARNING: asserts may slow down computation. Remove later?
 
     # confirm dimensions of X and y are correct
@@ -285,17 +310,12 @@ function update_variance!(model::GaussianRegression, X::Matrix{<:Real}, y::Matri
         X = hcat(ones(size(X, 1)), X)
     end
 
-
     residuals = y - X * model.β
-    
-    
+
     model.Σ = (residuals' * Diagonal(w) * residuals) / size(X, 1)
 
     # ensure rounding errors are not causing the covariance matrix to be non-positive definite
-    model.Σ = stabilize_covariance_matrix(model.Σ)
-
-   
-    
+    return model.Σ = stabilize_covariance_matrix(model.Σ)
 end
 
 """
@@ -317,7 +337,12 @@ y = rand(100, 1)
 fit!(model, X, y)
 ```
 """
-function fit!(model::GaussianRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+function fit!(
+    model::GaussianRegression,
+    X::Matrix{<:Real},
+    y::Matrix{<:Real},
+    w::Vector{Float64}=ones(size(y, 1)),
+)
     # confirm dimensions of X and y are correct
     @assert size(X, 1) == size(y, 1) "Number of rows (number of observations) in X and y must be equal."
     @assert size(y, 2) == model.num_targets "Number of columns in y must be equal to the number of targets in the model."
@@ -329,49 +354,51 @@ function fit!(model::GaussianRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w
     # confirm that the model has been fit
     @assert !all(model.β .== 0) "Coefficient matrix is all zeros. Did you forget to initialize?"
     @assert isposdef(model.Σ) "Covariance matrix is not positive definite. Did you forget to initialize?"
-    
 
-    
     # minimize objective
     function objective(β)
         log_likelihood = surrogate_loglikelihood(
             GaussianRegression(
-                β, 
-                model.Σ, 
-                num_features=model.num_features, 
-                num_targets=model.num_targets, 
-                include_intercept=model.include_intercept), 
-            X, y, w)
+                β,
+                model.Σ;
+                num_features=model.num_features,
+                num_targets=model.num_targets,
+                include_intercept=model.include_intercept,
+            ),
+            X,
+            y,
+            w,
+        )
         return -log_likelihood / size(X, 1)
     end
 
     function objective_grad!(G, β)
         surrogate_loglikelihood_gradient!(
-            G, 
+            G,
             GaussianRegression(
-                β, 
-                model.Σ, 
-                num_features=model.num_features, 
-                num_targets=model.num_targets, 
-                include_intercept=model.include_intercept), 
-            X, y, w)
+                β,
+                model.Σ;
+                num_features=model.num_features,
+                num_targets=model.num_targets,
+                include_intercept=model.include_intercept,
+            ),
+            X,
+            y,
+            w,
+        )
         # make it the gradient of the negative log likelihood
-        G .= -G / size(X, 1)
+        return G .= -G / size(X, 1)
     end
-
 
     result = optimize(objective, objective_grad!, model.β, LBFGS())
     # update parameters
     model.β = result.minimizer
 
-    
-    update_variance!(model, X, y, w)
+    return update_variance!(model, X, y, w)
 end
 
-
-
 """
-    BernoulliRegression(β::Vector{Float64}, include_intercept::Bool, λ::Float64=0.0)
+    BernoulliRegression(β::Vector{<:Real}, include_intercept::Bool, λ::Float64=0.0)
 
 # Fields
 - `β::Vector{Float64}`: Coefficients of the regression model.
@@ -380,7 +407,7 @@ end
 
 # Constructors
 - `BernoulliRegression(; include_intercept::Bool = true, λ::Float64=0.0)`
-- `BernoulliRegression(β::Vector{Float64}, include_intercept::Bool, λ::Float64=0.0)`
+- `BernoulliRegression(β::Vector{<:Real}, include_intercept::Bool, λ::Float64=0.0)`
 
 # Examples
 ```julia
@@ -394,17 +421,16 @@ mutable struct BernoulliRegression <: Regression
     include_intercept::Bool
     λ::Float64
     # Empty constructor
-    function BernoulliRegression(; include_intercept::Bool = true, λ::Float64=0.0) 
+    function BernoulliRegression(; include_intercept::Bool=true, λ::Float64=0.0)
         @assert λ >= 0.0 "Regularization parameter must be non-negative."
-        new(Vector{Float64}(), include_intercept, λ)
+        return new(Vector{Float64}(), include_intercept, λ)
     end
     # Parametric Constructor
     function BernoulliRegression(β::Vector{<:Real}, include_intercept::Bool, λ::Float64=0.0)
         @assert λ >= 0.0 "Regularization parameter must be non-negative."
-        new(β, include_intercept, λ)
+        return new(β, include_intercept, λ)
     end
 end
-
 
 function sample(model::BernoulliRegression, X::Matrix{<:Real})
     # confirm that the model has been fit
@@ -441,21 +467,26 @@ y = rand(Bool, 100)
 loglikelihood(model, X, y)
 ```
 """
-function loglikelihood(model::BernoulliRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+function loglikelihood(
+    model::BernoulliRegression,
+    X::Matrix{<:Real},
+    y::Matrix{<:Real},
+    w::Vector{Float64}=ones(size(y, 1)),
+)
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # add intercept if specified and not already included
-    if model.include_intercept && size(X, 2) == length(model.β) - 1 
+    if model.include_intercept && size(X, 2) == length(model.β) - 1
         X = hcat(ones(size(X, 1)), X)
     end
     # calculate log likelihood
     p = logistic.(X * model.β)
-    
+
     return sum(w .* (y .* log.(p) .+ (1 .- y) .* log.(1 .- p)))
 end
 
 """
-    loglikelihood(model::BernoulliRegression, X::Vector{Float64}, y::Union{Float64, Bool, Int64}, w::Float64=1.0)
+    loglikelihood(model::BernoulliRegression, X::Vector{<:Real}, y::Union{Float64, Bool, Int64}, w::Float64=1.0)
 
 Calculate the log-likelihood of a single observation of a Bernoulli regression model.
 
@@ -473,7 +504,12 @@ y = rand(Bool)
 loglikelihood(model, X, y)
 ```
 """
-function loglikelihood(model::BernoulliRegression, X::Vector{Float64}, y::Union{Float64, Bool, Int64}, w::Float64=1.0)
+function loglikelihood(
+    model::BernoulliRegression,
+    X::Vector{<:Real},
+    y::Union{Float64,Bool,Int64},
+    w::Float64=1.0,
+)
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # add intercept if specified
@@ -482,9 +518,11 @@ function loglikelihood(model::BernoulliRegression, X::Vector{Float64}, y::Union{
     end
     # calculate log likelihood
     p = logistic.(X' * model.β) # use stats fun for this
+    # Clamp probabilities to avoid log(0) and log(1)
+    p = clamp(p, 1e-16, 1 - 1e-16)
     # convert y if neccesary
     y = convert(Float64, y)
-    return sum(w .* (y .* log.(p) .+ (1 .- y) .* log.(1 .- p))) 
+    return sum(w .* (y .* log.(p) + (1 .- y) .* log.(1 .- p)))
 end
 
 """
@@ -499,11 +537,17 @@ Calculate the gradient of the negative log-likelihood function for a Bernoulli r
 - `y::Union{Vector{Float64}, BitVector}`: Response vector.
 - `w::Vector{Float64}`: Weights for the observations.
 """
-function gradient!(grad::Vector{Float64}, model::BernoulliRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+function gradient!(
+    grad::Vector{Float64},
+    model::BernoulliRegression,
+    X::Matrix{<:Real},
+    y::Matrix{<:Real},
+    w::Vector{Float64}=ones(size(y, 1)),
+)
     # confirm the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # add intercept if specified
-    if model.include_intercept && size(X, 2) == length(model.β) - 1 
+    if model.include_intercept && size(X, 2) == length(model.β) - 1
         X = hcat(ones(size(X, 1)), X)
     end
     # calculate probs 
@@ -511,7 +555,7 @@ function gradient!(grad::Vector{Float64}, model::BernoulliRegression, X::Matrix{
     # convert y if necessary
     # y = convert(Vector{Float64}, y)
     # calculate gradient
-    grad .= -(X' * (w .* (y .- p))) + 2 * model.λ * model.β
+    return grad .= -(X' * (w .* (y .- p))) + 2 * model.λ * model.β
 end
 
 """
@@ -539,7 +583,12 @@ w = rand(100)
 fit!(model, X, y, w)
 ```
 """
-function fit!(model::BernoulliRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+function fit!(
+    model::BernoulliRegression,
+    X::Matrix{<:Real},
+    y::Matrix{<:Real},
+    w::Vector{Float64}=ones(size(y, 1)),
+)
     # add intercept if specified
     if model.include_intercept
         X = hcat(ones(size(X, 1)), X)
@@ -547,17 +596,27 @@ function fit!(model::BernoulliRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, 
     # get number of parameters
     p = size(X, 2)
     # initialize parameters
-    model.β = rand(p)
+    model.β = zeros(p)
     # convert y if necessary
     # y = convert(Vector{Float64}, y)
     # minimize objective
-    objective(β) = -loglikelihood(BernoulliRegression(β, true, model.λ), X, y, w) + (model.λ * sum(β.^2))
-    objective_grad!(β, g) = gradient!(g, BernoulliRegression(β, true, model.λ), X, y, w) # troubleshoot this
-    result = optimize(objective, model.β, LBFGS())
+    obj =
+        β ->
+            -StateSpaceDynamics.loglikelihood(
+                StateSpaceDynamics.BernoulliRegression(β, model.include_intercept, model.λ),
+                X,
+                y,
+                w,
+            ) + (model.λ * sum(β .^ 2))
+    g! =
+        (g, β) -> StateSpaceDynamics.gradient!(
+            g, BernoulliRegression(β, model.include_intercept, model.λ), X, y, w
+        )
+    result = optimize(obj, g!, model.β, LBFGS())
     # update parameters
-    model.β = result.minimizer
+    return model.β = result.minimizer
 end
-    
+
 """
     mutable struct PoissonRegression <: Regression
 
@@ -567,7 +626,7 @@ end
 
 # Constructors
 - `PoissonRegression(; include_intercept::Bool = true, λ::Float64=0.0)`
-- `PoissonRegression(β::Vector{Float64}, include_intercept::Bool, λ::Float64=0.0)`
+- `PoissonRegression(β::Vector{<:Real}, include_intercept::Bool, λ::Float64=0.0)`
 
 # Examples
 ```julia
@@ -581,17 +640,16 @@ mutable struct PoissonRegression <: Regression
     include_intercept::Bool
     λ::Float64
     # Empty constructor
-    function PoissonRegression(; include_intercept::Bool = true, λ::Float64=0.0) 
+    function PoissonRegression(; include_intercept::Bool=true, λ::Float64=0.0)
         @assert λ >= 0.0 "Regularization parameter must be non-negative."
-        new(Vector{Float64}(), include_intercept, λ)
+        return new(Vector{Float64}(), include_intercept, λ)
     end
     # Parametric Constructor
     function PoissonRegression(β::Vector{<:Real}, include_intercept::Bool, λ::Float64=0.0)
         @assert λ >= 0.0 "Regularization parameter must be non-negative."
-        new(β, include_intercept, λ)
+        return new(β, include_intercept, λ)
     end
 end
-
 
 function sample(model::PoissonRegression, X::Matrix{<:Real})
     # confirm that the model has been fit
@@ -629,7 +687,12 @@ y = rand(Poisson(1), 100)
 loglikelihood(model, X, y)
 ```
 """
-function loglikelihood(model::PoissonRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+function loglikelihood(
+    model::PoissonRegression,
+    X::Matrix{<:Real},
+    y::Matrix{<:Real},
+    w::Vector{Float64}=ones(size(y, 1)),
+)
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # add intercept if specified
@@ -644,13 +707,13 @@ function loglikelihood(model::PoissonRegression, X::Matrix{<:Real}, y::Matrix{<:
 end
 
 """
-    loglikelihood(model::PoissonRegression, X::Vector{Float64}, y::Union{Float64, Int64}, w::Float64=1.0)
+    loglikelihood(model::PoissonRegression, X::Vector{<:Real}, y::Union{Float64, Int64}, w::Float64=1.0)
 
 Calculate the log-likelihood of a single observation of a Poisson regression model.
 
 # Arguments
 - `model::PoissonRegression`: Poisson regression model
-- `X::Vector{Float64}`: Design vector
+- `X::Vector{<:Real}`: Design vector
 - `y::Union{Float64, Int64}`: Response value
 - `w::Float64`: Weight for the observation
 
@@ -662,7 +725,9 @@ y = rand(Poisson(1))
 loglikelihood(model, X, y)
 ```
 """
-function loglikelihood(model::PoissonRegression, X::Vector{Float64}, y::Union{Float64, Int64}, w::Float64=1.0)
+function loglikelihood(
+    model::PoissonRegression, X::Vector{<:Real}, y::Union{Float64,Int64}, w::Float64=1.0
+)
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # add intercept if specified
@@ -673,7 +738,7 @@ function loglikelihood(model::PoissonRegression, X::Vector{Float64}, y::Union{Fl
     λ = exp.(X' * model.β)
     # convert y if necessary
     y = convert(Float64, y)
-    return sum(w .* (y .* log.(λ) .- λ .- log.(factorial.(Int.(y))))) 
+    return sum(w .* (y .* log.(λ) .- λ .- loggamma.(Int.(y) .+ 1)))
 end
 
 """
@@ -697,7 +762,13 @@ G = zeros(2)
 gradient!(G, model, X, y)
 ```
 """
-function gradient!(grad::Vector{Float64}, model::PoissonRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y,1)))
+function gradient!(
+    grad::Vector{Float64},
+    model::PoissonRegression,
+    X::Matrix{<:Real},
+    y::Matrix{<:Real},
+    w::Vector{Float64}=ones(size(y, 1)),
+)
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # add intercept if specified
@@ -709,7 +780,7 @@ function gradient!(grad::Vector{Float64}, model::PoissonRegression, X::Matrix{<:
     # convert y if necessary
     # y = convert(Vector{Float64}, y)
     # calculate gradient
-    grad .= -X' * (Diagonal(w) * (y .- rate)) + (model.λ * 2 * model.β)
+    return grad .= -X' * (Diagonal(w) * (y .- rate)) + (model.λ * 2 * model.β)
 end
 
 """
@@ -737,7 +808,12 @@ w = rand(100)
 fit!(model, X, y, w)
 ```
 """
-function fit!(model::PoissonRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+function fit!(
+    model::PoissonRegression,
+    X::Matrix{<:Real},
+    y::Matrix{<:Real},
+    w::Vector{Float64}=ones(size(y, 1)),
+)
     # add intercept if specified
     if model.include_intercept
         X = hcat(ones(size(X, 1)), X)
@@ -749,10 +825,19 @@ function fit!(model::PoissonRegression, X::Matrix{<:Real}, y::Matrix{<:Real}, w:
     # convert y if necessary
     # y = convert(Vector{Float64}, y)
     # minimize objective
-    objective(β) = -loglikelihood(PoissonRegression(β, true, model.λ), X, y, w) + (model.λ * sum(β.^2))
-    objective_grad!(β, g) = gradient!(g, PoissonRegression(β, true, model.λ), X, y, w)
-    result = optimize(objective, model.β, LBFGS())
+    obj =
+        β ->
+            -StateSpaceDynamics.loglikelihood(
+                StateSpaceDynamics.PoissonRegression(β, model.include_intercept, model.λ),
+                X,
+                y,
+                w,
+            ) + (model.λ * sum(β .^ 2))
+    g! =
+        (g, β) -> StateSpaceDynamics.gradient!(
+            g, PoissonRegression(β, model.include_intercept, model.λ), X, y, w
+        )
+    result = optimize(obj, g!, model.β, LBFGS())
     # update parameters
-    model.β = result.minimizer
+    return model.β = result.minimizer
 end
-

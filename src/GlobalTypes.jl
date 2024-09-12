@@ -2,8 +2,13 @@
 The purpose of this file is to provide a common place for all global types to be defined. This is to avoid circular dependencies between files.
 """
 
-export MixtureModel, EmissionsModel, AbstractHMM, DynamicalSystem
-
+export MixtureModel,
+    EmissionsModel,
+    AbstractHMM,
+    DynamicalSystem,
+    SmoothingMethod,
+    RTSSmoothing,
+    DirectSmoothing
 
 # Create abstract types here 
 
@@ -27,4 +32,12 @@ abstract type AbstractHMM end
 """
 Abstract type for Dynamical Systems. I.e. LDS, etc.
 """
+# Abstract types
+abstract type AbstractStateModel{T<:Real} end
+abstract type AbstractObservationModel{T<:Real} end
 abstract type DynamicalSystem end
+
+# smoothing methods for sufficient statistic calculation disambiguation, see LDS.jl
+abstract type SmoothingMethod end
+struct RTSSmoothing <: SmoothingMethod end
+struct DirectSmoothing <: SmoothingMethod end

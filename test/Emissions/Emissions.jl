@@ -19,8 +19,8 @@ function test_GaussianEmission()
     γ = ones(100)
     StateSpaceDynamics.updateEmissionModel!(gaussian_emission, data, γ)
     # Check if parameters are updated correctly
-    @test gaussian_emission.μ ≈ mean(data, dims=1)'
-    @test gaussian_emission.Σ ≈ cov(data, corrected=false)
+    @test gaussian_emission.μ ≈ mean(data; dims=1)'
+    @test gaussian_emission.Σ ≈ cov(data; corrected=false)
 end
 
 function test_regression_emissions()
@@ -29,7 +29,7 @@ function test_regression_emissions()
     true_β = [0.5, -1.2, 2.3]
     true_σ² = 0.5
     # gaussian glm response
-    y = X * true_β + rand(Normal(0., sqrt(true_σ²)), 1000)
+    y = X * true_β + rand(Normal(0.0, sqrt(true_σ²)), 1000)
     # poisson glm response
     true_poisson_model = PoissonRegression(true_β, true)
     y_poisson = StateSpaceDynamics.sample(true_poisson_model, X)
@@ -38,9 +38,11 @@ function test_regression_emissions()
     y_bernoulli = StateSpaceDynamics.sample(true_bernoulli_model, X)
 
     # initialize emission models
-    gaussian_emission = RegressionEmissions(GaussianRegression(num_features=3, num_targets=1;include_intercept=false))
-    poisson_emission = RegressionEmissions(PoissonRegression(;include_intercept=false))
-    bernoulli_emission = RegressionEmissions(BernoulliRegression(;include_intercept=false))
+    gaussian_emission = RegressionEmissions(
+        GaussianRegression(; num_features=3, num_targets=1, include_intercept=false)
+    )
+    poisson_emission = RegressionEmissions(PoissonRegression(; include_intercept=false))
+    bernoulli_emission = RegressionEmissions(BernoulliRegression(; include_intercept=false))
     # update emission models
     StateSpaceDynamics.update_emissions_model!(gaussian_emission, X, reshape(y, 1000, 1))
     StateSpaceDynamics.update_emissions_model!(poisson_emission, X, y_poisson)
@@ -51,9 +53,9 @@ function test_regression_emissions()
     @test isapprox(poisson_emission.regression.β, true_β, atol=0.5)
     @test isapprox(bernoulli_emission.regression.β, true_β, atol=0.5)
     # test the loglikelihood
-    # ll_gaussian = SSM.loglikelihood(gaussian_emission, X[1, :], y[1])
-    # ll_poisson = SSM.loglikelihood(poisson_emission, X[1, :], y_poisson[1])
-    # ll_bernoulli = SSM.loglikelihood(bernoulli_emission, X[1, :], y_bernoulli[1])
+    # ll_gaussian = StateSpaceDynamics.loglikelihood(gaussian_emission, X[1, :], y[1])
+    # ll_poisson = StateSpaceDynamics.loglikelihood(poisson_emission, X[1, :], y_poisson[1])
+    # ll_bernoulli = StateSpaceDynamics.loglikelihood(bernoulli_emission, X[1, :], y_bernoulli[1])
     # @test ll_gaussian < 0
     # @test ll_poisson < 0
     # @test ll_bernoulli < 0

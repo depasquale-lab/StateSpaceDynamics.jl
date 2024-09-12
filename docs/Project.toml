@@ -1,5 +1,6 @@
 [deps]
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 LiveServer = "16fef848-5104-11e9-1b77-fb7a48bbb589"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
-SSM = "19cf8126-1d00-4ad8-bf17-4e76d7bc0f6d"
+StateSpaceDynamics = "19cf8126-1d00-4ad8-bf17-4e76d7bc0f6d"

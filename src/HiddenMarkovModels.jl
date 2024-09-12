@@ -1,4 +1,5 @@
-export GaussianHMM, baumWelch!, viterbi, sample, initialize_transition_matrix, initialize_state_distribution
+export GaussianHMM,
+    baumWelch!, viterbi, sample, initialize_transition_matrix, initialize_state_distribution
 
 """
     mutable struct GaussianHMM{GaussianEmission} <: AbstractHMM
@@ -15,7 +16,7 @@ Represents a Gaussian Hidden Markov Model (HMM).
 mutable struct GaussianHMM{GaussianEmission} <: AbstractHMM
     A::Matrix{<:Real}  # State Transition Matrix
     B::Vector{GaussianEmission}       # Emission Model
-    πₖ ::Vector{Float64} # Initial State Distribution
+    πₖ::Vector{Float64} # Initial State Distribution
     K::Int              # Latent State Dimension
     D::Int              # Dimension of the data
 end
@@ -42,7 +43,9 @@ D = 2
 hmm = GaussianHMM(A, B, πₖ, K, D)
 ```
 """
-function GaussianHMM(A::Matrix{<:Real}, B::Vector{GaussianEmission}, πₖ::Vector{Float64}, K::Int, D::Int)
+function GaussianHMM(
+    A::Matrix{<:Real}, B::Vector{GaussianEmission}, πₖ::Vector{Float64}, K::Int, D::Int
+)
     return GaussianHMM{GaussianEmission}(A, B, πₖ, K, D)
 end
 
@@ -89,7 +92,7 @@ function initialize_state_distribution(K::Int)
     return rand(Dirichlet(ones(K)))
 end
 
-function forward(hmm::AbstractHMM, data::Y) where Y <: AbstractArray
+function forward(hmm::AbstractHMM, data::Y) where {Y<:AbstractArray}
     T = size(data, 1)
     K = size(hmm.A, 1)  # Number of states
     # Initialize an α-matrix 
@@ -103,7 +106,7 @@ function forward(hmm::AbstractHMM, data::Y) where Y <: AbstractArray
         @threads for j in 1:K
             values_to_sum = Float64[]
             for i in 1:K
-                push!(values_to_sum, log(hmm.A[i, j]) + α[t-1, i])
+                push!(values_to_sum, log(hmm.A[i, j]) + α[t - 1, i])
             end
             log_sum_alpha_a = logsumexp(values_to_sum)
             α[t, j] = log_sum_alpha_a + loglikelihood(hmm.B[j], data[t, :])
@@ -112,7 +115,7 @@ function forward(hmm::AbstractHMM, data::Y) where Y <: AbstractArray
     return α
 end
 
-function backward(hmm::AbstractHMM, data::Y) where Y <: AbstractArray
+function backward(hmm::AbstractHMM, data::Y) where {Y<:AbstractArray}
     T = size(data, 1)
     K = size(hmm.A, 1)  # Number of states
 
@@ -123,11 +126,16 @@ function backward(hmm::AbstractHMM, data::Y) where Y <: AbstractArray
     β[T, :] .= 0  # log(1) = 0
 
     # Calculate β, starting from T-1 and going backward to 1
-    for t in T-1:-1:1
+    for t in (T - 1):-1:1
         @threads for i in 1:K
             values_to_sum = Float64[]
             for j in 1:K
-                push!(values_to_sum, log(hmm.A[i, j]) + loglikelihood(hmm.B[j], data[t+1, :]) + β[t+1, j])
+                push!(
+                    values_to_sum,
+                    log(hmm.A[i, j]) +
+                    loglikelihood(hmm.B[j], data[t + 1, :]) +
+                    β[t + 1, j],
+                )
             end
             β[t, i] = logsumexp(values_to_sum)
         end
@@ -144,16 +152,22 @@ function calculate_γ(hmm::AbstractHMM, α::Matrix{<:Real}, β::Matrix{<:Real})
     return γ
 end
 
-function calculate_ξ(hmm::AbstractHMM, α::Matrix{<:Real}, β::Matrix{<:Real}, data::AbstractArray)
+function calculate_ξ(
+    hmm::AbstractHMM, α::Matrix{<:Real}, β::Matrix{<:Real}, data::AbstractArray
+)
     T = size(α, 1)
     K = size(hmm.A, 1)
-    ξ = zeros(Float64, T-1, K, K)
-    for t in 1:T-1
+    ξ = zeros(Float64, T - 1, K, K)
+    for t in 1:(T - 1)
         # Array to store the unnormalized ξ values
         log_ξ_unnormalized = zeros(Float64, K, K)
         @threads for i in 1:K
             for j in 1:K
-                log_ξ_unnormalized[i, j] = α[t, i] + log(hmm.A[i, j]) + loglikelihood(hmm.B[j], data[t+1, :]) + β[t+1, j]
+                log_ξ_unnormalized[i, j] =
+                    α[t, i] +
+                    log(hmm.A[i, j]) +
+                    loglikelihood(hmm.B[j], data[t + 1, :]) +
+                    β[t + 1, j]
             end
         end
         # Normalize the ξ values using log-sum-exp operation
@@ -164,16 +178,16 @@ end
 
 function update_initial_state_distribution!(hmm::AbstractHMM, γ::Matrix{<:Real})
     # Update initial state probabilities
-    hmm.πₖ .= exp.(γ[1, :])
+    return hmm.πₖ .= exp.(γ[1, :])
 end
 
-function update_transition_matrix!(hmm::AbstractHMM, γ::Matrix{<:Real}, ξ::Array{Float64, 3})
+function update_transition_matrix!(hmm::AbstractHMM, γ::Matrix{<:Real}, ξ::Array{Float64,3})
     K = size(hmm.A, 1)
     T = size(γ, 1)
     # Update transition probabilities
     @threads for i in 1:K
         for j in 1:K
-            hmm.A[i, j] = exp(logsumexp(ξ[:, i, j]) - logsumexp(γ[1:T-1, i]))
+            hmm.A[i, j] = exp(logsumexp(ξ[:, i, j]) - logsumexp(γ[1:(T - 1), i]))
         end
     end
 end
@@ -194,13 +208,15 @@ function E_step(hmm::AbstractHMM, data::Matrix{<:Real})
     return γ, ξ, α, β
 end
 
-function M_step!(hmm::AbstractHMM, γ::Matrix{<:Real}, ξ::Array{Float64, 3}, data::Matrix{<:Real})
+function M_step!(
+    hmm::AbstractHMM, γ::Matrix{<:Real}, ξ::Array{Float64,3}, data::Matrix{<:Real}
+)
     # Update initial state probabilities
     update_initial_state_distribution!(hmm, γ)
     # Update transition probabilities
     update_transition_matrix!(hmm, γ, ξ)
     # Update emission model 
-    update_emission_models!(hmm, γ, data)
+    return update_emission_models!(hmm, γ, data)
 end
 
 """
@@ -221,29 +237,35 @@ hmm = GaussianHMM(data, 2)
 baumWelch!(hmm, data)
 ```
 """
-function baumWelch!(hmm::AbstractHMM, data::Matrix{<:Real}, max_iters::Int=100, tol::Float64=1e-6)
+function baumWelch!(
+    hmm::AbstractHMM, data::Matrix{<:Real}, max_iters::Int=100, tol::Float64=1e-6
+)
+    # Create variable to store the previous log-likelihood
+    lls = []
     T, _ = size(data)
-    K = size(hmm.A, 1)
+    # initialize log-likelihood
     log_likelihood = -Inf
     # Initialize progress bar
-    p = Progress(max_iters; dt=1, desc="Computing Baum-Welch...",)
+    p = Progress(max_iters; dt=1, desc="Computing Baum-Welch...")
     for iter in 1:max_iters
-        # Update the progress bar
-        next!(p; showvalues = [(:iteration, iter), (:log_likelihood, log_likelihood)])
         # E-Step
         γ, ξ, α, β = E_step(hmm, data)
         # Compute and update the log-likelihood
         log_likelihood_current = logsumexp(α[T, :])
-        println(log_likelihood_current)
+        push!(lls, log_likelihood_current)
+        # Update the progress bar
+        next!(p)
         if abs(log_likelihood_current - log_likelihood) < tol
             finish!(p)
-            break
+            return lls
         else
             log_likelihood = log_likelihood_current
         end
         # M-Step
         M_step!(hmm, γ, ξ, data)
     end
+    finish!(p)
+    return lls
 end
 
 function viterbi(hmm::AbstractHMM, data::Matrix{<:Real})
@@ -256,13 +278,16 @@ function viterbi(hmm::AbstractHMM, data::Matrix{<:Real})
         viterbi[1, i] = log(hmm.πₖ[i]) + loglikelihood(hmm.B[i], data[1, :])
         backpointer[1, i] = 0
     end
-    
+
     # Step 2: Recursion
     for t in 2:T
         for j in 1:K
             max_prob, max_state = -Inf, 0
             for i in 1:K
-                prob = viterbi[t-1, i] + log(hmm.A[i, j]) + loglikelihood(hmm.B[j], data[t, :])
+                prob =
+                    viterbi[t - 1, i] +
+                    log(hmm.A[i, j]) +
+                    loglikelihood(hmm.B[j], data[t, :])
                 if prob > max_prob
                     max_prob = prob
                     max_state = i
@@ -294,7 +319,7 @@ function sample(hmm::GaussianHMM, n::Int)
     observations[1, :] = rand(MvNormal(hmm.B[states[1]].μ, hmm.B[states[1]].Σ))
     for t in 2:n
         # Transition to a new state
-        states[t] = StatsBase.sample(1:K, Weights(hmm.A[states[t-1], :]))
+        states[t] = StatsBase.sample(1:K, Weights(hmm.A[states[t - 1], :]))
         # Generate observation
         observations[t, :] = rand(MvNormal(hmm.B[states[t]].μ, hmm.B[states[t]].Σ))
     end
