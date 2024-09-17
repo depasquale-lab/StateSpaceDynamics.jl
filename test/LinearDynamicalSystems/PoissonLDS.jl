@@ -231,9 +231,9 @@ function test_state_model_parameter_updates(ntrials::Int=1)
     @test isapprox(plds.state_model.Q, Q_opt * Q_opt', atol=1e-6)
 end
 
-function test_EM()
+function test_EM(n_trials=1)
     # generate fake data
-    plds, x, y = toy_PoissonLDS()
+    plds, x, y = toy_PoissonLDS(n_trials)
     
     # create a new plds model with random parameters
     plds_new = PoissonLDS(; obs_dim=3, latent_dim=2)

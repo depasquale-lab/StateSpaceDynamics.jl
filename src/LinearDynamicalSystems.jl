@@ -466,7 +466,7 @@ function smooth(
     end
 
     # Set up the optimization problem
-    res = optimize(nll, g!, h!, X₀, Newton(), Optim.Options(; g_tol=1e-14))
+    res = optimize(nll, g!, h!, X₀, Newton())
 
     # get the optimal state
     x = StateSpaceDynamics.interleave_reshape(res.minimizer, time_steps, D)

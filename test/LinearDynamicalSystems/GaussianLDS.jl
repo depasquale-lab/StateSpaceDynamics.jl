@@ -279,11 +279,16 @@ function test_obs_model_params_updates(ntrials::Int=1)
     @test isapprox(lds.obs_model.R, R_opt * R_opt', atol=1e-6)
 end
 
-function test_EM()
-    lds, x, y = toy_lds()
+function test_EM(n_trials::Int=1)
+    # create a toy LDS
+    lds, x, y = toy_lds(n_trials)
+
+    # create a randomly initialized LDS
+
+    lds_new = GaussianLDS(; obs_dim=2, latent_dim=2)
 
     # run the EM algorithm for many iterations
-    ml_total = fit!(lds, y; max_iter=1000)
+    ml_total = fit!(lds_new, y; max_iter=1000)
 
     # test that the ml is increasing
     @test all(diff(ml_total) .>= 0)

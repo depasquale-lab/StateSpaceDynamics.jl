@@ -162,8 +162,9 @@ include("LinearDynamicalSystems//GaussianLDS.jl")
         test_initial_observation_parameter_updates(3)
         test_state_model_parameter_updates(3)
         test_obs_model_params_updates(3)
-        # test fit method
+        # test fit method using n=1 and n=3
         test_EM()
+        test_EM(3)
     end
 end
 
@@ -186,8 +187,9 @@ include("LinearDynamicalSystems//PoissonLDS.jl")
     # test when n_trials>1
     test_initial_observation_parameter_updates(3)
     test_state_model_parameter_updates(3)
-    # test fit method
+    # test fit method using 1 trial and three trials
     test_EM()
+    test_EM(3)
 end
 
 include("PLDS/PLDS.jl")

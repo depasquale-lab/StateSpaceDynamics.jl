@@ -358,16 +358,29 @@ Ensure that a matrix is positive definite by adjusting its eigenvalues.
 # Returns
 - A positive definite matrix derived from `A`.
 """
-function ensure_positive_definite(A::Matrix{T}) where {T}
+function ensure_positive_definite(A::Matrix{T}; min_eigenvalue::Real = 1e-6) where {T}
     # Perform eigenvalue decomposition
-    eigen_decomp = eigen(Symmetric(A))  # Ensure A is treated as symmetric
+    eigen_decomp = eigen(Symmetric(A))
     λ, V = eigen_decomp.values, eigen_decomp.vectors
-    # Set a threshold for eigenvalues (e.g., a small positive number)
-    ε = max(eps(T), 1e-10)
-    # Replace any non-positive eigenvalues with ε
+    
+    # Compute the maximum absolute eigenvalue
+    λ_max = maximum(abs.(λ))
+    
+    # Set a threshold relative to the maximum eigenvalue
+    ε = max(min_eigenvalue, eps(T) * λ_max * length(λ))
+    
+    # Replace any eigenvalues smaller than ε with ε
     λ_clipped = [max(λi, ε) for λi in λ]
+    
     # Reconstruct the matrix with the clipped eigenvalues
     A_posdef = V * Diagonal(λ_clipped) * V'
+    
+    # Ensure perfect symmetry
+    A_posdef = (A_posdef + A_posdef') / 2
+    
+    # Add a small multiple of the identity matrix for extra safety
+    A_posdef += ε * I
+    
     return A_posdef
 end
 
