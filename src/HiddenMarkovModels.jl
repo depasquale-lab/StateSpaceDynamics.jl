@@ -175,24 +175,69 @@ states, Y = sample(model, Φ, n=10)
 # output
 ```
 """
-function sample(model::HiddenMarkovModel, data...; n::Int)
+# function sample(model::HiddenMarkovModel, data...; n::Int)
+#     print("This is the data")
+#     print(data)
+#     println("Sampling check")
+#     # confirm model is valid
+#     validate_model(model)
+
+#     # confirm data is in the correct format
+#     validate_data(model, data...)
+
+
+#     state_sequence = [rand(Categorical(model.πₖ))]
+#     observation_sequence = emission_sample(model.B[state_sequence[1]], data...)
+
+#     for i in 2:n
+#         # sample the next state
+#         push!(state_sequence, rand(Categorical(model.A[state_sequence[end], :])))
+#         observation_sequence = emission_sample(model.B[state_sequence[i]], data...; observation_sequence=observation_sequence)
+#     end
+
+#     return state_sequence, observation_sequence
+# end
+
+function sample(model::HiddenMarkovModel, Φ::Matrix{<:Real}; n::Int)
     # confirm model is valid
     validate_model(model)
 
     # confirm data is in the correct format
-    validate_data(model, data...)
+    validate_data(model, Φ)
 
-
+    # Initialize the sample vectors
     state_sequence = [rand(Categorical(model.πₖ))]
-    observation_sequence = emission_sample(model.B[state_sequence[1]], data...)
+    observation_sequence = emission_sample(model.B[state_sequence[1]], Φ)
 
     for i in 2:n
         # sample the next state
         push!(state_sequence, rand(Categorical(model.A[state_sequence[end], :])))
-        observation_sequence = emission_sample(model.B[state_sequence[i]], data...; observation_sequence=observation_sequence)
+        observation_sequence = emission_sample(model.B[state_sequence[i]], Φ; observation_sequence=observation_sequence)
     end
 
     return state_sequence, observation_sequence
+
+end
+
+
+# Rewrite to have typed data and one for regression one for nonregression
+function sample(model::HiddenMarkovModel; n::Int)
+    # Check that model is valid
+    validate_model(model)
+
+    # Initialize the sample vectors
+    state_sequence = [rand(Categorical(model.πₖ))]
+    observation_sequence = emission_sample(model.B[state_sequence[1]])
+
+    # Sample the rest
+    for i in 2:n
+        # sample the next state
+        push!(state_sequence, rand(Categorical(model.A[state_sequence[end], :])))
+        observation_sequence = emission_sample(model.B[state_sequence[i]]; observation_sequence=observation_sequence)
+    end
+
+    return state_sequence, observation_sequence
+
 end
 
 """
@@ -593,7 +638,21 @@ function class_probabilities(model::HiddenMarkovModel, data...)
     return exp.(γ)
 end
 
+# function class_probabilities(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Real}, Nothing}=nothing)
+#     data = X === nothing ? (Y,) : (X, Y)
+    
+#     γ, ξ, α, β = E_step(model, data)
+#     return exp.(γ)
+# end
 
+
+# function class_probabilities(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}}, X::Union{Vector{<:Matrix{<:Real}}, Nothing}=nothing)
+#     data = X === nothing ? (Y,) : (X, Y)
+#     zipped_matrices = collect(zip(data...))
+#     output = E_step.(Ref(model), zipped_matrices)
+#     γ, ξ, α, β = map(x-> x[1], output), map(x-> x[2], output), map(x-> x[3], output), map(x-> x[4], output)
+#     return exp.(γ)
+# end
 
 
 """
