@@ -38,7 +38,7 @@ function GaussianStateModel(;
     latent_dim::Int=0,
 ) where {T<:Real}
     if latent_dim == 0 && (isempty(A) || isempty(Q) || isempty(x0) || isempty(P0))
-        error("Must provide latent_dim if any matrix is not provided")
+        throw(ArgumentError("Must provide latent_dim if any matrix is not provided"))
     end
 
     A = isempty(A) ? randn(T, latent_dim, latent_dim) : A
@@ -81,10 +81,10 @@ function GaussianObservationModel(;
     latent_dim::Int=0,
 ) where {T<:Real}
     if obs_dim == 0 && (isempty(C) || isempty(R))
-        error("Must provide obs_dim if C or R is not provided")
+        throw(ArgumentError("Must provide obs_dim if C or R is not provided"))
     end
     if latent_dim == 0 && isempty(C)
-        error("Must provide latent_dim if C is not provided")
+        throw(ArgumentError("Must provide latent_dim if C is not provided"))
     end
 
     C = isempty(C) ? randn(T, obs_dim, latent_dim) : C
@@ -155,6 +155,42 @@ struct LinearDynamicalSystem{S<:AbstractStateModel,O<:AbstractObservationModel}
     latent_dim::Int
     obs_dim::Int
     fit_bool::Vector{Bool}
+end
+
+"""
+    stateparams(lds::LinearDynamicalSystem{S,O}) where {S<:AbstractStateModel,O<:AbstractObservationModel}
+
+Extract the state parameters from a Linear Dynamical System.
+
+# Arguments
+- `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System.
+
+# Returns
+- `params::Vector{Vector{Real}}`: Vector of state parameters.
+"""
+function stateparams(lds::LinearDynamicalSystem{S, O}) where {S<:AbstractStateModel, O<:AbstractObservationModel}
+    if isa(lds.state_model, GaussianStateModel)
+        return [lds.state_model.A, lds.state_model.Q, lds.state_model.x0, lds.state_model.P0]
+    end
+end
+
+"""
+    obsparams(lds::LinearDynamicalSystem{S,O}) where {S<:AbstractStateModel,O<:AbstractObservationModel}
+
+Extract the observation parameters from a Linear Dynamical System.
+
+# Arguments
+- `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System.
+
+# Returns
+- `params::Vector{Vector{Real}}`: Vector of observation parameters.
+"""
+function obsparams(lds::LinearDynamicalSystem{S, O}) where {S<:AbstractStateModel, O<:AbstractObservationModel}
+    if isa(lds.obs_model, GaussianObservationModel)
+        return [lds.obs_model.C, lds.obs_model.R]
+    elseif isa(lds.obs_model, PoissonObservationModel)
+        return [lds.obs_model.C, lds.obs_model.log_d]
+    end
 end
 
 """
@@ -475,6 +511,22 @@ function smooth(
     H, main, super, sub = Hessian(lds, y)
     p_smooth, inverse_offdiag = block_tridiagonal_inverse(-sub, -main, -super)
 
+    # calculate entropy using the Hessian
+    function entropy(h::Matrix{T}) where T
+
+        # calculate the log determinant 
+        log_det_h = logdet(h)
+
+        # get the dimension of the hessian
+        dim = size(h, 1)
+
+        # calculate the entropy
+        return 0.5 * (dim * log(2π) + log_det_h)
+
+    end
+
+    gauss_entropy = entropy(Matrix{T}(H))
+
     # Enforce symmetry of p_smooth
     for i in 1:time_steps
         p_smooth[i, :, :] = 0.5 * (p_smooth[i, :, :] + p_smooth[i, :, :]')
@@ -483,7 +535,7 @@ function smooth(
     # Concatenate a zero matrix to the inverse off diagonal
     inverse_offdiag = cat(zeros(T, 1, D, D), inverse_offdiag; dims=1)
 
-    return x, p_smooth, inverse_offdiag
+    return x, p_smooth, inverse_offdiag, gauss_entropy
 end
 
 """
@@ -518,13 +570,19 @@ function smooth(
     p_smooth_all = Array{T,4}(undef, n_trials, time_steps, latent_dim, latent_dim)
     inverse_offdiag_all = Array{T,4}(undef, n_trials, time_steps, latent_dim, latent_dim)
 
+    # Initialize total entropy
+    total_entropy = 0.0
+    
     # Process each trial
     for trial in 1:n_trials
         # Extract data for the current trial
         y_trial = y[trial, :, :]
 
         # Call the single-trial smooth function
-        x, p_smooth, inverse_offdiag = smooth(lds, y_trial)
+        x, p_smooth, inverse_offdiag, entropy = smooth(lds, y_trial)
+
+        # Add entropy to total
+        total_entropy += entropy
 
         # Store results for this trial
         x_all[trial, :, :] = x
@@ -532,7 +590,7 @@ function smooth(
         inverse_offdiag_all[trial, :, :, :] = inverse_offdiag
     end
 
-    return x_all, p_smooth_all, inverse_offdiag_all
+    return x_all, p_smooth_all, inverse_offdiag_all, total_entropy
 end
 
 """
@@ -551,9 +609,6 @@ Calculate the state component of the Q-function for the EM algorithm in a Linear
 
 # Returns
 - `Q_val::Float64`: The state component of the Q-function.
-
-# Note
-- If Q and P0 are provided as Cholesky factors, they will be converted to full matrices.
 """
 function Q_state(
     A::Matrix{<:Real},
@@ -611,8 +666,6 @@ Calculate the observation component of the Q-function for the EM algorithm in a 
 # Returns
 - `Q_val::Float64`: The observation component of the Q-function.
 
-# Note
-- If R is provided as a Cholesky factor, it will be converted to a full matrix.
 """
 function Q_obs(
     H::Matrix{<:Real},
@@ -645,6 +698,7 @@ function Q_obs(
 
     return Q_val
 end
+
 
 """
     Q(A, Q, H, R, P0, x0, E_z, E_zz, E_zz_prev, y)
@@ -752,15 +806,15 @@ Perform the E-step of the EM algorithm for a Linear Dynamical System, treating a
 """
 function estep(
     lds::LinearDynamicalSystem{S,O}, y::Array{T,3}
-) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+) where {T<:Real,S<:GaussianStateModel{T}, O<:AbstractObservationModel{T}}
     # Smooth the data
-    x_smooth, p_smooth, inverse_offdiag = smooth(lds, y)
+    x_smooth, p_smooth, inverse_offdiag, total_entropy = smooth(lds, y)
 
     # Compute sufficient statistics
     E_z, E_zz, E_zz_prev = sufficient_statistics(x_smooth, p_smooth, inverse_offdiag)
 
     # Calculate the total marginal likelihood across all trials
-    ml_total = calculate_elbo(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
+    ml_total = calculate_elbo(lds, E_z, E_zz, E_zz_prev, p_smooth, y, total_entropy)
 
     return E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total
 end
@@ -791,6 +845,7 @@ function calculate_elbo(
     E_zz_prev::Array{T,4},
     p_smooth::Array{T,4},
     y::Array{T,3},
+    total_entropy::Float64,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     A, Q, x0, P0 = lds.state_model.A,
     lds.state_model.Q, lds.state_model.x0,
@@ -814,12 +869,11 @@ function calculate_elbo(
             y[trial, :, :],
         )
 
-        # Calculate the entropy of q(z) for this trial
-        entropy = sum(
-            gaussianentropy(Matrix(p_smooth[trial, t, :, :])) for t in axes(p_smooth, 2)
-        )
-        elbo += Q_val - entropy
+        elbo += Q_val
     end
+
+    # Add the entropy term
+    elbo -= total_entropy
 
     return elbo
 end
@@ -1074,13 +1128,25 @@ function mstep!(
     p_smooth::Array{T,4},
     y::Array{T,3},
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+    # get initial parameters
+    old_params = vec(stateparams(lds))
+    old_params = [old_params; vec(obsparams(lds))]
+
     # Update parameters
     update_initial_state_mean!(lds, E_z)
     update_initial_state_covariance!(lds, E_z, E_zz)
     update_A!(lds, E_zz, E_zz_prev)
     update_Q!(lds, E_zz, E_zz_prev)
     update_C!(lds, E_z, E_zz, y)
-    return update_R!(lds, E_z, E_zz, y)
+    update_R!(lds, E_z, E_zz, y)
+
+    # get new params
+    new_params = vec(stateparams(lds))
+    new_params = [new_params; vec(obsparams(lds))]
+
+    # calculate norm of parameter changes
+    norm_change = norm(new_params - old_params)
+    return norm_change
 end
 
 """
@@ -1117,6 +1183,8 @@ function fit!(
 
     # Create a vector to store the log-likelihood values
     mls = Vector{T}()
+    param_diff = Vector{T}()
+
     sizehint!(mls, max_iter)  # Pre-allocate for efficiency
 
     # Initialize progress bar
@@ -1136,10 +1204,10 @@ function fit!(
         E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml = estep(lds, y)
 
         # M-step
-        mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
-
-        # Update the log-likelihood vector
+        Δparams = mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
+        # Update the log-likelihood vector and parameter difference
         push!(mls, ml)
+        push!(param_diff, Δparams)
 
         # Update the progress bar
         next!(prog)
@@ -1147,7 +1215,7 @@ function fit!(
         # Check convergence
         if abs(ml - prev_ml) < tol
             finish!(prog)
-            return mls
+            return mls, param_diff
         end
 
         prev_ml = ml
@@ -1156,7 +1224,7 @@ function fit!(
     # Finish the progress bar if max_iter is reached
     finish!(prog)
 
-    return mls
+    return mls, param_diff
 end
 
 """
@@ -1656,6 +1724,7 @@ function calculate_elbo(
     E_zz_prev::Array{T,4},
     P_smooth::Array{T,4},
     y::Array{T,3},
+    total_entropy::Float64
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     # Set up parameters
     A, Q, x0, p0 = plds.state_model.A,
@@ -1666,17 +1735,8 @@ function calculate_elbo(
     # Calculate the expected complete log-likelihood
     ecll = Q_function(A, Q, C, log_d, x0, p0, E_z, E_zz, E_zz_prev, P_smooth, y)
 
-    # Calculate the entropy across all trials and timepoints
-    entropy = 0.0
-    for trial in 1:size(E_z, 1)
-        for tStep in 1:size(E_z, 2)
-            cov_matrix = P_smooth[trial, tStep, :, :] # Extract covariance matrix
-            entropy += StateSpaceDynamics.gaussianentropy(cov_matrix)
-        end
-    end
-
     # Return the ELBO
-    return ecll - entropy
+    return ecll - total_entropy
 end
 
 """
@@ -1727,7 +1787,7 @@ function smooth(
     end
 
     # Set up the optimization problem
-    res = optimize(nll, g!, h!, X₀, Newton())
+    res = optimize(nll, g!, h!, X₀, Newton(), Optim.Options(;g_tol=1e-12))
 
     # Get the optimal state
     x = StateSpaceDynamics.interleave_reshape(res.minimizer, time_steps, D)
@@ -1735,6 +1795,22 @@ function smooth(
     # Get covariances and nearest-neighbor second moments
     H, main, super, sub = Hessian(lds, y, x)
     p_smooth, inverse_offdiag = block_tridiagonal_inverse(-sub, -main, -super)
+
+    # Calculate the entropy
+    function entropy(h::Matrix{T}) where T
+
+        # calculate the log determinant 
+        log_det_h = logdet(h)
+    
+        # get the dimension of the hessian
+        dim = size(h, 1)
+    
+        # calculate the entropy
+        return 0.5 * (dim * log(2π) + log_det_h)
+    
+    end
+    
+    gauss_entropy = entropy(Matrix{T}(H))
 
     # Enforce symmetry of p_smooth
     for i in 1:time_steps
@@ -1744,7 +1820,7 @@ function smooth(
     # Concatenate a zero matrix to the inverse off diagonal
     inverse_offdiag = cat(zeros(T, 1, D, D), inverse_offdiag; dims=1)
 
-    return x, p_smooth, inverse_offdiag
+    return x, p_smooth, inverse_offdiag, gauss_entropy
 end
 
 """
@@ -1775,11 +1851,15 @@ function smooth(
     x_smooth = zeros(T, n_trials, T_steps, latent_dim)
     p_smooth = zeros(T, n_trials, T_steps, latent_dim, latent_dim)
     p_tt1 = zeros(T, n_trials, T_steps, latent_dim, latent_dim)
+    total_entropy = 0.0
 
     # Smooth the latent states for each trial
     for k in 1:n_trials
         # Smooth the latent states for a single trial
-        x_sm, p_sm, p_prev = smooth(lds, y[k, :, :])
+        x_sm, p_sm, p_prev, ent = smooth(lds, y[k, :, :])
+
+        # add the entropy
+        total_entropy += ent
 
         # Store the results
         x_smooth[k, :, :] = x_sm
@@ -1787,7 +1867,7 @@ function smooth(
         p_tt1[k, :, :, :] = p_prev
     end
 
-    return x_smooth, p_smooth, p_tt1
+    return x_smooth, p_smooth, p_tt1, total_entropy
 end
 
 """
@@ -1919,10 +1999,19 @@ function mstep!(
     p_smooth::Array{T,4},
     y::Array{T,3},
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
+    # Get old params
+    old_params = vec(stateparams(plds))
+    old_params = vcat(old_params, vec(obsparams(plds)))
     # Update parameters
     update_initial_state_mean!(plds, E_z)
     update_initial_state_covariance!(plds, E_z, E_zz)
     update_A!(plds, E_zz, E_zz_prev)
     update_Q!(plds, E_zz, E_zz_prev)
-    return update_observation_model!(plds, E_z, p_smooth, y)
+    update_observation_model!(plds, E_z, p_smooth, y)
+    # Get new params
+    new_params = vec(stateparams(plds))
+    new_params = vcat(new_params, vec(obsparams(plds)))
+
+    norm_params = norm(new_params - old_params)
+    return norm_params
 end

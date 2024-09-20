@@ -95,22 +95,11 @@ Reshape a vector into a matrix by interleaving its elements.
 # Throws
 - `ErrorException` if the length of `data` is not equal to `t * d`.
 """
-function interleave_reshape(data::AbstractArray, t::Int, d::Int)
-    # get length of data 
-    l = size(data, 1)
-    # check if the length of data equal to t * d
-    if l != (t * d)
-        error("The length of data must be equivalent to t * d")
-    end
-    # create a matrix of the same type as data
-    X = similar(data, t, d)
-    # loop through the data and reshape
-    for i in 1:d
-        X[:, i] = data[i:d:l]
-    end
-    # return the reshaped matrix
-    return X
+function interleave_reshape(data::AbstractVector, t::Int, d::Int)
+    length(data) == t * d || throw(DimensionMismatch("Length of data ($(length(data))) must equal t * d ($(t * d))"))
+    return permutedims(reshape(data, d, t))
 end
+
 
 """
     block_tridgm(main_diag::Vector{Matrix{T}}, upper_diag::Vector{Matrix{T}}, lower_diag::Vector{Matrix{T}}) where {T<:Real}
@@ -377,9 +366,6 @@ function ensure_positive_definite(A::Matrix{T}; min_eigenvalue::Real = 1e-6) whe
     
     # Ensure perfect symmetry
     A_posdef = (A_posdef + A_posdef') / 2
-    
-    # Add a small multiple of the identity matrix for extra safety
-    A_posdef += ε * I
     
     return A_posdef
 end

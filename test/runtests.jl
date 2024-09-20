@@ -8,6 +8,11 @@ using StatsFuns
 using SpecialFunctions
 using Test
 using Aqua
+using CSV
+using DataFrames
+using MAT
+
+print(pwd())
 
 """
 Package Wide Tests
@@ -190,6 +195,8 @@ include("LinearDynamicalSystems//PoissonLDS.jl")
     # test fit method using 1 trial and three trials
     test_EM()
     test_EM(3)
+    # test resutlts are same as matlab code
+    test_EM_matlab()
 end
 
 include("PLDS/PLDS.jl")

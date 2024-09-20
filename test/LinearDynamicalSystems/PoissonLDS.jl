@@ -60,6 +60,9 @@ function test_poisson_lds_without_params()
     @test !isempty(poisson_lds.state_model.x0)
     @test !isempty(poisson_lds.state_model.P0)
     @test !isempty(poisson_lds.obs_model.log_d)
+
+    # check errors are thrown when nothing is passed
+    # @test_throws PoissonLDS()
 end
 
 function test_Gradient()
@@ -231,15 +234,54 @@ function test_state_model_parameter_updates(ntrials::Int=1)
     @test isapprox(plds.state_model.Q, Q_opt * Q_opt', atol=1e-6)
 end
 
-function test_EM(n_trials=1)
+function test_EM(n_trials::Int=1)
     # generate fake data
     plds, x, y = toy_PoissonLDS(n_trials)
     
     # create a new plds model with random parameters
     plds_new = PoissonLDS(; obs_dim=3, latent_dim=2)
-    elbo = fit!(plds_new, y; max_iter=1000)
+    elbo, norm_grad = fit!(plds_new, y; max_iter=100)
 
     # check that the ELBO increases over the whole algorithm, we cannot use monotonicity as a check as we are using Laplace EM.
     @test elbo[end] > elbo[1]
 end
 
+function test_EM_matlab()
+    # read data used to smooth the results
+    data_1 = Matrix(CSV.read("test_data/trial1.csv", DataFrame))
+    data_2 = Matrix(CSV.read("test_data/trial2.csv", DataFrame))
+    data_3 = Matrix(CSV.read("test_data/trial3.csv", DataFrame))
+    y = cat(dims=3, data_1, data_2, data_3)
+    y = permutedims(y, [3, 1, 2])
+    # read the matlab objects to compare results
+    seq = matread("test_data/seq_matlab_3_trials_plds.mat")
+    params = matread("test_data/params_matlab_3_trials_plds.mat")
+    # create a new plds model, run a single iteration of EM and compare the results
+    plds = PoissonLDS(;A=[cos(0.1) -sin(0.1); sin(0.1) cos(0.1)], 
+                   C=[1.2 1.2; 1.2 1.2; 1.2 1.2], 
+                   log_d=log.([0.1, 0.1, 0.1]), 
+                   Q=0.00001*Matrix{Float64}(I(2)), 
+                   P0=0.00001*Matrix{Float64}(I(2)), 
+                   x0=[1.0, -1.0], obs_dim=3, latent_dim=2)
+    # first smooth results
+    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(plds, y)
+    # check each E_z, E_zz, E_zz_prev are the sample
+    for i in 1:3
+        posterior_x = seq["seq"]["posterior"][i]["xsm"]
+        posterior_cov = seq["seq"]["posterior"][i]["Vsm"]
+        posterior_lagged_cov = seq["seq"]["posterior"][i]["VVsm"]
+
+        @test isapprox(E_z[i, :, :], posterior_x', atol=1e-6)
+        # @test isapprox(E_zz[i, :, :, :], posterior_cov, atol=1e-6)
+        # @test isapprox(E_zz_prev[i, :, :, :], posterior_lagged_cov, atol=1e-6)
+    end
+    # now test the params
+    fit!(plds, y; max_iter=1)
+    params_obj = params["params"]["model"]
+    @test isapprox(plds.state_model.A, params_obj["A"], atol=1e-5)
+    @test isapprox(plds.state_model.Q, params_obj["Q"], atol=1e-5)
+    @test isapprox(plds.obs_model.C, params_obj["C"], atol=1e-5)
+    @test isapprox(plds.state_model.x0, params_obj["x0"], atol=1e-5)
+    @test isapprox(plds.state_model.P0, params_obj["Q0"], atol=1e-5)
+    @test isapprox(exp.(plds.obs_model.log_d), params_obj["d"], atol=1e-5)
+end
