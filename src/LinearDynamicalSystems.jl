@@ -124,11 +124,11 @@ function PoissonObservationModel(;
     obs_dim::Int=0,
     latent_dim::Int=0,
 ) where {T<:Real}
-    if obs_dim == 0 && (isempty(C) || isempty(D) || isempty(log_d))
-        error("Must provide obs_dim if any matrix is not provided")
+    if obs_dim == 0 && (isempty(C) || isempty(log_d))
+        throw(ArgumentError("Must provide obs_dim if C or log_d is not provided"))
     end
     if latent_dim == 0 && isempty(C)
-        error("Must provide latent_dim if C is not provided")
+        throw(ArgumentError("Must provide latent_dim if C is not provided"))
     end
 
     C = isempty(C) ? randn(T, obs_dim, latent_dim) : C
@@ -222,10 +222,10 @@ function GaussianLDS(;
 ) where {T<:Real}
     if latent_dim == 0 &&
         (isempty(A) || isempty(Q) || isempty(x0) || isempty(P0) || isempty(C))
-        error("Must provide latent_dim if A, Q, x0, P0, or C is not provided")
+       throw(ArgumentError("Must provide latent_dim if any matrix is not provided"))
     end
     if obs_dim == 0 && (isempty(C) || isempty(R))
-        error("Must provide obs_dim if C or R is not provided")
+        throw(ArgumentError("Must provide obs_dim if C or R is not provided"))
     end
 
     state_model = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0, latent_dim=latent_dim)
@@ -1257,10 +1257,10 @@ function PoissonLDS(;
 ) where {T<:Real}
     if latent_dim == 0 &&
         (isempty(A) || isempty(Q) || isempty(x0) || isempty(P0) || isempty(C))
-        error("Must provide latent_dim if A, Q, x0, P0, or C is not provided")
+        throw(ArgumentError("Must provide latent_dim if A, Q, x0, P0, or C is not provided"))
     end
     if obs_dim == 0 && (isempty(C) || isempty(log_d))
-        error("Must provide obs_dim if C, or log_d is not provided")
+        ethrow(ArgumentError("Must provide obs_dim if C or log_d is not provided"))
     end
 
     state_model = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0, latent_dim=latent_dim)
