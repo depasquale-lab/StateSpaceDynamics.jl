@@ -1,11 +1,20 @@
-.vscode
-.idea
-/tests/ssm_testing_notebook.ipynb
-*.csv
+# IDE and editor files
+.vscode/
+.idea/
 .DS_Store
-docs/build/
-Manifest.toml
-docs/Manifest.toml
-notebooks/Manifest.toml
+
+# Jupyter notebooks
+/tests/ssm_testing_notebook.ipynb
 test/*/notebooks
+/notebooks/*csv
+
+# Documentation
+docs/build/
+docs/Manifest.toml
+
+# Julia-specific files
+Manifest.toml
+notebooks/Manifest.toml
+
+# Specific Julia scripts
 notebooks/profiling.jl
