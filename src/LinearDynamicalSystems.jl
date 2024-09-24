@@ -28,7 +28,7 @@ Construct a GaussianStateModel with the given parameters or random initializatio
 - `Q::Matrix{T}=Matrix{T}(undef, 0, 0)`: Process noise covariance
 - `x0::Vector{T}=Vector{T}(undef, 0)`: Initial state
 - `P0::Matrix{T}=Matrix{T}(undef, 0, 0)`: Initial state covariance
-- `latent_dim::Int`: Dimension of the latent state (required if any matrix is not provided)
+- `latent_dim::Int`: Dimension of the latent state (required if any matrix is not provided.)
 """
 function GaussianStateModel(;
     A::Matrix{T}=Matrix{T}(undef, 0, 0),
@@ -38,7 +38,7 @@ function GaussianStateModel(;
     latent_dim::Int=0,
 ) where {T<:Real}
     if latent_dim == 0 && (isempty(A) || isempty(Q) || isempty(x0) || isempty(P0))
-        throw(ArgumentError("Must provide latent_dim if any matrix is not provided"))
+        throw(ArgumentError("Must provide latent_dim if any matrix is not provided."))
     end
 
     A = isempty(A) ? randn(T, latent_dim, latent_dim) : A
@@ -71,8 +71,8 @@ Construct a GaussianObservationModel with the given parameters or random initial
 # Arguments
 - `C::Matrix{T}=Matrix{T}(undef, 0, 0)`: Observation matrix
 - `R::Matrix{T}=Matrix{T}(undef, 0, 0)`: Observation noise covariance
-- `obs_dim::Int`: Dimension of the observations (required if C or R is not provided)
-- `latent_dim::Int`: Dimension of the latent state (required if C is not provided)
+- `obs_dim::Int`: Dimension of the observations (required if C or R is not provided.)
+- `latent_dim::Int`: Dimension of the latent state (required if C is not provided.)
 """
 function GaussianObservationModel(;
     C::Matrix{T}=Matrix{T}(undef, 0, 0),
@@ -81,10 +81,10 @@ function GaussianObservationModel(;
     latent_dim::Int=0,
 ) where {T<:Real}
     if obs_dim == 0 && (isempty(C) || isempty(R))
-        throw(ArgumentError("Must provide obs_dim if C or R is not provided"))
+        throw(ArgumentError("Must provide obs_dim if C or R is not provided."))
     end
     if latent_dim == 0 && isempty(C)
-        throw(ArgumentError("Must provide latent_dim if C is not provided"))
+        throw(ArgumentError("Must provide latent_dim if C is not provided."))
     end
 
     C = isempty(C) ? randn(T, obs_dim, latent_dim) : C
@@ -115,8 +115,8 @@ Construct a PoissonObservationModel with the given parameters or random initiali
 # Arguments
 - `C::Matrix{T}=Matrix{T}(undef, 0, 0)`: Observation matrix
 - `log_d::Vector{T}=Vector{T}(undef, 0)`: Mean firing rate vector (log space)
-- `obs_dim::Int`: Dimension of the observations (required if any matrix is not provided)
-- `latent_dim::Int`: Dimension of the latent state (required if C is not provided)
+- `obs_dim::Int`: Dimension of the observations (required if any matrix is not provided.)
+- `latent_dim::Int`: Dimension of the latent state (required if C is not provided.)
 """
 function PoissonObservationModel(;
     C::Matrix{T}=Matrix{T}(undef, 0, 0),
@@ -125,10 +125,10 @@ function PoissonObservationModel(;
     latent_dim::Int=0,
 ) where {T<:Real}
     if obs_dim == 0 && (isempty(C) || isempty(log_d))
-        throw(ArgumentError("Must provide obs_dim if C or log_d is not provided"))
+        throw(ArgumentError("Must provide obs_dim if C or log_d is not provided."))
     end
     if latent_dim == 0 && isempty(C)
-        throw(ArgumentError("Must provide latent_dim if C is not provided"))
+        throw(ArgumentError("Must provide latent_dim if C is not provided."))
     end
 
     C = isempty(C) ? randn(T, obs_dim, latent_dim) : C
@@ -206,8 +206,8 @@ Construct a Linear Dynamical System with Gaussian state and observation models.
 - `x0::Vector{T}=Vector{T}(undef, 0)`: Initial state
 - `P0::Matrix{T}=Matrix{T}(undef, 0, 0)`: Initial state covariance
 - `fit_bool::Vector{Bool}=fill(true, 6)`: Vector indicating which parameters to fit during optimization
-- `obs_dim::Int`: Dimension of the observations (required if C or R is not provided)
-- `latent_dim::Int`: Dimension of the latent state (required if A, Q, x0, P0, or C is not provided)
+- `obs_dim::Int`: Dimension of the observations (required if C or R is not provided.)
+- `latent_dim::Int`: Dimension of the latent state (required if A, Q, x0, P0, or C is not provided.)
 """
 function GaussianLDS(;
     A::Matrix{T}=Matrix{Float64}(undef, 0, 0),
@@ -222,10 +222,10 @@ function GaussianLDS(;
 ) where {T<:Real}
     if latent_dim == 0 &&
         (isempty(A) || isempty(Q) || isempty(x0) || isempty(P0) || isempty(C))
-       throw(ArgumentError("Must provide latent_dim if any matrix is not provided"))
+       throw(ArgumentError("Must provide latent_dim if any matrix is not provided."))
     end
     if obs_dim == 0 && (isempty(C) || isempty(R))
-        throw(ArgumentError("Must provide obs_dim if C or R is not provided"))
+        throw(ArgumentError("Must provide obs_dim if C or R is not provided."))
     end
 
     state_model = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0, latent_dim=latent_dim)
@@ -525,7 +525,7 @@ function smooth(
 
     end
 
-    gauss_entropy = entropy(Matrix{T}(H))
+    gauss_entropy = 0.0  #entropy(Matrix{T}(H))
 
     # Enforce symmetry of p_smooth
     for i in 1:time_steps
@@ -1241,8 +1241,8 @@ Construct a Linear Dynamical System with Gaussian state and Poisson observation 
 - `P0::Matrix{T}=Matrix{T}(undef, 0, 0)`: Initial state covariance
 - `refractory_period::Int=1`: Refractory period
 - `fit_bool::Vector{Bool}=fill(true, 7)`: Vector indicating which parameters to fit during optimization
-- `obs_dim::Int`: Dimension of the observations (required if C, D, or log_d is not provided)
-- `latent_dim::Int`: Dimension of the latent state (required if A, Q, x0, P0, or C is not provided)
+- `obs_dim::Int`: Dimension of the observations (required if C, D, or log_d is not provided.)
+- `latent_dim::Int`: Dimension of the latent state (required if A, Q, x0, P0, or C is not provided.)
 """
 function PoissonLDS(;
     A::Matrix{T}=Matrix{Float64}(undef, 0, 0),
@@ -1257,10 +1257,10 @@ function PoissonLDS(;
 ) where {T<:Real}
     if latent_dim == 0 &&
         (isempty(A) || isempty(Q) || isempty(x0) || isempty(P0) || isempty(C))
-        throw(ArgumentError("Must provide latent_dim if A, Q, x0, P0, or C is not provided"))
+        throw(ArgumentError("Must provide latent_dim if A, Q, x0, P0, or C is not provided."))
     end
     if obs_dim == 0 && (isempty(C) || isempty(log_d))
-        ethrow(ArgumentError("Must provide obs_dim if C or log_d is not provided"))
+        ethrow(ArgumentError("Must provide obs_dim if C or log_d is not provided."))
     end
 
     state_model = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0, latent_dim=latent_dim)
