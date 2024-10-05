@@ -512,10 +512,10 @@ function smooth(
     p_smooth, inverse_offdiag = block_tridiagonal_inverse(-sub, -main, -super)
 
     # calculate entropy using the Hessian
-    function entropy(h::Matrix{T}) where T
+    function entropy(h::SparseMatrixCSC{T}) where T
 
         # calculate the log determinant 
-        log_det_h = logdet(h)
+        log_det_h = logdet(-h)
 
         # get the dimension of the hessian
         dim = size(h, 1)
@@ -525,7 +525,7 @@ function smooth(
 
     end
 
-    gauss_entropy = 0.0  #entropy(Matrix{T}(H))
+    gauss_entropy = entropy(H)
 
     # Enforce symmetry of p_smooth
     for i in 1:time_steps
@@ -1796,21 +1796,21 @@ function smooth(
     H, main, super, sub = Hessian(lds, y, x)
     p_smooth, inverse_offdiag = block_tridiagonal_inverse(-sub, -main, -super)
 
-    # Calculate the entropy
-    function entropy(h::Matrix{T}) where T
+    # calculate entropy using the Hessian
+    function entropy(h::SparseMatrixCSC{T}) where T
 
         # calculate the log determinant 
-        log_det_h = logdet(h)
-    
+        log_det_h = logdet(-h)
+
         # get the dimension of the hessian
         dim = size(h, 1)
-    
+
         # calculate the entropy
         return 0.5 * (dim * log(2π) + log_det_h)
-    
+
     end
     
-    gauss_entropy = entropy(Matrix{T}(H))
+    gauss_entropy = entropy(H)
 
     # Enforce symmetry of p_smooth
     for i in 1:time_steps

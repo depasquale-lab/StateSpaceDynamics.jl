@@ -68,7 +68,7 @@ fit!(gmm, data)
 mutable struct GaussianMixtureModel <: MixtureModel
     k::Int # Number of clusters
     μₖ::Matrix{<:Real} # Means of each cluster
-    Σₖ::Array{Matrix{<:Real},1} # Covariance matrices of each cluster
+    Σₖ::Array{Matrix{<:Real}, 1} # Covariance matrices of each cluster
     πₖ::Vector{Float64} # Mixing coefficients
 end
 

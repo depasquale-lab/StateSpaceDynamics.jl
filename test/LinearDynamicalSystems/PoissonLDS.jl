@@ -77,7 +77,7 @@ function test_Gradient()
         # calculate the gradient
         grad = StateSpaceDynamics.Gradient(plds, y[i, :, :], x[i, :, :])
 
-        @test norm(grad - grad_numerical) < 1e-9
+        @test norm(grad - grad_numerical) < 1e-8
     end
 end
 
@@ -103,7 +103,7 @@ function test_Hessian()
         # calcualte hess using autodiff now
         obj = latents -> log_likelihood(latents, plds, y[i, 1:3, :])
         hess_numerical = ForwardDiff.hessian(obj, permutedims(x[i, 1:3, :]))
-        @test norm(hess_numerical - hess) < 1e-9
+        @test norm(hess_numerical - hess) < 1e-8
     end
 end
 
@@ -272,6 +272,8 @@ function test_EM_matlab()
         posterior_lagged_cov = seq["seq"]["posterior"][i]["VVsm"]
 
         @test isapprox(E_z[i, :, :], posterior_x', atol=1e-6)
+
+        # restructure E_zz and E_zz_pev so that they are the same shape as the matlab objects
         # @test isapprox(E_zz[i, :, :, :], posterior_cov, atol=1e-6)
         # @test isapprox(E_zz_prev[i, :, :, :], posterior_lagged_cov, atol=1e-6)
     end

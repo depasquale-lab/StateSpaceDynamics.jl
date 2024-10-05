@@ -293,5 +293,5 @@ function test_EM(n_trials::Int=1)
     ml_total, norm_diff = fit!(lds_new, y; max_iter=100)
 
     # test that the ml is increasing
-    # @test all(diff(ml_total) .>= 0)
+    @test all(diff(ml_total) .>= 0)
 end
