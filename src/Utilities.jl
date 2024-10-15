@@ -43,39 +43,32 @@ function block_tridiagonal_inverse(A, B, C)
     # Initialize Di and Ei arrays
     D = Array{AbstractMatrix}(undef, n + 1)
     E = Array{AbstractMatrix}(undef, n + 1)
-    λii = Array{Float64}(undef, n, block_size, block_size)
-    λij = Array{Float64}(undef, n - 1, block_size, block_size)
-
+    λii = Array{Float64}(undef, block_size, block_size, n)
+    λij = Array{Float64}(undef, block_size, block_size, n - 1)
     # Add a zero matrix to the subdiagonal and superdiagonal
     pushfirst!(A, zeros(block_size, block_size))
     push!(C, zeros(block_size, block_size))
-
     # Initial conditions
     D[1] = zeros(block_size, block_size)
     E[n + 1] = zeros(block_size, block_size)
-
     # Forward sweep for D
     for i in 1:n
         D[i + 1] = (B[i] - A[i] * D[i]) \ C[i]
     end
-
     # Backward sweep for E
     for i in n:-1:1
         E[i] = (B[i] - C[i] * E[i + 1]) \ A[i]
     end
-
     # Compute the inverses of the diagonal blocks λii
     for i in 1:n
         term1 = (I - D[i + 1] * E[i + 1])
         term2 = (B[i] - A[i] * D[i])
-        λii[i, :, :] = pinv(term1) * pinv(term2)
+        λii[:, :, i] = pinv(term1) * pinv(term2)
     end
-
     # Compute the inverse of the diagonal blocks λij
     for i in 2:n
-        λij[i - 1, :, :] = (E[i] * λii[i - 1, :, :])
+        λij[:, :, i - 1] = (E[i] * λii[:, :, i - 1])
     end
-
     return λii, -λij
 end
 
