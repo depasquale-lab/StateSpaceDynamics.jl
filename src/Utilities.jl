@@ -89,10 +89,11 @@ Reshape a vector into a matrix by interleaving its elements.
 - `ErrorException` if the length of `data` is not equal to `t * d`.
 """
 function interleave_reshape(data::AbstractVector, t::Int, d::Int)
-    length(data) == t * d || throw(DimensionMismatch("Length of data ($(length(data))) must equal t * d ($(t * d))"))
+    length(data) == t * d || throw(
+        DimensionMismatch("Length of data ($(length(data))) must equal t * d ($(t * d))"),
+    )
     return permutedims(reshape(data, d, t))
 end
-
 
 """
     block_tridgm(main_diag::Vector{Matrix{T}}, upper_diag::Vector{Matrix{T}}, lower_diag::Vector{Matrix{T}}) where {T<:Real}
@@ -216,7 +217,6 @@ function kmeanspp_initialization(data::Matrix{<:Real}, k_means::Int)
     return centroids
 end
 
-
 """
     kmeanspp_initialization(data::Vector{Float64}, k_means::Int)
 
@@ -328,7 +328,6 @@ function logistic(x::Real)
     end
 end
 
-
 """
     ensure_positive_definite(A::Matrix{T}) where {T}
 
@@ -340,26 +339,26 @@ Ensure that a matrix is positive definite by adjusting its eigenvalues.
 # Returns
 - A positive definite matrix derived from `A`.
 """
-function ensure_positive_definite(A::Matrix{T}; min_eigenvalue::Real = 1e-6) where {T}
+function ensure_positive_definite(A::Matrix{T}; min_eigenvalue::Real=1e-6) where {T}
     # Perform eigenvalue decomposition
     eigen_decomp = eigen(Symmetric(A))
     λ, V = eigen_decomp.values, eigen_decomp.vectors
-    
+
     # Compute the maximum absolute eigenvalue
     λ_max = maximum(abs.(λ))
-    
+
     # Set a threshold relative to the maximum eigenvalue
     ε = max(min_eigenvalue, eps(T) * λ_max * length(λ))
-    
+
     # Replace any eigenvalues smaller than ε with ε
     λ_clipped = [max(λi, ε) for λi in λ]
-    
+
     # Reconstruct the matrix with the clipped eigenvalues
     A_posdef = V * Diagonal(λ_clipped) * V'
-    
+
     # Ensure perfect symmetry
     A_posdef = (A_posdef + A_posdef') / 2
-    
+
     return A_posdef
 end
 

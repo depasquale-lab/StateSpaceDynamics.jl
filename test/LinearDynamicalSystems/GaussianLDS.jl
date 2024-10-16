@@ -109,7 +109,7 @@ function test_Hessian()
         # calculate the Hessian using autodiff
         obj = latents -> log_likelihood(latents, lds, y[:, 1:3, i])
         hess_numerical = ForwardDiff.hessian(obj, x[:, 1:3, i])
-        
+
         @test norm(hess_numerical - hess) < 1e-12
     end
 end
@@ -122,8 +122,8 @@ function test_smooth()
     n_tsteps = size(y, 2)
 
     @test size(x_smooth) == size(x)
-    @test size(p_smooth) == ( lds.latent_dim, lds.latent_dim, n_tsteps, n_trials)
-    @test size(inverseoffdiag) == ( lds.latent_dim, lds.latent_dim, n_tsteps, n_trials)
+    @test size(p_smooth) == (lds.latent_dim, lds.latent_dim, n_tsteps, n_trials)
+    @test size(inverseoffdiag) == (lds.latent_dim, lds.latent_dim, n_tsteps, n_trials)
 
     # test gradient is zero
     for i in axes(y, 3)

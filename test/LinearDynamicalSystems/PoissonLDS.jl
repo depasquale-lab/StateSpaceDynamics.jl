@@ -195,7 +195,6 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
     @test isapprox(plds.state_model.P0, P0_opt * P0_opt', atol=1e-6)
 end
 
-
 function test_state_model_parameter_updates(ntrials::Int=1)
     plds, x, y = toy_PoissonLDS(ntrials, [false, false, true, true, false, false])
 
@@ -205,7 +204,9 @@ function test_state_model_parameter_updates(ntrials::Int=1)
     # optimize the A and Q entries using autograd
     function obj(A::AbstractMatrix, Q_sqrt::AbstractMatrix, plds)
         Q = Q_sqrt * Q_sqrt'
-        Q_val = StateSpaceDynamics.Q_state(A, Q, plds.state_model.P0, plds.state_model.x0, E_z, E_zz, E_zz_prev)
+        Q_val = StateSpaceDynamics.Q_state(
+            A, Q, plds.state_model.P0, plds.state_model.x0, E_z, E_zz, E_zz_prev
+        )
         return -Q_val
     end
 
@@ -236,7 +237,7 @@ end
 function test_EM(n_trials::Int=1)
     # generate fake data
     plds, x, y = toy_PoissonLDS(n_trials)
-    
+
     # create a new plds model with random parameters
     plds_new = PoissonLDS(; obs_dim=3, latent_dim=2)
     elbo, norm_grad = fit!(plds_new, y; max_iter=100)
@@ -250,18 +251,22 @@ function test_EM_matlab()
     data_1 = Matrix(CSV.read("test_data/trial1.csv", DataFrame))
     data_2 = Matrix(CSV.read("test_data/trial2.csv", DataFrame))
     data_3 = Matrix(CSV.read("test_data/trial3.csv", DataFrame))
-    y = cat(dims=3, data_1, data_2, data_3)
+    y = cat(data_1, data_2, data_3; dims=3)
     y = permutedims(y, [2, 1, 3])
     # read the matlab objects to compare results
     seq = matread("test_data/seq_matlab_3_trials_plds.mat")
     params = matread("test_data/params_matlab_3_trials_plds.mat")
     # create a new plds model, run a single iteration of EM and compare the results
-    plds = PoissonLDS(;A=[cos(0.1) -sin(0.1); sin(0.1) cos(0.1)], 
-                   C=[1.2 1.2; 1.2 1.2; 1.2 1.2], 
-                   log_d=log.([0.1, 0.1, 0.1]), 
-                   Q=0.00001*Matrix{Float64}(I(2)), 
-                   P0=0.00001*Matrix{Float64}(I(2)), 
-                   x0=[1.0, -1.0], obs_dim=3, latent_dim=2)
+    plds = PoissonLDS(;
+        A=[cos(0.1) -sin(0.1); sin(0.1) cos(0.1)],
+        C=[1.2 1.2; 1.2 1.2; 1.2 1.2],
+        log_d=log.([0.1, 0.1, 0.1]),
+        Q=0.00001 * Matrix{Float64}(I(2)),
+        P0=0.00001 * Matrix{Float64}(I(2)),
+        x0=[1.0, -1.0],
+        obs_dim=3,
+        latent_dim=2,
+    )
     # first smooth results
     E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(plds, y)
     # check each E_z, E_zz, E_zz_prev are the sample

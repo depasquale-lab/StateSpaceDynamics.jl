@@ -66,10 +66,12 @@ function SwitchingGaussianRegression(;
     # if B vector is not passed, initialize using Gaussian Regression
     if isempty(B)
         B = [
-        RegressionEmissions(
-            GaussianRegression(; num_features=num_features, num_targets=num_targets, λ=λ)
-        ) for k in 1:K
-    ]
+            RegressionEmissions(
+                GaussianRegression(;
+                    num_features=num_features, num_targets=num_targets, λ=λ
+                ),
+            ) for k in 1:K
+        ]
     else
         nothing
     end
