@@ -487,7 +487,7 @@ function smooth(
         return h .= -H
     end
 
-    res = optimize(nll, g!, h!, X₀, Newton())
+    res = optimize(nll, g!, h!, X₀, Newton(linesearch=LineSearches.BackTracking()))
 
     x = reshape(res.minimizer, D, T_steps)
 
@@ -1709,7 +1709,7 @@ function smooth(
     end
 
     # Set up the optimization problem
-    res = optimize(nll, g!, h!, X₀, Newton(), Optim.Options(; g_tol=1e-12))
+    res = optimize(nll, g!, h!, X₀, Newton(linesearch=LineSearches.BackTracking()), Optim.Options(; g_tol=1e-12))
 
     # Get the optimal state
     x = reshape(res.minimizer, D, time_steps)
