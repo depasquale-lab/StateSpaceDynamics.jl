@@ -540,9 +540,9 @@ function smooth(
     Threads.@threads for trial in 1:n_trials
         x_sm, p_sm, p_prev, ent = smooth(lds, y[:, :, trial])
         total_entropy += ent
-        x_smooth[:, :, trial] = x_sm
-        p_smooth[:, :, :, trial] = p_sm
-        inverse_offdiag[:, :, :, trial] = p_prev
+        x_smooth[:, :, trial] .= x_sm
+        p_smooth[:, :, :, trial] .= p_sm
+        inverse_offdiag[:, :, :, trial] .= p_prev
     end
 
     return x_smooth, p_smooth, inverse_offdiag, total_entropy
