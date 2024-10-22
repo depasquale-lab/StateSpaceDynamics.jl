@@ -269,7 +269,7 @@ function fit!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, 
 
     # update parameters
     model.β = result.minimizer
-    update_variance!(model, Φ, Y, w)
+    #update_variance!(model, Φ, Y, w)  # comment this
 
     # confirm that the model has valid parameters
     validate_model(model)
