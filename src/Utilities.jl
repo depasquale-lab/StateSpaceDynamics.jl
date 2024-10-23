@@ -37,38 +37,47 @@ Compute the inverse of a block tridiagonal matrix.
 
 An Accelerated Lambda Iteration Method for Multilevel Radiative Transfer” Rybicki, G.B., and Hummer, D.G., Astronomy and Astrophysics, 245, 171–181 (1991), Appendix B.
 """
-function block_tridiagonal_inverse(A, B, C)
+function block_tridiagonal_inverse(A::Vector{Matrix{T}}, 
+                                   B::Vector{Matrix{T}},
+                                   C::Vector{Matrix{T}}) where {T<:Real}
     n = length(B)
     block_size = size(B[1], 1)
     # Initialize Di and Ei arrays
-    D = Array{AbstractMatrix}(undef, n + 1)
-    E = Array{AbstractMatrix}(undef, n + 1)
-    λii = Array{Float64}(undef, block_size, block_size, n)
-    λij = Array{Float64}(undef, block_size, block_size, n - 1)
+    D = Vector{Matrix{T}}(undef, n + 1)
+    E = Vector{Matrix{T}}(undef, n + 1)
+    λii = Array{T}(undef, block_size, block_size, n)
+    λij = Array{T}(undef, block_size, block_size, n - 1)
+
     # Add a zero matrix to the subdiagonal and superdiagonal
     pushfirst!(A, zeros(block_size, block_size))
     push!(C, zeros(block_size, block_size))
+
     # Initial conditions
     D[1] = zeros(block_size, block_size)
     E[n + 1] = zeros(block_size, block_size)
+
     # Forward sweep for D
     for i in 1:n
         D[i + 1] = (B[i] - A[i] * D[i]) \ C[i]
     end
+
     # Backward sweep for E
     for i in n:-1:1
         E[i] = (B[i] - C[i] * E[i + 1]) \ A[i]
     end
+
     # Compute the inverses of the diagonal blocks λii
     for i in 1:n
         term1 = (I - D[i + 1] * E[i + 1])
         term2 = (B[i] - A[i] * D[i])
-        λii[:, :, i] = pinv(term1) * pinv(term2)
+        λii[:, :, i] = (term1 \ Matrix{T}(I, block_size, block_size)) * (term2 \ Matrix{T}(I, block_size, block_size))
     end
+
     # Compute the inverse of the diagonal blocks λij
     for i in 2:n
         λij[:, :, i - 1] = (E[i] * λii[:, :, i - 1])
     end
+
     return λii, -λij
 end
 

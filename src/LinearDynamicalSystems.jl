@@ -313,7 +313,7 @@ function loglikelihood(
     dx0 = x[:, 1] - x0
     ll = dx0' * inv_P0 * dx0
 
-    for t in 1:T_steps
+    @inbounds for t in 1:T_steps
         if t > 1
             dx = x[:, t] - A * x[:, t - 1]
             ll += dx' * inv_Q * dx
