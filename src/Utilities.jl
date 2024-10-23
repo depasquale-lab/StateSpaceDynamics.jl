@@ -43,18 +43,14 @@ function block_tridiagonal_inverse(A::Vector{Matrix{T}},
     n = length(B)
     block_size = size(B[1], 1)
     # Initialize Di and Ei arrays
-    D = Vector{Matrix{T}}(undef, n + 1)
-    E = Vector{Matrix{T}}(undef, n + 1)
+    D = Vector{Matrix{T}}([zeros(T, block_size, block_size) for _ in 1:n+1])
+    E = Vector{Matrix{T}}([zeros(T, block_size, block_size) for _ in 1:n+1])
     λii = Array{T}(undef, block_size, block_size, n)
     λij = Array{T}(undef, block_size, block_size, n - 1)
 
     # Add a zero matrix to the subdiagonal and superdiagonal
     pushfirst!(A, zeros(block_size, block_size))
     push!(C, zeros(block_size, block_size))
-
-    # Initial conditions
-    D[1] = zeros(block_size, block_size)
-    E[n + 1] = zeros(block_size, block_size)
 
     # Forward sweep for D
     for i in 1:n
