@@ -7,3 +7,5 @@ docs/build/
 Manifest.toml
 docs/Manifest.toml
 test/*/notebooks
+notebooks/profiling.jl
+notebooks/benchmarking.ipynb
