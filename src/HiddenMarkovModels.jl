@@ -140,8 +140,8 @@ function HiddenMarkovModel(;
         end
     end
 
-
-    emission_models = Emission.(B)
+    emission_models = B
+    #emission_models = Emission.(B)
 
     model = HiddenMarkovModel(A, emission_models, πₖ, K)
 

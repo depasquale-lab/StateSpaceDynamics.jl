@@ -40,7 +40,7 @@ function validate_data(model::GaussianEmission, Y=nothing, w=nothing)
     end
 end
 
-function Gaussian(; 
+function GaussianEmission(; 
     output_dim::Int, 
     μ::Vector{<:Real}=zeros(output_dim), 
     Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim))
