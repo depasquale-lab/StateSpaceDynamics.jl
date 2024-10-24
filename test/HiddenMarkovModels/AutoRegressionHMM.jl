@@ -35,7 +35,7 @@ function test_AutoRegressionHMM()
 
     est_model = HiddenMarkovModel(K=2, emission=AutoRegression(order=1, output_dim=2, include_intercept=false))
     weighted_initialization(est_model, Y_prev, Y)
-    fit!(est_model, Y, Y_prev)  # These are flipped from above because of how fit!() handles data 
+    fit!(est_model, Y, Y_prev)  # flipped these
 
     # check the β values
     similar_β = false

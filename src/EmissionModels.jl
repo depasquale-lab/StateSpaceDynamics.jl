@@ -60,7 +60,7 @@ sequence = emission_sample(model, observation_sequence=sequence)
 function emission_sample(model::GaussianEmission; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim))
     validate_model(model)
 
-    raw_samples = rand(MvNormal(model.μ, model.Σ), 1)
+    raw_samples = rand(MvNormal(model.μ, model.Σ), 1)    
 
     return vcat(observation_sequence, Matrix(raw_samples'))
 end
