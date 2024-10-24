@@ -1,6 +1,6 @@
 export Emission, getproperty, setproperty!
 export GaussianEmission, validate_data, emission_sample, emission_loglikelihood, emission_fit!
-export SwitchingGaussianRegression, SwitchingBernoulliRegressionm, SwitchingAutoRegression, GaussianHMM
+export SwitchingGaussianRegression, SwitchingBernoulliRegression, SwitchingAutoRegression, GaussianHMM
 
 """
 Every emission model must implement the following functions:
@@ -345,9 +345,9 @@ A mutable struct representing a Bernoulli regression emission model, which wraps
 # Fields
 - `inner_model::BernoulliRegression`: The underlying Bernoulli regression model used for the emissions.
 """
-mutable struct BernoulliRegressionEmission <: EmissionModel
-    inner_model:: BernoulliRegression
-end
+# mutable struct BernoulliRegressionEmission <: EmissionModel
+#     inner_model:: BernoulliRegression
+# end
 
 
 """
@@ -375,7 +375,7 @@ function emission_sample(model::BernoulliRegressionEmission, Φ::Matrix{<:Real};
     # find the number of observations in the observation sequence
     t = size(observation_sequence, 1) + 1
     # get the n+1th observation
-    new_observation = sample(model.inner_model, Φ[t:t, :], n=1)
+    new_observation = sample(model, Φ[t:t, :], n=1)
 
     return vcat(observation_sequence, new_observation)
 end
@@ -445,11 +445,13 @@ Y = rand(Bool, 10, 1)
 emission_fit!(model, Φ, Y)
 # output
 """
+# function emission_fit!(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+#     fit!(model.inner_model, Φ, Y, w)
+# end
+
 function emission_fit!(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    fit!(model.inner_model, Φ, Y, w)
+    fit!(model, Φ, Y, w)
 end
-
-
 """
     SwitchingBernoulliRegression(; K::Int, input_dim::Int, include_intercept::Bool=true, β::Vector{<:Real}=if include_intercept zeros(input_dim + 1) else zeros(input_dim) end, λ::Float64=0.0, A::Matrix{<:Real}=initialize_transition_matrix(K), πₖ::Vector{Float64}=initialize_state_distribution(K))
 
@@ -482,7 +484,7 @@ function SwitchingBernoulliRegression(;
     πₖ::Vector{Float64} = initialize_state_distribution(K)
 )
     # Create emission models
-    emissions = [BernoulliRegression(input_dim=input_dim, include_intercept=include_intercept, β=β, λ=λ) for _ in 1:K]
+    emissions = [BernoulliRegressionEmission(input_dim=input_dim, include_intercept=include_intercept, β=β, λ=λ) for _ in 1:K]
     # Return the HiddenMarkovModel
     return HiddenMarkovModel(K=K, B=emissions, A=A, πₖ=πₖ)
 end

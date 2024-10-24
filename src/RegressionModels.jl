@@ -1,4 +1,4 @@
-export GaussianRegressionEmission, BernoulliRegression, PoissonRegression, AutoRegression, fit!, loglikelihood, least_squares, update_variance!, sample
+export GaussianRegressionEmission, BernoulliRegressionEmission, PoissonRegression, AutoRegression, fit!, loglikelihood, least_squares, update_variance!, sample
 
 # below used in notebooks and unit tests
 export define_objective, define_objective_gradient
@@ -293,7 +293,7 @@ model = BernoulliRegression(input_dim=2)
 # output
 ```
 """
-mutable struct BernoulliRegression <: RegressionModel
+mutable struct BernoulliRegressionEmission <: EmissionModel
     input_dim::Int
     β::Vector{<:Real}
     include_intercept::Bool
@@ -301,7 +301,7 @@ mutable struct BernoulliRegression <: RegressionModel
 end
 
 
-function validate_model(model::BernoulliRegression)
+function validate_model(model::BernoulliRegressionEmission)
     if model.include_intercept
         @assert size(model.β, 1) == model.input_dim + 1 "β must be of size (input_dim + 1) if an intercept/bias is included."
     else
@@ -311,7 +311,7 @@ function validate_model(model::BernoulliRegression)
     @assert model.λ >= 0.0
 end
 
-function validate_data(model::BernoulliRegression, Φ=nothing, Y=nothing, w=nothing)
+function validate_data(model::BernoulliRegressionEmission, Φ=nothing, Y=nothing, w=nothing)
     if !isnothing(Φ)
         @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the input dimension of the model."
     end
@@ -326,13 +326,13 @@ function validate_data(model::BernoulliRegression, Φ=nothing, Y=nothing, w=noth
     end
 end
 
-function BernoulliRegression(; 
+function BernoulliRegressionEmission(; 
     input_dim::Int, 
     include_intercept::Bool = true, 
     β::Vector{<:Real} = if include_intercept zeros(input_dim + 1) else zeros(input_dim) end,
     λ::Float64 = 0.0)
 
-    new_model = BernoulliRegression(input_dim, β, include_intercept, λ)
+    new_model = BernoulliRegressionEmission(input_dim, β, include_intercept, λ)
 
     validate_model(new_model)
     
@@ -363,7 +363,7 @@ Y = sample(model, Φ)
 # output
 ```
 """
-function sample(model::BernoulliRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
+function sample(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
     @assert n <= size(Φ, 1) "n must be less than or equal to the number of observations in Φ."
     # cut the length of Φ to n
     Φ = Φ[1:n, :]
@@ -412,7 +412,7 @@ loglikelihood(model, Φ, Y)
 # output
 ```
 """
-function loglikelihood(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)); observation_wise::Bool=false)
+function loglikelihood(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)); observation_wise::Bool=false)
     # confirm that the model has valid parameters
     validate_model(model)
     validate_data(model, Φ, Y, w)
@@ -432,7 +432,7 @@ function loglikelihood(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix
 end
 
 
-function define_objective(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+function define_objective(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     validate_model(model)
     validate_data(model, Φ, Y, w)
 
@@ -454,7 +454,7 @@ function define_objective(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Mat
 end
 
 
-function define_objective_gradient(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+function define_objective_gradient(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     validate_model(model)
     validate_data(model, Φ, Y, w)
 
@@ -501,7 +501,7 @@ loglikelihood(est_model, Φ, Y) > loglikelihood(true_model, Φ, Y)
 true
 ```
 """
-function fit!(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+function fit!(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # confirm that the model has valid parameters
     validate_model(model)
     validate_data(model, Φ, Y, w)
