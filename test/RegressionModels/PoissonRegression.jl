@@ -2,7 +2,7 @@ function PoissonRegression_simulation(n::Int)
     # Generate synthetic data
     Φ = randn(n, 2)
     β = [0.5, -1.2, 2.3]
-    true_model = PoissonRegression(β=β, input_dim=2)
+    true_model = PoissonRegressionEmission(β=β, input_dim=2)
     Y = StateSpaceDynamics.sample(true_model, Φ)
 
     return true_model, Φ, Y
@@ -18,14 +18,14 @@ end
 # check model shape and value from constructor
 function test_PoissonRegression_constructor()
     # test parameter shapes
-    model = PoissonRegression(input_dim=3)
+    model = PoissonRegressionEmission(input_dim=3)
     @test size(model.β, 1) == 4
 
-    model = PoissonRegression(input_dim=3, include_intercept=false)
+    model = PoissonRegressionEmission(input_dim=3, include_intercept=false)
     @test size(model.β, 1) == 3
 
     # test default values
-    model = PoissonRegression(input_dim=3)
+    model = PoissonRegressionEmission(input_dim=3)
     @test model.λ == 0.0
     @test model.include_intercept == true
     @test model.β == zeros(4)
@@ -37,7 +37,7 @@ function test_PoissonRegression_objective_gradient()
     true_model, Φ, Y = PoissonRegression_simulation(n)
 
 
-    est_model = PoissonRegression(input_dim=2)
+    est_model = PoissonRegressionEmission(input_dim=2)
     
 
     # test if analytical gradient is close to numerical gradient
@@ -69,7 +69,7 @@ function test_PoissonRegression_standard_fit()
     true_model, Φ, Y = PoissonRegression_simulation(n)
 
     # Initialize and fit the model
-    est_model = PoissonRegression(input_dim=2)
+    est_model = PoissonRegressionEmission(input_dim=2)
     fit!(est_model, Φ, Y)
 
     # confirm that the fitted model has a higher loglikelihood than the true model
@@ -88,11 +88,11 @@ function test_PoissonRegression_regularized_fit()
     true_model, Φ, Y = PoissonRegression_simulation(n)
 
     # Initialize and fit an *unregularized* model
-    est_model = PoissonRegression(input_dim=2)
+    est_model = PoissonRegressionEmission(input_dim=2)
     fit!(est_model, Φ, Y)
 
     # Initialize and fit a regularized model
-    regularized_est_model = PoissonRegression(input_dim=2, λ=λ)
+    regularized_est_model = PoissonRegressionEmission(input_dim=2, λ=λ)
     fit!(regularized_est_model, Φ, Y)
 
 
@@ -128,7 +128,7 @@ function test_PoissonRegression_valid_emission_model()
 
     # Criteria 2
     weights = rand(n)
-    est_model = PoissonRegression(input_dim=2)
+    est_model = PoissonRegressionEmission(input_dim=2)
     fit!(est_model, Φ, Y, weights)
 
     # Criteria 3

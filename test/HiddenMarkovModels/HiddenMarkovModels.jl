@@ -5,7 +5,7 @@ function test_HiddenMarkovModel_E_step()
     n = 1000
     true_model, state_sequence, Y = GaussianHMM_simulation(n)
 
-    est_model = HiddenMarkovModel(K=3, emission=Gaussian(output_dim=2))
+    est_model = HiddenMarkovModel(K=3, emission=GaussianEmission(output_dim=2))
     weighted_initialization(est_model, Y)
 
     γ, ξ, α, β = E_step(est_model, (Y,))
@@ -29,7 +29,7 @@ function test_viterbi()
     n = 1000
     true_model, state_sequence, Y = GaussianHMM_simulation(n)
 
-    est_model = HiddenMarkovModel(K=3, emission=Gaussian(output_dim=2))
+    est_model = HiddenMarkovModel(K=3, emission=GaussianEmission(output_dim=2))
     weighted_initialization(est_model, Y)
     fit!(est_model, Y)
 

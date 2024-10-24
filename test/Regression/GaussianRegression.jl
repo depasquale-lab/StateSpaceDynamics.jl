@@ -11,7 +11,7 @@ function GaussianRegression_simulation()
     X = X[:, 2:end] 
     
     # Initialize and fit the model
-    model = GaussianRegression(num_features=2, num_targets=1)
+    model = GaussianRegressionEmission(num_features=2, num_targets=1)
     model.β = ones(3, 1)
     model.Σ = ones(1, 1)
     fit!(model, X, y)
@@ -31,7 +31,7 @@ end
 function test_GaussianRegression_intercept()
     model, X, y, true_β, true_covariance, n = GaussianRegression_simulation()
     
-    model = GaussianRegression(num_features=2, num_targets=1, include_intercept=false)
+    model = GaussianRegressionEmission(num_features=2, num_targets=1, include_intercept=false)
     model.β = ones(2, 1)
     model.Σ = ones(1, 1)
     fit!(model, X, y)
@@ -52,7 +52,7 @@ function test_GaussianRegression_loglikelihood()
 end
 
 function test_GaussianRegression_default_model()
-    model = GaussianRegression(num_features=2, num_targets=1, include_intercept=false)
+    model = GaussianRegressionEmission(num_features=2, num_targets=1, include_intercept=false)
     @test model.β == ones(2, 1)
     @test model.Σ == ones(1, 1)
 end
@@ -69,7 +69,7 @@ function test_Gaussian_ll_gradient()
 
     
     # Initialize model
-    model = GaussianRegression(num_features=2, num_targets=1)
+    model = GaussianRegressionEmission(num_features=2, num_targets=1)
     model.β = ones(3, 1)
     model.Σ = ones(1, 1)
 
@@ -117,7 +117,7 @@ function test_Gaussian_ll_gradient()
 
 
     # finally test when λ is not 0
-    model = GaussianRegression(num_features=2, num_targets=1, λ=0.1)
+    model = GaussianRegressionEmission(num_features=2, num_targets=1, λ=0.1)
     model.β = ones(3, 1)
     model.Σ = ones(1, 1)
 

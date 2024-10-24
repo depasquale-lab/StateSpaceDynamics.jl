@@ -5,7 +5,7 @@ function GaussianRegression_simulation(n::Int)
     β = [3 3;
         1 0.5;
         0.5 1]
-    true_model = GaussianRegression(β=β, Σ=Σ, input_dim=2, output_dim=2)
+    true_model = GaussianRegressionEmission(β=β, Σ=Σ, input_dim=2, output_dim=2)
     Y = StateSpaceDynamics.sample(true_model, Φ)
 
     return true_model, Φ, Y
@@ -23,7 +23,7 @@ function test_GaussianRegression_Σ()
     n = 1000
     true_model, Φ, Y = GaussianRegression_simulation(n)
 
-    est_model = GaussianRegression(input_dim=2, output_dim=2)
+    est_model = GaussianRegressionEmission(input_dim=2, output_dim=2)
     fit!(est_model, Φ, Y)
 
     @test isposdef(est_model.Σ)
@@ -33,16 +33,16 @@ end
 # check model shape and value from constructor
 function test_GaussianRegression_constructor()
     # test parameter shapes
-    model = GaussianRegression(input_dim=3, output_dim=2)
+    model = GaussianRegressionEmission(input_dim=3, output_dim=2)
     @test size(model.β) == (4, 2)
     @test size(model.Σ) == (2, 2)
 
-    model = GaussianRegression(input_dim=3, output_dim=2, include_intercept=false)
+    model = GaussianRegressionEmission(input_dim=3, output_dim=2, include_intercept=false)
     @test size(model.β) == (3, 2)
     @test size(model.Σ) == (2, 2)
 
     # test default values
-    model = GaussianRegression(input_dim=3, output_dim=2)
+    model = GaussianRegressionEmission(input_dim=3, output_dim=2)
     @test model.λ == 0.0
     @test model.include_intercept == true
     @test model.β == zeros(4, 2)
@@ -56,7 +56,7 @@ function test_GaussianRegression_objective_gradient()
     true_model, Φ, Y = GaussianRegression_simulation(n)
 
 
-    est_model = GaussianRegression(input_dim=2, output_dim=2)
+    est_model = GaussianRegressionEmission(input_dim=2, output_dim=2)
     
 
     # test if analytical gradient is close to numerical gradient
@@ -88,7 +88,7 @@ function test_GaussianRegression_standard_fit()
     true_model, Φ, Y = GaussianRegression_simulation(n)
 
     # Initialize and fit the model
-    est_model = GaussianRegression(input_dim=2, output_dim=2)
+    est_model = GaussianRegressionEmission(input_dim=2, output_dim=2)
     fit!(est_model, Φ, Y)
 
     # confirm that the fitted model has a higher loglikelihood than the true model
@@ -111,11 +111,11 @@ function test_GaussianRegression_regularized_fit()
     true_model, Φ, Y = GaussianRegression_simulation(n)
 
     # Initialize and fit an *unregularized* model
-    est_model = GaussianRegression(input_dim=2, output_dim=2)
+    est_model = GaussianRegressionEmission(input_dim=2, output_dim=2)
     fit!(est_model, Φ, Y)
 
     # Initialize and fit a regularized model
-    regularized_est_model = GaussianRegression(input_dim=2, output_dim=2, λ=λ)
+    regularized_est_model = GaussianRegressionEmission(input_dim=2, output_dim=2, λ=λ)
     fit!(regularized_est_model, Φ, Y)
 
 
@@ -152,7 +152,7 @@ function test_GaussianRegression_valid_emission_model()
 
     # Criteria 2
     weights = rand(n)
-    est_model = GaussianRegression(input_dim=2, output_dim=2)
+    est_model = GaussianRegressionEmission(input_dim=2, output_dim=2)
     fit!(est_model, Φ, Y, weights)
 
     # Criteria 3

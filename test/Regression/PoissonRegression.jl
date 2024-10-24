@@ -2,11 +2,11 @@ function test_PoissonRegression_fit()
     # Generate synthetic data
     X = randn(1000, 2)
     β=[0.5, -1.2, 2.3]
-    true_model = PoissonRegression(β, true)
+    true_model = PoissonRegressionEmission(β, true)
     y = StateSpaceDynamics.sample(true_model, X)
 
     # Initialize and fit the model
-    est_model = PoissonRegression()
+    est_model = PoissonRegressionEmission()
     fit!(est_model, X, y)
 
     # Check if the fitted coefficients are reasonable
@@ -18,11 +18,11 @@ function test_PoissonRegression_loglikelihood()
     # Generate synthetic data
     X = randn(1000, 2)
     β=[0.5, -1.2, 2.3]
-    true_model = PoissonRegression(β, true)
+    true_model = PoissonRegressionEmission(β, true)
     y = StateSpaceDynamics.sample(true_model, X)
 
     # Initialize and fit the model
-    est_model = PoissonRegression()
+    est_model = PoissonRegressionEmission()
     fit!(est_model, X, y)
 
     # Check if the fitted coefficients are reasonable
@@ -39,7 +39,7 @@ function test_PoissonRegression_loglikelihood()
 end
 
 function test_PoissonRegression_empty_model()
-    model = PoissonRegression()
+    model = PoissonRegressionEmission()
     @test isempty(model.β)
 end
 
@@ -47,11 +47,11 @@ function test_PoissonRegression_intercept()
     # Generate synthetic data
     X = randn(1000, 2)
     β=[0.5, -1.2, 2.3]
-    true_model = PoissonRegression(β, true)
+    true_model = PoissonRegressionEmission(β, true)
     y = StateSpaceDynamics.sample(true_model, X)
 
     # Initialize and fit the model without intercept 
-    est_model = PoissonRegression(include_intercept=false)
+    est_model = PoissonRegressionEmission(include_intercept=false)
     fit!(est_model, X, y)
 
     # Check if the fitted coefficients are reasonable
@@ -62,17 +62,17 @@ function test_Poisson_ll_gradient()
     # Generate synthetic data
     X = randn(1000, 2)
     β=[0.5, -1.2, 2.3]
-    true_model = PoissonRegression(β, true)
+    true_model = PoissonRegressionEmission(β, true)
     y = StateSpaceDynamics.sample(true_model, X)
 
 
     # initialize model
-    est_model = PoissonRegression()
+    est_model = PoissonRegressionEmission()
     est_model.β = [0., 0., 0.]
 
 
     function objective(β, X, w)
-        temp_model = PoissonRegression()
+        temp_model = PoissonRegressionEmission()
         temp_model.β = β
         temp_model.λ = est_model.λ
         return -StateSpaceDynamics.loglikelihood(temp_model, X, y, w) + (temp_model.λ * sum(temp_model.β.^2))
@@ -98,7 +98,7 @@ function test_Poisson_ll_gradient()
 
 
     # finally test when λ is not 0
-    est_model = PoissonRegression(λ=0.1)
+    est_model = PoissonRegressionEmission(λ=0.1)
     est_model.β = rand(3)
 
     grad = ForwardDiff.gradient(x -> objective(x, X, ones(1000)), est_model.β)

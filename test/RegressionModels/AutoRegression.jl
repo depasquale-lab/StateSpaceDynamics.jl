@@ -6,7 +6,7 @@ function AutoRegression_simulation(n::Int)
     θ = π/20
     β = [cos(θ) -sin(θ); sin(θ) cos(θ)]
 
-    true_model = AutoRegression(order=order, output_dim=output_dim, β=β, include_intercept=false)
+    true_model = AutoRegressionEmission(order=order, output_dim=output_dim, β=β, include_intercept=false)
 
     Y_prev = randn(order, output_dim)
     Y = StateSpaceDynamics.sample(true_model, Y_prev, n=n)
@@ -26,7 +26,7 @@ function test_AutoRegression_Σ()
     n = 1000
     true_model, Φ, Y = AutoRegression_simulation(n)
 
-    est_model = AutoRegression(order=1, output_dim=2)
+    est_model = AutoRegressionEmission(order=1, output_dim=2)
     fit!(est_model, Φ, Y)
 
     @test valid_Σ(est_model.innerGaussianRegression.Σ)
@@ -35,20 +35,20 @@ end
 # check model shape and value from constructor
 function test_AutoRegression_constructor()
     # test parameter shapes
-    model = AutoRegression(order=1, output_dim=2)
+    model = AutoRegressionEmission(order=1, output_dim=2)
     @test size(model.innerGaussianRegression.β) == (3, 2)
     @test size(model.innerGaussianRegression.Σ) == (2, 2)
 
-    model = AutoRegression(order=2, output_dim=2)
+    model = AutoRegressionEmission(order=2, output_dim=2)
     @test size(model.innerGaussianRegression.β) == (5, 2)
     @test size(model.innerGaussianRegression.Σ) == (2, 2)
 
-    model = AutoRegression(order=1, output_dim=2, include_intercept=false)
+    model = AutoRegressionEmission(order=1, output_dim=2, include_intercept=false)
     @test size(model.innerGaussianRegression.β) == (2, 2)
     @test size(model.innerGaussianRegression.Σ) == (2, 2)
 
     # test default values
-    model = AutoRegression(order=1, output_dim=2)
+    model = AutoRegressionEmission(order=1, output_dim=2)
     @test model.innerGaussianRegression.λ == 0.0
     @test model.innerGaussianRegression.include_intercept == true
     @test model.innerGaussianRegression.β == zeros(3, 2)
@@ -62,7 +62,7 @@ function test_AutoRegression_standard_fit()
     true_model, Φ, Y = AutoRegression_simulation(n)
 
     # Initialize and fit the model
-    est_model = AutoRegression(order=1, output_dim=2, include_intercept=false)
+    est_model = AutoRegressionEmission(order=1, output_dim=2, include_intercept=false)
     fit!(est_model, Φ, Y)
 
     # confirm that the fitted model has a higher loglikelihood than the true model
@@ -85,11 +85,11 @@ function test_AutoRegression_regularized_fit()
     true_model, Φ, Y = AutoRegression_simulation(n)
 
     # Initialize and fit an *unregularized* model
-    est_model = AutoRegression(order = 1, output_dim=2, include_intercept=false)
+    est_model = AutoRegressionEmission(order = 1, output_dim=2, include_intercept=false)
     fit!(est_model, Φ, Y)
 
     # Initialize and fit a regularized model
-    regularized_est_model = AutoRegression(order = 1, output_dim=2, include_intercept=false, λ=λ)
+    regularized_est_model = AutoRegressionEmission(order = 1, output_dim=2, include_intercept=false, λ=λ)
     fit!(regularized_est_model, Φ, Y)
 
 
@@ -131,7 +131,7 @@ function test_AutoRegression_valid_emission_model()
 
     # Criteria 2
     weights = rand(n)
-    est_model = AutoRegression(order = 1, output_dim=2, include_intercept=false)
+    est_model = AutoRegressionEmission(order = 1, output_dim=2, include_intercept=false)
     fit!(est_model, Φ, Y, weights)
 
     # Criteria 3

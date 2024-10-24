@@ -7,14 +7,14 @@ function AutoRegressionHMM_simulation(n::Int)
     β = [cos(θ) -sin(θ); sin(θ) cos(θ)] 
     Σ = 0.001 * Matrix{Float64}(I, output_dim, output_dim)
 
-    emission_1 = AutoRegression(order=order, output_dim=output_dim, β=β, Σ=Σ, include_intercept=false)
+    emission_1 = AutoRegressionEmission(order=order, output_dim=output_dim, β=β, Σ=Σ, include_intercept=false)
 
     # make a rotation matrix for -pi/10 radians
     θ = -π/10
     β = [cos(θ) -sin(θ); sin(θ) cos(θ)] 
     Σ = 0.001 * Matrix{Float64}(I, output_dim, output_dim)
 
-    emission_2 = AutoRegression(order=order, output_dim=output_dim, β=β, Σ=Σ, include_intercept=false)
+    emission_2 = AutoRegressionEmission(order=order, output_dim=output_dim, β=β, Σ=Σ, include_intercept=false)
 
     # make the HMM
     true_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2])
@@ -33,7 +33,7 @@ function test_AutoRegressionHMM()
     n = 1000
     true_model, Y_prev, Y = AutoRegressionHMM_simulation(n)
 
-    est_model = HiddenMarkovModel(K=2, emission=AutoRegression(order=1, output_dim=2, include_intercept=false))
+    est_model = HiddenMarkovModel(K=2, emission=AutoRegressionEmission(order=1, output_dim=2, include_intercept=false))
     weighted_initialization(est_model, Y_prev, Y)
     fit!(est_model, Y, Y_prev)  # flipped these
 

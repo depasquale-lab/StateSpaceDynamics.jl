@@ -6,17 +6,17 @@ function GaussianHMM_simulation(n::Int)
     μ = [0.0, 0.0]
     Σ = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
 
-    emission_1 = Gaussian(output_dim=output_dim, μ=μ, Σ=Σ)
+    emission_1 = GaussianEmission(output_dim=output_dim, μ=μ, Σ=Σ)
 
     μ = [2.0, 1.0]
     Σ = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
 
-    emission_2 = Gaussian(μ=μ, Σ=Σ, output_dim=output_dim)
+    emission_2 = GaussianEmission(μ=μ, Σ=Σ, output_dim=output_dim)
 
     μ = [-1.0, 2.0]
     Σ = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
 
-    emission_3 = Gaussian(μ=μ, Σ=Σ, output_dim=output_dim)
+    emission_3 = GaussianEmission(μ=μ, Σ=Σ, output_dim=output_dim)
 
     # make the true_model
     true_model = HiddenMarkovModel(K=3, B=[emission_1, emission_2, emission_3])
@@ -33,7 +33,7 @@ function test_GaussianHMM()
     n = 1000
     true_model, state_sequence, Y = GaussianHMM_simulation(n)
 
-    est_model = HiddenMarkovModel(K=3, emission=Gaussian(output_dim=2))
+    est_model = HiddenMarkovModel(K=3, emission=GaussianEmission(output_dim=2))
     weighted_initialization(est_model, Y)
     fit!(est_model, Y)
 
@@ -47,11 +47,11 @@ function test_trialized_GaussianHMM()
     output_dim = 2
     μ = [-5.0, -4.0]
     Σ = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
-    emission_1 = GaussianEmission(Gaussian(output_dim=output_dim, μ=μ, Σ=Σ))
+    emission_1 = GaussianEmission(output_dim=output_dim, μ=μ, Σ=Σ)
 
     μ = [2.0, 1.0]
     Σ = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
-    emission_2 = GaussianEmission(Gaussian(μ=μ, Σ=Σ, output_dim=output_dim))
+    emission_2 = GaussianEmission(output_dim=output_dim, μ=μ, Σ=Σ)
 
     # Create GaussianHMM
     true_model = StateSpaceDynamics.GaussianHMM(K=2, output_dim=2)

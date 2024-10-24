@@ -1,4 +1,4 @@
-export GaussianRegressionEmission, BernoulliRegressionEmission, PoissonRegression, AutoRegression, fit!, loglikelihood, least_squares, update_variance!, sample
+export GaussianRegressionEmission, BernoulliRegressionEmission, PoissonRegressionEmission, AutoRegressionEmission, fit!, loglikelihood, least_squares, update_variance!, sample
 
 # below used in notebooks and unit tests
 export define_objective, define_objective_gradient
@@ -536,14 +536,14 @@ model = PoissonRegression(input_dim=2)
 # output
 ```
 """
-mutable struct PoissonRegression <: RegressionModel
+mutable struct PoissonRegressionEmission <: EmissionModel
     input_dim::Int
     β::Vector{<:Real}
     include_intercept::Bool
     λ::Float64
 end
 
-function validate_model(model::PoissonRegression)
+function validate_model(model::PoissonRegressionEmission)
     if model.include_intercept
         @assert size(model.β, 1) == model.input_dim + 1 "β must be of size (input_dim + 1) if an intercept/bias is included."
     else
@@ -553,7 +553,7 @@ function validate_model(model::PoissonRegression)
     @assert model.λ >= 0.0
 end
 
-function validate_data(model::PoissonRegression, Φ=nothing, Y=nothing, w=nothing)
+function validate_data(model::PoissonRegressionEmission, Φ=nothing, Y=nothing, w=nothing)
     if !isnothing(Φ)
         @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the input dimension of the model."
     end
@@ -568,13 +568,13 @@ function validate_data(model::PoissonRegression, Φ=nothing, Y=nothing, w=nothin
     end
 end
 
-function PoissonRegression(; 
+function PoissonRegressionEmission(; 
     input_dim::Int, 
     include_intercept::Bool = true, 
     β::Vector{<:Real} = if include_intercept zeros(input_dim + 1) else zeros(input_dim) end,
     λ::Float64 = 0.0)
 
-    new_model = PoissonRegression(input_dim, β, include_intercept, λ)
+    new_model = PoissonRegressionEmission(input_dim, β, include_intercept, λ)
 
     validate_model(new_model)
     
@@ -602,7 +602,7 @@ Y = sample(model, Φ)
 # output
 ```
 """
-function sample(model::PoissonRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
+function sample(model::PoissonRegressionEmission, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
     @assert n <= size(Φ, 1) "n must be less than or equal to the number of observations in Φ."
     # cut the length of Φ to n
     Φ = Φ[1:n, :]
@@ -626,7 +626,7 @@ function sample(model::PoissonRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1)
 end
 
 # custom sampling function for the HMM. Returns observation_sequence with new observation appended to bottom.
-function hmm_sample(model::PoissonRegression, observation_sequence::Matrix{<:Real}, Φ::Matrix{<:Real})
+function hmm_sample(model::PoissonRegressionEmission, observation_sequence::Matrix{<:Real}, Φ::Matrix{<:Real})
     # find the number of observations in the observation sequence
     t = size(observation_sequence, 1) + 1
     # get the n+1th observation
@@ -659,7 +659,7 @@ loglikelihood(model, Φ, Y)
 # output
 ```
 """
-function loglikelihood(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)); observation_wise::Bool=false)
+function loglikelihood(model::PoissonRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)); observation_wise::Bool=false)
     # confirm that the model has valid parameters
     validate_model(model)
     validate_data(model, Φ, Y, w)
@@ -684,7 +684,7 @@ function loglikelihood(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<
 end
 
 
-function define_objective(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+function define_objective(model::PoissonRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     validate_model(model)
     validate_data(model, Φ, Y, w)
 
@@ -705,7 +705,7 @@ function define_objective(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matri
     return objective
 end
 
-function define_objective_gradient(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+function define_objective_gradient(model::PoissonRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     validate_model(model)
     validate_data(model, Φ, Y, w)
 
@@ -727,7 +727,7 @@ end
 
 
 
-function gradient!(grad::Vector{Float64}, model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y,1)))
+function gradient!(grad::Vector{Float64}, model::PoissonRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y,1)))
     # confirm that the model has been fit
     @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
     # add intercept if specified
@@ -768,7 +768,7 @@ loglikelihood(est_model, Φ, Y) > loglikelihood(true_model, Φ, Y)
 true
 ```
 """
-function fit!(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+function fit!(model::PoissonRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # confirm that the model has valid parameters
     validate_model(model)
     validate_data(model, Φ, Y, w)
@@ -809,14 +809,14 @@ model = AutoRegression(output_dim=2, order=2, β=β)
 # output
 ```
 """
-mutable struct AutoRegression <: RegressionModel
+mutable struct AutoRegressionEmission <: EmissionModel
     output_dim::Int
     order::Int
     innerGaussianRegression::GaussianRegressionEmission
 end
 
 # define getters for innerGaussianRegression fields
-function Base.getproperty(model::AutoRegression, sym::Symbol)
+function Base.getproperty(model::AutoRegressionEmission, sym::Symbol)
     if sym === :β
         return model.innerGaussianRegression.β
     elseif sym === :Σ
@@ -831,7 +831,7 @@ function Base.getproperty(model::AutoRegression, sym::Symbol)
 end
 
 # define setters for innerGaussianRegression fields
-function Base.setproperty!(model::AutoRegression, sym::Symbol, value)
+function Base.setproperty!(model::AutoRegressionEmission, sym::Symbol, value)
     if sym === :β
         model.innerGaussianRegression.β = value
     elseif sym === :Σ
@@ -843,14 +843,14 @@ function Base.setproperty!(model::AutoRegression, sym::Symbol, value)
     end
 end
 
-function validate_model(model::AutoRegression)
+function validate_model(model::AutoRegressionEmission)
     @assert model.innerGaussianRegression.input_dim == model.output_dim * model.order
     @assert model.innerGaussianRegression.output_dim == model.output_dim
 
     validate_model(model.innerGaussianRegression)
 end
 
-function validate_data(model::AutoRegression, Y_prev=nothing, Y=nothing, w=nothing)
+function validate_data(model::AutoRegressionEmission, Y_prev=nothing, Y=nothing, w=nothing)
     if !isnothing(Y_prev)
         @assert size(Y_prev, 2) == model.output_dim "Number of columns in Y_prev must be equal to the data dimension of the model."
         @assert size(Y_prev, 1) == model.order "Number of rows in Y_prev must be equal to the order of the model. Got: rows=$(size(Y_prev, 1)) and order=$(model.order)"
@@ -863,7 +863,7 @@ function validate_data(model::AutoRegression, Y_prev=nothing, Y=nothing, w=nothi
     end
 end
 
-function AutoRegression(; 
+function AutoRegressionEmission(; 
     output_dim::Int, 
     order::Int, 
     include_intercept::Bool = true, 
@@ -879,7 +879,7 @@ function AutoRegression(;
         include_intercept=include_intercept, 
         λ=λ)
 
-    model = AutoRegression(output_dim, order, innerGaussianRegression)
+    model = AutoRegressionEmission(output_dim, order, innerGaussianRegression)
 
     validate_model(model)
 
@@ -917,7 +917,7 @@ function AR_to_Gaussian_data(Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
 end
 
 
-function _sample(model::AutoRegression, Y_prev::Matrix{<:Real})
+function _sample(model::AutoRegressionEmission, Y_prev::Matrix{<:Real})
     Φ_gaussian = AR_to_Gaussian_data(Y_prev)
     return sample(model.innerGaussianRegression, Φ_gaussian)
 end
@@ -944,7 +944,7 @@ Y = sample(model, Y_prev, n=10)
 # output
 ```
 """
-function sample(model::AutoRegression, Y_prev::Matrix{<:Real}; n::Int=1)
+function sample(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}; n::Int=1)
     # confirm that the model has valid parameters
     validate_model(model)
     validate_data(model, Y_prev)
@@ -968,7 +968,7 @@ end
 
 # custom sampling function for the HMM. Returns observation_sequence with new observation appended to bottom.
 # not used. emission_sample() has replaced this.
-function hmm_sample(model::AutoRegression, observation_sequence::Matrix{<:Real}, Y_prev::Matrix{<:Real})
+function hmm_sample(model::AutoRegressionEmission, observation_sequence::Matrix{<:Real}, Y_prev::Matrix{<:Real})
 
     full_sequence = vcat(Y_prev, observation_sequence)
 
@@ -1001,7 +1001,7 @@ loglikelihood(model, Y_prev, Y)
 # output
 ```
 """
-function loglikelihood(model::AutoRegression, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
+function loglikelihood(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
     # confirm that the model has valid parameters
     validate_model(model)
     validate_data(model, Y_prev, Y)
@@ -1037,7 +1037,7 @@ loglikelihood(est_model, Y_prev, Y) > loglikelihood(true_model, Y_prev, Y)
 true
 ```
 """
-function fit!(model::AutoRegression, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+function fit!(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # confirm that the model has valid parameters
     validate_model(model)
     validate_data(model, Y_prev, Y, w)

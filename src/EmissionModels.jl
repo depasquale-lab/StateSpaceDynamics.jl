@@ -498,9 +498,9 @@ A mutable struct representing an autoregressive emission model, which wraps arou
 # Fields
 - `inner_model::AutoRegression`: The underlying autoregressive model used for the emissions.
 """
-mutable struct AutoRegressionEmission <: EmissionModel
-    inner_model:: AutoRegression
-end
+# mutable struct AutoRegressionEmission <: EmissionModel
+#     inner_model:: AutoRegression
+# end
 
 
 """
@@ -529,7 +529,7 @@ function emission_sample(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}; 
     full_sequence = vcat(Y_prev, observation_sequence)
 
     # get the n+1th observation
-    new_observation = sample(model.inner_model, full_sequence[end-model.order+1:end, :], n=1)
+    new_observation = sample(model, full_sequence[end-model.order+1:end, :], n=1)
 
     return vcat(observation_sequence, new_observation)
 end
@@ -563,8 +563,8 @@ function emission_loglikelihood(model::AutoRegressionEmission, Y_prev::Matrix{<:
 
     Φ_gaussian = AR_to_Gaussian_data(Y_prev, Y)
 
-    # extract inner gaussian regression and wrap it with a GaussianEmission
-    innerGaussianRegression_emission = GaussianRegressionEmission(model.inner_model.innerGaussianRegression)
+    # extract inner gaussian regression and wrap it with a GaussianEmission <- old comment from when we had inner_models
+    innerGaussianRegression_emission = model.innerGaussianRegression
 
     return emission_loglikelihood(innerGaussianRegression_emission, Φ_gaussian, Y)
 end
@@ -592,8 +592,12 @@ Y = randn(10, 2)
 emission_fit!(model, Y_prev, Y)
 # output
 """
+# function emission_fit!(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+#     fit!(model.inner_model, Y_prev, Y, w)
+# end
+
 function emission_fit!(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    fit!(model.inner_model, Y_prev, Y, w)
+    fit!(model, Y_prev, Y, w)
 end
 
 """
@@ -632,7 +636,7 @@ function SwitchingAutoRegression(;
     πₖ::Vector{Float64} = initialize_state_distribution(K)
 )
     # Create the emissions
-    emissions = [AutoRegression(output_dim=output_dim, order=order, include_intercept=include_intercept, β=β, Σ=Σ, λ=λ) for _ in 1:K]
+    emissions = [AutoRegressionEmission(output_dim=output_dim, order=order, include_intercept=include_intercept, β=β, Σ=Σ, λ=λ) for _ in 1:K]
     # Return the HiddenMarkovModel
     return HiddenMarkovModel(K=K, B=emissions, A=A, πₖ=πₖ)
 end
