@@ -18,20 +18,20 @@ Gaussian(output_dim=2)
 Gaussian(2, [0.0, 0.0], [1.0 0.0; 0.0 1.0])
 ```
 """
-mutable struct Gaussian <: BasicModel
+mutable struct GaussianEmission <: EmissionModel
     output_dim::Int # dimension of the data
     μ::Vector{<:Real}  # mean 
     Σ::Matrix{<:Real}  # covariance matrix
 end
 
-function validate_model(model::Gaussian)
+function validate_model(model::GaussianEmission)
     @assert size(model.μ, 1) == model.output_dim
 
     @assert size(model.Σ) == (model.output_dim, model.output_dim)
     @assert valid_Σ(model.Σ)
 end
 
-function validate_data(model::Gaussian, Y=nothing, w=nothing)
+function validate_data(model::GaussianEmission, Y=nothing, w=nothing)
     if !isnothing(Y)
         @assert size(Y, 2) == model.output_dim
     end
@@ -45,7 +45,7 @@ function Gaussian(;
     μ::Vector{<:Real}=zeros(output_dim), 
     Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim))
     
-    model = Gaussian(output_dim, μ, Σ)
+    model = GaussianEmission(output_dim, μ, Σ)
     
     validate_model(model)
 
@@ -68,7 +68,7 @@ println(size(samples))
 (3, 2)
 ```
 """
-function sample(model::Gaussian; n::Int=1)
+function sample(model::GaussianEmission; n::Int=1)
     validate_model(model)
 
     raw_samples = rand(MvNormal(model.μ, model.Σ), n)    
@@ -91,7 +91,7 @@ loglikelihood(model, Y)
 # output
 ```
 """
-function loglikelihood(model::Gaussian, Y::Matrix{<:Real})
+function loglikelihood(model::GaussianEmission, Y::Matrix{<:Real})
     validate_model(model)
     validate_data(model, Y)
 
@@ -127,7 +127,7 @@ fit!(est_model, Y)
 # output
 ```
 """
-function fit!(model::Gaussian, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+function fit!(model::GaussianEmission, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     validate_model(model)
     validate_data(model, Y, w)
 

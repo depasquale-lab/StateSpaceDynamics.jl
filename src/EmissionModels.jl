@@ -33,9 +33,9 @@ A mutable struct representing a Gaussian emission model, which wraps around a `G
 # Fields
 - `inner_model::Gaussian`: The underlying Gaussian model used for the emissions.
 """
-mutable struct GaussianEmission <: EmissionModel
-    inner_model:: Gaussian
-end
+# mutable struct GaussianEmission <: EmissionModel
+#     inner_model:: Gaussian
+# end
 
 
 """
@@ -125,8 +125,12 @@ Y = randn(10, 2)
 emission_fit!(model, Y)
 # output
 """
+# function emission_fit!(model::GaussianEmission, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+#     fit!(model.inner_model, Y, w)
+# end
+
 function emission_fit!(model::GaussianEmission, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    fit!(model.inner_model, Y, w)
+    fit!(model, Y, w)
 end
 
 
@@ -152,7 +156,7 @@ model = GaussianHMM(K=2, output_dim=5)
 """
 function GaussianHMM(; K::Int, output_dim::Int, A::Matrix{<:Real}=initialize_transition_matrix(K), πₖ::Vector{Float64}=initialize_state_distribution(K))
     # Create emission models
-    emissions = [Gaussian(output_dim=output_dim) for _ in 1:K]
+    emissions = [GaussianEmission(output_dim=output_dim) for _ in 1:K]
     # Return constructed GaussianHMM
     return HiddenMarkovModel(K=K, B=emissions, A=A, πₖ=πₖ)
 end
