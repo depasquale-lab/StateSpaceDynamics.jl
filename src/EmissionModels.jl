@@ -170,9 +170,9 @@ A mutable struct representing a Gaussian regression emission model, which wraps 
 # Fields
 - `inner_model::GaussianRegression`: The underlying Gaussian regression model used for the emissions.
 """
-mutable struct GaussianRegressionEmission <: EmissionModel
-    inner_model:: GaussianRegression
-end
+# mutable struct GaussianRegressionEmission <: EmissionModel
+#     inner_model:: GaussianRegression
+# end
 
 
 """
@@ -203,7 +203,7 @@ function emission_sample(model::GaussianRegressionEmission, Φ::Matrix{<:Real}; 
     # find the number of observations in the observation sequence
     t = size(observation_sequence, 1) + 1
     # get the n+1th observation
-    new_observation = sample(model.inner_model, Φ[t:t, :], n=1)
+    new_observation = sample(model, Φ[t:t, :], n=1)
 
     return vcat(observation_sequence, new_observation)
 end
@@ -239,7 +239,7 @@ function emission_loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:
 
     # calculate observation wise loglikelihood (a vector of loglikelihoods for each observation)
     @threads for i in 1:size(Y, 1)
-        observation_wise_loglikelihood[i] = loglikelihood(model.inner_model, Φ[i:i, :], Y[i:i, :])
+        observation_wise_loglikelihood[i] = loglikelihood(model, Φ[i:i, :], Y[i:i, :])
     end
 
     return observation_wise_loglikelihood
@@ -268,8 +268,12 @@ Y = randn(10, 2)
 emission_fit!(model, Φ, Y)
 # output
 """
+# function emission_fit!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+#     fit!(model.inner_model, Φ, Y, w)
+# end
+
 function emission_fit!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    fit!(model.inner_model, Φ, Y, w)
+    fit!(model, Φ, Y, w)
 end
 
 
@@ -326,7 +330,7 @@ function SwitchingGaussianRegression(;
     πₖ::Vector{Float64} = initialize_state_distribution(K)
 )
     # Create emission models
-    emissions = [GaussianRegression(input_dim=input_dim, output_dim=output_dim, include_intercept=include_intercept, β=β, Σ=Σ, λ=λ) for _ in 1:K]
+    emissions = [GaussianRegressionEmission(input_dim=input_dim, output_dim=output_dim, include_intercept=include_intercept, β=β, Σ=Σ, λ=λ) for _ in 1:K]
 
     # Return the HiddenMarkovModel
     return HiddenMarkovModel(K=K, B=emissions, A=A, πₖ=πₖ)
@@ -718,22 +722,22 @@ end
 """
 Emission handler
 """
-function Emission(model::Model)
-    if model isa Gaussian
-        return GaussianEmission(model)
-    elseif model isa GaussianRegression
-        return GaussianRegressionEmission(model)
-    elseif model isa BernoulliRegression
-        return BernoulliRegressionEmission(model)
-    elseif model isa AutoRegression
-        return AutoRegressionEmission(model)
-    elseif model isa CompositeModel
-        emission_components = Emission.(model.components)
-        new_composite = CompositeModel(emission_components)
-        return CompositeModelEmission(new_composite)
-    else
-        # throw an error if the model is not a valid emission model
-        throw(ArgumentError("The model is not a valid emission model."))
-    end
-end 
+# function Emission(model::Model)
+#     if model isa Gaussian
+#         return GaussianEmission(model)
+#     elseif model isa GaussianRegression
+#         return GaussianRegressionEmission(model)
+#     elseif model isa BernoulliRegression
+#         return BernoulliRegressionEmission(model)
+#     elseif model isa AutoRegression
+#         return AutoRegressionEmission(model)
+#     elseif model isa CompositeModel
+#         emission_components = Emission.(model.components)
+#         new_composite = CompositeModel(emission_components)
+#         return CompositeModelEmission(new_composite)
+#     else
+#         # throw an error if the model is not a valid emission model
+#         throw(ArgumentError("The model is not a valid emission model."))
+#     end
+# end 
 

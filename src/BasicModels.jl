@@ -1,4 +1,4 @@
-export Gaussian, fit!, sample, loglikelihood
+export GaussianEmission, fit!, sample, loglikelihood
 
 """
     Gaussian

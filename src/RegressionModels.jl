@@ -1,4 +1,4 @@
-export GaussianRegression, BernoulliRegression, PoissonRegression, AutoRegression, fit!, loglikelihood, least_squares, update_variance!, sample
+export GaussianRegressionEmission, BernoulliRegression, PoissonRegression, AutoRegression, fit!, loglikelihood, least_squares, update_variance!, sample
 
 # below used in notebooks and unit tests
 export define_objective, define_objective_gradient
@@ -24,7 +24,7 @@ model = GaussianRegression(input_dim=2, output_dim=1, β=β)
 # output
 ```
 """
-mutable struct GaussianRegression <: RegressionModel
+mutable struct GaussianRegressionEmission <: EmissionModel
     input_dim::Int
     output_dim::Int
     β::Matrix{<:Real} # coefficient matrix of the model. Shape input_dim by output_dim. Column one is coefficients for target one, etc. The first row are the intercept terms, if included. 
@@ -34,7 +34,7 @@ mutable struct GaussianRegression <: RegressionModel
 end
 
 
-function validate_model(model::GaussianRegression)
+function validate_model(model::GaussianRegressionEmission)
     if model.include_intercept
         @assert size(model.β) == (model.input_dim + 1, model.output_dim) "β must be of size (input_dim + 1, output_dim) if an intercept/bias is included."
     else
@@ -46,7 +46,7 @@ function validate_model(model::GaussianRegression)
     @assert model.λ >= 0.0
 end
 
-function validate_data(model::GaussianRegression, Φ=nothing, Y=nothing, w=nothing)
+function validate_data(model::GaussianRegressionEmission, Φ=nothing, Y=nothing, w=nothing)
     if !isnothing(Φ)
         @assert size(Φ, 2) == model.input_dim "Number of columns in Φ must be equal to the input dimension of the model."
     end
@@ -62,7 +62,7 @@ function validate_data(model::GaussianRegression, Φ=nothing, Y=nothing, w=nothi
 end
 
 
-function GaussianRegression(; 
+function GaussianRegressionEmission(; 
     input_dim::Int, 
     output_dim::Int, 
     include_intercept::Bool = true, 
@@ -70,7 +70,7 @@ function GaussianRegression(;
     Σ::Matrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim),
     λ::Float64 = 0.0)
 
-    new_model = GaussianRegression(input_dim, output_dim, β, Σ, include_intercept, λ)
+    new_model = GaussianRegressionEmission(input_dim, output_dim, β, Σ, include_intercept, λ)
 
     validate_model(new_model)
     
@@ -97,7 +97,7 @@ model = GaussianRegression(input_dim=2, output_dim=1)
 Y = sample(model, Φ)
 # output
 """
-function sample(model::GaussianRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
+function sample(model::GaussianRegressionEmission, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
     @assert n <= size(Φ, 1) "n must be less than or equal to the number of observations in Φ."
     # cut the length of Φ to n
     Φ = Φ[1:n, :]
@@ -135,7 +135,7 @@ loglikelihood(model, Φ, Y)
 # output
 ```
 """
-function loglikelihood(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
+function loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
     # confirm that the model has valid parameters
     validate_model(model)
 
@@ -161,7 +161,7 @@ end
 
 
 # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
-function define_objective(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+function define_objective(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
     validate_data(model, Φ, Y, w)
 
@@ -185,7 +185,7 @@ function define_objective(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matr
 end
 
 
-function define_objective_gradient(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+function define_objective_gradient(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     validate_data(model, Φ, Y, w)
 
     # add intercept if specified
@@ -204,7 +204,7 @@ function define_objective_gradient(model::GaussianRegression, Φ::Matrix{<:Real}
 end
 
 
-function update_variance!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+function update_variance!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
 
     # add intercept if specified
@@ -252,7 +252,7 @@ loglikelihood(est_model, Φ, Y) > loglikelihood(true_model, Φ, Y)
 true
 ```
 """
-function fit!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+function fit!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # confirm that the model has valid parameters
     validate_model(model)
     validate_data(model, Φ, Y, w)
@@ -812,7 +812,7 @@ model = AutoRegression(output_dim=2, order=2, β=β)
 mutable struct AutoRegression <: RegressionModel
     output_dim::Int
     order::Int
-    innerGaussianRegression::GaussianRegression
+    innerGaussianRegression::GaussianRegressionEmission
 end
 
 # define getters for innerGaussianRegression fields
@@ -871,7 +871,7 @@ function AutoRegression(;
     Σ::Matrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim),
     λ::Float64=0.0)
 
-    innerGaussianRegression = GaussianRegression(
+    innerGaussianRegression = GaussianRegressionEmission(
         input_dim=output_dim * order, 
         output_dim=output_dim, 
         β=β,
