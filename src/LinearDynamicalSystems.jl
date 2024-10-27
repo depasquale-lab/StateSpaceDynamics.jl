@@ -306,9 +306,9 @@ function loglikelihood(
     lds.state_model.P0
     C, R = lds.obs_model.C, lds.obs_model.R
 
-    inv_R = pinv(R)
-    inv_Q = pinv(Q)
-    inv_P0 = pinv(P0)
+    inv_R = inv(R)
+    inv_Q = inv(Q)
+    inv_P0 = inv(P0)
 
     dx0 = x[:, 1] - x0
     ll = dx0' * inv_P0 * dx0
@@ -361,7 +361,7 @@ function Gradient(
         inv_P0 * (x[:, 1] - x0)
 
     # Middle time steps
-    for t in 2:(T_steps - 1)
+    @inbounds for t in 2:(T_steps - 1)
         grad[:, t] =
             C' * inv_R * (y[:, t] - C * x[:, t]) - inv_Q * (x[:, t] - A * x[:, t - 1]) +
             A' * inv_Q * (x[:, t + 1] - A * x[:, t])
@@ -408,16 +408,17 @@ function Hessian(
     C, R = lds.obs_model.C, lds.obs_model.R
 
     T_steps = size(y, 2)
-    inv_R = pinv(R)
-    inv_Q = pinv(Q)
-    inv_P0 = pinv(P0)
+
+    inv_R = inv(R)
+    inv_Q = inv(Q)
+    inv_P0 = inv(P0)
 
     H_sub_entry = inv_Q * A
     H_super_entry = Matrix(H_sub_entry')
     H_sub = Vector{Matrix{T}}(undef, T_steps - 1)
     H_super = Vector{Matrix{T}}(undef, T_steps - 1)
 
-    Threads.@threads for i in 1:(T_steps - 1)
+    @inbounds for i in 1:(T_steps - 1)
         H_sub[i] = H_sub_entry
         H_super[i] = H_super_entry
     end
@@ -429,7 +430,7 @@ function Hessian(
 
     H_diag = Vector{Matrix{T}}(undef, T_steps)
 
-    Threads.@threads for i in 2:(T_steps - 1)
+    @inbounds for i in 2:(T_steps - 1)
         H_diag[i] = yt_given_xt + xt_given_xt_1 + xt1_given_xt
     end
 
@@ -440,6 +441,7 @@ function Hessian(
 
     return H, H_diag, H_super, H_sub
 end
+
 
 """
     smooth(lds::LinearDynamicalSystem{S,O}, y::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
@@ -481,14 +483,32 @@ function smooth(
         return g .= vec(-grad)
     end
 
-    function h!(h::Matrix{T}, vec_x::Vector{T})
+    function h!(h::AbstractSparseMatrix, vec_x::Vector{T})
         x = reshape(vec_x, D, T_steps)
         H, _, _, _ = Hessian(lds, y)
-        return h .= -H
+        copyto!(h, -H)
+        return 
     end
 
-    res = optimize(nll, g!, h!, X₀, Newton(linesearch=LineSearches.BackTracking()))
+    # set up initial values
+    initial_f = nll(X₀)
+    
+    inital_g = similar(X₀)
+    g!(inital_g, X₀)
 
+    initial_h = spzeros(Float64, length(X₀), length(X₀))
+    h!(initial_h, X₀)
+
+    # set up a TwiceDifferentiable object i guess?
+    td = TwiceDifferentiable(nll, g!, h!, X₀, initial_f, inital_g, initial_h)
+
+    # set up Optim.Options
+    opts = Optim.Options(g_tol=1e-12, x_tol=1e-12, f_tol=1e-12, iterations=100)
+
+    # Go!
+    res = optimize(td, X₀, Newton(linesearch=LineSearches.BackTracking()), opts)
+    
+    # Profit
     x = reshape(res.minimizer, D, T_steps)
 
     H, main, super, sub = Hessian(lds, y)
@@ -496,7 +516,7 @@ function smooth(
 
     gauss_entropy = 0.5 * (size(H, 1) * log(2π) + logdet(-H))
 
-    for i in 1:T_steps
+    @inbounds for i in 1:T_steps
         p_smooth[:, :, i] .= 0.5 .* (p_smooth[:, :, i] .+ p_smooth[:, :, i]')
     end
 
@@ -572,8 +592,8 @@ function Q_state(
     E_zz_prev::Array{<:Real,3},
 )
     # Calculate the inverses
-    Q_inv = pinv(Q)
-    P0_inv = pinv(P0)
+    Q_inv = inv(Q)
+    P0_inv = inv(P0)
     # Get dimensions
     T_step = size(E_z, 2)
     # Initialize Q_val
@@ -621,7 +641,7 @@ function Q_obs(
     y::Matrix{<:Real},
 )
     # Calculate the inverse
-    R_inv = pinv(R)
+    R_inv = inv(R)
     # Get dimensions
     obs_dim = size(H, 1)
     T_step = size(E_z, 2)
@@ -1519,7 +1539,7 @@ end
 
 Calculate the Q-function for the observation model.
 
-# Arguments
+# Arguments 
 - `C::Matrix{<:Real}`: The observation matrix.
 - `log_d::Vector{<:Real}`: The mean firing rate vector in log space.
 - `E_z::Array{<:Real}`: The expected latent states.
