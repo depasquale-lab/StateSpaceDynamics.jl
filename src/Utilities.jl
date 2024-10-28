@@ -121,56 +121,73 @@ function block_tridgm(
     upper_diag::Vector{Matrix{T}},
     lower_diag::Vector{Matrix{T}},
 ) where {T<:Real}
-    # Check that the vectors have the correct lengths
+    # Input validation
     if length(upper_diag) != length(main_diag) - 1 ||
         length(lower_diag) != length(main_diag) - 1
-        error(
-            "The length of upper_diag and lower_diag must be one less than the length of main_diag",
-        )
+        throw(DimensionMismatch(
+            "The length of upper_diag and lower_diag must be one less than the length of main_diag"
+        ))
     end
 
-    # Determine the size of the blocks and the total matrix size
-    m = size(main_diag[1], 1) # Size of each block
-    n = length(main_diag) # Number of blocks
-    N = m * n # Total size of the matrix
-
-    # Initialize containers for constructing sparse matrix
-    row_indices = Int[]
-    col_indices = Int[]
-    values = T[]
-
-    # Function to add block indices and values to arrays
-    function append_block(i_row, i_col, block)
-        base_row = (i_row - 1) * m
-        base_col = (i_col - 1) * m
-        for j in 1:m
-            for i in 1:m
-                push!(row_indices, base_row + i)
-                push!(col_indices, base_col + j)
-                push!(values, block[i, j])
-            end
+    # Determine dimensions
+    m = size(main_diag[1], 1)  # block size
+    n = length(main_diag)      # number of blocks
+    N = m * n                  # total matrix size
+    
+    # Pre-calculate number of non-zero elements for each section
+    nnz_main = n * m * m           # main diagonal blocks
+    nnz_off = 2 * (n-1) * m * m   # upper and lower diagonal blocks
+    total_nnz = nnz_main + nnz_off
+    
+    # Pre-allocate arrays with exact sizes
+    I = Vector{Int}(undef, total_nnz)
+    J = Vector{Int}(undef, total_nnz)
+    V = Vector{T}(undef, total_nnz)
+    
+    # Use linear indexing for better performance
+    idx = 1
+    
+    # Fill main diagonal blocks
+    @inbounds for block_idx in 1:n
+        block = main_diag[block_idx]
+        base = (block_idx - 1) * m
+        
+        # Use linear indexing for the block
+        for j in 1:m, i in 1:m
+            I[idx] = base + i
+            J[idx] = base + j
+            V[idx] = block[i, j]
+            idx += 1
         end
     end
-
-    # Fill in the main diagonal blocks
-    for i in 1:n
-        append_block(i, i, main_diag[i])
+    
+    # Fill upper and lower diagonal blocks simultaneously
+    @inbounds for block_idx in 1:(n-1)
+        upper_block = upper_diag[block_idx]
+        lower_block = lower_diag[block_idx]
+        
+        base_current = (block_idx - 1) * m
+        base_next = block_idx * m
+        
+        # Upper diagonal block
+        for j in 1:m, i in 1:m
+            I[idx] = base_current + i
+            J[idx] = base_next + j
+            V[idx] = upper_block[i, j]
+            idx += 1
+        end
+        
+        # Lower diagonal block
+        for j in 1:m, i in 1:m
+            I[idx] = base_next + i
+            J[idx] = base_current + j
+            V[idx] = lower_block[i, j]
+            idx += 1
+        end
     end
-
-    # Fill in the upper diagonal blocks
-    for i in 1:(n - 1)
-        append_block(i, i + 1, upper_diag[i])
-    end
-
-    # Fill in the lower diagonal blocks
-    for i in 1:(n - 1)
-        append_block(i + 1, i, lower_diag[i])
-    end
-
-    # Create sparse matrix from collected indices and values
-    A = sparse(row_indices, col_indices, values, N, N)
-
-    return A
+    
+    # Create sparse matrix optimized for subsequent operations
+    return sparse(I, J, V, N, N, +)
 end
 
 # Initialization utilities

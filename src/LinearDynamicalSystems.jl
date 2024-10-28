@@ -437,7 +437,7 @@ function Hessian(
     H_diag[1] = yt_given_xt + xt1_given_xt + x_t
     H_diag[T_steps] = yt_given_xt + xt_given_xt_1
 
-    H = block_tridgm(H_diag, H_super, H_sub)
+    H = StateSpaceDynamics.block_tridgm(H_diag, H_super, H_sub)
 
     return H, H_diag, H_super, H_sub
 end
