@@ -503,6 +503,7 @@ function smooth(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     T_steps, D = size(y, 2), lds.latent_dim
 
+    # set initial "solution" and preallocate x_reshape
     X₀ = zeros(T, D * T_steps)
 
     function nll(vec_x::Vector{T})
@@ -581,24 +582,35 @@ x, p_smooth, inverse_offdiag = smooth(lds, y)
 """
 function smooth(
     lds::LinearDynamicalSystem{S,O}, y::Array{T,3}
-) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     obs_dim, T_steps, n_trials = size(y)
     latent_dim = lds.latent_dim
 
+    # Fast path for single trial case
+    if n_trials == 1
+        x_sm, p_sm, p_prev, ent = smooth(lds, y[:, :, 1])
+        # Return directly in the required shape without additional copying
+        return reshape(x_sm, latent_dim, T_steps, 1),
+               reshape(p_sm, latent_dim, latent_dim, T_steps, 1),
+               reshape(p_prev, latent_dim, latent_dim, T_steps, 1),
+               ent
+    end
+
+    # Pre-allocate output arrays
     x_smooth = Array{T,3}(undef, latent_dim, T_steps, n_trials)
     p_smooth = Array{T,4}(undef, latent_dim, latent_dim, T_steps, n_trials)
     inverse_offdiag = Array{T,4}(undef, latent_dim, latent_dim, T_steps, n_trials)
-    total_entropy = 0.0
+    total_entropy = Threads.Atomic{Float64}(0.0)
 
     Threads.@threads for trial in 1:n_trials
         x_sm, p_sm, p_prev, ent = smooth(lds, y[:, :, trial])
-        total_entropy += ent
+        Threads.atomic_add!(total_entropy, ent)
         x_smooth[:, :, trial] .= x_sm
         p_smooth[:, :, :, trial] .= p_sm
         inverse_offdiag[:, :, :, trial] .= p_prev
     end
 
-    return x_smooth, p_smooth, inverse_offdiag, total_entropy
+    return x_smooth, p_smooth, inverse_offdiag, total_entropy[]
 end
 
 """
@@ -773,7 +785,7 @@ function sufficient_statistics(
     E_zz_prev = similar(p_smooth)
 
     for trial in 1:n_trials
-        for t in 1:T_steps
+        @inbounds for t in 1:T_steps
             E_zz[:, :, t, trial] =
                 p_smooth[:, :, t, trial] + x_smooth[:, t, trial] * x_smooth[:, t, trial]'
             if t > 1
@@ -998,7 +1010,7 @@ function update_Q!(
 
         for trial in 1:n_trials
             sum_expectations = zeros(T, state_dim, state_dim)
-            for t in 2:T_steps
+            @inbounds for t in 2:T_steps
                 sum_expectations .+=
                     E_zz[:, :, t, trial] -
                     (E_zz_prev[:, :, t, trial] * lds.state_model.A') -
@@ -1040,7 +1052,7 @@ function update_C!(
         sum_zz = zeros(T, size(E_zz)[1:2])
 
         for trial in 1:n_trials
-            for t in 1:T_steps
+            @inbounds for t in 1:T_steps
                 sum_yz .+= y[:, t, trial] * E_z[:, t, trial]'
                 sum_zz .+= E_zz[:, :, t, trial]
             end
@@ -1075,7 +1087,7 @@ function update_R!(
         R_new = zeros(T, obs_dim, obs_dim)
 
         for trial in 1:n_trials
-            for t in 1:T_steps
+            @inbounds for t in 1:T_steps
                 yt = y[:, t, trial]
                 zt = E_z[:, t, trial]
                 Zt = E_zz[:, :, t, trial]
@@ -1742,7 +1754,7 @@ Perform smoothing for a Poisson Linear Dynamical System (LDS).
 - `x::Matrix{T}`: The smoothed state estimates. Dimensions: (latent_dim, T_steps)
 - `p_smooth::Array{T, 3}`: The smoothed state covariances. Dimensions: (latent_dim, latent_dim, T_steps)
 - `inverse_offdiag::Array{T, 3}`: The inverse off-diagonal matrices. Dimensions: (latent_dim, latent_dim, T_steps)
-
+221
 # Note
 This function uses Newton's method for optimization and computes the Hessian
 and gradient specifically for the Poisson observation model.
@@ -1797,53 +1809,6 @@ function smooth(
     inverse_offdiag = cat(zeros(T, D, D), inverse_offdiag; dims=3)
 
     return x, p_smooth, inverse_offdiag, gauss_entropy
-end
-
-"""
-    smooth(lds::LinearDynamicalSystem{S,O}, y::Array{T,3}) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
-
-Smooth the latent states for each trial of a Poisson Linear Dynamical System (PLDS) model.
-
-# Arguments
-- `lds::LinearDynamicalSystem{S,O}`: The Poisson Linear Dynamical System model.
-- `y::Array{T,3}`: The observed data for each trial. Dimensions: (obs_dim, T_steps, n_trials)
-
-# Returns
-- `x_smooth::Array{T,3}`: The smoothed latent states for each trial. Dimensions: (latent_dim, T_Steps, n_trials)
-- `p_smooth::Array{T,4}`: The smoothed covariance matrices for each trial. Dimensions: (latent_dim, T_Steps, n_trials, latent_dim)
-- `p_tt1::Array{T,4}`: The lag-one covariance smoother for each trial. Dimensions: (latent_dim, T_Steps, n_trials, latent_dim)
-
-# Note
-This function applies smoothing to each trial independently using the `smooth` function for a single trial.
-"""
-function smooth(
-    lds::LinearDynamicalSystem{S,O}, y::Array{T,3}
-) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    # Get dimensions
-    obs_dim, T_steps, n_trials = size(y)
-    latent_dim = lds.latent_dim
-
-    # Pre-allocate arrays for results
-    x_smooth = zeros(T, latent_dim, T_steps, n_trials)
-    p_smooth = zeros(T, latent_dim, latent_dim, T_steps, n_trials)
-    p_tt1 = zeros(T, latent_dim, latent_dim, T_steps, n_trials)
-    total_entropy = 0.0
-
-    # Smooth the latent states for each trial
-    Threads.@threads for k in 1:n_trials
-        # Smooth the latent states for a single trial
-        x_sm, p_sm, p_prev, ent = smooth(lds, y[:, :, k])
-
-        # add the entropy
-        total_entropy += ent
-
-        # Store the results
-        x_smooth[:, :, k] = x_sm
-        p_smooth[:, :, :, k] = cat(p_sm...; dims=3)
-        p_tt1[:, :, :, k] = cat(p_prev...; dims=3)
-    end
-
-    return x_smooth, p_smooth, p_tt1, total_entropy
 end
 
 """
