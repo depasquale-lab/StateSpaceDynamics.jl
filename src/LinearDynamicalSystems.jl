@@ -404,7 +404,7 @@ function Gradient(
 end
 
 """
-    Hessian(lds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+    Hessian(lds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{T}, x::AbstractMatrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
 
 Construct the Hessian matrix of the log-likelihood of the LDS model given a set of observations.
 
@@ -420,15 +420,19 @@ where ̂xₙ is the current smoothed state estimate, H is the Hessian matrix, an
 # Arguments
 - `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System.
 - `y::AbstractMatrix{T}`: Matrix of observations.
+- `x::AbstractMatrix{T}`: Matrix of latent states.
 
 # Returns
 - `H::Matrix{T}`: Hessian matrix of the log-likelihood.
 - `H_diag::Vector{Matrix{T}}`: Main diagonal blocks of the Hessian.
 - `H_super::Vector{Matrix{T}}`: Super-diagonal blocks of the Hessian.
 - `H_sub::Vector{Matrix{T}}`: Sub-diagonal blocks of the Hessian.
+
+# Note 
+- `x` is not used in this function, but is required to match the function signature of other Hessian calculations e.g., in PoissonLDS.
 """
 function Hessian(
-    lds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{T}
+    lds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{T}, x::AbstractMatrix{T}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     A, Q, x0, P0 = lds.state_model.A,
     lds.state_model.Q, lds.state_model.x0,
@@ -500,7 +504,7 @@ x, p_smooth, inverse_offdiag, Q_val = DirectSmoother(lds, y)
 """
 function smooth(
     lds::LinearDynamicalSystem{S,O}, y::Matrix{T}
-) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     T_steps, D = size(y, 2), lds.latent_dim
 
     # set initial "solution" and preallocate x_reshape
@@ -519,7 +523,7 @@ function smooth(
 
     function h!(h::AbstractSparseMatrix, vec_x::Vector{T})
         x = reshape(vec_x, D, T_steps)
-        H, _, _, _ = Hessian(lds, y)
+        H, _, _, _ = Hessian(lds, y, x)
         copyto!(h, -H)
         return 
     end
@@ -545,7 +549,7 @@ function smooth(
     # Profit
     x = reshape(res.minimizer, D, T_steps)
 
-    H, main, super, sub = Hessian(lds, y)
+    H, main, super, sub = Hessian(lds, y, x)
     p_smooth, inverse_offdiag = block_tridiagonal_inverse(-sub, -main, -super)
 
     gauss_entropy = 0.5 * (size(H, 1) * log(2π) + logdet(-H))
@@ -1477,8 +1481,7 @@ end
 Calculate the Hessian matrix of the log-likelihood for a Poisson Linear Dynamical System.
 
 This function computes the Hessian matrix, which represents the second-order partial derivatives
-of the log-likelihood with respect to the latent states. The Hessian is useful for optimization
-algorithms and for computing the Fisher information matrix.
+of the log-likelihood with respect to the latent states.
 
 # Arguments
 - `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System with Poisson observations.
@@ -1490,11 +1493,6 @@ algorithms and for computing the Fisher information matrix.
 - `H_diag::Vector{Matrix{T}}`: The main diagonal blocks of the Hessian.
 - `H_super::Vector{Matrix{T}}`: The super-diagonal blocks of the Hessian.
 - `H_sub::Vector{Matrix{T}}`: The sub-diagonal blocks of the Hessian.
-
-# Note
-The function exploits the block tridiagonal structure of the Hessian for efficiency.
-The returned full Hessian `H` and its components can be used for various purposes,
-such as Newton's method in optimization or for computing confidence intervals.
 
 """
 function Hessian(
@@ -1739,81 +1737,6 @@ function calculate_elbo(
 
     # Return the ELBO
     return ecll - total_entropy
-end
-
-"""
-    smooth(lds::LinearDynamicalSystem{S,O}, y::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
-
-Perform smoothing for a Poisson Linear Dynamical System (LDS).
-
-# Arguments
-
-- `lds::LinearDynamicalSystem{S,O}`: The Poisson Linear Dynamical System model.
-- `y::Matrix{T}`: The observed data. Dimensions: (obs_dim, T_steps)
-
-# Returns
-- `x::Matrix{T}`: The smoothed state estimates. Dimensions: (latent_dim, T_steps)
-- `p_smooth::Array{T, 3}`: The smoothed state covariances. Dimensions: (latent_dim, latent_dim, T_steps)
-- `inverse_offdiag::Array{T, 3}`: The inverse off-diagonal matrices. Dimensions: (latent_dim, latent_dim, T_steps)
-221
-# Note
-This function uses Newton's method for optimization and computes the Hessian
-and gradient specifically for the Poisson observation model.
-"""
-function smooth(
-    lds::LinearDynamicalSystem{S,O}, y::Matrix{T}
-) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    # Get the length of Y and latent dimension
-    obs_dim, time_steps = size(y)
-    D = lds.latent_dim
-
-    # Create starting point for the optimization
-    X₀ = zeros(T, D * time_steps)
-
-    # Create wrappers for the loglikelihood, gradient, and hessian
-    function nll(vec_x::Vector{T})
-        x = reshape(vec_x, D, time_steps)
-        return -loglikelihood(x, lds, y)
-    end
-
-    function g!(g::Vector{T}, vec_x::Vector{T})
-        x = reshape(vec_x, D, time_steps)
-        grad = Gradient(lds, y, x)
-        return g .= vec(-grad)
-    end
-
-    function h!(h::Matrix{T}, vec_x::Vector{T})
-        x = reshape(vec_x, D, time_steps)
-        H, _, _, _ = Hessian(lds, y, x)
-        return h .= -H
-    end
-
-    # set up initial values
-    initial_f = nll(X₀)
-
-
-    # Set up the optimization problem
-    res = optimize(nll, g!, h!, X₀, Newton(linesearch=LineSearches.BackTracking()), Optim.Options(; g_tol=1e-12))
-
-    # Get the optimal state
-    x = reshape(res.minimizer, D, time_steps)
-
-    # Get covariances and nearest-neighbor second moments
-    H, main, super, sub = Hessian(lds, y, x)
-    p_smooth, inverse_offdiag = block_tridiagonal_inverse(-sub, -main, -super)
-
-    # calculate the entropy
-    gauss_entropy = 0.5 * (size(H, 1) * log(2π) + logdet(-H))
-
-    # Enforce symmetry of p_smooth
-    for i in 1:time_steps
-        p_smooth[:, :, i] = 0.5 * (p_smooth[:, :, i] + p_smooth[:, :, i]')
-    end
-
-    # Concatenate a zero matrix to the inverse off diagonal
-    inverse_offdiag = cat(zeros(T, D, D), inverse_offdiag; dims=3)
-
-    return x, p_smooth, inverse_offdiag, gauss_entropy
 end
 
 """

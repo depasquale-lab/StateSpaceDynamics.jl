@@ -100,7 +100,7 @@ function test_Hessian()
 
     # for each trial check the Hessian
     for i in axes(y, 3)
-        hess, main, super, sub = StateSpaceDynamics.Hessian(lds, y[:, 1:3, i])
+        hess, main, super, sub = StateSpaceDynamics.Hessian(lds, y[:, 1:3, i], x[:, 1:3, i])
         @test size(hess) == (3 * lds.latent_dim, 3 * lds.latent_dim)
         @test size(main) == (3,)
         @test size(super) == (2,)
