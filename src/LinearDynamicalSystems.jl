@@ -300,28 +300,31 @@ function loglikelihood(
     x::AbstractMatrix{T}, lds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{U}
 ) where {T<:Real,U<:Real,S<:GaussianStateModel{<:Real},O<:GaussianObservationModel{<:Real}}
     T_steps = size(y, 2)
-
     A, Q, x0, P0 = lds.state_model.A,
     lds.state_model.Q, lds.state_model.x0,
     lds.state_model.P0
     C, R = lds.obs_model.C, lds.obs_model.R
-
-    inv_R = inv(R)
-    inv_Q = inv(Q)
-    inv_P0 = inv(P0)
-
+    
+    # Pre-compute inverses
+    inv_R = Symmetric(inv(R))
+    inv_Q = Symmetric(inv(Q))
+    inv_P0 = Symmetric(inv(P0))
+    
     dx0 = x[:, 1] - x0
     ll = dx0' * inv_P0 * dx0
-
+    
+    # Create temporaries with the same element type as x
+    temp_dx = zeros(T, size(x, 1))
+    temp_dy = zeros(promote_type(T, U), size(y, 1))
+    
     @inbounds for t in 1:T_steps
         if t > 1
-            dx = x[:, t] - A * x[:, t - 1]
-            ll += dx' * inv_Q * dx
+            temp_dx .= x[:, t] - A * x[:, t - 1]
+            ll += temp_dx' * inv_Q * temp_dx
         end
-        dy = y[:, t] - C * x[:, t]
-        ll += dy' * inv_R * dy
+        temp_dy .= y[:, t] - C * x[:, t]
+        ll += temp_dy' * inv_R * temp_dy
     end
-
     return -0.5 * ll
 end
 
@@ -341,35 +344,42 @@ Compute the gradient of the log-likelihood with respect to the latent states for
 function Gradient(
     lds::LinearDynamicalSystem{S,O}, y::Matrix{T}, x::Matrix{T}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+    # Dims etc.
     latent_dim, T_steps = size(x)
     obs_dim, _ = size(y)
 
+    # Model Parameters
     A, Q, x0, P0 = lds.state_model.A,
     lds.state_model.Q, lds.state_model.x0,
     lds.state_model.P0
     C, R = lds.obs_model.C, lds.obs_model.R
+    
+    # Pre-compute inverses
+    inv_R = Symmetric(inv(R))
+    inv_Q = Symmetric(inv(Q))
+    inv_P0 = Symmetric(inv(P0))
 
-    inv_R = pinv(R)
-    inv_Q = pinv(Q)
-    inv_P0 = pinv(P0)
+    # Pre-compute common matrix products
+    C_inv_R = C' * inv_R
+    A_inv_Q = A' * inv_Q
 
     grad = zeros(T, latent_dim, T_steps)
 
     # First time step
-    grad[:, 1] =
-        A' * inv_Q * (x[:, 2] - A * x[:, 1]) + C' * inv_R * (y[:, 1] - C * x[:, 1]) -
+    grad[:, 1] .=
+        A_inv_Q * (x[:, 2] - A * x[:, 1]) + C_inv_R * (y[:, 1] - C * x[:, 1]) -
         inv_P0 * (x[:, 1] - x0)
 
     # Middle time steps
     @inbounds for t in 2:(T_steps - 1)
-        grad[:, t] =
-            C' * inv_R * (y[:, t] - C * x[:, t]) - inv_Q * (x[:, t] - A * x[:, t - 1]) +
-            A' * inv_Q * (x[:, t + 1] - A * x[:, t])
+        grad[:, t] .=
+            C_inv_R * (y[:, t] - C * x[:, t]) - inv_Q * (x[:, t] - A * x[:, t - 1]) +
+            A_inv_Q * (x[:, t + 1] - A * x[:, t])
     end
 
     # Last time step
-    grad[:, T_steps] =
-        C' * inv_R * (y[:, T_steps] - C * x[:, T_steps]) -
+    grad[:, T_steps] .=
+        C_inv_R * (y[:, T_steps] - C * x[:, T_steps]) -
         inv_Q * (x[:, T_steps] - A * x[:, T_steps - 1])
 
     return grad
@@ -409,32 +419,37 @@ function Hessian(
 
     T_steps = size(y, 2)
 
-    inv_R = inv(R)
-    inv_Q = inv(Q)
-    inv_P0 = inv(P0)
+    # Pre-compute inverses
+    inv_R = Symmetric(inv(R))
+    inv_Q = Symmetric(inv(Q))
+    inv_P0 = Symmetric(inv(P0))
 
-    H_sub_entry = inv_Q * A
-    H_super_entry = Matrix(H_sub_entry')
+    # Pre-allocate all blocks
     H_sub = Vector{Matrix{T}}(undef, T_steps - 1)
     H_super = Vector{Matrix{T}}(undef, T_steps - 1)
+    H_diag = Vector{Matrix{T}}(undef, T_steps)
 
+    # Off-diagonal terms
+    H_sub_entry = inv_Q * A
+    H_super_entry = Matrix(H_sub_entry')
+
+    # Calculate main diagonal terms
+    yt_given_xt = -C' * inv_R * C
+    xt_given_xt_1 = -inv_Q
+    xt1_given_xt = -A' * inv_Q * A
+    x_t = -inv_P0
+    
+    # Build off-diagonals
     @inbounds for i in 1:(T_steps - 1)
         H_sub[i] = H_sub_entry
         H_super[i] = H_super_entry
     end
 
-    yt_given_xt = -C' * inv_R * C
-    xt_given_xt_1 = -inv_Q
-    xt1_given_xt = -A' * inv_Q * A
-    x_t = -inv_P0
-
-    H_diag = Vector{Matrix{T}}(undef, T_steps)
-
+    # Build main diagonal
+    H_diag[1] = yt_given_xt + xt1_given_xt + x_t
     @inbounds for i in 2:(T_steps - 1)
         H_diag[i] = yt_given_xt + xt_given_xt_1 + xt1_given_xt
     end
-
-    H_diag[1] = yt_given_xt + xt1_given_xt + x_t
     H_diag[T_steps] = yt_given_xt + xt_given_xt_1
 
     H = StateSpaceDynamics.block_tridgm(H_diag, H_super, H_sub)
@@ -1294,12 +1309,12 @@ function loglikelihood(
     T_steps = size(y, 2)
 
     # Pre-compute matrix inverses
-    inv_p0 = pinv(plds.state_model.P0)
-    inv_Q = pinv(plds.state_model.Q)
+    inv_p0 = inv(plds.state_model.P0)
+    inv_Q = inv(plds.state_model.Q)
 
     # Calculate p(yₜ|xₜ)
     pygivenx_sum = zero(T)
-    for t in 1:T_steps
+    @inbounds for t in 1:T_steps
         temp = plds.obs_model.C * x[:, t] .+ d
         pygivenx_sum += dot(y[:, t], temp) - sum(exp.(temp))
     end
@@ -1310,7 +1325,7 @@ function loglikelihood(
 
     # Calculate p(xₜ|xₜ₋₁)
     pxtgivenxt1_sum = zero(T)
-    for t in 2:T_steps
+    @inbounds for t in 2:T_steps
         temp = x[:, t] .- (plds.state_model.A * x[:, t - 1])
         pxtgivenxt1_sum += -T(0.5) * dot(temp, inv_Q * temp)
     end
@@ -1382,14 +1397,14 @@ function Gradient(
     T_steps = size(y, 2)
 
     # Precompute matrix inverses
-    inv_P0 = pinv(P0)
-    inv_Q = pinv(Q)
+    inv_P0 = inv(P0)
+    inv_Q = inv(Q)
 
     # Pre-allocate gradient
     grad = zeros(lds.latent_dim, T_steps)
 
     # Calculate gradient for each time step
-    for t in 1:T_steps
+    @inbounds for t in 1:T_steps
         # Common term for all time steps
         common_term = C' * (y[:, t] - exp.(C * x[:, t] .+ d))
 
@@ -1460,7 +1475,7 @@ function Hessian(
     H_sub = Vector{typeof(H_sub_entry)}(undef, T_steps - 1)
     H_super = Vector{typeof(H_super_entry)}(undef, T_steps - 1)
 
-    Threads.@threads for i in 1:(T_steps - 1)
+    @inbounds for i in 1:(T_steps - 1)
         H_sub[i] = H_sub_entry
         H_super[i] = H_super_entry
     end
@@ -1478,7 +1493,7 @@ function Hessian(
     # Calculate the main diagonal
     H_diag = Vector{Matrix{T}}(undef, T_steps)
 
-    Threads.@threads for t in 1:T_steps
+    @inbounds for t in 1:T_steps
         λ = exp.(C * x[:, t] .+ d)
         if t == 1
             H_diag[t] = x_t + xt1_given_xt + calculate_poisson_hess(C, λ)
@@ -1525,7 +1540,7 @@ function Q_state(
     Q_val = 0.0
 
     # Calcualte over trials
-    for k in axes(E_z, 3)
+    Threads.@threads for k in axes(E_z, 3)
         Q_val += Q_state(
             A, Q, P0, x0, E_z[:, :, k], E_zz[:, :, :, k], E_zz_prev[:, :, :, k]
         )
@@ -1571,9 +1586,9 @@ function Q_observation_model(
     end
 
     # sum over trials
-    for k in 1:trials
+    Threads.@threads for k in 1:trials
         # sum over time-points
-        for t in 1:time_steps
+        @inbounds for t in 1:time_steps
             # Mean term
             h = (C * E_z[:, t, k]) .+ d
 
@@ -1783,7 +1798,7 @@ function smooth(
     total_entropy = 0.0
 
     # Smooth the latent states for each trial
-    for k in 1:n_trials
+    Threads.@threads for k in 1:n_trials
         # Smooth the latent states for a single trial
         x_sm, p_sm, p_prev, ent = smooth(lds, y[:, :, k])
 
@@ -1830,8 +1845,8 @@ function gradient_observation_model!(
 
     fill!(grad, zero(T))
 
-    for k in 1:trials
-        for t in 1:time_steps
+    Threads.@threads for k in 1:trials
+        @inbounds for t in 1:time_steps
             z_t = E_z[:, t, k]
             P_t = P_smooth[:, :, t, k]
             y_t = y[:, t, k]

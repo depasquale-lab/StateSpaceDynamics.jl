@@ -123,24 +123,6 @@ include("HiddenMarkovModels/HiddenMarkovModels.jl")
     test_HMM_EM()
 end
 
-# """
-# Tests for LDS.jl
-# """
-
-# include("LDS/LDS.jl")
-
-# @testset "LDS Tests" begin
-#     test_LDS_with_params()
-#     test_LDS_without_params()
-#     test_LDS_E_Step()
-#     test_LDS_M_Step!()
-#     test_LDS_EM()
-#     test_LDS_gradient()
-#     test_LDS_Hessian()
-#     test_EM_numeric_RTS()
-#     test_EM_numeric_Direct()
-# end
-
 """
 Tests for GaussianLDS.jl
 """
@@ -204,21 +186,6 @@ include("LinearDynamicalSystems//PoissonLDS.jl")
         test_EM_matlab()
     end
 end
-
-# include("PLDS/PLDS.jl")
-
-# @testset "PLDS Tests" begin
-#     test_PLDS_constructor_with_params()
-#     test_PLDS_constructor_without_params()
-#     test_countspikes()
-#     test_logposterior()
-#     test_gradient_plds()
-#     test_hessian_plds()
-#     test_direct_smoother()
-#     test_smooth()
-#     test_analytical_parameter_updates()
-#     test_direct_smoother()
-# end
 
 """
 Tests for Regression.jl

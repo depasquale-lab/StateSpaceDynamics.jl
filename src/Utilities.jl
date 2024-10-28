@@ -37,41 +37,58 @@ Compute the inverse of a block tridiagonal matrix.
 
 An Accelerated Lambda Iteration Method for Multilevel Radiative Transfer” Rybicki, G.B., and Hummer, D.G., Astronomy and Astrophysics, 245, 171–181 (1991), Appendix B.
 """
-function block_tridiagonal_inverse(A::Vector{Matrix{T}}, 
+function block_tridiagonal_inverse(A::Vector{Matrix{T}},
                                    B::Vector{Matrix{T}},
                                    C::Vector{Matrix{T}}) where {T<:Real}
     n = length(B)
     block_size = size(B[1], 1)
-    # Initialize Di and Ei arrays
-    D = Vector{Matrix{T}}([zeros(T, block_size, block_size) for _ in 1:n+1])
-    E = Vector{Matrix{T}}([zeros(T, block_size, block_size) for _ in 1:n+1])
+
+    # Initialize D and E arrays
+    D = Vector{Matrix{T}}(undef, n + 1)
+    E = Vector{Matrix{T}}(undef, n + 1)
+    D[1] = zeros(T, block_size, block_size)
+    E[n + 1] = zeros(T, block_size, block_size)
+
+    # Initialize λii and λij arrays
     λii = Array{T}(undef, block_size, block_size, n)
     λij = Array{T}(undef, block_size, block_size, n - 1)
+    identity = Matrix{T}(I, block_size, block_size)
 
-    # Add a zero matrix to the subdiagonal and superdiagonal
-    pushfirst!(A, zeros(block_size, block_size))
-    push!(C, zeros(block_size, block_size))
+    # Add zero matrices to A and C
+    pushfirst!(A, zeros(T, block_size, block_size))
+    push!(C, zeros(T, block_size, block_size))
+
+    # Preallocate LU factorization arrays
+    lu_D = Vector{LU{T, Matrix{T}}}(undef, n)
+    lu_E = Vector{LU{T, Matrix{T}}}(undef, n)
+    lu_S = Vector{LU{T, Matrix{T}}}(undef, n)
 
     # Forward sweep for D
-    for i in 1:n
-        D[i + 1] = (B[i] - A[i] * D[i]) \ C[i]
+    @inbounds for i in 1:n
+        M = B[i] - A[i] * D[i]
+        lu_D[i] = lu(M)
+        D[i + 1] = lu_D[i] \ C[i]
     end
 
     # Backward sweep for E
-    for i in n:-1:1
-        E[i] = (B[i] - C[i] * E[i + 1]) \ A[i]
+    @inbounds for i in n:-1:1
+        M = B[i] - C[i] * E[i + 1]
+        lu_E[i] = lu(M)
+        E[i] = lu_E[i] \ A[i]
     end
 
-    # Compute the inverses of the diagonal blocks λii
-    for i in 1:n
-        term1 = (I - D[i + 1] * E[i + 1])
-        term2 = (B[i] - A[i] * D[i])
-        λii[:, :, i] = (term1 \ Matrix{T}(I, block_size, block_size)) * (term2 \ Matrix{T}(I, block_size, block_size))
+    # Compute λii
+    @inbounds for i in 1:n
+        term1 = identity - D[i + 1] * E[i + 1]
+        term2 = B[i] - A[i] * D[i]
+        S = term2 * term1
+        lu_S[i] = lu(S)
+        λii[:, :, i] = lu_S[i] \ identity
     end
 
-    # Compute the inverse of the diagonal blocks λij
-    for i in 2:n
-        λij[:, :, i - 1] = (E[i] * λii[:, :, i - 1])
+    # Compute λij
+    @inbounds for i in 2:n
+        λij[:, :, i - 1] = E[i] * λii[:, :, i - 1]
     end
 
     return λii, -λij
