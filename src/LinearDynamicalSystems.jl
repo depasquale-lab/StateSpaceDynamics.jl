@@ -305,13 +305,15 @@ function loglikelihood(
     lds.state_model.P0
     C, R = lds.obs_model.C, lds.obs_model.R
     
-    # Pre-compute inverses
-    inv_R = Symmetric(inv(R))
-    inv_Q = Symmetric(inv(Q))
-    inv_P0 = Symmetric(inv(P0))
+    # Pre-compute Cholesky factors instead of inverses
+    R_chol = cholesky(Symmetric(R))
+    Q_chol = cholesky(Symmetric(Q))
+    P0_chol = cholesky(Symmetric(P0))
     
+    # Initial state contribution
     dx0 = x[:, 1] - x0
-    ll = dx0' * inv_P0 * dx0
+    # Replace dx0' * inv_P0 * dx0 with equivalent using Cholesky
+    ll = sum(abs2, P0_chol.U \ dx0)
     
     # Create temporaries with the same element type as x
     temp_dx = zeros(T, size(x, 1))
@@ -320,10 +322,12 @@ function loglikelihood(
     @inbounds for t in 1:T_steps
         if t > 1
             temp_dx .= x[:, t] - A * x[:, t - 1]
-            ll += temp_dx' * inv_Q * temp_dx
+            # Replace temp_dx' * inv_Q * temp_dx
+            ll += sum(abs2, Q_chol.U \ temp_dx)
         end
         temp_dy .= y[:, t] - C * x[:, t]
-        ll += temp_dy' * inv_R * temp_dy
+        # Replace temp_dy' * inv_R * temp_dy
+        ll += sum(abs2, R_chol.U \ temp_dy)
     end
     return -0.5 * ll
 end
@@ -347,41 +351,55 @@ function Gradient(
     # Dims etc.
     latent_dim, T_steps = size(x)
     obs_dim, _ = size(y)
-
     # Model Parameters
     A, Q, x0, P0 = lds.state_model.A,
     lds.state_model.Q, lds.state_model.x0,
     lds.state_model.P0
     C, R = lds.obs_model.C, lds.obs_model.R
     
-    # Pre-compute inverses
-    inv_R = Symmetric(inv(R))
-    inv_Q = Symmetric(inv(Q))
-    inv_P0 = Symmetric(inv(P0))
-
+    # Compute Cholesky factors
+    R_chol = cholesky(Symmetric(R))
+    Q_chol = cholesky(Symmetric(Q))
+    P0_chol = cholesky(Symmetric(P0))
+    
     # Pre-compute common matrix products
-    C_inv_R = C' * inv_R
-    A_inv_Q = A' * inv_Q
-
+    # Instead of C' * inv(R), we can use: C' * (R_chol \ I)
+    # or equivalently: (R_chol \ C)'
+    C_inv_R = (R_chol \ C)'
+    A_inv_Q = (Q_chol \ A)'
+    
     grad = zeros(T, latent_dim, T_steps)
-
+    
     # First time step
-    grad[:, 1] .=
-        A_inv_Q * (x[:, 2] - A * x[:, 1]) + C_inv_R * (y[:, 1] - C * x[:, 1]) -
-        inv_P0 * (x[:, 1] - x0)
-
+    dx1 = x[:, 1] - x0
+    dx2 = x[:, 2] - A * x[:, 1]
+    dy1 = y[:, 1] - C * x[:, 1]
+    
+    grad[:, 1] .= 
+        A_inv_Q * dx2 + 
+        C_inv_R * dy1 - 
+        (P0_chol \ dx1)
+    
     # Middle time steps
     @inbounds for t in 2:(T_steps - 1)
-        grad[:, t] .=
-            C_inv_R * (y[:, t] - C * x[:, t]) - inv_Q * (x[:, t] - A * x[:, t - 1]) +
-            A_inv_Q * (x[:, t + 1] - A * x[:, t])
+        dxt = x[:, t] - A * x[:, t - 1]
+        dxt_next = x[:, t + 1] - A * x[:, t]
+        dyt = y[:, t] - C * x[:, t]
+        
+        grad[:, t] .= 
+            C_inv_R * dyt - 
+            (Q_chol \ dxt) + 
+            A_inv_Q * dxt_next
     end
-
+    
     # Last time step
-    grad[:, T_steps] .=
-        C_inv_R * (y[:, T_steps] - C * x[:, T_steps]) -
-        inv_Q * (x[:, T_steps] - A * x[:, T_steps - 1])
-
+    dxT = x[:, T_steps] - A * x[:, T_steps - 1]
+    dyT = y[:, T_steps] - C * x[:, T_steps]
+    
+    grad[:, T_steps] .= 
+        C_inv_R * dyT - 
+        (Q_chol \ dxT)
+        
     return grad
 end
 
@@ -606,29 +624,37 @@ function Q_state(
     E_zz::Array{<:Real,3},
     E_zz_prev::Array{<:Real,3},
 )
-    # Calculate the inverses
-    Q_inv = inv(Q)
-    P0_inv = inv(P0)
-    # Get dimensions
     T_step = size(E_z, 2)
-    # Initialize Q_val
-    Q_val = 0.0
-    # Calculate the Q-function for the first time step
-    Q_val +=
-        -0.5 * (
-            logdet(P0) + tr(
-                P0_inv *
-                (E_zz[:, :, 1] - (E_z[:, 1] * x0') - (x0 * E_z[:, 1]') + (x0 * x0')),
-            )
-        )
-    # Calculate the Q-function for the state model
-    for t in 2:T_step
-        term1 = E_zz[:, :, t]
-        term2 = A * E_zz_prev[:, :, t]'
-        term3 = E_zz_prev[:, :, t] * A'
-        term4 = A * E_zz[:, :, t - 1] * A'
-        Q_val += -0.5 * (logdet(Q) + tr(Q_inv * (term1 - term2 - term3 + term4)))
+    state_dim = size(A, 1)
+    
+    # Pre-compute constants and decompositions once
+    Q_chol = cholesky(Q)
+    P0_chol = cholesky(P0)
+    log_det_Q = logdet(Q_chol)
+    log_det_P0 = logdet(P0_chol)
+    
+    # Pre-allocate the main temporary matrix
+    temp = zeros(state_dim, state_dim)
+    
+    # First time step
+    mul!(temp, E_z[:,1], x0', -1.0, 0.0)  # -E_z[:,1] * x0'
+    temp .+= view(E_zz,:,:,1)              # Add E_zz[:,:,1]
+    temp .-= x0 * E_z[:,1]'                # Subtract x0 * E_z[:,1]'
+    temp .+= x0 * x0'                      # Add x0 * x0'
+    
+    Q_val = -0.5 * (log_det_P0 + tr(P0_chol \ temp))
+    
+    # Main loop
+    @inbounds for t in 2:T_step
+        # Direct computation avoiding temporary matrices where possible
+        copyto!(temp, view(E_zz,:,:,t))
+        mul!(temp, A, view(E_zz_prev,:,:,t)', -1.0, 1.0)  # Subtract A * E_zz_prev[:,:,t]'
+        temp .-= view(E_zz_prev,:,:,t) * A'               # Subtract E_zz_prev[:,:,t] * A'
+        temp .+= A * view(E_zz,:,:,t-1) * A'             # Add A * E_zz[:,:,t-1] * A'
+        
+        Q_val += -0.5 * (log_det_Q + tr(Q_chol \ temp))
     end
+    
     return Q_val
 end
 
@@ -655,23 +681,29 @@ function Q_obs(
     E_zz::Array{<:Real,3},
     y::Matrix{<:Real},
 )
-    # Calculate the inverse
-    R_inv = inv(R)
-    # Get dimensions
     obs_dim = size(H, 1)
     T_step = size(E_z, 2)
-    # Initialize Q_val
+    
+    # Pre-compute constants
+    R_chol = cholesky(R)
+    log_det_R = logdet(R_chol)
+    const_term = obs_dim * log(2π)
+    
+    # Pre-allocate temporary matrix
+    temp = zeros(obs_dim, obs_dim)
+    
     Q_val = 0.0
-    # Calculate the Q-function for the observation model
-    for t in 1:T_step
-        term1 = y[:, t] * y[:, t]'
-        term2 = H * (E_z[:, t] * y[:, t]')
-        term3 = (y[:, t] * E_z[:, t]') * H'
-        term4 = H * E_zz[:, :, t] * H'
-        Q_val +=
-            -0.5 *
-            (obs_dim * log(2π) + logdet(R) + tr(R_inv * (term1 - term2 - term3 + term4)))
+    
+    @inbounds for t in 1:T_step
+        # Compute terms with minimal temporary allocations
+        mul!(temp, y[:,t], y[:,t]')                    # term1
+        temp .-= H * (E_z[:,t] * y[:,t]')             # Subtract term2
+        temp .-= (y[:,t] * E_z[:,t]') * H'            # Subtract term3
+        temp .+= H * view(E_zz,:,:,t) * H'            # Add term4
+        
+        Q_val += -0.5 * (const_term + log_det_R + tr(R_chol \ temp))
     end
+    
     return Q_val
 end
 
