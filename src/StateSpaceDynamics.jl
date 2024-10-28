@@ -1,5 +1,6 @@
 module StateSpaceDynamics
 
+using ArrayLayouts
 using Distributions
 using ForwardDiff
 using LinearAlgebra
@@ -8,6 +9,7 @@ using Optim
 using ProgressMeter
 using Random
 using SparseArrays
+using StaticArrays
 using Statistics
 using StatsBase
 using StatsFuns

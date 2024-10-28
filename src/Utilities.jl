@@ -38,59 +38,62 @@ Compute the inverse of a block tridiagonal matrix.
 An Accelerated Lambda Iteration Method for Multilevel Radiative Transfer” Rybicki, G.B., and Hummer, D.G., Astronomy and Astrophysics, 245, 171–181 (1991), Appendix B.
 """
 function block_tridiagonal_inverse(A::Vector{Matrix{T}},
-                                   B::Vector{Matrix{T}},
-                                   C::Vector{Matrix{T}}) where {T<:Real}
+                                 B::Vector{Matrix{T}},
+                                 C::Vector{Matrix{T}}) where {T<:Real}
     n = length(B)
-    block_size = size(B[1], 1)
-
+    N = size(B[1], 1)
+    N2 = N * N
+    
+    # Convert input vectors to static matrices
+    A_static = [SMatrix{N,N,T,N2}(A[i]) for i in eachindex(A)]
+    B_static = [SMatrix{N,N,T,N2}(B[i]) for i in eachindex(B)]
+    C_static = [SMatrix{N,N,T,N2}(C[i]) for i in eachindex(C)]
+    
     # Initialize D and E arrays
-    D = Vector{Matrix{T}}(undef, n + 1)
-    E = Vector{Matrix{T}}(undef, n + 1)
-    D[1] = zeros(T, block_size, block_size)
-    E[n + 1] = zeros(T, block_size, block_size)
-
+    D = Vector{SMatrix{N,N,T,N2}}(undef, n + 1)
+    E = Vector{SMatrix{N,N,T,N2}}(undef, n + 1)
+    D[1] = @SMatrix zeros(T, N, N)
+    E[n + 1] = @SMatrix zeros(T, N, N)
+    
     # Initialize λii and λij arrays
-    λii = Array{T}(undef, block_size, block_size, n)
-    λij = Array{T}(undef, block_size, block_size, n - 1)
-    identity = Matrix{T}(I, block_size, block_size)
-
+    λii = Array{T}(undef, N, N, n)
+    λij = Array{T}(undef, N, N, n - 1)
+    
+    # Static identity
+    identity_static = SMatrix{N,N,T,N2}(I)
+    
     # Add zero matrices to A and C
-    pushfirst!(A, zeros(T, block_size, block_size))
-    push!(C, zeros(T, block_size, block_size))
-
-    # Preallocate LU factorization arrays
-    lu_D = Vector{LU{T, Matrix{T}}}(undef, n)
-    lu_E = Vector{LU{T, Matrix{T}}}(undef, n)
-    lu_S = Vector{LU{T, Matrix{T}}}(undef, n)
-
+    A_extended = vcat([(@SMatrix zeros(T, N, N))], A_static)
+    C_extended = vcat(C_static, [(@SMatrix zeros(T, N, N))])
+    
     # Forward sweep for D
     @inbounds for i in 1:n
-        M = B[i] - A[i] * D[i]
-        lu_D[i] = lu(M)
-        D[i + 1] = lu_D[i] \ C[i]
+        M = B_static[i] - A_extended[i] * D[i]
+        lu_M = lu(M)  # LU factorization directly on static matrix
+        D[i + 1] = lu_M \ C_extended[i]
     end
-
+    
     # Backward sweep for E
     @inbounds for i in n:-1:1
-        M = B[i] - C[i] * E[i + 1]
-        lu_E[i] = lu(M)
-        E[i] = lu_E[i] \ A[i]
+        M = B_static[i] - C_extended[i] * E[i + 1]
+        lu_M = lu(M)  # LU factorization directly on static matrix
+        E[i] = lu_M \ A_extended[i]
     end
-
+    
     # Compute λii
     @inbounds for i in 1:n
-        term1 = identity - D[i + 1] * E[i + 1]
-        term2 = B[i] - A[i] * D[i]
+        term1 = identity_static - D[i + 1] * E[i + 1]
+        term2 = B_static[i] - A_extended[i] * D[i]
         S = term2 * term1
-        lu_S[i] = lu(S)
-        λii[:, :, i] = lu_S[i] \ identity
+        lu_S = lu(S)  # LU factorization directly on static matrix
+        λii[:, :, i] = Matrix(lu_S \ identity_static)  # Convert only final result
     end
-
+    
     # Compute λij
     @inbounds for i in 2:n
-        λij[:, :, i - 1] = E[i] * λii[:, :, i - 1]
+        λij[:, :, i - 1] = Matrix(E[i] * SMatrix{N,N,T,N2}(λii[:, :, i - 1]))
     end
-
+    
     return λii, -λij
 end
 

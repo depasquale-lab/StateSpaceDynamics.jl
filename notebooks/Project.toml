@@ -16,6 +16,7 @@ ProfileView = "c46f51b8-102a-5cf2-8d2c-8597cb0e0da7"
 SparseConnectivityTracer = "9f842d2f-2579-4b1d-911e-f412cf18a3f5"
 SparseMatrixColorings = "0a514795-09f3-496d-8182-132a7b665d35"
 StateSpaceDynamics = "19cf8126-1d00-4ad8-bf17-4e76d7bc0f6d"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 TimerOutputs = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
 
 [compat]
