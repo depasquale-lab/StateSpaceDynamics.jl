@@ -586,31 +586,32 @@ function smooth(
     obs_dim, T_steps, n_trials = size(y)
     latent_dim = lds.latent_dim
 
-    # Fast path for single trial case
-    if n_trials == 1
-        x_sm, p_sm, p_prev, ent = smooth(lds, y[:, :, 1])
-        # Return directly in the required shape without additional copying
-        return reshape(x_sm, latent_dim, T_steps, 1),
-               reshape(p_sm, latent_dim, latent_dim, T_steps, 1),
-               reshape(p_prev, latent_dim, latent_dim, T_steps, 1),
-               ent
-    end
+    #{ TODO: Debug, this for some reason causes issues with the threading, causes the multi-trial case to fail in test_EM()
+    # # Fast path for single trial case
+    # if n_trials == 1
+    #     x_sm, p_sm, p_prev, ent = smooth(lds, y[:, :, 1])
+    #     # Return directly in the required shape without additional copying
+    #     return reshape(x_sm, latent_dim, T_steps, 1),
+    #            reshape(p_sm, latent_dim, latent_dim, T_steps, 1),
+    #            reshape(p_prev, latent_dim, latent_dim, T_steps, 1),
+    #            ent
+    # end
 
     # Pre-allocate output arrays
     x_smooth = Array{T,3}(undef, latent_dim, T_steps, n_trials)
     p_smooth = Array{T,4}(undef, latent_dim, latent_dim, T_steps, n_trials)
     inverse_offdiag = Array{T,4}(undef, latent_dim, latent_dim, T_steps, n_trials)
-    total_entropy = Threads.Atomic{Float64}(0.0)
+    total_entropy = 0.0
 
     Threads.@threads for trial in 1:n_trials
         x_sm, p_sm, p_prev, ent = smooth(lds, y[:, :, trial])
-        Threads.atomic_add!(total_entropy, ent)
+        total_entropy += ent
         x_smooth[:, :, trial] .= x_sm
         p_smooth[:, :, :, trial] .= p_sm
         inverse_offdiag[:, :, :, trial] .= p_prev
     end
 
-    return x_smooth, p_smooth, inverse_offdiag, total_entropy[]
+    return x_smooth, p_smooth, inverse_offdiag, total_entropy
 end
 
 """
@@ -1786,6 +1787,10 @@ function smooth(
         H, _, _, _ = Hessian(lds, y, x)
         return h .= -H
     end
+
+    # set up initial values
+    initial_f = nll(X₀)
+
 
     # Set up the optimization problem
     res = optimize(nll, g!, h!, X₀, Newton(linesearch=LineSearches.BackTracking()), Optim.Options(; g_tol=1e-12))
