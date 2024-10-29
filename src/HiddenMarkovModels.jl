@@ -118,18 +118,29 @@ states, Y = sample(model, Φ, n=10)
 # output
 ```
 """
-function sample(model::HiddenMarkovModel, data...; n::Int)
-    state_sequence = [rand(Categorical(model.πₖ))]
-    observation_sequence = emission_sample(model.B[state_sequence[1]], data...)
+function sample(model::HiddenMarkovModel, X::Union{Matrix{<:Real}, Nothing}=nothing; n::Int)
+    state_sequence = Vector{Int}(undef, n)
+    
+    # Handle case where X is nothing and is being passed to a non-regression emission
+    initial_observation = isnothing(X) ? emission_sample(model.B[1]) : emission_sample(model.B[1], X)
+    output_dimension = length(initial_observation)
+    
+    observation_sequence = Matrix{eltype(initial_observation)}(undef, n, output_dimension)
 
+    # Initialize the first state and observation
+    state_sequence[1] = rand(Categorical(model.πₖ))
+    observation_sequence[1, :] = initial_observation
+
+    # Sample the state paths and observations
     for i in 2:n
-        # sample the next state
-        push!(state_sequence, rand(Categorical(model.A[state_sequence[end], :])))
-        observation_sequence = emission_sample(model.B[state_sequence[i]], data...; n=length(observation_sequence))
+        state_sequence[i] = rand(Categorical(model.A[state_sequence[i - 1], :]))
+        observation_sequence[i, :] = isnothing(X) ? emission_sample(model.B[state_sequence[i]]) : emission_sample(model.B[state_sequence[i]], X)
     end
 
     return state_sequence, observation_sequence
 end
+
+
 
 """
     loglikelihood(model::HiddenMarkovModel, data...)
