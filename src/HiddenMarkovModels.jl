@@ -2,7 +2,7 @@ export HiddenMarkovModel, valid_emission, fit!, sample, loglikelihood, viterbi
 export weighted_initialization
 
 # for unit tests
-export E_step, validate_model, validate_data, valid_emission_models
+export E_step, valid_emission_models
 export class_probabilities
 
 """
@@ -32,30 +32,6 @@ mutable struct HiddenMarkovModel <: Model
     B::Vector{EmissionModel} # Vector of emission Models
     πₖ::Vector{Float64} # initial state distribution
     K::Int # number of states
-end
-
-function validate_model(model::HiddenMarkovModel)
-    # check that the transition matrix is the proper shape
-    @assert size(model.A) == (model.K, model.K)
-    @assert isapprox(sum(model.A, dims=2), ones(model.K))
-    # check that the initial state distribution is the same length as the number of states
-    @assert model.K == length(model.πₖ)
-    @assert sum(model.πₖ) ≈ 1.0
-    # check that the number of states is equal to the number of emission models
-    @assert model.K == length(model.B)
-    # check that all emission model are the same type
-    @assert all([model.B[i] isa EmissionModel for i in 1:length(model.B)])
-
-
-    # check that all emission models are valid
-    for i in 1:length(model.B)
-        validate_model(model.B[i])
-    end
-end
-
-function validate_data(model::HiddenMarkovModel, data...)
-    # check that the data is the correct length
-    validate_data(model.B[1], data...)
 end
 
 function initialize_transition_matrix(K::Int)
@@ -102,9 +78,6 @@ true
 ```
 """
 function weighted_initialization(model::HiddenMarkovModel, data...)
-    validate_model(model)
-    validate_data(model, data...)
-
     # get the proper shape for class probabilities
     responsibilities = class_probabilities(model, data...)
 
@@ -144,8 +117,6 @@ function HiddenMarkovModel(;
     #emission_models = Emission.(B)
 
     model = HiddenMarkovModel(A, emission_models, πₖ, K)
-
-    validate_model(model)
     
     return model
 end
@@ -176,13 +147,6 @@ states, Y = sample(model, Φ, n=10)
 ```
 """
 function sample(model::HiddenMarkovModel, data...; n::Int)
-    # confirm model is valid
-    validate_model(model)
-
-    # confirm data is in the correct format
-    validate_data(model, data...)
-
-
     state_sequence = [rand(Categorical(model.πₖ))]
     observation_sequence = emission_sample(model.B[state_sequence[1]], data...)
 
@@ -216,11 +180,6 @@ loglikelihood(model, Y)
 ```
 """
 function loglikelihood(model::HiddenMarkovModel, data...)
-    # confirm model is valid
-    validate_model(model)
-
-    # confirm data is in the correct format
-    validate_data(model, data...)
 
     # Calculate observation wise likelihoods for all states
     loglikelihoods_state_1 = emission_loglikelihood(model.B[1], data...)
@@ -430,11 +389,6 @@ function fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Rea
     lls = [-Inf]
 
     data = X === nothing ? (Y,) : (X, Y)
-    # confirm model is valid
-    validate_model(model)
-
-    # confirm data is in the correct format
-    validate_data(model, data...)
 
     log_likelihood = -Inf
     # Initialize progress bar
@@ -457,9 +411,6 @@ function fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Rea
         # M-Step
         M_step!(model, γ, ξ, data)
     end
-
-    # confirm model is valid
-    validate_model(model)
 
     return lls
 end
@@ -523,14 +474,6 @@ function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}}, X::Union{Ve
     lls = [-Inf]
     data = X === nothing ? (Y,) : (X, Y)
 
-    # Validate the model
-    validate_model(model)
-
-    # Validate the data
-    for matrices in zip(data...)  # If data... is [A1 A2] [B1 B2] then matrices is [A1 B1] [A2 B2]
-        validate_data(model, matrices...)  # you get one matrices tuple for each trial, then splat it into the next function
-    end
-
     # Initialize log_likelihood
     log_likelihood = -Inf
 
@@ -561,7 +504,6 @@ function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}}, X::Union{Ve
         M_step!(model, γ, ξ, stacked_data)
 
     end
-    validate_model(model)
 
     return lls
 end
