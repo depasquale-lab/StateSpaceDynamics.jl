@@ -111,5 +111,5 @@ function test_interleave_reshape()
     data = collect(1:11)
     t = 2
     d = 5
-    @test_throws ErrorException interleave_reshape(data, t, d)
+    @test_throws DimensionMismatch interleave_reshape(data, t, d)
 end

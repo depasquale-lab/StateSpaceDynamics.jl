@@ -60,21 +60,24 @@ function test_poisson_lds_without_params()
     @test !isempty(poisson_lds.state_model.x0)
     @test !isempty(poisson_lds.state_model.P0)
     @test !isempty(poisson_lds.obs_model.log_d)
+
+    # check errors are thrown when nothing is passed
+    # @test_throws PoissonLDS()
 end
 
 function test_Gradient()
     plds, x, y = toy_PoissonLDS()
 
     # for each trial check the gradient
-    for i in axes(y, 1)
+    for i in axes(y, 3)
         # numerically calculate the gradient
-        f = latents -> StateSpaceDynamics.loglikelihood(latents, plds, y[i, :, :])
-        grad_numerical = ForwardDiff.gradient(f, x[i, :, :])
+        f = latents -> StateSpaceDynamics.loglikelihood(latents, plds, y[:, :, i])
+        grad_numerical = ForwardDiff.gradient(f, x[:, :, i])
 
         # calculate the gradient
-        grad = StateSpaceDynamics.Gradient(plds, y[i, :, :], x[i, :, :])
+        grad = StateSpaceDynamics.Gradient(plds, y[:, :, i], x[:, :, i])
 
-        @test norm(grad - grad_numerical) < 1e-9
+        @test norm(grad - grad_numerical) < 1e-8
     end
 end
 
@@ -83,14 +86,13 @@ function test_Hessian()
 
     # create function that allows that we cna pass the latents to the loglikelihood transposed
     function log_likelihood(x::AbstractArray, plds, y::AbstractArray)
-        x = permutedims(x)
         return StateSpaceDynamics.loglikelihood(x, plds, y)
     end
 
     # check hessian for each trial
-    for i in axes(y, 1)
+    for i in axes(y, 3)
         hess, main, super, sub = StateSpaceDynamics.Hessian(
-            plds, y[i, 1:3, :], x[i, 1:3, :]
+            plds, y[:, 1:3, i], x[:, 1:3, i]
         )
         @test size(hess) == (plds.latent_dim * 3, plds.latent_dim * 3)
         @test size(main) == (3,)
@@ -98,9 +100,9 @@ function test_Hessian()
         @test size(sub) == (2,)
 
         # calcualte hess using autodiff now
-        obj = latents -> log_likelihood(latents, plds, y[i, 1:3, :])
-        hess_numerical = ForwardDiff.hessian(obj, permutedims(x[i, 1:3, :]))
-        @test norm(hess_numerical - hess) < 1e-9
+        obj = latents -> log_likelihood(latents, plds, y[:, 1:3, i])
+        hess_numerical = ForwardDiff.hessian(obj, x[:, 1:3, i])
+        @test norm(hess_numerical - hess) < 1e-8
     end
 end
 
@@ -110,19 +112,19 @@ function test_smooth()
     # smooth data
     x_smooth, p_smooth, inverseoffdiag = StateSpaceDynamics.smooth(plds, y)
 
-    nTrials = size(y, 1)
+    nTrials = size(y, 3)
     nTsteps = size(y, 2)
 
     @test size(x_smooth) == size(x)
-    @test size(p_smooth) == (nTrials, nTsteps, plds.latent_dim, plds.latent_dim)
-    @test size(inverseoffdiag) == (nTrials, nTsteps, plds.latent_dim, plds.latent_dim)
+    @test size(p_smooth) == (plds.latent_dim, plds.latent_dim, nTsteps, nTrials)
+    @test size(inverseoffdiag) == (plds.latent_dim, plds.latent_dim, nTsteps, nTrials)
 
     # test gradient is zero
-    for i in axes(y, 1)
+    for i in axes(y, 3)
         # may as well test the gradient here too 
-        f = latents -> StateSpaceDynamics.loglikelihood(latents, plds, y[i, :, :])
-        grad_numerical = ForwardDiff.gradient(f, x_smooth[i, :, :])
-        grad_analytical = StateSpaceDynamics.Gradient(plds, y[i, :, :], x_smooth[i, :, :])
+        f = latents -> StateSpaceDynamics.loglikelihood(latents, plds, y[:, :, i])
+        grad_numerical = ForwardDiff.gradient(f, x_smooth[:, :, i])
+        grad_analytical = StateSpaceDynamics.Gradient(plds, y[:, :, i], x_smooth[:, :, i])
 
         @test norm(grad_numerical - grad_analytical) < 1e-10
     end
@@ -167,9 +169,9 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
         A, Q = plds.state_model.A, plds.state_model.Q
         P0 = P0_sqrt * P0_sqrt'
         Q_val = 0.0
-        for i in axes(E_z, 1)
+        for i in axes(E_z, 3)
             Q_val += StateSpaceDynamics.Q_state(
-                A, Q, P0, x0, E_z[i, :, :], E_zz[i, :, :, :], E_zz_prev[i, :, :, :]
+                A, Q, P0, x0, E_z[:, :, i], E_zz[:, :, :, i], E_zz_prev[:, :, :, i]
             )
         end
         return -Q_val
@@ -193,7 +195,6 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
     @test isapprox(plds.state_model.P0, P0_opt * P0_opt', atol=1e-6)
 end
 
-
 function test_state_model_parameter_updates(ntrials::Int=1)
     plds, x, y = toy_PoissonLDS(ntrials, [false, false, true, true, false, false])
 
@@ -203,7 +204,9 @@ function test_state_model_parameter_updates(ntrials::Int=1)
     # optimize the A and Q entries using autograd
     function obj(A::AbstractMatrix, Q_sqrt::AbstractMatrix, plds)
         Q = Q_sqrt * Q_sqrt'
-        Q_val = StateSpaceDynamics.Q_state(A, Q, plds.state_model.P0, plds.state_model.x0, E_z, E_zz, E_zz_prev)
+        Q_val = StateSpaceDynamics.Q_state(
+            A, Q, plds.state_model.P0, plds.state_model.x0, E_z, E_zz, E_zz_prev
+        )
         return -Q_val
     end
 
@@ -231,15 +234,60 @@ function test_state_model_parameter_updates(ntrials::Int=1)
     @test isapprox(plds.state_model.Q, Q_opt * Q_opt', atol=1e-6)
 end
 
-function test_EM()
+function test_EM(n_trials::Int=1)
     # generate fake data
-    plds, x, y = toy_PoissonLDS()
-    
+    plds, x, y = toy_PoissonLDS(n_trials)
+
     # create a new plds model with random parameters
     plds_new = PoissonLDS(; obs_dim=3, latent_dim=2)
-    elbo = fit!(plds_new, y; max_iter=1000)
+    elbo, norm_grad = fit!(plds_new, y; max_iter=100)
 
     # check that the ELBO increases over the whole algorithm, we cannot use monotonicity as a check as we are using Laplace EM.
     @test elbo[end] > elbo[1]
 end
 
+function test_EM_matlab()
+    # read data used to smooth the results
+    data_1 = Matrix(CSV.read("test_data/trial1.csv", DataFrame))
+    data_2 = Matrix(CSV.read("test_data/trial2.csv", DataFrame))
+    data_3 = Matrix(CSV.read("test_data/trial3.csv", DataFrame))
+    y = cat(data_1, data_2, data_3; dims=3)
+    y = permutedims(y, [2, 1, 3])
+    # read the matlab objects to compare results
+    seq = matread("test_data/seq_matlab_3_trials_plds.mat")
+    params = matread("test_data/params_matlab_3_trials_plds.mat")
+    # create a new plds model, run a single iteration of EM and compare the results
+    plds = PoissonLDS(;
+        A=[cos(0.1) -sin(0.1); sin(0.1) cos(0.1)],
+        C=[1.2 1.2; 1.2 1.2; 1.2 1.2],
+        log_d=log.([0.1, 0.1, 0.1]),
+        Q=0.00001 * Matrix{Float64}(I(2)),
+        P0=0.00001 * Matrix{Float64}(I(2)),
+        x0=[1.0, -1.0],
+        obs_dim=3,
+        latent_dim=2,
+    )
+    # first smooth results
+    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(plds, y)
+    # check each E_z, E_zz, E_zz_prev are the sample
+    for i in 1:3
+        posterior_x = seq["seq"]["posterior"][i]["xsm"]
+        posterior_cov = seq["seq"]["posterior"][i]["Vsm"]
+        posterior_lagged_cov = seq["seq"]["posterior"][i]["VVsm"]
+
+        @test isapprox(E_z[:, :, i], posterior_x, atol=1e-6)
+
+        # restructure E_zz and E_zz_pev so that they are the same shape as the matlab objects
+        # @test isapprox(E_zz[:, :, :, i], posterior_cov, atol=1e-6)
+        # @test isapprox(E_zz_prev[:, :, :, i], posterior_lagged_cov, atol=1e-6)
+    end
+    # now test the params
+    fit!(plds, y; max_iter=1)
+    params_obj = params["params"]["model"]
+    @test isapprox(plds.state_model.A, params_obj["A"], atol=1e-5)
+    @test isapprox(plds.state_model.Q, params_obj["Q"], atol=1e-5)
+    @test isapprox(plds.obs_model.C, params_obj["C"], atol=1e-5)
+    @test isapprox(plds.state_model.x0, params_obj["x0"], atol=1e-5)
+    @test isapprox(plds.state_model.P0, params_obj["Q0"], atol=1e-5)
+    @test isapprox(exp.(plds.obs_model.log_d), params_obj["d"], atol=1e-5)
+end

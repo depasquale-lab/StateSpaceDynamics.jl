@@ -67,9 +67,9 @@ end
 
 function test_gradient(lds, x, y)
     for i in axes(y, 1)
-        f = latents -> StateSpaceDynamics.loglikelihood(latents, lds, y[i, :, :])
-        grad_numerical = ForwardDiff.gradient(f, x[i, :, :])
-        grad_analytical = StateSpaceDynamics.Gradient(lds, y[i, :, :], x[i, :, :])
+        f = latents -> StateSpaceDynamics.loglikelihood(latents, lds, y[:, :, i])
+        grad_numerical = ForwardDiff.gradient(f, x[:, :, i])
+        grad_analytical = StateSpaceDynamics.Gradient(lds, y[:, :, i], x[:, :, i])
         @test isapprox(grad_numerical, grad_analytical, rtol=1e-5, atol=1e-5)
     end
 end
@@ -94,13 +94,13 @@ function test_smooth(lds, x, y)
     x_smooth, p_smooth, inverseoffdiag = StateSpaceDynamics.smooth(lds, y)
 
     @test size(x_smooth) == size(x)
-    @test size(p_smooth) == (size(y, 1), size(y, 2), lds.latent_dim, lds.latent_dim)
-    @test size(inverseoffdiag) == (size(y, 1), size(y, 2), lds.latent_dim, lds.latent_dim)
+    @test size(p_smooth) == (lds.latent_dim, lds.latent_dim, size(y, 2))
+    @test size(inverseoffdiag) == (lds.latent_dim, lds.latent_dim, size(y, 2))
 
-    for i in axes(y, 1)
-        f = latents -> StateSpaceDynamics.loglikelihood(latents, lds, y[i, :, :])
-        grad_numerical = ForwardDiff.gradient(f, x_smooth[i, :, :])
-        grad_analytical = StateSpaceDynamics.Gradient(lds, y[i, :, :], x_smooth[i, :, :])
+    for i in axes(y, 3)
+        f = latents -> StateSpaceDynamics.loglikelihood(latents, lds, y[:, :, i])
+        grad_numerical = ForwardDiff.gradient(f, x_smooth[:, :, i])
+        grad_analytical = StateSpaceDynamics.Gradient(lds, y[:, :, i], x_smooth[:, :, i])
         @test isapprox(grad_numerical, grad_analytical, rtol=1e-5, atol=1e-5)
         @test norm(grad_analytical) < 1e-4
     end
@@ -109,10 +109,10 @@ end
 function test_estep(lds, x, y)
     E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(lds, y)
 
-    @test size(E_z) == (size(y, 1), size(y, 2), lds.latent_dim)
-    @test size(E_zz) == (size(y, 1), size(y, 2), lds.latent_dim, lds.latent_dim)
-    @test size(E_zz_prev) == (size(y, 1), size(y, 2), lds.latent_dim, lds.latent_dim)
+    @test size(E_z) == (lds.latent_dim, size(y, 2))
+    @test size(E_zz) == (lds.latent_dim, lds.latent_dim, size(y, 2), size(y, 3))
+    @test size(E_zz_prev) == (lds.latent_dim, lds.latent_dim, size(y, 2), size(y, 3))
     @test size(x_smooth) == size(x)
-    @test size(p_smooth) == (size(y, 1), size(y, 2), lds.latent_dim, lds.latent_dim)
+    @test size(p_smooth) == (lds.latent_dim, lds.latent_dim, size(y, 2), size(y, 3))
     @test isa(ml_total, Float64)
 end

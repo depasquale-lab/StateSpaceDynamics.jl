@@ -70,20 +70,23 @@ function test_lds_without_params()
     @test !isempty(lds.obs_model.R)
     @test !isempty(lds.state_model.x0)
     @test !isempty(lds.state_model.P0)
+
+    # test error is thrown if nothing is passed
+    @test_throws ArgumentError GaussianLDS()
 end
 
 function test_Gradient()
     lds, x, y = toy_lds()
 
     # for each trial check the gradient
-    for i in axes(y, 1)
+    for i in axes(y, 3)
 
         # numerically calculate the gradient
-        f = latents -> StateSpaceDynamics.loglikelihood(latents, lds, y[i, :, :])
-        grad_numerical = ForwardDiff.gradient(f, x[i, :, :])
+        f = latents -> StateSpaceDynamics.loglikelihood(latents, lds, y[:, :, i])
+        grad_numerical = ForwardDiff.gradient(f, x[:, :, i])
 
         # analytical gradient
-        grad_analytical = StateSpaceDynamics.Gradient(lds, y[i, :, :], x[i, :, :])
+        grad_analytical = StateSpaceDynamics.Gradient(lds, y[:, :, i], x[:, :, i])
         @test norm(grad_numerical - grad_analytical) < 1e-12
     end
 end
@@ -92,21 +95,21 @@ function test_Hessian()
     lds, x, y = toy_lds()
 
     function log_likelihood(x::AbstractArray, lds, y::AbstractArray)
-        x = permutedims(x)
         return StateSpaceDynamics.loglikelihood(x, lds, y)
     end
 
     # for each trial check the Hessian
-    for i in axes(y, 1)
-        hess, main, super, sub = StateSpaceDynamics.Hessian(lds, y[i, 1:3, :])
+    for i in axes(y, 3)
+        hess, main, super, sub = StateSpaceDynamics.Hessian(lds, y[:, 1:3, i], x[:, 1:3, i])
         @test size(hess) == (3 * lds.latent_dim, 3 * lds.latent_dim)
         @test size(main) == (3,)
         @test size(super) == (2,)
         @test size(sub) == (2,)
 
         # calculate the Hessian using autodiff
-        obj = latents -> log_likelihood(latents, lds, y[i, 1:3, :])
-        hess_numerical = ForwardDiff.hessian(obj, permutedims(x[i, 1:3, :]))
+        obj = latents -> log_likelihood(latents, lds, y[:, 1:3, i])
+        hess_numerical = ForwardDiff.hessian(obj, x[:, 1:3, i])
+
         @test norm(hess_numerical - hess) < 1e-12
     end
 end
@@ -115,19 +118,19 @@ function test_smooth()
     lds, x, y = toy_lds()
     x_smooth, p_smooth, inverseoffdiag = smooth(lds, y)
 
-    n_trials = size(y, 1)
+    n_trials = size(y, 3)
     n_tsteps = size(y, 2)
 
     @test size(x_smooth) == size(x)
-    @test size(p_smooth) == (n_trials, n_tsteps, lds.latent_dim, lds.latent_dim)
-    @test size(inverseoffdiag) == (n_trials, n_tsteps, lds.latent_dim, lds.latent_dim)
+    @test size(p_smooth) == (lds.latent_dim, lds.latent_dim, n_tsteps, n_trials)
+    @test size(inverseoffdiag) == (lds.latent_dim, lds.latent_dim, n_tsteps, n_trials)
 
     # test gradient is zero
-    for i in axes(y, 1)
+    for i in axes(y, 3)
         # may as well test the gradient here too 
-        f = latents -> StateSpaceDynamics.loglikelihood(latents, lds, y[i, :, :])
-        grad_numerical = ForwardDiff.gradient(f, x_smooth[i, :, :])
-        grad_analytical = StateSpaceDynamics.Gradient(lds, y[i, :, :], x_smooth[i, :, :])
+        f = latents -> StateSpaceDynamics.loglikelihood(latents, lds, y[:, :, i])
+        grad_numerical = ForwardDiff.gradient(f, x_smooth[:, :, i])
+        grad_analytical = StateSpaceDynamics.Gradient(lds, y[:, :, i], x_smooth[:, :, i])
 
         @test norm(grad_numerical - grad_analytical) < 1e-12
         @test maximum(abs.(grad_analytical)) < 1e-8
@@ -141,14 +144,14 @@ function test_estep()
     # run the E_Step
     E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(lds, y)
 
-    n_trials = size(y, 1)
+    n_trials = size(y, 3)
     n_tsteps = size(y, 2)
 
-    @test size(E_z) == (n_trials, n_tsteps, lds.latent_dim)
-    @test size(E_zz) == (n_trials, n_tsteps, lds.latent_dim, lds.latent_dim)
-    @test size(E_zz_prev) == (n_trials, n_tsteps, lds.latent_dim, lds.latent_dim)
+    @test size(E_z) == (lds.latent_dim, n_tsteps, n_trials)
+    @test size(E_zz) == (lds.latent_dim, lds.latent_dim, n_tsteps, n_trials)
+    @test size(E_zz_prev) == (lds.latent_dim, lds.latent_dim, n_tsteps, n_trials)
     @test size(x_smooth) == size(x)
-    @test size(p_smooth) == (n_trials, n_tsteps, lds.latent_dim, lds.latent_dim)
+    @test size(p_smooth) == (lds.latent_dim, lds.latent_dim, n_tsteps, n_trials)
     @test isa(ml_total, Float64)
 end
 
@@ -163,9 +166,9 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
         A, Q = lds.state_model.A, lds.state_model.Q
         P0 = P0_sqrt * P0_sqrt'
         Q_val = 0.0
-        for i in axes(E_z, 1)
+        for i in axes(E_z, 3)
             Q_val += StateSpaceDynamics.Q_state(
-                A, Q, P0, x0, E_z[i, :, :], E_zz[i, :, :, :], E_zz_prev[i, :, :, :]
+                A, Q, P0, x0, E_z[:, :, i], E_zz[:, :, :, i], E_zz_prev[:, :, :, i]
             )
         end
         return -Q_val
@@ -199,15 +202,15 @@ function test_state_model_parameter_updates(ntrials::Int=1)
     function obj(A::AbstractMatrix, Q_sqrt::AbstractMatrix, lds)
         Q = Q_sqrt * Q_sqrt'
         Q_val = 0.0
-        for i in axes(E_z, 1)
+        for i in axes(E_z, 3)
             Q_val += StateSpaceDynamics.Q_state(
                 A,
                 Q,
                 lds.state_model.P0,
                 lds.state_model.x0,
-                E_z[i, :, :],
-                E_zz[i, :, :, :],
-                E_zz_prev[i, :, :, :],
+                E_z[:, :, i],
+                E_zz[:, :, :, i],
+                E_zz_prev[:, :, :, i],
             )
         end
         return -Q_val
@@ -247,9 +250,9 @@ function test_obs_model_params_updates(ntrials::Int=1)
     function obj(C::AbstractMatrix, R_sqrt::AbstractMatrix, lds)
         R = R_sqrt * R_sqrt'
         Q_val = 0.0
-        for i in axes(E_z, 1)
+        for i in axes(E_z, 3)
             Q_val += StateSpaceDynamics.Q_obs(
-                C, R, E_z[i, :, :], E_zz[i, :, :, :], y[i, :, :]
+                C, R, E_z[:, :, i], E_zz[:, :, :, i], y[:, :, i]
             )
         end
         return -Q_val
@@ -279,11 +282,15 @@ function test_obs_model_params_updates(ntrials::Int=1)
     @test isapprox(lds.obs_model.R, R_opt * R_opt', atol=1e-6)
 end
 
-function test_EM()
-    lds, x, y = toy_lds()
+function test_EM(n_trials::Int=1)
+    # create a toy LDS
+    lds, x, y = toy_lds(n_trials)
+
+    # create a randomly initialized LDS
+    lds_new = GaussianLDS(; obs_dim=2, latent_dim=2)
 
     # run the EM algorithm for many iterations
-    ml_total = fit!(lds, y; max_iter=1000)
+    ml_total, norm_diff = fit!(lds_new, y; max_iter=100)
 
     # test that the ml is increasing
     @test all(diff(ml_total) .>= 0)

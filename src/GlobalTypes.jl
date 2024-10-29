@@ -5,10 +5,7 @@ The purpose of this file is to provide a common place for all global types to be
 export MixtureModel,
     EmissionsModel,
     AbstractHMM,
-    DynamicalSystem,
-    SmoothingMethod,
-    RTSSmoothing,
-    DirectSmoothing
+    DynamicalSystem
 
 # Create abstract types here 
 
@@ -36,8 +33,3 @@ Abstract type for Dynamical Systems. I.e. LDS, etc.
 abstract type AbstractStateModel{T<:Real} end
 abstract type AbstractObservationModel{T<:Real} end
 abstract type DynamicalSystem end
-
-# smoothing methods for sufficient statistic calculation disambiguation, see LDS.jl
-abstract type SmoothingMethod end
-struct RTSSmoothing <: SmoothingMethod end
-struct DirectSmoothing <: SmoothingMethod end

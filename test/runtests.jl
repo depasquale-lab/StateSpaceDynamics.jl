@@ -8,6 +8,11 @@ using StatsFuns
 using SpecialFunctions
 using Test
 using Aqua
+using CSV
+using DataFrames
+using MAT
+
+print(pwd())
 
 """
 Package Wide Tests
@@ -119,24 +124,6 @@ include("HiddenMarkovModels/HiddenMarkovModels.jl")
 end
 
 """
-Tests for LDS.jl
-"""
-
-include("LDS/LDS.jl")
-
-@testset "LDS Tests" begin
-    test_LDS_with_params()
-    test_LDS_without_params()
-    test_LDS_E_Step()
-    test_LDS_M_Step!()
-    test_LDS_EM()
-    test_LDS_gradient()
-    test_LDS_Hessian()
-    test_EM_numeric_RTS()
-    test_EM_numeric_Direct()
-end
-
-"""
 Tests for GaussianLDS.jl
 """
 
@@ -162,8 +149,9 @@ include("LinearDynamicalSystems//GaussianLDS.jl")
         test_initial_observation_parameter_updates(3)
         test_state_model_parameter_updates(3)
         test_obs_model_params_updates(3)
-        # test fit method
+        # test fit method using n=1 and n=3
         test_EM()
+        test_EM(3)
     end
 end
 
@@ -174,35 +162,29 @@ Tests for PoissonLDS.jl
 include("LinearDynamicalSystems//PoissonLDS.jl")
 
 @testset "PoissonLDS Tests" begin
-    test_PoissonLDS_with_params()
-    test_poisson_lds_without_params()
-    test_Gradient()
-    test_Hessian()
-    test_smooth()
-    test_parameter_gradient()
-    # test when ntrials=1
-    test_initial_observation_parameter_updates()
-    test_state_model_parameter_updates()
-    # test when n_trials>1
-    test_initial_observation_parameter_updates(3)
-    test_state_model_parameter_updates(3)
-    # test fit method
-    test_EM()
-end
-
-include("PLDS/PLDS.jl")
-
-@testset "PLDS Tests" begin
-    test_PLDS_constructor_with_params()
-    test_PLDS_constructor_without_params()
-    test_countspikes()
-    test_logposterior()
-    test_gradient_plds()
-    test_hessian_plds()
-    test_direct_smoother()
-    test_smooth()
-    test_analytical_parameter_updates()
-    test_direct_smoother()
+    @testset "Constructor Tests" begin
+        test_PoissonLDS_with_params()
+        test_poisson_lds_without_params()
+    end
+    @testset "Smoother Tests" begin
+        test_Gradient()
+        test_Hessian()
+        test_smooth()
+    end
+    @testset "EM Tests" begin
+        test_parameter_gradient()
+        # test when ntrials=1
+        test_initial_observation_parameter_updates()
+        test_state_model_parameter_updates()
+        # test when n_trials>1
+        test_initial_observation_parameter_updates(3)
+        test_state_model_parameter_updates(3)
+        # test fit method using 1 trial and three trials
+        test_EM()
+        test_EM(3)
+        # test resutlts are same as matlab code
+        test_EM_matlab()
+    end
 end
 
 """
