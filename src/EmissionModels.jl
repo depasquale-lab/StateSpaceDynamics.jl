@@ -43,10 +43,8 @@ function GaussianEmission(;
     output_dim::Int, 
     μ::Vector{<:Real}=zeros(output_dim), 
     Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim))
-    
-    model = GaussianEmission(output_dim, μ, Σ)
 
-    return model
+    return GaussianEmission(output_dim, μ, Σ)
 end
 
 
@@ -224,10 +222,8 @@ function GaussianRegressionEmission(;
     β::Matrix{<:Real} = if include_intercept zeros(input_dim + 1, output_dim) else zeros(input_dim, output_dim) end,
     Σ::Matrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim),
     λ::Float64 = 0.0)
-
-    new_model = GaussianRegressionEmission(input_dim, output_dim, β, Σ, include_intercept, λ)
     
-    return new_model
+    return GaussianRegressionEmission(input_dim, output_dim, β, Σ, include_intercept, λ)
 end
 
 
@@ -251,7 +247,7 @@ model = GaussianRegression(input_dim=2, output_dim=1)
 Y = sample(model, Φ)
 # output
 """
-function sample(model::GaussianRegressionEmission, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
+function emission_sample(model::GaussianRegressionEmission, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
     @assert n <= size(Φ, 1) "n must be less than or equal to the number of observations in Φ."
     # cut the length of Φ to n
     Φ = Φ[1:n, :]
@@ -260,6 +256,7 @@ function sample(model::GaussianRegressionEmission, Φ::Matrix{<:Real}; n::Int=si
     if model.include_intercept
         Φ = hcat(ones(size(Φ, 1)), Φ)
     end
+
     return Φ * model.β + rand(MvNormal(zeros(model.output_dim), model.Σ), size(Φ, 1))'
 end
 
@@ -285,18 +282,57 @@ Y = randn(10, 2)
 loglikelihoods = emission_loglikelihood(model, Φ, Y)
 # output
 """
-function emission_loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
+# function emission_loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
 
-    # calculate observation wise likelihoods for all states
+#     # calculate observation wise likelihoods for all states
+#     observation_wise_loglikelihood = zeros(size(Y, 1))
+
+#     # calculate observation wise loglikelihood (a vector of loglikelihoods for each observation)
+#     @threads for i in 1:size(Y, 1)
+#         observation_wise_loglikelihood[i] = loglikelihood(model, Φ[i:i, :], Y[i:i, :])
+#     end
+
+#     return observation_wise_loglikelihood
+# end
+
+# function loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
+#     # add intercept if specified
+#     if model.include_intercept
+#         Φ = hcat(ones(size(Φ, 1)), Φ)
+#     end
+
+#     # calculate inverse of covariance matrix
+#     Σ_inv = inv(model.Σ)
+
+#     # calculate log likelihood
+#     residuals = Y - Φ * model.β
+
+
+#     loglikelihood = -0.5 * size(Φ, 1) * size(Φ, 2) * log(2π) - 0.5 * size(Φ, 1) * logdet(model.Σ) - 0.5 * sum(residuals .* (Σ_inv * residuals')')
+#     return loglikelihood
+# end
+
+function emission_loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
+    # Calculate observation-wise likelihoods for all timepoints
     observation_wise_loglikelihood = zeros(size(Y, 1))
 
-    # calculate observation wise loglikelihood (a vector of loglikelihoods for each observation)
-    @threads for i in 1:size(Y, 1)
-        observation_wise_loglikelihood[i] = loglikelihood(model, Φ[i:i, :], Y[i:i, :])
+    # Add intercept if specified
+    if model.include_intercept
+        Φ = hcat(ones(size(Φ, 1)), Φ)
+    end
+
+    # Calculate inverse of covariance matrix
+    Σ_inv = inv(model.Σ)
+
+    # Calculate log likelihood for each observation
+    for i in axes(Y, 1)
+        residuals = Y[i:i, :] - Φ[i:i, :] * model.β
+        observation_wise_loglikelihood[i] = -0.5 * size(Φ, 2) * log(2π) - 0.5 * logdet(model.Σ) - 0.5 * sum(residuals .* (Σ_inv * residuals')')
     end
 
     return observation_wise_loglikelihood
 end
+
 
 
 """
@@ -318,22 +354,7 @@ loglikelihood(model, Φ, Y)
 # output
 ```
 """
-function loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
-    # add intercept if specified
-    if model.include_intercept
-        Φ = hcat(ones(size(Φ, 1)), Φ)
-    end
 
-    # calculate inverse of covariance matrix
-    Σ_inv = inv(model.Σ)
-
-    # calculate log likelihood
-    residuals = Y - Φ * model.β
-
-
-    loglikelihood = -0.5 * size(Φ, 1) * size(Φ, 2) * log(2π) - 0.5 * size(Φ, 1) * logdet(model.Σ) - 0.5 * sum(residuals .* (Σ_inv * residuals')')
-    return loglikelihood
-end
 
 
 # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
@@ -446,8 +467,6 @@ function emission_fit!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y:
     # confirm that the model has valid parameters
     validate_model(model)
 end
-
-
 
 
 """

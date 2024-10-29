@@ -122,11 +122,12 @@ function sample(model::HiddenMarkovModel, X::Union{Matrix{<:Real}, Nothing}=noth
     state_sequence = Vector{Int}(undef, n)
     
     # Handle case where X is nothing and is being passed to a non-regression emission
-    initial_observation = isnothing(X) ? emission_sample(model.B[1]) : emission_sample(model.B[1], X)
+    initial_observation = isnothing(X) ? emission_sample(model.B[1]) : emission_sample(model.B[1], X, n=1)  # FIx this funciton
+    println(size(initial_observation))
     output_dimension = length(initial_observation)
     
     observation_sequence = Matrix{eltype(initial_observation)}(undef, n, output_dimension)
-
+    
     # Initialize the first state and observation
     state_sequence[1] = rand(Categorical(model.πₖ))
     observation_sequence[1, :] = initial_observation
@@ -134,7 +135,7 @@ function sample(model::HiddenMarkovModel, X::Union{Matrix{<:Real}, Nothing}=noth
     # Sample the state paths and observations
     for i in 2:n
         state_sequence[i] = rand(Categorical(model.A[state_sequence[i - 1], :]))
-        observation_sequence[i, :] = isnothing(X) ? emission_sample(model.B[state_sequence[i]]) : emission_sample(model.B[state_sequence[i]], X)
+        observation_sequence[i, :] .= isnothing(X) ? emission_sample(model.B[state_sequence[i]]) : emission_sample(model.B[state_sequence[i]], X)
     end
 
     return state_sequence, observation_sequence
