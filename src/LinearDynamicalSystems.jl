@@ -1436,42 +1436,36 @@ function Gradient(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     # Extract model parameters
     A, Q = lds.state_model.A, lds.state_model.Q
-    C, log_d = lds.obs_model.C, lds.obs_model.log_d
+    C, d = lds.obs_model.C, exp.(lds.obs_model.log_d)  # Pre-compute d
     x0, P0 = lds.state_model.x0, lds.state_model.P0
-
-    # Convert log_d to d (non-log space)
-    d = exp.(log_d)
-
-    # Get number of time steps
-    T_steps = size(y, 2)
-
-    # Precompute matrix inverses
+    
+    # Pre-compute constant matrix operations
     inv_P0 = inv(P0)
     inv_Q = inv(Q)
-
-    # Pre-allocate gradient
+    At_inv_Q = A' * inv_Q
+    
+    # Get dimensions and allocate gradient
+    T_steps = size(y, 2)
     grad = zeros(lds.latent_dim, T_steps)
-
+    
     # Calculate gradient for each time step
     @inbounds for t in 1:T_steps
         # Common term for all time steps
-        common_term = C' * (y[:, t] - exp.(C * x[:, t] .+ d))
-
+        common_term = C' * (y[:, t] .- exp.(C * x[:, t] .+ d))
+        
         if t == 1
             # First time step
-            grad[:, t] =
-                common_term + A' * inv_Q * (x[:, 2] - A * x[:, 1]) - inv_P0 * (x[:, 1] - x0)
+            grad[:, t] = common_term + At_inv_Q * (x[:, 2] - A * x[:, 1]) - inv_P0 * (x[:, 1] - x0)
         elseif t == T_steps
             # Last time step
-            grad[:, t] = common_term - inv_Q * (x[:, t] - A * x[:, t - 1])
+            grad[:, t] = common_term - inv_Q * (x[:, t] - A * x[:, t-1])
         else
             # Intermediate time steps
-            grad[:, t] =
-                common_term + A' * inv_Q * (x[:, t + 1] - A * x[:, t]) -
-                inv_Q * (x[:, t] - A * x[:, t - 1])
+            grad[:, t] = common_term + At_inv_Q * (x[:, t+1] - A * x[:, t]) - 
+                        inv_Q * (x[:, t] - A * x[:, t-1])
         end
     end
-
+    
     return grad
 end
 
@@ -1515,6 +1509,12 @@ function Hessian(
     H_sub_entry = inv_Q * A
     H_super_entry = permutedims(H_sub_entry)
 
+    # Pre-compute common terms
+    xt_given_xt_1 = -inv_Q
+    xt1_given_xt = -A' * inv_Q * A
+    x_t = -inv_P0
+
+    # Pre-allocate arrays
     H_sub = Vector{typeof(H_sub_entry)}(undef, T_steps - 1)
     H_super = Vector{typeof(H_super_entry)}(undef, T_steps - 1)
 
@@ -1522,11 +1522,6 @@ function Hessian(
         H_sub[i] = H_sub_entry
         H_super[i] = H_super_entry
     end
-
-    # Pre-compute common terms
-    xt_given_xt_1 = -inv_Q
-    xt1_given_xt = -A' * inv_Q * A
-    x_t = -inv_P0
 
     # Helper function to calculate the Poisson Hessian term
     function calculate_poisson_hess(C::Matrix{T}, λ::Vector{T}) where {T<:Real}
@@ -1536,6 +1531,7 @@ function Hessian(
     # Calculate the main diagonal
     H_diag = Vector{Matrix{T}}(undef, T_steps)
 
+    # Calculate the main diagonal
     @inbounds for t in 1:T_steps
         λ = exp.(C * x[:, t] .+ d)
         if t == 1
@@ -1637,7 +1633,8 @@ function Q_observation_model(
 
             # calculate rho
             ρ = T(0.5) .* CC * vec(P_smooth[:, :, t, k])
-
+            
+            # calculate ŷ
             ŷ = exp.(h .+ ρ)
 
             # calculate the Q-value
@@ -1767,8 +1764,6 @@ function gradient_observation_model!(
     d = exp.(log_d)
     obs_dim, latent_dim = size(C)
     latent_dim, time_steps, trials = size(E_z)
-
-    fill!(grad, zero(T))
 
     Threads.@threads for k in 1:trials
         @inbounds for t in 1:time_steps
