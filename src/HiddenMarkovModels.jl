@@ -1,8 +1,8 @@
 export HiddenMarkovModel, valid_emission, fit!, sample, loglikelihood, viterbi
-export weighted_initialization
+export kmeans_init!
 
 # for unit tests
-export E_step, validate_model, validate_data, valid_emission_models
+export E_step
 export class_probabilities
 
 """
@@ -34,30 +34,6 @@ mutable struct HiddenMarkovModel <: Model
     K::Int # number of states
 end
 
-function validate_model(model::HiddenMarkovModel)
-    # check that the transition matrix is the proper shape
-    @assert size(model.A) == (model.K, model.K)
-    @assert isapprox(sum(model.A, dims=2), ones(model.K))
-    # check that the initial state distribution is the same length as the number of states
-    @assert model.K == length(model.πₖ)
-    @assert sum(model.πₖ) ≈ 1.0
-    # check that the number of states is equal to the number of emission models
-    @assert model.K == length(model.B)
-    # check that all emission model are the same type
-    @assert all([model.B[i] isa EmissionModel for i in 1:length(model.B)])
-
-
-    # check that all emission models are valid
-    for i in 1:length(model.B)
-        validate_model(model.B[i])
-    end
-end
-
-function validate_data(model::HiddenMarkovModel, data...)
-    # check that the data is the correct length
-    validate_data(model.B[1], data...)
-end
-
 function initialize_transition_matrix(K::Int)
     # initialize a transition matrix
     A = zeros(Float64, K, K)
@@ -71,60 +47,6 @@ function initialize_state_distribution(K::Int)
     # initialize a state distribution
     return rand(Dirichlet(ones(K)))
 end
-
-
-"""
-    weighted_initialization(model::HiddenMarkovModel, data...)
-
-Initialize the matrix with our custom weighted initialization method. Assigns responsibilities randomly, fits the emission models, and sets the transition matrix and initial state distribution to uniform priors.
-
-# Arguments
-- `model::HiddenMarkovModel`: The HiddenMarkovModel to initialize.
-- `data...`: The data to fit the emission models.
-
-# Examples
-```jldoctest; output = true
-μ = [3.0, 4.0]
-emission_1 = Gaussian(output_dim=2, μ=μ)
-μ = [-5.0, 2.0]
-emission_2 = Gaussian(output_dim=2, μ=μ)
-
-true_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2])
-states, Y = sample(true_model, n=1000)
-
-est_model = HiddenMarkovModel(K=2, emission=Gaussian(output_dim=2))
-weighted_initialization(est_model, Y)
-fit!(est_model, Y)
-
-loglikelihood(est_model, Y) > loglikelihood(true_model, Y)
-# output
-true
-```
-"""
-function weighted_initialization(model::HiddenMarkovModel, data...)
-    validate_model(model)
-    validate_data(model, data...)
-
-    # get the proper shape for class probabilities
-    responsibilities = class_probabilities(model, data...)
-
-    # replace each row in responsibilities with rand(Dirichlet(ones(K)))
-    for i in 1:size(responsibilities, 1)
-        responsibilities[i, :] = rand(Dirichlet(ones(model.K)))
-    end
-
-    # train each emission model with their randomized responsibilities
-    for i in 1:model.K
-        emission_fit!(model.B[i], data..., responsibilities[:, i])
-    end
-
-    # set the transition matrix to a uniform prior
-    model.A = ones(Float64, model.K, model.K) / model.K
-
-    # set the initial state distribution to a uniform prior
-    model.πₖ = ones(Float64, model.K) / model.K
-end
-
 
 function HiddenMarkovModel(; 
     K::Int,
@@ -145,9 +67,30 @@ function HiddenMarkovModel(;
 
     model = HiddenMarkovModel(A, emission_models, πₖ, K)
 
-    validate_model(model)
+    # check that the transition matrix is the proper shape
+    @assert size(model.A) == (model.K, model.K)
+    @assert isapprox(sum(model.A, dims=2), ones(model.K))
+    # check that the initial state distribution is the same length as the number of states
+    @assert model.K == length(model.πₖ)
+    @assert sum(model.πₖ) ≈ 1.0
+    # check that the number of states is equal to the number of emission models
+    @assert model.K == length(model.B)
+    # check that all emission model are the same type
+    @assert all([model.B[i] isa EmissionModel for i in 1:length(model.B)])
     
     return model
+end
+
+function kmeans_init!(model::HiddenMarkovModel, data::Matrix{T}) where T <: Real
+    num_states = model.K
+    # run k-means 
+    means, labels = kmeans_clustering(data, num_states)
+    covs = [cov(data[labels .== i, :]) for i in 1:num_states]
+    # initialize the emission models
+    for k in 1:num_states
+        model.B[k].μ = means[:, k]
+        model.B[k].Σ = covs[k]
+    end
 end
 
 """
@@ -176,11 +119,6 @@ states, Y = sample(model, Φ, n=10)
 ```
 """
 function sample(model::HiddenMarkovModel, data...; n::Int)
-    # confirm model is valid
-    validate_model(model)
-
-    # confirm data is in the correct format
-    validate_data(model, data...)
 
 
     state_sequence = [rand(Categorical(model.πₖ))]
@@ -216,11 +154,6 @@ loglikelihood(model, Y)
 ```
 """
 function loglikelihood(model::HiddenMarkovModel, data...)
-    # confirm model is valid
-    validate_model(model)
-
-    # confirm data is in the correct format
-    validate_data(model, data...)
 
     # Calculate observation wise likelihoods for all states
     loglikelihoods_state_1 = emission_loglikelihood(model.B[1], data...)
@@ -430,11 +363,6 @@ function fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Rea
     lls = [-Inf]
 
     data = X === nothing ? (Y,) : (X, Y)
-    # confirm model is valid
-    validate_model(model)
-
-    # confirm data is in the correct format
-    validate_data(model, data...)
 
     log_likelihood = -Inf
     # Initialize progress bar
@@ -457,9 +385,6 @@ function fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Rea
         # M-Step
         M_step!(model, γ, ξ, data)
     end
-
-    # confirm model is valid
-    validate_model(model)
 
     return lls
 end
@@ -523,14 +448,6 @@ function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}}, X::Union{Ve
     lls = [-Inf]
     data = X === nothing ? (Y,) : (X, Y)
 
-    # Validate the model
-    validate_model(model)
-
-    # Validate the data
-    for matrices in zip(data...)  # If data... is [A1 A2] [B1 B2] then matrices is [A1 B1] [A2 B2]
-        validate_data(model, matrices...)  # you get one matrices tuple for each trial, then splat it into the next function
-    end
-
     # Initialize log_likelihood
     log_likelihood = -Inf
 
@@ -561,7 +478,6 @@ function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}}, X::Union{Ve
         M_step!(model, γ, ξ, stacked_data)
 
     end
-    validate_model(model)
 
     return lls
 end

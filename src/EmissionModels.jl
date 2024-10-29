@@ -197,8 +197,6 @@ sequence = emission_sample(model, Φ, observation_sequence=sequence)
 # output
 """
 function emission_sample(model::GaussianRegressionEmission, Φ::Matrix{<:Real}; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim))
-    validate_model(model)
-    validate_data(model, Φ)
 
     # find the number of observations in the observation sequence
     t = size(observation_sequence, 1) + 1
@@ -231,8 +229,6 @@ loglikelihoods = emission_loglikelihood(model, Φ, Y)
 # output
 """
 function emission_loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
-    validate_model(model)
-    validate_data(model, Φ, Y)
 
     # calculate observation wise likelihoods for all states
     observation_wise_loglikelihood = zeros(size(Y, 1))
@@ -404,9 +400,6 @@ loglikelihoods = emission_loglikelihood(model, Φ, Y)
 # output
 """
 function emission_loglikelihood(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    # confirm that the model has valid parameters
-    validate_model(model)
-    validate_data(model, Φ, Y, w)
 
     # add intercept if specified and not already included
     if model.include_intercept && size(Φ, 2) == length(model.β) - 1 
@@ -557,9 +550,6 @@ loglikelihoods = emission_loglikelihood(model, Y_prev, Y)
 # output
 """
 function emission_loglikelihood(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
-    # confirm that the model has valid parameters
-    validate_model(model)
-    validate_data(model, Y_prev, Y)
 
     Φ_gaussian = AR_to_Gaussian_data(Y_prev, Y)
 
@@ -655,29 +645,7 @@ mutable struct CompositeModelEmission <: EmissionModel
 end
 
 
-"""
-    validate_model(model::CompositeModelEmission)
-
-Validate that the `CompositeModelEmission` and all its component emission models are correctly set up.
-
-# Arguments
-- `model::CompositeModelEmission`: The composite emission model to validate.
-
-# Returns
-- `Nothing`: This function does not return a value but throws an error if any component is not a valid emission model.
-"""
-function validate_model(model::CompositeModelEmission)
-    validate_model(model.inner_model)
-
-    for component in model.components
-        if !(component isa EmissionModel)
-            throw(ArgumentError("The model $(typeof(component)) is not a valid emission model."))
-        end
-    end
-end
-
 function emission_sample(model::CompositeModelEmission, input_data::Vector{}; observation_sequence::Vector{}=Vector())
-    validate_model(model)
 
     if isempty(observation_sequence)
         for i in 1:length(model.components)
@@ -693,11 +661,7 @@ function emission_sample(model::CompositeModelEmission, input_data::Vector{}; ob
 end
 
 function emission_loglikelihood(model::CompositeModelEmission, input_data::Vector{}, output_data::Vector{})
-    validate_model(model)
-    validate_data(model, input_data, output_data)
-
     loglikelihoods = Vector{}(undef, length(model.components))
-
 
     for i in 1:length(model.components)
         loglikelihoods[i] = emission_loglikelihood(model.components[i], input_data[i]..., output_data[i]...)
@@ -710,40 +674,4 @@ function emission_fit!(model::CompositeModelEmission, input_data::Vector{}, outp
         emission_fit!(model.components[i], input_data[i]..., output_data[i]..., w)
     end
 end
-
-"""
-Validation Functions
-"""
-
-function validate_model(model::EmissionModel)
-    validate_model(model.inner_model)
-end
-
-
-function validate_data(model::EmissionModel, data...)
-    validate_data(model.inner_model, data...)
-end
-
-
-"""
-Emission handler
-"""
-# function Emission(model::Model)
-#     if model isa Gaussian
-#         return GaussianEmission(model)
-#     elseif model isa GaussianRegression
-#         return GaussianRegressionEmission(model)
-#     elseif model isa BernoulliRegression
-#         return BernoulliRegressionEmission(model)
-#     elseif model isa AutoRegression
-#         return AutoRegressionEmission(model)
-#     elseif model isa CompositeModel
-#         emission_components = Emission.(model.components)
-#         new_composite = CompositeModel(emission_components)
-#         return CompositeModelEmission(new_composite)
-#     else
-#         # throw an error if the model is not a valid emission model
-#         throw(ArgumentError("The model is not a valid emission model."))
-#     end
-# end 
 

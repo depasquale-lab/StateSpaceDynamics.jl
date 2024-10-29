@@ -34,7 +34,7 @@ function test_GaussianHMM()
     true_model, state_sequence, Y = GaussianHMM_simulation(n)
 
     est_model = HiddenMarkovModel(K=3, emission=GaussianEmission(output_dim=2))
-    weighted_initialization(est_model, Y)
+    kmeans_init!(est_model, Y)
     fit!(est_model, Y)
 
     # confirm that the fitted model has a higher loglikelihood than the true model

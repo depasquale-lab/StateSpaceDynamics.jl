@@ -34,7 +34,7 @@ function test_AutoRegressionHMM()
     true_model, Y_prev, Y = AutoRegressionHMM_simulation(n)
 
     est_model = HiddenMarkovModel(K=2, emission=AutoRegressionEmission(order=1, output_dim=2, include_intercept=false))
-    weighted_initialization(est_model, Y_prev, Y)
+    # weighted_initialization(est_model, Y_prev, Y) #TODO: add an initialization strategy later
     fit!(est_model, Y, Y_prev)  # flipped these
 
     # check the β values
