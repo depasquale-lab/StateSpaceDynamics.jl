@@ -22,7 +22,7 @@ include("LDS.jl")
 
 #include("MarkovRegression.jl")
 
-include("BasicModels.jl")
+
 include("RegressionModels.jl")
 include("CompositeModel.jl")
 include("EmissionModels.jl")

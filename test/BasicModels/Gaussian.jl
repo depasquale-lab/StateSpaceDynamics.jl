@@ -4,7 +4,7 @@ function Gaussian_simulation(n::Int)
     true_model.Σ = [0.8 0.1; 0.1 2.0]
 
     # sample data
-    Y = StateSpaceDynamics.sample(true_model, n=n)
+    Y = StateSpaceDynamics.emission_sample(true_model, n=n)
 
     return true_model, Y
 end
@@ -68,7 +68,7 @@ function test_Gaussian_valid_emission_model()
     fit!(est_model, Y, weights)
 
     # Criteria 3
-    Y_new = StateSpaceDynamics.sample(est_model, n=100)
+    Y_new = StateSpaceDynamics.emission_sample(est_model, n=100)
     time_series = StateSpaceDynamics.TimeSeries(est_model, Y_new)
     @test typeof(time_series) == TimeSeries
 

@@ -3,66 +3,50 @@ export GaussianEmission, validate_data, emission_sample, emission_loglikelihood,
 export SwitchingGaussianRegression, SwitchingBernoulliRegression, SwitchingAutoRegression, GaussianHMM
 
 """
-Every emission model must implement the following functions:
-
-- emission_sample(model::EmissionModel, data...; observation_sequence)
-    The point of this function is to iteratively sample from the emission model through repeated calls of the form:
-    `
-    observation_sequence = emission_sample(model, data...)
-    observation_sequence = emission_sample(model, data..., observation_sequence=observation_sequence)
-    observation_sequence = emission_sample(model, data..., observation_sequence=observation_sequence)
-    observation_sequence = emission_sample(model, data..., observation_sequence=observation_sequence)
-    `
-    Et cetera.
-
-    NOTE: The observation_sequence argument is optional, and when it is not passed in, the function should return a NEW observation sequence with one observation.
-- emission_loglikelihood(model::EmissionModel, data...)
-    This function should return a vector of loglikelihoods for each observation in the data.
-- emission_fit!(model::EmissionModel, data..., weights)
-    This function should fit the model to the data, with weights for each observation.
-
-Make sure to add any new emission models to the Emission function at the end of this file!!
+Each emission model should have:
+    1) Mutable struct definition
+    2) Constructor Function
+    3) Log_likelihood Function
+    4) Sampling Function
+    5) Fit Function (and associated gradient functions for regression models)
 """
 
+"""
+*** GAUSSIAN EMISSION FUNCTIONS ***
+"""
 
 """
-    GaussianEmission <: EmissionModel
+    mutable struct GaussianEmission <: EmissionModel
 
-A mutable struct representing a Gaussian emission model, which wraps around a `Gaussian` model.
-
-# Fields
-- `inner_model::Gaussian`: The underlying Gaussian model used for the emissions.
+GaussianEmission model with mean and covariance.
 """
-# mutable struct GaussianEmission <: EmissionModel
-#     inner_model:: Gaussian
-# end
+mutable struct GaussianEmission <: EmissionModel
+    output_dim::Int # dimension of the data
+    μ::Vector{<:Real}  # mean 
+    Σ::Matrix{<:Real}  # covariance matrix
+end
 
 
 """
-    emission_sample(model::GaussianEmission; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim))
+    function GaiussianEmission(; output_dim::Int, μ::Vector{<:Real}=zeros(output_dim), Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim))
 
-Generate a sample from the given Gaussian emission model and append it to the provided observation sequence.
+Functon to create a GaussianEmission with given output dimension, mean, and covariance.
 
 # Arguments
-- `model::GaussianEmission`: The Gaussian emission model to sample from.
-- `observation_sequence::Matrix{<:Real}`: The sequence of observations to which the new sample will be appended (defaults to an empty matrix with the same output dimension as the model).
+- `output_dim::Int`: The output dimension of the emission
+- `μ::Vector{<:Real}=zeros(output_dim)`: The mean of the Gaussian
+- `Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim))`: The covariance matrix of the Gaussian
 
 # Returns
-- `Matrix{Float64}`: The updated observation sequence with the new sample appended.
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-model = GaussianEmission(Gaussian(output_dim=2))
-sequence = emission_sample(model)
-sequence = emission_sample(model, observation_sequence=sequence)
-# output
 """
-function emission_sample(model::GaussianEmission; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim))
-    validate_model(model)
+function GaussianEmission(; 
+    output_dim::Int, 
+    μ::Vector{<:Real}=zeros(output_dim), 
+    Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim))
+    
+    model = GaussianEmission(output_dim, μ, Σ)
 
-    raw_samples = rand(MvNormal(model.μ, model.Σ), 1)    
-
-    return vcat(observation_sequence, Matrix(raw_samples'))
+    return model
 end
 
 
@@ -86,9 +70,6 @@ loglikelihoods = SSD.emission_loglikelihood(model, Y)
 # output
 """
 function emission_loglikelihood(model::GaussianEmission, Y::Matrix{<:Real})
-    validate_model(model)
-    validate_data(model, Y)
-
     # calculate inverse of covariance matrix
     Σ_inv = inv(model.Σ)
 
@@ -106,31 +87,63 @@ end
 
 
 """
+    emission_sample(model::Gaussian; n::Int=1)
+
+Generate `n` samples from a Gaussian model. Returns a matrix of size `(n, output_dim)`.
+
+# Examples
+```jldoctest; output = false
+model = Gaussian(output_dim=2)
+samples = sample(model, n=3)
+
+println(size(samples))
+
+# output
+(3, 2)
+```
+"""
+function emission_sample(model::GaussianEmission; n::Int=1)
+    raw_samples = rand(MvNormal(model.μ, model.Σ), n)    
+
+    return Matrix(raw_samples')
+end
+
+
+"""
     emission_fit!(model::GaussianEmission, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
-Call the fit!() function in BasicModels.jl to fit the Gaussian emission model to the data `Y` using the provided weights `w`.
+Fit a GaussianEmission model to the data `Y`. 
 
 # Arguments
-- `model::GaussianEmission`: The Gaussian emission model to be fit.
-- `Y::Matrix{<:Real}`: The data matrix (Observations x Features)
-- `w::Vector{Float64}`: A vector of weights corresponding to each observation (defaults to a vector of ones).
-
-# Returns
-- `Nothing`: The function modifies the model in place.
+- `model::GaussianEmission`: Gaussian model to fit.
+- `Y::Matrix{<:Real}`: Data to fit the model to. Should be a matrix of size `(n, output_dim)`.
+- `w::Vector{Float64}=ones(size(Y, 1))`: Weights for the data. Should be a vector of size `n`.
 
 # Examples
 ```jldoctest; output = false, filter = r"(?s).*" => s""
-model = GaussianEmission(Gaussian(output_dim=2))
-Y = randn(10, 2)
-emission_fit!(model, Y)
-# output
-"""
-# function emission_fit!(model::GaussianEmission, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-#     fit!(model.inner_model, Y, w)
-# end
+true_model = Gaussian(output_dim=2)
+Y = sample(true_model, n=3)
 
+est_model = Gaussian(output_dim=2)
+fit!(est_model, Y)
+
+# output
+```
+"""
 function emission_fit!(model::GaussianEmission, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    fit!(model, Y, w)
+    weighted_sum = sum(Y .* w, dims=1)
+    new_mean = weighted_sum[:] ./ sum(w)
+
+    centered_data = Y .- new_mean'
+    weighted_centered = centered_data .* sqrt.(w)
+    new_covariance = (weighted_centered' * weighted_centered) ./ sum(w)
+
+    new_covariance = stabilize_covariance_matrix(new_covariance)
+
+    model.μ = new_mean
+    model.Σ = new_covariance
+
+    return model
 end
 
 
@@ -160,6 +173,14 @@ function GaussianHMM(; K::Int, output_dim::Int, A::Matrix{<:Real}=initialize_tra
     # Return constructed GaussianHMM
     return HiddenMarkovModel(K=K, B=emissions, A=A, πₖ=πₖ)
 end
+
+
+"""
+
+10/29/2024 3:02 PM refactoring checkpoint (Above functions are complete)
+
+"""
+
 
 
 """

@@ -119,8 +119,6 @@ states, Y = sample(model, Φ, n=10)
 ```
 """
 function sample(model::HiddenMarkovModel, data...; n::Int)
-
-
     state_sequence = [rand(Categorical(model.πₖ))]
     observation_sequence = emission_sample(model.B[state_sequence[1]], data...)
 
