@@ -1,7 +1,7 @@
 export Emission, getproperty, setproperty!
 export GaussianEmission, validate_data, emission_sample, emission_loglikelihood, emission_fit!
 export SwitchingGaussianRegression, SwitchingBernoulliRegression, SwitchingAutoRegression, GaussianHMM
-
+export GaussianRegressionEmission
 """
 Each emission model should have:
     1) Mutable struct definition
@@ -184,47 +184,83 @@ end
 
 
 """
-    GaussianRegressionEmission <: EmissionModel
+*** Gaussian Regression Functions ***
+"""
 
-A mutable struct representing a Gaussian regression emission model, which wraps around a `GaussianRegression` model.
+"""
+    GaussianRegressionEmission
+
+A Gaussian regression Emission model.
 
 # Fields
-- `inner_model::GaussianRegression`: The underlying Gaussian regression model used for the emissions.
-"""
-# mutable struct GaussianRegressionEmission <: EmissionModel
-#     inner_model:: GaussianRegression
-# end
-
-
-"""
-    emission_sample(model::GaussianRegressionEmission, Φ::Matrix{<:Real}; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim))
-
-Generate a sample from the given Gaussian regression emission model using the input features `Φ`, and append it to the provided observation sequence.
-
-# Arguments
-- `model::GaussianRegressionEmission`: The Gaussian regression emission model to sample from.
-- `Φ::Matrix{<:Real}`: The input features matrix (Observations x Features).
-- `observation_sequence::Matrix{<:Real}`: The sequence of observations to which the new sample will be appended (defaults to an empty matrix with the same output dimension as the model).
-
-# Returns
-- `Matrix{Float64}`: The updated observation sequence with the new sample appended.
+- `input_dim::Int`: Dimension of the input data.
+- `output_dim::Int`: Dimension of the output data.
+- `include_intercept::Bool = true`: Whether to include an intercept term; if true, the first column of β is assumed to be the intercept/bias.
+- `β::Matrix{<:Real} = if include_intercept zeros(input_dim + 1, output_dim) else zeros(input_dim, output_dim) end`: Coefficient matrix of the model. Shape input_dim by output_dim. The first row are the intercept terms, if included.
+- `Σ::Matrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim)`: Covariance matrix of the model.
+- `λ::Float64 = 0.0`: Regularization parameter.
 
 # Examples
 ```jldoctest; output = false, filter = r"(?s).*" => s""
-model = GaussianRegressionEmission(GaussianRegression(input_dim=3, output_dim=2))
-Φ = randn(10, 3)
-sequence = emission_sample(model, Φ)
-sequence = emission_sample(model, Φ, observation_sequence=sequence)
+β = rand(3, 1)
+model = GaussianRegression(input_dim=2, output_dim=1, β=β)
+# output
+```
+"""
+mutable struct GaussianRegressionEmission <: EmissionModel
+    input_dim::Int
+    output_dim::Int
+    β::Matrix{<:Real} # coefficient matrix of the model. Shape input_dim by output_dim. Column one is coefficients for target one, etc. The first row are the intercept terms, if included. 
+    Σ::Matrix{<:Real} # covariance matrix of the model 
+    include_intercept::Bool # whether to include an intercept term; if true, the first column of β is assumed to be the intercept/bias
+    λ::Float64 # regularization parameter
+end
+
+
+function GaussianRegressionEmission(; 
+    input_dim::Int, 
+    output_dim::Int, 
+    include_intercept::Bool = true, 
+    β::Matrix{<:Real} = if include_intercept zeros(input_dim + 1, output_dim) else zeros(input_dim, output_dim) end,
+    Σ::Matrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim),
+    λ::Float64 = 0.0)
+
+    new_model = GaussianRegressionEmission(input_dim, output_dim, β, Σ, include_intercept, λ)
+    
+    return new_model
+end
+
+
+"""
+    sample(model::GaussianRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
+
+Generate `n` samples from a Gaussian regression model. Returns a matrix of size `(n, output_dim)`.
+
+# Arguments
+- `model::GaussianRegression`: Gaussian regression model.
+- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
+- `n::Int=size(Φ, 1)`: Number of samples to generate.
+
+# Returns
+- `Y::Matrix{<:Real}`: Matrix of samples of shape `(n, output_dim)`.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = GaussianRegression(input_dim=2, output_dim=1)
+Φ = rand(100, 2)
+Y = sample(model, Φ)
 # output
 """
-function emission_sample(model::GaussianRegressionEmission, Φ::Matrix{<:Real}; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim))
+function sample(model::GaussianRegressionEmission, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
+    @assert n <= size(Φ, 1) "n must be less than or equal to the number of observations in Φ."
+    # cut the length of Φ to n
+    Φ = Φ[1:n, :]
 
-    # find the number of observations in the observation sequence
-    t = size(observation_sequence, 1) + 1
-    # get the n+1th observation
-    new_observation = sample(model, Φ[t:t, :], n=1)
-
-    return vcat(observation_sequence, new_observation)
+    # add intercept if specified
+    if model.include_intercept
+        Φ = hcat(ones(size(Φ, 1)), Φ)
+    end
+    return Φ * model.β + rand(MvNormal(zeros(model.output_dim), model.Σ), size(Φ, 1))'
 end
 
 
@@ -264,34 +300,154 @@ end
 
 
 """
-    emission_fit!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    loglikelihood(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
 
-Call the fit!() function in RegressionModels.jl to fit the Gaussian regression emission model to the data `Y` using the input features `Φ` and the provided weights `w`.
+Calculate the log-likelihood of a Gaussian regression model.
 
 # Arguments
-- `model::GaussianRegressionEmission`: The Gaussian regression emission model to be fitted.
-- `Φ::Matrix{<:Real}`: The input features matrix (Observations x Features).
-- `Y::Matrix{<:Real}`: The data matrix (Observations x Features).
-- `w::Vector{Float64}`: A vector of weights corresponding to each observation (defaults to a vector of ones).
-
-# Returns
-- `Nothing`: The function modifies the model in place.
+- `model::GaussianRegression`: Gaussian regression model.
+- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`. 
+- `Y::Matrix{<:Real}`: Response matrix of shape `(n, output_dim)`.
 
 # Examples
 ```jldoctest; output = false, filter = r"(?s).*" => s""
-model = GaussianRegressionEmission(GaussianRegression(input_dim=3, output_dim=2))
-Φ = randn(10, 3)
-Y = randn(10, 2)
-emission_fit!(model, Φ, Y)
+model = GaussianRegression(input_dim=2, output_dim=1)
+Φ = rand(100, 2)
+Y = sample(model, Φ)
+loglikelihood(model, Φ, Y)
 # output
+```
 """
-# function emission_fit!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-#     fit!(model.inner_model, Φ, Y, w)
-# end
+function loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
+    # add intercept if specified
+    if model.include_intercept
+        Φ = hcat(ones(size(Φ, 1)), Φ)
+    end
 
-function emission_fit!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    fit!(model, Φ, Y, w)
+    # calculate inverse of covariance matrix
+    Σ_inv = inv(model.Σ)
+
+    # calculate log likelihood
+    residuals = Y - Φ * model.β
+
+
+    loglikelihood = -0.5 * size(Φ, 1) * size(Φ, 2) * log(2π) - 0.5 * size(Φ, 1) * logdet(model.Σ) - 0.5 * sum(residuals .* (Σ_inv * residuals')')
+    return loglikelihood
 end
+
+
+# assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
+function define_objective(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+
+    validate_data(model, Φ, Y, w)
+
+    # add intercept if specified
+    if model.include_intercept
+        Φ = hcat(ones(size(Φ, 1)), Φ)
+    end
+
+    function objective(β::Matrix{<:Real})
+        # calculate log likelihood
+        residuals = Y - Φ * β
+
+        # reshape w for broadcasting
+        w = reshape(w, (length(w), 1))
+        pseudo_loglikelihood = -0.5 * sum(broadcast(*, w, residuals.^2)) - (model.λ * sum(β.^2))
+
+        return -pseudo_loglikelihood / size(Φ, 1)
+    end
+
+    return objective
+end
+
+
+function define_objective_gradient(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    validate_data(model, Φ, Y, w)
+
+    # add intercept if specified
+    if model.include_intercept
+        Φ = hcat(ones(size(Φ, 1)), Φ)
+    end
+
+    function objective_gradient!(G::Matrix{<:Real}, β::Matrix{<:Real})
+        # calculate log likelihood
+        residuals = Y - Φ * β
+
+        G .= -(Φ' * Diagonal(w) * residuals - (2*model.λ*β)) / size(Φ, 1)
+    end
+    
+    return objective_gradient!
+end
+
+
+function update_variance!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+
+
+    # add intercept if specified
+    if model.include_intercept
+        Φ = hcat(ones(size(Φ, 1)), Φ)
+    end
+
+
+    residuals = Y - Φ * model.β
+    
+    
+    model.Σ = (residuals' * Diagonal(w) * residuals) / size(Φ, 1)
+
+    # ensure rounding errors are not causing the covariance matrix to be non-positive definite
+    model.Σ = stabilize_covariance_matrix(model.Σ)    
+end
+
+"""
+    emission_fit!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+
+Fit a Gaussian regression emission model using maximum likelihood estimation and OLS.
+
+# Arguments
+- `model::GaussianRegression`: Gaussian regression model.
+- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
+- `Y::Matrix{<:Real}`: Response matrix of shape `(n, output_dim)`.
+- `w::Vector{Float64}`: Weights of the data points. Should be a vector of size `n`.
+
+# Examples
+```jldoctest; output = true
+true_model = GaussianRegression(input_dim=2, output_dim=1)
+Φ = rand(100, 2)
+Y = sample(true_model, Φ)
+
+est_model = GaussianRegression(input_dim=2, output_dim=1)
+fit!(est_model, Φ, Y)
+
+loglikelihood(est_model, Φ, Y) > loglikelihood(true_model, Φ, Y)
+
+# output
+true
+```
+"""
+function emission_fit!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    # confirm that the model has valid parameters
+    validate_model(model)
+    validate_data(model, Φ, Y, w)
+
+    # confirm the size of w is correct
+    @assert length(w) == size(Y, 1) "Length of w must be equal to the number of observations in Y."
+    
+    # minimize objective
+    objective = define_objective(model, Φ, Y, w)
+    objective_grad! = define_objective_gradient(model, Φ, Y, w)
+
+
+    result = optimize(objective, objective_grad!, model.β, LBFGS())
+
+    # update parameters
+    model.β = result.minimizer
+    update_variance!(model, Φ, Y, w)
+
+    # confirm that the model has valid parameters
+    validate_model(model)
+end
+
+
 
 
 """

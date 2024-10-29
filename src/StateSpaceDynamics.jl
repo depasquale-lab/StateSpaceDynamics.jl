@@ -23,9 +23,11 @@ include("LDS.jl")
 #include("MarkovRegression.jl")
 
 
-include("RegressionModels.jl")
+
 include("CompositeModel.jl")
+include("RegressionModels.jl")
 include("EmissionModels.jl")
+
 include("MixtureModels.jl")
 include("HiddenMarkovModels.jl")
 

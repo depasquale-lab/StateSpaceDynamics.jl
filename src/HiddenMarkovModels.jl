@@ -125,7 +125,7 @@ function sample(model::HiddenMarkovModel, data...; n::Int)
     for i in 2:n
         # sample the next state
         push!(state_sequence, rand(Categorical(model.A[state_sequence[end], :])))
-        observation_sequence = emission_sample(model.B[state_sequence[i]], data...; observation_sequence=observation_sequence)
+        observation_sequence = emission_sample(model.B[state_sequence[i]], data...; n=length(observation_sequence))
     end
 
     return state_sequence, observation_sequence
