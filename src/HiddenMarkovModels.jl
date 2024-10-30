@@ -362,7 +362,6 @@ true
 ```
 """
 function fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Real}, Nothing}=nothing; max_iters::Int=100, tol::Float64=1e-6)
-    println("New Function in use...")
     lls = [-Inf]
 
     data = X === nothing ? (Y,) : (X, Y)

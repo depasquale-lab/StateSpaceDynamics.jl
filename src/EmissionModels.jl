@@ -329,7 +329,6 @@ end
 
 
 function update_variance!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-
     # add intercept if specified
     if model.include_intercept
         Φ = [ones(size(Φ, 1)) Φ]
