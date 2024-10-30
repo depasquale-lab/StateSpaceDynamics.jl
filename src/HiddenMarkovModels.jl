@@ -126,7 +126,7 @@ function sample(model::HiddenMarkovModel, X::Union{Matrix{<:Real}, Nothing}=noth
     output_dimension = length(initial_observation)
     
     observation_sequence = Matrix{eltype(initial_observation)}(undef, n, output_dimension)
-
+    
     # Initialize the first state and observation
     state_sequence[1] = rand(Categorical(model.πₖ))
     observation_sequence[1, :] = initial_observation
