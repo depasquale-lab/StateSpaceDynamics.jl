@@ -15,7 +15,7 @@ end
 function test_GaussianRegression_loglikelihood()
     n = 1000
     true_model, Φ, Y = GaussianRegression_simulation(n)
-    @test StateSpaceDynamics.loglikelihood(true_model, Φ, Y) < 0
+    @test all(StateSpaceDynamics.loglikelihood(true_model, Φ, Y) .< 0)
 end
 
 # check covariance matrix is positive definite and hermitian

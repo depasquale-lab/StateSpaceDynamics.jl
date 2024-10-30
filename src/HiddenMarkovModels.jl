@@ -149,6 +149,7 @@ function emission_loglikelihoods(model::HiddenMarkovModel, data...)
     @threads for k in 1:model.K
         loglikelihoods[k, :] .= loglikelihood(model.B[k], data...)
     end
+    
     return loglikelihoods
 end
 

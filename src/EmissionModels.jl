@@ -242,7 +242,7 @@ model = GaussianRegression(input_dim=2, output_dim=1)
 Y = sample(model, Φ)
 # output
 """
-function emission_sample(model::GaussianRegressionEmission, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
+function sample(model::GaussianRegressionEmission, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
     @assert n <= size(Φ, 1) "n must be less than or equal to the number of observations in Φ."
     # cut the length of Φ to n
     Φ = Φ[1:n, :]
@@ -278,7 +278,7 @@ loglikelihoods = loglikelihood(model, Φ, Y)
 # output
 """
 
-# function emission_loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
+# function loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
 
 #     # calculate observation wise likelihoods for all states
 #     observation_wise_loglikelihood = zeros(size(Y, 1))
@@ -308,25 +308,16 @@ loglikelihoods = loglikelihood(model, Φ, Y)
 #     return loglikelihood
 # end
 
-function emission_loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
-    # Calculate observation-wise likelihoods for all timepoints
-    observation_wise_loglikelihood = zeros(size(Y, 1))
-
+function loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
     # Add intercept if specified
-    if model.include_intercept
-        Φ = hcat(ones(size(Φ, 1)), Φ)
-    end
-
-    # Calculate inverse of covariance matrix
-    Σ_inv = inv(model.Σ)
-
+    X = model.include_intercept ? [ones(size(Φ, 1)) Φ] : Φ
+    
+    # Create MvNormal distribution for each observation
+    μ = X * model.β
+    dist = MvNormal(model.Σ)
+    
     # Calculate log likelihood for each observation
-    for i in axes(Y, 1)
-        residuals = Y[i:i, :] - Φ[i:i, :] * model.β
-        observation_wise_loglikelihood[i] = -0.5 * size(Φ, 2) * log(2π) - 0.5 * logdet(model.Σ) - 0.5 * sum(residuals .* (Σ_inv * residuals')')
-    end
-
-    return observation_wise_loglikelihood
+    return [logpdf(dist, Y[i,:] .- μ[i]) for i in axes(Y, 1)]
 end
 
 
@@ -358,7 +349,7 @@ function define_objective(model::GaussianRegressionEmission, Φ::Matrix{<:Real},
 
     # add intercept if specified
     if model.include_intercept
-        Φ = hcat(ones(size(Φ, 1)), Φ)
+        Φ = [ones(size(Φ, 1)) Φ]
     end
 
     function objective(β::Matrix{<:Real})
@@ -395,22 +386,18 @@ end
 
 function update_variance!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
-
     # add intercept if specified
     if model.include_intercept
-        Φ = hcat(ones(size(Φ, 1)), Φ)
+        Φ = [ones(size(Φ, 1)) Φ]
     end
-
 
     residuals = Y - Φ * model.β
     
-    
-    model.Σ = (residuals' * Diagonal(w) * residuals) / size(Φ, 1)
+    Σ = (residuals' * Diagonal(w) * residuals) / size(Φ, 1)
 
     # ensure rounding errors are not causing the covariance matrix to be non-positive definite
-    model.Σ = stabilize_covariance_matrix(model.Σ)    
+    model.Σ .= 0.5 * (Σ * Σ') 
 end
-
 """
     fit!!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
@@ -438,15 +425,12 @@ true
 ```
 """
 function fit!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-
-
     # confirm the size of w is correct
     @assert length(w) == size(Y, 1) "Length of w must be equal to the number of observations in Y."
     
     # minimize objective
     objective = define_objective(model, Φ, Y, w)
     objective_grad! = define_objective_gradient(model, Φ, Y, w)
-
 
     result = optimize(objective, objective_grad!, model.β, LBFGS())
 
