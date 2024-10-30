@@ -236,18 +236,21 @@ model = GaussianRegression(input_dim=2, output_dim=1)
 Y = sample(model, Φ)
 # output
 """
-function sample(model::GaussianRegressionEmission, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
-    @assert n <= size(Φ, 1) "n must be less than or equal to the number of observations in Φ."
-    # cut the length of Φ to n
-    Φ = Φ[1:n, :]
+function sample(model::GaussianRegressionEmission, Φ::Union{Matrix{<:Real}, Vector{<:Real}})
+    # Ensure Φ is a 2D matrix even if it's a single sample
+    Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
 
-    # add intercept if specified
+    # Add intercept column if specified
     if model.include_intercept
         Φ = hcat(ones(size(Φ, 1)), Φ)
     end
-
-    return Φ * model.β + rand(MvNormal(zeros(model.output_dim), model.Σ), size(Φ, 1))'
+    
+    # Ensure the noise dimensions match the output dimension and sample size
+    noise = rand(MvNormal(zeros(model.output_dim), model.Σ), size(Φ, 1))'
+    return Φ * model.β + noise
 end
+
+
 
 
 """

@@ -120,21 +120,16 @@ states, Y = sample(model, Φ, n=10)
 """
 function sample(model::HiddenMarkovModel, X::Union{Matrix{<:Real}, Nothing}=nothing; n::Int)
     state_sequence = Vector{Int}(undef, n)
-    
-    # Handle case where X is nothing and is being passed to a non-regression emission
-    initial_observation = isnothing(X) ? sample(model.B[1]) : sample(model.B[1], X)
-    output_dimension = length(initial_observation)
-    
-    observation_sequence = Matrix{eltype(initial_observation)}(undef, n, output_dimension)
-    
+    observation_sequence = Matrix{Float64}(undef, n, model.B[1].output_dim)
+
     # Initialize the first state and observation
     state_sequence[1] = rand(Categorical(model.πₖ))
-    observation_sequence[1, :] = initial_observation
+    observation_sequence[1, :] = isnothing(X) ? sample(model.B[state_sequence[1]]) : sample(model.B[state_sequence[1]], X[1,:])
 
     # Sample the state paths and observations
     for i in 2:n
         state_sequence[i] = rand(Categorical(model.A[state_sequence[i - 1], :]))
-        observation_sequence[i, :] = isnothing(X) ? sample(model.B[state_sequence[i]]) : sample(model.B[state_sequence[i]], X)
+        observation_sequence[i, :] = isnothing(X) ? sample(model.B[state_sequence[i]]) : sample(model.B[state_sequence[i]], X[i,:])
     end
 
     return state_sequence, observation_sequence
