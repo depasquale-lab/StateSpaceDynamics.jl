@@ -244,13 +244,11 @@ function sample(model::GaussianRegressionEmission, Φ::Union{Matrix{<:Real}, Vec
     if model.include_intercept
         Φ = hcat(ones(size(Φ, 1)), Φ)
     end
-    
+
     # Ensure the noise dimensions match the output dimension and sample size
     noise = rand(MvNormal(zeros(model.output_dim), model.Σ), size(Φ, 1))'
     return Φ * model.β + noise
 end
-
-
 
 
 """
@@ -274,72 +272,22 @@ Y = randn(10, 2)
 loglikelihoods = loglikelihood(model, Φ, Y)
 # output
 """
-
-# function loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
-
-#     # calculate observation wise likelihoods for all states
-#     observation_wise_loglikelihood = zeros(size(Y, 1))
-
-#     # calculate observation wise loglikelihood (a vector of loglikelihoods for each observation)
-#     @threads for i in 1:size(Y, 1)
-#         observation_wise_loglikelihood[i] = loglikelihood(model, Φ[i:i, :], Y[i:i, :])
-#     end
-
-#     return observation_wise_loglikelihood
-# end
-
-# function loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
-#     # add intercept if specified
-#     if model.include_intercept
-#         Φ = hcat(ones(size(Φ, 1)), Φ)
-#     end
-
-#     # calculate inverse of covariance matrix
-#     Σ_inv = inv(model.Σ)
-
-#     # calculate log likelihood
-#     residuals = Y - Φ * model.β
-
-
-#     loglikelihood = -0.5 * size(Φ, 1) * size(Φ, 2) * log(2π) - 0.5 * size(Φ, 1) * logdet(model.Σ) - 0.5 * sum(residuals .* (Σ_inv * residuals')')
-#     return loglikelihood
-# end
-
 function loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # Add intercept if specified
     X = model.include_intercept ? [ones(size(Φ, 1)) Φ] : Φ
-    
+
     # Create MvNormal distribution for each observation
     μ = X * model.β
     dist = MvNormal(model.Σ)
-    
+
     # Calculate log likelihood for each observation
     return w .* [logpdf(dist, Y[i,:] .- μ[i]) for i in axes(Y, 1)]
 end
 
 
 """
-    loglikelihood(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
-
-Calculate the log-likelihood of a Gaussian regression model.
-
-# Arguments
-- `model::GaussianRegression`: Gaussian regression model.
-- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`. 
-- `Y::Matrix{<:Real}`: Response matrix of shape `(n, output_dim)`.
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-model = GaussianRegression(input_dim=2, output_dim=1)
-Φ = rand(100, 2)
-Y = sample(model, Φ)
-loglikelihood(model, Φ, Y)
-# output
-```
+These objective functions need to be redone...
 """
-
-
-
 # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
 function define_objective(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
@@ -394,6 +342,8 @@ function update_variance!(model::GaussianRegressionEmission, Φ::Matrix{<:Real},
     # ensure rounding errors are not causing the covariance matrix to be non-positive definite
     model.Σ .= 0.5 * (Σ * Σ') 
 end
+
+
 """
     fit!!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
@@ -433,8 +383,8 @@ function fit!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<
     # update parameters
     model.β = result.minimizer
     update_variance!(model, Φ, Y, w)
-
 end
+
 
 """
     SwitchingGaussianRegression(; 
@@ -497,46 +447,81 @@ end
 
 
 """
-    BernoulliRegressionEmission <: EmissionModel
+Refactoring checkpoint 10/30/2024 2:09PM -> Above functions are refactored. Need to change how fit functions work above though.
+"""
 
-A mutable struct representing a Bernoulli regression emission model, which wraps around a `BernoulliRegression` model.
+
+"""
+    BernoulliRegression
+
+A Bernoulli regression model.
 
 # Fields
-- `inner_model::BernoulliRegression`: The underlying Bernoulli regression model used for the emissions.
-"""
-# mutable struct BernoulliRegressionEmission <: EmissionModel
-#     inner_model:: BernoulliRegression
-# end
-
-
-"""
-    sample(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, 1))
-
-Generate a sample from the given Bernoulli regression emission model using the input features `Φ`, and append it to the provided observation sequence.
-
-# Arguments
-- `model::BernoulliRegressionEmission`: The Bernoulli regression emission model to sample from.
-- `Φ::Matrix{<:Real}`: The input features matrix (Observations x Features).
-- `observation_sequence::Matrix{<:Real}`: The sequence of observations to which the new sample will be appended (defaults to an empty matrix).
-
-# Returns
-- `Matrix{Float64}`: The updated observation sequence with the new sample appended.
+- `input_dim::Int`: Dimension of the input data.
+- `include_intercept::Bool = true`: Whether to include an intercept term.
+- `β::Vector{<:Real} = if include_intercept zeros(input_dim + 1) else zeros(input_dim) end`: Coefficients of the model. The first element is the intercept term, if included.
+- `λ::Float64 = 0.0`: Regularization parameter.
 
 # Examples
 ```jldoctest; output = false, filter = r"(?s).*" => s""
-model = BernoulliRegressionEmission(BernoulliRegression(input_dim=3))
-Φ = randn(10, 3)
-sequence = sample(model, Φ)
-sequence = sample(model, Φ, observation_sequence=sequence)
+model = BernoulliRegression(input_dim=2)
 # output
+```
 """
-function sample(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}; observation_sequence::Matrix{<:Real} = Matrix{Float64}(undef, 0, 1))
-    # find the number of observations in the observation sequence
-    t = size(observation_sequence, 1) + 1
-    # get the n+1th observation
-    new_observation = sample(model, Φ[t:t, :], n=1)
+mutable struct BernoulliRegressionEmission <: EmissionModel
+    input_dim::Int
+    β::Vector{<:Real}
+    include_intercept::Bool
+    λ::Float64
+    output_dim::Int
+end
 
-    return vcat(observation_sequence, new_observation)
+function BernoulliRegressionEmission(; 
+    input_dim::Int,
+    include_intercept::Bool = true, 
+    β::Vector{<:Real} = if include_intercept zeros(input_dim + 1) else zeros(input_dim) end,
+    λ::Float64 = 0.0,
+    output_dim::Int=1)
+
+    new_model = BernoulliRegressionEmission(input_dim, β, include_intercept, λ, output_dim)
+    
+    return new_model
+end
+
+
+"""
+    sample(model::BernoulliRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
+
+Generate `n` samples from a Bernoulli regression model. Returns a matrix of size `(n, 1)`.
+
+# Arguments
+- `model::BernoulliRegression`: Bernoulli regression model.
+- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
+- `n::Int=size(Φ, 1)`: Number of samples to generate.
+
+# Returns
+- `Y::Matrix{<:Real}`: Matrix of samples of shape `(n, 1)`.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = BernoulliRegression(input_dim=2)
+Φ = rand(100, 2)
+Y = sample(model, Φ)
+# output
+```
+"""
+function sample(model::BernoulliRegressionEmission, Φ::Union{Matrix{<:Real}, Vector{<:Real}})
+    # Ensure Φ is a 2D matrix even if it's a single sample
+    Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
+
+    # add intercept if specified
+    if model.include_intercept && size(Φ, 2) == length(model.β) - 1
+        Φ = hcat(ones(size(Φ, 1)), Φ)
+    end
+
+    Y = rand.(Bernoulli.(logistic.(Φ * model.β)))
+
+    return float.(reshape(Y, :, 1))
 end
 
 
@@ -563,7 +548,6 @@ loglikelihoods = loglikelihood(model, Φ, Y)
 # output
 """
 function loglikelihood(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-
     # add intercept if specified and not already included
     if model.include_intercept && size(Φ, 2) == length(model.β) - 1 
         Φ = hcat(ones(size(Φ, 1)), Φ)
@@ -578,36 +562,79 @@ function loglikelihood(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y
     return obs_wise_loglikelihood
 end
 
+function define_objective(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    # add intercept if specified
+    if model.include_intercept
+        Φ = hcat(ones(size(Φ, 1)), Φ)
+    end
+
+    function objective(β)
+        # calculate log likelihood
+        p = logistic.(Φ * β)
+        
+        val = -sum(w .* (Y .* log.(p) .+ (1 .- Y) .* log.(1 .- p))) + (model.λ * sum(β.^2))
+
+        return val / size(Φ, 1)
+    end
+
+    return objective
+end
+
+
+function define_objective_gradient(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    # add intercept if specified
+    if model.include_intercept
+        Φ = hcat(ones(size(Φ, 1)), Φ)
+    end
+
+    function objective_gradient!(G, β)
+        # calculate log likelihood
+        p = logistic.(Φ * β)
+
+        G .= (-(Φ' * (w .* (Y .- p))) + 2 * model.λ * β) / size(Φ, 1)
+    end
+    
+    return objective_gradient!
+end
+
 
 """
-    fit!(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    fit!(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
-Calls fit!() function in RegressionModels.jl to fit the Bernoulli regression emission model to the data `Y` using the input features `Φ` and the provided weights `w`.
+Fit a Bernoulli regression model using maximum likelihood estimation.
 
 # Arguments
-- `model::BernoulliRegressionEmission`: The Bernoulli regression emission model to be fitted.
-- `Φ::Matrix{<:Real}`: The input features matrix (Observations x Features).
-- `Y::Matrix{<:Real}`: The data matrix (Observations x Features).
-- `w::Vector{Float64}`: A vector of weights corresponding to each observation (defaults to a vector of ones).
-
-# Returns
-- `Nothing`: The function modifies the model in place.
+- `model::BernoulliRegression`: Bernoulli regression model.
+- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
+- `Y::Matrix{<:Real}`: Response matrix of shape `(n, 1)`.
+- `w::Vector{Float64}`: Weights of the data points. Should be a vector of size `n`.
 
 # Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-model = BernoulliRegressionEmission(BernoulliRegression(input_dim=3))
-Φ = randn(10, 3)
-Y = rand(Bool, 10, 1)
-fit!(model, Φ, Y)
-# output
-"""
-# function fit!(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-#     fit!(model.inner_model, Φ, Y, w)
-# end
+```jldoctest; output = true
+true_model = BernoulliRegression(input_dim=2)
+Φ = rand(100, 2)
+Y = sample(true_model, Φ)
 
+est_model = BernoulliRegression(input_dim=2)
+fit!(est_model, Φ, Y)
+
+loglikelihood(est_model, Φ, Y) > loglikelihood(true_model, Φ, Y)
+
+# output
+true
+```
+"""
 function fit!(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    fit!(model, Φ, Y, w)
+    # minimize objective
+    objective = define_objective(model, Φ, Y, w)
+    objective_grad! = define_objective_gradient(model, Φ, Y, w)
+
+    result = optimize(objective, objective_grad!, model.β, LBFGS())
+
+    # update parameters
+    model.β = result.minimizer
 end
+
 """
     SwitchingBernoulliRegression(; K::Int, input_dim::Int, include_intercept::Bool=true, β::Vector{<:Real}=if include_intercept zeros(input_dim + 1) else zeros(input_dim) end, λ::Float64=0.0, A::Matrix{<:Real}=initialize_transition_matrix(K), πₖ::Vector{Float64}=initialize_state_distribution(K))
 
