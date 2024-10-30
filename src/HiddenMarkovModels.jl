@@ -122,7 +122,7 @@ function sample(model::HiddenMarkovModel, X::Union{Matrix{<:Real}, Nothing}=noth
     state_sequence = Vector{Int}(undef, n)
     
     # Handle case where X is nothing and is being passed to a non-regression emission
-    initial_observation = isnothing(X) ? emission_sample(model.B[1]) : emission_sample(model.B[1], X)
+    initial_observation = isnothing(X) ? sample(model.B[1]) : sample(model.B[1], X)
     output_dimension = length(initial_observation)
     
     observation_sequence = Matrix{eltype(initial_observation)}(undef, n, output_dimension)
@@ -134,12 +134,23 @@ function sample(model::HiddenMarkovModel, X::Union{Matrix{<:Real}, Nothing}=noth
     # Sample the state paths and observations
     for i in 2:n
         state_sequence[i] = rand(Categorical(model.A[state_sequence[i - 1], :]))
-        observation_sequence[i, :] = isnothing(X) ? emission_sample(model.B[state_sequence[i]]) : emission_sample(model.B[state_sequence[i]], X)
+        observation_sequence[i, :] = isnothing(X) ? sample(model.B[state_sequence[i]]) : sample(model.B[state_sequence[i]], X)
     end
 
     return state_sequence, observation_sequence
 end
 
+
+function emission_loglikelihoods(model::HiddenMarkovModel, data...)
+    # Pre-allocate the loglikelihood matrix, should be timesteps x states
+    loglikelihoods = zeros(model.K, size(data[1], 1))
+
+    # Calculate observation wise likelihoods for all states
+    @threads for k in 1:model.K
+        loglikelihoods[k, :] .= loglikelihood(model.B[k], data...)
+    end
+    return loglikelihoods
+end
 
 
 """
@@ -164,19 +175,12 @@ loglikelihood(model, Y)
 """
 function loglikelihood(model::HiddenMarkovModel, data...)
 
-    # Calculate observation wise likelihoods for all states
-    loglikelihoods_state_1 = emission_loglikelihood(model.B[1], data...)
-    loglikelihoods = zeros(model.K, length(loglikelihoods_state_1))
-    loglikelihoods[1, :] = loglikelihoods_state_1
+    lls = emission_loglikelihoods(model, data...)
 
-    @threads for k in 2:model.K
-        loglikelihoods[k, :] = emission_loglikelihood(model.B[k], data...)
-    end
-
-    α = forward(model, loglikelihoods)
+    # Run forward algorithm
+    α = forward(model, lls)
     return logsumexp(α[end, :])
 end
-
 
 
 function forward(model::HiddenMarkovModel, loglikelihoods::Matrix{<:Real})
@@ -253,17 +257,11 @@ end
 
 
 function E_step(model::HiddenMarkovModel, data)
+
+    # compute lls of the observations
+    loglikelihoods = emission_loglikelihoods(model, data...)
+
     # run forward-backward algorithm
-
-    # Calculate observation wise likelihoods for all states
-    loglikelihoods_state_1 = emission_loglikelihood(model.B[1], data...)
-    loglikelihoods = zeros(model.K, length(loglikelihoods_state_1))
-    loglikelihoods[1, :] = loglikelihoods_state_1
-
-    @threads for k in 2:model.K
-        loglikelihoods[k, :] = emission_loglikelihood(model.B[k], data...)
-    end
-
     α = forward(model, loglikelihoods)
     β = backward(model, loglikelihoods)
     γ = calculate_γ(model, α, β)
@@ -289,7 +287,7 @@ function update_emissions!(model::HiddenMarkovModel, data, w::Matrix{<:Real})
     # update regression models 
  
      @threads for k in 1:model.K
-         emission_fit!(model.B[k], data..., w[:, k])
+         fit!(model.B[k], data..., w[:, k])
      end
  
  end
@@ -545,12 +543,12 @@ state_sequence = viterbi(model, Y)
 """
 function viterbi(model::HiddenMarkovModel, data...)
     # Calculate observation wise likelihoods for all states
-    loglikelihoods_state_1 = emission_loglikelihood(model.B[1], data...)
+    loglikelihoods_state_1 = loglikelihood(model.B[1], data...)
     loglikelihoods = zeros(model.K, length(loglikelihoods_state_1))
     loglikelihoods[1, :] = loglikelihoods_state_1
 
     @threads for k in 2:model.K
-        loglikelihoods[k, :] = emission_loglikelihood(model.B[k], data...)
+        loglikelihoods[k, :] = loglikelihood(model.B[k], data...)
     end
 
     T = length(loglikelihoods_state_1)

@@ -5,13 +5,6 @@ export define_objective, define_objective_gradient
 export getproperty, setproperty!
 
 
-
-
-
-
-
-
-
 """
     BernoulliRegression
 
@@ -74,8 +67,6 @@ function BernoulliRegressionEmission(;
     
     return new_model
 end
-
-
 
 
 """

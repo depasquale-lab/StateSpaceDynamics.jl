@@ -1,5 +1,5 @@
 export Emission, getproperty, setproperty!
-export GaussianEmission, validate_data, emission_sample, emission_loglikelihood, emission_fit!
+export GaussianEmission, sample, loglikelihood, fit!
 export SwitchingGaussianRegression, SwitchingBernoulliRegression, SwitchingAutoRegression, GaussianHMM
 export GaussianRegressionEmission
 """
@@ -28,7 +28,7 @@ end
 
 
 """
-    function GaiussianEmission(; output_dim::Int, μ::Vector{<:Real}=zeros(output_dim), Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim))
+    function GaussianEmission(; output_dim::Int, μ::Vector{<:Real}=zeros(output_dim), Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim))
 
 Functon to create a GaussianEmission with given output dimension, mean, and covariance.
 
@@ -43,15 +43,13 @@ function GaussianEmission(;
     output_dim::Int, 
     μ::Vector{<:Real}=zeros(output_dim), 
     Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim))
-    
-    model = GaussianEmission(output_dim, μ, Σ)
 
-    return model
+    return GaussianEmission(output_dim, μ, Σ)
 end
 
 
 """
-    emission_loglikelihood(model::GaussianEmission, Y::Matrix{<:Real})
+    loglikelihood(model::GaussianEmission, Y::Matrix{<:Real})
 
 Calculate the log likelihood of the data `Y` given the Gaussian emission model.
 
@@ -66,20 +64,18 @@ Calculate the log likelihood of the data `Y` given the Gaussian emission model.
 ```jldoctest; output = false, filter = r"(?s).*" => s""
 model = GaussianEmission(Gaussian(output_dim=2))
 Y = randn(10, 2)  # Observations x Features
-loglikelihoods = SSD.emission_loglikelihood(model, Y)
+loglikelihoods = SSD.loglikelihood(model, Y)
 # output
 """
-function emission_loglikelihood(model::GaussianEmission, Y::Matrix{<:Real})
-    # calculate inverse of covariance matrix
+function loglikelihood(model::GaussianEmission, Y::Matrix{<:Real})
     Σ_inv = inv(model.Σ)
-
-    # calculate log likelihood
     residuals = broadcast(-, Y, model.μ')
     observation_wise_loglikelihood = zeros(size(Y, 1))
 
-    # calculate observation wise loglikelihood (a vector of loglikelihoods for each observation)
-    @threads for i in 1:size(Y, 1)
-        observation_wise_loglikelihood[i] = -0.5 * size(Y, 2) * log(2π) - 0.5 * logdet(model.Σ) - 0.5 * sum(residuals[i, :] .* (Σ_inv * residuals[i, :]))
+    for i in axes(Y, 1)
+        observation_wise_loglikelihood[i] = -0.5 * size(Y, 2) * log(2π) - 
+                                          0.5 * logdet(model.Σ) - 
+                                          0.5 * sum(residuals[i, :] .* (Σ_inv * residuals[i, :]))
     end
 
     return observation_wise_loglikelihood
@@ -87,7 +83,7 @@ end
 
 
 """
-    emission_sample(model::Gaussian; n::Int=1)
+    sample(model::Gaussian; n::Int=1)
 
 Generate `n` samples from a Gaussian model. Returns a matrix of size `(n, output_dim)`.
 
@@ -102,15 +98,14 @@ println(size(samples))
 (3, 2)
 ```
 """
-function emission_sample(model::GaussianEmission; n::Int=1)
+function sample(model::GaussianEmission; n::Int=1)
     raw_samples = rand(MvNormal(model.μ, model.Σ), n)    
-
     return Matrix(raw_samples')
 end
 
 
 """
-    emission_fit!(model::GaussianEmission, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    fit!(model::GaussianEmission, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
 Fit a GaussianEmission model to the data `Y`. 
 
@@ -130,19 +125,17 @@ fit!(est_model, Y)
 # output
 ```
 """
-function emission_fit!(model::GaussianEmission, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+function fit!(model::GaussianEmission, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     weighted_sum = sum(Y .* w, dims=1)
     new_mean = weighted_sum[:] ./ sum(w)
 
     centered_data = Y .- new_mean'
     weighted_centered = centered_data .* sqrt.(w)
     new_covariance = (weighted_centered' * weighted_centered) ./ sum(w)
-
     new_covariance = stabilize_covariance_matrix(new_covariance)
 
     model.μ = new_mean
     model.Σ = new_covariance
-
     return model
 end
 
@@ -265,7 +258,7 @@ end
 
 
 """
-    emission_loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
+    loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
 
 Calculate the log likelihood of the data `Y` given the Gaussian regression emission model and the input features `Φ`.
 
@@ -282,10 +275,10 @@ Calculate the log likelihood of the data `Y` given the Gaussian regression emiss
 model = GaussianRegressionEmission(GaussianRegression(input_dim=3, output_dim=2))
 Φ = randn(10, 3)
 Y = randn(10, 2)
-loglikelihoods = emission_loglikelihood(model, Φ, Y)
+loglikelihoods = loglikelihood(model, Φ, Y)
 # output
 """
-function emission_loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
+function loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
 
     # calculate observation wise likelihoods for all states
     observation_wise_loglikelihood = zeros(size(Y, 1))
@@ -339,8 +332,6 @@ end
 # assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
 function define_objective(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
-    validate_data(model, Φ, Y, w)
-
     # add intercept if specified
     if model.include_intercept
         Φ = hcat(ones(size(Φ, 1)), Φ)
@@ -362,8 +353,6 @@ end
 
 
 function define_objective_gradient(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    validate_data(model, Φ, Y, w)
-
     # add intercept if specified
     if model.include_intercept
         Φ = hcat(ones(size(Φ, 1)), Φ)
@@ -399,7 +388,7 @@ function update_variance!(model::GaussianRegressionEmission, Φ::Matrix{<:Real},
 end
 
 """
-    emission_fit!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    fit!!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
 Fit a Gaussian regression emission model using maximum likelihood estimation and OLS.
 
@@ -424,10 +413,8 @@ loglikelihood(est_model, Φ, Y) > loglikelihood(true_model, Φ, Y)
 true
 ```
 """
-function emission_fit!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    # confirm that the model has valid parameters
-    validate_model(model)
-    validate_data(model, Φ, Y, w)
+function fit!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+
 
     # confirm the size of w is correct
     @assert length(w) == size(Y, 1) "Length of w must be equal to the number of observations in Y."
@@ -443,12 +430,7 @@ function emission_fit!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y:
     model.β = result.minimizer
     update_variance!(model, Φ, Y, w)
 
-    # confirm that the model has valid parameters
-    validate_model(model)
 end
-
-
-
 
 """
     SwitchingGaussianRegression(; 
@@ -524,7 +506,7 @@ A mutable struct representing a Bernoulli regression emission model, which wraps
 
 
 """
-    emission_sample(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, 1))
+    sample(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, 1))
 
 Generate a sample from the given Bernoulli regression emission model using the input features `Φ`, and append it to the provided observation sequence.
 
@@ -540,11 +522,11 @@ Generate a sample from the given Bernoulli regression emission model using the i
 ```jldoctest; output = false, filter = r"(?s).*" => s""
 model = BernoulliRegressionEmission(BernoulliRegression(input_dim=3))
 Φ = randn(10, 3)
-sequence = emission_sample(model, Φ)
-sequence = emission_sample(model, Φ, observation_sequence=sequence)
+sequence = sample(model, Φ)
+sequence = sample(model, Φ, observation_sequence=sequence)
 # output
 """
-function emission_sample(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}; observation_sequence::Matrix{<:Real} = Matrix{Float64}(undef, 0, 1))
+function sample(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}; observation_sequence::Matrix{<:Real} = Matrix{Float64}(undef, 0, 1))
     # find the number of observations in the observation sequence
     t = size(observation_sequence, 1) + 1
     # get the n+1th observation
@@ -555,7 +537,7 @@ end
 
 
 """
-    emission_loglikelihood(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    loglikelihood(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
 Calculate the log likelihood of the data `Y` given the Bernoulli regression emission model and the input features `Φ`. Optionally, a vector of weights `w` can be provided.
 
@@ -573,10 +555,10 @@ Calculate the log likelihood of the data `Y` given the Bernoulli regression emis
 model = BernoulliRegressionEmission(BernoulliRegression(input_dim=3))
 Φ = randn(10, 3)
 Y = rand(Bool, 10, 1)
-loglikelihoods = emission_loglikelihood(model, Φ, Y)
+loglikelihoods = loglikelihood(model, Φ, Y)
 # output
 """
-function emission_loglikelihood(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+function loglikelihood(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
     # add intercept if specified and not already included
     if model.include_intercept && size(Φ, 2) == length(model.β) - 1 
@@ -594,7 +576,7 @@ end
 
 
 """
-    emission_fit!(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    fit!(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
 Calls fit!() function in RegressionModels.jl to fit the Bernoulli regression emission model to the data `Y` using the input features `Φ` and the provided weights `w`.
 
@@ -612,14 +594,14 @@ Calls fit!() function in RegressionModels.jl to fit the Bernoulli regression emi
 model = BernoulliRegressionEmission(BernoulliRegression(input_dim=3))
 Φ = randn(10, 3)
 Y = rand(Bool, 10, 1)
-emission_fit!(model, Φ, Y)
+fit!(model, Φ, Y)
 # output
 """
-# function emission_fit!(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+# function fit!(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 #     fit!(model.inner_model, Φ, Y, w)
 # end
 
-function emission_fit!(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+function fit!(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     fit!(model, Φ, Y, w)
 end
 """
@@ -674,7 +656,7 @@ A mutable struct representing an autoregressive emission model, which wraps arou
 
 
 """
-    emission_sample(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim))
+    sample(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim))
 
 Generate a sample from the given autoregressive emission model using the previous observations `Y_prev`, and append it to the provided observation sequence.
 
@@ -690,11 +672,11 @@ Generate a sample from the given autoregressive emission model using the previou
 ```jldoctest; output = false, filter = r"(?s).*" => s""
 model = AutoRegressionEmission(AutoRegression(output_dim=2, order=3))
 Y_prev = randn(10, 2)
-sequence = emission_sample(model, Y_prev)
-sequence = emission_sample(model, Y_prev, observation_sequence=sequence)
+sequence = sample(model, Y_prev)
+sequence = sample(model, Y_prev, observation_sequence=sequence)
 # output
 """
-function emission_sample(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim))
+function sample(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim))
 
     full_sequence = vcat(Y_prev, observation_sequence)
 
@@ -706,7 +688,7 @@ end
 
 
 """
-    emission_loglikelihood(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
+    loglikelihood(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
 
 Calculate the log likelihood of the data `Y` given the autoregressive emission model and the previous observations `Y_prev`.
 
@@ -723,22 +705,22 @@ Calculate the log likelihood of the data `Y` given the autoregressive emission m
 model = AutoRegressionEmission(AutoRegression(output_dim=2, order=10))
 Y_prev = randn(10, 2)
 Y = randn(10, 2)
-loglikelihoods = emission_loglikelihood(model, Y_prev, Y)
+loglikelihoods = loglikelihood(model, Y_prev, Y)
 # output
 """
-function emission_loglikelihood(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
+function loglikelihood(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
 
     Φ_gaussian = AR_to_Gaussian_data(Y_prev, Y)
 
     # extract inner gaussian regression and wrap it with a GaussianEmission <- old comment from when we had inner_models
     innerGaussianRegression_emission = model.innerGaussianRegression
 
-    return emission_loglikelihood(innerGaussianRegression_emission, Φ_gaussian, Y)
+    return loglikelihood(innerGaussianRegression_emission, Φ_gaussian, Y)
 end
 
 
 """
-    emission_fit!(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    fit!(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
 Calls to fit!() function in RegressionModels.jl to fit the autoregressive emission model to the data `Y` using the previous observations `Y_prev` and the provided weights `w`.
 
@@ -756,14 +738,14 @@ Calls to fit!() function in RegressionModels.jl to fit the autoregressive emissi
 model = AutoRegressionEmission(AutoRegression(output_dim=2, order=10))
 Y_prev = randn(10, 2)
 Y = randn(10, 2)
-emission_fit!(model, Y_prev, Y)
+fit!(model, Y_prev, Y)
 # output
 """
-# function emission_fit!(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+# function fit!(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 #     fit!(model.inner_model, Y_prev, Y, w)
 # end
 
-function emission_fit!(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+function fit!(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     fit!(model, Y_prev, Y, w)
 end
 
@@ -822,33 +804,33 @@ mutable struct CompositeModelEmission <: EmissionModel
 end
 
 
-function emission_sample(model::CompositeModelEmission, input_data::Vector{}; observation_sequence::Vector{}=Vector())
+function sample(model::CompositeModelEmission, input_data::Vector{}; observation_sequence::Vector{}=Vector())
 
     if isempty(observation_sequence)
         for i in 1:length(model.components)
-            push!(observation_sequence, (emission_sample(model.components[i], input_data[i]...),))
+            push!(observation_sequence, (sample(model.components[i], input_data[i]...),))
         end 
     else
         for i in 1:length(model.components)
-            observation_sequence[i] = (emission_sample(model.components[i], input_data[i]...; observation_sequence=observation_sequence[i][1]),)
+            observation_sequence[i] = (sample(model.components[i], input_data[i]...; observation_sequence=observation_sequence[i][1]),)
         end 
     end
 
     return observation_sequence
 end
 
-function emission_loglikelihood(model::CompositeModelEmission, input_data::Vector{}, output_data::Vector{})
+function loglikelihood(model::CompositeModelEmission, input_data::Vector{}, output_data::Vector{})
     loglikelihoods = Vector{}(undef, length(model.components))
 
     for i in 1:length(model.components)
-        loglikelihoods[i] = emission_loglikelihood(model.components[i], input_data[i]..., output_data[i]...)
+        loglikelihoods[i] = loglikelihood(model.components[i], input_data[i]..., output_data[i]...)
     end
     return sum(loglikelihoods, dims=1)[1]
 end
 
-function emission_fit!(model::CompositeModelEmission, input_data::Vector{}, output_data::Vector{}, w::Vector{Float64}=Vector{Float64}())
+function fit!(model::CompositeModelEmission, input_data::Vector{}, output_data::Vector{}, w::Vector{Float64}=Vector{Float64}())
     for i in 1:length(model.components)
-        emission_fit!(model.components[i], input_data[i]..., output_data[i]..., w)
+        fit!!(model.components[i], input_data[i]..., output_data[i]..., w)
     end
 end
 

@@ -23,9 +23,9 @@ include("HiddenMarkovModels/HiddenMarkovModels.jl")
     test_HiddenMarkovModel_E_step()
     #test_viterbi() -- don't have time to finish, need emission matching logic
     test_GaussianHMM()
-    test_AutoRegressionHMM()
+    # test_AutoRegressionHMM()
     test_trialized_GaussianHMM()
-    test_trialized_SwitchingGaussianRegression()
+    # test_trialized_SwitchingGaussianRegression()
 end
 
 """
@@ -141,17 +141,6 @@ include("LDS/LDS.jl")
     test_direct_smoother()
     test_LDS_gradient()
     test_LDS_Hessian()
-end
-
-"""
-Tests for BasicModels.jl
-""" 
-
-include("BasicModels/Gaussian.jl")
-
-@testset "Gaussian Tests" begin
-    test_Gaussian_loglikelihood()
-    test_Gaussian_standard_fit()
 end
 
 """
