@@ -68,17 +68,11 @@ loglikelihoods = SSD.loglikelihood(model, Y)
 # output
 """
 function loglikelihood(model::GaussianEmission, Y::Matrix{<:Real})
-    Σ_inv = inv(model.Σ)
-    residuals = broadcast(-, Y, model.μ')
-    observation_wise_loglikelihood = zeros(size(Y, 1))
-
-    for i in axes(Y, 1)
-        observation_wise_loglikelihood[i] = -0.5 * size(Y, 2) * log(2π) - 
-                                          0.5 * logdet(model.Σ) - 
-                                          0.5 * sum(residuals[i, :] .* (Σ_inv * residuals[i, :]))
-    end
-
-    return observation_wise_loglikelihood
+    # Create MvNormal distribution with the model parameters
+    dist = MvNormal(model.μ, model.Σ)
+    
+    # Calculate log likelihood for each observation
+    return [logpdf(dist, Y[i,:]) for i in axes(Y, 1)]
 end
 
 
@@ -308,7 +302,7 @@ loglikelihoods = loglikelihood(model, Φ, Y)
 #     return loglikelihood
 # end
 
-function loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
+function loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # Add intercept if specified
     X = model.include_intercept ? [ones(size(Φ, 1)) Φ] : Φ
     
@@ -317,9 +311,8 @@ function loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y:
     dist = MvNormal(model.Σ)
     
     # Calculate log likelihood for each observation
-    return [logpdf(dist, Y[i,:] .- μ[i]) for i in axes(Y, 1)]
+    return w .* [logpdf(dist, Y[i,:] .- μ[i]) for i in axes(Y, 1)]
 end
-
 
 
 """
