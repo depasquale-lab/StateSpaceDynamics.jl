@@ -161,12 +161,12 @@ end
 include("RegressionModels/BernoulliRegression.jl")
 
 @testset "BernoulliRegression Tests" begin
-    # test_BernoulliRegression_initialization()
-    # test_BernoulliRegression_loglikelihood()
-    # test_BernoulliRegression_fit!()
-    # test_BernoulliRegression_sample()
-    # test_BernoulliRegression_optimization()
-    # test_BernoulliRegression_regularization()
+    test_BernoulliRegression_initialization()
+    test_BernoulliRegression_loglikelihood()
+    test_BernoulliRegression_fit()
+    test_BernoulliRegression_sample()
+    test_BernoulliRegression_optimization()
+    test_BernoulliRegression_regularization()
 end
 
 include("RegressionModels/PoissonRegression.jl")
@@ -174,7 +174,7 @@ include("RegressionModels/PoissonRegression.jl")
 @testset "PoissonRegression Tests" begin
     test_PoissonRegression_initialization()
     test_PoissonRegression_loglikelihood()
-    test_PoissonRegression_fit!()
+    test_PoissonRegression_fit()
     test_PoissonRegression_sample()
     test_PoissonRegression_optimization()
     test_PoissonRegression_regularization()

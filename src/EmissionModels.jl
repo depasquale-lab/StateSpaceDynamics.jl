@@ -581,7 +581,7 @@ model = PoissonRegression(input_dim=2)
 mutable struct PoissonRegressionEmission <: RegressionEmission
     input_dim::Int
     output_dim::Int
-    β::Vector{<:Real}
+    β::Matrix{<:Real}
     include_intercept::Bool
     λ::Float64
 end

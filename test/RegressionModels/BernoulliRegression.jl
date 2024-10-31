@@ -11,7 +11,8 @@ function BernoulliRegression_simulation(; include_intercept::Bool=true)
     
     # Generate y with or without intercept
     X_with_intercept = include_intercept ? hcat(ones(n), X) : X
-    y = StateSpaceDynamics.sample(BernoulliRegressionEmission(vec(true_β), true), X)
+    p = 1 ./ (1 .+ exp.(-X_with_intercept * true_β))
+    y =  reshape(Float64.(rand.(Bernoulli.(p))), :, 1)
     
     return X, y, true_β, n
 end
@@ -62,7 +63,7 @@ function test_BernoulliRegression_loglikelihood()
     @test all(isfinite.(ll))
     
     # Test single observation
-    single_ll = StateSpaceDynamics.loglikelihood(model, X[1:1,:], y[1:1])
+    single_ll = StateSpaceDynamics.loglikelihood(model, X[1:1,:], y[1:1, :])
     @test length(single_ll) == 1
     @test isfinite(single_ll[1])
     
@@ -71,6 +72,20 @@ function test_BernoulliRegression_loglikelihood()
     weighted_ll = StateSpaceDynamics.loglikelihood(model, X, y, w)
     @test length(weighted_ll) == n
     @test all(isfinite.(weighted_ll))
+end
+
+function test_BernoulliRegression_sample()
+    model = BernoulliRegressionEmission(input_dim=2, output_dim=1)
+    
+    # Test single sample
+    X_test = randn(1, 2)
+    sample_single = StateSpaceDynamics.sample(model, X_test)
+    @test size(sample_single) == (1, 1)
+    
+    # Test multiple samples
+    X_test = randn(10, 2)
+    samples = StateSpaceDynamics.sample(model, X_test)
+    @test size(samples) == (10, 1)
 end
 
 function test_BernoulliRegression_optimization()
