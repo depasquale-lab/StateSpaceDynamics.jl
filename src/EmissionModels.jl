@@ -1,7 +1,7 @@
 export Emission, getproperty, setproperty!
 export GaussianEmission, sample, loglikelihood, fit!
-export SwitchingGaussianRegression, SwitchingBernoulliRegression, SwitchingAutoRegression, GaussianHMM
-export GaussianRegressionEmission
+export SwitchingGaussianRegression, SwitchingBernoulliRegression, SwitchingPoissonRegression, SwitchingAutoRegression, GaussianHMM
+export GaussianRegressionEmission, PoissonRegressionEmission
 """
 Each emission model should have:
     1) Mutable struct definition
@@ -381,7 +381,7 @@ function fit!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<
 
     # update parameters
     model.β = result.minimizer
-    update_variance!(model, Φ, Y, w)
+    # update_variance!(model, Φ, Y, w)
 end
 
 
@@ -663,10 +663,231 @@ function SwitchingBernoulliRegression(;
     β::Vector{<:Real} = if include_intercept zeros(input_dim + 1) else zeros(input_dim) end,
     λ::Float64 = 0.0,
     A::Matrix{<:Real} = initialize_transition_matrix(K),
-    πₖ::Vector{Float64} = initialize_state_distribution(K)
+    πₖ::Vector{Float64} = initialize_state_distribution(K),
+    output_dim::Int=1
 )
     # Create emission models
-    emissions = [BernoulliRegressionEmission(input_dim=input_dim, include_intercept=include_intercept, β=β, λ=λ) for _ in 1:K]
+    emissions = [BernoulliRegressionEmission(input_dim=input_dim, include_intercept=include_intercept, β=β, λ=λ, output_dim=output_dim) for _ in 1:K]
+    # Return the HiddenMarkovModel
+    return HiddenMarkovModel(K=K, B=emissions, A=A, πₖ=πₖ)
+end
+
+
+"""
+    PoissonRegression
+
+A Poisson regression model.
+
+# Fields
+- `input_dim::Int`: Dimension of the input data.
+- `include_intercept::Bool = true`: Whether to include an intercept term.
+- `β::Vector{<:Real} = if include_intercept zeros(input_dim + 1) else zeros(input_dim) end`: Coefficients of the model. The first element is the intercept term, if included.
+- `λ::Float64 = 0.0`: Regularization parameter.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = PoissonRegression(input_dim=2)
+# output
+```
+"""
+mutable struct PoissonRegressionEmission <: EmissionModel
+    input_dim::Int
+    β::Vector{<:Real}
+    include_intercept::Bool
+    λ::Float64
+    output_dim::Int
+end
+
+function PoissonRegressionEmission(; 
+    input_dim::Int, 
+    include_intercept::Bool = true, 
+    β::Vector{<:Real} = if include_intercept zeros(input_dim + 1) else zeros(input_dim) end,
+    λ::Float64 = 0.0,
+    output_dim::Int=1)
+    
+    new_model = PoissonRegressionEmission(input_dim, β, include_intercept, λ, output_dim)
+
+    return new_model
+end
+
+
+"""
+    sample(model::PoissonRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
+
+Generate `n` samples from a Poisson regression model. Returns a matrix of size `(n, 1)`.
+
+# Arguments
+- `model::PoissonRegression`: Poisson regression model.
+- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
+- `n::Int=size(Φ, 1)`: Number of samples to generate.
+
+# Returns
+- `Y::Matrix{<:Real}`: Matrix of samples of shape `(n, 1)`.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = PoissonRegression(input_dim=2)
+Φ = rand(100, 2)
+Y = sample(model, Φ)
+# output
+```
+"""
+function sample(model::PoissonRegressionEmission, Φ::Union{Matrix{<:Real}, Vector{<:Real}})
+    # Ensure Φ is a 2D matrix even if it's a single sample
+    Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
+
+    # add intercept if specified
+    if model.include_intercept && size(Φ, 2) == length(model.β) - 1
+        Φ = hcat(ones(size(Φ, 1)), Φ)
+    end
+
+    Y = rand.(Poisson.(exp.(Φ * model.β)))
+
+    # convert Y 
+    Y = reshape(Y, :, 1)
+    Y = Float64.(Y)
+
+    return Y
+end
+
+
+"""
+    loglikelihood(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+
+Calculate the log-likelihood of a Poisson regression model.
+
+# Arguments
+- `model::PoissonRegression`: Poisson regression model.
+- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
+- `Y::Matrix{<:Real}`: Response matrix of shape `(n, 1)`.
+- `w::Vector{Float64}`: Weights of the data points. Should be a vector of size `n`.
+
+# Returns
+- `loglikelihood::Float64`: Log-likelihood of the model.
+
+# Examples
+```jldoctest; output = false, filter = r"(?s).*" => s""
+model = PoissonRegression(input_dim=2)
+Φ = rand(100, 2)
+Y = sample(model, Φ)
+loglikelihood(model, Φ, Y)
+# output
+```
+"""
+function loglikelihood(model::PoissonRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    # add intercept if specified
+    if model.include_intercept && size(Φ, 2) == length(model.β) - 1
+        Φ = hcat(ones(size(Φ, 1)), Φ)
+    end
+
+    # calculate log likelihood
+    λ = exp.(Φ * model.β)
+
+    obs_wise_loglikelihood = w .* (Y .* log.(λ) .- λ .- loggamma.(Int.(Y) .+ 1))
+
+    return obs_wise_loglikelihood
+end
+
+function define_objective(model::PoissonRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    # add intercept if specified
+    if model.include_intercept
+        Φ = hcat(ones(size(Φ, 1)), Φ)
+    end
+
+    function objective(β)
+        # calculate the rate
+        rate = exp.(Φ * β)
+
+        val = -sum(w .* (Y .* log.(rate) .- rate .- loggamma.(Int.(Y) .+ 1))) + (model.λ * sum(β.^2))
+
+        return val / size(Φ, 1)
+    end
+
+    return objective
+end
+
+function define_objective_gradient(model::PoissonRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    # add intercept if specified
+    if model.include_intercept
+        Φ = hcat(ones(size(Φ, 1)), Φ)
+    end
+
+    function objective_gradient!(G, β)
+        # calculate the rate
+        rate = exp.(Φ * β)
+
+        G .= (-Φ' * (Diagonal(w) * (Y .- rate)) + (model.λ * 2 * β)) / size(Φ, 1)
+    end
+    
+    return objective_gradient!
+end
+
+
+function gradient!(grad::Vector{Float64}, model::PoissonRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y,1)))
+    # confirm that the model has been fit
+    @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
+    # add intercept if specified
+    if model.include_intercept && size(Φ, 2) == length(model.β) - 1
+        Φ = hcat(ones(size(Φ, 1)), Φ)
+    end
+    # calculate the rate
+    rate = exp.(Φ * model.β)
+    # convert Y if necessary
+    # Y = convert(Vector{Float64}, Y)
+    # calculate gradient
+    grad .= -Φ' * (Diagonal(w) * (Y .- rate)) + (model.λ * 2 * model.β)
+end
+
+"""
+    fit!(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+
+Fit a Poisson regression model using maximum likelihood estimation.
+
+# Arguments
+- `model::PoissonRegression`: Poisson regression model.
+- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
+- `Y::Matrix{<:Real}`: Response matrix of shape `(n, 1)`.
+- `w::Vector{Float64}`: Weights of the data points. Should be a vector of size `n`.
+
+# Examples
+```jldoctest; output = true
+true_model = PoissonRegression(input_dim=2)
+Φ = rand(100, 2)
+Y = sample(true_model, Φ)
+
+est_model = PoissonRegression(input_dim=2)
+fit!(est_model, Φ, Y)
+
+loglikelihood(est_model, Φ, Y) > loglikelihood(true_model, Φ, Y)
+
+# output
+true
+```
+"""
+function fit!(model::PoissonRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    # minimize objective
+    objective = define_objective(model, Φ, Y, w)
+    objective_grad! = define_objective_gradient(model, Φ, Y, w)
+    result = optimize(objective, objective_grad!, model.β, LBFGS())
+    
+    # update parameters
+    model.β = result.minimizer
+end
+
+function SwitchingPoissonRegression(;
+    K::Int,
+    input_dim::Int,
+    output_dim::Int=1,
+    include_intercept::Bool=true,
+    β::Vector{<:Real} = if include_intercept zeros(input_dim + 1) else zeros(input_dim) end,
+    λ::Float64 = 0.0,
+    A::Matrix{<:Real} = initialize_transition_matrix(K),
+    πₖ::Vector{Float64} = initialize_state_distribution(K)    
+)
+    
+    # Create emission models
+    emissions = [PoissonRegressionEmission(input_dim=input_dim, output_dim=output_dim, include_intercept=include_intercept, β=β, λ=λ) for _ in 1:K]
+
     # Return the HiddenMarkovModel
     return HiddenMarkovModel(K=K, B=emissions, A=A, πₖ=πₖ)
 end
