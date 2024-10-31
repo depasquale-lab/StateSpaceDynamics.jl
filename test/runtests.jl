@@ -25,7 +25,7 @@ include("HiddenMarkovModels/HiddenMarkovModels.jl")
     test_GaussianHMM()
     # test_AutoRegressionHMM()
     test_trialized_GaussianHMM()
-    # test_trialized_SwitchingGaussianRegression()
+    test_trialized_SwitchingGaussianRegression()
 end
 
 """
@@ -151,9 +151,8 @@ include("RegressionModels/GaussianRegression.jl")
 
 @testset "GaussianRegression Tests" begin
     test_GaussianRegression_loglikelihood()
-    # not neccessary with validate_model (second opinion please confirm)
-    # test_GaussianRegression_Σ()
-    # test_GaussianRegression_constructor()
+    test_GaussianRegression_Σ()
+    test_GaussianRegression_constructor()
     test_GaussianRegression_objective_gradient()
     test_GaussianRegression_standard_fit()
     test_GaussianRegression_regularized_fit()
@@ -163,8 +162,7 @@ include("RegressionModels/BernoulliRegression.jl")
 
 @testset "BernoulliRegression Tests" begin
     test_BernoulliRegression_loglikelihood()
-    # not neccessary with validate_model (second opinion please confirm)
-    # test_BernoulliRegression_constructor()
+    test_BernoulliRegression_constructor()
     test_BernoulliRegression_objective_gradient()
     test_BernoulliRegression_standard_fit()
     test_BernoulliRegression_regularized_fit()
@@ -174,8 +172,7 @@ include("RegressionModels/PoissonRegression.jl")
 
 @testset "PoissonRegression Tests" begin
     test_PoissonRegression_loglikelihood()
-    # not neccessary with validate_model (second opinion please confirm)
-    # test_PoissonRegression_constructor()
+    test_PoissonRegression_constructor()
     test_PoissonRegression_objective_gradient()
     test_PoissonRegression_standard_fit()
     test_PoissonRegression_regularized_fit()
@@ -185,7 +182,6 @@ include("RegressionModels/AutoRegression.jl")
 
 @testset "AutoRegression Tests" begin
     test_AutoRegression_loglikelihood()
-    # not neccessary with validate_model (second opinion please confirm)
     # test_AutoRegression_Σ()
     # test_AutoRegression_constructor()
     test_AutoRegression_standard_fit()

@@ -1,19 +1,32 @@
-export Emission, getproperty, setproperty!
-export GaussianEmission, sample, loglikelihood, fit!
-export SwitchingGaussianRegression, SwitchingBernoulliRegression, SwitchingPoissonRegression, SwitchingAutoRegression, GaussianHMM
-export GaussianRegressionEmission, PoissonRegressionEmission
 """
-Each emission model should have:
-    1) Mutable struct definition
-    2) Constructor Function
-    3) Log_likelihood Function
-    4) Sampling Function
-    5) Fit Function (and associated gradient functions for regression models)
+EmissionModels.jl
+
+This module implements various emission models for state space modeling, including:
+- Gaussian emissions
+- Regression-based emissions (Gaussian, Bernoulli, Poisson)
+- Composite emissions
 """
 
+# Exports
+export EmissionModel, RegressionEmission
+export GaussianEmission, GaussianRegressionEmission, BernoulliRegressionEmission, PoissonRegressionEmission
+export CompositeModelEmission
+export SwitchingGaussianRegression, SwitchingBernoulliRegression, SwitchingPoissonRegression
+export sample, loglikelihood, fit!
+
 """
-*** GAUSSIAN EMISSION FUNCTIONS ***
+Base type hierarchy for emission models.
+Each emission model must implement:
+- sample()
+- loglikelihood()
+- fit!()
 """
+abstract type EmissionModel end
+abstract type RegressionEmission <: EmissionModel end
+
+#=
+Gaussian Emission Models
+=#
 
 """
     mutable struct GaussianEmission <: EmissionModel
@@ -161,18 +174,52 @@ function GaussianHMM(; K::Int, output_dim::Int, A::Matrix{<:Real}=initialize_tra
     return HiddenMarkovModel(K=K, B=emissions, A=A, πₖ=πₖ)
 end
 
+#=
+Regression Emission Models
+=#
 
 """
+    RegressionOptimization{T<:RegressionEmission}
 
-10/29/2024 3:02 PM refactoring checkpoint (Above functions are complete)
-
+Holds the optimization problem data for regression emissions.
 """
+struct RegressionOptimization{T<:RegressionEmission}
+    model::T
+    X::Matrix{<:Real}
+    y::Matrix{<:Real}
+    w::Vector{Float64}
+    β_shape::Tuple{Int,Int}  # Added to track original shape
+end
 
+# Unified interface for creating optimization problems
+function create_optimization(model::RegressionEmission, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+    if model.include_intercept
+        X = hcat(ones(size(X, 1)), X)
+    end
+    β_shape = size(model.β)
+    RegressionOptimization(model, X, y, w, β_shape)
+end
 
+# Helper functions for reshaping
+vec_to_matrix(β_vec::Vector{Float64}, shape::Tuple{Int,Int}) = reshape(β_vec, shape)
+matrix_to_vec(β_mat::Matrix{Float64}) = vec(β_mat)
 
-"""
-*** Gaussian Regression Functions ***
-"""
+# Generic optimization interfaces
+function objective(opt::RegressionOptimization, β_vec::Vector{Float64})
+    β_mat = vec_to_matrix(β_vec, opt.β_shape)
+    error("objective not implemented for $(typeof(opt.model))")
+end
+
+function objective_gradient!(G::Vector{Float64}, opt::RegressionOptimization, β_vec::Vector{Float64})
+    error("objective_gradient! not implemented for $(typeof(opt.model))")
+end
+
+# Default no-op post-optimization
+post_optimization!(model::RegressionEmission, opt::RegressionOptimization) = nothing
+
+#=
+Gaussian Regression Functions
+=#
 
 """
     GaussianRegressionEmission
@@ -194,7 +241,7 @@ model = GaussianRegression(input_dim=2, output_dim=1, β=β)
 # output
 ```
 """
-mutable struct GaussianRegressionEmission <: EmissionModel
+mutable struct GaussianRegressionEmission <: RegressionEmission
     input_dim::Int
     output_dim::Int
     β::Matrix{<:Real} # coefficient matrix of the model. Shape input_dim by output_dim. Column one is coefficients for target one, etc. The first row are the intercept terms, if included. 
@@ -274,114 +321,38 @@ loglikelihoods = loglikelihood(model, Φ, Y)
 """
 function loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
     # Add intercept if specified
-    X = model.include_intercept ? [ones(size(Φ, 1)) Φ] : Φ
+    Φ = model.include_intercept ? [ones(size(Φ, 1)) Φ] : Φ
 
-    # Create MvNormal distribution for each observation
-    μ = X * model.β
-    dist = MvNormal(model.Σ)
-
-    # Calculate log likelihood for each observation
-    return w .* [logpdf(dist, Y[i,:] .- μ[i]) for i in axes(Y, 1)]
-end
-
-
-"""
-These objective functions need to be redone...
-"""
-# assume covariance is the identity, so the log likelihood is just the negative squared error. Ignore loglikelihood terms that don't depend on β.
-function define_objective(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-
-    # add intercept if specified
-    if model.include_intercept
-        Φ = [ones(size(Φ, 1)) Φ]
-    end
-
-    function objective(β::Matrix{<:Real})
-        # calculate log likelihood
-        residuals = Y - Φ * β
-
-        # reshape w for broadcasting
-        w = reshape(w, (length(w), 1))
-        pseudo_loglikelihood = -0.5 * sum(broadcast(*, w, residuals.^2)) - (model.λ * sum(β.^2))
-
-        return -pseudo_loglikelihood / size(Φ, 1)
-    end
-
-    return objective
-end
-
-
-function define_objective_gradient(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    # add intercept if specified
-    if model.include_intercept
-        Φ = hcat(ones(size(Φ, 1)), Φ)
-    end
-
-    function objective_gradient!(G::Matrix{<:Real}, β::Matrix{<:Real})
-        # calculate log likelihood
-        residuals = Y - Φ * β
-
-        G .= -(Φ' * Diagonal(w) * residuals - (2*model.λ*β)) / size(Φ, 1)
-    end
-    
-    return objective_gradient!
-end
-
-
-function update_variance!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    # add intercept if specified
-    if model.include_intercept
-        Φ = [ones(size(Φ, 1)) Φ]
-    end
-
+    # residuals
     residuals = Y - Φ * model.β
-    
-    Σ = (residuals' * Diagonal(w) * residuals) / size(Φ, 1)
 
-    # ensure rounding errors are not causing the covariance matrix to be non-positive definite
-    model.Σ .= 0.5 * (Σ * Σ') 
+    # Calculate weighted least squares
+    weighted_residuals = residuals.^2 .* w
+
+    return -0.5 .* weighted_residuals
 end
 
+# Gaussian Regression Implementation
+function objective(opt::RegressionOptimization{GaussianRegressionEmission}, β_vec::Vector{Float64})
+    β_mat = vec_to_matrix(β_vec, opt.β_shape)
+    residuals = opt.y - opt.X * β_mat
+    w_reshaped = reshape(opt.w, :, 1)
+    pseudo_ll = -0.5 * sum(w_reshaped .* residuals.^2) - (opt.model.λ * sum(β_mat.^2))
+    return -pseudo_ll / size(opt.X, 1)
+end
 
-"""
-    fit!!(model::GaussianRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+function objective_gradient!(G::Vector{Float64}, opt::RegressionOptimization{GaussianRegressionEmission}, β_vec::Vector{Float64})
+    β_mat = vec_to_matrix(β_vec, opt.β_shape)
+    residuals = opt.y - opt.X * β_mat
+    grad_mat = -(opt.X' * Diagonal(opt.w) * residuals - (2 * opt.model.λ * β_mat)) / size(opt.X, 1)
+    G .= vec(grad_mat)
+end
 
-Fit a Gaussian regression emission model using maximum likelihood estimation and OLS.
-
-# Arguments
-- `model::GaussianRegression`: Gaussian regression model.
-- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
-- `Y::Matrix{<:Real}`: Response matrix of shape `(n, output_dim)`.
-- `w::Vector{Float64}`: Weights of the data points. Should be a vector of size `n`.
-
-# Examples
-```jldoctest; output = true
-true_model = GaussianRegression(input_dim=2, output_dim=1)
-Φ = rand(100, 2)
-Y = sample(true_model, Φ)
-
-est_model = GaussianRegression(input_dim=2, output_dim=1)
-fit!(est_model, Φ, Y)
-
-loglikelihood(est_model, Φ, Y) > loglikelihood(true_model, Φ, Y)
-
-# output
-true
-```
-"""
-function fit!(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    # confirm the size of w is correct
-    @assert length(w) == size(Y, 1) "Length of w must be equal to the number of observations in Y."
-    
-    # minimize objective
-    objective = define_objective(model, Φ, Y, w)
-    objective_grad! = define_objective_gradient(model, Φ, Y, w)
-
-    result = optimize(objective, objective_grad!, model.β, LBFGS())
-
-    # update parameters
-    model.β = result.minimizer
-    # update_variance!(model, Φ, Y, w)
+# Special handling for Gaussian regression to update variance
+function post_optimization!(model::GaussianRegressionEmission, opt::RegressionOptimization)
+    residuals = opt.y - opt.X * model.β
+    Σ = (residuals' * Diagonal(opt.w) * residuals) / size(opt.X, 1)
+    model.Σ = 0.5 * (Σ + Σ')  # Ensure symmetry
 end
 
 
@@ -444,12 +415,6 @@ function SwitchingGaussianRegression(;
     return HiddenMarkovModel(K=K, B=emissions, A=A, πₖ=πₖ)
 end
 
-
-"""
-Refactoring checkpoint 10/30/2024 2:09PM -> Above functions are refactored. Need to change how fit functions work above though.
-"""
-
-
 """
     BernoulliRegression
 
@@ -467,7 +432,7 @@ model = BernoulliRegression(input_dim=2)
 # output
 ```
 """
-mutable struct BernoulliRegressionEmission <: EmissionModel
+mutable struct BernoulliRegressionEmission <: RegressionEmission
     input_dim::Int
     β::Vector{<:Real}
     include_intercept::Bool
@@ -561,78 +526,22 @@ function loglikelihood(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y
     return obs_wise_loglikelihood
 end
 
-function define_objective(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    # add intercept if specified
-    if model.include_intercept
-        Φ = hcat(ones(size(Φ, 1)), Φ)
-    end
-
-    function objective(β)
-        # calculate log likelihood
-        p = logistic.(Φ * β)
-        
-        val = -sum(w .* (Y .* log.(p) .+ (1 .- Y) .* log.(1 .- p))) + (model.λ * sum(β.^2))
-
-        return val / size(Φ, 1)
-    end
-
-    return objective
+# Bernoulli Regression Implementation
+function objective(opt::RegressionOptimization{BernoulliRegressionEmission}, β_vec::Vector{Float64})
+    β_mat = vec_to_matrix(β_vec, opt.β_shape)
+    p = logistic.(opt.X * β_mat)
+    val = -sum(opt.w .* (opt.y .* log.(p) .+ (1 .- opt.y) .* log.(1 .- p))) + 
+          (opt.model.λ * sum(β_mat.^2))
+    return val / size(opt.X, 1)
 end
 
-
-function define_objective_gradient(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    # add intercept if specified
-    if model.include_intercept
-        Φ = hcat(ones(size(Φ, 1)), Φ)
-    end
-
-    function objective_gradient!(G, β)
-        # calculate log likelihood
-        p = logistic.(Φ * β)
-
-        G .= (-(Φ' * (w .* (Y .- p))) + 2 * model.λ * β) / size(Φ, 1)
-    end
-    
-    return objective_gradient!
+function objective_gradient!(G::Vector{Float64}, opt::RegressionOptimization{BernoulliRegressionEmission}, β_vec::Vector{Float64})
+    β_mat = vec_to_matrix(β_vec, opt.β_shape)
+    p = logistic.(opt.X * β_mat)
+    grad_mat = (-(opt.X' * (opt.w .* (opt.y .- p))) + 2 * opt.model.λ * β_mat) / size(opt.X, 1)
+    G .= vec(grad_mat)
 end
 
-
-"""
-    fit!(model::BernoulliRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-
-Fit a Bernoulli regression model using maximum likelihood estimation.
-
-# Arguments
-- `model::BernoulliRegression`: Bernoulli regression model.
-- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
-- `Y::Matrix{<:Real}`: Response matrix of shape `(n, 1)`.
-- `w::Vector{Float64}`: Weights of the data points. Should be a vector of size `n`.
-
-# Examples
-```jldoctest; output = true
-true_model = BernoulliRegression(input_dim=2)
-Φ = rand(100, 2)
-Y = sample(true_model, Φ)
-
-est_model = BernoulliRegression(input_dim=2)
-fit!(est_model, Φ, Y)
-
-loglikelihood(est_model, Φ, Y) > loglikelihood(true_model, Φ, Y)
-
-# output
-true
-```
-"""
-function fit!(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    # minimize objective
-    objective = define_objective(model, Φ, Y, w)
-    objective_grad! = define_objective_gradient(model, Φ, Y, w)
-
-    result = optimize(objective, objective_grad!, model.β, LBFGS())
-
-    # update parameters
-    model.β = result.minimizer
-end
 
 """
     SwitchingBernoulliRegression(; K::Int, input_dim::Int, include_intercept::Bool=true, β::Vector{<:Real}=if include_intercept zeros(input_dim + 1) else zeros(input_dim) end, λ::Float64=0.0, A::Matrix{<:Real}=initialize_transition_matrix(K), πₖ::Vector{Float64}=initialize_state_distribution(K))
@@ -690,7 +599,7 @@ model = PoissonRegression(input_dim=2)
 # output
 ```
 """
-mutable struct PoissonRegressionEmission <: EmissionModel
+mutable struct PoissonRegressionEmission <: RegressionEmission
     input_dim::Int
     β::Vector{<:Real}
     include_intercept::Bool
@@ -788,90 +697,21 @@ function loglikelihood(model::PoissonRegressionEmission, Φ::Matrix{<:Real}, Y::
     return obs_wise_loglikelihood
 end
 
-function define_objective(model::PoissonRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    # add intercept if specified
-    if model.include_intercept
-        Φ = hcat(ones(size(Φ, 1)), Φ)
-    end
-
-    function objective(β)
-        # calculate the rate
-        rate = exp.(Φ * β)
-
-        val = -sum(w .* (Y .* log.(rate) .- rate .- loggamma.(Int.(Y) .+ 1))) + (model.λ * sum(β.^2))
-
-        return val / size(Φ, 1)
-    end
-
-    return objective
+# Poisson Regression Implementation
+function objective(opt::RegressionOptimization{PoissonRegressionEmission}, β_vec::Vector{Float64})
+    β_mat = vec_to_matrix(β_vec, opt.β_shape)
+    rate = exp.(opt.X * β_mat)
+    val = -sum(opt.w .* (opt.y .* log.(rate) .- rate .- loggamma.(Int.(opt.y) .+ 1))) + 
+          (opt.model.λ * sum(β_mat.^2))
+    return val / size(opt.X, 1)
 end
 
-function define_objective_gradient(model::PoissonRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    # add intercept if specified
-    if model.include_intercept
-        Φ = hcat(ones(size(Φ, 1)), Φ)
-    end
-
-    function objective_gradient!(G, β)
-        # calculate the rate
-        rate = exp.(Φ * β)
-
-        G .= (-Φ' * (Diagonal(w) * (Y .- rate)) + (model.λ * 2 * β)) / size(Φ, 1)
-    end
-    
-    return objective_gradient!
-end
-
-
-function gradient!(grad::Vector{Float64}, model::PoissonRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y,1)))
-    # confirm that the model has been fit
-    @assert !isempty(model.β) "Model parameters not initialized, please call fit! first."
-    # add intercept if specified
-    if model.include_intercept && size(Φ, 2) == length(model.β) - 1
-        Φ = hcat(ones(size(Φ, 1)), Φ)
-    end
-    # calculate the rate
-    rate = exp.(Φ * model.β)
-    # convert Y if necessary
-    # Y = convert(Vector{Float64}, Y)
-    # calculate gradient
-    grad .= -Φ' * (Diagonal(w) * (Y .- rate)) + (model.λ * 2 * model.β)
-end
-
-"""
-    fit!(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-
-Fit a Poisson regression model using maximum likelihood estimation.
-
-# Arguments
-- `model::PoissonRegression`: Poisson regression model.
-- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
-- `Y::Matrix{<:Real}`: Response matrix of shape `(n, 1)`.
-- `w::Vector{Float64}`: Weights of the data points. Should be a vector of size `n`.
-
-# Examples
-```jldoctest; output = true
-true_model = PoissonRegression(input_dim=2)
-Φ = rand(100, 2)
-Y = sample(true_model, Φ)
-
-est_model = PoissonRegression(input_dim=2)
-fit!(est_model, Φ, Y)
-
-loglikelihood(est_model, Φ, Y) > loglikelihood(true_model, Φ, Y)
-
-# output
-true
-```
-"""
-function fit!(model::PoissonRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    # minimize objective
-    objective = define_objective(model, Φ, Y, w)
-    objective_grad! = define_objective_gradient(model, Φ, Y, w)
-    result = optimize(objective, objective_grad!, model.β, LBFGS())
-    
-    # update parameters
-    model.β = result.minimizer
+function objective_gradient!(G::Vector{Float64}, opt::RegressionOptimization{PoissonRegressionEmission}, β_vec::Vector{Float64})
+    β_mat = vec_to_matrix(β_vec, opt.β_shape)
+    rate = exp.(opt.X * β_mat)
+    grad_mat = (-opt.X' * (Diagonal(opt.w) * (opt.y .- rate)) + (opt.model.λ * 2 * β_mat)) / 
+               size(opt.X, 1)
+    G .= vec(grad_mat)
 end
 
 function SwitchingPoissonRegression(;
@@ -890,6 +730,28 @@ function SwitchingPoissonRegression(;
 
     # Return the HiddenMarkovModel
     return HiddenMarkovModel(K=K, B=emissions, A=A, πₖ=πₖ)
+end
+
+
+# Unified fit! function for all regression emissions
+function fit!(model::RegressionEmission, X::Matrix{<:Real}, y::Matrix{<:Real}, 
+             w::Vector{Float64}=ones(size(y, 1)))
+    opt_problem = create_optimization(model, X, y, w)
+    
+    # Create closure functions for Optim.jl
+    f(β) = objective(opt_problem, β)
+    g!(G, β) = objective_gradient!(G, opt_problem, β)
+    
+    # Run optimization
+    result = optimize(f, g!, vec(model.β), LBFGS())
+    
+    # Update model parameters
+    model.β = vec_to_matrix(result.minimizer, opt_problem.β_shape)
+    
+    # Update additional parameters if needed (e.g., variance for Gaussian)
+    post_optimization!(model, opt_problem)
+    
+    return model
 end
 
 
@@ -1084,4 +946,3 @@ function fit!(model::CompositeModelEmission, input_data::Vector{}, output_data::
         fit!!(model.components[i], input_data[i]..., output_data[i]..., w)
     end
 end
-

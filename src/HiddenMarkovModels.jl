@@ -27,7 +27,7 @@ model = HiddenMarkovModel(K=2, emission=Gaussian(output_dim=2))
 # output
 ```
 """
-mutable struct HiddenMarkovModel <: Model
+mutable struct HiddenMarkovModel <: AbstractHMM
     A::Matrix{<:Real} # transition matrix
     B::Vector{EmissionModel} # Vector of emission Models
     πₖ::Vector{Float64} # initial state distribution
