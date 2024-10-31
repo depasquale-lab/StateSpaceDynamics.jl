@@ -14,16 +14,6 @@ export CompositeModelEmission
 export SwitchingGaussianRegression, SwitchingBernoulliRegression, SwitchingPoissonRegression
 export sample, loglikelihood, fit!
 
-"""
-Base type hierarchy for emission models.
-Each emission model must implement:
-- sample()
-- loglikelihood()
-- fit!()
-"""
-abstract type EmissionModel end
-abstract type RegressionEmission <: EmissionModel end
-
 #=
 Gaussian Emission Models
 =#
@@ -204,16 +194,6 @@ end
 vec_to_matrix(β_vec::Vector{Float64}, shape::Tuple{Int,Int}) = reshape(β_vec, shape)
 matrix_to_vec(β_mat::Matrix{Float64}) = vec(β_mat)
 
-# Generic optimization interfaces
-function objective(opt::RegressionOptimization, β_vec::Vector{Float64})
-    β_mat = vec_to_matrix(β_vec, opt.β_shape)
-    error("objective not implemented for $(typeof(opt.model))")
-end
-
-function objective_gradient!(G::Vector{Float64}, opt::RegressionOptimization, β_vec::Vector{Float64})
-    error("objective_gradient! not implemented for $(typeof(opt.model))")
-end
-
 # Default no-op post-optimization
 post_optimization!(model::RegressionEmission, opt::RegressionOptimization) = nothing
 
@@ -333,7 +313,7 @@ function loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y:
 end
 
 # Gaussian Regression Implementation
-function objective(opt::RegressionOptimization{GaussianRegressionEmission}, β_vec::Vector{Float64})
+function objective(opt::RegressionOptimization{GaussianRegressionEmission}, β_vec::Vector{T}) where T <: Real
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     residuals = opt.y - opt.X * β_mat
     w_reshaped = reshape(opt.w, :, 1)
@@ -341,7 +321,7 @@ function objective(opt::RegressionOptimization{GaussianRegressionEmission}, β_v
     return -pseudo_ll / size(opt.X, 1)
 end
 
-function objective_gradient!(G::Vector{Float64}, opt::RegressionOptimization{GaussianRegressionEmission}, β_vec::Vector{Float64})
+function objective_gradient!(G::Vector{Float64}, opt::RegressionOptimization{GaussianRegressionEmission}, β_vec::Vector{T}) where T <: Real
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     residuals = opt.y - opt.X * β_mat
     grad_mat = -(opt.X' * Diagonal(opt.w) * residuals - (2 * opt.model.λ * β_mat)) / size(opt.X, 1)
@@ -527,7 +507,7 @@ function loglikelihood(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y
 end
 
 # Bernoulli Regression Implementation
-function objective(opt::RegressionOptimization{BernoulliRegressionEmission}, β_vec::Vector{Float64})
+function objective(opt::RegressionOptimization{BernoulliRegressionEmission}, β_vec::Vector{T}) where T <: Real
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     p = logistic.(opt.X * β_mat)
     val = -sum(opt.w .* (opt.y .* log.(p) .+ (1 .- opt.y) .* log.(1 .- p))) + 
@@ -535,7 +515,7 @@ function objective(opt::RegressionOptimization{BernoulliRegressionEmission}, β_
     return val / size(opt.X, 1)
 end
 
-function objective_gradient!(G::Vector{Float64}, opt::RegressionOptimization{BernoulliRegressionEmission}, β_vec::Vector{Float64})
+function objective_gradient!(G::Vector{Float64}, opt::RegressionOptimization{BernoulliRegressionEmission}, β_vec::Vector{T}) where T <: Real
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     p = logistic.(opt.X * β_mat)
     grad_mat = (-(opt.X' * (opt.w .* (opt.y .- p))) + 2 * opt.model.λ * β_mat) / size(opt.X, 1)
@@ -698,7 +678,7 @@ function loglikelihood(model::PoissonRegressionEmission, Φ::Matrix{<:Real}, Y::
 end
 
 # Poisson Regression Implementation
-function objective(opt::RegressionOptimization{PoissonRegressionEmission}, β_vec::Vector{Float64})
+function objective(opt::RegressionOptimization{PoissonRegressionEmission}, β_vec::Vector{T}) where T <: Real
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     rate = exp.(opt.X * β_mat)
     val = -sum(opt.w .* (opt.y .* log.(rate) .- rate .- loggamma.(Int.(opt.y) .+ 1))) + 
@@ -706,7 +686,7 @@ function objective(opt::RegressionOptimization{PoissonRegressionEmission}, β_ve
     return val / size(opt.X, 1)
 end
 
-function objective_gradient!(G::Vector{Float64}, opt::RegressionOptimization{PoissonRegressionEmission}, β_vec::Vector{Float64})
+function objective_gradient!(G::Vector{Float64}, opt::RegressionOptimization{PoissonRegressionEmission}, β_vec::Vector{T}) where T <: Real
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     rate = exp.(opt.X * β_mat)
     grad_mat = (-opt.X' * (Diagonal(opt.w) * (opt.y .- rate)) + (opt.model.λ * 2 * β_mat)) / 

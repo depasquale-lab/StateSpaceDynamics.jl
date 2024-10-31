@@ -150,12 +150,12 @@ Tests for RegressionModels.jl
 include("RegressionModels/GaussianRegression.jl")
 
 @testset "GaussianRegression Tests" begin
+    test_GaussianRegression_initialization()
     test_GaussianRegression_loglikelihood()
-    test_GaussianRegression_Σ()
-    test_GaussianRegression_constructor()
-    test_GaussianRegression_objective_gradient()
-    test_GaussianRegression_standard_fit()
-    test_GaussianRegression_regularized_fit()
+    test_GaussianRegression_fit()
+    test_GaussianRegression_sample()
+    test_GaussianRegression_optimization()
+    test_GaussianRegression_regularization()
 end
 
 include("RegressionModels/BernoulliRegression.jl")

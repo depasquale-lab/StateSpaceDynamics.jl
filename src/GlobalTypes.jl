@@ -28,3 +28,13 @@ Abstract type for Dynamical Systems. I.e. LDS, etc.
 """
 
 abstract type DynamicalSystem end
+
+"""
+Base type hierarchy for emission models.
+Each emission model must implement:
+- sample()
+- loglikelihood()
+- fit!()
+"""
+abstract type EmissionModel end
+abstract type RegressionEmission <: EmissionModel end
