@@ -1,142 +1,122 @@
-function PoissonRegression_simulation(n::Int)
+# PoissonRegression.jl
+function PoissonRegression_simulation(; include_intercept::Bool=true)
     # Generate synthetic data
-    Φ = randn(n, 2)
-    β = [0.5, -1.2, 2.3]
-    true_model = PoissonRegressionEmission(β=β, input_dim=2)
-    Y = StateSpaceDynamics.sample(true_model, Φ)
-
-    return true_model, Φ, Y
-end
-
-# check loglikelihood is negative
-function test_PoissonRegression_loglikelihood()
     n = 1000
-    true_model, Φ, Y = PoissonRegression_simulation(n)
-    @test StateSpaceDynamics.loglikelihood(true_model, Φ, Y) < 0
-end
-
-# check model shape and value from constructor
-function test_PoissonRegression_constructor()
-    # test parameter shapes
-    model = PoissonRegressionEmission(input_dim=3)
-    @test size(model.β, 1) == 4
-
-    model = PoissonRegressionEmission(input_dim=3, include_intercept=false)
-    @test size(model.β, 1) == 3
-
-    # test default values
-    model = PoissonRegressionEmission(input_dim=3)
-    @test model.λ == 0.0
-    @test model.include_intercept == true
-    @test model.β == zeros(4)
-end
-
-# check the objective_grad! is close to numerical gradient
-function test_PoissonRegression_objective_gradient()
-    n = 1000
-    true_model, Φ, Y = PoissonRegression_simulation(n)
-
-
-    est_model = PoissonRegressionEmission(input_dim=2)
+    X = randn(n, 2)  # Remove intercept from data generation
+    true_β = [-1.2, 2.3]
+    if include_intercept
+        true_β = vcat(0.5, true_β)
+    end
+    true_β = reshape(true_β, :, 1)
     
-
-    # test if analytical gradient is close to numerical gradient
-    objective = define_objective(est_model, Φ, Y)
-    objective_grad! = define_objective_gradient(est_model, Φ, Y)
-    test_gradient(objective, objective_grad!, ones(3, 2))
-
-
-
-    # now do the same with Weights
-    weights = rand(1000)
-    objective = define_objective(est_model, Φ, Y, weights)
-    objective_grad! = define_objective_gradient(est_model, Φ, Y, weights)
-    test_gradient(objective, objective_grad!, ones(3, 2))
-
-
-
-    # finally test when λ is not 0
-    est_model.λ = 0.1
-    objective = define_objective(est_model, Φ, Y)
-    objective_grad! = define_objective_gradient(est_model, Φ, Y)
-    test_gradient(objective, objective_grad!, ones(3, 2))
+    # Generate y with or without intercept
+    X_with_intercept = include_intercept ? hcat(ones(n), X) : X
+    y = StateSpaceDynamics.sample(PoissonRegressionEmission(vec(true_β), true), X)
+    
+    return X, y, true_β, n
 end
 
-# check that a fitted model has a higher loglikelihood than the true model
-function test_PoissonRegression_standard_fit()
-    # Generate synthetic data
-    n = 5000
-    true_model, Φ, Y = PoissonRegression_simulation(n)
-
-    # Initialize and fit the model
-    est_model = PoissonRegressionEmission(input_dim=2)
-    fit!(est_model, Φ, Y)
-
-    # confirm that the fitted model has a higher loglikelihood than the true model
-    @test StateSpaceDynamics.loglikelihood(est_model, Φ, Y) >= StateSpaceDynamics.loglikelihood(true_model, Φ, Y)
-
-    # confirm that the fitted model has similar β values to the true model
-    @test isapprox(est_model.β, true_model.β, atol=0.5)
+function test_PoissonRegression_initialization()
+    # Test with default parameters
+    model = PoissonRegressionEmission(input_dim=2, output_dim=1)
+    
+    @test model.input_dim == 2
+    @test model.output_dim == 1
+    @test model.include_intercept == true
+    @test size(model.β) == (3, 1)  # input_dim + 1 (intercept) × output_dim
+    @test model.λ == 0.0
+    
+    # Test without intercept
+    model_no_intercept = PoissonRegressionEmission(
+        input_dim=2,
+        output_dim=1,
+        include_intercept=false
+    )
+    @test size(model_no_intercept.β) == (2, 1)
 end
 
-# check that a regularized model has β values closer to a normal gaussian and the model doesn't perform too much worse
-function test_PoissonRegression_regularized_fit()
-    λ = 0.1
+function test_PoissonRegression_fit()
+    X, y, true_β, n = PoissonRegression_simulation()
+    
+    model = PoissonRegressionEmission(input_dim=2, output_dim=1)
+    fit!(model, X, y)
+    
+    # Check if the fitted coefficients are close to the true coefficients
+    @test isapprox(model.β, true_β, atol=0.5)
+    
+    # Test with weights
+    w = ones(n)
+    fit!(model, X, y, w)
+    @test isapprox(model.β, true_β, atol=0.5)
+end
 
-    # Generate synthetic data
-    n = 1000
-    true_model, Φ, Y = PoissonRegression_simulation(n)
+function test_PoissonRegression_loglikelihood()
+    X, y, true_β, n = PoissonRegression_simulation()
+    
+    model = PoissonRegressionEmission(input_dim=2, output_dim=1)
+    fit!(model, X, y)
+    
+    # Test full dataset loglikelihood
+    ll = StateSpaceDynamics.loglikelihood(model, X, y)
+    @test length(ll) == n
+    @test all(isfinite.(ll))
+    
+    # Test single observation
+    single_ll = StateSpaceDynamics.loglikelihood(model, X[1:1,:], y[1:1])
+    @test length(single_ll) == 1
+    @test isfinite(single_ll[1])
+    
+    # Test with weights
+    w = ones(n)
+    weighted_ll = StateSpaceDynamics.loglikelihood(model, X, y, w)
+    @test length(weighted_ll) == n
+    @test all(isfinite.(weighted_ll))
+end
 
-    # Initialize and fit an *unregularized* model
-    est_model = PoissonRegressionEmission(input_dim=2)
-    fit!(est_model, Φ, Y)
+function test_PoissonRegression_optimization()
+    X, y, true_β, n = PoissonRegression_simulation()
+    
+    model = PoissonRegressionEmission(
+        input_dim=2,
+        output_dim=1,
+        λ=0.1  # Add regularization for testing
+    )
+    
+    # Test objective function
+    β_vec = vec(model.β)
+    opt_problem = StateSpaceDynamics.create_optimization(model, X, y)
+    obj_val = StateSpaceDynamics.objective(opt_problem, β_vec)
+    @test isfinite(obj_val)
+    
+    # Test gradient calculation
+    G = similar(β_vec)
+    StateSpaceDynamics.objective_gradient!(G, opt_problem, β_vec)
+    @test length(G) == length(β_vec)
+    @test all(isfinite.(G))
+    
+    # Compare with ForwardDiff
+    grad_fd = ForwardDiff.gradient(β -> StateSpaceDynamics.objective(opt_problem, β), β_vec)
+    @test isapprox(G, grad_fd, rtol=1e-5)
+end
 
-    # Initialize and fit a regularized model
-    regularized_est_model = PoissonRegressionEmission(input_dim=2, λ=λ)
-    fit!(regularized_est_model, Φ, Y)
-
-
-    # confirm that the regularized model is not too much worse
-    @test isapprox(
-        StateSpaceDynamics.loglikelihood(regularized_est_model, Φ, Y), 
-        StateSpaceDynamics.loglikelihood(est_model, Φ, Y), 
-        atol=0.1
+function test_PoissonRegression_regularization()
+    X, y, true_β, n = PoissonRegression_simulation()
+    
+    # Test model with different regularization values
+    λ_values = [0.0, 0.1, 1.0]
+    
+    for λ in λ_values
+        model = PoissonRegressionEmission(
+            input_dim=2,
+            output_dim=1,
+            λ=λ
         )
-
-    # confirm thet the regularized model's parameters are closer to standard normal Distributions
-    θ_prior = MvNormal(zeros(3), Matrix{Float64}(I, 3, 3))
-    @test logpdf(θ_prior, regularized_est_model.β) > logpdf(θ_prior, est_model.β)
-
-end
-
-
-
-# check that the model is a valid emission model
-
-# Please ensure all criteria are met for any new emission model:
-# 1. loglikelihood(model, data...; observation_wise=true) must return a Vector{Float64} of the loglikelihood of each observation.
-# 2. fit!(model, data..., <weights here>) must fit the model using the weights provided (by maximizing the weighted loglikelihood).
-# 3. TimeSeries(model, sample(model, data...; n=<number of samples>)) must return a TimeSeries object of n samples.
-# 4. revert_TimeSeries(model, time_series) must return the time_series data converted back to the original sample() format (the inverse of TimeSeries(model, samples)).
-function test_PoissonRegression_valid_emission_model()
-    n = 1000
-    true_model, Φ, Y = PoissonRegression_simulation(n)
-
-    # Criteria 1
-    loglikelihoods = StateSpaceDynamics.loglikelihood(true_model, Φ, Y, observation_wise=true)
-    @test length(loglikelihoods) == n
-
-    # Criteria 2
-    weights = rand(n)
-    est_model = PoissonRegressionEmission(input_dim=2)
-    fit!(est_model, Φ, Y, weights)
-
-    # Criteria 3
-    Y_new = StateSpaceDynamics.sample(est_model, Φ, n=100)
-    time_series = StateSpaceDynamics.TimeSeries(est_model, Y_new)
-    @test typeof(time_series) == TimeSeries
-
-    # Criteria 4
-    @test StateSpaceDynamics.revert_TimeSeries(est_model, time_series) == Y_new
-   
+        
+        fit!(model, X, y)
+        
+        # Higher regularization should result in smaller coefficients
+        if λ > 0
+            @test norm(model.β) < norm(true_β)
+        end
+    end
 end

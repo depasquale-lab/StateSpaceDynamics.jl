@@ -191,8 +191,8 @@ function create_optimization(model::RegressionEmission, X::Matrix{<:Real}, y::Ma
 end
 
 # Helper functions for reshaping
-vec_to_matrix(β_vec::Vector{Float64}, shape::Tuple{Int,Int}) = reshape(β_vec, shape)
-matrix_to_vec(β_mat::Matrix{Float64}) = vec(β_mat)
+vec_to_matrix(β_vec::Vector{<:Real}, shape::Tuple{Int,Int}) = reshape(β_vec, shape) 
+matrix_to_vec(β_mat::Matrix{<:Real}) = vec(β_mat)
 
 # Default no-op post-optimization
 post_optimization!(model::RegressionEmission, opt::RegressionOptimization) = nothing
@@ -414,22 +414,21 @@ model = BernoulliRegression(input_dim=2)
 """
 mutable struct BernoulliRegressionEmission <: RegressionEmission
     input_dim::Int
-    β::Vector{<:Real}
-    include_intercept::Bool
-    λ::Float64
     output_dim::Int
+    β::Matrix{<:Real} # coefficient matrix of the model. Shape input_dim by output_dim. Column one is coefficients for target one, etc. The first row are the intercept terms, if included. 
+    include_intercept::Bool # whether to include an intercept term; if true, the first column of β is assumed to be the intercept/bias
+    λ::Float64 # regularization parameter
 end
 
 function BernoulliRegressionEmission(; 
-    input_dim::Int,
+    input_dim::Int, 
+    output_dim::Int, 
     include_intercept::Bool = true, 
-    β::Vector{<:Real} = if include_intercept zeros(input_dim + 1) else zeros(input_dim) end,
-    λ::Float64 = 0.0,
-    output_dim::Int=1)
+    β::Matrix{<:Real} = if include_intercept zeros(input_dim + 1, output_dim) else zeros(input_dim, output_dim) end,
+    λ::Float64 = 0.0)
 
-    new_model = BernoulliRegressionEmission(input_dim, β, include_intercept, λ, output_dim)
+    return BernoulliRegressionEmission(input_dim, output_dim, β, include_intercept, λ)
     
-    return new_model
 end
 
 
@@ -581,22 +580,20 @@ model = PoissonRegression(input_dim=2)
 """
 mutable struct PoissonRegressionEmission <: RegressionEmission
     input_dim::Int
+    output_dim::Int
     β::Vector{<:Real}
     include_intercept::Bool
     λ::Float64
-    output_dim::Int
 end
 
 function PoissonRegressionEmission(; 
     input_dim::Int, 
+    output_dim::Int, 
     include_intercept::Bool = true, 
-    β::Vector{<:Real} = if include_intercept zeros(input_dim + 1) else zeros(input_dim) end,
-    λ::Float64 = 0.0,
-    output_dim::Int=1)
-    
-    new_model = PoissonRegressionEmission(input_dim, β, include_intercept, λ, output_dim)
+    β::Matrix{<:Real} = if include_intercept zeros(input_dim + 1, output_dim) else zeros(input_dim, output_dim) end,
+    λ::Float64 = 0.0)
 
-    return new_model
+    return PoissonRegressionEmission(input_dim, output_dim, β, include_intercept, λ)
 end
 
 
