@@ -13,135 +13,135 @@ Random.seed!(1234)
 
 include("helper_functions.jl")
 
-# """
-# Tests for HiddenMarkovModels.jl
-# """
+"""
+Tests for HiddenMarkovModels.jl
+"""
 
-# include("HiddenMarkovModels/HiddenMarkovModels.jl")
+include("HiddenMarkovModels/HiddenMarkovModels.jl")
 
-# @testset "HiddenMarkovModels.jl Tests" begin
-#     test_HiddenMarkovModel_E_step()
-#     #test_viterbi() -- don't have time to finish, need emission matching logic
-#     test_GaussianHMM()
-#     # test_AutoRegressionHMM()
-#     test_trialized_GaussianHMM()
-#     test_trialized_SwitchingGaussianRegression()
-# end
+@testset "HiddenMarkovModels.jl Tests" begin
+    test_HiddenMarkovModel_E_step()
+    #test_viterbi() -- don't have time to finish, need emission matching logic
+    test_GaussianHMM()
+    # test_AutoRegressionHMM()
+    test_trialized_GaussianHMM()
+    test_trialized_SwitchingGaussianRegression()
+end
 
-# """
-# Tests for MixtureModels.jl
-# """
+"""
+Tests for MixtureModels.jl
+"""
 
-# include("MixtureModels/GaussianMixtureModel.jl")
-# include("MixtureModels/PoissonMixtureModel.jl")
+include("MixtureModels/GaussianMixtureModel.jl")
+include("MixtureModels/PoissonMixtureModel.jl")
 
 
-# @testset "MixtureModels.jl Tests" begin
-#     # Test GaussianMixtureModel
+@testset "MixtureModels.jl Tests" begin
+    # Test GaussianMixtureModel
 
     
-#     # Initialize test models
+    # Initialize test models
 
 
-#     # Standard GaussianMixtureModel model
+    # Standard GaussianMixtureModel model
 
-#     # Number of clusters
-#     k = 3
-#     # Dimension of data points
-#     data_dim = 2
-#     # Construct gmm
-#     standard_gmm = GaussianMixtureModel(k, data_dim)
-#     # Generate sample data
-#     standard_data = randn(10, data_dim)
+    # Number of clusters
+    k = 3
+    # Dimension of data points
+    data_dim = 2
+    # Construct gmm
+    standard_gmm = GaussianMixtureModel(k, data_dim)
+    # Generate sample data
+    standard_data = randn(10, data_dim)
 
-#     # Test constructor method of GaussianMixtureModel
-#     test_GaussianMixtureModel_properties(standard_gmm, k, data_dim)
+    # Test constructor method of GaussianMixtureModel
+    test_GaussianMixtureModel_properties(standard_gmm, k, data_dim)
 
 
 
-#     # Vector-data GaussianMixtureModel model
+    # Vector-data GaussianMixtureModel model
 
-#     # Number of clusters
-#     k = 2
-#     # Dimension of data points
-#     data_dim = 1
-#     # Construct gmm
-#     vector_gmm = GaussianMixtureModel(k, data_dim)
-#     # Generate sample data
-#     vector_data = randn(1000,)
-#     # Test constructor method of GaussianMixtureModel
-#     test_GaussianMixtureModel_properties(vector_gmm, k, data_dim)
+    # Number of clusters
+    k = 2
+    # Dimension of data points
+    data_dim = 1
+    # Construct gmm
+    vector_gmm = GaussianMixtureModel(k, data_dim)
+    # Generate sample data
+    vector_data = randn(1000,)
+    # Test constructor method of GaussianMixtureModel
+    test_GaussianMixtureModel_properties(vector_gmm, k, data_dim)
   
-#     # Test EM methods of the GaussianMixtureModels
+    # Test EM methods of the GaussianMixtureModels
 
-#     # Paired data and GaussianMixtureModels to test
-#     tester_set = [
-#         (standard_gmm, standard_data), 
-#         (vector_gmm, vector_data),
-#         ]
+    # Paired data and GaussianMixtureModels to test
+    tester_set = [
+        (standard_gmm, standard_data), 
+        (vector_gmm, vector_data),
+        ]
 
-#     for (gmm, data) in tester_set
-#         k = gmm.k
-#         data_dim = size(data, 2)
+    for (gmm, data) in tester_set
+        k = gmm.k
+        data_dim = size(data, 2)
 
-#         gmm = GaussianMixtureModel(k, data_dim)
-#         testGaussianMixtureModel_EStep(gmm, data)
+        gmm = GaussianMixtureModel(k, data_dim)
+        testGaussianMixtureModel_EStep(gmm, data)
 
-#         gmm = GaussianMixtureModel(k, data_dim)
-#         testGaussianMixtureModel_MStep(gmm, data)
+        gmm = GaussianMixtureModel(k, data_dim)
+        testGaussianMixtureModel_MStep(gmm, data)
 
-#         gmm = GaussianMixtureModel(k, data_dim)
-#         testGaussianMixtureModel_fit(gmm, data)
+        gmm = GaussianMixtureModel(k, data_dim)
+        testGaussianMixtureModel_fit(gmm, data)
 
-#         gmm = GaussianMixtureModel(k, data_dim)
-#         test_log_likelihood(gmm, data)
-#     end
+        gmm = GaussianMixtureModel(k, data_dim)
+        test_log_likelihood(gmm, data)
+    end
   
-#     # Test PoissonMixtureModel
-#     k = 3  # Number of clusters
+    # Test PoissonMixtureModel
+    k = 3  # Number of clusters
     
-#     # Simulate some Poisson-distributed data using the sample function
-#     # First, define a temporary PMM for sampling purposes
-#     temp_pmm = PoissonMixtureModel(k)
-#     temp_pmm.λₖ = [5.0, 10.0, 15.0]  # Assign some λ values for generating data
-#     temp_pmm.πₖ = [1/3, 1/3, 1/3]  # Equal mixing coefficients for simplicity
-#     data = StateSpaceDynamics.sample(temp_pmm, 300)  # Generate sample data
+    # Simulate some Poisson-distributed data using the sample function
+    # First, define a temporary PMM for sampling purposes
+    temp_pmm = PoissonMixtureModel(k)
+    temp_pmm.λₖ = [5.0, 10.0, 15.0]  # Assign some λ values for generating data
+    temp_pmm.πₖ = [1/3, 1/3, 1/3]  # Equal mixing coefficients for simplicity
+    data = StateSpaceDynamics.sample(temp_pmm, 300)  # Generate sample data
     
-#     standard_pmm = PoissonMixtureModel(k)
+    standard_pmm = PoissonMixtureModel(k)
     
-#     # Conduct tests
-#     test_PoissonMixtureModel_properties(standard_pmm, k)
+    # Conduct tests
+    test_PoissonMixtureModel_properties(standard_pmm, k)
     
-#     tester_set = [(standard_pmm, data)]
+    tester_set = [(standard_pmm, data)]
     
-#     for (pmm, data) in tester_set
-#         pmm = PoissonMixtureModel(k)
-#         testPoissonMixtureModel_EStep(pmm, data)
-#         pmm = PoissonMixtureModel(k)
-#         testPoissonMixtureModel_MStep(pmm, data)
-#         pmm = PoissonMixtureModel(k)
-#         testPoissonMixtureModel_fit(pmm, data)
-#         pmm = PoissonMixtureModel(k)
-#         test_log_likelihood(pmm, data)
-#     end
-# end
+    for (pmm, data) in tester_set
+        pmm = PoissonMixtureModel(k)
+        testPoissonMixtureModel_EStep(pmm, data)
+        pmm = PoissonMixtureModel(k)
+        testPoissonMixtureModel_MStep(pmm, data)
+        pmm = PoissonMixtureModel(k)
+        testPoissonMixtureModel_fit(pmm, data)
+        pmm = PoissonMixtureModel(k)
+        test_log_likelihood(pmm, data)
+    end
+end
 
-# """
-# Tests for LDS.jl
-# """
+"""
+Tests for LDS.jl
+"""
 
-# include("LDS/LDS.jl")
+include("LDS/LDS.jl")
 
-# @testset "LDS.jl Tests" begin
-#     test_LDS_with_params()
-#     test_LDS_without_params()
-#     test_LDS_E_Step()
-#     test_LDS_M_Step!()
-#     test_LDS_EM()
-#     test_direct_smoother()
-#     test_LDS_gradient()
-#     test_LDS_Hessian()
-# end
+@testset "LDS.jl Tests" begin
+    test_LDS_with_params()
+    test_LDS_without_params()
+    test_LDS_E_Step()
+    test_LDS_M_Step!()
+    test_LDS_EM()
+    test_direct_smoother()
+    test_LDS_gradient()
+    test_LDS_Hessian()
+end
 
 """
 Tests for RegressionModels.jl
