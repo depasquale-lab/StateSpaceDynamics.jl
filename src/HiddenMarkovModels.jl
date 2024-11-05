@@ -370,8 +370,6 @@ function fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Rea
     # Initialize progress bar
     p = Progress(max_iters; dt=1, desc="Running EM algorithm...",)
     for iter in 1:max_iters
-        # Update the progress bar
-        next!(p; showvalues = [(:iteration, iter), (:log_likelihood, log_likelihood)])
         # E-Step
         γ, ξ, α, β = E_step(model, data)
         # Compute and update the log-likelihood
@@ -380,14 +378,13 @@ function fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Rea
         #println("iter $(iter) loglikelihood: ", log_likelihood_current)
         if abs(log_likelihood_current - log_likelihood) < tol
             finish!(p)
-            break
+            return lls
         else
             log_likelihood = log_likelihood_current
         end
         # M-Step
         M_step!(model, γ, ξ, data)
     end
-
     return lls
 end
 

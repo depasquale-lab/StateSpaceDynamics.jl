@@ -4,7 +4,7 @@ function test_hmmglm_properties(model::StateSpaceDynamics.hmmglm)
     @test length(model.B) == model.K
     @test length(model.πₖ) == model.K
     @test sum(model.πₖ) ≈ 1.0
-    @test sum(model.A, dims=2) ≈ ones(model.K)
+    @test sum(model.A; dims=2) ≈ ones(model.K)
 end
 
 function test_HMMGLM_initialization()
@@ -16,5 +16,5 @@ function test_HMMGLM_initialization()
     # test properties
     test_hmmglm_properties(gaussian_model)
     test_hmmglm_properties(bernoulli_model)
-    test_hmmglm_properties(poisson_model)
+    return test_hmmglm_properties(poisson_model)
 end

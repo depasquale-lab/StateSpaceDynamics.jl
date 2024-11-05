@@ -2,7 +2,10 @@
 The purpose of this file is to provide a common place for all global types to be defined. This is to avoid circular dependencies between files.
 """
 
-export RegressionModel, MixtureModel, EmissionsModel, AbstractHMM, DynamicalSystem, EmissionModel
+export MixtureModel,
+    EmissionsModel,
+    AbstractHMM,
+    DynamicalSystem
 
 # Create abstract types here 
 """
@@ -28,6 +31,8 @@ Abstract type for Dynamical Systems. I.e. LDS, etc.
 """
 
 abstract type DynamicalSystem end
+abstract type AbstractStateModel{T<:Real} end
+abstract type AbstractObservationModel{T<:Real} end
 
 """
 Base type hierarchy for emission models.
@@ -36,5 +41,7 @@ Each emission model must implement:
 - loglikelihood()
 - fit!()
 """
+
 abstract type EmissionModel end
 abstract type RegressionEmission <: EmissionModel end
+

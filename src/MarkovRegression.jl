@@ -1,4 +1,10 @@
-export SwitchingGaussianRegression, SwitchingBernoulliRegression, SwitchingPoissonRegression, fit!, viterbi, log_likelihood, hmmglm
+export SwitchingGaussianRegression,
+    SwitchingBernoulliRegression,
+    SwitchingPoissonRegression,
+    fit!,
+    viterbi,
+    log_likelihood,
+    hmmglm
 
 abstract type hmmglm <: AbstractHMM end
 """
@@ -17,7 +23,7 @@ at each time point we can assess the most likely state and the most likely regre
 - `input_dim::Int`: number of features
 - `output_dim::Int`: number of targets
 """
-mutable struct SwitchingGaussianRegression{T <: Real} <: hmmglm
+mutable struct SwitchingGaussianRegression{T<:Real} <: hmmglm
     A::Matrix{T} # transition matrix
     B::Vector{RegressionEmissions} # Vector of Gaussian Regression Models
     πₖ::Vector{T} # initial state distribution
@@ -128,11 +134,21 @@ Constructor for Switching Bernoulli Regression Model.
 model = SwitchingBernoulliRegression(K=2)
 ```
 """
-function SwitchingBernoulliRegression(; A::Matrix{<:Real}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), K::Int, λ::Float64=0.0)
+function SwitchingBernoulliRegression(;
+    A::Matrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(),
+    πₖ::Vector{Float64}=Vector{Float64}(),
+    K::Int,
+    λ::Float64=0.0,
+)
     # if A matrix is not passed, initialize using Dirichlet 
     isempty(A) ? A = initialize_transition_matrix(K) : nothing
     # if B vector is not passed, initialize using Gaussian Regression
-    isempty(B) ? B = [RegressionEmissions(BernoulliRegression(;λ=λ)) for k in 1:K] : nothing
+    if isempty(B)
+        B = [RegressionEmissions(BernoulliRegression(; λ=λ)) for k in 1:K]
+    else
+        nothing
+    end
     # if πₖ vector is not passed, initialize using Dirichlet
     isempty(πₖ) ? πₖ = initialize_state_distribution(K) : nothing
     # return model
@@ -178,7 +194,13 @@ Constructor for Switching Poisson Regression Model.
 model = SwitchingPoissonRegression(K=2)
 ```
 """
-function SwitchingPoissonRegression(; A::Matrix{<:Real}=Matrix{Float64}(undef, 0, 0), B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(), πₖ::Vector{Float64}=Vector{Float64}(), K::Int, λ::Float64=0.0)
+function SwitchingPoissonRegression(;
+    A::Matrix{<:Real}=Matrix{Float64}(undef, 0, 0),
+    B::Vector{RegressionEmissions}=Vector{RegressionEmissions}(),
+    πₖ::Vector{Float64}=Vector{Float64}(),
+    K::Int,
+    λ::Float64=0.0,
+)
     # if A matrix is not passed, initialize using Dirichlet 
     isempty(A) ? A = initialize_transition_matrix(K) : nothing
     # if B vector is not passed, initialize using Gaussian Regression
@@ -189,21 +211,27 @@ function SwitchingPoissonRegression(; A::Matrix{<:Real}=Matrix{Float64}(undef, 0
     return SwitchingPoissonRegression(A, B, πₖ, K, λ)
 end
 
-function update_regression!(model::hmmglm, X::Matrix{<:Real}, y::Union{Vector{Float64}, Matrix{<:Real}}, w::Matrix{<:Real}=ones(size(y, 1), model.K))
-   # update regression models 
+function update_regression!(
+    model::hmmglm,
+    X::Matrix{<:Real},
+    y::Union{Vector{Float64},Matrix{<:Real}},
+    w::Matrix{<:Real}=ones(size(y, 1), model.K),
+)
+    # update regression models 
 
-    @threads for k in 1:model.K
+    @threads for k in 1:(model.K)
         update_emissions_model!(model.B[k], X, y, w[:, k])
     end
-
 end
 
-function initialize_regression!(model::hmmglm, X::Matrix{<:Real}, y::Union{Vector{Float64}, Matrix{<:Real}})
+function initialize_regression!(
+    model::hmmglm, X::Matrix{<:Real}, y::Union{Vector{Float64},Matrix{<:Real}}
+)
     # first fit the regression models to all of the data unweighted
     update_regression!(model, X, y)
 
     # add white noise to the beta coefficients
-    @threads for k in 1:model.K
+    @threads for k in 1:(model.K)
         model.B[k].regression.β += randn(size(model.B[k].regression.β))
     end
 end
@@ -222,7 +250,7 @@ function forward(hmm::hmmglm, X::Matrix{<:Real}, y::Vector{Float64})
         @threads for k in 1:K
             values_to_sum = Float64[]
             for i in 1:K
-                push!(values_to_sum, log(hmm.A[i, k]) + α[t-1, i])
+                push!(values_to_sum, log(hmm.A[i, k]) + α[t - 1, i])
             end
             log_sum_alpha_a = logsumexp(values_to_sum)
             α[t, k] = log_sum_alpha_a + loglikelihood(hmm.B[k], X[t, :], y[t])
@@ -238,23 +266,27 @@ function forward(hmm::hmmglm, X::Matrix{<:Real}, y::Matrix{<:Real})
     α = zeros(Float64, T, K)
     # Calculate α₁
     @threads for k in 1:K
-        α[1, k] = log(hmm.πₖ[k]) + loglikelihood(hmm.B[k], row_matrix(X[1, :]), row_matrix(y[1, :]))
+        α[1, k] =
+            log(hmm.πₖ[k]) +
+            loglikelihood(hmm.B[k], row_matrix(X[1, :]), row_matrix(y[1, :]))
     end
     # Now perform the rest of the forward algorithm for t=2 to T
     for t in 2:T
         @threads for k in 1:K
             values_to_sum = Float64[]
             for i in 1:K
-                push!(values_to_sum, log(hmm.A[i, k]) + α[t-1, i])
+                push!(values_to_sum, log(hmm.A[i, k]) + α[t - 1, i])
             end
             log_sum_alpha_a = logsumexp(values_to_sum)
-            α[t, k] = log_sum_alpha_a + loglikelihood(hmm.B[k], row_matrix(X[t, :]), row_matrix(y[t, :]))
+            α[t, k] =
+                log_sum_alpha_a +
+                loglikelihood(hmm.B[k], row_matrix(X[t, :]), row_matrix(y[t, :]))
         end
     end
     return α
 end
 
-function backward(hmm::hmmglm,  X::Matrix{<:Real}, y::Vector{Float64})
+function backward(hmm::hmmglm, X::Matrix{<:Real}, y::Vector{Float64})
     T = length(y)
     K = size(hmm.A, 1)  # Number of states
 
@@ -265,11 +297,16 @@ function backward(hmm::hmmglm,  X::Matrix{<:Real}, y::Vector{Float64})
     β[T, :] .= 0  # log(1) = 0
 
     # Calculate β, starting from T-1 and going backward to 1
-    for t in T-1:-1:1
+    for t in (T - 1):-1:1
         @threads for i in 1:K
             values_to_sum = Float64[]
             for j in 1:K
-                push!(values_to_sum, log(hmm.A[i, j]) + loglikelihood(hmm.B[j], X[t+1, :], y[t+1]) + β[t+1, j])
+                push!(
+                    values_to_sum,
+                    log(hmm.A[i, j]) +
+                    loglikelihood(hmm.B[j], X[t + 1, :], y[t + 1]) +
+                    β[t + 1, j],
+                )
             end
             β[t, i] = logsumexp(values_to_sum)
         end
@@ -277,7 +314,7 @@ function backward(hmm::hmmglm,  X::Matrix{<:Real}, y::Vector{Float64})
     return β
 end
 
-function backward(hmm::hmmglm,  X::Matrix{<:Real}, y::Matrix{<:Real})
+function backward(hmm::hmmglm, X::Matrix{<:Real}, y::Matrix{<:Real})
     T = size(y, 1)
     K = size(hmm.A, 1)  # Number of states
 
@@ -288,11 +325,18 @@ function backward(hmm::hmmglm,  X::Matrix{<:Real}, y::Matrix{<:Real})
     β[T, :] .= 0  # log(1) = 0
 
     # Calculate β, starting from T-1 and going backward to 1
-    for t in T-1:-1:1
+    for t in (T - 1):-1:1
         @threads for i in 1:K
             values_to_sum = Float64[]
             for j in 1:K
-                push!(values_to_sum, log(hmm.A[i, j]) + loglikelihood(hmm.B[j], row_matrix(X[t+1, :]), row_matrix(y[t+1, :])) + β[t+1, j])
+                push!(
+                    values_to_sum,
+                    log(hmm.A[i, j]) +
+                    loglikelihood(
+                        hmm.B[j], row_matrix(X[t + 1, :]), row_matrix(y[t + 1, :])
+                    ) +
+                    β[t + 1, j],
+                )
             end
             β[t, i] = logsumexp(values_to_sum)
         end
@@ -300,16 +344,22 @@ function backward(hmm::hmmglm,  X::Matrix{<:Real}, y::Matrix{<:Real})
     return β
 end
 
-function calculate_ξ(hmm::hmmglm, α::Matrix{<:Real}, β::Matrix{<:Real}, X::Matrix{<:Real}, y::Vector{Float64})
+function calculate_ξ(
+    hmm::hmmglm, α::Matrix{<:Real}, β::Matrix{<:Real}, X::Matrix{<:Real}, y::Vector{Float64}
+)
     T = length(y)
     K = size(hmm.A, 1)
-    ξ = zeros(Float64, T-1, K, K)
-    for t in 1:T-1
+    ξ = zeros(Float64, T - 1, K, K)
+    for t in 1:(T - 1)
         # Array to store the unnormalized ξ values
         log_ξ_unnormalized = zeros(Float64, K, K)
         @threads for i in 1:K
             for j in 1:K
-                log_ξ_unnormalized[i, j] = α[t, i] + log(hmm.A[i, j]) + loglikelihood(hmm.B[j], X[t+1, :], y[t+1]) + β[t+1, j]
+                log_ξ_unnormalized[i, j] =
+                    α[t, i] +
+                    log(hmm.A[i, j]) +
+                    loglikelihood(hmm.B[j], X[t + 1, :], y[t + 1]) +
+                    β[t + 1, j]
             end
         end
         # Normalize the ξ values using log-sum-exp operation
@@ -318,16 +368,24 @@ function calculate_ξ(hmm::hmmglm, α::Matrix{<:Real}, β::Matrix{<:Real}, X::Ma
     return ξ
 end
 
-function calculate_ξ(hmm::hmmglm, α::Matrix{<:Real}, β::Matrix{<:Real}, X::Matrix{<:Real}, y::Matrix{<:Real})
+function calculate_ξ(
+    hmm::hmmglm, α::Matrix{<:Real}, β::Matrix{<:Real}, X::Matrix{<:Real}, y::Matrix{<:Real}
+)
     T = size(y, 1)
     K = size(hmm.A, 1)
-    ξ = zeros(Float64, T-1, K, K)
-    for t in 1:T-1
+    ξ = zeros(Float64, T - 1, K, K)
+    for t in 1:(T - 1)
         # Array to store the unnormalized ξ values
         log_ξ_unnormalized = zeros(Float64, K, K)
         @threads for i in 1:K
             for j in 1:K
-                log_ξ_unnormalized[i, j] = α[t, i] + log(hmm.A[i, j]) + loglikelihood(hmm.B[j], row_matrix(X[t+1, :]), row_matrix(y[t+1, :])) + β[t+1, j]
+                log_ξ_unnormalized[i, j] =
+                    α[t, i] +
+                    log(hmm.A[i, j]) +
+                    loglikelihood(
+                        hmm.B[j], row_matrix(X[t + 1, :]), row_matrix(y[t + 1, :])
+                    ) +
+                    β[t + 1, j]
             end
         end
         # Normalize the ξ values using log-sum-exp operation
@@ -336,7 +394,7 @@ function calculate_ξ(hmm::hmmglm, α::Matrix{<:Real}, β::Matrix{<:Real}, X::Ma
     return ξ
 end
 
-function E_step(model::hmmglm, X::Matrix{<:Real}, y::Union{Vector{Float64}, Matrix{<:Real}})
+function E_step(model::hmmglm, X::Matrix{<:Real}, y::Union{Vector{Float64},Matrix{<:Real}})
     # run forward-backward algorithm
     α = forward(model, X, y)
     β = backward(model, X, y)
@@ -345,13 +403,19 @@ function E_step(model::hmmglm, X::Matrix{<:Real}, y::Union{Vector{Float64}, Matr
     return γ, ξ, α, β
 end
 
-function M_step!(model::hmmglm, γ::Matrix{<:Real}, ξ::Array{Float64, 3}, X::Matrix{<:Real}, y::Union{Vector{Float64}, Matrix{<:Real}})
+function M_step!(
+    model::hmmglm,
+    γ::Matrix{<:Real},
+    ξ::Array{Float64,3},
+    X::Matrix{<:Real},
+    y::Union{Vector{Float64},Matrix{<:Real}},
+)
     # update initial state distribution
-    update_initial_state_distribution!(model, γ)   
+    update_initial_state_distribution!(model, γ)
     # update transition matrix
     update_transition_matrix!(model, γ, ξ)
     # update regression models
-    update_regression!(model, X, y, exp.(γ)) 
+    return update_regression!(model, X, y, exp.(γ))
 end
 
 """
@@ -378,7 +442,14 @@ model = SwitchingGaussianRegression(input_dim=2, output_dim=1, K=2)
 lls = fit!(model, X, y)
 ```
 """
-function fit!(model::hmmglm, X::Matrix{<:Real}, y::Union{Vector{T}, BitVector, Matrix{<:Real}}, max_iter::Int=100, tol::Float64=1e-6, initialize::Bool=true) where T<: Real
+function fit!(
+    model::hmmglm,
+    X::Matrix{<:Real},
+    y::Union{Vector{<:Real},BitVector,Matrix{<:Real}},
+    max_iter::Int=100,
+    tol::Float64=1e-6,
+    initialize::Bool=true,
+)
     # convert y to Float64
     if typeof(y) == BitVector
         y = convert(Vector{Float64}, y)
@@ -407,7 +478,7 @@ function fit!(model::hmmglm, X::Matrix{<:Real}, y::Union{Vector{T}, BitVector, M
                 return lls
             end
         end
-        prev_ll = ll 
+        prev_ll = ll
     end
     return lls
 end
@@ -451,7 +522,10 @@ function viterbi(hmm::hmmglm, X::Matrix{<:Real}, y::Vector{Float64})
         for j in 1:K
             max_prob, max_state = -Inf, 0
             for i in 1:K
-                prob = viterbi[t-1, i] + log(hmm.A[i, j]) + loglikelihood(hmm.B[j], X[t, :], y[t])
+                prob =
+                    viterbi[t - 1, i] +
+                    log(hmm.A[i, j]) +
+                    loglikelihood(hmm.B[j], X[t, :], y[t])
                 if prob > max_prob
                     max_prob = prob
                     max_state = i
@@ -470,5 +544,3 @@ function viterbi(hmm::hmmglm, X::Matrix{<:Real}, y::Vector{Float64})
     end
     return reverse(best_path)
 end
-
-

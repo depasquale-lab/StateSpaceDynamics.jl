@@ -24,7 +24,7 @@ function test_kmeans_clustering()
     @test size(centroids) == (2, k_means)
     @test length(labels) == 100
     # Now test kmeans on a vector.
-    data = randn(100,)
+    data = randn(100)
     centroids, labels = kmeans_clustering(data, k_means)
     # Check dimensions
     @test size(centroids) == (1, k_means)
@@ -52,10 +52,10 @@ function test_block_tridgm()
 
     # Check some blocks in the matrix
     for i in 1:10
-        @test A[(2i-1):(2i), (2i-1):(2i)] == main[i]
+        @test A[(2i - 1):(2i), (2i - 1):(2i)] == main[i]
         if i < 10
-            @test A[(2i-1):(2i), (2i+1):(2i+2)] == super[i]
-            @test A[(2i+1):(2i+2), (2i-1):(2i)] == sub[i]
+            @test A[(2i - 1):(2i), (2i + 1):(2i + 2)] == super[i]
+            @test A[(2i + 1):(2i + 2), (2i - 1):(2i)] == sub[i]
         end
     end
 
@@ -66,10 +66,10 @@ function test_block_tridgm()
     A = block_tridgm(main, super, sub)
     @test size(A) == (20, 20)
     for i in 1:10
-        @test A[(2i-1):(2i), (2i-1):(2i)] == main[i]
+        @test A[(2i - 1):(2i), (2i - 1):(2i)] == main[i]
         if i < 10
-            @test A[(2i-1):(2i), (2i+1):(2i+2)] == super[i]
-            @test A[(2i+1):(2i+2), (2i-1):(2i)] == sub[i]
+            @test A[(2i - 1):(2i), (2i + 1):(2i + 2)] == super[i]
+            @test A[(2i + 1):(2i + 2), (2i - 1):(2i)] == sub[i]
         end
     end
 end
@@ -111,5 +111,5 @@ function test_interleave_reshape()
     data = collect(1:11)
     t = 2
     d = 5
-    @test_throws ErrorException interleave_reshape(data, t, d)
+    @test_throws DimensionMismatch interleave_reshape(data, t, d)
 end

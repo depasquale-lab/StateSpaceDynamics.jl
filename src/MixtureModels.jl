@@ -1,4 +1,5 @@
-export  GaussianMixtureModel, PoissonMixtureModel, fit!, log_likelihood, sample, E_Step, M_Step!, MixtureModel
+export GaussianMixtureModel,
+    PoissonMixtureModel, fit!, log_likelihood, sample, E_Step, M_Step!, MixtureModel
 
 
 """
@@ -22,10 +23,9 @@ fit!(gmm, data)
 mutable struct GaussianMixtureModel <: MixtureModel
     k::Int # Number of clusters
     μₖ::Matrix{<:Real} # Means of each cluster
-    Σₖ::Array{Matrix{<:Real}, 1} # Covariance matrices of each cluster
+    Σₖ::Array{Matrix{<:Real},1} # Covariance matrices of each cluster
     πₖ::Vector{Float64} # Mixing coefficients
 end
-
 
 """
     GaussianMixtureModel(k::Int, data_dim::Int)
@@ -35,7 +35,7 @@ identity, πₖ to a uniform distribution, and μₖ's means to zeros.
 
 """
 function GaussianMixtureModel(k::Int, data_dim::Int)
-    Σ = [Matrix{Float64}(I, data_dim, data_dim) for _ = 1:k]
+    Σ = [Matrix{Float64}(I, data_dim, data_dim) for _ in 1:k]
     πs = ones(k) ./ k
     μ = zeros(Float64, k, data_dim)  # Mean of each cluster initialized to zero matrix
     return GaussianMixtureModel(k, μ, Σ, πs)
@@ -47,17 +47,19 @@ Draw 'n' samples from gmm. Returns a Matrix{<:Real}, where each row is a data po
 function sample(gmm::GaussianMixtureModel, n::Int)
     # Determine the number of samples from each component
     component_samples = rand(Multinomial(n, gmm.πₖ), 1)
-    
+
     # Initialize a container for all samples
     samples = Matrix{Float64}(undef, n, size(gmm.μₖ, 2))
     start_idx = 1
-    
-    for i in 1:gmm.k
+
+    for i in 1:(gmm.k)
         num_samples = component_samples[i]
         if num_samples > 0
             # Sample all at once from the i-th Gaussian component
             dist = MvNormal(gmm.μₖ[i, :], gmm.Σₖ[i])
-            samples[start_idx:(start_idx + num_samples - 1), :] = transpose(rand(dist, num_samples))
+            samples[start_idx:(start_idx + num_samples - 1), :] = transpose(
+                rand(dist, num_samples)
+            )
             start_idx += num_samples
         end
     end
@@ -84,10 +86,12 @@ function E_Step(gmm::GaussianMixtureModel, data::Matrix{<:Real})
     return γ
 end
 
-function M_Step!(gmm::GaussianMixtureModel, data::Matrix{<:Real}, class_probabilities::Matrix{<:Real})
+function M_Step!(
+    gmm::GaussianMixtureModel, data::Matrix{<:Real}, class_probabilities::Matrix{<:Real}
+)
     N, D = size(data)
     K = gmm.k
-    γ = class_probabilities  
+    γ = class_probabilities
 
     N_k = zeros(K)
     μₖ = zeros(K, D)
@@ -100,17 +104,16 @@ function M_Step!(gmm::GaussianMixtureModel, data::Matrix{<:Real}, class_probabil
 
     for k in 1:K
         x_n = data .- μₖ[k, :]'
-        Σₖ[:,:,k] = ((γ[:, k] .* x_n)' * x_n ./ (N_k[k] + I*1e-6)) + (I * 1e-6)
+        Σₖ[:, :, k] = ((γ[:, k] .* x_n)' * x_n ./ (N_k[k] + I * 1e-6)) + (I * 1e-6)
         if !ishermitian(Σₖ[:, :, k])
-            Σₖ[:,:,k] = 0.5 * (Σₖ[:,:,k] + Σₖ[:,:,k]')
+            Σₖ[:, :, k] = 0.5 * (Σₖ[:, :, k] + Σₖ[:, :, k]')
         end
         gmm.πₖ[k] = N_k[k] / N
     end
 
     gmm.μₖ = μₖ
-    gmm.Σₖ = [Σₖ[:,:,k] for k in 1:K]
+    return gmm.Σₖ = [Σₖ[:, :, k] for k in 1:K]
 end
-
 
 """
     log_likelihood(gmm::GaussianMixtureModel, data::Matrix{<:Real})
@@ -124,9 +127,14 @@ function log_likelihood(gmm::GaussianMixtureModel, data::Matrix{<:Real})
     N, K = size(data, 1), gmm.k
     ll = 0.0
     for n in 1:N
-        log_probabilities = [log(gmm.πₖ[k]) + logpdf(MvNormal(gmm.μₖ[k, :], gmm.Σₖ[k]), data[n, :]) for k in 1:K]
+        log_probabilities = [
+            log(gmm.πₖ[k]) + logpdf(MvNormal(gmm.μₖ[k, :], gmm.Σₖ[k]), data[n, :]) for
+            k in 1:K
+        ]
         max_log_prob = maximum(log_probabilities)
-        ll_n = max_log_prob + log(sum(exp(log_prob - max_log_prob) for log_prob in log_probabilities))
+        ll_n =
+            max_log_prob +
+            log(sum(exp(log_prob - max_log_prob) for log_prob in log_probabilities))
         ll += ll_n
     end
     return ll
@@ -153,14 +161,20 @@ gmm = GaussianMixtureModel(k=3, d=2)  # Initialize a GMM with 3 components and 2
 class_probabilities = fit!(gmm, data, maxiter=100, tol=1e-4, initialize_kmeans=true)
 ```
 """
-function fit!(gmm::GaussianMixtureModel, data::Matrix{<:Real}; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=false)
+function fit!(
+    gmm::GaussianMixtureModel,
+    data::Matrix{<:Real};
+    maxiter::Int=50,
+    tol::Float64=1e-3,
+    initialize_kmeans::Bool=false,
+)
     prev_ll = -Inf  # Initialize to negative infinity
 
     if initialize_kmeans
         gmm.μₖ = permutedims(kmeanspp_initialization(data, gmm.k))
     end
 
-    for i = 1:maxiter
+    for i in 1:maxiter
         # E-Step
         class_probabilities = E_Step(gmm, data)
         # M-Step
@@ -183,19 +197,33 @@ end
 
 # Handle vector data by reshaping it into a 2D matrix with a single column
 function E_Step(gmm::GaussianMixtureModel, data::Vector{Float64})
-    E_Step(gmm, reshape(data, :, 1))
+    return E_Step(gmm, reshape(data, :, 1))
 end
 
-function M_Step!(gmm::GaussianMixtureModel, data::Vector{Float64}, class_probabilities::Matrix{<:Real})
-    M_Step!(gmm, reshape(data, :, 1), class_probabilities::Matrix{<:Real})
+function M_Step!(
+    gmm::GaussianMixtureModel, data::Vector{Float64}, class_probabilities::Matrix{<:Real}
+)
+    return M_Step!(gmm, reshape(data, :, 1), class_probabilities::Matrix{<:Real})
 end
 
 function log_likelihood(gmm::GaussianMixtureModel, data::Vector{Float64})
-    log_likelihood(gmm, reshape(data, :, 1))
+    return log_likelihood(gmm, reshape(data, :, 1))
 end
 
-function fit!(gmm::GaussianMixtureModel, data::Vector{Float64}; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=true)
-    fit!(gmm, reshape(data, :, 1); maxiter=maxiter, tol=tol, initialize_kmeans=initialize_kmeans)
+function fit!(
+    gmm::GaussianMixtureModel,
+    data::Vector{Float64};
+    maxiter::Int=50,
+    tol::Float64=1e-3,
+    initialize_kmeans::Bool=true,
+)
+    return fit!(
+        gmm,
+        reshape(data, :, 1);
+        maxiter=maxiter,
+        tol=tol,
+        initialize_kmeans=initialize_kmeans,
+    )
 end
 
 """
@@ -220,7 +248,6 @@ mutable struct PoissonMixtureModel <: MixtureModel
     πₖ::Vector{Float64} # Mixing coefficients
 end
 
-
 """
     PoissonMixtureModel(k::Int)
     
@@ -238,23 +265,23 @@ end
 function E_Step(pmm::PoissonMixtureModel, data::Matrix{Int})
     N, _ = size(data)
     γ = zeros(N, pmm.k)
-    
+
     for n in 1:N
-        for k in 1:pmm.k
+        for k in 1:(pmm.k)
             λk = pmm.λₖ[k]
             log_γnk = log(pmm.πₖ[k]) + logpdf(Poisson(λk), data[n, 1])
             γ[n, k] = exp(log_γnk)  # Direct computation of responsibilities
         end
         γ[n, :] /= sum(γ[n, :])  # Normalize responsibilities
     end
-    
+
     return γ  # Return the responsibility matrix
 end
 
 function M_Step!(pmm::PoissonMixtureModel, data::Matrix{Int}, γ::Matrix{<:Real})
     N, _ = size(data)
-    
-    for k in 1:pmm.k
+
+    for k in 1:(pmm.k)
         Nk = sum(γ[:, k])
         pmm.λₖ[k] = sum(γ[:, k] .* data) / Nk  # Update λk
         pmm.πₖ[k] = Nk / N  # Update mixing coefficient
@@ -283,7 +310,13 @@ pmm = PoissonMixtureModel(k=3)  # Initialize a PMM with 3 components
 class_probabilities = fit!(pmm, data, maxiter=100, tol=1e-4, initialize_kmeans=true)
 ```
 """
-function fit!(pmm::PoissonMixtureModel, data::Matrix{Int}; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=false)
+function fit!(
+    pmm::PoissonMixtureModel,
+    data::Matrix{Int};
+    maxiter::Int=50,
+    tol::Float64=1e-3,
+    initialize_kmeans::Bool=false,
+)
     prev_ll = -Inf  # Initialize previous log likelihood to negative infinity
 
     if initialize_kmeans
@@ -317,7 +350,9 @@ Compute the log-likelihood of the data given the Poisson Mixture Model (PMM). Th
 function log_likelihood(pmm::PoissonMixtureModel, data::Matrix{Int})
     ll = 0.0
     for n in 1:size(data, 1)
-        ll_n = log(sum([pmm.πₖ[k] * pdf(Poisson(pmm.λₖ[k]), data[n, 1]) for k in 1:pmm.k]))
+        ll_n = log(
+            sum([pmm.πₖ[k] * pdf(Poisson(pmm.λₖ[k]), data[n, 1]) for k in 1:(pmm.k)])
+        )
         ll += ll_n
     end
     return ll
@@ -326,18 +361,18 @@ end
 """
     sample(pmm::PoissonMixtureModel, n)
 
-Draw 'n' samples from pmm. Returns a Vector{Int} of lenth n.
+Draw 'n' samples from pmm. Returns a Vector{Int} of length n.
 
 """
 function sample(pmm::PoissonMixtureModel, n::Int)
     # Determine the number of samples from each component
     component_samples = rand(Multinomial(n, pmm.πₖ), 1)
-    
+
     # Initialize a container for all samples
     samples = Vector{Int}(undef, n)
     start_idx = 1
-    
-    for i in 1:pmm.k
+
+    for i in 1:(pmm.k)
         num_samples = component_samples[i]
         if num_samples > 0
             # Sample all at once from the i-th Poisson component
@@ -349,20 +384,33 @@ function sample(pmm::PoissonMixtureModel, n::Int)
     return samples
 end
 
-
 # Handle vector data by reshaping it into a 2D matrix with a single column
 function E_Step(pmm::PoissonMixtureModel, data::Vector{Int})
-    E_Step(pmm, reshape(data, :, 1))
+    return E_Step(pmm, reshape(data, :, 1))
 end
 
-function M_Step!(pmm::PoissonMixtureModel, data::Vector{Int}, class_probabilities::Matrix{<:Real})
-    M_Step!(pmm, reshape(data, :, 1), class_probabilities)
+function M_Step!(
+    pmm::PoissonMixtureModel, data::Vector{Int}, class_probabilities::Matrix{<:Real}
+)
+    return M_Step!(pmm, reshape(data, :, 1), class_probabilities)
 end
 
 function log_likelihood(pmm::PoissonMixtureModel, data::Vector{Int})
-    log_likelihood(pmm, reshape(data, :, 1))
+    return log_likelihood(pmm, reshape(data, :, 1))
 end
 
-function fit!(pmm::PoissonMixtureModel, data::Vector{Int}; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=true)
-    fit!(pmm, reshape(data, :, 1); maxiter=maxiter, tol=tol, initialize_kmeans=initialize_kmeans)
+function fit!(
+    pmm::PoissonMixtureModel,
+    data::Vector{Int};
+    maxiter::Int=50,
+    tol::Float64=1e-3,
+    initialize_kmeans::Bool=true,
+)
+    return fit!(
+        pmm,
+        reshape(data, :, 1);
+        maxiter=maxiter,
+        tol=tol,
+        initialize_kmeans=initialize_kmeans,
+    )
 end

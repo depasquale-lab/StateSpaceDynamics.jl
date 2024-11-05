@@ -1,14 +1,15 @@
 module StateSpaceDynamics
 
+using ArrayLayouts
 using Distributions
 using ForwardDiff
 using LinearAlgebra
-using Logging
+using LineSearches
 using Optim
-using Plots
 using ProgressMeter
 using Random
 using SparseArrays
+using StaticArrays
 using Statistics
 using StatsBase
 using StatsFuns
@@ -17,21 +18,12 @@ using Base.Threads
 
 include("GlobalTypes.jl")
 include("Utilities.jl")
-
-include("LDS.jl")
-
-#include("MarkovRegression.jl")
-
-
-
-include("CompositeModel.jl")
 include("RegressionModels.jl")
+include("LinearDynamicalSystems.jl")
 include("EmissionModels.jl")
-
-include("MixtureModels.jl")
 include("HiddenMarkovModels.jl")
-
-include("Optimization.jl")
+include("MarkovRegression.jl")
+include("MixtureModels.jl")
 include("Preprocessing.jl")
 
 end
