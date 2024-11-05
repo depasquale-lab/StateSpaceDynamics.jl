@@ -1,3 +1,5 @@
+export CompositeModel
+
 """
     CompositeModel
 

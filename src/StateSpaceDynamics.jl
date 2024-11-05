@@ -18,11 +18,10 @@ using Base.Threads
 
 include("GlobalTypes.jl")
 include("Utilities.jl")
-include("RegressionModels.jl")
 include("LinearDynamicalSystems.jl")
+include("CompositeModel.jl")
 include("EmissionModels.jl")
 include("HiddenMarkovModels.jl")
-include("MarkovRegression.jl")
 include("MixtureModels.jl")
 include("Preprocessing.jl")
 

@@ -3,7 +3,7 @@ The purpose of this file is to provide a common place for all global types to be
 """
 
 export MixtureModel,
-    EmissionsModel,
+    EmissionModel,
     AbstractHMM,
     DynamicalSystem
 

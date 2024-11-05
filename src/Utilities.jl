@@ -1,4 +1,4 @@
-export kmeanspp_initialization, kmeans_clustering, PPCA, fit!, block_tridgm, interleave_reshape, block_tridiagonal_inverse
+export kmeanspp_initialization, kmeans_clustering, fit!, block_tridgm, interleave_reshape, block_tridiagonal_inverse
 export row_matrix, stabilize_covariance_matrix, valid_Σ
 
 # Matrix utilities

@@ -740,9 +740,8 @@ A mutable struct representing an autoregressive emission model, which wraps arou
 # Fields
 - `inner_model::AutoRegression`: The underlying autoregressive model used for the emissions.
 """
-# mutable struct AutoRegressionEmission <: EmissionModel
-#     inner_model:: AutoRegression
-# end
+mutable struct AutoRegressionEmission <: EmissionModel
+end
 
 
 """
