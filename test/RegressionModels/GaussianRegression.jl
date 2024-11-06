@@ -118,24 +118,34 @@ function test_GaussianRegression_optimization()
     @test isapprox(G, grad_fd, rtol=1e-5)
 end
 
-function test_GaussianRegression_regularization()
-    X, y, true_β, true_covariance, n = GaussianRegression_simulation()
+function test_GaussianRegression_sklearn()
+    # create fake data that we fit in sklearn as well
+    X = reshape([1., 2., 3., 4.1], 4, 1)
+    y = reshape([0.5, 0.9, 0.99, 1.4], 4, 1)
+    w = [1.0, 1.0, 1.0, 0.1]
+
+    # plain model i.e., no weights, no regularization
+    base_model = GaussianRegressionEmission(input_dim=1, output_dim=1, λ=0.0)
+    fit!(base_model, X, y)
+
+    @test isapprox(base_model.β, [0.2623, 0.2713]; atol=1e-3)
+
+    # test with regularization
+    regularized_model = GaussianRegressionEmission(input_dim=1, output_dim=1, λ=1.0)
+    fit!(regularized_model, X, y)
+
+    @test isapprox(regularized_model.β, [0.3709, 0.2283]; atol=1e-3)
+
+    # test model with weight but no regularization
+    weighted_model = GaussianRegressionEmission(input_dim=1, output_dim=1, λ=0.0)
+    fit!(weighted_model, X, y, w)
+
+    @test isapprox(weighted_model.β, [0.2941, 0.2524], atol=1e-3)
     
-    # Test model with different regularization values
-    λ_values = [0.0, 0.1, 1.0]
-    
-    for λ in λ_values
-        model = GaussianRegressionEmission(
-            input_dim=2,
-            output_dim=1,
-            λ=λ
-        )
-        
-        fit!(model, X, y)
-        
-        # Higher regularization should result in smaller coefficients
-        if λ > 0
-            @test norm(model.β) < norm(true_β)
-        end
-    end
+    # test model with weights and regularized_model
+    rw_model = GaussianRegressionEmission(input_dim=1, output_dim=1, λ=1.0)
+    fit!(rw_model, X, y, w)
+
+    @test isapprox(rw_model.β, [0.4464, 0.1787], atol=1e-3)
+
 end

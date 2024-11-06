@@ -312,19 +312,37 @@ function loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y:
     return -0.5 .* weighted_residuals
 end
 
-# Gaussian Regression Implementation
 function objective(opt::RegressionOptimization{GaussianRegressionEmission}, β_vec::Vector{T}) where T <: Real
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     residuals = opt.y - opt.X * β_mat
     w_reshaped = reshape(opt.w, :, 1)
-    pseudo_ll = -0.5 * sum(w_reshaped .* residuals.^2) - (opt.model.λ * sum(β_mat.^2))
-    return -pseudo_ll / size(opt.X, 1)
+    
+    # calculate regularization
+    if opt.model.include_intercept  # Fixed: model -> opt.model
+        regularization = 0.5 * opt.model.λ * sum(abs2, β_mat[2:end, :])  # Fixed: accessing λ through opt.model
+    else
+        regularization = 0.5 * opt.model.λ * sum(abs2, β_mat)
+    end
+    
+    # calculate pseudo log-likelihood
+    pseudo_ll = 0.5 * sum(w_reshaped .* residuals.^2) + regularization
+    return pseudo_ll 
 end
 
 function objective_gradient!(G::Vector{Float64}, opt::RegressionOptimization{GaussianRegressionEmission}, β_vec::Vector{T}) where T <: Real
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     residuals = opt.y - opt.X * β_mat
-    grad_mat = -(opt.X' * Diagonal(opt.w) * residuals - (2 * opt.model.λ * β_mat)) / size(opt.X, 1)
+    
+    # calculate the gradient of the regularization component
+    regularization = zeros(size(β_mat))
+    if opt.model.include_intercept  # Fixed: model -> opt.model
+        regularization[2:end, :] .= opt.model.λ * β_mat[2:end, :]
+    else
+        regularization .= opt.model.λ * β_mat
+    end
+    
+    # calculate the gradient
+    grad_mat = -(opt.X' * (Diagonal(opt.w) * residuals)) + regularization  # Fixed: Added negative sign
     G .= vec(grad_mat)
 end
 
@@ -509,15 +527,32 @@ end
 function objective(opt::RegressionOptimization{BernoulliRegressionEmission}, β_vec::Vector{T}) where T <: Real
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     p = logistic.(opt.X * β_mat)
-    val = -sum(opt.w .* (opt.y .* log.(p) .+ (1 .- opt.y) .* log.(1 .- p))) + 
-          (opt.model.λ * sum(β_mat.^2))
-    return val / size(opt.X, 1)
+
+    # calculate regularization
+    if opt.model.include_intercept
+        regularization = 0.5 * opt.model.λ * sum(abs2, β_mat[2:end, :])
+    else
+        regularization = 0.5 * opt.model.λ * sum(abs2, β_mat)
+    end
+
+    val = -sum(opt.w .* (opt.y .* log.(p) .+ (1 .- opt.y) .* log.(1 .- p))) + regularization
+          
+    return val
 end
 
 function objective_gradient!(G::Vector{Float64}, opt::RegressionOptimization{BernoulliRegressionEmission}, β_vec::Vector{T}) where T <: Real
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     p = logistic.(opt.X * β_mat)
-    grad_mat = (-(opt.X' * (opt.w .* (opt.y .- p))) + 2 * opt.model.λ * β_mat) / size(opt.X, 1)
+
+    # calculate regularization term
+    regularization = zeros(size(β_mat))
+    if opt.model.include_intercept
+        regularization[2:end] .= opt.model.λ * β_mat[2:end, :]
+    else
+        regularization .= opt.model.λ * β_mat
+    end
+
+    grad_mat = -(opt.X' * (opt.w .* (opt.y .- p))) + regularization
     G .= vec(grad_mat)
 end
 

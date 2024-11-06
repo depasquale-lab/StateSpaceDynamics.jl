@@ -114,24 +114,34 @@ function test_BernoulliRegression_optimization()
     @test isapprox(G, grad_fd, rtol=1e-5)
 end
 
-function test_BernoulliRegression_regularization()
-    X, y, true_β, n = BernoulliRegression_simulation()
+function test_BernoulliRegression_sklearn()
+    # create a set of dummy data to pass to sklearn to assess consistency
+    X = reshape([1.0, 2.1, 3.0, 4.0], 4, 1)
+    y = reshape([0.0, 1.0, 0.0, 1.0], 4, 1)
+    w = [1.0, 1.0, 1.0, 0.1]
+
+    # first check that the regualr model is 
+    base_model = BernoulliRegressionEmission(input_dim=1, output_dim=1, λ=0.0)
+    fit!(base_model, X, y)
+
+    @test isapprox(base_model.β, [-2.522, 0.9965], atol=1e-3)
+
+    # now check with regularization
+    regularized_model = BernoulliRegressionEmission(input_dim=1, output_dim=1, λ=1.0)
+    fit!(regularized_model, X, y)
+
+    @test isapprox(regularized_model.β, [-1.2169, 0.4816], atol=1e-3)
+
+    # check weighted model
+    weighted_model = BernoulliRegressionEmission(input_dim=1, output_dim=1, λ=0.0)
+    fit!(weighted_model, X, y, w)
+
+    @test isapprox(weighted_model.β, [-1.366, 0.3599], atol=1e-3)
     
-    # Test model with different regularization values
-    λ_values = [0.0, 0.1, 1.0]
+    # test weighted and regularized model
+    rw_model = BernoulliRegressionEmission(input_dim=1, output_dim=1, λ=1.0)
+    fit!(rw_model, X, y, w)
     
-    for λ in λ_values
-        model = BernoulliRegressionEmission(
-            input_dim=2,
-            output_dim=1,
-            λ=λ
-        )
-        
-        fit!(model, X, y)
-        
-        # Higher regularization should result in smaller coefficients
-        if λ > 0
-            @test norm(model.β) < norm(true_β)
-        end
-    end
+    @test isapprox(rw_model.β, [-0.8623, 0.1253], atol=1e-3)
+    
 end

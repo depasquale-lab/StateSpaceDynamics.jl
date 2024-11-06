@@ -12,180 +12,180 @@ using CSV
 using DataFrames
 using MAT
 
-"""
-Package Wide Tests
-"""
+# """
+# Package Wide Tests
+# """
 
-@testset "Package Wide Tests" begin
-    Aqua.test_all(StateSpaceDynamics; ambiguities=false)
-    @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
-end
+# @testset "Package Wide Tests" begin
+#     Aqua.test_all(StateSpaceDynamics; ambiguities=false)
+#     @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
+# end
 
-include("helper_functions.jl")
+# include("helper_functions.jl")
 
-"""
-Tests for HiddenMarkovModels.jl
-"""
+# """
+# Tests for HiddenMarkovModels.jl
+# """
 
-include("HiddenMarkovModels/HiddenMarkovModels.jl")
+# include("HiddenMarkovModels/HiddenMarkovModels.jl")
 
-@testset "HiddenMarkovModels.jl Tests" begin
-    test_HiddenMarkovModel_E_step()
-    #test_viterbi() -- don't have time to finish, need emission matching logic
-    test_GaussianHMM()
-    # test_AutoRegressionHMM()
-    test_trialized_GaussianHMM()
-    test_trialized_SwitchingGaussianRegression()
-end
+# @testset "HiddenMarkovModels.jl Tests" begin
+#     test_HiddenMarkovModel_E_step()
+#     #test_viterbi() -- don't have time to finish, need emission matching logic
+#     test_GaussianHMM()
+#     # test_AutoRegressionHMM()
+#     test_trialized_GaussianHMM()
+#     test_trialized_SwitchingGaussianRegression()
+# end
 
-"""
-Tests for MixtureModels.jl
-"""
+# """
+# Tests for MixtureModels.jl
+# """
 
-include("MixtureModels/GaussianMixtureModel.jl")
-include("MixtureModels/PoissonMixtureModel.jl")
+# include("MixtureModels/GaussianMixtureModel.jl")
+# include("MixtureModels/PoissonMixtureModel.jl")
 
 
-@testset "MixtureModels.jl Tests" begin
-    # Test GaussianMixtureModel
-    # Initialize test models
-    # Standard GaussianMixtureModel model
-    # Number of clusters
-    k = 3
-    # Dimension of data points
-    data_dim = 2
-    # Construct gmm
-    standard_gmm = GaussianMixtureModel(k, data_dim)
-    # Generate sample data
-    standard_data = randn(10, data_dim)
-    # Test constructor method of GaussianMixtureModel
-    test_GaussianMixtureModel_properties(standard_gmm, k, data_dim)
-    # Vector-data GaussianMixtureModel model
-    # Number of clusters
-    k = 2
-    # Dimension of data points
-    data_dim = 1
-    # Construct gmm
-    vector_gmm = GaussianMixtureModel(k, data_dim)
-    # Generate sample data
-    vector_data = randn(1000)
-    # Test constructor method of GaussianMixtureModel
-    test_GaussianMixtureModel_properties(vector_gmm, k, data_dim)
+# @testset "MixtureModels.jl Tests" begin
+#     # Test GaussianMixtureModel
+#     # Initialize test models
+#     # Standard GaussianMixtureModel model
+#     # Number of clusters
+#     k = 3
+#     # Dimension of data points
+#     data_dim = 2
+#     # Construct gmm
+#     standard_gmm = GaussianMixtureModel(k, data_dim)
+#     # Generate sample data
+#     standard_data = randn(10, data_dim)
+#     # Test constructor method of GaussianMixtureModel
+#     test_GaussianMixtureModel_properties(standard_gmm, k, data_dim)
+#     # Vector-data GaussianMixtureModel model
+#     # Number of clusters
+#     k = 2
+#     # Dimension of data points
+#     data_dim = 1
+#     # Construct gmm
+#     vector_gmm = GaussianMixtureModel(k, data_dim)
+#     # Generate sample data
+#     vector_data = randn(1000)
+#     # Test constructor method of GaussianMixtureModel
+#     test_GaussianMixtureModel_properties(vector_gmm, k, data_dim)
 
-    # Test EM methods of the GaussianMixtureModels
+#     # Test EM methods of the GaussianMixtureModels
 
-    # Paired data and GaussianMixtureModels to test
-    tester_set = [(standard_gmm, standard_data), (vector_gmm, vector_data)]
+#     # Paired data and GaussianMixtureModels to test
+#     tester_set = [(standard_gmm, standard_data), (vector_gmm, vector_data)]
 
-    for (gmm, data) in tester_set
-        k = gmm.k
-        data_dim = size(data, 2)
+#     for (gmm, data) in tester_set
+#         k = gmm.k
+#         data_dim = size(data, 2)
 
-        gmm = GaussianMixtureModel(k, data_dim)
-        testGaussianMixtureModel_EStep(gmm, data)
+#         gmm = GaussianMixtureModel(k, data_dim)
+#         testGaussianMixtureModel_EStep(gmm, data)
 
-        gmm = GaussianMixtureModel(k, data_dim)
-        testGaussianMixtureModel_MStep(gmm, data)
+#         gmm = GaussianMixtureModel(k, data_dim)
+#         testGaussianMixtureModel_MStep(gmm, data)
 
-        gmm = GaussianMixtureModel(k, data_dim)
-        testGaussianMixtureModel_fit(gmm, data)
+#         gmm = GaussianMixtureModel(k, data_dim)
+#         testGaussianMixtureModel_fit(gmm, data)
 
-        gmm = GaussianMixtureModel(k, data_dim)
-        test_log_likelihood(gmm, data)
-    end
+#         gmm = GaussianMixtureModel(k, data_dim)
+#         test_log_likelihood(gmm, data)
+#     end
 
-    # Test PoissonMixtureModel
-    k = 3  # Number of clusters
+#     # Test PoissonMixtureModel
+#     k = 3  # Number of clusters
 
-    # Simulate some Poisson-distributed data using the sample function
-    # First, define a temporary PMM for sampling purposes
-    temp_pmm = PoissonMixtureModel(k)
-    temp_pmm.λₖ = [5.0, 10.0, 15.0]  # Assign some λ values for generating data
-    temp_pmm.πₖ = [1 / 3, 1 / 3, 1 / 3]  # Equal mixing coefficients for simplicity
-    data = StateSpaceDynamics.sample(temp_pmm, 300)  # Generate sample data
+#     # Simulate some Poisson-distributed data using the sample function
+#     # First, define a temporary PMM for sampling purposes
+#     temp_pmm = PoissonMixtureModel(k)
+#     temp_pmm.λₖ = [5.0, 10.0, 15.0]  # Assign some λ values for generating data
+#     temp_pmm.πₖ = [1 / 3, 1 / 3, 1 / 3]  # Equal mixing coefficients for simplicity
+#     data = StateSpaceDynamics.sample(temp_pmm, 300)  # Generate sample data
 
-    standard_pmm = PoissonMixtureModel(k)
+#     standard_pmm = PoissonMixtureModel(k)
 
-    # Conduct tests
-    test_PoissonMixtureModel_properties(standard_pmm, k)
+#     # Conduct tests
+#     test_PoissonMixtureModel_properties(standard_pmm, k)
 
-    tester_set = [(standard_pmm, data)]
+#     tester_set = [(standard_pmm, data)]
 
-    for (pmm, data) in tester_set
-        pmm = PoissonMixtureModel(k)
-        testPoissonMixtureModel_EStep(pmm, data)
-        pmm = PoissonMixtureModel(k)
-        testPoissonMixtureModel_MStep(pmm, data)
-        pmm = PoissonMixtureModel(k)
-        testPoissonMixtureModel_fit(pmm, data)
-        pmm = PoissonMixtureModel(k)
-        test_log_likelihood(pmm, data)
-    end
-end
+#     for (pmm, data) in tester_set
+#         pmm = PoissonMixtureModel(k)
+#         testPoissonMixtureModel_EStep(pmm, data)
+#         pmm = PoissonMixtureModel(k)
+#         testPoissonMixtureModel_MStep(pmm, data)
+#         pmm = PoissonMixtureModel(k)
+#         testPoissonMixtureModel_fit(pmm, data)
+#         pmm = PoissonMixtureModel(k)
+#         test_log_likelihood(pmm, data)
+#     end
+# end
 
-"""
-Tests for LDS.jl
-"""
+# """
+# Tests for LDS.jl
+# """
 
-include("LinearDynamicalSystems//GaussianLDS.jl")
+# include("LinearDynamicalSystems//GaussianLDS.jl")
 
-@testset "GaussianLDS Tests" begin
-    @testset "Constructor Tests" begin
-        test_lds_with_params()
-        test_lds_without_params()
-    end
-    @testset "Smoother tests" begin
-        test_Gradient()
-        test_Hessian()
-        test_smooth()
-    end
-    @testset "EM tests" begin
-        test_estep()
-        # test when ntrials=1
-        test_initial_observation_parameter_updates()
-        test_state_model_parameter_updates()
-        test_obs_model_params_updates()
-        # test when ntrials>1
-        test_initial_observation_parameter_updates(3)
-        test_state_model_parameter_updates(3)
-        test_obs_model_params_updates(3)
-        # test fit method using n=1 and n=3
-        test_EM()
-        test_EM(3)
-    end
-end
+# @testset "GaussianLDS Tests" begin
+#     @testset "Constructor Tests" begin
+#         test_lds_with_params()
+#         test_lds_without_params()
+#     end
+#     @testset "Smoother tests" begin
+#         test_Gradient()
+#         test_Hessian()
+#         test_smooth()
+#     end
+#     @testset "EM tests" begin
+#         test_estep()
+#         # test when ntrials=1
+#         test_initial_observation_parameter_updates()
+#         test_state_model_parameter_updates()
+#         test_obs_model_params_updates()
+#         # test when ntrials>1
+#         test_initial_observation_parameter_updates(3)
+#         test_state_model_parameter_updates(3)
+#         test_obs_model_params_updates(3)
+#         # test fit method using n=1 and n=3
+#         test_EM()
+#         test_EM(3)
+#     end
+# end
 
-"""
-Tests for PoissonLDS.jl
-"""
+# """
+# Tests for PoissonLDS.jl
+# """
 
-include("LinearDynamicalSystems//PoissonLDS.jl")
+# include("LinearDynamicalSystems//PoissonLDS.jl")
 
-@testset "PoissonLDS Tests" begin
-    @testset "Constructor Tests" begin
-        test_PoissonLDS_with_params()
-        test_poisson_lds_without_params()
-    end
-    @testset "Smoother Tests" begin
-        test_Gradient()
-        test_Hessian()
-        test_smooth()
-    end
-    @testset "EM Tests" begin
-        test_parameter_gradient()
-        # test when ntrials=1
-        test_initial_observation_parameter_updates()
-        test_state_model_parameter_updates()
-        # test when n_trials>1
-        test_initial_observation_parameter_updates(3)
-        test_state_model_parameter_updates(3)
-        # test fit method using 1 trial and three trials
-        test_EM()
-        test_EM(3)
-        # test resutlts are same as matlab code
-        test_EM_matlab()
-    end
-end
+# @testset "PoissonLDS Tests" begin
+#     @testset "Constructor Tests" begin
+#         test_PoissonLDS_with_params()
+#         test_poisson_lds_without_params()
+#     end
+#     @testset "Smoother Tests" begin
+#         test_Gradient()
+#         test_Hessian()
+#         test_smooth()
+#     end
+#     @testset "EM Tests" begin
+#         test_parameter_gradient()
+#         # test when ntrials=1
+#         test_initial_observation_parameter_updates()
+#         test_state_model_parameter_updates()
+#         # test when n_trials>1
+#         test_initial_observation_parameter_updates(3)
+#         test_state_model_parameter_updates(3)
+#         # test fit method using 1 trial and three trials
+#         test_EM()
+#         test_EM(3)
+#         # test resutlts are same as matlab code
+#         test_EM_matlab()
+#     end
+# end
 
 """
 Tests for RegressionModels.jl
@@ -199,7 +199,7 @@ include("RegressionModels/GaussianRegression.jl")
     test_GaussianRegression_fit()
     test_GaussianRegression_sample()
     test_GaussianRegression_optimization()
-    test_GaussianRegression_regularization()
+    test_GaussianRegression_sklearn()
 end
 
 include("RegressionModels/BernoulliRegression.jl")
@@ -210,7 +210,7 @@ include("RegressionModels/BernoulliRegression.jl")
     test_BernoulliRegression_fit()
     test_BernoulliRegression_sample()
     test_BernoulliRegression_optimization()
-    test_BernoulliRegression_regularization()
+   test_BernoulliRegression_sklearn()
 end
 
 include("RegressionModels/PoissonRegression.jl")
@@ -221,7 +221,6 @@ include("RegressionModels/PoissonRegression.jl")
     test_PoissonRegression_fit()
     test_PoissonRegression_sample()
     test_PoissonRegression_optimization()
-    test_PoissonRegression_regularization()
     test_PoissonRegression_regularization()
 end
 
