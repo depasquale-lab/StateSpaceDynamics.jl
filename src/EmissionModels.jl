@@ -582,12 +582,12 @@ model = SwitchingBernoulliRegression(K=2, input_dim=5)
 function SwitchingBernoulliRegression(; 
     K::Int,
     input_dim::Int,
+    output_dim::Int=1,
     include_intercept::Bool=true,
-    β::Vector{<:Real} = if include_intercept zeros(input_dim + 1) else zeros(input_dim) end,
+    β::Matrix{<:Real} = if include_intercept zeros(input_dim + 1, output_dim) else zeros(input_dim, output_dim) end,
     λ::Float64 = 0.0,
     A::Matrix{<:Real} = initialize_transition_matrix(K),
     πₖ::Vector{Float64} = initialize_state_distribution(K),
-    output_dim::Int=1
 )
     # Create emission models
     emissions = [BernoulliRegressionEmission(input_dim=input_dim, include_intercept=include_intercept, β=β, λ=λ, output_dim=output_dim) for _ in 1:K]
@@ -731,7 +731,7 @@ function SwitchingPoissonRegression(;
     input_dim::Int,
     output_dim::Int=1,
     include_intercept::Bool=true,
-    β::Vector{<:Real} = if include_intercept zeros(input_dim + 1) else zeros(input_dim) end,
+    β::Matrix{<:Real} = if include_intercept zeros(input_dim + 1, output_dim) else zeros(input_dim, output_dim) end,
     λ::Float64 = 0.0,
     A::Matrix{<:Real} = initialize_transition_matrix(K),
     πₖ::Vector{Float64} = initialize_state_distribution(K)    
