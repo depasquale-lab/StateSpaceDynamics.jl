@@ -287,8 +287,8 @@ function test_EM_matlab()
     params_obj = params["params"]["model"]
     @test isapprox(plds.state_model.A, params_obj["A"], atol=1e-5)
     @test isapprox(plds.state_model.Q, params_obj["Q"], atol=1e-5)
-    @test_broken isapprox(plds.obs_model.C, params_obj["C"], atol=1e-5)
+    @test isapprox(plds.obs_model.C, params_obj["C"], atol=1e-5)
     @test isapprox(plds.state_model.x0, params_obj["x0"], atol=1e-5)
     @test isapprox(plds.state_model.P0, params_obj["Q0"], atol=1e-5)
-    @test_broken isapprox(exp.(plds.obs_model.log_d), params_obj["d"], atol=1e-5)
+    @test isapprox(exp.(plds.obs_model.log_d), params_obj["d"], atol=1e-5)
 end
