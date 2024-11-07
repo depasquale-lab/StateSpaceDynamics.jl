@@ -19,3 +19,4 @@ notebooks/Manifest.toml
 # Specific Julia scripts
 notebooks/profiling.jl
 notebooks/benchmarking.ipynb
+notebooks/regression_debug.ipynb
