@@ -221,7 +221,7 @@ include("RegressionModels/PoissonRegression.jl")
     test_PoissonRegression_fit()
     test_PoissonRegression_sample()
     test_PoissonRegression_optimization()
-    test_PoissonRegression_regularization()
+    test_PoissonRegression_sklearn()
 end
 
 include("RegressionModels/AutoRegression.jl")

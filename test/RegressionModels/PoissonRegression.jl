@@ -114,24 +114,33 @@ function test_PoissonRegression_sample()
     @test size(samples) == (10, 1)
 end
 
-function test_PoissonRegression_regularization()
-    X, y, true_β, n = PoissonRegression_simulation()
-    
-    # Test model with different regularization values
-    λ_values = [0.0, 0.1, 1.0]
-    
-    for λ in λ_values
-        model = PoissonRegressionEmission(
-            input_dim=2,
-            output_dim=1,
-            λ=λ
-        )
-        
-        fit!(model, X, y)
-        
-        # Higher regularization should result in smaller coefficients
-        if λ > 0
-            @test norm(model.β) < norm(true_β) || isapprox(norm(model.β), norm(true_β), atol=0.1)
-        end
-    end
+function test_PoissonRegression_sklearn()
+    # create a set of dummy data we will fit equivalently in sklearn
+    X = reshape([1.0, 2.0, 3.0, 4.1], 4, 1)
+    y = reshape([0.0, 0.0, 2.0, 1.0], 4, 1)
+    w = [1.0, 1.0, 1.0, 0.1]
+
+    # test the regression with no weights and no regularization
+    base_model = PoissonRegressionEmission(input_dim=1, output_dim=1, λ=0.0)
+    fit!(base_model, X, y)
+
+    @test isapprox(base_model.β, [-2.404, 0.7123], atol=1e-3)
+
+    # now test with regularization
+    regularized_model = PoissonRegressionEmission(input_dim=1, output_dim=1, λ=1.0)
+    fit!(regularized_model, X, y)
+
+    @test isapprox(regularized_model.β, [-1.1618, 0.3195], atol=1e-3)
+
+    # test with regularization
+    weighted_model = PoissonRegressionEmission(input_dim=1, output_dim=1)
+    fit!(weighted_model, X, y, w)
+
+    @test isapprox(weighted_model.β, [-3.8794, 1.3505], atol=1e-3)
+
+    # test with weights and refularization
+    rw_model = PoissonRegressionEmission(input_dim=1, output_dim=1, λ=1.0)
+    fit!(rw_model, X, y, w)
+
+    @test isapprox(rw_model.β, [-1.3611, 0.4338], atol=1e-3)
 end

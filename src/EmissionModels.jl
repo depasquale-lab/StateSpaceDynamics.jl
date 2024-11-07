@@ -713,16 +713,33 @@ end
 function objective(opt::RegressionOptimization{PoissonRegressionEmission}, β_vec::Vector{T}) where T <: Real
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     rate = exp.(opt.X * β_mat)
-    val = -sum(opt.w .* (opt.y .* log.(rate) .- rate .- loggamma.(Int.(opt.y) .+ 1))) + 
-          (opt.model.λ * sum(β_mat.^2))
-    return val / size(opt.X, 1)
+
+    # calculate penalty
+    if opt.model.include_intercept
+        regularization = 0.5 * opt.model.λ * sum(abs2, β_mat[2:end, :])
+    else
+        regularization = 0.5 * opt.model.λ * sum(abs2, β_mat)
+    end
+
+    val = -sum(opt.w .* (opt.y .* log.(rate) .- rate .- loggamma.(Int.(opt.y) .+ 1))) + regularization
+    return val
 end
 
 function objective_gradient!(G::Vector{Float64}, opt::RegressionOptimization{PoissonRegressionEmission}, β_vec::Vector{T}) where T <: Real
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     rate = exp.(opt.X * β_mat)
-    grad_mat = (-opt.X' * (Diagonal(opt.w) * (opt.y .- rate)) + (opt.model.λ * 2 * β_mat)) / 
-               size(opt.X, 1)
+    # calculate the gradient of the penalty
+    grad_penalty = zeros(size(β_mat))
+    # calculate regularization term
+    regularization = zeros(size(β_mat))
+
+    if opt.model.include_intercept
+        regularization[2:end] .= opt.model.λ * β_mat[2:end, :]
+    else
+        regularization .= opt.model.λ * β_mat
+    end
+
+    grad_mat = (-opt.X' * (Diagonal(opt.w) * (opt.y .- rate))) + regularization
     G .= vec(grad_mat)
 end
 
