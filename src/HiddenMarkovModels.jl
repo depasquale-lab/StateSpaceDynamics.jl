@@ -443,10 +443,9 @@ true
 ```
 """
 function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}}, X::Union{Vector{<:Matrix{<:Real}}, Nothing}=nothing; max_iters::Int=100, tol::Float64=1e-6)
-    println("Using new GLM function")
     lls = [-Inf]
     data = X === nothing ? (Y,) : (X, Y)
-
+ 
     # Initialize log_likelihood
     log_likelihood = -Inf
 
