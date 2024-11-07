@@ -280,9 +280,19 @@ using MAT
 
 include("HiddenMarkovModels/GaussianHMM.jl")
 
-@testset "Switching Gaussian Tests" begin
+@testset "GaussianHMM Tests" begin
     test_SwitchingGaussian_fit()
     test_SwitchingGaussian_SingleState_fit()
     test_trialized_GaussianHMM()
-    
+end
+
+
+include("HiddenMarkovModels/SwitchingGaussianRegression.jl")
+
+@testset "Switching Gaussian Regression Tests" begin
+    test_SwitchingGaussianRegression_fit()
+    test_SwitchingGaussianRegression_SingleState_fit()
+    test_trialized_SwitchingGaussianRegression()
+
+
 end
