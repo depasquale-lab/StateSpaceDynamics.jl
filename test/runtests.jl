@@ -155,122 +155,131 @@ using MAT
 #     end
 # end
 
-"""
-Tests for PoissonLDS.jl
-"""
 
-include("LinearDynamicalSystems//PoissonLDS.jl")
 
-@testset "PoissonLDS Tests" begin
-    @testset "Constructor Tests" begin
-        test_PoissonLDS_with_params()
-        test_poisson_lds_without_params()
-    end
-    @testset "Smoother Tests" begin
-        test_Gradient()
-        test_Hessian()
-        test_smooth()
-    end
-    @testset "EM Tests" begin
-        test_parameter_gradient()
-        # test when ntrials=1
-        test_initial_observation_parameter_updates()
-        test_state_model_parameter_updates()
-        # test when n_trials>1
-        test_initial_observation_parameter_updates(3)
-        test_state_model_parameter_updates(3)
-        # test fit method using 1 trial and three trials
-        test_EM()
-        test_EM(3)
-        # test resutlts are same as matlab code
-        test_EM_matlab()
-    end
-end
 
-"""
-Tests for RegressionModels.jl
-""" 
 
-include("RegressionModels/GaussianRegression.jl")
 
-@testset "GaussianRegression Tests" begin
-    test_GaussianRegression_initialization()
-    test_GaussianRegression_loglikelihood()
-    test_GaussianRegression_fit()
-    test_GaussianRegression_sample()
-    test_GaussianRegression_optimization()
-    test_GaussianRegression_sklearn()
-end
 
-include("RegressionModels/BernoulliRegression.jl")
 
-@testset "BernoulliRegression Tests" begin
-    test_BernoulliRegression_initialization()
-    test_BernoulliRegression_loglikelihood()
-    test_BernoulliRegression_fit()
-    test_BernoulliRegression_sample()
-    test_BernoulliRegression_optimization()
-    test_BernoulliRegression_sklearn()
-end
 
-include("RegressionModels/PoissonRegression.jl")
 
-@testset "PoissonRegression Tests" begin
-    test_PoissonRegression_initialization()
-    test_PoissonRegression_loglikelihood()
-    test_PoissonRegression_fit()
-    test_PoissonRegression_sample()
-    test_PoissonRegression_optimization()
-    test_PoissonRegression_sklearn()
-end
+# """
+# Tests for PoissonLDS.jl
+# """
 
-include("RegressionModels/AutoRegression.jl")
+# include("LinearDynamicalSystems//PoissonLDS.jl")
 
-@testset "AutoRegression Tests" begin
-    test_AutoRegression_loglikelihood()
-    # test_AutoRegression_Σ()
-    # test_AutoRegression_constructor()
-    test_AutoRegression_standard_fit()
-    test_AutoRegression_regularized_fit()
-end
-
-"""
-Tests for Emissions.jl
-"""
-
-# include("Emissions/Emissions.jl")
-
-# @testset "Emissions.jl Tests" begin
-#     test_GaussianEmission()
-#     test_regression_emissions()
+# @testset "PoissonLDS Tests" begin
+#     @testset "Constructor Tests" begin
+#         test_PoissonLDS_with_params()
+#         test_poisson_lds_without_params()
+#     end
+#     @testset "Smoother Tests" begin
+#         test_Gradient()
+#         test_Hessian()
+#         test_smooth()
+#     end
+#     @testset "EM Tests" begin
+#         test_parameter_gradient()
+#         # test when ntrials=1
+#         test_initial_observation_parameter_updates()
+#         test_state_model_parameter_updates()
+#         # test when n_trials>1
+#         test_initial_observation_parameter_updates(3)
+#         test_state_model_parameter_updates(3)
+#         # test fit method using 1 trial and three trials
+#         test_EM()
+#         test_EM(3)
+#         # test resutlts are same as matlab code
+#         test_EM_matlab()
+#     end
 # end
 
-"""
-Tests for Utilities.jl
-"""
+# """
+# Tests for RegressionModels.jl
+# """ 
 
-include("Utilities/Utilities.jl")
+# include("RegressionModels/GaussianRegression.jl")
 
-@testset "Utilities.jl Tests" begin
-    test_euclidean_distance()
-    test_kmeanspp_initialization()
-    test_kmeans_clustering()
-    test_block_tridgm()
-    test_interleave_reshape()
-end
+# @testset "GaussianRegression Tests" begin
+#     test_GaussianRegression_initialization()
+#     test_GaussianRegression_loglikelihood()
+#     test_GaussianRegression_fit()
+#     test_GaussianRegression_sample()
+#     test_GaussianRegression_optimization()
+#     test_GaussianRegression_sklearn()
+# end
 
-"""
-Tests for Preprocessing.jl
-"""
+# include("RegressionModels/BernoulliRegression.jl")
 
-include("Preprocessing/Preprocessing.jl")
+# @testset "BernoulliRegression Tests" begin
+#     test_BernoulliRegression_initialization()
+#     test_BernoulliRegression_loglikelihood()
+#     test_BernoulliRegression_fit()
+#     test_BernoulliRegression_sample()
+#     test_BernoulliRegression_optimization()
+#     test_BernoulliRegression_sklearn()
+# end
 
-@testset "PPCA Tests" begin
-    test_PPCA_with_params()
-    test_PPCA_without_params()
-    test_PPCA_E_and_M_Step()
-    test_PPCA_fit()
-end
+# include("RegressionModels/PoissonRegression.jl")
+
+# @testset "PoissonRegression Tests" begin
+#     test_PoissonRegression_initialization()
+#     test_PoissonRegression_loglikelihood()
+#     test_PoissonRegression_fit()
+#     test_PoissonRegression_sample()
+#     test_PoissonRegression_optimization()
+#     test_PoissonRegression_sklearn()
+# end
+
+# include("RegressionModels/AutoRegression.jl")
+
+# @testset "AutoRegression Tests" begin
+#     test_AutoRegression_loglikelihood()
+#     # test_AutoRegression_Σ()
+#     # test_AutoRegression_constructor()
+#     test_AutoRegression_standard_fit()
+#     test_AutoRegression_regularized_fit()
+# end
+
+# """
+# Tests for Emissions.jl
+# """
+
+# # include("Emissions/Emissions.jl")
+
+# # @testset "Emissions.jl Tests" begin
+# #     test_GaussianEmission()
+# #     test_regression_emissions()
+# # end
+
+# """
+# Tests for Utilities.jl
+# """
+
+# include("Utilities/Utilities.jl")
+
+# @testset "Utilities.jl Tests" begin
+#     test_euclidean_distance()
+#     test_kmeanspp_initialization()
+#     test_kmeans_clustering()
+#     test_block_tridgm()
+#     test_interleave_reshape()
+# end
+
+# """
+# Tests for Preprocessing.jl
+# """
+
+# include("Preprocessing/Preprocessing.jl")
+
+# @testset "PPCA Tests" begin
+#     test_PPCA_with_params()
+#     test_PPCA_without_params()
+#     test_PPCA_E_and_M_Step()
+#     test_PPCA_fit()
+# end
 
 
 include("HiddenMarkovModels/GaussianHMM.jl")

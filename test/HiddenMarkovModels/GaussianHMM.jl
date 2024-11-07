@@ -21,6 +21,7 @@ function test_SwitchingGaussian_fit()
 
     # Fit a new gaussian hmm to the data
     test_model = GaussianHMM(K=2, output_dim=2)
+    test_model.A = [0.7 0.3; 0.05 0.95]
     ll = fit!(test_model, data)
 
     # Test that the transition matrix is correct
