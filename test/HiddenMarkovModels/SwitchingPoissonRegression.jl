@@ -1,0 +1,54 @@
+function test_SwitchingPoissonRegression_fit()
+    # Create the emission models
+    emission_1 = PoissonRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([4, 3, 2, 4], :, 1))
+    emission_2 = PoissonRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([-4, -2, 1, 3], :, 1))
+
+    # Initialize the SwitchingPoissonRegression
+    true_model = SwitchingPoissonRegression(K=2, input_dim=3, output_dim=1)
+
+    # Plug in the emission models
+    true_model.B[1] = emission_1
+    true_model.B[2] = emission_2
+
+    # Sample from the HMM
+    n=20000
+    Φ = randn(n, 3)
+    true_labels, data = StateSpaceDynamics.sample(true_model, Φ, n=n)
+
+    # Create a new SwitchingPoissonRegression and try to recover parameters
+    test_model = SwitchingPoissonRegression(K=2, input_dim=3, output_dim=1)
+
+    # Create the emission models for warm start
+    emission_1 = PoissonRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([2.0, 1.0, 4.0, 2.0], :, 1))
+    emission_2 = PoissonRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([-5.0, -1.0, 0.0, 2.0], :, 1))
+    test_model.B[1], test_model.B[2] = emission_1, emission_2
+
+    ll = StateSpaceDynamics.fit!(test_model, data, Φ, max_iters=200)
+
+    # Test the transition matrix
+    @test isapprox(true_model.A, test_model.A, atol=0.1)
+
+    # Test the regression fit
+    @test isapprox(test_model.B[1].β, true_model.B[1].β, atol=0.1) || isapprox(test_model.B[1].β, true_model.B[2].β, atol=0.1)
+    @test isapprox(test_model.B[2].β, true_model.B[2].β, atol=0.1) || isapprox(test_model.B[2].β, true_model.B[1].β, atol=0.1)
+    
+    # Test that the ll is always increasing (accept some numerical instability)
+    any(diff(ll) .< -1e4) == false
+
+end
+
+function test_trialized_SwitchingPoissonRegression()
+   # in development
+   println("In development")
+end
+
+
+# Function to sample from initial state and transition matrix
+function sample_states(num_samples, initial_probs, transition_matrix)
+    states = Vector{Int}(undef, num_samples)
+    states[1] = rand(Categorical(initial_probs))  # Initial state
+    for i in 2:num_samples
+        states[i] = rand(Categorical(transition_matrix[states[i - 1], :]))  # State transitions
+    end
+    return states
+end

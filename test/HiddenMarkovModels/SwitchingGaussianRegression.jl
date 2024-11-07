@@ -25,6 +25,9 @@ function test_SwitchingGaussianRegression_fit()
     # Test regression fit
     @test isapprox(test_model.B[1].β, true_model.B[1].β, atol=0.1) || isapprox(test_model.B[1].β, true_model.B[2].β, atol=0.1)
     @test isapprox(test_model.B[2].β, true_model.B[2].β, atol=0.1) || isapprox(test_model.B[2].β, true_model.B[1].β, atol=0.1)
+
+    # Test that the ll is always increasing
+    @test any(diff(ll) .< 0) == false
 end
 
 function test_SwitchingGaussianRegression_SingleState_fit()
@@ -51,6 +54,9 @@ function test_SwitchingGaussianRegression_SingleState_fit()
 
     # Test regression fit
     @test isapprox(test_model.B[1].β, true_model.B[1].β, atol=0.1)
+
+    # Test that the ll is always increasing
+    @test any(diff(ll) .< 0) == false
 end
 
 function test_trialized_SwitchingGaussianRegression()
@@ -106,6 +112,9 @@ function test_trialized_SwitchingGaussianRegression()
     @test isapprox(est_model.B[2].β, model.B[2].β, atol=0.1) || isapprox(est_model.B[2].β, model.B[1].β, atol=0.1)
     # @test isapprox(est_model.B[1].Σ, model.B[1].Σ, atol=0.1) || isapprox(est_model.B[1].Σ, model.B[2].Σ, atol=0.1)
     # @test isapprox(est_model.B[2].Σ, model.B[2].Σ, atol=0.1) || isapprox(est_model.B[2].Σ, model.B[1].Σ, atol=0.1)
+
+    # Test that the ll is always increasing (accept small numerical instability)
+    any(diff(ll) .< -1e4) == false
 end
 
 
