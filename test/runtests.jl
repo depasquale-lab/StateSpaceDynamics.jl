@@ -24,21 +24,6 @@ end
 include("helper_functions.jl")
 
 """
-Tests for HiddenMarkovModels.jl
-"""
-
-# include("HiddenMarkovModels/HiddenMarkovModels.jl")
-
-# @testset "HiddenMarkovModels.jl Tests" begin
-#     # test_HiddenMarkovModel_E_step()
-#     #test_viterbi() -- don't have time to finish, need emission matching logic
-#     test_GaussianHMM()
-#     # test_AutoRegressionHMM()
-#     test_trialized_GaussianHMM()
-#     test_trialized_SwitchingGaussianRegression()
-# end
-
-"""
 Tests for MixtureModels.jl
 """
 
