@@ -11,7 +11,7 @@ This module implements various emission models for state space modeling, includi
 export EmissionModel, RegressionEmission
 export GaussianEmission, GaussianRegressionEmission, BernoulliRegressionEmission, PoissonRegressionEmission
 export CompositeModelEmission
-export SwitchingGaussianRegression, SwitchingBernoulliRegression, SwitchingPoissonRegression
+export SwitchingGaussianRegression, SwitchingBernoulliRegression, SwitchingPoissonRegression, GaussianHMM
 export sample, loglikelihood, fit!
 
 #=
