@@ -38,7 +38,7 @@ Advancements in systems neuroscience have enabled the collection of massive, mul
 
 Although advanced SSM implementations exist in Python—such as the SSM package [@PySSM2022] and Dynamax [@ChangUnknown-wn], the Julia programming language lacks an equivalent library that meets the needs of modern neuroscientists. Existing Julia offerings, like `StateSpaceModels.jl` [@SSMjl2024], implement the Kalman Filter/Smoother for inference in Gaussian Linear Dynamical Systems, with learning performed via direct optimization of the marginal log-likelihood function. Although useful, this approach has inherent limitations: it supports only Gaussian observation models and relies on the analytical calculation of the marginal likelihood integral, which is intractable for non-conjugate observation models. This precludes the ability to perform inference with non-Gaussian observations and to develop learning algorithms when the following integral cannot be computed analytically:
 
-\begin{equation}\label{marginal}
+\begin{equation}
 p(y_{1
 :T}|\theta) = \int_{x_{1:T
 }} p(y_{1:T
@@ -63,10 +63,10 @@ It is well designed. We did awesome stuff.
 
 Consider the Poisson Linear Dynamical System (PLDS):
 
-\begin{equation}\label{plds}
-X_t \dot \mathrel{\dot\sim} \text{N}(AX_{t-1}, Q) \\
-Y_t \sim \text{Poisson}(f(CX_t + b)\delta t) \\
-X_0 \sim \text N(\mu_0, \Sigma_0)\end{equation}
+\begin{equation}\begin{align}
+X_t &\sim \text{N}(AX_{t-1}, Q) \\
+Y_t &\sim \text{Poisson}(f(CX_t + b)\Delta t) \\
+X_0 &\sim \text N(\mu_0, \Sigma_0)\end{align}\end{equation}
 
 # Availability
 
