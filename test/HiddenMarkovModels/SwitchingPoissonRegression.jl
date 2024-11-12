@@ -1,4 +1,5 @@
 function test_SwitchingPoissonRegression_fit()
+    Random.seed!(1234)
     # Create the emission models
     emission_1 = PoissonRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([4, 3, 2, 4], :, 1))
     emission_2 = PoissonRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([-4, -2, 1, 3], :, 1))
@@ -38,6 +39,7 @@ function test_SwitchingPoissonRegression_fit()
 end
 
 function test_trialized_SwitchingPoissonRegression()
+    Random.seed!(1234)
     # Define parameters
     num_trials = 50  # Number of trials
     trial_length = 400  # Number of time steps per trial
@@ -83,12 +85,13 @@ function test_trialized_SwitchingPoissonRegression()
     @test isapprox(test_model.B[2].β, true_model.B[2].β, atol=0.1) || isapprox(test_model.B[2].β, true_model.B[1].β, atol=0.1)
 
     # Test that the ll is always increasing (accept some numerical instability)
-    any(diff(ll) .< -1e4) == false
+    @test any(diff(ll) .< -1e4) == false
 end
 
 
 # Function to sample from initial state and transition matrix
 function sample_states(num_samples, initial_probs, transition_matrix)
+    Random.seed!(1234)
     states = Vector{Int}(undef, num_samples)
     states[1] = rand(Categorical(initial_probs))  # Initial state
     for i in 2:num_samples

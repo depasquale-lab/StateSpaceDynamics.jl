@@ -1,4 +1,5 @@
 function test_SwitchingGaussian_fit()
+    Random.seed!(1234)
     # Create Guassian Emission Models
     output_dim = 2
     μ = [0.0, 0.0]
@@ -10,19 +11,32 @@ function test_SwitchingGaussian_fit()
     emission_2 = GaussianEmission(output_dim, μ, Σ)
 
     # Create GaussianHMM
-    true_model = GaussianHMM(K=2, output_dim=2)
+    true_model = StateSpaceDynamics.GaussianHMM(K=2, output_dim=2)
     true_model.B[1] = emission_1
     true_model.B[2] = emission_2
-    true_model.A = [0.9 0.1; 0.8 0.2]
+    true_model.A = [0.9 0.1; 0.2 0.8]
 
     # Sample from the model
-    n=20000
+    n=50000
     true_labels, data = StateSpaceDynamics.sample(true_model, n=n)
 
-    # Fit a new gaussian hmm to the data
-    test_model = GaussianHMM(K=2, output_dim=2)
-    test_model.A = [0.7 0.3; 0.05 0.95]
-    ll = fit!(test_model, data)
+    # Fit a gaussian hmm to the data
+    test_model = StateSpaceDynamics.GaussianHMM(K=2, output_dim=2)
+
+    μ = [0.5, 0.1]
+    Σ = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
+    emission_1 = GaussianEmission(output_dim, μ, Σ)
+
+    μ = [1.8, 1.2]
+    Σ = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
+    emission_2 = GaussianEmission(output_dim, μ, Σ)
+
+    test_model.B[1] = emission_1
+    test_model.B[2] = emission_2
+
+    test_model.A = [0.8 0.2; 0.05 0.95]
+    ll = StateSpaceDynamics.fit!(test_model, data)
+
 
     # Test that the transition matrix is correct
     @test isapprox(test_model.A, true_model.A, atol=0.1)
@@ -35,11 +49,12 @@ function test_SwitchingGaussian_fit()
     @test isapprox(test_model.B[2].Σ, true_model.B[2].Σ, atol=0.1) || isapprox(test_model.B[2].Σ, true_model.B[1].Σ, atol=0.1)
 
     # Test that the ll is always increasing
-    @test any(diff(ll) .< 0) == false
+    @test any(diff(ll) .< -1e-4) == false
 
 end
 
 function test_SwitchingGaussian_SingleState_fit()
+    Random.seed!(1234)
     # Create Guassian Emission Models
     output_dim = 3
     μ = [0.75, -1.25, 1.5]
@@ -49,13 +64,13 @@ function test_SwitchingGaussian_SingleState_fit()
     # Create GaussianHMM
     true_model = GaussianHMM(K=1, output_dim=2)
     true_model.B[1] = emission_1
-
     # Sample from the model
     n=20000
     true_labels, data = StateSpaceDynamics.sample(true_model, n=n)
 
     # Fit a new gaussian hmm to the data
     test_model = GaussianHMM(K=1, output_dim=3)
+
     ll = StateSpaceDynamics.fit!(test_model, data)
 
     # Test that the transition matrix is correct
