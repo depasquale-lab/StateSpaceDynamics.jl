@@ -7,11 +7,12 @@ authors:
   - name: Ryan Senne
     orcid: 0000-0003-3776-4576
     affiliation: "1,2"
-  - name: Zach Loschinsky
+  - name: Zachary Loschinskey
+  orcid: 0009-0005-2831-2641
     affiliation: "1"
   - name: Carson Loughridge
     affiliation: "1"
-  - name: James Fourier
+  - name: James Fourie
     affiliation: "1"
   - name: Brian D. DePasquale
     orcid: 0000-0003-4508-0537
