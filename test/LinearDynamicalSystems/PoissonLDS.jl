@@ -278,7 +278,7 @@ function test_EM_matlab()
 
         @test isapprox(E_z[:, :, i], posterior_x, atol=1e-6)
 
-        # restructure E_zz and E_zz_pev so that they are the same shape as the matlab objects
+        # TODO: Restructure matlab objects s.t. we can comparse as below
         # @test isapprox(E_zz[:, :, :, i], posterior_cov, atol=1e-6)
         # @test isapprox(E_zz_prev[:, :, :, i], posterior_lagged_cov, atol=1e-6)
     end

@@ -5,10 +5,13 @@ tags:
   - Julia
 authors:
   - name: Ryan Senne
+    orcid: 0000-0003-3776-4576
     affiliation: "1,2"
+  - name: Zach Loschinsky
+    affiliation: "1"
   - name: Carson Loughridge
     affiliation: "1"
-  - name: Zach Loschinsky
+  - name: James Fourier
     affiliation: "1"
   - name: Brian D. DePasquale
     orcid: 0000-0003-4508-0537
@@ -26,7 +29,7 @@ bibliography: paper.bib
 
 # Summary
 
-State-space models (SSMs) are powerful tools for modeling time series data that naturally arise across a variety of domains, including neuroscience, finance, and engineering. The unifying principle of these models is that they assume that an observation sequence, $Y_1, Y_2,...,Y_T$, is generated through an underlying hidden latent sequence, $X_1, X_2,...,X_T$. This general framework encompasses two of the most popular models for time series analysis: the Hidden Markov Model (HMM) and the (Gaussian) Linear Dynamical System (LDS, i.e., the Kalman filter). SSMs provide a probabilistic framework for describing the temporal evolution of many phenomena, and their generality naturally leads to widely applicable use cases. We introduce `StateSpaceDynamics.jl`, an open source, modular package designed to be fast, readable, and self contained [@SSDjl2024]
+State-space models (SSMs) are powerful tools for modeling time series data that naturally arise across a variety of domains, including neuroscience, finance, and engineering. The unifying principle of these models is that they assume that an observation sequence, $Y_1, Y_2,...,Y_T$, is generated through an underlying hidden latent sequence, $X_1, X_2,...,X_T$. This general framework encompasses two of the most popular models for time series analysis: the Hidden Markov Model (HMM) and the (Gaussian) Linear Dynamical System (LDS, i.e., the Kalman filter). Thus, SSMs provide a probabilistic framework for describing the temporal evolution of many phenomena, and their generality naturally leads to widely applicable use cases. We introduce `StateSpaceDynamics.jl`, an open source, modular package designed to be fast, readable, and self contained for the express purpose of fitting a plurality of SSMs, easily in Julia. [@SSDjl2024]
 
 # Statement of need
 
@@ -43,11 +46,11 @@ p(y_{1
 }|\theta) dx_{1:T
 } \end{equation}
 
-To address these limitations, we have developed `StateSpaceDynamics.jl`, which employs a previously advocated approach of directly maximizing the complete-data log-likelihood with respect to the hidden state path for Linear Dynamical System models [@Paninski2010-ns]. By leveraging the block-tridiagonal structure of the Hessian matrix, this method allows for the exact computation of the Kalman smoother in O(T) time [@Paninski2010-ns]. Furthermore, it facilitates the generalization of the Rauch–Tung–Striebel (RTS) smoother to accommodate other observation noise models (e.g., Poisson and Bernoulli), requiring only the computation of the gradient and Hessian of the new model to obtain an exact maximum a posteriori (MAP) path.\\
+To address these limitations, we have developed `StateSpaceDynamics.jl`, which employs a previously advocated approach of directly maximizing the complete-data log-likelihood with respect to the hidden state path for Linear Dynamical System models [@Paninski2010-ns]. By leveraging the block-tridiagonal structure of the Hessian matrix, this method allows for the exact computation of the Kalman smoother in O(T) time [@Paninski2010-ns]. Furthermore, it facilitates the generalization of the Rauch–Tung–Striebel (RTS) smoother to accommodate other observation noise models (e.g., Poisson and Bernoulli), requiring only the computation of the gradient and Hessian of the new model to obtain an *exact* maximum a posteriori (MAP) path.\\
 
-An additional advantage of this approach is the ease of pairing with the  Laplace approximation, which assumes a globally Gaussian posterior over the latent state path. In the case of Gaussian observations, this method reduces to exact EM.\
+Furthermore, given the analytical Hessian matrices are available, once can make use of this to perform an approximate EM algorithm by generating an LaPlace approxiamtion of the posterior distirubtion of the latent states. One can easily make use of fast inversion algorithms of the negative Hessian (i.e., Fisher Information Matrix), which are block-triadiagonal (cite the paper whsoe algorithm i used). From here one can compute the approximate second moments of the posterior distribution i.e., $\text{Cov}(X_t, X_t)$ and $\text{Cov}(X_t, X_{t-1})$, and use the analytical updatse for the canonical LDS (cite paninski and robert kass). This approach becomes exact EM in the case of Gaussian observations.
 
-By providing these advanced features, `StateSpaceDynamics.jl` fills a critical gap in the Julia ecosystem, offering modern computational neuroscientists the tools necessary to model complex neural data with state-space models that incorporate both dimensionality reduction and temporal dynamics.
+By providing these features, `StateSpaceDynamics.jl` fills a critical gap in the Julia ecosystem, offering modern computational neuroscientists the tools necessary to model complex neural data with state-space models that incorporate both dimensionality reduction and temporal dynamics.
 
 # Package design
 
@@ -55,7 +58,14 @@ It is well designed. We did awesome stuff.
 
 # Example
 
-![Model architecture](model.png)
+![Model architecture](model.png)\
+
+Consider the Poisson Linear Dynamical System (PLDS):
+
+\begin{equation}\label{plds}
+X_t \dot \mathrel{\dot\sim} \text{N}(AX_{t-1}, Q) \\
+Y_t \sim \text{Poisson}(f(CX_t + b)\delta t) \\
+X_0 \sim \text N(\mu_0, \Sigma_0)\end{equation}
 
 # Availability
 
@@ -65,7 +75,7 @@ It is well designed. We did awesome stuff.
 
 # Author contributions
 
-RS did XXX. CL did XXX. ZL did XXX. BD did XXX.
+RS did XXX. CL did XXX. ZL did XXX. BD oversaw development, provided mentorship, and secured funding.
 
 # Acknowledgements
 

@@ -186,6 +186,7 @@ function create_optimization(model::RegressionEmission, X::Matrix{<:Real}, y::Ma
     if model.include_intercept
         X = hcat(ones(size(X, 1)), X)
     end
+
     β_shape = size(model.β)
     RegressionOptimization(model, X, y, w, β_shape)
 end
@@ -197,6 +198,52 @@ matrix_to_vec(β_mat::Matrix{<:Real}) = vec(β_mat)
 # Default no-op post-optimization
 post_optimization!(model::RegressionEmission, opt::RegressionOptimization) = nothing
 
+"""
+    calc_regularization(β::Matrix{<:Real}, λ::Float64, include_intercept::Bool)
+
+Calculate L2 regularization term for regression coefficients.
+
+# Arguments
+- `β::Matrix{<:Real}`: Coefficient matrix
+- `λ::Float64`: Regularization parameter
+- `include_intercept::Bool`: Whether to exclude the intercept term from regularization
+
+# Returns
+- `Float64`: The regularization term value
+"""
+function calc_regularization(β::Matrix{<:Real}, λ::Float64, include_intercept::Bool=true)
+    # calculate L2 penalty
+    if include_intercept
+        regularization = 0.5 * λ * sum(abs2, β[2:end, :])
+    else
+        regularization = 0.5 * λ * sum(abs2, β)
+    end
+
+    return regularization
+end
+
+"""
+    calc_regularization_gradient(β::Matrix{<:Real}, λ::Float64, include_intercept::Bool)
+
+Calculate gradient of L2 regularization term for regression coefficients.
+
+# Arguments
+- `β::Matrix{<:Real}`: Coefficient matrix
+- `λ::Float64`: Regularization parameter
+- `include_intercept::Bool`: Whether to exclude the intercept term from regularization
+"""
+function calc_regularization_gradient(β::Matrix{<:Real}, λ::Float64, include_intercept::Bool=true)
+    # calculate the gradient of the regularization component
+    regularization = zeros(size(β))
+
+    if include_intercept  
+        regularization[2:end, :] .= λ * β[2:end, :]
+    else
+        regularization .= λ * β
+    end
+
+    return regularization
+end
 #=
 Gaussian Regression Functions
 =#
@@ -318,11 +365,7 @@ function objective(opt::RegressionOptimization{GaussianRegressionEmission}, β_v
     w_reshaped = reshape(opt.w, :, 1)
     
     # calculate regularization
-    if opt.model.include_intercept  # Fixed: model -> opt.model
-        regularization = 0.5 * opt.model.λ * sum(abs2, β_mat[2:end, :])  # Fixed: accessing λ through opt.model
-    else
-        regularization = 0.5 * opt.model.λ * sum(abs2, β_mat)
-    end
+    regularization = calc_regularization(β_mat, opt.model.λ, opt.model.include_intercept)
     
     # calculate pseudo log-likelihood
     pseudo_ll = 0.5 * sum(w_reshaped .* residuals.^2) + regularization
@@ -333,13 +376,8 @@ function objective_gradient!(G::Vector{Float64}, opt::RegressionOptimization{Gau
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     residuals = opt.y - opt.X * β_mat
     
-    # calculate the gradient of the regularization component
-    regularization = zeros(size(β_mat))
-    if opt.model.include_intercept  # Fixed: model -> opt.model
-        regularization[2:end, :] .= opt.model.λ * β_mat[2:end, :]
-    else
-        regularization .= opt.model.λ * β_mat
-    end
+    # calc gradient of penalty
+    regularization = calc_regularization_gradient(β_mat, opt.model.λ, opt.model.include_intercept)
     
     # calculate the gradient
     grad_mat = -(opt.X' * (Diagonal(opt.w) * residuals)) + regularization  # Fixed: Added negative sign
@@ -529,11 +567,7 @@ function objective(opt::RegressionOptimization{BernoulliRegressionEmission}, β_
     p = logistic.(opt.X * β_mat)
 
     # calculate regularization
-    if opt.model.include_intercept
-        regularization = 0.5 * opt.model.λ * sum(abs2, β_mat[2:end, :])
-    else
-        regularization = 0.5 * opt.model.λ * sum(abs2, β_mat)
-    end
+    regularization = calc_regularization(β_mat, opt.model.λ, opt.model.include_intercept)
 
     val = -sum(opt.w .* (opt.y .* log.(p) .+ (1 .- opt.y) .* log.(1 .- p))) + regularization
           
@@ -544,13 +578,8 @@ function objective_gradient!(G::Vector{Float64}, opt::RegressionOptimization{Ber
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     p = logistic.(opt.X * β_mat)
 
-    # calculate regularization term
-    regularization = zeros(size(β_mat))
-    if opt.model.include_intercept
-        regularization[2:end] .= opt.model.λ * β_mat[2:end, :]
-    else
-        regularization .= opt.model.λ * β_mat
-    end
+    # calc gradient of penalty
+    regularization = calc_regularization_gradient(β_mat, opt.model.λ, opt.model.include_intercept)
 
     grad_mat = -(opt.X' * (opt.w .* (opt.y .- p))) + regularization
     G .= vec(grad_mat)
@@ -702,9 +731,10 @@ function loglikelihood(model::PoissonRegressionEmission, Φ::Matrix{<:Real}, Y::
     end
 
     # calculate log likelihood
-    λ = exp.(Φ * model.β)
+    η = clamp.(Φ * model.β, -30, 30)
+    rate = exp.(η)
 
-    obs_wise_loglikelihood = w .* (Y .* log.(λ) .- λ .- loggamma.(Int.(Y) .+ 1))
+    obs_wise_loglikelihood = w .* (Y .* log.(rate) .- rate .- loggamma.(Int.(Y) .+ 1))
 
     return obs_wise_loglikelihood
 end
@@ -712,14 +742,12 @@ end
 # Poisson Regression Implementation
 function objective(opt::RegressionOptimization{PoissonRegressionEmission}, β_vec::Vector{T}) where T <: Real
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
-    rate = exp.(opt.X * β_mat)
 
-    # calculate penalty
-    if opt.model.include_intercept
-        regularization = 0.5 * opt.model.λ * sum(abs2, β_mat[2:end, :])
-    else
-        regularization = 0.5 * opt.model.λ * sum(abs2, β_mat)
-    end
+    η = clamp.(opt.X * β_mat, -30, 30)
+    rate = exp.(η)
+
+    # calculate regularization
+    regularization = calc_regularization(β_mat, opt.model.λ, opt.model.include_intercept)
 
     val = -sum(opt.w .* (opt.y .* log.(rate) .- rate .- loggamma.(Int.(opt.y) .+ 1))) + regularization
     return val
@@ -727,17 +755,11 @@ end
 
 function objective_gradient!(G::Vector{Float64}, opt::RegressionOptimization{PoissonRegressionEmission}, β_vec::Vector{T}) where T <: Real
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
-    rate = exp.(opt.X * β_mat)
-    # calculate the gradient of the penalty
-    grad_penalty = zeros(size(β_mat))
-    # calculate regularization term
-    regularization = zeros(size(β_mat))
+    η = clamp.(opt.X * β_mat, -30, 30)
+    rate = exp.(η)
 
-    if opt.model.include_intercept
-        regularization[2:end] .= opt.model.λ * β_mat[2:end, :]
-    else
-        regularization .= opt.model.λ * β_mat
-    end
+    # calc gradient of penalty
+    regularization = calc_regularization_gradient(β_mat, opt.model.λ, opt.model.include_intercept)
 
     grad_mat = (-opt.X' * (Diagonal(opt.w) * (opt.y .- rate))) + regularization
     G .= vec(grad_mat)
@@ -770,9 +792,11 @@ function fit!(model::RegressionEmission, X::Matrix{<:Real}, y::Matrix{<:Real},
     # Create closure functions for Optim.jl
     f(β) = objective(opt_problem, β)
     g!(G, β) = objective_gradient!(G, opt_problem, β)
+
+    opts = Optim.Options(x_abstol=1e-8, x_reltol=1e-8, f_abstol=1e-8, f_reltol=1e-8, g_abstol=1e-8, g_reltol=1e-8)
     
     # Run optimization
-    result = optimize(f, g!, vec(model.β), LBFGS())
+    result = optimize(f, g!, vec(model.β), LBFGS(), opts)
     
     # Update model parameters
     model.β = vec_to_matrix(result.minimizer, opt_problem.β_shape)
