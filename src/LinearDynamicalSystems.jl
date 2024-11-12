@@ -1197,11 +1197,10 @@ function fit!(
 
     # Initialize progress bar
     if O <: GaussianObservationModel
-        prog = Progress(max_iter; desc="Fitting LDS via EM...", showspeed=True)
+        prog = Progress(max_iter; desc="Fitting LDS via EM...", barlen=50, showspeed=true)
     elseif O <: PoissonObservationModel
         prog = Progress(
-            max_iter; desc="Fitting Poisson LDS via LaPlaceEM...", showspeed=True
-        )
+            max_iter; desc="Fitting Poisson LDS via LaPlaceEM...", barlen=50, showspeed=true)
     else
         error("Unknown LDS model type")
     end

@@ -368,7 +368,7 @@ function fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Rea
 
     log_likelihood = -Inf
     # Initialize progress bar
-    p = Progress(max_iters; desc="Running EM algorithm...", showspeed=true)
+    p = Progress(max_iters; desc="Running EM algorithm...", barlen=50, showspeed=true)
     for iter in 1:max_iters
         next!(p)
         # E-Step
@@ -452,7 +452,7 @@ function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}}, X::Union{Ve
 
     # Collect the zipped data into a vector of tuples
     zipped_matrices = collect(zip(data...))
-    p = Progress(max_iters; desc="Running EM algorithm...", showspeed=true)
+    p = Progress(max_iters; desc="Running EM algorithm...", barlen=50, showspeed=true)
     for iter in 1:max_iters
         # E_step
         output = E_step.(Ref(model), zipped_matrices)
@@ -461,7 +461,7 @@ function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}}, X::Union{Ve
         # Calculate log_likelihood
         log_likelihood_current = sum(map(α -> logsumexp(α[end, :]), α))
         push!(lls, log_likelihood_current)
-        
+
         next!(p)
         
         # Check for convergence
