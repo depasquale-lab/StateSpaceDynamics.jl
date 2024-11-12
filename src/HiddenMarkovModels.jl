@@ -288,7 +288,7 @@ function update_emissions!(model::HiddenMarkovModel, data, w::Matrix{<:Real})
  
  end
 
-function M_step!(model::HiddenMarkovModel, γ::Matrix{<:Real}, ξ::Array{Float64, 3}, data)
+function mstep!(model::HiddenMarkovModel, γ::Matrix{<:Real}, ξ::Array{Float64, 3}, data)
     # update initial state distribution
     update_initial_state_distribution!(model, γ)   
     # update transition matrix
@@ -298,7 +298,7 @@ function M_step!(model::HiddenMarkovModel, γ::Matrix{<:Real}, ξ::Array{Float64
 end
 
 # Trialized versions of functions
-function M_step!(model::HiddenMarkovModel, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Float64, 3}}, data)
+function mstep!(model::HiddenMarkovModel, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Float64, 3}}, data)
     # update initial state distribution
     update_initial_state_distribution!(model, γ)   
     # update transition matrix
@@ -384,7 +384,7 @@ function fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Rea
             log_likelihood = log_likelihood_current
         end
         # M-Step
-        M_step!(model, γ, ξ, data)
+        mstep!(model, γ, ξ, data)
     end
     return lls
 end
@@ -472,11 +472,11 @@ function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}}, X::Union{Ve
             log_likelihood = log_likelihood_current
         end
         
-        # Get data trial tuples stacked for M_step!()
+        # Get data trial tuples stacked for mstep!()
         stacked_data = stack_tuples(zipped_matrices)
 
         # M_step
-        M_step!(model, γ, ξ, stacked_data)
+        mstep!(model, γ, ξ, stacked_data)
 
     end
 
