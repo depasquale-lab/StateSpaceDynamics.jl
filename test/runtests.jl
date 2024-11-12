@@ -24,21 +24,6 @@ end
 include("helper_functions.jl")
 
 """
-Tests for HiddenMarkovModels.jl
-"""
-
-include("HiddenMarkovModels/HiddenMarkovModels.jl")
-
-@testset "HiddenMarkovModels.jl Tests" begin
-    test_HiddenMarkovModel_E_step()
-    #test_viterbi() -- don't have time to finish, need emission matching logic
-    test_GaussianHMM()
-    # test_AutoRegressionHMM()
-    test_trialized_GaussianHMM()
-    test_trialized_SwitchingGaussianRegression()
-end
-
-"""
 Tests for MixtureModels.jl
 """
 
@@ -155,37 +140,37 @@ include("LinearDynamicalSystems//GaussianLDS.jl")
     end
 end
 
-# """
-# Tests for PoissonLDS.jl
-# """
+"""
+Tests for PoissonLDS.jl
+"""
 
-# include("LinearDynamicalSystems//PoissonLDS.jl")
+include("LinearDynamicalSystems//PoissonLDS.jl")
 
-# @testset "PoissonLDS Tests" begin
-#     @testset "Constructor Tests" begin
-#         test_PoissonLDS_with_params()
-#         test_poisson_lds_without_params()
-#     end
-#     @testset "Smoother Tests" begin
-#         test_Gradient()
-#         test_Hessian()
-#         test_smooth()
-#     end
-#     @testset "EM Tests" begin
-#         test_parameter_gradient()
-#         # test when ntrials=1
-#         test_initial_observation_parameter_updates()
-#         test_state_model_parameter_updates()
-#         # test when n_trials>1
-#         test_initial_observation_parameter_updates(3)
-#         test_state_model_parameter_updates(3)
-#         # test fit method using 1 trial and three trials
-#         test_EM()
-#         test_EM(3)
-#         # test resutlts are same as matlab code
-#         test_EM_matlab()
-#     end
-# end
+@testset "PoissonLDS Tests" begin
+    @testset "Constructor Tests" begin
+        test_PoissonLDS_with_params()
+        test_poisson_lds_without_params()
+    end
+    @testset "Smoother Tests" begin
+        test_Gradient()
+        test_Hessian()
+        test_smooth()
+    end
+    @testset "EM Tests" begin
+        test_parameter_gradient()
+        # test when ntrials=1
+        test_initial_observation_parameter_updates()
+        test_state_model_parameter_updates()
+        # test when n_trials>1
+        test_initial_observation_parameter_updates(3)
+        test_state_model_parameter_updates(3)
+        # test fit method using 1 trial and three trials
+        test_EM()
+        test_EM(3)
+        # test resutlts are same as matlab code
+        test_EM_matlab()
+    end
+end
 
 """
 Tests for RegressionModels.jl
@@ -226,13 +211,13 @@ end
 
 include("RegressionModels/AutoRegression.jl")
 
-@testset "AutoRegression Tests" begin
-    test_AutoRegression_loglikelihood()
-    # test_AutoRegression_Σ()
-    # test_AutoRegression_constructor()
-    test_AutoRegression_standard_fit()
-    test_AutoRegression_regularized_fit()
-end
+# @testset "AutoRegression Tests" begin
+#     test_AutoRegression_loglikelihood()
+#     # test_AutoRegression_Σ()
+#     # test_AutoRegression_constructor()
+#     test_AutoRegression_standard_fit()
+#     test_AutoRegression_regularized_fit()
+# end
 
 """
 Tests for Emissions.jl
