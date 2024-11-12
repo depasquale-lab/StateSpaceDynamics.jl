@@ -2,7 +2,7 @@ export HiddenMarkovModel, fit!, sample, loglikelihood, viterbi
 export kmeans_init!
 
 # for unit tests
-export E_step
+export estep
 export class_probabilities
 
 """
@@ -252,7 +252,7 @@ function calculate_ξ(model::HiddenMarkovModel, α::Matrix{<:Real}, β::Matrix{<
 end
 
 
-function E_step(model::HiddenMarkovModel, data)
+function estep(model::HiddenMarkovModel, data)
 
     # compute lls of the observations
     loglikelihoods = emission_loglikelihoods(model, data...)
@@ -372,7 +372,7 @@ function fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Rea
     for iter in 1:max_iters
         next!(p)
         # E-Step
-        γ, ξ, α, β = E_step(model, data)
+        γ, ξ, α, β = estep(model, data)
         # Compute and update the log-likelihood
         log_likelihood_current = logsumexp(α[end, :])
         push!(lls, log_likelihood_current)
@@ -454,8 +454,8 @@ function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}}, X::Union{Ve
     zipped_matrices = collect(zip(data...))
     p = Progress(max_iters; desc="Running EM algorithm...", barlen=50, showspeed=true)
     for iter in 1:max_iters
-        # E_step
-        output = E_step.(Ref(model), zipped_matrices)
+        # estep
+        output = estep.(Ref(model), zipped_matrices)
         γ, ξ, α, β = map(x-> x[1], output), map(x-> x[2], output), map(x-> x[3], output), map(x-> x[4], output)
         
         # Calculate log_likelihood
@@ -506,7 +506,7 @@ class_probabilities(model, Y)
 ```
 """
 function class_probabilities(model::HiddenMarkovModel, data...)
-    γ, ξ, α, β = E_step(model, data)
+    γ, ξ, α, β = estep(model, data)
     return exp.(γ)
 end
 

@@ -8,7 +8,7 @@ authors:
     orcid: 0000-0003-3776-4576
     affiliation: "1,2"
   - name: Zachary Loschinskey
-  orcid: 0009-0005-2831-2641
+    orcid: 0009-0005-2831-2641
     affiliation: "1"
   - name: Carson Loughridge
     affiliation: "1"
