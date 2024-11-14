@@ -63,10 +63,11 @@ It is well designed. We did awesome stuff.
 
 Consider the Poisson Linear Dynamical System (PLDS):
 
-\begin{equation}\begin{align}
-X_t &\sim \text{N}(AX_{t-1}, Q) \\
+\begin{align}
+X_t &\sim \mathcal{N}(AX_{t-1}, Q) \\
 Y_t &\sim \text{Poisson}(f(CX_t + b)\Delta t) \\
-X_0 &\sim \text N(\mu_0, \Sigma_0)\end{align}\end{equation}
+X_0 &\sim \mathcal{N}(\mu_0, \Sigma_0)
+\end{align}
 
 # Availability
 

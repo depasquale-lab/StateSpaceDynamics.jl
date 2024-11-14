@@ -73,6 +73,7 @@ function loglikelihood(model::GaussianEmission, Y::Matrix{<:Real})
     # Create MvNormal distribution with the model parameters
     dist = MvNormal(model.μ, model.Σ)
     
+    
     # Calculate log likelihood for each observation
     return [logpdf(dist, Y[i,:]) for i in axes(Y, 1)]
 end
