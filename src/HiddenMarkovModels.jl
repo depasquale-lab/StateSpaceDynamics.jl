@@ -256,11 +256,8 @@ end
 
 
 function estep(model::HiddenMarkovModel, data)
-
-    transposed_data = Matrix.(transpose.(data)) # Transpose the data to get the correct shape in EmissionModels.jl
-
     # compute lls of the observations
-    loglikelihoods = emission_loglikelihoods(model, transposed_data...)
+    loglikelihoods = emission_loglikelihoods(model, data...)
 
     # run forward-backward algorithm
     α = forward(model, loglikelihoods)
@@ -289,7 +286,6 @@ function update_emissions!(model::HiddenMarkovModel, data, w::Matrix{<:Real})
      @threads for k in 1:model.K
          fit!(model.B[k], data..., w[:, k])
      end
- 
  end
 
 function mstep!(model::HiddenMarkovModel, γ::Matrix{<:Real}, ξ::Array{Float64, 3}, data)
@@ -298,8 +294,7 @@ function mstep!(model::HiddenMarkovModel, γ::Matrix{<:Real}, ξ::Array{Float64,
     # update transition matrix
     update_transition_matrix!(model, γ, ξ)
     # update regression models
-    transposed_data = Matrix.(transpose.(data)) # Transpose the data to get the correct shape in EmissionModels.jl
-    update_emissions!(model, transposed_data, exp.(permutedims(γ))) 
+    update_emissions!(model, data, exp.(permutedims(γ))) 
 end
 
 # Trialized versions of functions
@@ -310,13 +305,13 @@ function mstep!(model::HiddenMarkovModel, γ::Vector{Matrix{Float64}}, ξ::Vecto
     update_transition_matrix!(model, γ, ξ)
     # update regression models
     γ_exp = [exp.(γ_trial) for γ_trial in γ]
-    update_emissions!(model, data, vcat(γ_exp...)) 
+    update_emissions!(model, data, vcat(permutedims.(γ_exp)...)) 
 end
 
 function update_initial_state_distribution!(model::HiddenMarkovModel, γ::Vector{Matrix{Float64}})
     # Update initial state probabilities for trialized data
     num_trials = length(γ)
-    model.πₖ = mean([exp.(γ[i][1, :]) for i in 1:num_trials])
+    model.πₖ = mean([exp.(γ[i][:, 1]) for i in 1:num_trials])
 end
 
 function update_transition_matrix!(model::HiddenMarkovModel, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Float64, 3}})
@@ -325,7 +320,7 @@ function update_transition_matrix!(model::HiddenMarkovModel, γ::Vector{Matrix{F
     num_trials = length(γ)
 
     E = vcat(ξ...)
-    G = vcat([γ[i][1:size(γ[i], 1)-1, :] for i in 1:num_trials]...)
+    G = vcat([γ[i][:, 1:size(γ[i], 1)-1] for i in 1:num_trials]...)
 
     @threads for i in 1:K
         for j in 1:K
@@ -370,6 +365,9 @@ function fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Rea
     lls = [-Inf]
 
     data = X === nothing ? (Y,) : (X, Y)
+    
+    # transpose data so that correct dimensions are passed to EmissionModels.jl, a bit hacky but works for now.
+    transpose_data = Matrix.(transpose.(data))
 
     log_likelihood = -Inf
     # Initialize progress bar
@@ -377,7 +375,7 @@ function fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Rea
     for iter in 1:max_iters
         next!(p)
         # E-Step
-        γ, ξ, α, β = estep(model, data)
+        γ, ξ, α, β = estep(model, transpose_data)
         # Compute and update the log-likelihood
         log_likelihood_current = logsumexp(α[:, end])
         push!(lls, log_likelihood_current)
@@ -389,7 +387,7 @@ function fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Rea
             log_likelihood = log_likelihood_current
         end
         # M-Step
-        mstep!(model, γ, ξ, data)
+        mstep!(model, γ, ξ, transpose_data)
     end
     return lls
 end
@@ -448,20 +446,25 @@ ll = fit!(test_model, trial_inputs)
 true
 ```
 """
-function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}}, X::Union{Vector{<:Matrix{<:Real}}, Nothing}=nothing; max_iters::Int=100, tol::Float64=1e-6)
+function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}}, 
+             X::Union{Vector{<:Matrix{<:Real}}, Nothing}=nothing; 
+             max_iters::Int=100, tol::Float64=1e-6)
     lls = [-Inf]
     data = X === nothing ? (Y,) : (X, Y)
  
     # Initialize log_likelihood
     log_likelihood = -Inf
 
-    # Collect the zipped data into a vector of tuples
-    zipped_matrices = collect(zip(data...))
+    # Transform each matrix in each tuple to the correct orientation
+    transposed_matrices = map(data_tuple -> Matrix.(transpose.(data_tuple)), data)
+    zipped_matrices = collect(zip(transposed_matrices...))
+
     p = Progress(max_iters; desc="Running EM algorithm...", barlen=50, showspeed=true)
     for iter in 1:max_iters
         # estep
         output = estep.(Ref(model), zipped_matrices)
-        γ, ξ, α, β = map(x-> x[1], output), map(x-> x[2], output), map(x-> x[3], output), map(x-> x[4], output)
+        γ, ξ, α, β = map(x-> x[1], output), map(x-> x[2], output), 
+                     map(x-> x[3], output), map(x-> x[4], output)
         
         # Calculate log_likelihood
         log_likelihood_current = sum(map(α -> logsumexp(α[:, end]), α))
@@ -482,7 +485,6 @@ function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}}, X::Union{Ve
 
         # M_step
         mstep!(model, γ, ξ, stacked_data)
-
     end
 
     return lls

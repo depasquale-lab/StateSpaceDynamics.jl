@@ -22,4 +22,8 @@ notebooks/profiling.jl
 notebooks/benchmarking.ipynb
 notebooks/regression_debug.ipynb
 notebooks/benchmarking.jl
+notebooks/debugging.jl
+
+# Paper files
 paper/jats/paper.jats
+
