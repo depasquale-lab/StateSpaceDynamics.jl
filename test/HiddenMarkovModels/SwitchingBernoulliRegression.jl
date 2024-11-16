@@ -25,13 +25,9 @@ function test_SwitchingBernoulliRegression()
     # Test the transition matrix
     @test isapprox(true_model.A, test_model.A, atol=0.1)
 
-    println(test_model.B[1].β,true_model.B[1].β)
-    println(test_model.B[2].β,true_model.B[2].β)
-
     # # Test it works alright
-    @test isapprox(test_model.B[1].β, true_model.B[1].β, atol=0.2)
-    @test isapprox(test_model.B[2].β, true_model.B[2].β, atol=0.2)
-
+    @test all(isapprox.(test_model.B[1].β, true_model.B[1].β, atol=0.2))
+    @test all(isapprox.(test_model.B[2].β, true_model.B[2].β, atol=0.2))
     # Test that the ll is always increasing (accept some numerical instability)
     @test any(diff(ll) .< -1e4) == false
 end
@@ -79,8 +75,9 @@ function test_trialized_SwitchingBernoulliRegression()
     @test isapprox(true_model.A, test_model.A, atol=0.1)
 
     # Check if parameters are approximately recovered
-    @test isapprox(test_model.B[1].β, true_model.B[1].β, atol=0.2) || isapprox(test_model.B[1].β, true_model.B[2].β, atol=0.2)
-    @test isapprox(test_model.B[2].β, true_model.B[2].β, atol=0.2) || isapprox(test_model.B[2].β, true_model.B[1].β, atol=0.2)
+
+    @test all(isapprox.(test_model.B[1].β, true_model.B[1].β, atol=0.2)) || all(isapprox.(test_model.B[1].β, true_model.B[2].β, atol=0.2))
+    @test all(isapprox.(test_model.B[2].β, true_model.B[2].β, atol=0.2)) || all(isapprox.(test_model.B[2].β, true_model.B[1].β, atol=0.2))
 
     # Test that the ll is always increasing (accept some numerical instability)
     @test any(diff(ll) .< -1e4) == false

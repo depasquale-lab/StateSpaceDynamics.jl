@@ -26,8 +26,8 @@ function test_SwitchingPoissonRegression_fit()
 
     ll = StateSpaceDynamics.fit!(test_model, data, Φ, max_iters=200)
 
-    # Test the transition matrix
-    # @test isapprox(true_model.A, test_model.A, atol=0.1)
+    #Test the transition matrix
+    @test isapprox(true_model.A, test_model.A, atol=0.1)
 
     # Test the regression fit
     @test isapprox(test_model.B[1].β, true_model.B[1].β, atol=0.1) || isapprox(test_model.B[1].β, true_model.B[2].β, atol=0.1)
@@ -78,7 +78,7 @@ function test_trialized_SwitchingPoissonRegression()
     ll = StateSpaceDynamics.fit!(test_model, data_trials, Φ_trials, max_iters=200)
     
     # Test the transition matrix
-    # @test isapprox(true_model.A, test_model.A, atol=0.1)
+    @test isapprox(true_model.A, test_model.A, atol=0.1)
 
     # Check if parameters are approximately recovered
     @test isapprox(test_model.B[1].β, true_model.B[1].β, atol=0.1) || isapprox(test_model.B[1].β, true_model.B[2].β, atol=0.1)
