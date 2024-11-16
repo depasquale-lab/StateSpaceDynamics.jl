@@ -319,8 +319,8 @@ function update_transition_matrix!(model::HiddenMarkovModel, γ::Vector{Matrix{F
     K = size(model.A, 1)
     num_trials = length(γ)
 
-    E = vcat(ξ...)
-    G = vcat([γ[i][:, 1:size(γ[i], 1)-1] for i in 1:num_trials]...)
+    E = cat(ξ..., dims=3)
+    G = hcat([γ[i][:, 1:size(γ[i], 2)-1] for i in 1:num_trials]...)
 
     @threads for i in 1:K
         for j in 1:K

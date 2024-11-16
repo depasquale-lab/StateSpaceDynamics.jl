@@ -14,7 +14,7 @@ function test_SwitchingGaussianRegression_fit()
 
     # Sample from the model
     n = 20000
-    Φ = randn(n, 3)
+    Φ = randn(3, n)
     true_labels, data = StateSpaceDynamics.sample(true_model, Φ, n=n)
 
     # Try to fit a new model to the data
@@ -50,7 +50,7 @@ function test_SwitchingGaussianRegression_SingleState_fit()
 
     # Sample from the model
     n = 20000
-    Φ = randn(n, 3)
+    Φ = randn(3, n)
     true_labels, data = StateSpaceDynamics.sample(true_model, Φ, n=n)
 
     # Try to fit a new model to the data
@@ -92,7 +92,7 @@ function test_trialized_SwitchingGaussianRegression()
     # Generate trials
     for trial in 1:num_trials
         # Random input data
-        x_data = randn(n, 1)  # Random input data for this trial
+        x_data = randn(1, n)  # Random input data for this trial
         trial_inputs[trial] = x_data
 
         # Generate state sequence
@@ -100,7 +100,7 @@ function test_trialized_SwitchingGaussianRegression()
         trial_labels[trial] = state_sequence
 
         # Generate output data based on state and linear relationships
-        y_data = zeros(n, 1)
+        y_data = zeros(1, n)
         for i in 1:n
             if state_sequence[i] == 1
                 y_data[i] = (model.B[1].β[2] * x_data[i] + model.B[1].β[1]) + (randn() * n1_std)
@@ -114,6 +114,9 @@ function test_trialized_SwitchingGaussianRegression()
     # Create new model and fit the data
     est_model = SwitchingGaussianRegression(K=2, input_dim=1, output_dim=1)
     ll = fit!(est_model, trial_outputs, trial_inputs, max_iters=200)
+
+    # Test the transition matrix
+    # @test isapprox(est_model.A, transition_matrix, atol=0.1)
 
     # Run tests to assess model fit
     @test isapprox(est_model.B[1].β, model.B[1].β, atol=0.1) || isapprox(est_model.B[1].β, model.B[2].β, atol=0.1)
