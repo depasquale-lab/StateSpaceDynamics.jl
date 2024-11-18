@@ -44,4 +44,5 @@ Each emission model must implement:
 
 abstract type EmissionModel end
 abstract type RegressionEmission <: EmissionModel end
+abstract type AutoRegressiveEmission <: EmissionModel end
 
