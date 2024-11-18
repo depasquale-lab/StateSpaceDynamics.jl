@@ -1,0 +1,10 @@
+channels = ["conda-forge"]
+
+[deps]
+
+[pip.deps]
+dynamax = ""
+jax = ""
+hmmlearn = ""
+jaxlib = ""
+pykalman = ""

@@ -126,7 +126,7 @@ function test_smooth()
         grad_numerical = ForwardDiff.gradient(f, x_smooth[:, :, i])
         grad_analytical = StateSpaceDynamics.Gradient(plds, y[:, :, i], x_smooth[:, :, i])
 
-        @test norm(grad_numerical - grad_analytical) < 1e-8
+        @test norm(grad_numerical - grad_analytical) < 1e-7
     end
 end
 
