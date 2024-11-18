@@ -230,7 +230,6 @@ include("Utilities/Utilities.jl")
     test_kmeanspp_initialization()
     test_kmeans_clustering()
     test_block_tridgm()
-    test_interleave_reshape()
 end
 
 """

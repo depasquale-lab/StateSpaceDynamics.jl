@@ -1,5 +1,5 @@
-export kmeanspp_initialization, kmeans_clustering, fit!, block_tridgm, interleave_reshape, block_tridiagonal_inverse
-export row_matrix, stabilize_covariance_matrix, valid_Σ
+export kmeanspp_initialization, kmeans_clustering, fit!, block_tridgm, block_tridiagonal_inverse
+export row_matrix, stabilize_covariance_matrix, valid_Σ, make_posdef!
 
 # Matrix utilities
 
@@ -94,29 +94,6 @@ function block_tridiagonal_inverse(A::Vector{Matrix{T}},
     end
     
     return λii, -λij
-end
-
-"""
-    interleave_reshape(data::AbstractArray, t::Int, d::Int)
-
-Reshape a vector into a matrix by interleaving its elements.
-
-# Arguments
-- `data::AbstractArray`: The input vector to be reshaped.
-- `t::Int`: The number of rows in the output matrix.
-- `d::Int`: The number of columns in the output matrix.
-
-# Returns
-- A reshaped matrix of size `t × d`.
-
-# Throws
-- `ErrorException` if the length of `data` is not equal to `t * d`.
-"""
-function interleave_reshape(data::AbstractVector, t::Int, d::Int)
-    length(data) == t * d || throw(
-        DimensionMismatch("Length of data ($(length(data))) must equal t * d ($(t * d))"),
-    )
-    return permutedims(reshape(data, d, t))
 end
 
 """
@@ -370,7 +347,7 @@ function logistic(x::Real)
 end
 
 """
-    ensure_positive_definite(A::Matrix{T}) where {T}
+    make_posdef!(A::Matrix{T}) where {T}
 
 Ensure that a matrix is positive definite by adjusting its eigenvalues.
 
@@ -380,27 +357,31 @@ Ensure that a matrix is positive definite by adjusting its eigenvalues.
 # Returns
 - A positive definite matrix derived from `A`.
 """
-function ensure_positive_definite(A::Matrix{T}; min_eigenvalue::Real=1e-6) where {T}
-    # Perform eigenvalue decomposition
-    eigen_decomp = eigen(Symmetric(A))
-    λ, V = eigen_decomp.values, eigen_decomp.vectors
-
-    # Compute the maximum absolute eigenvalue
-    λ_max = maximum(abs.(λ))
-
-    # Set a threshold relative to the maximum eigenvalue
-    ε = max(min_eigenvalue, eps(T) * λ_max * length(λ))
-
-    # Replace any eigenvalues smaller than ε with ε
-    λ_clipped = [max(λi, ε) for λi in λ]
-
-    # Reconstruct the matrix with the clipped eigenvalues
-    A_posdef = V * Diagonal(λ_clipped) * V'
-
-    # Ensure perfect symmetry
-    A_posdef = (A_posdef + A_posdef') / 2
-
-    return A_posdef
+function make_posdef!(A::AbstractMatrix{T}; min_eigval::T = 1e-3) where T<:Real
+    # Work with the symmetric part
+    B = Symmetric((A + A') / 2)
+    
+    # Get eigendecomposition
+    F = eigen(B)
+    
+    # Find negative or small eigenvalues
+    neg_eigs = F.values .< min_eigval
+    
+    # If already positive definite, return early
+    if !any(neg_eigs)
+        return A
+    end
+    
+    # Fix negative eigenvalues
+    F.values[neg_eigs] .= min_eigval
+    
+    # Reconstruct
+    A .= F.vectors * Diagonal(F.values) * F.vectors'
+    
+    # Ensure symmetry due to numerical errors
+    A .= (A + A') / 2
+    
+    return A
 end
 
 """
@@ -429,28 +410,6 @@ end
 function valid_Σ(Σ::Matrix{<:Real})
     return ishermitian(Σ) && isposdef(Σ)
 end
-
-"""
-Overload getproperty and setproperty behavior for EmissionModel to give the appearance that all properties of the 
-inner_model are also properties of the EmissionModel.
-"""
-# # define getters for inner_model fields
-# function Base.getproperty(model::EmissionModel, sym::Symbol)
-#     if sym === :inner_model
-#         return getfield(model, sym)
-#     else # fallback to getfield
-#         return getproperty(model.inner_model, sym)
-#     end
-# end
-
-# # define setters for inner_model fields
-# function Base.setproperty!(model::EmissionModel, sym::Symbol, value)
-#     if sym === :inner_model
-#         setfield!(model, sym, value)
-#     else # fallback to setfield!
-#         setproperty!(model.inner_model, sym, value)
-#     end
-# end
 
 # Function for stacking data... in prep for the trialized M_step!()
 function stack_tuples(d)
