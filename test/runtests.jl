@@ -220,17 +220,6 @@ include("RegressionModels/AutoRegression.jl")
 # end
 
 """
-Tests for Emissions.jl
-"""
-
-# include("Emissions/Emissions.jl")
-
-# @testset "Emissions.jl Tests" begin
-#     test_GaussianEmission()
-#     test_regression_emissions()
-# end
-
-"""
 Tests for Utilities.jl
 """
 

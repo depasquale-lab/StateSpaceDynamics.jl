@@ -118,6 +118,8 @@ function test_trialized_GaussianHMM()
     lls = StateSpaceDynamics.fit!(est_model, Y, max_iters=100)
 
     # Test that model output is correct
+    @test isapprox(est_model.A, true_model.A, atol=0.1)
+
     # @test StateSpaceDynamics.loglikelihood(est_model, Y) >= StateSpaceDynamics.loglikelihood(true_model, Y)
     @test isapprox(est_model.B[1].μ, true_model.B[1].μ, atol=0.1) || isapprox(est_model.B[1].μ, true_model.B[2].μ, atol=0.1)
     @test isapprox(est_model.B[1].Σ, true_model.B[1].Σ, atol=0.1) || isapprox(est_model.B[1].Σ, true_model.B[2].Σ, atol=0.1)

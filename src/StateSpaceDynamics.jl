@@ -22,6 +22,7 @@ include("LinearDynamicalSystems.jl")
 include("CompositeModel.jl")
 include("EmissionModels.jl")
 include("HiddenMarkovModels.jl")
+include("HMMConstructors.jl")
 include("MixtureModels.jl")
 include("Preprocessing.jl")
 

@@ -12,7 +12,7 @@ function test_SwitchingBernoulliRegression()
 
     # Sample from the model
     n=30000
-    Φ = randn(n, 2)
+    Φ = randn(2, n)
     true_labels, data = StateSpaceDynamics.sample(true_model, Φ, n=n)
 
     # Fit a new Bernoulli Regression Model to the data
@@ -25,13 +25,9 @@ function test_SwitchingBernoulliRegression()
     # Test the transition matrix
     @test isapprox(true_model.A, test_model.A, atol=0.1)
 
-    println(test_model.B[1].β,true_model.B[1].β)
-    println(test_model.B[2].β,true_model.B[2].β)
-
     # # Test it works alright
-    @test isapprox(test_model.B[1].β, true_model.B[1].β, atol=0.2)
-    @test isapprox(test_model.B[2].β, true_model.B[2].β, atol=0.2)
-
+    @test all(isapprox.(test_model.B[1].β, true_model.B[1].β, atol=0.2))
+    @test all(isapprox.(test_model.B[2].β, true_model.B[2].β, atol=0.2))
     # Test that the ll is always increasing (accept some numerical instability)
     @test any(diff(ll) .< -1e4) == false
 end
@@ -55,7 +51,7 @@ function test_trialized_SwitchingBernoulliRegression()
     true_model.B[2] = emission_2
 
     # Create lists to hold data and labels for each trial
-    Φ_trials = [randn(trial_length, 2) for _ in 1:num_trials]  # Input features for each trial
+    Φ_trials = [randn(2, trial_length) for _ in 1:num_trials]  # Input features for each trial
     true_labels_trials = Vector{Vector{Int}}(undef, num_trials)
     data_trials = Vector{Matrix{Float64}}(undef, num_trials)
 
@@ -79,8 +75,9 @@ function test_trialized_SwitchingBernoulliRegression()
     @test isapprox(true_model.A, test_model.A, atol=0.1)
 
     # Check if parameters are approximately recovered
-    @test isapprox(test_model.B[1].β, true_model.B[1].β, atol=0.2) || isapprox(test_model.B[1].β, true_model.B[2].β, atol=0.2)
-    @test isapprox(test_model.B[2].β, true_model.B[2].β, atol=0.2) || isapprox(test_model.B[2].β, true_model.B[1].β, atol=0.2)
+
+    @test all(isapprox.(test_model.B[1].β, true_model.B[1].β, atol=0.2)) || all(isapprox.(test_model.B[1].β, true_model.B[2].β, atol=0.2))
+    @test all(isapprox.(test_model.B[2].β, true_model.B[2].β, atol=0.2)) || all(isapprox.(test_model.B[2].β, true_model.B[1].β, atol=0.2))
 
     # Test that the ll is always increasing (accept some numerical instability)
     @test any(diff(ll) .< -1e4) == false
