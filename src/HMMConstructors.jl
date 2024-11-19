@@ -1,7 +1,5 @@
 export GaussianHMM,
-    SwitchingGaussianRegression,
-    SwitchingBernoulliRegression,
-    SwitchingPoissonRegression
+    SwitchingGaussianRegression, SwitchingBernoulliRegression, SwitchingPoissonRegression
 
 """
     GaussianHMM(; K::Int, output_dim::Int, A::Matrix{<:Real}=initialize_transition_matrix(K), πₖ::Vector{Float64}=initialize_state_distribution(K))
@@ -23,11 +21,16 @@ model = GaussianHMM(K=2, output_dim=5)
 # output
 ```
 """
-function GaussianHMM(; K::Int, output_dim::Int, A::Matrix{<:Real}=initialize_transition_matrix(K), πₖ::Vector{Float64}=initialize_state_distribution(K))
+function GaussianHMM(;
+    K::Int,
+    output_dim::Int,
+    A::Matrix{<:Real}=initialize_transition_matrix(K),
+    πₖ::Vector{Float64}=initialize_state_distribution(K),
+)
     # Create emission models
-    emissions = [GaussianEmission(output_dim=output_dim) for _ in 1:K]
+    emissions = [GaussianEmission(; output_dim=output_dim) for _ in 1:K]
     # Return constructed GaussianHMM
-    return HiddenMarkovModel(K=K, B=emissions, A=A, πₖ=πₖ)
+    return HiddenMarkovModel(; K=K, B=emissions, A=A, πₖ=πₖ)
 end
 
 """
@@ -67,26 +70,35 @@ Create a Switching Gaussian Regression Model
 model = SwitchingGaussianRegression(K=2, input_dim=5, output_dim=10)
 # output
 """
-function SwitchingGaussianRegression(; 
+function SwitchingGaussianRegression(;
     K::Int,
     input_dim::Int,
     output_dim::Int,
-    include_intercept::Bool = true,
-    β::Matrix{<:Real} = if include_intercept
+    include_intercept::Bool=true,
+    β::Matrix{<:Real}=if include_intercept
         zeros(input_dim + 1, output_dim)
     else
         zeros(input_dim, output_dim)
     end,
-    Σ::Matrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim),
-    λ::Float64 = 0.0,
-    A::Matrix{<:Real} = initialize_transition_matrix(K),
-    πₖ::Vector{Float64} = initialize_state_distribution(K)
+    Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim),
+    λ::Float64=0.0,
+    A::Matrix{<:Real}=initialize_transition_matrix(K),
+    πₖ::Vector{Float64}=initialize_state_distribution(K),
 )
     # Create emission models
-    emissions = [GaussianRegressionEmission(input_dim=input_dim, output_dim=output_dim, include_intercept=include_intercept, β=β, Σ=Σ, λ=λ) for _ in 1:K]
+    emissions = [
+        GaussianRegressionEmission(;
+            input_dim=input_dim,
+            output_dim=output_dim,
+            include_intercept=include_intercept,
+            β=β,
+            Σ=Σ,
+            λ=λ,
+        ) for _ in 1:K
+    ]
 
     # Return the HiddenMarkovModel
-    return HiddenMarkovModel(K=K, B=emissions, A=A, πₖ=πₖ)
+    return HiddenMarkovModel(; K=K, B=emissions, A=A, πₖ=πₖ)
 end
 
 """
@@ -111,20 +123,32 @@ Create a Switching Bernoulli Regression Model
 model = SwitchingBernoulliRegression(K=2, input_dim=5)
 # output
 """
-function SwitchingBernoulliRegression(; 
+function SwitchingBernoulliRegression(;
     K::Int,
     input_dim::Int,
     output_dim::Int=1,
     include_intercept::Bool=true,
-    β::Matrix{<:Real} = if include_intercept zeros(input_dim + 1, output_dim) else zeros(input_dim, output_dim) end,
-    λ::Float64 = 0.0,
-    A::Matrix{<:Real} = initialize_transition_matrix(K),
-    πₖ::Vector{Float64} = initialize_state_distribution(K),
+    β::Matrix{<:Real}=if include_intercept
+        zeros(input_dim + 1, output_dim)
+    else
+        zeros(input_dim, output_dim)
+    end,
+    λ::Float64=0.0,
+    A::Matrix{<:Real}=initialize_transition_matrix(K),
+    πₖ::Vector{Float64}=initialize_state_distribution(K),
 )
     # Create emission models
-    emissions = [BernoulliRegressionEmission(input_dim=input_dim, include_intercept=include_intercept, β=β, λ=λ, output_dim=output_dim) for _ in 1:K]
+    emissions = [
+        BernoulliRegressionEmission(;
+            input_dim=input_dim,
+            include_intercept=include_intercept,
+            β=β,
+            λ=λ,
+            output_dim=output_dim,
+        ) for _ in 1:K
+    ]
     # Return the HiddenMarkovModel
-    return HiddenMarkovModel(K=K, B=emissions, A=A, πₖ=πₖ)
+    return HiddenMarkovModel(; K=K, B=emissions, A=A, πₖ=πₖ)
 end
 
 function SwitchingPoissonRegression(;
@@ -132,15 +156,27 @@ function SwitchingPoissonRegression(;
     input_dim::Int,
     output_dim::Int=1,
     include_intercept::Bool=true,
-    β::Matrix{<:Real} = if include_intercept zeros(input_dim + 1, output_dim) else zeros(input_dim, output_dim) end,
-    λ::Float64 = 0.0,
-    A::Matrix{<:Real} = initialize_transition_matrix(K),
-    πₖ::Vector{Float64} = initialize_state_distribution(K)    
+    β::Matrix{<:Real}=if include_intercept
+        zeros(input_dim + 1, output_dim)
+    else
+        zeros(input_dim, output_dim)
+    end,
+    λ::Float64=0.0,
+    A::Matrix{<:Real}=initialize_transition_matrix(K),
+    πₖ::Vector{Float64}=initialize_state_distribution(K),
 )
-    
+
     # Create emission models
-    emissions = [PoissonRegressionEmission(input_dim=input_dim, output_dim=output_dim, include_intercept=include_intercept, β=β, λ=λ) for _ in 1:K]
+    emissions = [
+        PoissonRegressionEmission(;
+            input_dim=input_dim,
+            output_dim=output_dim,
+            include_intercept=include_intercept,
+            β=β,
+            λ=λ,
+        ) for _ in 1:K
+    ]
 
     # Return the HiddenMarkovModel
-    return HiddenMarkovModel(K=K, B=emissions, A=A, πₖ=πₖ)
+    return HiddenMarkovModel(; K=K, B=emissions, A=A, πₖ=πₖ)
 end

@@ -1,7 +1,6 @@
 export GaussianMixtureModel,
     PoissonMixtureModel, fit!, log_likelihood, sample, E_Step, M_Step!, MixtureModel
 
-
 """
     GaussianMixtureModel
 
@@ -65,7 +64,6 @@ function sample(gmm::GaussianMixtureModel, n::Int)
     end
     return samples
 end
-
 
 function E_Step(gmm::GaussianMixtureModel, data::Matrix{<:Real})
     N, _ = size(data)
@@ -260,7 +258,6 @@ function PoissonMixtureModel(k::Int)
     πs = ones(k) ./ k
     return PoissonMixtureModel(k, λs, πs)
 end
-
 
 function E_Step(pmm::PoissonMixtureModel, data::Matrix{Int})
     N, _ = size(data)

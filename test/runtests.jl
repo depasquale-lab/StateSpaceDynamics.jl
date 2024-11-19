@@ -30,7 +30,6 @@ Tests for MixtureModels.jl
 include("MixtureModels/GaussianMixtureModel.jl")
 include("MixtureModels/PoissonMixtureModel.jl")
 
-
 @testset "MixtureModels.jl Tests" begin
     # Test GaussianMixtureModel
     # Initialize test models
@@ -174,7 +173,7 @@ end
 
 """
 Tests for RegressionModels.jl
-""" 
+"""
 
 include("RegressionModels/GaussianRegression.jl")
 
@@ -245,7 +244,6 @@ include("Preprocessing/Preprocessing.jl")
     test_PPCA_fit()
 end
 
-
 """
 Tests for Switching Regression Models
 """
@@ -257,7 +255,6 @@ include("HiddenMarkovModels/GaussianHMM.jl")
     test_SwitchingGaussian_SingleState_fit()
     test_trialized_GaussianHMM()
 end
-
 
 include("HiddenMarkovModels/SwitchingGaussianRegression.jl")
 

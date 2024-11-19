@@ -304,21 +304,21 @@ function loglikelihood(
     lds.state_model.Q, lds.state_model.x0,
     lds.state_model.P0
     C, R = lds.obs_model.C, lds.obs_model.R
-    
+
     # Pre-compute Cholesky factors instead of inverses
     R_chol = cholesky(Symmetric(R))
     Q_chol = cholesky(Symmetric(Q))
     P0_chol = cholesky(Symmetric(P0))
-    
+
     # Initial state contribution
     dx0 = x[:, 1] - x0
     # Replace dx0' * inv_P0 * dx0 with equivalent using Cholesky
     ll = sum(abs2, P0_chol.U \ dx0)
-    
+
     # Create temporaries with the same element type as x
     temp_dx = zeros(T, size(x, 1))
     temp_dy = zeros(promote_type(T, U), size(y, 1))
-    
+
     @inbounds for t in 1:T_steps
         if t > 1
             temp_dx .= x[:, t] - A * x[:, t - 1]
@@ -356,50 +356,42 @@ function Gradient(
     lds.state_model.Q, lds.state_model.x0,
     lds.state_model.P0
     C, R = lds.obs_model.C, lds.obs_model.R
-    
+
     # Compute Cholesky factors
     R_chol = cholesky(Symmetric(R))
     Q_chol = cholesky(Symmetric(Q))
     P0_chol = cholesky(Symmetric(P0))
-    
+
     # Pre-compute common matrix products
     # Instead of C' * inv(R), we can use: C' * (R_chol \ I)
     # or equivalently: (R_chol \ C)'
     C_inv_R = (R_chol \ C)'
     A_inv_Q = (Q_chol \ A)'
-    
+
     grad = zeros(T, latent_dim, T_steps)
-    
+
     # First time step
     dx1 = x[:, 1] - x0
     dx2 = x[:, 2] - A * x[:, 1]
     dy1 = y[:, 1] - C * x[:, 1]
-    
-    grad[:, 1] .= 
-        A_inv_Q * dx2 + 
-        C_inv_R * dy1 - 
-        (P0_chol \ dx1)
-    
+
+    grad[:, 1] .= A_inv_Q * dx2 + C_inv_R * dy1 - (P0_chol \ dx1)
+
     # Middle time steps
     @inbounds for t in 2:(T_steps - 1)
         dxt = x[:, t] - A * x[:, t - 1]
         dxt_next = x[:, t + 1] - A * x[:, t]
         dyt = y[:, t] - C * x[:, t]
-        
-        grad[:, t] .= 
-            C_inv_R * dyt - 
-            (Q_chol \ dxt) + 
-            A_inv_Q * dxt_next
+
+        grad[:, t] .= C_inv_R * dyt - (Q_chol \ dxt) + A_inv_Q * dxt_next
     end
-    
+
     # Last time step
     dxT = x[:, T_steps] - A * x[:, T_steps - 1]
     dyT = y[:, T_steps] - C * x[:, T_steps]
-    
-    grad[:, T_steps] .= 
-        C_inv_R * dyT - 
-        (Q_chol \ dxT)
-        
+
+    grad[:, T_steps] .= C_inv_R * dyT - (Q_chol \ dxT)
+
     return grad
 end
 
@@ -460,7 +452,7 @@ function Hessian(
     xt_given_xt_1 = -inv_Q
     xt1_given_xt = -A' * inv_Q * A
     x_t = -inv_P0
-    
+
     # Build off-diagonals
     @inbounds for i in 1:(T_steps - 1)
         H_sub[i] = H_sub_entry
@@ -478,7 +470,6 @@ function Hessian(
 
     return H, H_diag, H_super, H_sub
 end
-
 
 """
     smooth(lds::LinearDynamicalSystem{S,O}, y::Matrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
@@ -525,12 +516,12 @@ function smooth(
         x = reshape(vec_x, D, T_steps)
         H, _, _, _ = Hessian(lds, y, x)
         copyto!(h, -H)
-        return 
+        return nothing
     end
 
     # set up initial values
     initial_f = nll(X₀)
-    
+
     inital_g = similar(X₀)
     g!(inital_g, X₀)
 
@@ -541,11 +532,11 @@ function smooth(
     td = TwiceDifferentiable(nll, g!, h!, X₀, initial_f, inital_g, initial_h)
 
     # set up Optim.Options
-    opts = Optim.Options(g_tol=1e-12, x_tol=1e-12, f_tol=1e-12, iterations=100)
+    opts = Optim.Options(; g_tol=1e-12, x_tol=1e-12, f_tol=1e-12, iterations=100)
 
     # Go!
-    res = optimize(td, X₀, Newton(linesearch=LineSearches.BackTracking()), opts)
-    
+    res = optimize(td, X₀, Newton(; linesearch=LineSearches.BackTracking()), opts)
+
     # Profit
     x = reshape(res.minimizer, D, T_steps)
 
@@ -643,35 +634,35 @@ function Q_state(
 )
     T_step = size(E_z, 2)
     state_dim = size(A, 1)
-    
+
     # Pre-compute constants and decompositions once
     Q_chol = cholesky(Symmetric(Q))
     P0_chol = cholesky(Symmetric(P0))
     log_det_Q = logdet(Q_chol)
     log_det_P0 = logdet(P0_chol)
-    
+
     # Pre-allocate the main temporary matrix
     temp = zeros(state_dim, state_dim)
-    
+
     # First time step
-    mul!(temp, E_z[:,1], x0', -1.0, 0.0)  # -E_z[:,1] * x0'
-    temp .+= view(E_zz,:,:,1)              # Add E_zz[:,:,1]
-    temp .-= x0 * E_z[:,1]'                # Subtract x0 * E_z[:,1]'
+    mul!(temp, E_z[:, 1], x0', -1.0, 0.0)  # -E_z[:,1] * x0'
+    temp .+= view(E_zz, :, :, 1)              # Add E_zz[:,:,1]
+    temp .-= x0 * E_z[:, 1]'                # Subtract x0 * E_z[:,1]'
     temp .+= x0 * x0'                      # Add x0 * x0'
-    
+
     Q_val = -0.5 * (log_det_P0 + tr(P0_chol \ temp))
-    
+
     # Main loop
     @inbounds for t in 2:T_step
         # Direct computation avoiding temporary matrices where possible
-        copyto!(temp, view(E_zz,:,:,t))
-        mul!(temp, A, view(E_zz_prev,:,:,t)', -1.0, 1.0)  # Subtract A * E_zz_prev[:,:,t]'
-        temp .-= view(E_zz_prev,:,:,t) * A'               # Subtract E_zz_prev[:,:,t] * A'
-        temp .+= A * view(E_zz,:,:,t-1) * A'             # Add A * E_zz[:,:,t-1] * A'
-        
+        copyto!(temp, view(E_zz, :, :, t))
+        mul!(temp, A, view(E_zz_prev, :, :, t)', -1.0, 1.0)  # Subtract A * E_zz_prev[:,:,t]'
+        temp .-= view(E_zz_prev, :, :, t) * A'               # Subtract E_zz_prev[:,:,t] * A'
+        temp .+= A * view(E_zz, :, :, t - 1) * A'             # Add A * E_zz[:,:,t-1] * A'
+
         Q_val += -0.5 * (log_det_Q + tr(Q_chol \ temp))
     end
-    
+
     return Q_val
 end
 
@@ -700,27 +691,27 @@ function Q_obs(
 )
     obs_dim = size(H, 1)
     T_step = size(E_z, 2)
-    
+
     # Pre-compute constants
     R_chol = cholesky(Symmetric(R))
     log_det_R = logdet(R_chol)
     const_term = obs_dim * log(2π)
-    
+
     # Pre-allocate temporary matrix
     temp = zeros(obs_dim, obs_dim)
-    
+
     Q_val = 0.0
-    
+
     @inbounds for t in 1:T_step
         # Compute terms with minimal temporary allocations
-        mul!(temp, y[:,t], y[:,t]')                    # term1
-        temp .-= H * (E_z[:,t] * y[:,t]')             # Subtract term2
-        temp .-= (y[:,t] * E_z[:,t]') * H'            # Subtract term3
-        temp .+= H * view(E_zz,:,:,t) * H'            # Add term4
-        
+        mul!(temp, y[:, t], y[:, t]')                    # term1
+        temp .-= H * (E_z[:, t] * y[:, t]')             # Subtract term2
+        temp .-= (y[:, t] * E_z[:, t]') * H'            # Subtract term3
+        temp .+= H * view(E_zz, :, :, t) * H'            # Add term4
+
         Q_val += -0.5 * (const_term + log_det_R + tr(R_chol \ temp))
     end
-    
+
     return Q_val
 end
 
@@ -1012,27 +1003,26 @@ function update_Q!(
         state_dim = size(E_zz, 1)
         Q_new = zeros(T, state_dim, state_dim)
         A = lds.state_model.A
-        
+
         for trial in 1:n_trials
             @inbounds for t in 2:T_steps
                 # Get current state covariance and previous-current cross covariance
                 Σt = E_zz[:, :, t, trial]          # E[z_t z_t']
-                Σt_prev = E_zz[:, :, t-1, trial]   # E[z_{t-1} z_{t-1}']
+                Σt_prev = E_zz[:, :, t - 1, trial]   # E[z_{t-1} z_{t-1}']
                 Σt_cross = E_zz_prev[:, :, t, trial] # E[z_t z_{t-1}']
-                
+
                 # Compute innovation: actual state minus predicted state
                 # Q = E[(z_t - Az_{t-1})(z_t - Az_{t-1})']
                 innovation_cov = Σt - Σt_cross * A' - A * Σt_cross' + A * Σt_prev * A'
-                
+
                 # This is equivalent to E[(z_t - Az_{t-1})(z_t - Az_{t-1})']
                 Q_new .+= innovation_cov
             end
         end
-        
+
         Q_new ./= (n_trials * (T_steps - 1))
-        
+
         lds.state_model.Q = 0.5 * (Q_new + Q_new')
-        
     end
 end
 
@@ -1103,19 +1093,19 @@ function update_R!(
                 yt = y[:, t, trial]
                 zt = E_z[:, t, trial]
                 innovation = yt - C * zt
-                
+
                 # Add innovation outer product (guaranteed symmetric and pos semi-def)
                 R_new .+= innovation * innovation'
-                
+
                 # Add correction term for uncertainty in state estimate
                 # (C * (Σ_t - z_t*z_t') * C') is guaranteed pos semi-def if Σ_t - z_t*z_t' is
-                state_uncertainty = E_zz[:,:,t,trial] - zt * zt'
+                state_uncertainty = E_zz[:, :, t, trial] - zt * zt'
                 R_new .+= C * state_uncertainty * C'
             end
         end
-        
+
         R_new ./= (n_trials * T_steps)
-        
+
         lds.obs_model.R = (R_new + R_new') / 2
     end
 end
@@ -1210,7 +1200,8 @@ function fit!(
         prog = Progress(max_iter; desc="Fitting LDS via EM...", barlen=50, showspeed=true)
     elseif O <: PoissonObservationModel
         prog = Progress(
-            max_iter; desc="Fitting Poisson LDS via LaPlaceEM...", barlen=50, showspeed=true)
+            max_iter; desc="Fitting Poisson LDS via LaPlaceEM...", barlen=50, showspeed=true
+        )
     else
         error("Unknown LDS model type")
     end
@@ -1842,7 +1833,7 @@ function update_observation_model!(
             return gradient_observation_model!(grad, C, log_d, E_z, P_smooth, y)
         end
 
-        result = optimize(f, g!, params, LBFGS(;linesearch=LineSearches.BackTracking()))
+        result = optimize(f, g!, params, LBFGS(; linesearch=LineSearches.BackTracking()))
 
         # Update the parameters
         C_size = plds.obs_dim * plds.latent_dim

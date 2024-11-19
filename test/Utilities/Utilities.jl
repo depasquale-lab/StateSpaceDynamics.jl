@@ -73,5 +73,3 @@ function test_block_tridgm()
         end
     end
 end
-
-

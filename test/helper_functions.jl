@@ -52,5 +52,5 @@ function print_models(true_model, est_model, data...)
     println()
     println("Estimated Model:")
     println("est_model: ", est_model)
-    println("loglikelihood: ", SSM.loglikelihood(est_model, data...))
+    return println("loglikelihood: ", SSM.loglikelihood(est_model, data...))
 end

@@ -2,10 +2,7 @@
 The purpose of this file is to provide a common place for all global types to be defined. This is to avoid circular dependencies between files.
 """
 
-export MixtureModel,
-    EmissionModel,
-    AbstractHMM,
-    DynamicalSystem
+export MixtureModel, EmissionModel, AbstractHMM, DynamicalSystem
 
 # Create abstract types here 
 """
@@ -18,7 +15,7 @@ abstract type MixtureModel end
 Abstract type for Regression Models. I.e. GaussianRegression, BernoulliRegression, etc.
 """
 
-abstract type RegressionModel  end
+abstract type RegressionModel end
 
 """
 Abstract type for HMMs 
@@ -44,4 +41,3 @@ Each emission model must implement:
 
 abstract type EmissionModel end
 abstract type RegressionEmission <: EmissionModel end
-

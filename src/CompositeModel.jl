@@ -30,7 +30,7 @@ mutable struct CompositeModel <: EmissionModel
 
     function CompositeModel(components::Vector{<:EmissionModel})
         @assert !isempty(components) "CompositeModel must have at least one component"
-        new(components)
+        return new(components)
     end
 end
 
@@ -51,10 +51,11 @@ Sample from each component model in the composite model.
 - Each element in input_data should match the input requirements of its corresponding component model
 - Returns a vector where each element is a tuple containing the samples for that component
 """
-function sample(model::CompositeModel, 
-               input_data::Vector{T}=[() for _ in 1:length(model.components)]; 
-               n::Int=1) where T
-
+function sample(
+    model::CompositeModel,
+    input_data::Vector{T}=[() for _ in 1:length(model.components)];
+    n::Int=1,
+) where {T}
     @assert length(input_data) == length(model.components) "Input data length must match number of components"
     @assert n > 0 "Number of samples must be positive"
 
@@ -90,11 +91,12 @@ Calculate the log likelihood of the data under the composite model.
 # Notes
 - For observation-wise computation, all components must have the same number of observations
 """
-function loglikelihood(model::CompositeModel, 
-                      input_data::Vector, 
-                      output_data::Vector; 
-                      observation_wise::Bool=false)
-
+function loglikelihood(
+    model::CompositeModel,
+    input_data::Vector,
+    output_data::Vector;
+    observation_wise::Bool=false,
+)
     @assert length(input_data) == length(model.components) "Input data length must match number of components"
     @assert length(output_data) == length(model.components) "Output data length must match number of components"
 
@@ -103,15 +105,15 @@ function loglikelihood(model::CompositeModel,
     try
         for i in eachindex(model.components)
             loglikelihoods[i] = loglikelihood(
-                model.components[i], 
-                input_data[i]..., 
-                output_data[i]..., 
-                observation_wise=observation_wise
+                model.components[i],
+                input_data[i]...,
+                output_data[i]...;
+                observation_wise=observation_wise,
             )
         end
 
         # Sum log likelihoods across components
-        return sum(loglikelihoods, dims=1)[1]
+        return sum(loglikelihoods; dims=1)[1]
     catch e
         throw(ErrorException("Error computing log likelihood for component $i: $(e.msg)"))
     end
@@ -133,14 +135,15 @@ Fit the composite model to the provided data.
 - The same weights are applied to all components
 - Each component's fit! method must handle the case of empty weights
 """
-function fit!(model::CompositeModel, 
-             input_data::Vector, 
-             output_data::Vector, 
-             w::AbstractVector{Float64}=Float64[])
-
+function fit!(
+    model::CompositeModel,
+    input_data::Vector,
+    output_data::Vector,
+    w::AbstractVector{Float64}=Float64[],
+)
     @assert length(input_data) == length(model.components) "Input data length must match number of components"
     @assert length(output_data) == length(model.components) "Output data length must match number of components"
-    
+
     try
         for i in eachindex(model.components)
             fit!(model.components[i], input_data[i]..., output_data[i]..., w)
@@ -160,12 +163,11 @@ Alternative fit method for models that don't require input data.
 - `output_data::Vector`: Vector of output data for each component
 - `w::AbstractVector{Float64}=Float64[]`: Optional weights for the observations
 """
-function fit!(model::CompositeModel, 
-             output_data::Vector, 
-             w::AbstractVector{Float64}=Float64[])
-
+function fit!(
+    model::CompositeModel, output_data::Vector, w::AbstractVector{Float64}=Float64[]
+)
     @assert length(output_data) == length(model.components) "Output data length must match number of components"
-    
+
     try
         for i in eachindex(model.components)
             fit!(model.components[i], output_data[i]..., w)

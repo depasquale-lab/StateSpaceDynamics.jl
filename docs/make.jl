@@ -5,13 +5,14 @@ root = joinpath(dirname(pathof(StateSpaceDynamics)), "..", "docs")
 
 println("working dir: ", pwd())
 
-DocMeta.setdocmeta!(StateSpaceDynamics, :DocTestSetup, :(using StateSpaceDynamics); recursive=true)
+DocMeta.setdocmeta!(
+    StateSpaceDynamics, :DocTestSetup, :(using StateSpaceDynamics); recursive=true
+)
 
-
-makedocs(
-    root = root, 
+makedocs(;
+    root=root,
     sitename="StateSpaceDynamics Julia",
-    modules = [StateSpaceDynamics],
+    modules=[StateSpaceDynamics],
     pages=[
         "Home" => "index.md",
         "getting_started.md",
@@ -21,6 +22,7 @@ makedocs(
             "HiddenMarkovModels.md",
             "MixtureModels.md",
             "LDS.md",
-            ],
+        ],
         "Misc" => "Misc.md",
-        ])
+    ],
+)

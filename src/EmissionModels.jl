@@ -9,7 +9,8 @@ This module implements various emission models for state space modeling, includi
 
 # Exports
 export EmissionModel, RegressionEmission
-export GaussianEmission, GaussianRegressionEmission, BernoulliRegressionEmission, PoissonRegressionEmission
+export GaussianEmission,
+    GaussianRegressionEmission, BernoulliRegressionEmission, PoissonRegressionEmission
 export CompositeModelEmission
 export sample, loglikelihood, fit!
 
@@ -28,7 +29,6 @@ mutable struct GaussianEmission <: EmissionModel
     Σ::Matrix{<:Real}  # covariance matrix
 end
 
-
 """
     function GaussianEmission(; output_dim::Int, μ::Vector{<:Real}=zeros(output_dim), Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim))
 
@@ -41,14 +41,13 @@ Functon to create a GaussianEmission with given output dimension, mean, and cova
 
 # Returns
 """
-function GaussianEmission(; 
-    output_dim::Int, 
-    μ::Vector{<:Real}=zeros(output_dim), 
-    Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim))
-
+function GaussianEmission(;
+    output_dim::Int,
+    μ::Vector{<:Real}=zeros(output_dim),
+    Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim),
+)
     return GaussianEmission(output_dim, μ, Σ)
 end
-
 
 """
     loglikelihood(model::GaussianEmission, Y::Matrix{<:Real})
@@ -72,12 +71,10 @@ loglikelihoods = SSD.loglikelihood(model, Y)
 function loglikelihood(model::GaussianEmission, Y::Matrix{<:Real})
     # Create MvNormal distribution with the model parameters
     dist = MvNormal(model.μ, model.Σ)
-    
-    
-    # Calculate log likelihood for each observation
-    return [logpdf(dist, Y[i,:]) for i in axes(Y, 1)]
-end
 
+    # Calculate log likelihood for each observation
+    return [logpdf(dist, Y[i, :]) for i in axes(Y, 1)]
+end
 
 """
     sample(model::Gaussian; n::Int=1)
@@ -96,10 +93,9 @@ println(size(samples))
 ```
 """
 function sample(model::GaussianEmission; n::Int=1)
-    raw_samples = rand(MvNormal(model.μ, model.Σ), n)    
+    raw_samples = rand(MvNormal(model.μ, model.Σ), n)
     return Matrix(raw_samples')
 end
-
 
 """
     fit!(model::GaussianEmission, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
@@ -122,8 +118,10 @@ fit!(est_model, Y)
 # output
 ```
 """
-function fit!(model::GaussianEmission, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    weighted_sum = sum(Y .* w, dims=1)
+function fit!(
+    model::GaussianEmission, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1))
+)
+    weighted_sum = sum(Y .* w; dims=1)
     new_mean = weighted_sum[:] ./ sum(w)
 
     centered_data = Y .- new_mean'
@@ -154,17 +152,22 @@ struct RegressionOptimization{T<:RegressionEmission}
 end
 
 # Unified interface for creating optimization problems
-function create_optimization(model::RegressionEmission, X::Matrix{<:Real}, y::Matrix{<:Real}, w::Vector{Float64}=ones(size(y, 1)))
+function create_optimization(
+    model::RegressionEmission,
+    X::Matrix{<:Real},
+    y::Matrix{<:Real},
+    w::Vector{Float64}=ones(size(y, 1)),
+)
     if model.include_intercept
         X = hcat(ones(size(X, 1)), X)
     end
 
     β_shape = size(model.β)
-    RegressionOptimization(model, X, y, w, β_shape)
+    return RegressionOptimization(model, X, y, w, β_shape)
 end
 
 # Helper functions for reshaping
-vec_to_matrix(β_vec::Vector{<:Real}, shape::Tuple{Int,Int}) = reshape(β_vec, shape) 
+vec_to_matrix(β_vec::Vector{<:Real}, shape::Tuple{Int,Int}) = reshape(β_vec, shape)
 matrix_to_vec(β_mat::Matrix{<:Real}) = vec(β_mat)
 
 # Default no-op post-optimization
@@ -204,11 +207,13 @@ Calculate gradient of L2 regularization term for regression coefficients.
 - `λ::Float64`: Regularization parameter
 - `include_intercept::Bool`: Whether to exclude the intercept term from regularization
 """
-function calc_regularization_gradient(β::Matrix{<:Real}, λ::Float64, include_intercept::Bool=true)
+function calc_regularization_gradient(
+    β::Matrix{<:Real}, λ::Float64, include_intercept::Bool=true
+)
     # calculate the gradient of the regularization component
     regularization = zeros(size(β))
 
-    if include_intercept  
+    if include_intercept
         regularization[2:end, :] .= λ * β[2:end, :]
     else
         regularization .= λ * β
@@ -249,18 +254,20 @@ mutable struct GaussianRegressionEmission <: RegressionEmission
     λ::Float64 # regularization parameter
 end
 
-
-function GaussianRegressionEmission(; 
-    input_dim::Int, 
-    output_dim::Int, 
-    include_intercept::Bool = true, 
-    β::Matrix{<:Real} = if include_intercept zeros(input_dim + 1, output_dim) else zeros(input_dim, output_dim) end,
-    Σ::Matrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim),
-    λ::Float64 = 0.0)
-    
+function GaussianRegressionEmission(;
+    input_dim::Int,
+    output_dim::Int,
+    include_intercept::Bool=true,
+    β::Matrix{<:Real}=if include_intercept
+        zeros(input_dim + 1, output_dim)
+    else
+        zeros(input_dim, output_dim)
+    end,
+    Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim),
+    λ::Float64=0.0,
+)
     return GaussianRegressionEmission(input_dim, output_dim, β, Σ, include_intercept, λ)
 end
-
 
 """
     sample(model::GaussianRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
@@ -282,7 +289,7 @@ model = GaussianRegression(input_dim=2, output_dim=1)
 Y = sample(model, Φ)
 # output
 """
-function sample(model::GaussianRegressionEmission, Φ::Union{Matrix{<:Real}, Vector{<:Real}})
+function sample(model::GaussianRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
     # Ensure Φ is a 2D matrix even if it's a single sample
     Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
 
@@ -295,7 +302,6 @@ function sample(model::GaussianRegressionEmission, Φ::Union{Matrix{<:Real}, Vec
     noise = rand(MvNormal(zeros(model.output_dim), model.Σ), size(Φ, 1))'
     return Φ * model.β + noise
 end
-
 
 """
     loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
@@ -318,7 +324,12 @@ Y = randn(10, 2)
 loglikelihoods = loglikelihood(model, Φ, Y)
 # output
 """
-function loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+function loglikelihood(
+    model::GaussianRegressionEmission,
+    Φ::Matrix{<:Real},
+    Y::Matrix{<:Real},
+    w::Vector{Float64}=ones(size(Y, 1)),
+)
     # Add intercept if specified
     Φ = model.include_intercept ? [ones(size(Φ, 1)) Φ] : Φ
 
@@ -326,41 +337,49 @@ function loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y:
     residuals = Y - Φ * model.β
 
     # Calculate weighted least squares
-    weighted_residuals = residuals.^2 .* w
+    weighted_residuals = residuals .^ 2 .* w
 
     return -0.5 .* weighted_residuals
 end
 
-function objective(opt::RegressionOptimization{GaussianRegressionEmission}, β_vec::Vector{T}) where T <: Real
+function objective(
+    opt::RegressionOptimization{GaussianRegressionEmission}, β_vec::Vector{T}
+) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     residuals = opt.y - opt.X * β_mat
     w_reshaped = reshape(opt.w, :, 1)
-    
+
     # calculate regularization
     regularization = calc_regularization(β_mat, opt.model.λ, opt.model.include_intercept)
-    
+
     # calculate pseudo log-likelihood
-    pseudo_ll = 0.5 * sum(w_reshaped .* residuals.^2) + regularization
-    return pseudo_ll 
+    pseudo_ll = 0.5 * sum(w_reshaped .* residuals .^ 2) + regularization
+    return pseudo_ll
 end
 
-function objective_gradient!(G::Vector{Float64}, opt::RegressionOptimization{GaussianRegressionEmission}, β_vec::Vector{T}) where T <: Real
+function objective_gradient!(
+    G::Vector{Float64},
+    opt::RegressionOptimization{GaussianRegressionEmission},
+    β_vec::Vector{T},
+) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     residuals = opt.y - opt.X * β_mat
-    
+
     # calc gradient of penalty
-    regularization = calc_regularization_gradient(β_mat, opt.model.λ, opt.model.include_intercept)
-    
+    regularization = calc_regularization_gradient(
+        β_mat, opt.model.λ, opt.model.include_intercept
+    )
+
     # calculate the gradient
     grad_mat = -(opt.X' * (Diagonal(opt.w) * residuals)) + regularization  # Fixed: Added negative sign
-    G .= vec(grad_mat)
+    return G .= vec(grad_mat)
 end
 
 # Special handling for Gaussian regression to update variance
 function post_optimization!(model::GaussianRegressionEmission, opt::RegressionOptimization)
     residuals = opt.y - opt.X * model.β
     Σ = (residuals' * Diagonal(opt.w) * residuals) / size(opt.X, 1)
-    model.Σ = 0.5 * (Σ + Σ')  # Ensure symmetry
+    return model.Σ = 0.5 * (Σ + Σ')  # Ensure symmetry
 end
 
 """
@@ -388,17 +407,19 @@ mutable struct BernoulliRegressionEmission <: RegressionEmission
     λ::Float64 # regularization parameter
 end
 
-function BernoulliRegressionEmission(; 
-    input_dim::Int, 
-    output_dim::Int, 
-    include_intercept::Bool = true, 
-    β::Matrix{<:Real} = if include_intercept zeros(input_dim + 1, output_dim) else zeros(input_dim, output_dim) end,
-    λ::Float64 = 0.0)
-
+function BernoulliRegressionEmission(;
+    input_dim::Int,
+    output_dim::Int,
+    include_intercept::Bool=true,
+    β::Matrix{<:Real}=if include_intercept
+        zeros(input_dim + 1, output_dim)
+    else
+        zeros(input_dim, output_dim)
+    end,
+    λ::Float64=0.0,
+)
     return BernoulliRegressionEmission(input_dim, output_dim, β, include_intercept, λ)
-    
 end
-
 
 """
     sample(model::BernoulliRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
@@ -421,7 +442,7 @@ Y = sample(model, Φ)
 # output
 ```
 """
-function sample(model::BernoulliRegressionEmission, Φ::Union{Matrix{<:Real}, Vector{<:Real}})
+function sample(model::BernoulliRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
     # Ensure Φ is a 2D matrix even if it's a single sample
     Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
 
@@ -434,7 +455,6 @@ function sample(model::BernoulliRegressionEmission, Φ::Union{Matrix{<:Real}, Ve
 
     return float.(reshape(Y, :, 1))
 end
-
 
 """
     loglikelihood(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
@@ -458,9 +478,14 @@ Y = rand(Bool, 10, 1)
 loglikelihoods = loglikelihood(model, Φ, Y)
 # output
 """
-function loglikelihood(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+function loglikelihood(
+    model::BernoulliRegressionEmission,
+    Φ::Matrix{<:Real},
+    Y::Matrix{<:Real},
+    w::Vector{Float64}=ones(size(Y, 1)),
+)
     # add intercept if specified and not already included
-    if model.include_intercept && size(Φ, 2) == length(model.β) - 1 
+    if model.include_intercept && size(Φ, 2) == length(model.β) - 1
         Φ = hcat(ones(size(Φ, 1)), Φ)
     end
 
@@ -469,12 +494,13 @@ function loglikelihood(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y
 
     obs_wise_loglikelihood = w .* (Y .* log.(p) .+ (1 .- Y) .* log.(1 .- p))
 
-
     return obs_wise_loglikelihood
 end
 
 # Bernoulli Regression Implementation
-function objective(opt::RegressionOptimization{BernoulliRegressionEmission}, β_vec::Vector{T}) where T <: Real
+function objective(
+    opt::RegressionOptimization{BernoulliRegressionEmission}, β_vec::Vector{T}
+) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     p = logistic.(opt.X * β_mat)
 
@@ -482,19 +508,25 @@ function objective(opt::RegressionOptimization{BernoulliRegressionEmission}, β_
     regularization = calc_regularization(β_mat, opt.model.λ, opt.model.include_intercept)
 
     val = -sum(opt.w .* (opt.y .* log.(p) .+ (1 .- opt.y) .* log.(1 .- p))) + regularization
-          
+
     return val
 end
 
-function objective_gradient!(G::Vector{Float64}, opt::RegressionOptimization{BernoulliRegressionEmission}, β_vec::Vector{T}) where T <: Real
+function objective_gradient!(
+    G::Vector{Float64},
+    opt::RegressionOptimization{BernoulliRegressionEmission},
+    β_vec::Vector{T},
+) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     p = logistic.(opt.X * β_mat)
 
     # calc gradient of penalty
-    regularization = calc_regularization_gradient(β_mat, opt.model.λ, opt.model.include_intercept)
+    regularization = calc_regularization_gradient(
+        β_mat, opt.model.λ, opt.model.include_intercept
+    )
 
     grad_mat = -(opt.X' * (opt.w .* (opt.y .- p))) + regularization
-    G .= vec(grad_mat)
+    return G .= vec(grad_mat)
 end
 
 """
@@ -522,16 +554,19 @@ mutable struct PoissonRegressionEmission <: RegressionEmission
     λ::Float64
 end
 
-function PoissonRegressionEmission(; 
-    input_dim::Int, 
-    output_dim::Int, 
-    include_intercept::Bool = true, 
-    β::Matrix{<:Real} = if include_intercept zeros(input_dim + 1, output_dim) else zeros(input_dim, output_dim) end,
-    λ::Float64 = 0.0)
-
+function PoissonRegressionEmission(;
+    input_dim::Int,
+    output_dim::Int,
+    include_intercept::Bool=true,
+    β::Matrix{<:Real}=if include_intercept
+        zeros(input_dim + 1, output_dim)
+    else
+        zeros(input_dim, output_dim)
+    end,
+    λ::Float64=0.0,
+)
     return PoissonRegressionEmission(input_dim, output_dim, β, include_intercept, λ)
 end
-
 
 """
     sample(model::PoissonRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
@@ -554,7 +589,7 @@ Y = sample(model, Φ)
 # output
 ```
 """
-function sample(model::PoissonRegressionEmission, Φ::Union{Matrix{<:Real}, Vector{<:Real}})
+function sample(model::PoissonRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
     # Ensure Φ is a 2D matrix even if it's a single sample
     Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
 
@@ -571,7 +606,6 @@ function sample(model::PoissonRegressionEmission, Φ::Union{Matrix{<:Real}, Vect
 
     return Y
 end
-
 
 """
     loglikelihood(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
@@ -596,7 +630,12 @@ loglikelihood(model, Φ, Y)
 # output
 ```
 """
-function loglikelihood(model::PoissonRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+function loglikelihood(
+    model::PoissonRegressionEmission,
+    Φ::Matrix{<:Real},
+    Y::Matrix{<:Real},
+    w::Vector{Float64}=ones(size(Y, 1)),
+)
     # add intercept if specified
     if model.include_intercept && size(Φ, 2) == length(model.β) - 1
         Φ = hcat(ones(size(Φ, 1)), Φ)
@@ -612,7 +651,9 @@ function loglikelihood(model::PoissonRegressionEmission, Φ::Matrix{<:Real}, Y::
 end
 
 # Poisson Regression Implementation
-function objective(opt::RegressionOptimization{PoissonRegressionEmission}, β_vec::Vector{T}) where T <: Real
+function objective(
+    opt::RegressionOptimization{PoissonRegressionEmission}, β_vec::Vector{T}
+) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
 
     η = clamp.(opt.X * β_mat, -30, 30)
@@ -621,46 +662,63 @@ function objective(opt::RegressionOptimization{PoissonRegressionEmission}, β_ve
     # calculate regularization
     regularization = calc_regularization(β_mat, opt.model.λ, opt.model.include_intercept)
 
-    val = -sum(opt.w .* (opt.y .* log.(rate) .- rate .- loggamma.(Int.(opt.y) .+ 1))) + regularization
+    val =
+        -sum(opt.w .* (opt.y .* log.(rate) .- rate .- loggamma.(Int.(opt.y) .+ 1))) +
+        regularization
     return val
 end
 
-function objective_gradient!(G::Vector{Float64}, opt::RegressionOptimization{PoissonRegressionEmission}, β_vec::Vector{T}) where T <: Real
+function objective_gradient!(
+    G::Vector{Float64},
+    opt::RegressionOptimization{PoissonRegressionEmission},
+    β_vec::Vector{T},
+) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     η = clamp.(opt.X * β_mat, -30, 30)
     rate = exp.(η)
 
     # calc gradient of penalty
-    regularization = calc_regularization_gradient(β_mat, opt.model.λ, opt.model.include_intercept)
+    regularization = calc_regularization_gradient(
+        β_mat, opt.model.λ, opt.model.include_intercept
+    )
 
     grad_mat = (-opt.X' * (Diagonal(opt.w) * (opt.y .- rate))) + regularization
-    G .= vec(grad_mat)
+    return G .= vec(grad_mat)
 end
 
-
 # Unified fit! function for all regression emissions
-function fit!(model::RegressionEmission, X::Matrix{<:Real}, y::Matrix{<:Real}, 
-             w::Vector{Float64}=ones(size(y, 1)))
+function fit!(
+    model::RegressionEmission,
+    X::Matrix{<:Real},
+    y::Matrix{<:Real},
+    w::Vector{Float64}=ones(size(y, 1)),
+)
     opt_problem = create_optimization(model, X, y, w)
-    
+
     # Create closure functions for Optim.jl
     f(β) = objective(opt_problem, β)
     g!(G, β) = objective_gradient!(G, opt_problem, β)
 
-    opts = Optim.Options(x_abstol=1e-8, x_reltol=1e-8, f_abstol=1e-8, f_reltol=1e-8, g_abstol=1e-8, g_reltol=1e-8)
-    
+    opts = Optim.Options(;
+        x_abstol=1e-8,
+        x_reltol=1e-8,
+        f_abstol=1e-8,
+        f_reltol=1e-8,
+        g_abstol=1e-8,
+        g_reltol=1e-8,
+    )
+
     # Run optimization
     result = optimize(f, g!, vec(model.β), LBFGS(), opts)
-    
+
     # Update model parameters
     model.β = vec_to_matrix(result.minimizer, opt_problem.β_shape)
-    
+
     # Update additional parameters if needed (e.g., variance for Gaussian)
     post_optimization!(model, opt_problem)
-    
+
     return model
 end
-
 
 """
     AutoRegressionEmission <: EmissionModel
@@ -670,9 +728,7 @@ A mutable struct representing an autoregressive emission model, which wraps arou
 # Fields
 - `inner_model::AutoRegression`: The underlying autoregressive model used for the emissions.
 """
-mutable struct AutoRegressionEmission <: EmissionModel
-end
-
+mutable struct AutoRegressionEmission <: EmissionModel end
 
 """
     sample(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim))
@@ -695,16 +751,18 @@ sequence = sample(model, Y_prev)
 sequence = sample(model, Y_prev, observation_sequence=sequence)
 # output
 """
-function sample(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim))
-
+function sample(
+    model::AutoRegressionEmission,
+    Y_prev::Matrix{<:Real};
+    observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim),
+)
     full_sequence = vcat(Y_prev, observation_sequence)
 
     # get the n+1th observation
-    new_observation = sample(model, full_sequence[end-model.order+1:end, :], n=1)
+    new_observation = sample(model, full_sequence[(end - model.order + 1):end, :]; n=1)
 
     return vcat(observation_sequence, new_observation)
 end
-
 
 """
     loglikelihood(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
@@ -727,8 +785,9 @@ Y = randn(10, 2)
 loglikelihoods = loglikelihood(model, Y_prev, Y)
 # output
 """
-function loglikelihood(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
-
+function loglikelihood(
+    model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}
+)
     Φ_gaussian = AR_to_Gaussian_data(Y_prev, Y)
 
     # extract inner gaussian regression and wrap it with a GaussianEmission <- old comment from when we had inner_models
@@ -736,7 +795,6 @@ function loglikelihood(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y:
 
     return loglikelihood(innerGaussianRegression_emission, Φ_gaussian, Y)
 end
-
 
 """
     fit!(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
@@ -764,8 +822,13 @@ fit!(model, Y_prev, Y)
 #     fit!(model.inner_model, Y_prev, Y, w)
 # end
 
-function fit!(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-    fit!(model, Y_prev, Y, w)
+function fit!(
+    model::AutoRegressionEmission,
+    Y_prev::Matrix{<:Real},
+    Y::Matrix{<:Real},
+    w::Vector{Float64}=ones(size(Y, 1)),
+)
+    return fit!(model, Y_prev, Y, w)
 end
 
 """
@@ -792,23 +855,35 @@ Create a Switching AutoRegression Model
 model = SwitchingAutoRegression(K=3, output_dim=2, order=2)
 # output
 """
-function SwitchingAutoRegression(; 
+function SwitchingAutoRegression(;
     K::Int,
-    output_dim::Int, 
-    order::Int, 
-    include_intercept::Bool = true, 
-    β::Matrix{<:Real} = if include_intercept zeros(output_dim * order + 1, output_dim) else zeros(output_dim * order, output_dim) end,
-    Σ::Matrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim),
+    output_dim::Int,
+    order::Int,
+    include_intercept::Bool=true,
+    β::Matrix{<:Real}=if include_intercept
+        zeros(output_dim * order + 1, output_dim)
+    else
+        zeros(output_dim * order, output_dim)
+    end,
+    Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim),
     λ::Float64=0.0,
-    A::Matrix{<:Real} = initialize_transition_matrix(K),
-    πₖ::Vector{Float64} = initialize_state_distribution(K)
+    A::Matrix{<:Real}=initialize_transition_matrix(K),
+    πₖ::Vector{Float64}=initialize_state_distribution(K),
 )
     # Create the emissions
-    emissions = [AutoRegressionEmission(output_dim=output_dim, order=order, include_intercept=include_intercept, β=β, Σ=Σ, λ=λ) for _ in 1:K]
+    emissions = [
+        AutoRegressionEmission(;
+            output_dim=output_dim,
+            order=order,
+            include_intercept=include_intercept,
+            β=β,
+            Σ=Σ,
+            λ=λ,
+        ) for _ in 1:K
+    ]
     # Return the HiddenMarkovModel
-    return HiddenMarkovModel(K=K, B=emissions, A=A, πₖ=πₖ)
+    return HiddenMarkovModel(; K=K, B=emissions, A=A, πₖ=πₖ)
 end
-
 
 """
     CompositeModelEmission <: EmissionModel
@@ -819,35 +894,52 @@ A mutable struct representing a composite emission model that combines multiple 
 - `inner_model::CompositeModel`: The underlying composite model used for the emissions.
 """
 mutable struct CompositeModelEmission <: EmissionModel
-    inner_model:: CompositeModel
+    inner_model::CompositeModel
 end
 
-
-function sample(model::CompositeModelEmission, input_data::Vector{}; observation_sequence::Vector{}=Vector())
-
+function sample(
+    model::CompositeModelEmission,
+    input_data::Vector{};
+    observation_sequence::Vector{}=Vector(),
+)
     if isempty(observation_sequence)
         for i in 1:length(model.components)
             push!(observation_sequence, (sample(model.components[i], input_data[i]...),))
-        end 
+        end
     else
         for i in 1:length(model.components)
-            observation_sequence[i] = (sample(model.components[i], input_data[i]...; observation_sequence=observation_sequence[i][1]),)
-        end 
+            observation_sequence[i] = (
+                sample(
+                    model.components[i],
+                    input_data[i]...;
+                    observation_sequence=observation_sequence[i][1],
+                ),
+            )
+        end
     end
 
     return observation_sequence
 end
 
-function loglikelihood(model::CompositeModelEmission, input_data::Vector{}, output_data::Vector{})
+function loglikelihood(
+    model::CompositeModelEmission, input_data::Vector{}, output_data::Vector{}
+)
     loglikelihoods = Vector{}(undef, length(model.components))
 
     for i in 1:length(model.components)
-        loglikelihoods[i] = loglikelihood(model.components[i], input_data[i]..., output_data[i]...)
+        loglikelihoods[i] = loglikelihood(
+            model.components[i], input_data[i]..., output_data[i]...
+        )
     end
-    return sum(loglikelihoods, dims=1)[1]
+    return sum(loglikelihoods; dims=1)[1]
 end
 
-function fit!(model::CompositeModelEmission, input_data::Vector{}, output_data::Vector{}, w::Vector{Float64}=Vector{Float64}())
+function fit!(
+    model::CompositeModelEmission,
+    input_data::Vector{},
+    output_data::Vector{},
+    w::Vector{Float64}=Vector{Float64}(),
+)
     for i in 1:length(model.components)
         fit!!(model.components[i], input_data[i]..., output_data[i]..., w)
     end

@@ -48,16 +48,17 @@ function initialize_state_distribution(K::Int)
     return rand(Dirichlet(ones(K)))
 end
 
-function HiddenMarkovModel(; 
+function HiddenMarkovModel(;
     K::Int,
     B::Vector=Vector(),
     emission=nothing,
-    A::Matrix{<:Real} = initialize_transition_matrix(K), 
-    πₖ::Vector{Float64} = initialize_state_distribution(K))
+    A::Matrix{<:Real}=initialize_transition_matrix(K),
+    πₖ::Vector{Float64}=initialize_state_distribution(K),
+)
 
     # if B does not have all K emission models, then fill in the rest with deep copies of "emission"
     if !isnothing(emission) && length(B) < K
-        for i in length(B)+1:K
+        for i in (length(B) + 1):K
             push!(B, deepcopy(emission))
         end
     end
@@ -69,7 +70,7 @@ function HiddenMarkovModel(;
 
     # check that the transition matrix is the proper shape
     @assert size(model.A) == (model.K, model.K)
-    @assert isapprox(sum(model.A, dims=2), ones(model.K))
+    @assert isapprox(sum(model.A; dims=2), ones(model.K))
     # check that the initial state distribution is the same length as the number of states
     @assert model.K == length(model.πₖ)
     @assert sum(model.πₖ) ≈ 1.0
@@ -77,11 +78,11 @@ function HiddenMarkovModel(;
     @assert model.K == length(model.B)
     # check that all emission model are the same type
     @assert all([model.B[i] isa EmissionModel for i in 1:length(model.B)])
-    
+
     return model
 end
 
-function kmeans_init!(model::HiddenMarkovModel, data::Matrix{T}) where T <: Real
+function kmeans_init!(model::HiddenMarkovModel, data::Matrix{T}) where {T<:Real}
     num_states = model.K
     # run k-means 
     means, labels = kmeans_clustering(data, num_states)
@@ -118,37 +119,43 @@ states, Y = sample(model, Φ, n=10)
 # output
 ```
 """
-function sample(model::HiddenMarkovModel, X::Union{Matrix{<:Real}, Nothing}=nothing; n::Int)
+function sample(model::HiddenMarkovModel, X::Union{Matrix{<:Real},Nothing}=nothing; n::Int)
     state_sequence = Vector{Int}(undef, n)
     # Change to (dimension, time) ordering
     observation_sequence = Matrix{Float64}(undef, model.B[1].output_dim, n)
 
     # Initialize the first state and observation
     state_sequence[1] = rand(Categorical(model.πₖ))
-    observation_sequence[:, 1] = isnothing(X) ? sample(model.B[state_sequence[1]]) : sample(model.B[state_sequence[1]], X[:, 1])
+    observation_sequence[:, 1] = if isnothing(X)
+        sample(model.B[state_sequence[1]])
+    else
+        sample(model.B[state_sequence[1]], X[:, 1])
+    end
 
     # Sample the state paths and observations
     for t in 2:n  # t represents time steps
         state_sequence[t] = rand(Categorical(model.A[state_sequence[t - 1], :]))
-        observation_sequence[:, t] = isnothing(X) ? sample(model.B[state_sequence[t]]) : sample(model.B[state_sequence[t]], X[:, t])
+        observation_sequence[:, t] = if isnothing(X)
+            sample(model.B[state_sequence[t]])
+        else
+            sample(model.B[state_sequence[t]], X[:, t])
+        end
     end
 
     return state_sequence, observation_sequence
 end
-
 
 function emission_loglikelihoods(model::HiddenMarkovModel, data...)
     # Pre-allocate the loglikelihood matrix, should be states x observations
     loglikelihoods = zeros(model.K, size(data[1], 1))  # data is being passed in as time x states from the estep function
 
     # Calculate observation wise likelihoods for all states
-    @threads for k in 1:model.K
+    @threads for k in 1:(model.K)
         loglikelihoods[k, :] .= loglikelihood(model.B[k], data...)
     end
-    
+
     return loglikelihoods
 end
-
 
 """
     loglikelihood(model::HiddenMarkovModel, data...)
@@ -171,7 +178,6 @@ loglikelihood(model, Y)
 ```
 """
 function loglikelihood(model::HiddenMarkovModel, data...)
-
     transposed_data = permutedims.(data) # Transpose the data to get the correct shape in EmissionModels.jl
 
     lls = emission_loglikelihoods(model, transposed_data...)
@@ -181,7 +187,6 @@ function loglikelihood(model::HiddenMarkovModel, data...)
     return logsumexp(α[:, end])
 end
 
-
 function forward(model::HiddenMarkovModel, loglikelihoods::Matrix{<:Real})
     time_steps = size(loglikelihoods, 2)
 
@@ -189,15 +194,15 @@ function forward(model::HiddenMarkovModel, loglikelihoods::Matrix{<:Real})
     α = zeros(model.K, time_steps)
 
     # Calculate α₁
-    @threads for k in 1:model.K
+    @threads for k in 1:(model.K)
         α[k, 1] = log(model.πₖ[k]) + loglikelihoods[k, 1]
     end
     # Now perform the rest of the forward algorithm for t=2 to time_steps
     for t in 2:time_steps
-        @threads for k in 1:model.K
+        @threads for k in 1:(model.K)
             values_to_sum = Float64[]
-            for i in 1:model.K
-                push!(values_to_sum, log(model.A[i, k]) + α[i, t-1])
+            for i in 1:(model.K)
+                push!(values_to_sum, log(model.A[i, k]) + α[i, t - 1])
             end
             log_sum_alpha_a = logsumexp(values_to_sum)
             α[k, t] = log_sum_alpha_a + loglikelihoods[k, t]
@@ -216,11 +221,14 @@ function backward(model::HiddenMarkovModel, loglikelihoods::Matrix{<:Real})
     β[:, end] .= 0  # log(1) = 0
 
     # Calculate β, starting from time_steps-1 and going backward to 1
-    for t in time_steps-1:-1:1
-        @threads for i in 1:model.K
+    for t in (time_steps - 1):-1:1
+        @threads for i in 1:(model.K)
             values_to_sum = Float64[]
-            for j in 1:model.K
-                push!(values_to_sum, log(model.A[i, j]) + loglikelihoods[j, t+1] + β[j, t+1])
+            for j in 1:(model.K)
+                push!(
+                    values_to_sum,
+                    log(model.A[i, j]) + loglikelihoods[j, t + 1] + β[j, t + 1],
+                )
             end
             β[i, t] = logsumexp(values_to_sum)
         end
@@ -237,15 +245,21 @@ function calculate_γ(model::HiddenMarkovModel, α::Matrix{<:Real}, β::Matrix{<
     return γ
 end
 
-function calculate_ξ(model::HiddenMarkovModel, α::Matrix{<:Real}, β::Matrix{<:Real}, loglikelihoods::Matrix{<:Real})
+function calculate_ξ(
+    model::HiddenMarkovModel,
+    α::Matrix{<:Real},
+    β::Matrix{<:Real},
+    loglikelihoods::Matrix{<:Real},
+)
     time_steps = size(α, 2)
-    ξ = zeros(Float64, model.K, model.K, time_steps-1)
-    for t in 1:time_steps-1
+    ξ = zeros(Float64, model.K, model.K, time_steps - 1)
+    for t in 1:(time_steps - 1)
         # Array to store the unnormalized ξ values
         log_ξ_unnormalized = zeros(Float64, model.K, model.K)
-        @threads for i in 1:model.K
-            for j in 1:model.K
-                log_ξ_unnormalized[i, j] = α[i, t] + log(model.A[i, j]) + loglikelihoods[j, t+1] + β[j, t+1]
+        @threads for i in 1:(model.K)
+            for j in 1:(model.K)
+                log_ξ_unnormalized[i, j] =
+                    α[i, t] + log(model.A[i, j]) + loglikelihoods[j, t + 1] + β[j, t + 1]
             end
         end
         # Normalize the ξ values using log-sum-exp operation
@@ -253,7 +267,6 @@ function calculate_ξ(model::HiddenMarkovModel, α::Matrix{<:Real}, β::Matrix{<
     end
     return ξ
 end
-
 
 function estep(model::HiddenMarkovModel, data)
     # compute lls of the observations
@@ -269,58 +282,66 @@ end
 
 function update_initial_state_distribution!(model::HiddenMarkovModel, γ::Matrix{<:Real})
     # Update initial state probabilities
-    model.πₖ .= exp.(γ[:, 1])
+    return model.πₖ .= exp.(γ[:, 1])
 end
 
-function update_transition_matrix!(model::HiddenMarkovModel, γ::Matrix{<:Real}, ξ::Array{Float64, 3})
+function update_transition_matrix!(
+    model::HiddenMarkovModel, γ::Matrix{<:Real}, ξ::Array{Float64,3}
+)
     # Update transition probabilities
-    @threads for i in 1:model.K
-        for j in 1:model.K
-            model.A[i, j] = exp(logsumexp(ξ[i, j, :]) - logsumexp(γ[i, 1:end-1]))
+    @threads for i in 1:(model.K)
+        for j in 1:(model.K)
+            model.A[i, j] = exp(logsumexp(ξ[i, j, :]) - logsumexp(γ[i, 1:(end - 1)]))
         end
     end
 end
 
 function update_emissions!(model::HiddenMarkovModel, data, w::Matrix{<:Real})
     # update regression models 
-     @threads for k in 1:model.K
-         fit!(model.B[k], data..., w[:, k])
-     end
- end
+    @threads for k in 1:(model.K)
+        fit!(model.B[k], data..., w[:, k])
+    end
+end
 
-function mstep!(model::HiddenMarkovModel, γ::Matrix{<:Real}, ξ::Array{Float64, 3}, data)
+function mstep!(model::HiddenMarkovModel, γ::Matrix{<:Real}, ξ::Array{Float64,3}, data)
     # update initial state distribution
-    update_initial_state_distribution!(model, γ)   
+    update_initial_state_distribution!(model, γ)
     # update transition matrix
     update_transition_matrix!(model, γ, ξ)
     # update regression models
-    update_emissions!(model, data, exp.(permutedims(γ))) 
+    return update_emissions!(model, data, exp.(permutedims(γ)))
 end
 
 # Trialized versions of functions
-function mstep!(model::HiddenMarkovModel, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Float64, 3}}, data)
+function mstep!(
+    model::HiddenMarkovModel, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Float64,3}}, data
+)
     # update initial state distribution
-    update_initial_state_distribution!(model, γ)   
+    update_initial_state_distribution!(model, γ)
     # update transition matrix
     update_transition_matrix!(model, γ, ξ)
     # update regression models
     γ_exp = [exp.(γ_trial) for γ_trial in γ]
-    update_emissions!(model, data, vcat(permutedims.(γ_exp)...)) 
+    return update_emissions!(model, data, vcat(permutedims.(γ_exp)...))
 end
 
-function update_initial_state_distribution!(model::HiddenMarkovModel, γ::Vector{Matrix{Float64}})
+function update_initial_state_distribution!(
+    model::HiddenMarkovModel, γ::Vector{Matrix{Float64}}
+)
     # Update initial state probabilities for trialized data
     num_trials = length(γ)
-    model.πₖ = mean([exp.(γ[i][:, 1]) for i in 1:num_trials])
+    return model.πₖ = mean([exp.(γ[i][:, 1]) for i in 1:num_trials])
 end
 
-function update_transition_matrix!(model::HiddenMarkovModel, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Float64, 3}})
+function update_transition_matrix!(
+    model::HiddenMarkovModel, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Float64,3}}
+)
     # Update transition matrix for trialized data
     K = size(model.A, 1)
     num_trials = length(γ)
 
-    E = cat(ξ..., dims=3)
-    G = hcat([γ[i][:, 1:size(γ[i], 2)-1] for i in 1:num_trials]...)
+    E = cat(ξ...; dims=3)
+    G = hcat([γ[i][:, 1:(size(γ[i], 2) - 1)] for i in 1:num_trials]...)
 
     @threads for i in 1:K
         for j in 1:K
@@ -328,7 +349,6 @@ function update_transition_matrix!(model::HiddenMarkovModel, γ::Vector{Matrix{F
         end
     end
 end
-
 
 """
     fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Real}, Nothing}=nothing; max_iters::Int=100, tol::Float64=1e-6)
@@ -361,11 +381,17 @@ loglikelihood(est_model, Y) > loglikelihood(true_model, Y)
 true
 ```
 """
-function fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Real}, Nothing}=nothing; max_iters::Int=100, tol::Float64=1e-6)
+function fit!(
+    model::HiddenMarkovModel,
+    Y::Matrix{<:Real},
+    X::Union{Matrix{<:Real},Nothing}=nothing;
+    max_iters::Int=100,
+    tol::Float64=1e-6,
+)
     lls = [-Inf]
 
     data = X === nothing ? (Y,) : (X, Y)
-    
+
     # transpose data so that correct dimensions are passed to EmissionModels.jl, a bit hacky but works for now.
     transpose_data = Matrix.(transpose.(data))
 
@@ -391,7 +417,6 @@ function fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Rea
     end
     return lls
 end
-
 
 """
     fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Real}, Nothing}=nothing; max_iters::Int=100, tol::Float64=1e-6)
@@ -446,12 +471,16 @@ ll = fit!(test_model, trial_inputs)
 true
 ```
 """
-function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}}, 
-             X::Union{Vector{<:Matrix{<:Real}}, Nothing}=nothing; 
-             max_iters::Int=100, tol::Float64=1e-6)
+function fit!(
+    model::HiddenMarkovModel,
+    Y::Vector{<:Matrix{<:Real}},
+    X::Union{Vector{<:Matrix{<:Real}},Nothing}=nothing;
+    max_iters::Int=100,
+    tol::Float64=1e-6,
+)
     lls = [-Inf]
     data = X === nothing ? (Y,) : (X, Y)
- 
+
     # Initialize log_likelihood
     log_likelihood = -Inf
 
@@ -463,15 +492,16 @@ function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}},
     for iter in 1:max_iters
         # estep
         output = estep.(Ref(model), zipped_matrices)
-        γ, ξ, α, β = map(x-> x[1], output), map(x-> x[2], output), 
-                     map(x-> x[3], output), map(x-> x[4], output)
-        
+        γ, ξ, α, β = map(x -> x[1], output),
+        map(x -> x[2], output), map(x -> x[3], output),
+        map(x -> x[4], output)
+
         # Calculate log_likelihood
         log_likelihood_current = sum(map(α -> logsumexp(α[:, end]), α))
         push!(lls, log_likelihood_current)
 
         next!(p)
-        
+
         # Check for convergence
         if abs(log_likelihood_current - log_likelihood) < tol
             finish!(p)
@@ -479,7 +509,7 @@ function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}},
         else
             log_likelihood = log_likelihood_current
         end
-        
+
         # Get data trial tuples stacked for mstep!()
         stacked_data = stack_tuples(zipped_matrices)
 
@@ -489,7 +519,6 @@ function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}},
 
     return lls
 end
-
 
 """
     class_probabilities(model::HiddenMarkovModel, data...)
@@ -516,9 +545,6 @@ function class_probabilities(model::HiddenMarkovModel, data...)
     γ, ξ, α, β = estep(model, data)
     return exp.(γ)
 end
-
-
-
 
 """
     viterbi(model::HiddenMarkovModel, data...)
@@ -548,7 +574,7 @@ function viterbi(model::HiddenMarkovModel, data...)
     loglikelihoods = zeros(model.K, length(loglikelihoods_state_1))
     loglikelihoods[:, 1] = loglikelihoods_state_1
 
-    @threads for k in 2:model.K
+    @threads for k in 2:(model.K)
         loglikelihoods[k, :] = loglikelihood(model.B[k], data...)
     end
 
@@ -568,7 +594,7 @@ function viterbi(model::HiddenMarkovModel, data...)
         for j in 1:K
             max_prob, max_state = -Inf, 0
             for i in 1:K
-                prob = viterbi[i, t-1] + log(model.A[i, j]) + loglikelihoods[j, t]
+                prob = viterbi[i, t - 1] + log(model.A[i, j]) + loglikelihoods[j, t]
                 if prob > max_prob
                     max_prob = prob
                     max_state = i

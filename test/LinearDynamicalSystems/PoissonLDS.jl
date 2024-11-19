@@ -266,7 +266,7 @@ function test_EM_matlab()
         x0=[1.0, -1.0],
         obs_dim=3,
         latent_dim=2,
-        fit_bool=fill(true, 6)
+        fit_bool=fill(true, 6),
     )
     # first smooth results
     E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(plds, y)
