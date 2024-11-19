@@ -645,8 +645,8 @@ function Q_state(
     state_dim = size(A, 1)
     
     # Pre-compute constants and decompositions once
-    Q_chol = cholesky(Q)
-    P0_chol = cholesky(P0)
+    Q_chol = cholesky(Symmetric(Q))
+    P0_chol = cholesky(Symmetric(P0))
     log_det_Q = logdet(Q_chol)
     log_det_P0 = logdet(P0_chol)
     
@@ -702,7 +702,7 @@ function Q_obs(
     T_step = size(E_z, 2)
     
     # Pre-compute constants
-    R_chol = cholesky(R)
+    R_chol = cholesky(Symmetric(R))
     log_det_R = logdet(R_chol)
     const_term = obs_dim * log(2π)
     
@@ -1010,24 +1010,29 @@ function update_Q!(
     if lds.fit_bool[4]
         n_trials, T_steps = size(E_zz, 4), size(E_zz, 3)
         state_dim = size(E_zz, 1)
-
         Q_new = zeros(T, state_dim, state_dim)
-
+        A = lds.state_model.A
+        
         for trial in 1:n_trials
-            sum_expectations = zeros(T, state_dim, state_dim)
             @inbounds for t in 2:T_steps
-                sum_expectations .+=
-                    E_zz[:, :, t, trial] -
-                    (E_zz_prev[:, :, t, trial] * lds.state_model.A') -
-                    (lds.state_model.A * E_zz_prev[:, :, t, trial]') +
-                    (lds.state_model.A * E_zz[:, :, t - 1, trial] * lds.state_model.A')
+                # Get current state covariance and previous-current cross covariance
+                Σt = E_zz[:, :, t, trial]          # E[z_t z_t']
+                Σt_prev = E_zz[:, :, t-1, trial]   # E[z_{t-1} z_{t-1}']
+                Σt_cross = E_zz_prev[:, :, t, trial] # E[z_t z_{t-1}']
+                
+                # Compute innovation: actual state minus predicted state
+                # Q = E[(z_t - Az_{t-1})(z_t - Az_{t-1})']
+                innovation_cov = Σt - Σt_cross * A' - A * Σt_cross' + A * Σt_prev * A'
+                
+                # This is equivalent to E[(z_t - Az_{t-1})(z_t - Az_{t-1})']
+                Q_new .+= innovation_cov
             end
-            Q_new .+= sum_expectations
         end
-
+        
         Q_new ./= (n_trials * (T_steps - 1))
-
+        
         lds.state_model.Q = 0.5 * (Q_new + Q_new')
+        
     end
 end
 
@@ -1088,25 +1093,30 @@ function update_R!(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     if lds.fit_bool[6]
         obs_dim, T_steps, n_trials = size(y)
-
         R_new = zeros(T, obs_dim, obs_dim)
+        C = lds.obs_model.C
 
+        # Reorganize as sum of outer products
         for trial in 1:n_trials
             @inbounds for t in 1:T_steps
+                # Compute innovation: actual observation minus expected observation
                 yt = y[:, t, trial]
                 zt = E_z[:, t, trial]
-                Zt = E_zz[:, :, t, trial]
-
-                R_new .+=
-                    (yt * yt') - (lds.obs_model.C * (yt * zt')') -
-                    ((yt * zt') * lds.obs_model.C') +
-                    (lds.obs_model.C * Zt * lds.obs_model.C')
+                innovation = yt - C * zt
+                
+                # Add innovation outer product (guaranteed symmetric and pos semi-def)
+                R_new .+= innovation * innovation'
+                
+                # Add correction term for uncertainty in state estimate
+                # (C * (Σ_t - z_t*z_t') * C') is guaranteed pos semi-def if Σ_t - z_t*z_t' is
+                state_uncertainty = E_zz[:,:,t,trial] - zt * zt'
+                R_new .+= C * state_uncertainty * C'
             end
         end
-
+        
         R_new ./= (n_trials * T_steps)
-
-        lds.obs_model.R = 0.5 * (R_new + R_new')
+        
+        lds.obs_model.R = (R_new + R_new') / 2
     end
 end
 
