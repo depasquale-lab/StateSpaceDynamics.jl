@@ -9,8 +9,7 @@ This module implements various emission models for state space modeling, includi
 
 # Exports
 export EmissionModel, RegressionEmission
-export GaussianEmission,
-    GaussianRegressionEmission, BernoulliRegressionEmission, PoissonRegressionEmission
+export GaussianEmission, GaussianRegressionEmission, BernoulliRegressionEmission, PoissonRegressionEmission, AutoRegressionEmission
 export CompositeModelEmission
 export sample, loglikelihood, fit!
 
@@ -720,6 +719,9 @@ function fit!(
     return model
 end
 
+# pass in inner model and original data
+# reshape the data into gaussian regression data
+
 """
     AutoRegressionEmission <: EmissionModel
 
@@ -728,7 +730,94 @@ A mutable struct representing an autoregressive emission model, which wraps arou
 # Fields
 - `inner_model::AutoRegression`: The underlying autoregressive model used for the emissions.
 """
-mutable struct AutoRegressionEmission <: EmissionModel end
+mutable struct AutoRegressionEmission <: AutoRegressiveEmission
+    output_dim::Int
+    order::Int
+    innerGaussianRegression::GaussianRegressionEmission
+end
+
+# move these to utils at some point
+# define getters for innerGaussianRegression fields
+function Base.getproperty(model::AutoRegressiveEmission, sym::Symbol)
+    if sym === :β
+        return model.innerGaussianRegression.β
+    elseif sym === :Σ
+        return model.innerGaussianRegression.Σ
+    elseif sym === :include_intercept
+        return model.innerGaussianRegression.include_intercept
+    elseif sym === :λ
+        return model.innerGaussianRegression.λ
+    else # fallback to getfield
+        return getfield(model, sym)
+    end
+end
+
+# define setters for innerGaussianRegression fields
+function Base.setproperty!(model::AutoRegressiveEmission, sym::Symbol, value)
+    if sym === :β
+        model.innerGaussianRegression.β = value
+    elseif sym === :Σ
+        model.innerGaussianRegression.Σ = value
+    elseif sym === :λ
+        model.innerGaussianRegression.λ = value
+    else # fallback to setfield!
+        setfield!(model, sym, value)
+    end
+end
+
+
+function AutoRegressionEmission(; 
+    output_dim::Int, 
+    order::Int, 
+    include_intercept::Bool = true, 
+    β::Matrix{<:Real} = if include_intercept zeros(output_dim * order + 1, output_dim) else zeros(output_dim * order, output_dim) end,
+    Σ::Matrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim),
+    λ::Float64=0.0)
+
+    innerGaussianRegression = GaussianRegressionEmission(
+        input_dim=output_dim * order, 
+        output_dim=output_dim, 
+        β=β,
+        Σ=Σ,
+        include_intercept=include_intercept, 
+        λ=λ)
+
+    model = AutoRegressionEmission(output_dim, order, innerGaussianRegression)
+
+
+    return model
+end
+
+
+function AR_to_Gaussian_data(Y_prev::Matrix{<:Real})
+    # take each row of Y_prev and stack them horizontally to form the input row matrix Φ_gaussian
+    Φ_gaussian = vcat([Y_prev[i, :] for i in 1:size(Y_prev, 1)]...)
+    Φ_gaussian = reshape(Φ_gaussian, 1, :)
+
+    return Φ_gaussian
+end
+
+function AR_to_Gaussian_data(Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
+    order = size(Y_prev, 1)
+    output_dim = size(Y_prev, 2)
+    Φ_gaussian = zeros(size(Y, 1), output_dim * order)
+
+    for i in 1:size(Y, 1)
+        Φ_gaussian[i, :] = AR_to_Gaussian_data(Y_prev)
+
+
+        old_part = Y_prev[2:end, :]
+        new_part = Y[i, :]
+
+        old_part = reshape(old_part, order - 1, output_dim)
+        new_part = reshape(new_part, 1, output_dim)
+
+        Y_prev = vcat(old_part, new_part)
+    end
+   
+
+    return Φ_gaussian
+end
 
 """
     sample(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim))
@@ -751,17 +840,33 @@ sequence = sample(model, Y_prev)
 sequence = sample(model, Y_prev, observation_sequence=sequence)
 # output
 """
-function sample(
-    model::AutoRegressionEmission,
-    Y_prev::Matrix{<:Real};
-    observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim),
-)
-    full_sequence = vcat(Y_prev, observation_sequence)
 
-    # get the n+1th observation
-    new_observation = sample(model, full_sequence[(end - model.order + 1):end, :]; n=1)
+function sample(model::AutoRegressiveEmission, Φ::Union{Matrix{<:Real}, Vector{<:Real}})
+    # Create the design matrix Φ using past observations
+    Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
+    order = model.order
+    output_dim = model.output_dim
 
-    return vcat(observation_sequence, new_observation)
+    # Ensure Y_prev matches the AR order
+    if size(Φ, 1) < order
+        error("Y_prev must have at least as many rows as the AR order.")
+    end
+
+    # Ensure Φ is a 2D matrix even if it's a single sample
+    Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
+
+    # Flatten the last `order` rows of Y_prev to construct Φ
+    Φ = reshape(Φ', 1, :)
+
+    # Add intercept column if specified -> need to do this before reshape so that you include enough 1s in flattened vector
+    if model.include_intercept
+        Φ = hcat(ones(size(Φ, 1)), Φ)
+    end
+
+    # Ensure the noise dimensions match the output dimension and sample size
+    noise = rand(MvNormal(zeros(model.output_dim), model.Σ), size(Φ, 1))'
+
+    return Φ * model.β + noise
 end
 
 """
@@ -785,50 +890,12 @@ Y = randn(10, 2)
 loglikelihoods = loglikelihood(model, Y_prev, Y)
 # output
 """
-function loglikelihood(
-    model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}
-)
+
+function loglikelihood(model::AutoRegressiveEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
+    # confirm that the model has valid parameters
     Φ_gaussian = AR_to_Gaussian_data(Y_prev, Y)
 
-    # extract inner gaussian regression and wrap it with a GaussianEmission <- old comment from when we had inner_models
-    innerGaussianRegression_emission = model.innerGaussianRegression
-
-    return loglikelihood(innerGaussianRegression_emission, Φ_gaussian, Y)
-end
-
-"""
-    fit!(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-
-Calls to fit!() function in RegressionModels.jl to fit the autoregressive emission model to the data `Y` using the previous observations `Y_prev` and the provided weights `w`.
-
-# Arguments
-- `model::AutoRegressionEmission`: The autoregressive emission model to be fitted.
-- `Y_prev::Matrix{<:Real}`: The matrix of previous observations, where each row represents an observation.
-- `Y::Matrix{<:Real}`: The data matrix, where each row represents an observation.
-- `w::Vector{Float64}`: A vector of weights corresponding to each observation (defaults to a vector of ones).
-
-# Returns
-- `Nothing`: The function modifies the model in place.
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-model = AutoRegressionEmission(AutoRegression(output_dim=2, order=10))
-Y_prev = randn(10, 2)
-Y = randn(10, 2)
-fit!(model, Y_prev, Y)
-# output
-"""
-# function fit!(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
-#     fit!(model.inner_model, Y_prev, Y, w)
-# end
-
-function fit!(
-    model::AutoRegressionEmission,
-    Y_prev::Matrix{<:Real},
-    Y::Matrix{<:Real},
-    w::Vector{Float64}=ones(size(Y, 1)),
-)
-    return fit!(model, Y_prev, Y, w)
+    return loglikelihood(model.innerGaussianRegression, Φ_gaussian, Y)
 end
 
 """
