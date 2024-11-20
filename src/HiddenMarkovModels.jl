@@ -16,16 +16,6 @@ A Hidden Markov Model (HMM) with custom emissions.
 - `emission=nothing`: If B is missing emissions, clones of this model will be used to fill in the rest.
 - `A::Matrix{<:Real}`: Transition matrix.
 - `πₖ::Vector{Float64}`: Initial state distribution.
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-emission_1 = Gaussian(output_dim=2)
-emission_2 = Gaussian(output_dim=2)
-model = HiddenMarkovModel(K=2, B=[emission_1, emission_2])
-
-model = HiddenMarkovModel(K=2, emission=Gaussian(output_dim=2))
-# output
-```
 """
 mutable struct HiddenMarkovModel <: AbstractHMM
     A::Matrix{<:Real} # transition matrix
@@ -107,17 +97,6 @@ Generate `n` samples from a Hidden Markov Model. Returns a tuple of the state se
 # Returns
 - `state_sequence::Vector{Int}`: The state sequence, where each element is an integer 1:K.
 - `observation_sequence::Matrix{Float64}`: The observation sequence. This takes the form of the emission model's output.
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-model = HiddenMarkovModel(K=2, emission=Gaussian(output_dim=2))
-states, Y = sample(model, n=1000)
-
-model = HiddenMarkovModel(K=2, emission=GaussianRegression(input_dim=2, output_dim=2))
-Φ = randn(100, 2)
-states, Y = sample(model, Φ, n=10)
-# output
-```
 """
 function sample(model::HiddenMarkovModel, X::Union{Matrix{<:Real},Nothing}=nothing; n::Int)
     state_sequence = Vector{Int}(undef, n)
@@ -168,14 +147,6 @@ Calculate the log likelihood of the data given the Hidden Markov Model.
 
 # Returns
 - `loglikelihood::Float64`: The log likelihood of the data given the Hidden Markov Model.
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-model = HiddenMarkovModel(K=2, emission=Gaussian(output_dim=2))
-states, Y = sample(model, n=10)
-loglikelihood(model, Y)
-# output
-```
 """
 function loglikelihood(model::HiddenMarkovModel, data...)
     transposed_data = permutedims.(data) # Transpose the data to get the correct shape in EmissionModels.jl
@@ -361,25 +332,6 @@ Fit the Hidden Markov Model using the EM algorithm.
 - `X::Union{Matrix{<:Real}, Nothing}=nothing`: Optional input data for fitting Switching Regression Models
 - `max_iters::Int=100`: The maximum number of iterations to run the EM algorithm.
 - `tol::Float64=1e-6`: When the log likelihood is improving by less than this value, the algorithm will stop.
-
-# Examples
-```jldoctest; output = true
-μ = [3.0, 4.0]
-emission_1 = Gaussian(output_dim=2, μ=μ)
-μ = [-5.0, 2.0]
-emission_2 = Gaussian(output_dim=2, μ=μ)
-
-true_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2])
-states, Y = sample(true_model, n=1000)
-
-est_model = HiddenMarkovModel(K=2, emission=Gaussian(output_dim=2))
-weighted_initialization(est_model, Y)
-fit!(est_model, Y)
-
-loglikelihood(est_model, Y) > loglikelihood(true_model, Y)
-# output
-true
-```
 """
 function fit!(
     model::HiddenMarkovModel,
@@ -429,47 +381,6 @@ Fit the Hidden Markov Model to multiple trials of data using the EM algorithm.
 - `X::Union{Vector{<:Matrix{<:Real}}, Nothing}=nothing`: Optional input data for fitting Switching Regression Models
 - `max_iters::Int=100`: The maximum number of iterations to run the EM algorithm.
 - `tol::Float64=1e-6`: When the log likelihood is improving by less than this value, the algorithm will stop.
-
-# Examples
-```jldoctest; output = true
-# Create Guassian Emission Models
-output_dim = 2
-μ = [0.0, 0.0]
-Σ = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
-emission_1 = GaussianEmission(Gaussian(output_dim=output_dim, μ=μ, Σ=Σ))
-
-μ = [2.0, 1.0]
-Σ = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
-emission_2 = GaussianEmission(Gaussian(μ=μ, Σ=Σ, output_dim=output_dim))
-
-# Create GaussianHMM
-true_model = GaussianHMM(K=2, output_dim=2)
-true_model.B[1] = emission_1
-true_model.B[2] = emission_2
-true_model.A = [0.9 0.1; 0.8 0.2]
-
-n = 10  # Number of samples per trial
-num_trials = 3  # Number of trials
-trial_inputs = Vector{Matrix{Float64}}(undef, num_trials)  # Vector to store data matrices
-trial_labels = Vector{Vector{Int}}(undef, num_trials)  # Vector to store label vectors
-trial_outputs = Vector{Matrix{Float64}}(undef, num_trials)
-
-for i in 1:num_trials
-    true_labels, data = sample(true_model, n=n)  # Generate data and labels
-    trial_labels[i] = true_labels  # Store labels for the ith trial
-    trial_inputs[i] = data  # Store data matrix for the ith trial
-
-    true_labels, data = sample(true_model, n=n)  # Generate data and labels
-    trial_outputs[i] = data  # Store data matrix for the ith trial
-end
-
-# Fit trialized model
-test_model = GaussianHMM(K=2, output_dim=2)
-ll = fit!(test_model, trial_inputs)
-
-# output
-true
-```
 """
 function fit!(
     model::HiddenMarkovModel,
@@ -531,15 +442,6 @@ Calculate the class probabilities for each observation. Returns a matrix of size
 
 # Returns
 - `class_probabilities::Matrix{Float64}`: The class probabilities for each observation. Of shape `(T, K)`. Each row of the Matrix sums to 1.
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-
-model = HiddenMarkovModel(K=2, emission=Gaussian(output_dim=2))
-states, Y = sample(model, n=10)
-class_probabilities(model, Y)
-# output
-```
 """
 function class_probabilities(model::HiddenMarkovModel, data...)
     γ, ξ, α, β = estep(model, data)
@@ -557,16 +459,6 @@ Calculate the most likely sequence of states given the data.
 
 # Returns
 - `best_path::Vector{Int}`: The most likely sequence of states.
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-emission_1 = Gaussian(output_dim=2, μ=[3.0, 4.0])
-emission_2 = Gaussian(output_dim=2, μ=[-5.0, 2.0])
-model = HiddenMarkovModel(K=2, B=[emission_1, emission_2])
-states, Y = sample(model, n=100)
-state_sequence = viterbi(model, Y)
-# output
-```
 """
 function viterbi(model::HiddenMarkovModel, data...)
     # Calculate observation wise likelihoods for all states

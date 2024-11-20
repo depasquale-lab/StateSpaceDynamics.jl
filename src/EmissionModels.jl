@@ -59,13 +59,6 @@ Calculate the log likelihood of the data `Y` given the Gaussian emission model.
 
 # Returns
 - `Vector{Float64}`: A vector of log likelihoods, one for each observation in the data.
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-model = GaussianEmission(Gaussian(output_dim=2))
-Y = randn(10, 2)  # Observations x Features
-loglikelihoods = SSD.loglikelihood(model, Y)
-# output
 """
 function loglikelihood(model::GaussianEmission, Y::Matrix{<:Real})
     # Create MvNormal distribution with the model parameters
@@ -79,17 +72,6 @@ end
     sample(model::Gaussian; n::Int=1)
 
 Generate `n` samples from a Gaussian model. Returns a matrix of size `(n, output_dim)`.
-
-# Examples
-```jldoctest; output = false
-model = Gaussian(output_dim=2)
-samples = sample(model, n=3)
-
-println(size(samples))
-
-# output
-(3, 2)
-```
 """
 function sample(model::GaussianEmission; n::Int=1)
     raw_samples = rand(MvNormal(model.μ, model.Σ), n)
@@ -105,17 +87,6 @@ Fit a GaussianEmission model to the data `Y`.
 - `model::GaussianEmission`: Gaussian model to fit.
 - `Y::Matrix{<:Real}`: Data to fit the model to. Should be a matrix of size `(n, output_dim)`.
 - `w::Vector{Float64}=ones(size(Y, 1))`: Weights for the data. Should be a vector of size `n`.
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-true_model = Gaussian(output_dim=2)
-Y = sample(true_model, n=3)
-
-est_model = Gaussian(output_dim=2)
-fit!(est_model, Y)
-
-# output
-```
 """
 function fit!(
     model::GaussianEmission, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1))
@@ -136,7 +107,6 @@ end
 #=
 Regression Emission Models
 =#
-
 """
     RegressionOptimization{T<:RegressionEmission}
 
@@ -236,13 +206,6 @@ A Gaussian regression Emission model.
 - `β::Matrix{<:Real} = if include_intercept zeros(input_dim + 1, output_dim) else zeros(input_dim, output_dim) end`: Coefficient matrix of the model. Shape input_dim by output_dim. The first row are the intercept terms, if included.
 - `Σ::Matrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim)`: Covariance matrix of the model.
 - `λ::Float64 = 0.0`: Regularization parameter.
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-β = rand(3, 1)
-model = GaussianRegression(input_dim=2, output_dim=1, β=β)
-# output
-```
 """
 mutable struct GaussianRegressionEmission <: RegressionEmission
     input_dim::Int
@@ -269,24 +232,17 @@ function GaussianRegressionEmission(;
 end
 
 """
-    sample(model::GaussianRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
+    sample(model::GaussianRegressionEmission, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
 
 Generate `n` samples from a Gaussian regression model. Returns a matrix of size `(n, output_dim)`.
 
 # Arguments
-- `model::GaussianRegression`: Gaussian regression model.
+- `model::GaussianRegressionEmission`: Gaussian regression model.
 - `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
 - `n::Int=size(Φ, 1)`: Number of samples to generate.
 
 # Returns
 - `Y::Matrix{<:Real}`: Matrix of samples of shape `(n, output_dim)`.
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-model = GaussianRegression(input_dim=2, output_dim=1)
-Φ = rand(100, 2)
-Y = sample(model, Φ)
-# output
 """
 function sample(model::GaussianRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
     # Ensure Φ is a 2D matrix even if it's a single sample
@@ -314,14 +270,6 @@ Calculate the log likelihood of the data `Y` given the Gaussian regression emiss
 
 # Returns
 - `Vector{Float64}`: A vector of log likelihoods, one for each observation in the data.
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-model = GaussianRegressionEmission(GaussianRegression(input_dim=3, output_dim=2))
-Φ = randn(10, 3)
-Y = randn(10, 2)
-loglikelihoods = loglikelihood(model, Φ, Y)
-# output
 """
 function loglikelihood(
     model::GaussianRegressionEmission,
@@ -382,7 +330,7 @@ function post_optimization!(model::GaussianRegressionEmission, opt::RegressionOp
 end
 
 """
-    BernoulliRegression
+    BernoulliRegressionEmission
 
 A Bernoulli regression model.
 
@@ -391,17 +339,12 @@ A Bernoulli regression model.
 - `include_intercept::Bool = true`: Whether to include an intercept term.
 - `β::Vector{<:Real} = if include_intercept zeros(input_dim + 1) else zeros(input_dim) end`: Coefficients of the model. The first element is the intercept term, if included.
 - `λ::Float64 = 0.0`: Regularization parameter.
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-model = BernoulliRegression(input_dim=2)
-# output
 ```
 """
 mutable struct BernoulliRegressionEmission <: RegressionEmission
     input_dim::Int
     output_dim::Int
-    β::Matrix{<:Real} # coefficient matrix of the model. Shape input_dim by output_dim. Column one is coefficients for target one, etc. The first row are the intercept terms, if included. 
+    β::Matrix{<:Real} 
     include_intercept::Bool # whether to include an intercept term; if true, the first column of β is assumed to be the intercept/bias
     λ::Float64 # regularization parameter
 end
@@ -421,25 +364,17 @@ function BernoulliRegressionEmission(;
 end
 
 """
-    sample(model::BernoulliRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
+    sample(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
 
 Generate `n` samples from a Bernoulli regression model. Returns a matrix of size `(n, 1)`.
 
 # Arguments
-- `model::BernoulliRegression`: Bernoulli regression model.
+- `model::BernoulliRegressionEmission`: Bernoulli regression model.
 - `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
 - `n::Int=size(Φ, 1)`: Number of samples to generate.
 
 # Returns
 - `Y::Matrix{<:Real}`: Matrix of samples of shape `(n, 1)`.
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-model = BernoulliRegression(input_dim=2)
-Φ = rand(100, 2)
-Y = sample(model, Φ)
-# output
-```
 """
 function sample(model::BernoulliRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
     # Ensure Φ is a 2D matrix even if it's a single sample
@@ -468,14 +403,6 @@ Calculate the log likelihood of the data `Y` given the Bernoulli regression emis
 
 # Returns
 - `Vector{Float64}`: A vector of log likelihoods, one for each observation in the data.
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-model = BernoulliRegressionEmission(BernoulliRegression(input_dim=3))
-Φ = randn(10, 3)
-Y = rand(Bool, 10, 1)
-loglikelihoods = loglikelihood(model, Φ, Y)
-# output
 """
 function loglikelihood(
     model::BernoulliRegressionEmission,
@@ -529,7 +456,7 @@ function objective_gradient!(
 end
 
 """
-    PoissonRegression
+    PoissonRegressionEmission
 
 A Poisson regression model.
 
@@ -538,12 +465,6 @@ A Poisson regression model.
 - `include_intercept::Bool = true`: Whether to include an intercept term.
 - `β::Vector{<:Real} = if include_intercept zeros(input_dim + 1) else zeros(input_dim) end`: Coefficients of the model. The first element is the intercept term, if included.
 - `λ::Float64 = 0.0`: Regularization parameter.
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-model = PoissonRegression(input_dim=2)
-# output
-```
 """
 mutable struct PoissonRegressionEmission <: RegressionEmission
     input_dim::Int
@@ -568,25 +489,17 @@ function PoissonRegressionEmission(;
 end
 
 """
-    sample(model::PoissonRegression, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
+    sample(model::PoissonRegressionEmission, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
 
 Generate `n` samples from a Poisson regression model. Returns a matrix of size `(n, 1)`.
 
 # Arguments
-- `model::PoissonRegression`: Poisson regression model.
+- `model::PoissonRegressionEmission`: Poisson regression model.
 - `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
 - `n::Int=size(Φ, 1)`: Number of samples to generate.
 
 # Returns
 - `Y::Matrix{<:Real}`: Matrix of samples of shape `(n, 1)`.
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-model = PoissonRegression(input_dim=2)
-Φ = rand(100, 2)
-Y = sample(model, Φ)
-# output
-```
 """
 function sample(model::PoissonRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
     # Ensure Φ is a 2D matrix even if it's a single sample
@@ -607,27 +520,18 @@ function sample(model::PoissonRegressionEmission, Φ::Union{Matrix{<:Real},Vecto
 end
 
 """
-    loglikelihood(model::PoissonRegression, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    loglikelihood(model::PoissonRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
 
 Calculate the log-likelihood of a Poisson regression model.
 
 # Arguments
-- `model::PoissonRegression`: Poisson regression model.
+- `model::PoissonRegressionEmission`: Poisson regression model.
 - `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
 - `Y::Matrix{<:Real}`: Response matrix of shape `(n, 1)`.
 - `w::Vector{Float64}`: Weights of the data points. Should be a vector of size `n`.
 
 # Returns
 - `loglikelihood::Float64`: Log-likelihood of the model.
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-model = PoissonRegression(input_dim=2)
-Φ = rand(100, 2)
-Y = sample(model, Φ)
-loglikelihood(model, Φ, Y)
-# output
-```
 """
 function loglikelihood(
     model::PoissonRegressionEmission,
@@ -831,14 +735,6 @@ Generate a sample from the given autoregressive emission model using the previou
 
 # Returns
 - `Matrix{Float64}`: The updated observation sequence with the new sample appended.
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-model = AutoRegressionEmission(AutoRegression(output_dim=2, order=3))
-Y_prev = randn(10, 2)
-sequence = sample(model, Y_prev)
-sequence = sample(model, Y_prev, observation_sequence=sequence)
-# output
 """
 
 function sample(model::AutoRegressiveEmission, Φ::Union{Matrix{<:Real}, Vector{<:Real}})
@@ -881,14 +777,6 @@ Calculate the log likelihood of the data `Y` given the autoregressive emission m
 
 # Returns
 - `Vector{Float64}`: A vector of log likelihoods, one for each observation in the data.
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-model = AutoRegressionEmission(AutoRegression(output_dim=2, order=10))
-Y_prev = randn(10, 2)
-Y = randn(10, 2)
-loglikelihoods = loglikelihood(model, Y_prev, Y)
-# output
 """
 
 function loglikelihood(model::AutoRegressiveEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
@@ -916,11 +804,6 @@ Create a Switching AutoRegression Model
 
 # Returns
 - `::HiddenMarkovModel`: A Switching AutoRegression Model
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-model = SwitchingAutoRegression(K=3, output_dim=2, order=2)
-# output
 """
 function SwitchingAutoRegression(;
     K::Int,

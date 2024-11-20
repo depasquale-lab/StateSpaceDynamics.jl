@@ -1,7 +1,7 @@
 # Misc
 
 ```@autodocs
-Modules = [SSM]
+Modules = [StateSpaceDynamics]
 Pages   = [
     "GlobalTypes.jl", 
     "Preprocessing.jl",

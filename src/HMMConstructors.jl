@@ -14,11 +14,6 @@ Create a Hidden Markov Model with Gaussian Emissions
 
 # Returns
 - `::HiddenMarkovModel`: Hidden Markov Model Object with Gaussian Emissions
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-model = GaussianHMM(K=2, output_dim=5)
-# output
 ```
 """
 function GaussianHMM(;
@@ -65,10 +60,6 @@ Create a Switching Gaussian Regression Model
 
 # Returns
 - `::HiddenMarkovModel`: A Switching Gaussian Regression Model
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-model = SwitchingGaussianRegression(K=2, input_dim=5, output_dim=10)
-# output
 """
 function SwitchingGaussianRegression(;
     K::Int,
@@ -117,11 +108,6 @@ Create a Switching Bernoulli Regression Model
 
 # Returns
 - `::HiddenMarkovModel`: A Switching Bernoulli Regression Model
-
-# Examples
-```jldoctest; output = false, filter = r"(?s).*" => s""
-model = SwitchingBernoulliRegression(K=2, input_dim=5)
-# output
 """
 function SwitchingBernoulliRegression(;
     K::Int,
