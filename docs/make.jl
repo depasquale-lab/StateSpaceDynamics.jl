@@ -1,28 +1,26 @@
 using Documenter
 using StateSpaceDynamics
 
-root = joinpath(dirname(pathof(StateSpaceDynamics)), "..", "docs")
 
-println("working dir: ", pwd())
-
-DocMeta.setdocmeta!(
-    StateSpaceDynamics, :DocTestSetup, :(using StateSpaceDynamics); recursive=true
-)
+DocMeta.setdocmeta!(StateSpaceDynamics, :DocTestSetup, :(using StateSpaceDynamics); recursive=true)
 
 makedocs(;
-    root=root,
-    sitename="StateSpaceDynamics Julia",
     modules=[StateSpaceDynamics],
+    authors="Ryan Senne",
+    sitename="StateSpaceDynamics.jl",
+    format=Documenter.HTML(;
+        prettyurls=get(ENV, "CI", "false") == "true",
+    ),
+    remotes=nothing,
     pages=[
         "Home" => "index.md",
-        "getting_started.md",
+        "Getting Started" => "getting_started.md",
         "Models" => [
-            "BasicModels.md",
-            "RegressionModels.md",
-            "HiddenMarkovModels.md",
-            "MixtureModels.md",
-            "LDS.md",
+            "EmissionModels" => "EmissionModels.md",
+            "Hidden Markov Models" => "HiddenMarkovModels.md",
+            "Mixture Models" => "MixtureModels.md",
+            "Linear Dynamical Systems" => "LinearDynamicalSystems.md",
         ],
-        "Misc" => "Misc.md",
-    ],
+        "Miscellaneous" => "Misc.md",
+    ]
 )
