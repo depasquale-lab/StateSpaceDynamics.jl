@@ -5,5 +5,6 @@ Modules = [StateSpaceDynamics]
 Pages   = [
     "GlobalTypes.jl", 
     "Preprocessing.jl",
-    "Utilities.jl"]
+    "Utilities.jl",
+    "CompositeModel.jl"]
 ```
