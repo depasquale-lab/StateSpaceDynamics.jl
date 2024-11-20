@@ -493,6 +493,11 @@ function loglikelihood(
 
     obs_wise_loglikelihood = w .* (Y .* log.(p) .+ (1 .- Y) .* log.(1 .- p))
 
+    # sum across independent feature log likelihoods if mulitple features
+    if size(obs_wise_loglikelihood, 2) > 1
+        obs_wise_loglikelihood = sum(obs_wise_loglikelihood, dims=2)
+    end
+
     return obs_wise_loglikelihood
 end
 
@@ -645,6 +650,11 @@ function loglikelihood(
     rate = exp.(η)
 
     obs_wise_loglikelihood = w .* (Y .* log.(rate) .- rate .- loggamma.(Int.(Y) .+ 1))
+
+    # sum across independent feature log likelihoods if mulitple features
+    if size(obs_wise_loglikelihood, 2) > 1
+        obs_wise_loglikelihood = sum(obs_wise_loglikelihood, dims=2)
+    end
 
     return obs_wise_loglikelihood
 end
