@@ -30,3 +30,4 @@ paper/jats/paper.jats
 # benchmarking files
 benchmarking/.CondaPkg
 
+/paper/jats

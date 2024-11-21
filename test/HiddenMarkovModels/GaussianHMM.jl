@@ -86,6 +86,33 @@ function test_SwitchingGaussian_SingleState_fit()
     @test any(diff(ll) .< 0) == false
 end
 
+function test_kmeans_init()
+    # Create a dummy dataset that we know the mean and covariance of
+    data = [1.0 2.0 11.0 12.0 1.0; 5.0 5.0 -14.0 -13.0 6.0]
+
+    # Define the expected clusters
+    μ₁ = [1.33, 5.33]  # Approximate mean of first cluster
+    μ₂ = [11.5, -13.5]  # Approximate mean of second cluster]
+
+    Σ₁ = [0.333 -0.166; -0.166 0.333] # Approximate covariance of first cluster
+    Σ₂ = [0.5 0.5; 0.5 0.5] # Approximate covariance of second cluster
+
+    # Create a dummy hmm
+    model = GaussianHMM(; K=2, output_dim=2)
+
+    # Initialize the model using kmeans
+    kmeans_init!(model, data)
+
+    # Test that the means are correct 
+    @test isapprox(model.B[1].μ, μ₁, atol=0.1) || isapprox(model.B[1].μ, μ₂, atol=0.1)
+    @test isapprox(model.B[2].μ, μ₁, atol=0.1) || isapprox(model.B[2].μ, μ₂, atol=0.1)
+
+    # Test that the covariances are correct
+    @test isapprox(model.B[1].Σ, Σ₁, atol=0.1) || isapprox(model.B[1].Σ, Σ₂, atol=0.1)
+    @test isapprox(model.B[2].Σ, Σ₁, atol=0.1) || isapprox(model.B[2].Σ, Σ₂, atol=0.1)
+end
+
+
 function test_trialized_GaussianHMM()
 
     # Create Guassian Emission Models

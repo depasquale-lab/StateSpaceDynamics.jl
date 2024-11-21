@@ -253,6 +253,7 @@ include("HiddenMarkovModels/GaussianHMM.jl")
 @testset "GaussianHMM Tests" begin
     test_SwitchingGaussian_fit()
     test_SwitchingGaussian_SingleState_fit()
+    test_kmeans_init()
     test_trialized_GaussianHMM()
 end
 
