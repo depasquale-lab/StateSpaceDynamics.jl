@@ -14,13 +14,14 @@ makedocs(;
     remotes=nothing,
     pages=[
         "Home" => "index.md",
-        "Getting Started" => "getting_started.md",
         "Models" => [
-            "EmissionModels" => "EmissionModels.md",
-            "Hidden Markov Models" => "HiddenMarkovModels.md",
-            "Mixture Models" => "MixtureModels.md",
             "Linear Dynamical Systems" => "LinearDynamicalSystems.md",
+            "Hidden Markov Models" => "HiddenMarkovModels.md",
+            "EmissionModels" => "EmissionModels.md",
+            "Mixture Models" => "MixtureModels.md",
         ],
         "Miscellaneous" => "Misc.md",
     ]
 )
+
+deploydocs(; repo="github.com/depasquale-lab/StateSpaceDynamics.jl", devbranch="main")
