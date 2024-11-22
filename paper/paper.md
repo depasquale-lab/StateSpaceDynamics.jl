@@ -54,17 +54,17 @@ Lastly, `StateSpaceDynamics.jl` provides implementations od discrete state space
 
 By providing these features, `StateSpaceDynamics.jl` fills a critical gap in the Julia ecosystem, offering modern computational neuroscientists the tools necessary to model complex neural data with state-space models that incorporate both dimensionality reduction and temporal dynamics.
 
-# Example
+# Benchmarks
 
-![Model architecture](model.png)\
+To evaluate the performance of StateSpaceDynamics.jl, we conducted two comprehensive benchmarking studies focusing on fitting a Gaussian Linear Dynamical System (LDS) and a Bernoulli GLM-HMM. For the Gaussian LDS benchmark, we compared our package against two alternatives: the NumPy-based Kalman Filter smoother package pykalman and the more recent JAX-based Dynamax. We intentionally excluded StateSpaceModels.jl from our comparison as its scope is geared towards structured time-series models.
 
-Consider the Poisson Linear Dynamical System (PLDS):
+For our Gaussian LDS experiments, we constructed a synthetic dataset as follows. The state transition matrix $A$ was generated as a random $n$-dimensional rotation matrix, while the observation matrix $C$ was created as a random $m \times n$ matrix. Both the state noise covariance $Q$ and observation noise covariance $R$ were set to identity matrices. To ensure a fair comparison, all packages were initialized using identical random parameters, after which we executed the EM algorithm for 100 iterations. We conducted these benchmarks using PythonCall.jl and BenchmarkTools.jl to ensure accurate timing measurements.
 
-\begin{align}
-X_t &\sim \mathcal{N}(AX_{t-1}, Q) \\
-Y_t &\sim \text{Poisson}(f(CX_t + b)\Delta t) \\
-X_0 &\sim \mathcal{N}(\mu_0, \Sigma_0)
-\end{align}
+To thoroughly assess performance across different scales, we tested three sequence lengths ($T = 100, 500, 1000$) and explored various dimensionality combinations, with state dimensions $n = 2, 4, 8$ and observation dimensions $m = 2, 4, 8$.
+
+\begin{figure}
+\includegraphics[width=\textwidth]{benchmark_plot.pdf}
+\end{figure}
 
 # Availability
 
@@ -72,9 +72,12 @@ X_0 &\sim \mathcal{N}(\mu_0, \Sigma_0)
 
 # Conclusion
 
+Overall, `StateSpaceDynamics.jl` fills an existing gap in the Julia ecosystem for general state-space modelling that exist in Python. Importantly, our package's approach is simple enough that other candidate state-space could be easily implemented. Further, this work provides a foundation for future development of more advanced state-space models, such as the SLDS and rSLDS, which are essential for modeling complex neural data. We expect that this package will be of interest to computational neuroscientists and other researchers working with high-dimensional time series data and we are currenrtly using its functionality in three separate projects.
+
 # Author contributions
 
-RS did XXX. CL did XXX. ZL did XXX. BD oversaw development, provided mentorship, and secured funding.
+RS was the primary developer of StateSpaceDynamics.jl, implementing the core algorithms, designing the package architecture, and writing the manuscript. ZL (Zachary Loschinskey), CL (Carson Loughridge), and JF (James Fourie) contributed to package development, including implementation of key features testing, and documentation. BDD (Brian D. DePasquale) conceived the project, provided theoretical guidance and technical oversight throughout
+development, secured funding, and supervised the work. All authors reviewed and approved the final manuscript.
 
 # Acknowledgements
 

@@ -75,8 +75,8 @@ end
 function kmeans_init!(model::HiddenMarkovModel, data::Matrix{T}) where {T<:Real}
     num_states = model.K
     # run k-means 
-    means, labels = kmeans_clustering(data, num_states)
-    covs = [cov(data[labels .== i, :]) for i in 1:num_states]
+    means, labels = kmeans_clustering(permutedims(data), num_states) # permute dims to interface with kmenas clustering function 
+    covs = [cov(permutedims(data[:, labels .== i])) for i in 1:num_states]
     # initialize the emission models
     for k in 1:num_states
         model.B[k].μ = means[:, k]
