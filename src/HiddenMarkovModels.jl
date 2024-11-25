@@ -349,9 +349,9 @@ function fit!(
 
     log_likelihood = -Inf
     # Initialize progress bar
-    p = Progress(max_iters; desc="Running EM algorithm...", barlen=50, showspeed=true)
+    #p = Progress(max_iters; desc="Running EM algorithm...", barlen=50, showspeed=true)
     for iter in 1:max_iters
-        next!(p)
+        #next!(p)
         # E-Step
         γ, ξ, α, β = estep(model, transpose_data)
         # Compute and update the log-likelihood
@@ -359,7 +359,7 @@ function fit!(
         push!(lls, log_likelihood_current)
         #println("iter $(iter) loglikelihood: ", log_likelihood_current)
         if abs(log_likelihood_current - log_likelihood) < tol
-            finish!(p)
+            #finish!(p)
             return lls
         else
             log_likelihood = log_likelihood_current

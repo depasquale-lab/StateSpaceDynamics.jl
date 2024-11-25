@@ -1,3 +1,7 @@
+"""
+Library Import
+"""
+
 using BenchmarkTools
 using Random
 using Statistics
@@ -9,7 +13,12 @@ using CSV
 using Distributions
 using HiddenMarkovModels
 using StateSpaceDynamics
+using Plots
 
+import HiddenMarkovModels as HMMs
+using StatsAPI
+using StableRNGs
+using Optim
 
 const np = pyimport("numpy")
 const dynamax = pyimport("dynamax.hidden_markov_model")
@@ -17,6 +26,9 @@ const jr = pyimport("jax.random")
 const jnp = pyimport("jax.numpy")
 
 
+"""
+Function Definitions
+"""
 struct BenchConfig
     latent_dims::Vector{Int}
     input_dims::Vector{Int}
@@ -27,10 +39,10 @@ struct BenchConfig
 end
 
 default_config = BenchConfig(
-    [2,4,8,16],       # latent dimensions
-    [2,4,8,16],        # input dimension
+    [2],       # latent dimensions
+    [2],        # input dimension
     [1],      # observation dimensions 
-    [100, 500, 1000],    # sequence lengths
+    [50, 100],    # sequence lengths
     200,                 # EM iterations
     5                    # benchmark repeats
 )
@@ -61,6 +73,7 @@ function generate_random_hmm(latent_dim::Int, input_dim::Int, obs_dim::Int)
     """
     # Create Gaussian Emission Models with random means and covariances
     emissions = Vector{BernoulliRegressionEmission}(undef, latent_dim)
+    emissions_hmmjl = Vector{}(undef, latent_dim)
     true_model = StateSpaceDynamics.SwitchingBernoulliRegression(K=latent_dim, input_dim=input_dim, output_dim=obs_dim, include_intercept=false)
 
     # Make the dynamax emission weights
@@ -74,10 +87,19 @@ function generate_random_hmm(latent_dim::Int, input_dim::Int, obs_dim::Int)
     for (state, row) in enumerate(eachrow(emission_ssd))
         β = Matrix(reshape(row, :, 1))
         true_model.B[state] = BernoulliRegressionEmission(input_dim=input_dim, output_dim=obs_dim, β=β, include_intercept=false)
+        emissions_hmmjl[state] = convert(Vector{Float64}, row)
     end
 
     true_model.A = initialize_transition_matrix(latent_dim)
     true_model.πₖ = initialize_state_distribution(latent_dim)
+
+    """
+    Create the HMM.jl model
+    """
+    init = true_model.πₖ
+    trans = true_model.A
+    dist_coeffs = [-ones(input_dim), ones(input_dim)]
+    hmmjl = ControlledBernoulliHMM(init, trans, dist_coeffs)
 
     """
     Create the Dynamax Model
@@ -99,7 +121,7 @@ function generate_random_hmm(latent_dim::Int, input_dim::Int, obs_dim::Int)
         emission_biases=emission_biases
     )
 
-    return true_model, dynamax_model, params, props
+    return true_model, dynamax_model, params, props, hmmjl
 end
 
 
@@ -115,21 +137,28 @@ function generate_test_data(model, seq_len::Int)
 end
 
 
-function run_single_benchmark(model_type::Symbol, hmm_ssd, y, inputs, params=nothing, props=nothing; config=default_config)
+function run_single_benchmark(model_type::Symbol, hmm_ssd, y, inputs, params=nothing, props=nothing; config=default_config, seq_ends=nothing)
     if model_type == :julia
         bench = @benchmark begin
             model = deepcopy($hmm_ssd)  # Create a fresh copy for each iteration
-            StateSpaceDynamics.fit!(model, $y, $inputs, max_iters=200, tol=1e-15)
+            StateSpaceDynamics.fit!(model, $y, $inputs, max_iters=$config.n_iters, tol=1e-25)
         end samples=config.n_repeats
         return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
-    else
+    elseif model_type==:dynamax
         bench = @benchmark begin
             dynamax_model=deepcopy($hmm_ssd)
             p = deepcopy($params)
             pr = deepcopy($props)
-            dynamax_model.fit_em(p, pr, $y, $inputs, num_iters=200,verbose=false)
+            dynamax_model.fit_em(p, pr, $y, $inputs, num_iters=$config.n_iters,verbose=false)
         end samples=config.n_repeats
-        return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)        
+        return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
+    else
+        println("Running HMM.jl")
+        bench = @benchmark begin
+            hmm=deepcopy($hmm_ssd)
+            hmm_est, loglikelihood_evolution = baum_welch(hmm, vec($y), $inputs, loglikelihood_increasing=false, max_iterations=$config.n_iters; seq_ends=[length(vec($y))])
+        end samples=config.n_repeats
+        return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
     end
 end
 
@@ -143,7 +172,7 @@ function benchmark_fitting(config::BenchConfig = default_config)
                     println("\nTesting configuration: latent_dim=$latent_dim, input_dim=$input_dim, obs_dim=$obs_dim, seq_len=$seq_len")
 
                     # Create true model
-                    true_model, dynamax_model, params, props = generate_random_hmm(latent_dim, input_dim, obs_dim)
+                    true_model, dynamax_model, params, props, hmmjl = generate_random_hmm(latent_dim, input_dim, obs_dim)
                     
                     # Generate test data
                     model, labels, Φ, data = generate_test_data(true_model, seq_len)
@@ -155,7 +184,21 @@ function benchmark_fitting(config::BenchConfig = default_config)
                     labels_np = np.array(labels .- 1)  # Dynamax expects labels indexed from 0
 
                     # Generate random HMMs for fitting
-                    test_model, dynamax_model, params, props = generate_random_hmm(latent_dim, input_dim, obs_dim)
+                    test_model, dynamax_model, params, props, hmmjl = generate_random_hmm(latent_dim, input_dim, obs_dim)
+
+                    # get data in format for hmm.jl benchmarking
+                    # convert to vector
+                    obs_seq = vec(data)
+                    seq_ends = [length(obs_seq)]
+                    Φ_vector = [Φ[:, t] for t in 1:size(Φ, 2)]  # Create vector for baum_welch input
+                    
+                    
+                    hmmjl_result = try
+                        run_single_benchmark(:hmmjl, hmmjl, data, Φ_vector; seq_ends=seq_ends)
+                    catch err
+                        println("Error in HMM.jl benchmarking: ", err)
+                        (time="FAIL", memory="FAIL", allocs="FAIL", success=false)
+                    end
 
                     # Run benchmarks separately with error handling
                     julia_result = try
@@ -176,7 +219,8 @@ function benchmark_fitting(config::BenchConfig = default_config)
                     push!(results, Dict(
                         "config" => (latent_dim=latent_dim, input_dim=input_dim, obs_dim=obs_dim, seq_len=seq_len),
                         "SSD.jl" => julia_result,
-                        "Dynamax" => dynamax_result
+                        "Dynamax" => dynamax_result,
+                        "HMM.jl" => hmmjl_result
                     ))
                 end
             end
@@ -188,9 +232,153 @@ end
 
 
 
-results = benchmark_fitting()
+
+"""
+Functions for fitting SwitchingBernoulliRegression using HMM.jl
+"""
 
 
+logistic(x) = 1 / (1 + exp(-x))
+
+# Helper function: Converts a vector to a matrix with a given shape
+function vec_to_matrix(vec::Vector, shape::Tuple{Int, Int})
+    reshape(vec, shape)
+end
+
+
+
+mutable struct ControlledBernoulliHMM{T} <: HMMs.AbstractHMM
+    init::Vector{T}
+    trans::Matrix{T}
+    dist_coeffs::Vector{Vector{T}}  # One vector for each state
+end
+
+function HMMs.initialization(hmm::ControlledBernoulliHMM)
+    return hmm.init
+end
+
+function HMMs.transition_matrix(hmm::ControlledBernoulliHMM, control::AbstractVector)
+    return hmm.trans
+end
+
+# Modified to use Bernoulli with probabilities from logistic regression
+function HMMs.obs_distributions(hmm::ControlledBernoulliHMM, control::AbstractVector)
+    return [
+        Bernoulli(logistic(dot(hmm.dist_coeffs[i], control))) for i in 1:length(hmm)
+    ]
+end
+
+
+# Example regression optimization structure
+struct RegressionOptimizationTest{}
+    X::Matrix{}
+    y::Matrix{}
+    w::Vector{}
+    β_shape::Tuple{Int, Int}
+end
+
+# Bernoulli Regression Objective Function
+function objective(opt::RegressionOptimizationTest, β_vec)
+    β_mat = vec_to_matrix(β_vec, opt.β_shape) # Reshape vector to matrix
+    p = logistic.(opt.X * β_mat)             # Predicted probabilities
+    # Calculate negative log-likelihood
+    val = -sum(opt.w .* (opt.y .* log.(p) .+ (1 .- opt.y) .* log.(1 .- p)))
+    return val
+end
+
+function objective_gradient!(
+    G::Vector{Float64},
+    opt::RegressionOptimizationTest,
+    β_vec::Vector{Float64})
+    β_mat = vec_to_matrix(β_vec, opt.β_shape)
+    η = clamp.(opt.X * β_mat, -30, 30)
+    rate = exp.(η)
+
+    grad_mat = (-opt.X' * (Diagonal(opt.w) * (opt.y .- rate)))
+    return G .= vec(grad_mat)
+end
+
+
+function fit_bern(X::Matrix{<:Real}, y::Matrix{<:Real}, β_shape::Tuple{Int, Int}, β_init::Vector{<:Real}, w::Vector{Float64}=ones(size(y,1)))
+    # Create the RegressionOptimization struct
+    opt_problem = RegressionOptimizationTest(X, y, w, β_shape)
+    f(β) = objective(opt_problem, β)
+    g!(G, β) = objective_gradient!(G, opt_problem, β)
+
+    # Set optimization options
+    opts = Optim.Options(
+        x_abstol=1e-8,
+        x_reltol=1e-8,
+        f_abstol=1e-8,
+        f_reltol=1e-8,
+        g_abstol=1e-8,
+        g_reltol=1e-8,
+    )
+
+    # Run optimization
+    result = optimize(f, g!, β_init, LBFGS(), opts)
+    # Retrieve the optimized parameters
+    β_opt_vec = result.minimizer
+    β_opt_mat = vec_to_matrix(β_opt_vec, β_shape)
+
+    return β_opt_mat
+
+end
+
+
+function StatsAPI.fit!(
+    hmm::ControlledBernoulliHMM{T},
+    fb_storage::HMMs.ForwardBackwardStorage,
+    obs_seq::AbstractVector,
+    control_seq::AbstractVector;
+    seq_ends,
+) where {T}
+    (; γ, ξ) = fb_storage
+    N = length(hmm)
+
+    # Update initial probabilities and transition matrix
+    hmm.init .= 0
+    hmm.trans .= 0
+    for k in eachindex(seq_ends)
+        t1, t2 = HMMs.seq_limits(seq_ends, k)
+        hmm.init .+= γ[:, t1]
+        hmm.trans .+= sum(ξ[t1:t2])
+    end
+    hmm.init ./= sum(hmm.init)
+    for row in eachrow(hmm.trans)
+        row ./= sum(row)
+    end
+
+
+    """
+    Update Bernoulli Regression Coefficients for Each State
+    """
+    updated_betas = Vector{Vector{Float64}}(undef, N)  # To store new coefficients for each state
+    for i in 1:N
+        # Weight observations by state responsibility (γ)
+        state_weights = γ[i, :]
+
+        # Get right shapes for fit_bern
+        β_shape = size(hmm.dist_coeffs[i])[1]
+        β_init = vec(hmm.dist_coeffs[i])
+        control_matrix = hcat(control_seq...)
+        obs_matrix = reshape(obs_seq, :, 1)
+        control_matrix = permutedims(control_matrix)
+        result = fit_bern(control_matrix, obs_matrix,(β_shape, 1), β_init, state_weights)
+
+        # Store updated coefficients
+        updated_betas[i] = vec(result)  # Store the updated coefficients as a vector
+    end
+
+    # Update the HMM's coefficients with the newly fitted values
+    hmm.dist_coeffs = updated_betas
+
+end
+
+
+"""
+Functions for saving results and plotting
+"""
 
 function prepare_results_for_csv(results)
     rows = []
@@ -225,10 +413,6 @@ function prepare_results_for_csv(results)
     end
     return DataFrame(rows)
 end
-
-results_df = prepare_results_for_csv(results)
-CSV.write("benchmark_results.csv", results_df)
-
 
 function transform_to_df(data_vector::Vector)
     # Initialize vectors for all our columns
@@ -337,14 +521,18 @@ function plot_benchmarks(df::DataFrame)
 end
 
 
+"""
+Main
+"""
+
+results = benchmark_fitting()
+results_df = prepare_results_for_csv(results)
+CSV.write("benchmark_results_bernoulli_orig.csv", results_df)
+
 df = transform_to_df(results)
 df.time = df.time / 1e9;
+CSV.write("benchmark_results_bernoulli_df.csv", df)
 
-CSV.write("benchmark_results_bernoulli.csv", df)
 
-
-using Plots
 benchmark_plot = plot_benchmarks(df)
-savefig(benchmark_plot, "benchmark_bernoulli_plot.pdf")
-
-
+savefig(benchmark_plot, "benchmark_plot_bernoulli.pdf")
