@@ -14,7 +14,7 @@ using Statistics
 using StatsBase
 using StatsFuns
 using SpecialFunctions
-using Base.Threads
+using Base.Threads: @threads
 
 include("GlobalTypes.jl")
 include("Utilities.jl")

@@ -598,7 +598,7 @@ function smooth(
     inverse_offdiag = Array{T,4}(undef, latent_dim, latent_dim, T_steps, n_trials)
     total_entropy = 0.0
 
-    Threads.@threads for trial in 1:n_trials
+    @threads for trial in 1:n_trials
         x_sm, p_sm, p_prev, ent = smooth(lds, y[:, :, trial])
         total_entropy += ent
         x_smooth[:, :, trial] .= x_sm
@@ -1408,7 +1408,7 @@ function loglikelihood(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     # Calculate the log-likelihood over all trials
     ll = zeros(size(y, 3))
-    Threads.@threads for n in axes(y, 3)
+    @threads for n in axes(y, 3)
         ll[n] = loglikelihood(x[:, :, n], plds, y[:, :, n])
     end
     return sum(ll)
@@ -1583,7 +1583,7 @@ function Q_state(
     Q_val = 0.0
 
     # Calcualte over trials
-    Threads.@threads for k in axes(E_z, 3)
+    @threads for k in axes(E_z, 3)
         Q_val += Q_state(
             A, Q, P0, x0, E_z[:, :, k], E_zz[:, :, :, k], E_zz_prev[:, :, :, k]
         )
@@ -1629,7 +1629,7 @@ function Q_observation_model(
     end
 
     # sum over trials
-    Threads.@threads for k in 1:trials
+    @threads for k in 1:trials
         # sum over time-points
         @inbounds for t in 1:time_steps
             # Mean term
@@ -1767,34 +1767,55 @@ function gradient_observation_model!(
     d = exp.(log_d)
     obs_dim, latent_dim = size(C)
     latent_dim, time_steps, trials = size(E_z)
-
+    grad_C_size = obs_dim * latent_dim
+    
+    # Pre-allocate temporary arrays outside the loops
+    h = zeros(T, obs_dim)
+    ρ = zeros(T, obs_dim)
+    λ = zeros(T, obs_dim)
+    grad_trial = zeros(T, length(grad))
+    
     fill!(grad, zero(T))
-
-    Threads.@threads for k in 1:trials
-        @inbounds for t in 1:time_steps
-            z_t = E_z[:, t, k]
-            P_t = P_smooth[:, :, t, k]
-            y_t = y[:, t, k]
-
-            h = C * z_t .+ d
-            ρ = T(0.5) .* [sum(C[i, :] .* (P_t * C[i, :])) for i in 1:obs_dim]
-            λ = exp.(h .+ ρ)
-
-            # Gradient w.r.t. C (flattened in column-major order)
-            for j in 1:latent_dim
+    
+    @threads for k in 1:trials
+        fill!(grad_trial, zero(T))
+        
+        for t in 1:time_steps
+            # Get views instead of copies
+            z_t = @view E_z[:, t, k]
+            P_t = @view P_smooth[:, :, t, k]
+            y_t = @view y[:, t, k]
+            
+            # Compute h = C * z_t + d efficiently
+            mul!(h, C, z_t)
+            h .+= d
+            
+            # Compute ρ using matrix operations
+            # ρ[i] = 0.5 * sum(C[i, :] .* (P_t * C[i, :]))
+            CP = C * P_t
+            @inbounds for i in 1:obs_dim
+                ρ[i] = T(0.5) * dot(C[i, :], CP[i, :])
+            end
+            
+            # Compute λ
+            @. λ = exp(h + ρ)
+            
+            # Gradient for C (reshaped computation)
+            @inbounds for j in 1:latent_dim
                 for i in 1:obs_dim
                     idx = (j - 1) * obs_dim + i
-                    grad[idx] +=
-                        y_t[i] * z_t[j] - λ[i] * (z_t[j] + sum(C[i, :] .* P_t[:, j]))
+                    CP_term = dot(@view(C[i, :]), @view(P_t[:, j]))
+                    grad_trial[idx] += y_t[i] * z_t[j] - λ[i] * (z_t[j] + CP_term)
                 end
             end
-
-            # Gradient w.r.t. log_d (with scaling factor)
-            grad[(end - obs_dim + 1):end] .+= (y_t .- λ) .* d
+            
+            # Gradient for log_d
+            @views grad_trial[(end - obs_dim + 1):end] .+= (y_t .- λ) .* d
         end
+        
+        grad .+= grad_trial
     end
-
-    # Negate the gradient because we're minimizing -Q
+    
     return grad .*= -1
 end
 
@@ -1833,7 +1854,7 @@ function update_observation_model!(
             return gradient_observation_model!(grad, C, log_d, E_z, P_smooth, y)
         end
 
-        result = optimize(f, g!, params, LBFGS(; linesearch=LineSearches.BackTracking()))
+        result = optimize(f, g!, params, LBFGS(;linesearch=LineSearches.BackTracking()))
 
         # Update the parameters
         C_size = plds.obs_dim * plds.latent_dim
