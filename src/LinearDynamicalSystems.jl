@@ -1409,7 +1409,7 @@ function loglikelihood(
     # Calculate the log-likelihood over all trials
     ll = zeros(size(y, 3))
     @threads for n in axes(y, 3)
-        ll[n] = loglikelihood(x[:, :, n], plds, y[:, :, n])
+        ll[n] .= loglikelihood(x[:, :, n], plds, y[:, :, n])
     end
     return sum(ll)
 end
@@ -1459,14 +1459,14 @@ function Gradient(
 
         if t == 1
             # First time step
-            grad[:, t] =
+            grad[:, t] .=
                 common_term + A' * inv_Q * (x[:, 2] - A * x[:, 1]) - inv_P0 * (x[:, 1] - x0)
         elseif t == T_steps
             # Last time step
-            grad[:, t] = common_term - inv_Q * (x[:, t] - A * x[:, t - 1])
+            grad[:, t] .= common_term - inv_Q * (x[:, t] - A * x[:, t - 1])
         else
             # Intermediate time steps
-            grad[:, t] =
+            grad[:, t] .=
                 common_term + A' * inv_Q * (x[:, t + 1] - A * x[:, t]) -
                 inv_Q * (x[:, t] - A * x[:, t - 1])
         end
@@ -1614,6 +1614,9 @@ function Q_observation_model(
     P_smooth::AbstractArray{U,4},
     y::Array{U,3},
 ) where {T<:Real,U<:Real}
+    # Get dimensions
+    obs_dim, state_dim = size(C)
+
     # Re-parametrize log_d
     d = exp.(log_d)
 
@@ -1621,6 +1624,11 @@ function Q_observation_model(
     Q_val = zero(T)
     trials = size(E_z, 3)
     time_steps = size(E_z, 2)
+
+    # Pre-allocate
+    h = Vector{T}(undef, obs_dim)
+    ρ = Vector{T}(undef, obs_dim)
+    CC = Matrix{T}(undef, obs_dim, state_dim^2)
 
     # calculate CC term
     CC = zeros(T, size(C, 1), size(C, 2)^2)
@@ -1633,10 +1641,10 @@ function Q_observation_model(
         # sum over time-points
         @inbounds for t in 1:time_steps
             # Mean term
-            h = (C * E_z[:, t, k]) .+ d
+            h .= (C * E_z[:, t, k]) .+ d
 
             # calculate rho
-            ρ = T(0.5) .* CC * vec(P_smooth[:, :, t, k])
+            ρ .= T(0.5) .* CC * vec(P_smooth[:, :, t, k])
 
             ŷ = exp.(h .+ ρ)
 

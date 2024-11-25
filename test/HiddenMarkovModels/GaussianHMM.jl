@@ -144,6 +144,13 @@ function test_trialized_GaussianHMM()
 
     # Fit a model to the trialized synthetic data
     est_model = GaussianHMM(; K=2, output_dim=2)
+
+    # Give the model a warm start 
+    est_model.A = [0.75 0.25; 0.01 0.99]
+    est_model.B[1] = GaussianEmission(; output_dim=output_dim, μ=[-4.0, -3.0], Σ=0.1 * Matrix{Float64}(I, output_dim, output_dim))
+    est_model.B[2] = GaussianEmission(; output_dim=output_dim, μ=[1.5, 1.0], Σ=0.1 * Matrix{Float64}(I, output_dim, output_dim))
+
+
     lls = StateSpaceDynamics.fit!(est_model, Y; max_iters=100)
 
     # Test that model output is correct

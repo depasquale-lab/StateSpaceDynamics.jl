@@ -31,3 +31,4 @@ paper/jats/paper.jats
 benchmarking/.CondaPkg
 
 /paper/jats
+benchmarking/benchmark.jl
