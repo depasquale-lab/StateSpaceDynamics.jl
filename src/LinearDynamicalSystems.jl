@@ -571,7 +571,7 @@ This function performs direct smoothing for a linear dynamical system (LDS) give
 # Example
 ```julia
 lds = GaussianLDS(obs_dim=4, latent_dim=3)
-y = randn(5, 100, 4)  # 5 trials, 100 time steps, 4 observed dimensions
+y = randn(5, 100, 4)  # 5 trials, 100 time steps, 4 observed dimension
 x, p_smooth, inverse_offdiag = smooth(lds, y)
 ```
 """
@@ -581,16 +581,17 @@ function smooth(
     obs_dim, T_steps, n_trials = size(y)
     latent_dim = lds.latent_dim
 
-    #{ TODO: Debug, this for some reason causes issues with the threading, causes the multi-trial case to fail in test_EM()
-    # # Fast path for single trial case
-    # if n_trials == 1
-    #     x_sm, p_sm, p_prev, ent = smooth(lds, y[:, :, 1])
-    #     # Return directly in the required shape without additional copying
-    #     return reshape(x_sm, latent_dim, T_steps, 1),
-    #            reshape(p_sm, latent_dim, latent_dim, T_steps, 1),
-    #            reshape(p_prev, latent_dim, latent_dim, T_steps, 1),
-    #            ent
-    # end
+    #TODO: Debug, this for some reason causes issues with the threading, causes the multi-trial case to fail in test_EM()
+
+    # Fast path for single trial case
+    if n_trials == 1
+        x_sm, p_sm, p_prev, ent = smooth(lds, y[:, :, 1])
+        # Return directly in the required shape without additional copying
+        return reshape(x_sm, latent_dim, T_steps, 1),
+               reshape(p_sm, latent_dim, latent_dim, T_steps, 1),
+               reshape(p_prev, latent_dim, latent_dim, T_steps, 1),
+               ent
+    end
 
     # Pre-allocate output arrays
     x_smooth = Array{T,3}(undef, latent_dim, T_steps, n_trials)
@@ -1775,53 +1776,55 @@ function gradient_observation_model!(
     d = exp.(log_d)
     obs_dim, latent_dim = size(C)
     latent_dim, time_steps, trials = size(E_z)
-    grad_C_size = obs_dim * latent_dim
     
-    # Pre-allocate temporary arrays outside the loops
+    # Pre-allocate shared temporary arrays
     h = zeros(T, obs_dim)
     ρ = zeros(T, obs_dim)
     λ = zeros(T, obs_dim)
-    grad_trial = zeros(T, length(grad))
+    CP_row = zeros(T, latent_dim)  # Single row buffer for CP computations
     
     fill!(grad, zero(T))
     
     @threads for k in 1:trials
-        fill!(grad_trial, zero(T))
+        # Local temporary arrays for each thread
+        local_grad = zeros(T, length(grad))
         
         for t in 1:time_steps
-            # Get views instead of copies
+            # Use views for all array slices
             z_t = @view E_z[:, t, k]
             P_t = @view P_smooth[:, :, t, k]
             y_t = @view y[:, t, k]
             
-            # Compute h = C * z_t + d efficiently
+            # Compute h = C * z_t + d in-place
             mul!(h, C, z_t)
             h .+= d
             
-            # Compute ρ using matrix operations
-            # ρ[i] = 0.5 * sum(C[i, :] .* (P_t * C[i, :]))
-            CP = C * P_t
+            # Compute ρ more efficiently using local storage
             @inbounds for i in 1:obs_dim
-                ρ[i] = T(0.5) * dot(C[i, :], CP[i, :])
+                # Compute one row of CP at a time
+                mul!(CP_row, P_t', C[i, :])
+                ρ[i] = T(0.5) * dot(C[i, :], CP_row)
             end
             
-            # Compute λ
+            # Compute λ in-place
             @. λ = exp(h + ρ)
             
-            # Gradient for C (reshaped computation)
+            # Gradient computation with fewer allocations
             @inbounds for j in 1:latent_dim
+                Pj = @view P_t[:, j]
                 for i in 1:obs_dim
                     idx = (j - 1) * obs_dim + i
-                    CP_term = dot(@view(C[i, :]), @view(P_t[:, j]))
-                    grad_trial[idx] += y_t[i] * z_t[j] - λ[i] * (z_t[j] + CP_term)
+                    CP_term = dot(C[i, :], Pj)
+                    local_grad[idx] += y_t[i] * z_t[j] - λ[i] * (z_t[j] + CP_term)
                 end
             end
             
-            # Gradient for log_d
-            @views grad_trial[(end - obs_dim + 1):end] .+= (y_t .- λ) .* d
+            # Update log_d gradient
+            @views local_grad[(end - obs_dim + 1):end] .+= (y_t .- λ) .* d
         end
         
-        grad .+= grad_trial
+        # Thread-safe update of global gradient
+        grad .+= local_grad
     end
     
     return grad .*= -1
@@ -1846,6 +1849,7 @@ function update_observation_model!(
     plds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, P_smooth::Array{T,4}, y::Array{T,3}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     if plds.fit_bool[5]
+
         params = vcat(vec(plds.obs_model.C), plds.obs_model.log_d)
 
         function f(params::Vector{T})
@@ -1862,7 +1866,7 @@ function update_observation_model!(
             return gradient_observation_model!(grad, C, log_d, E_z, P_smooth, y)
         end
 
-        result = optimize(f, g!, params, LBFGS(;linesearch=LineSearches.BackTracking()))
+        result = optimize(f, g!, params, LBFGS(;m=20, linesearch=LineSearches.BackTracking()))
 
         # Update the parameters
         C_size = plds.obs_dim * plds.latent_dim

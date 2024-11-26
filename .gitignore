@@ -25,10 +25,8 @@ notebooks/benchmarking.jl
 notebooks/debugging.jl
 
 # Paper files
-paper/jats/paper.jats
+/paper/jats
 
 # benchmarking files
 benchmarking/.CondaPkg
-
-/paper/jats
 benchmarking/benchmark.jl
