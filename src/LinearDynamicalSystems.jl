@@ -581,8 +581,6 @@ function smooth(
     obs_dim, T_steps, n_trials = size(y)
     latent_dim = lds.latent_dim
 
-    #TODO: Debug, this for some reason causes issues with the threading, causes the multi-trial case to fail in test_EM()
-
     # Fast path for single trial case
     if n_trials == 1
         x_sm, p_sm, p_prev, ent = smooth(lds, y[:, :, 1])
@@ -635,37 +633,47 @@ function Q_state(
 )
     T_step = size(E_z, 2)
     state_dim = size(A, 1)
-
+    
     # Pre-compute constants and decompositions once
     Q_chol = cholesky(Symmetric(Q))
     P0_chol = cholesky(Symmetric(P0))
     log_det_Q = logdet(Q_chol)
     log_det_P0 = logdet(P0_chol)
-
-    # Pre-allocate the main temporary matrix
+    
+    # Pre-allocate temp matrix
     temp = zeros(state_dim, state_dim)
-
-    # First time step
+    
+    # First time step (handled separately)
     mul!(temp, E_z[:, 1], x0', -1.0, 0.0)  # -E_z[:,1] * x0'
-    temp .+= view(E_zz, :, :, 1)              # Add E_zz[:,:,1]
-    temp .-= x0 * E_z[:, 1]'                # Subtract x0 * E_z[:,1]'
+    temp .+= view(E_zz, :, :, 1)           # Add E_zz[:,:,1]
+    temp .-= x0 * E_z[:, 1]'               # Subtract x0 * E_z[:,1]'
     temp .+= x0 * x0'                      # Add x0 * x0'
-
     Q_val = -0.5 * (log_det_P0 + tr(P0_chol \ temp))
-
-    # Main loop
+    
+    # Compute correct sums for t ≥ 2
+    sum_E_zz_current = zeros(state_dim, state_dim)     # Sum of E_zz[:,:,t]
+    sum_E_zz_prev_cross = zeros(state_dim, state_dim)  # Sum of E_zz_prev[:,:,t]
+    sum_E_zz_prev_time = zeros(state_dim, state_dim)   # Sum of E_zz[:,:,t-1]
+    
+    # Compute the sums with proper temporal alignment
     @inbounds for t in 2:T_step
-        # Direct computation avoiding temporary matrices where possible
-        copyto!(temp, view(E_zz, :, :, t))
-        mul!(temp, A, view(E_zz_prev, :, :, t)', -1.0, 1.0)  # Subtract A * E_zz_prev[:,:,t]'
-        temp .-= view(E_zz_prev, :, :, t) * A'               # Subtract E_zz_prev[:,:,t] * A'
-        temp .+= A * view(E_zz, :, :, t - 1) * A'             # Add A * E_zz[:,:,t-1] * A'
-
-        Q_val += -0.5 * (log_det_Q + tr(Q_chol \ temp))
+        sum_E_zz_current .+= view(E_zz, :, :, t)        # t
+        sum_E_zz_prev_cross .+= view(E_zz_prev, :, :, t) # t with t-1
+        sum_E_zz_prev_time .+= view(E_zz, :, :, t-1)     # t-1
     end
-
+    
+    # Compute the summed transition term
+    copyto!(temp, sum_E_zz_current)
+    mul!(temp, A, sum_E_zz_prev_cross', -1.0, 1.0)  # Subtract A * sum_E_zz_prev_cross'
+    temp .-= sum_E_zz_prev_cross * A'               # Subtract sum_E_zz_prev_cross * A'
+    temp .+= A * sum_E_zz_prev_time * A'           # Add A * sum_E_zz_prev_time * A'
+    
+    # Add contribution from all other time steps
+    Q_val += -0.5 * ((T_step - 1) * log_det_Q + tr(Q_chol \ temp))
+    
     return Q_val
 end
+
 
 """
     Q_obs(H, R, E_z, E_zz, y)
@@ -698,21 +706,29 @@ function Q_obs(
     log_det_R = logdet(R_chol)
     const_term = obs_dim * log(2π)
 
-    # Pre-allocate temporary matrix
-    temp = zeros(obs_dim, obs_dim)
+    # Compute sums of sufficient statistics
+    sum_yy = zeros(obs_dim, obs_dim)
+    sum_yz = zeros(obs_dim, size(E_z, 1))
+    sum_E_zz = dropdims(sum(E_zz, dims=3), dims=3)
 
-    Q_val = 0.0
-
+    # Compute terms that depend on sums
     @inbounds for t in 1:T_step
-        # Compute terms with minimal temporary allocations
-        mul!(temp, y[:, t], y[:, t]')                    # term1
-        temp .-= H * (E_z[:, t] * y[:, t]')             # Subtract term2
-        temp .-= (y[:, t] * E_z[:, t]') * H'            # Subtract term3
-        temp .+= H * view(E_zz, :, :, t) * H'            # Add term4
-
-        Q_val += -0.5 * (const_term + log_det_R + tr(R_chol \ temp))
+        mul!(sum_yy, y[:, t], y[:, t]', 1.0, 1.0)     # Add y[:, t] * y[:, t]'
+        mul!(sum_yz, y[:, t], E_z[:, t]', 1.0, 1.0)   # Add y[:, t] * E_z[:, t]'
     end
 
+    # Pre-allocate temporary matrix
+    temp = zeros(obs_dim, obs_dim)
+    
+    # Compute final expression using sums
+    copyto!(temp, sum_yy)                              # term1
+    mul!(temp, H, sum_yz', -1.0, 1.0)                 # Subtract term2
+    temp .-= sum_yz * H'                              # Subtract term3
+    mul!(temp, H * sum_E_zz, H', 1.0, 1.0)           # Add term4
+    
+    # Compute final Q_value
+    Q_val = -0.5 * (T_step * (const_term + log_det_R) + tr(R_chol \ temp))
+    
     return Q_val
 end
 
@@ -826,8 +842,8 @@ function estep(
 
     E_z, E_zz, E_zz_prev = sufficient_statistics(x_smooth, p_smooth, inverse_offdiag)
 
-    # ml_total = calculate_elbo(lds, E_z, E_zz, E_zz_prev, p_smooth, y, total_entropy)
-    ml_total = 0.0 # test the speed difference w/o calculating elbo
+    ml_total = calculate_elbo(lds, E_z, E_zz, E_zz_prev, p_smooth, y, total_entropy)
+    # ml_total = 0.0 # test the speed difference w/o calculating elbo
 
     return E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total
 end
