@@ -783,10 +783,10 @@ function sufficient_statistics(
 
     for trial in 1:n_trials
         @inbounds for t in 1:T_steps
-            E_zz[:, :, t, trial] =
+            E_zz[:, :, t, trial] .=
                 p_smooth[:, :, t, trial] + x_smooth[:, t, trial] * x_smooth[:, t, trial]'
             if t > 1
-                E_zz_prev[:, :, t, trial] =
+                E_zz_prev[:, :, t, trial] .=
                     p_smooth_t1[:, :, t, trial] +
                     x_smooth[:, t, trial] * x_smooth[:, t - 1, trial]'
             end
@@ -826,7 +826,8 @@ function estep(
 
     E_z, E_zz, E_zz_prev = sufficient_statistics(x_smooth, p_smooth, inverse_offdiag)
 
-    ml_total = calculate_elbo(lds, E_z, E_zz, E_zz_prev, p_smooth, y, total_entropy)
+    # ml_total = calculate_elbo(lds, E_z, E_zz, E_zz_prev, p_smooth, y, total_entropy)
+    ml_total = 0.0 # test the speed difference w/o calculating elbo
 
     return E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total
 end

@@ -2,7 +2,7 @@
 
 ## Mathematical Background
 
-In the most general form, a linear dynamical system (LDS) is a state space model with linear dynamics. This can be expressed as follows:
+In the most general form, a linear dynamical system (LDS) is a state-space model with linear dynamics. This can be expressed as follows:
 
 ```math
 \begin{align*}
@@ -11,7 +11,7 @@ y_t &= g(x_t)
 \end{align*}
 ```
 
-where $x_t$ is the latent state at time $t$, $y_t$ is the observed data at time $t$, $f$ is the state transition function, $g$ is the observation function. In the linear case, $f$ and $g$ are linear functions. 
+where $x_t$ is the latent state at time $t$, $y_t$ is the observed data at time $t$, $f$ is the state transition function, $g$ is the observation function. In the linear case, $f$ and $g$ are linear functions. The way we have written the above expression, we haven't made an explicit statement about the noise distribution--and this is on purpose. While the classic Linear-Gaussian Dynamical System (i.e., the Kalman Filter/Smoother), is often the immedate assumption, there's nothing mathematically preventing us from assuming othe rnoise 
 
 ## The Filtering Problem
 
