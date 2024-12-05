@@ -545,7 +545,8 @@ function smooth(
     H, main, super, sub = Hessian(lds, y, x)
     p_smooth, inverse_offdiag = block_tridiagonal_inverse(-sub, -main, -super)
 
-    gauss_entropy = 0.5 * (size(H, 1) * log(2π) + logdet(-H))
+    # Calculate the entropy, see utilities.jl for the function
+    gauss_entropy = gaussian_entropy(Symmetric(H))
 
     @inbounds for i in 1:T_steps
         p_smooth[:, :, i] .= 0.5 .* (p_smooth[:, :, i] .+ p_smooth[:, :, i]')

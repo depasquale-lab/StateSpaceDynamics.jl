@@ -1,6 +1,6 @@
 export kmeanspp_initialization,
     kmeans_clustering, fit!, block_tridgm, block_tridiagonal_inverse
-export row_matrix, stabilize_covariance_matrix, valid_Σ, make_posdef!
+export row_matrix, stabilize_covariance_matrix, valid_Σ, make_posdef!, gaussian_entropy
 
 # Matrix utilities
 
@@ -435,3 +435,20 @@ function stack_tuples(d)
     return tuple(stacked_matrices...)
 end
 
+"""
+    gaussian_entropy(H::Symmetric{T}) where T <: Real
+
+Calculate the entropy of a Gaussian distribution with Hessian (i.e. negative precision) matrix `H`.
+
+# Arguments
+- `H::Symmetric{T}`: The Hessian matrix.
+
+# Returns
+- The entropy of the Gaussian distribution.
+"""
+function gaussian_entropy(H::Symmetric{T}) where T <: Real
+    n = size(H, 1)
+    F = cholesky(-H)
+    logdet_H = 2 * sum(log.(diag(F)))
+    return 0.5 * (n * log(2π) + logdet_H)
+end
