@@ -163,17 +163,17 @@ function forward(model::HiddenMarkovModel, loglikelihoods::Matrix{<:Real})
 
     # Initialize an α-matrix 
     α = zeros(model.K, time_steps)
+    values_to_sum = zeros(model.K)
 
     # Calculate α₁
-    @threads for k in 1:(model.K)
+    for k in 1:(model.K)
         α[k, 1] = log(model.πₖ[k]) + loglikelihoods[k, 1]
     end
     # Now perform the rest of the forward algorithm for t=2 to time_steps
     for t in 2:time_steps
-        @threads for k in 1:(model.K)
-            values_to_sum = Float64[]
+        for k in 1:(model.K)
             for i in 1:(model.K)
-                push!(values_to_sum, log(model.A[i, k]) + α[i, t - 1])
+                values_to_sum[i] = log(model.A[i, k]) + α[i, t - 1]
             end
             log_sum_alpha_a = logsumexp(values_to_sum)
             α[k, t] = log_sum_alpha_a + loglikelihoods[k, t]
@@ -187,19 +187,15 @@ function backward(model::HiddenMarkovModel, loglikelihoods::Matrix{<:Real})
 
     # Initialize a β matrix
     β = zeros(Float64, model.K, time_steps)
-
+    values_to_sum = zeros(model.K)
     # Set last β values. In log-space, 0 corresponds to a value of 1 in the original space.
     β[:, end] .= 0  # log(1) = 0
 
     # Calculate β, starting from time_steps-1 and going backward to 1
     for t in (time_steps - 1):-1:1
-        @threads for i in 1:(model.K)
-            values_to_sum = Float64[]
+        for i in 1:(model.K)
             for j in 1:(model.K)
-                push!(
-                    values_to_sum,
-                    log(model.A[i, j]) + loglikelihoods[j, t + 1] + β[j, t + 1],
-                )
+                values_to_sum[j] = log(model.A[i, j]) + loglikelihoods[j, t + 1] + β[j, t + 1]
             end
             β[i, t] = logsumexp(values_to_sum)
         end
@@ -210,8 +206,16 @@ end
 function calculate_γ(model::HiddenMarkovModel, α::Matrix{<:Real}, β::Matrix{<:Real})
     time_steps = size(α, 2)
     γ = α .+ β
-    @threads for t in 1:time_steps
-        γ[:, t] .-= logsumexp(γ[:, t])
+    
+    # use threads for longer sequences
+    if time_steps>=2000
+        @threads for t in 1:time_steps
+            γ[:, t] .-= logsumexp(γ[:, t])
+        end
+    else
+        for t in 1:time_steps
+            γ[:, t] .-= logsumexp(γ[:, t])
+        end
     end
     return γ
 end
@@ -227,7 +231,7 @@ function calculate_ξ(
     for t in 1:(time_steps - 1)
         # Array to store the unnormalized ξ values
         log_ξ_unnormalized = zeros(Float64, model.K, model.K)
-        @threads for i in 1:(model.K)
+        for i in 1:(model.K)
             for j in 1:(model.K)
                 log_ξ_unnormalized[i, j] =
                     α[i, t] + log(model.A[i, j]) + loglikelihoods[j, t + 1] + β[j, t + 1]

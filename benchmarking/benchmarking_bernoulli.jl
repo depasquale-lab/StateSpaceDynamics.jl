@@ -199,10 +199,10 @@ struct BenchConfig
 end
 
 default_config = BenchConfig(
-    [2],       # latent dimensions
-    [2],        # input dimension
+    [2, 4, 8],       # latent dimensions
+    [2, 4, 8],        # input dimension
     [1],      # observation dimensions 
-    [100],    # sequence lengths
+    [100, 500, 1000],    # sequence lengths
     200,                 # EM iterations
     5                    # benchmark repeats
 )
@@ -538,13 +538,13 @@ end
 results = benchmark_fitting()
 
 results_df = prepare_results_for_csv(results)
-CSV.write("benchmark_results_bernoulli_1124.csv", results_df)
+CSV.write("benchmark_results_bernoulli_12_05_24.csv", results_df)
 
 df = transform_to_df(results)
 df.time = df.time / 1e9;
 
-CSV.write("benchmark_results_bernoulli_1124.csv", df)
+CSV.write("benchmark_results_bernoulli_12_05_24_df.csv", df)
 
 
 benchmark_plot = plot_benchmarks(df)
-savefig(benchmark_plot, "benchmark_plot_bernoulli_1124.pdf")
+savefig(benchmark_plot, "benchmark_plot_bernoulli_12_05_24.pdf")
