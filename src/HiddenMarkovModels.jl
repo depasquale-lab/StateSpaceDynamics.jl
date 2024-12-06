@@ -203,6 +203,7 @@ function backward(model::HiddenMarkovModel, loglikelihoods::Matrix{<:Real})
     return β
 end
 
+# try broadcasting this instead and time them.
 function calculate_γ(model::HiddenMarkovModel, α::Matrix{<:Real}, β::Matrix{<:Real})
     time_steps = size(α, 2)
     γ = α .+ β
