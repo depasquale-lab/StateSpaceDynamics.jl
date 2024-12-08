@@ -24,6 +24,25 @@ mutable struct HiddenMarkovModel <: AbstractHMM
     K::Int # number of states
 end
 
+mutable struct ForwardBackward{T<:Real}
+    loglikelihoods::Matrix{T}
+    α::Matrix{T}
+    β::Matrix{T}
+    γ::Matrix{T}
+    ξ::Array{T, 3}
+end
+
+function initialize_forward_backward(model::HiddenMarkovModel, num_obs::Int)
+    num_states = model.K
+    ForwardBackward(
+        zeros(num_states, num_obs),
+        zeros(num_states, num_obs),
+        zeros(num_states, num_obs),
+        zeros(num_states, num_obs),
+        zeros(Float64, num_states, num_states, num_obs - 1)
+    )
+end
+
 function initialize_transition_matrix(K::Int)
     # initialize a transition matrix
     A = zeros(Float64, K, K)
@@ -136,6 +155,16 @@ function emission_loglikelihoods(model::HiddenMarkovModel, data...)
     return loglikelihoods
 end
 
+# New function for FB storage
+function emission_loglikelihoods!(model::HiddenMarkovModel, FB_storage::ForwardBackward, data...)
+    log_likelihoods = FB_storage.loglikelihoods
+
+    # Calculate observation wise likelihoods for all states
+    for k in 1:model.K
+        log_likelihoods[k, :] .= loglikelihood(model.B[k], data...)
+    end
+end
+
 """
     loglikelihood(model::HiddenMarkovModel, data...)
 
@@ -182,6 +211,30 @@ function forward(model::HiddenMarkovModel, loglikelihoods::Matrix{<:Real})
     return α
 end
 
+function forward!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
+    # reference storage
+    α = FB_storage.α
+    loglikelihoods = FB_storage.loglikelihoods
+
+    time_steps = size(loglikelihoods, 2)
+    values_to_sum = zeros(model.K)
+
+    # Calculate α₁
+    for k in 1:(model.K)
+        α[k, 1] = log(model.πₖ[k]) + loglikelihoods[k, 1]
+    end
+    # Now perform the rest of the forward algorithm for t=2 to time_steps
+    for t in 2:time_steps
+        for k in 1:(model.K)
+            for i in 1:(model.K)
+                values_to_sum[i] = log(model.A[i, k]) + α[i, t - 1]
+            end
+            log_sum_alpha_a = logsumexp(values_to_sum)
+            α[k, t] = log_sum_alpha_a + loglikelihoods[k, t]
+        end
+    end
+end
+
 function backward(model::HiddenMarkovModel, loglikelihoods::Matrix{<:Real})
     time_steps = size(loglikelihoods, 2)
 
@@ -203,7 +256,28 @@ function backward(model::HiddenMarkovModel, loglikelihoods::Matrix{<:Real})
     return β
 end
 
-# try broadcasting this instead and time them.
+function backward!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
+    # Initialize a β matrix
+    β = FB_storage.β
+    loglikelihoods = FB_storage.loglikelihoods
+
+    time_steps = size(loglikelihoods, 2)
+    values_to_sum = zeros(model.K)
+    # Set last β values. In log-space, 0 corresponds to a value of 1 in the original space.
+    β[:, end] .= 0  # log(1) = 0
+
+    # Calculate β, starting from time_steps-1 and going backward to 1
+    for t in (time_steps - 1):-1:1
+        for i in 1:(model.K)
+            for j in 1:(model.K)
+                values_to_sum[j] = log(model.A[i, j]) + loglikelihoods[j, t + 1] + β[j, t + 1]
+            end
+            β[i, t] = logsumexp(values_to_sum)
+        end
+    end
+    return β
+end
+
 function calculate_γ(model::HiddenMarkovModel, α::Matrix{<:Real}, β::Matrix{<:Real})
     time_steps = size(α, 2)
     γ = α .+ β
@@ -221,12 +295,58 @@ function calculate_γ(model::HiddenMarkovModel, α::Matrix{<:Real}, β::Matrix{<
     return γ
 end
 
+function calculate_γ!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
+    α = FB_storage.α
+    β = FB_storage.β
+    γ = FB_storage.γ
+
+    time_steps = size(α, 2)
+    γ = α .+ β
+    
+    # use threads for longer sequences
+    if time_steps>=2000
+        @threads for t in 1:time_steps
+            γ[:, t] .-= logsumexp(γ[:, t])
+        end
+    else
+        for t in 1:time_steps
+            γ[:, t] .-= logsumexp(γ[:, t])
+        end
+    end
+end
+
 function calculate_ξ(
     model::HiddenMarkovModel,
     α::Matrix{<:Real},
     β::Matrix{<:Real},
     loglikelihoods::Matrix{<:Real},
 )
+    time_steps = size(α, 2)
+    ξ = zeros(Float64, model.K, model.K, time_steps - 1)
+    for t in 1:(time_steps - 1)
+        # Array to store the unnormalized ξ values
+        log_ξ_unnormalized = zeros(Float64, model.K, model.K)
+        for i in 1:(model.K)
+            for j in 1:(model.K)
+                log_ξ_unnormalized[i, j] =
+                    α[i, t] + log(model.A[i, j]) + loglikelihoods[j, t + 1] + β[j, t + 1]
+            end
+        end
+        # Normalize the ξ values using log-sum-exp operation
+        ξ[:, :, t] .= log_ξ_unnormalized .- logsumexp(log_ξ_unnormalized)
+    end
+    return ξ
+end
+
+function calculate_ξ!(
+    model::HiddenMarkovModel,
+    FB_storage::ForwardBackward
+)
+    α = FB_storage.α
+    β = FB_storage.β
+    γ = FB_storage.γ
+    loglikelihoods = FB_storage.loglikelihoods
+
     time_steps = size(α, 2)
     ξ = zeros(Float64, model.K, model.K, time_steps - 1)
     for t in 1:(time_steps - 1)
@@ -256,36 +376,52 @@ function estep(model::HiddenMarkovModel, data)
     return γ, ξ, α, β
 end
 
-function update_initial_state_distribution!(model::HiddenMarkovModel, γ::Matrix{<:Real})
+function estep!(model::HiddenMarkovModel, data, FB_storage)
+    # compute lls of the observations
+    emission_loglikelihoods!(model, FB_storage, data...)
+
+    # run forward-backward algorithm
+    forward!(model, FB_storage)
+    backward!(model, FB_storage)
+    calculate_γ!(model, FB_storage)
+    calculate_ξ!(model, FB_storage)
+end
+
+function update_initial_state_distribution!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
     # Update initial state probabilities
+    γ = FB_storage.γ
     return model.πₖ .= exp.(γ[:, 1])
 end
 
 function update_transition_matrix!(
-    model::HiddenMarkovModel, γ::Matrix{<:Real}, ξ::Array{Float64,3}
+    model::HiddenMarkovModel, FB_storage::ForwardBackward
 )
-    # Update transition probabilities
-    @threads for i in 1:(model.K)
+    γ = FB_storage.γ
+    ξ = FB_storage.ξ
+    # Update transition probabilities -> @threading good here?
+    for i in 1:(model.K)
         for j in 1:(model.K)
             model.A[i, j] = exp(logsumexp(ξ[i, j, :]) - logsumexp(γ[i, 1:(end - 1)]))
         end
     end
 end
 
-function update_emissions!(model::HiddenMarkovModel, data, w::Matrix{<:Real})
-    # update regression models 
+function update_emissions!(model::HiddenMarkovModel, FB_storage::ForwardBackward, data)
+    # update regression models
+    w = exp.(permutedims(FB_storage.γ))
+    # check threading speed here
     @threads for k in 1:(model.K)
         fit!(model.B[k], data..., w[:, k])
     end
 end
 
-function mstep!(model::HiddenMarkovModel, γ::Matrix{<:Real}, ξ::Array{Float64,3}, data)
+function mstep!(model::HiddenMarkovModel, FB_storage::ForwardBackward, data)
     # update initial state distribution
-    update_initial_state_distribution!(model, γ)
+    update_initial_state_distribution!(model, FB_storage)
     # update transition matrix
-    update_transition_matrix!(model, γ, ξ)
+    update_transition_matrix!(model, FB_storage)
     # update regression models
-    return update_emissions!(model, data, exp.(permutedims(γ)))
+    return update_emissions!(model, FB_storage, data)
 end
 
 # Trialized versions of functions
@@ -352,15 +488,20 @@ function fit!(
     # transpose data so that correct dimensions are passed to EmissionModels.jl, a bit hacky but works for now.
     transpose_data = Matrix.(transpose.(data))
 
+    num_obs = size(transpose_data[1], 1)
+    println(num_obs)
+    # initialize forward backward storage
+    FB_storage = initialize_forward_backward(model, num_obs)
+
     log_likelihood = -Inf
     # Initialize progress bar
     p = Progress(max_iters; desc="Running EM algorithm...", barlen=50, showspeed=true)
     for iter in 1:max_iters
         next!(p)
         # E-Step
-        γ, ξ, α, β = estep(model, transpose_data)
+        estep!(model, transpose_data, FB_storage)
         # Compute and update the log-likelihood
-        log_likelihood_current = logsumexp(α[:, end])
+        log_likelihood_current = logsumexp(FB_storage.α[:, end])
         push!(lls, log_likelihood_current)
         #println("iter $(iter) loglikelihood: ", log_likelihood_current)
         if abs(log_likelihood_current - log_likelihood) < tol
@@ -370,7 +511,7 @@ function fit!(
             log_likelihood = log_likelihood_current
         end
         # M-Step
-        mstep!(model, γ, ξ, transpose_data)
+        mstep!(model, FB_storage, transpose_data)
     end
     return lls
 end
