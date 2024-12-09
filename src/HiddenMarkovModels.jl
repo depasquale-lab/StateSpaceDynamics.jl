@@ -212,25 +212,31 @@ function forward(model::HiddenMarkovModel, loglikelihoods::Matrix{<:Real})
 end
 
 function forward!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
-    # reference storage
+    # Reference storage
     α = FB_storage.α
     loglikelihoods = FB_storage.loglikelihoods
-
+    A = model.A
+    πₖ = model.πₖ
+    K = model.K
     time_steps = size(loglikelihoods, 2)
-    values_to_sum = zeros(model.K)
+
+    # Preallocate reusable arrays
+    values_to_sum = zeros(K)
+    log_A = log.(A)  # Precompute log of transition probabilities
+    log_πₖ = log.(πₖ)  # Precompute log of initial state probabilities
 
     # Calculate α₁
-    @inbounds for k in 1:(model.K)
-        α[k, 1] = log(model.πₖ[k]) + loglikelihoods[k, 1]
+    @inbounds for k in 1:K
+        α[k, 1] = log_πₖ[k] + loglikelihoods[k, 1]
     end
-    # Now perform the rest of the forward algorithm for t=2 to time_steps
+
+    # Compute α for all time steps
     @inbounds for t in 2:time_steps
-        for k in 1:(model.K)
-            for i in 1:(model.K)
-                values_to_sum[i] = log(model.A[i, k]) + view(α, i, t - 1)[1] 
+        for k in 1:K
+            for i in 1:K
+                values_to_sum[i] = log_A[i, k] + α[i, t - 1]
             end
-            log_sum_alpha_a = logsumexp(values_to_sum)
-            α[k, t] = log_sum_alpha_a + view(loglikelihoods, k, t)[1]
+            α[k, t] = logsumexp(values_to_sum) + loglikelihoods[k, t]
         end
     end
 end
@@ -257,26 +263,31 @@ function backward(model::HiddenMarkovModel, loglikelihoods::Matrix{<:Real})
 end
 
 function backward!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
-    # Initialize a β matrix
+    # Reference storage
     β = FB_storage.β
     loglikelihoods = FB_storage.loglikelihoods
-
+    A = model.A
+    K = model.K
     time_steps = size(loglikelihoods, 2)
-    values_to_sum = zeros(model.K)
-    # Set last β values. In log-space, 0 corresponds to a value of 1 in the original space.
-    β[:, end] .= 0  # log(1) = 0
+    
+    # Preallocate reusable arrays
+    values_to_sum = zeros(K)
+    log_A = log.(A)
+    
+    # Initialize last column of β
+    @inbounds β[:, end] .= 0
 
-    # Calculate β, starting from time_steps-1 and going backward to 1
+    # Compute β for all time steps
     @inbounds for t in (time_steps - 1):-1:1
-        for i in 1:(model.K)
-            for j in 1:(model.K)
-                values_to_sum[j] = log(model.A[i, j]) + view(loglikelihoods, j, t+1)[1] + view(β, j, t+1)[1]
+        for i in 1:K
+            for j in 1:K
+                values_to_sum[j] = log_A[i, j] + loglikelihoods[j, t + 1] + β[j, t + 1]
             end
             β[i, t] = logsumexp(values_to_sum)
         end
     end
-    return β
 end
+
 
 function calculate_γ(model::HiddenMarkovModel, α::Matrix{<:Real}, β::Matrix{<:Real})
     time_steps = size(α, 2)
@@ -298,20 +309,13 @@ end
 function calculate_γ!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
     α = FB_storage.α
     β = FB_storage.β
-    γ = FB_storage.γ
 
     time_steps = size(α, 2)
-    γ = α .+ β
-    
-    # use threads for longer sequences
-    if time_steps>=2000
-        @threads for t in 1:time_steps
-            γ[:, t] .-= logsumexp(γ[:, t])
-        end
-    else
-        @inbounds for t in 1:time_steps
-            γ[:, t] .-= logsumexp(view(γ,:,t)[1])
-        end
+    FB_storage.γ = α .+ β
+    γ = FB_storage.γ
+
+    @inbounds for t in 1:time_steps
+        γ[:, t] .-= logsumexp(view(γ,:,t)[1])
     end
 end
 
@@ -344,25 +348,29 @@ function calculate_ξ!(
 )
     α = FB_storage.α
     β = FB_storage.β
-    γ = FB_storage.γ
     loglikelihoods = FB_storage.loglikelihoods
-
+    ξ = FB_storage.ξ
+    A = model.A
+    log_A = log.(A)  # Precompute log transition probabilities
+    K = model.K
     time_steps = size(α, 2)
-    ξ = zeros(Float64, model.K, model.K, time_steps - 1)
+
+    # Preallocate reusable arrays
+    log_ξ_unnormalized = zeros(K, K)
+
     @inbounds for t in 1:(time_steps - 1)
-        # Array to store the unnormalized ξ values
-        log_ξ_unnormalized = zeros(Float64, model.K, model.K)
-        for i in 1:(model.K)
-            for j in 1:(model.K)
-                log_ξ_unnormalized[i, j] =
-                    α[i, t] + log(model.A[i, j]) + view(loglikelihoods, j, t+1)[1] + view(β, j, t+1)[1]
+        for i in 1:K
+            α_t = α[i, t]  # Cache α[i, t] for reuse
+            for j in 1:K
+                log_ξ_unnormalized[i, j] = α_t + log_A[i, j] + loglikelihoods[j, t + 1] + β[j, t + 1]
             end
         end
-        # Normalize the ξ values using log-sum-exp operation
-        ξ[:, :, t] .= log_ξ_unnormalized .- logsumexp(log_ξ_unnormalized)
+        # Normalize the ξ values in log-space using log-sum-exp
+        log_norm_factor = logsumexp(log_ξ_unnormalized)
+        ξ[:, :, t] .= log_ξ_unnormalized .- log_norm_factor
     end
-    return ξ
 end
+
 
 function estep(model::HiddenMarkovModel, data)
     # compute lls of the observations
@@ -410,7 +418,7 @@ function update_emissions!(model::HiddenMarkovModel, FB_storage::ForwardBackward
     # update regression models
     w = exp.(permutedims(FB_storage.γ))
     # check threading speed here
-    @threads for k in 1:(model.K)
+    for k in 1:(model.K)
         fit!(model.B[k], data..., w[:, k])
     end
 end
@@ -494,22 +502,24 @@ function fit!(
 
     log_likelihood = -Inf
     # Initialize progress bar
-    p = Progress(max_iters; desc="Running EM algorithm...", barlen=50, showspeed=true)
+    # p = Progress(max_iters; desc="Running EM algorithm...", barlen=50, showspeed=true)
     for iter in 1:max_iters
-        next!(p)
+        # next!(p)
         # E-Step
         estep!(model, transpose_data, FB_storage)
+
         # Compute and update the log-likelihood
         log_likelihood_current = logsumexp(FB_storage.α[:, end])
         push!(lls, log_likelihood_current)
         if abs(log_likelihood_current - log_likelihood) < tol
-            finish!(p)
+            # finish!(p)
             return lls
         else
             log_likelihood = log_likelihood_current
         end
         # M-Step
         mstep!(model, FB_storage, transpose_data)
+
     end
     return lls
 end
