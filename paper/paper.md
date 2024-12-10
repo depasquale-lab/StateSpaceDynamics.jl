@@ -66,6 +66,12 @@ To thoroughly assess performance across different scales, we tested three sequen
 \includegraphics[width=\textwidth]{benchmark_plot.pdf}
 \end{figure}
 
+For the subsequent benchmarking experiments, we compared StateSpaceDyamics.jl, HiddenMarkovModels.jl, and Dynamax in their abilities to fit a Bernoulli HMM-GLM. We completed the benchmarking on the same combinations of sequence lengths, state dimensions, and observation dimensions as in the Gaussian LDS benchmarking. Synthetic datasets were generated for each of these combinations by sampling from a randomly generated Bernoulli HMM-GLM using StateSpaceDynamics.jl. All packages were initialized to the same random parameters and the EM algorithm was run for 200 iterations. We disabled the convergence criteria to ensure each package completed all 200 iterations of EM. These benchmarks were conducted using PythonCall.jl and BenchmarkTools.jl to ensure timing accuracy.
+
+\begin{figure}
+\includegraphics[width=\textwidth]{SwitchingBernoulli_Benchmark_Plot.pdf}
+\end{figure}
+
 # Availability
 
 ``StateSpaceDynamics.jl`` is publicly available under the [GNU license](https://github.com/depasquale-lab/StateSpaceDynamics.jl/blob/main/LICENSE) at <https://github.com/depasquale-lab/StateSpaceDynamics.jl>.
