@@ -160,7 +160,7 @@ function emission_loglikelihoods!(model::HiddenMarkovModel, FB_storage::ForwardB
     log_likelihoods = FB_storage.loglikelihoods
 
     # Calculate observation wise likelihoods for all states
-    for k in 1:model.K
+    @threads for k in 1:model.K
         log_likelihoods[k, :] .= loglikelihood(model.B[k], data...)
     end
 end
@@ -315,7 +315,7 @@ function calculate_γ!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
     γ = FB_storage.γ
 
     @inbounds for t in 1:time_steps
-        γ[:, t] .-= logsumexp(view(γ,:,t)[1])
+        γ[:, t] .-= logsumexp(view(γ,:,t))
     end
 end
 
@@ -418,7 +418,7 @@ function update_emissions!(model::HiddenMarkovModel, FB_storage::ForwardBackward
     # update regression models
     w = exp.(permutedims(FB_storage.γ))
     # check threading speed here
-    for k in 1:(model.K)
+    @threads for k in 1:(model.K)
         fit!(model.B[k], data..., w[:, k])
     end
 end
@@ -463,7 +463,7 @@ function update_transition_matrix!(
     E = cat(ξ...; dims=3)
     G = hcat([γ[i][:, 1:(size(γ[i], 2) - 1)] for i in 1:num_trials]...)
 
-    @threads for i in 1:K
+    for i in 1:K
         for j in 1:K
             model.A[i, j] = exp(logsumexp(E[i, j, :]) - logsumexp(G[i, :]))
         end
