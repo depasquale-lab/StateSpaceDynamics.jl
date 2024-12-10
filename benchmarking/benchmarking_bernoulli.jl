@@ -22,8 +22,6 @@ const dynamax = pyimport("dynamax.hidden_markov_model")
 const jr = pyimport("jax.random")
 const jnp = pyimport("jax.numpy")
 
-println("********** SET INITIALIZE TO FALSE IN DYNAMAX ***************")
-
 function HiddenMarkovModels.baum_welch_has_converged(
     logL_evolution::Vector; atol::Real, loglikelihood_increasing::Bool
 )
@@ -438,6 +436,7 @@ function transform_to_df(data_vector::Vector)
     allocs = Int[]
     successes = Bool[]
     latent_dims = Int[]
+    input_dims = Int[]
     obs_dims = Int[]
     seq_lens = Int[]
     
@@ -447,7 +446,9 @@ function transform_to_df(data_vector::Vector)
         config = dict["config"]
         latent_dim = config.latent_dim
         obs_dim = config.obs_dim
+        input_dim = config.input_dim
         seq_len = config.seq_len
+        
         
         # Process each package's results
         for (pkg_name, results) in dict
@@ -459,6 +460,7 @@ function transform_to_df(data_vector::Vector)
                 push!(successes, results.success)
                 push!(latent_dims, latent_dim)
                 push!(obs_dims, obs_dim)
+                push!(input_dims, input_dim)
                 push!(seq_lens, seq_len)
             end
         end
@@ -473,109 +475,60 @@ function transform_to_df(data_vector::Vector)
         success = successes,
         latent_dim = latent_dims,
         obs_dim = obs_dims,
+        input_dim = input_dims,
         seq_length = seq_lens
     )
 end
 
 function plot_benchmarks(df::DataFrame)
-    # Create a unique identifier for each obs_dim/latent_dim combination
-    df.dim_combo = string.(df.obs_dim, "x", df.latent_dim)
+    # Define all possible combinations of input_dim x obs_dim x latent_dim
+    input_dims = unique(df.input_dim)
+    obs_dims = unique(df.obs_dim)
+    latent_dims = unique(df.latent_dim)
+    full_dim_combos = [string(inp, "x", obs, "x", lat) for inp in input_dims, obs in obs_dims, lat in latent_dims]
     
-    # Define line styles that will cycle if we have more combinations than styles
-    base_styles = [:solid, :dash, :dot, :dashdot, :dashdotdot]
-    dim_combos = unique(df.dim_combo)
+    # Define 9 unique markers
+    base_markers = [:circle, :square, :diamond, :utriangle, :dtriangle, :star5, :hexagon, :pentagon, :cross]
+    marker_dict = Dict(combo => base_markers[i] for (i, combo) in enumerate(full_dim_combos))
     
-    # Create style dictionary by cycling through available styles
-    style_dict = Dict(
-        combo => base_styles[mod1(i, length(base_styles))] 
-        for (i, combo) in enumerate(dim_combos)
-    )
-    
-    # Create the plot
-    p = plot(
-        xlabel="Sequence Length",
-        ylabel="Time (seconds)",
-        title="Package Performance Across Sequence Lengths",
-        legend=:outertopright,
-        xscale=:log10,
-        yscale=:log10
-    )
-    
-    # Plot each package with a different color
-    packages = unique(df.package)
-    for (i, pkg) in enumerate(packages)
-        pkg_data = df[df.package .== pkg, :]
-        
-        # Plot each dimension combination for this package
-        for dim_combo in dim_combos
-            combo_data = pkg_data[pkg_data.dim_combo .== dim_combo, :]
-            if !isempty(combo_data)
-                plot!(
-                    p,
-                    combo_data.seq_length,
-                    combo_data.time ./ 1e9,  # Convert to seconds
-                    label="$(pkg) ($(dim_combo))",
-                    color=i,
-                    linestyle=style_dict[dim_combo],
-                    marker=:circle,
-                    markersize=4
-                )
-            end
-        end
-    end
-    
-    # Add gridlines and adjust layout
-    plot!(
-        p,
-        grid=true,
-        minorgrid=true,
-        size=(900, 600),
-        margin=10Plots.mm
-    )
-    
-    return p
-end
-
-function plot_benchmarks(df::DataFrame)
-    # Create a unique identifier for each obs_dim/latent_dim combination
-    df.dim_combo = string.(df.obs_dim, "x", df.latent_dim)
-    
-    # Define marker shapes that will cycle if we have more combinations than shapes
-    base_markers = [:circle, :square, :diamond, :utriangle, :dtriangle, :star5]
-    dim_combos = unique(df.dim_combo)
-    
-    # Create marker dictionary by cycling through available markers
-    marker_dict = Dict(
-        combo => base_markers[mod1(i, length(base_markers))]
-        for (i, combo) in enumerate(dim_combos)
-    )
-    
-    # Create the plot
+    # Initialize the plot
     p = plot(
         xlabel="log(Sequence Length)",
         ylabel="log(Runtime (s))",
-        title="Expectation-Maximization Benchmark",
+        title="Benchmark: EM Runtime for Different Packages",
         legend=:outertopright,
         xscale=:log10,
         yscale=:log10
     )
     
-    # Plot each package with a different color
+    # Plot each package with its own line color
     packages = unique(df.package)
-    for (i, pkg) in enumerate(packages)
+    for (pkg_idx, pkg) in enumerate(packages)
         pkg_data = df[df.package .== pkg, :]
         
-        # Plot each dimension combination for this package
-        for dim_combo in dim_combos
-            combo_data = pkg_data[pkg_data.dim_combo .== dim_combo, :]
+        # Iterate over all possible combinations
+        for dim_combo in full_dim_combos
+            # Extract the data for this specific dimension combination
+            inp_obs_lat_split = split(dim_combo, "x")
+            input_dim, obs_dim, latent_dim = 
+                parse(Int, inp_obs_lat_split[1]), 
+                parse(Int, inp_obs_lat_split[2]), 
+                parse(Int, inp_obs_lat_split[3])
+            
+            combo_data = pkg_data[
+                (pkg_data.input_dim .== input_dim) .&
+                (pkg_data.obs_dim .== obs_dim) .&
+                (pkg_data.latent_dim .== latent_dim), :
+            ]
+            
             if !isempty(combo_data)
                 plot!(
                     p,
                     combo_data.seq_length,
                     combo_data.time,
-                    label="$(pkg) ($(dim_combo))",
-                    color=i,
-                    marker=marker_dict[dim_combo],
+                    label="$(pkg) ($dim_combo)",
+                    color=pkg_idx,  # Unique color for each package
+                    marker=marker_dict[dim_combo],  # Unique marker for each combination
                     markersize=6,
                     markerstrokewidth=1
                 )
@@ -598,13 +551,13 @@ end
 results = benchmark_fitting()
 
 results_df = prepare_results_for_csv(results)
-CSV.write("benchmark_results_bernoulli_12_08_24.csv", results_df)
+CSV.write("benchmark_results_bernoulli_12_10_24.csv", results_df)
 
 df = transform_to_df(results)
 df.time = df.time / 1e9;
 
-CSV.write("benchmark_results_bernoulli_12_08_24_df.csv", df)
+CSV.write("benchmark_results_bernoulli_12_10_24_df.csv", df)
 
 
 benchmark_plot = plot_benchmarks(df)
-savefig(benchmark_plot, "benchmark_plot_bernoulli_12_08_24.pdf")
+savefig(benchmark_plot, "benchmark_plot_bernoulli_12_10_24.pdf")

@@ -23,7 +23,7 @@ lls = [-Inf]
 
 SSD.fit!(model, data, Φ; max_iters=1)
 
-@profview for _ in 1:50
+@profview for _ in 1:10
     model2 = deepcopy(model)
     SSD.fit!(model2, data, Φ; max_iters=100)
 end
