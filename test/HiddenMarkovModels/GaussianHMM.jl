@@ -132,8 +132,8 @@ function test_trialized_GaussianHMM()
     true_model.A = [0.9 0.1; 0.8 0.2]
 
     # Generate trialized synthetic data
-    n = 100
-    num_trials = 30
+    n = 1000
+    num_trials = 50
     Y = Vector{Matrix{Float64}}(undef, num_trials)
     trial_labels = Vector{Vector{Int}}(undef, num_trials)
 

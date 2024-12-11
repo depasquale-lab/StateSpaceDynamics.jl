@@ -107,7 +107,7 @@ function test_trialized_SwitchingGaussianRegression()
     initial_probs = [0.6, 0.4]
     transition_matrix = [0.9 0.1; 0.4 0.6]
 
-    n = 100 # Number of samples per trial
+    n = 1000 # Number of samples per trial
     num_trials = 50  # Number of trials
     n1_std = 1.0
     n2_std = 0.5
@@ -153,8 +153,8 @@ function test_trialized_SwitchingGaussianRegression()
         isapprox(est_model.B[1].β, model.B[2].β; atol=0.1)
     @test isapprox(est_model.B[2].β, model.B[2].β; atol=0.1) ||
         isapprox(est_model.B[2].β, model.B[1].β; atol=0.1)
-    # @test isapprox(est_model.B[1].Σ, model.B[1].Σ, atol=0.1) || isapprox(est_model.B[1].Σ, model.B[2].Σ, atol=0.1)
-    # @test isapprox(est_model.B[2].Σ, model.B[2].Σ, atol=0.1) || isapprox(est_model.B[2].Σ, model.B[1].Σ, atol=0.1)
+    @test_broken isapprox(est_model.B[1].Σ, model.B[1].Σ, atol=0.1) || isapprox(est_model.B[1].Σ, model.B[2].Σ, atol=0.1)
+    @test_broken isapprox(est_model.B[2].Σ, model.B[2].Σ, atol=0.1) || isapprox(est_model.B[2].Σ, model.B[1].Σ, atol=0.1)
 
     # Test that the ll is always increasing (accept small numerical instability)
     @test any(diff(ll) .< -1e4) == false

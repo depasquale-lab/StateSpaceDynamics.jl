@@ -54,10 +54,9 @@ function test_SwitchingPoissonRegression_fit()
 end
 
 function test_trialized_SwitchingPoissonRegression()
-    Random.seed!(1234)
     # Define parameters
     num_trials = 50  # Number of trials
-    trial_length = 400  # Number of time steps per trial
+    trial_length = 1000  # Number of time steps per trial
 
     # Create the emission models
     emission_1 = PoissonRegressionEmission(;
