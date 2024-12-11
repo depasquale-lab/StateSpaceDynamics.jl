@@ -56,7 +56,6 @@ function aggregate_forward_backward!(
     
 end
 
-
 function initialize_transition_matrix(K::Int)
     # initialize a transition matrix
     A = zeros(Float64, K, K)
@@ -157,18 +156,6 @@ function sample(model::HiddenMarkovModel, X::Union{Matrix{<:Real},Nothing}=nothi
     return state_sequence, observation_sequence
 end
 
-function emission_loglikelihoods(model::HiddenMarkovModel, data...)
-    # Pre-allocate the loglikelihood matrix, should be states x observations
-    loglikelihoods = zeros(model.K, size(data[1], 1))  # data is being passed in as time x states from the estep function
-
-    # Calculate observation wise likelihoods for all states
-    @threads for k in 1:(model.K)
-        loglikelihoods[k, :] .= loglikelihood(model.B[k], data...)
-    end
-
-    return loglikelihoods
-end
-
 # New function for FB storage
 function emission_loglikelihoods!(model::HiddenMarkovModel, FB_storage::ForwardBackward, data...)
     log_likelihoods = FB_storage.loglikelihoods
@@ -201,30 +188,6 @@ function loglikelihood(model::HiddenMarkovModel, data...)
     return logsumexp(α[:, end])
 end
 
-function forward(model::HiddenMarkovModel, loglikelihoods::Matrix{<:Real})
-    time_steps = size(loglikelihoods, 2)
-
-    # Initialize an α-matrix 
-    α = zeros(model.K, time_steps)
-    values_to_sum = zeros(model.K)
-
-    # Calculate α₁
-    for k in 1:(model.K)
-        α[k, 1] = log(model.πₖ[k]) + loglikelihoods[k, 1]
-    end
-    # Now perform the rest of the forward algorithm for t=2 to time_steps
-    for t in 2:time_steps
-        for k in 1:(model.K)
-            for i in 1:(model.K)
-                values_to_sum[i] = log(model.A[i, k]) + α[i, t - 1]
-            end
-            log_sum_alpha_a = logsumexp(values_to_sum)
-            α[k, t] = log_sum_alpha_a + loglikelihoods[k, t]
-        end
-    end
-    return α
-end
-
 function forward!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
     # Reference storage
     α = FB_storage.α
@@ -255,27 +218,6 @@ function forward!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
     end
 end
 
-function backward(model::HiddenMarkovModel, loglikelihoods::Matrix{<:Real})
-    time_steps = size(loglikelihoods, 2)
-
-    # Initialize a β matrix
-    β = zeros(Float64, model.K, time_steps)
-    values_to_sum = zeros(model.K)
-    # Set last β values. In log-space, 0 corresponds to a value of 1 in the original space.
-    β[:, end] .= 0  # log(1) = 0
-
-    # Calculate β, starting from time_steps-1 and going backward to 1
-    for t in (time_steps - 1):-1:1
-        for i in 1:(model.K)
-            for j in 1:(model.K)
-                values_to_sum[j] = log(model.A[i, j]) + loglikelihoods[j, t + 1] + β[j, t + 1]
-            end
-            β[i, t] = logsumexp(values_to_sum)
-        end
-    end
-    return β
-end
-
 function backward!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
     # Reference storage
     β = FB_storage.β
@@ -302,24 +244,6 @@ function backward!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
     end
 end
 
-
-function calculate_γ(model::HiddenMarkovModel, α::Matrix{<:Real}, β::Matrix{<:Real})
-    time_steps = size(α, 2)
-    γ = α .+ β
-    
-    # use threads for longer sequences
-    if time_steps>=2000
-        @threads for t in 1:time_steps
-            γ[:, t] .-= logsumexp(γ[:, t])
-        end
-    else
-        for t in 1:time_steps
-            γ[:, t] .-= logsumexp(γ[:, t])
-        end
-    end
-    return γ
-end
-
 function calculate_γ!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
     α = FB_storage.α
     β = FB_storage.β
@@ -331,29 +255,6 @@ function calculate_γ!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
     @inbounds for t in 1:time_steps
         γ[:, t] .-= logsumexp(view(γ,:,t))
     end
-end
-
-function calculate_ξ(
-    model::HiddenMarkovModel,
-    α::Matrix{<:Real},
-    β::Matrix{<:Real},
-    loglikelihoods::Matrix{<:Real},
-)
-    time_steps = size(α, 2)
-    ξ = zeros(Float64, model.K, model.K, time_steps - 1)
-    for t in 1:(time_steps - 1)
-        # Array to store the unnormalized ξ values
-        log_ξ_unnormalized = zeros(Float64, model.K, model.K)
-        for i in 1:(model.K)
-            for j in 1:(model.K)
-                log_ξ_unnormalized[i, j] =
-                    α[i, t] + log(model.A[i, j]) + loglikelihoods[j, t + 1] + β[j, t + 1]
-            end
-        end
-        # Normalize the ξ values using log-sum-exp operation
-        ξ[:, :, t] .= log_ξ_unnormalized .- logsumexp(log_ξ_unnormalized)
-    end
-    return ξ
 end
 
 function calculate_ξ!(
@@ -383,19 +284,6 @@ function calculate_ξ!(
         log_norm_factor = logsumexp(log_ξ_unnormalized)
         ξ[:, :, t] .= log_ξ_unnormalized .- log_norm_factor
     end
-end
-
-
-function estep(model::HiddenMarkovModel, data)
-    # compute lls of the observations
-    loglikelihoods = emission_loglikelihoods(model, data...)
-
-    # run forward-backward algorithm
-    α = forward(model, loglikelihoods)
-    β = backward(model, loglikelihoods)
-    γ = calculate_γ(model, α, β)
-    ξ = calculate_ξ(model, α, β, loglikelihoods)
-    return γ, ξ, α, β
 end
 
 function estep!(model::HiddenMarkovModel, data, FB_storage)
@@ -446,29 +334,18 @@ function mstep!(model::HiddenMarkovModel, FB_storage::ForwardBackward, data)
     update_emissions!(model, FB_storage, data)
 end
 
-function update_initial_state_distribution!(
-    model::HiddenMarkovModel, γ::Vector{Matrix{Float64}}
-)
-    # Update initial state probabilities for trialized data
-    num_trials = length(γ)
-    return model.πₖ = mean([exp.(γ[i][:, 1]) for i in 1:num_trials])
+function mstep!(model::HiddenMarkovModel, FB_storage_vec::Vector{ForwardBackward{Float64}}, Aggregate_FB_storage::ForwardBackward, data)
+    # update initial state distribution
+    update_initial_state_distribution!(model, FB_storage_vec)
+    # update transition matrix
+    update_transition_matrix!(model, Aggregate_FB_storage)
+    # update regression models
+    update_emissions!(model, Aggregate_FB_storage, data)
 end
 
-function update_transition_matrix!(
-    model::HiddenMarkovModel, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Float64,3}}
-)
-    # Update transition matrix for trialized data
-    K = size(model.A, 1)
-    num_trials = length(γ)
-
-    E = cat(ξ...; dims=3)
-    G = hcat([γ[i][:, 1:(size(γ[i], 2) - 1)] for i in 1:num_trials]...)
-
-    for i in 1:K
-        for j in 1:K
-            model.A[i, j] = exp(logsumexp(E[i, j, :]) - logsumexp(G[i, :]))
-        end
-    end
+function update_initial_state_distribution!(model::HiddenMarkovModel, FB_storage_vec::Vector{ForwardBackward{Float64}})
+    num_trials = length(FB_storage_vec)
+    return model.πₖ = mean([exp.(FB_storage_vec[i].γ[:, 1]) for i in 1:num_trials])
 end
 
 """
@@ -584,7 +461,7 @@ function fit!(
         stacked_data = stack_tuples(zipped_matrices)
 
         # M_step
-        mstep!(model, Aggregate_FB_storage, stacked_data)
+        mstep!(model, FB_storage_vec, Aggregate_FB_storage, stacked_data)
     end
 
     return lls
