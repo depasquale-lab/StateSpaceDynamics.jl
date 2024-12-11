@@ -1,81 +1,59 @@
-export GaussianHMM,
-    baumWelch!, viterbi, sample, initialize_transition_matrix, initialize_state_distribution
+export HiddenMarkovModel, fit!, sample, loglikelihood, viterbi
+export kmeans_init!
+
+# for unit tests
+export estep
+export class_probabilities
 
 """
-    mutable struct GaussianHMM{GaussianEmission} <: AbstractHMM
+    HiddenMarkovModel
 
-Represents a Gaussian Hidden Markov Model (HMM).
+A Hidden Markov Model (HMM) with custom emissions.
 
 # Fields
-- `A::Matrix{<:Real}`: State Transition Matrix.
-- `B::Vector{GaussianEmission}`: Emission Model.
-- `πₖ::Vector{Float64}`: Initial State Distribution.
-- `K::Int`: Latent State Dimension.
-- `D::Int`: Dimension of the data.
+- `K::Int`: Number of states.
+- `B::Vector=Vector()`: Vector of emission models.
+- `emission=nothing`: If B is missing emissions, clones of this model will be used to fill in the rest.
+- `A::Matrix{<:Real}`: Transition matrix.
+- `πₖ::Vector{Float64}`: Initial state distribution.
 """
-mutable struct GaussianHMM{GaussianEmission} <: AbstractHMM
-    A::Matrix{<:Real}  # State Transition Matrix
-    B::Vector{GaussianEmission}       # Emission Model
-    πₖ::Vector{Float64} # Initial State Distribution
-    K::Int              # Latent State Dimension
-    D::Int              # Dimension of the data
+mutable struct HiddenMarkovModel <: AbstractHMM
+    A::Matrix{<:Real} # transition matrix
+    B::Vector{EmissionModel} # Vector of emission Models
+    πₖ::Vector{Float64} # initial state distribution
+    K::Int # number of states
 end
 
-"""
-    GaussianHMM(A::Matrix{<:Real}, B::Vector{GaussianEmission}, πₖ::Vector{Float64}, K::Int, D::Int)
-
-Creates a Gaussian Hidden Markov Model (HMM) with the specified parameters.
-
-# Arguments
-- `A::Matrix{<:Real}`: State Transition Matrix.
-- `B::Vector{GaussianEmission}`: Emission Model.
-- `πₖ::Vector{Float64}`: Initial State Distribution.
-- `K::Int`: Latent State Dimension.
-- `D::Int`: Dimension of the data.
-
-# Examples:
-```julia
-A = [0.7 0.3; 0.4 0.6]
-B = [GaussianEmission([0.0, 0.0], [1.0 0.0; 0.0 1.0]), GaussianEmission([1.0, 1.0], [1.0 0.0; 0.0 1.0])]
-πₖ = [0.6, 0.4]
-K = 2
-D = 2
-hmm = GaussianHMM(A, B, πₖ, K, D)
-```
-"""
-function GaussianHMM(
-    A::Matrix{<:Real}, B::Vector{GaussianEmission}, πₖ::Vector{Float64}, K::Int, D::Int
-)
-    return GaussianHMM{GaussianEmission}(A, B, πₖ, K, D)
+mutable struct ForwardBackward{T<:Real}
+    loglikelihoods::Matrix{T}
+    α::Matrix{T}
+    β::Matrix{T}
+    γ::Matrix{T}
+    ξ::Array{T, 3}
 end
 
-"""
-    GaussianHMM(data::Matrix{<:Real}, k_states::Int=2)
+function initialize_forward_backward(model::HiddenMarkovModel, num_obs::Int)
+    num_states = model.K
+    ForwardBackward(
+        zeros(num_states, num_obs),
+        zeros(num_states, num_obs),
+        zeros(num_states, num_obs),
+        zeros(num_states, num_obs),
+        zeros(Float64, num_states, num_states, num_obs - 1)
+    )
+end
 
-Initializes a Gaussian Hidden Markov Model (HMM) using K-means clusters. Both πₖ and A are initialized randomly from Dirichlet distributions.
-
-# Arguments
-- `data::Matrix{<:Real}`: Observational data.
-- `k_states::Int=2`: Number of latent states (default is 2).
-
-
-# Examples:
-```julia
-data = randn(100, 2)
-hmm = GaussianHMM(data, 2)
-```
-"""
-function GaussianHMM(data::Matrix{<:Real}, k_states::Int=2)
-    N, D = size(data)
-    # Initialize A
-    A = initialize_transition_matrix(k_states)
-    # Initialize π
-    πₖ = initialize_state_distribution(k_states)
-    # use kmeans_clustering to initialize the emission model
-    sample_means, labels = kmeans_clustering(data, k_states)
-    sample_covs = [cov(data[labels .== i, :]) for i in 1:k_states]
-    B = [GaussianEmission(sample_means[:, i], sample_covs[i]) for i in 1:k_states]
-    return GaussianHMM(A, B, πₖ, k_states, D)
+function aggregate_forward_backward!(
+    aggregated_FB::ForwardBackward{T}, 
+    FB_storages::Vector{ForwardBackward{T}}
+) where {T<:Real}
+    # Concatenate each field into the respective field in the aggregated struct
+    aggregated_FB.loglikelihoods .= hcat([fb.loglikelihoods for fb in FB_storages]...)
+    aggregated_FB.α .= hcat([fb.α for fb in FB_storages]...)
+    aggregated_FB.β .= hcat([fb.β for fb in FB_storages]...)
+    aggregated_FB.γ .= hcat([fb.γ for fb in FB_storages]...)
+    aggregated_FB.ξ = cat([fb.ξ for fb in FB_storages]..., dims=3)
+    
 end
 
 function initialize_transition_matrix(K::Int)
@@ -92,191 +70,451 @@ function initialize_state_distribution(K::Int)
     return rand(Dirichlet(ones(K)))
 end
 
-function forward(hmm::AbstractHMM, data::Y) where {Y<:AbstractArray}
-    T = size(data, 1)
-    K = size(hmm.A, 1)  # Number of states
-    # Initialize an α-matrix 
-    α = zeros(Float64, T, K)
-    # Calculate α₁
-    @threads for k in 1:K
-        α[1, k] = log(hmm.πₖ[k]) + loglikelihood(hmm.B[k], data[1, :])
-    end
-    # Now perform the rest of the forward algorithm for t=2 to T
-    for t in 2:T
-        @threads for j in 1:K
-            values_to_sum = Float64[]
-            for i in 1:K
-                push!(values_to_sum, log(hmm.A[i, j]) + α[t - 1, i])
-            end
-            log_sum_alpha_a = logsumexp(values_to_sum)
-            α[t, j] = log_sum_alpha_a + loglikelihood(hmm.B[j], data[t, :])
-        end
-    end
-    return α
-end
-
-function backward(hmm::AbstractHMM, data::Y) where {Y<:AbstractArray}
-    T = size(data, 1)
-    K = size(hmm.A, 1)  # Number of states
-
-    # Initialize a β matrix
-    β = zeros(Float64, T, K)
-
-    # Set last β values. In log-space, 0 corresponds to a value of 1 in the original space.
-    β[T, :] .= 0  # log(1) = 0
-
-    # Calculate β, starting from T-1 and going backward to 1
-    for t in (T - 1):-1:1
-        @threads for i in 1:K
-            values_to_sum = Float64[]
-            for j in 1:K
-                push!(
-                    values_to_sum,
-                    log(hmm.A[i, j]) +
-                    loglikelihood(hmm.B[j], data[t + 1, :]) +
-                    β[t + 1, j],
-                )
-            end
-            β[t, i] = logsumexp(values_to_sum)
-        end
-    end
-    return β
-end
-
-function calculate_γ(hmm::AbstractHMM, α::Matrix{<:Real}, β::Matrix{<:Real})
-    T = size(α, 1)
-    γ = α .+ β
-    @threads for t in 1:T
-        γ[t, :] .-= logsumexp(γ[t, :])
-    end
-    return γ
-end
-
-function calculate_ξ(
-    hmm::AbstractHMM, α::Matrix{<:Real}, β::Matrix{<:Real}, data::AbstractArray
+function HiddenMarkovModel(;
+    K::Int,
+    B::Vector=Vector(),
+    emission=nothing,
+    A::Matrix{<:Real}=initialize_transition_matrix(K),
+    πₖ::Vector{Float64}=initialize_state_distribution(K),
 )
-    T = size(α, 1)
-    K = size(hmm.A, 1)
-    ξ = zeros(Float64, T - 1, K, K)
-    for t in 1:(T - 1)
-        # Array to store the unnormalized ξ values
-        log_ξ_unnormalized = zeros(Float64, K, K)
-        @threads for i in 1:K
-            for j in 1:K
-                log_ξ_unnormalized[i, j] =
-                    α[t, i] +
-                    log(hmm.A[i, j]) +
-                    loglikelihood(hmm.B[j], data[t + 1, :]) +
-                    β[t + 1, j]
-            end
-        end
-        # Normalize the ξ values using log-sum-exp operation
-        ξ[t, :, :] .= log_ξ_unnormalized .- logsumexp(log_ξ_unnormalized)
-    end
-    return ξ
-end
 
-function update_initial_state_distribution!(hmm::AbstractHMM, γ::Matrix{<:Real})
-    # Update initial state probabilities
-    return hmm.πₖ .= exp.(γ[1, :])
-end
-
-function update_transition_matrix!(hmm::AbstractHMM, γ::Matrix{<:Real}, ξ::Array{Float64,3})
-    K = size(hmm.A, 1)
-    T = size(γ, 1)
-    # Update transition probabilities
-    @threads for i in 1:K
-        for j in 1:K
-            hmm.A[i, j] = exp(logsumexp(ξ[:, i, j]) - logsumexp(γ[1:(T - 1), i]))
+    # if B does not have all K emission models, then fill in the rest with deep copies of "emission"
+    if !isnothing(emission) && length(B) < K
+        for i in (length(B) + 1):K
+            push!(B, deepcopy(emission))
         end
     end
+
+    emission_models = B
+    #emission_models = Emission.(B)
+
+    model = HiddenMarkovModel(A, emission_models, πₖ, K)
+
+    # check that the transition matrix is the proper shape
+    @assert size(model.A) == (model.K, model.K)
+    @assert isapprox(sum(model.A; dims=2), ones(model.K))
+    # check that the initial state distribution is the same length as the number of states
+    @assert model.K == length(model.πₖ)
+    @assert sum(model.πₖ) ≈ 1.0
+    # check that the number of states is equal to the number of emission models
+    @assert model.K == length(model.B)
+    # check that all emission model are the same type
+    @assert all([model.B[i] isa EmissionModel for i in 1:length(model.B)])
+
+    return model
 end
 
-function update_emission_models!(hmm::AbstractHMM, γ::Matrix{<:Real}, data::Matrix{<:Real})
-    K = size(hmm.B, 1)
-    # Update emission model
-    for k in 1:K
-        hmm.B[k] = updateEmissionModel!(hmm.B[k], data, exp.(γ[:, k]))
+function kmeans_init!(model::HiddenMarkovModel, data::Matrix{T}) where {T<:Real}
+    num_states = model.K
+    # run k-means 
+    means, labels = kmeans_clustering(permutedims(data), num_states) # permute dims to interface with kmenas clustering function 
+    covs = [cov(permutedims(data[:, labels .== i])) for i in 1:num_states]
+    # initialize the emission models
+    for k in 1:num_states
+        model.B[k].μ = means[:, k]
+        model.B[k].Σ = covs[k]
     end
-end
-
-function E_step(hmm::AbstractHMM, data::Matrix{<:Real})
-    α = forward(hmm, data)
-    β = backward(hmm, data)
-    γ = calculate_γ(hmm, α, β)
-    ξ = calculate_ξ(hmm, α, β, data)
-    return γ, ξ, α, β
-end
-
-function M_step!(
-    hmm::AbstractHMM, γ::Matrix{<:Real}, ξ::Array{Float64,3}, data::Matrix{<:Real}
-)
-    # Update initial state probabilities
-    update_initial_state_distribution!(hmm, γ)
-    # Update transition probabilities
-    update_transition_matrix!(hmm, γ, ξ)
-    # Update emission model 
-    return update_emission_models!(hmm, γ, data)
 end
 
 """
-    baumWelch!(hmm::AbstractHMM, data::Matrix{<:Real}, max_iters::Int=100, tol::Float64=1e-6)
+    sample(model::HiddenMarkovModel, data...; n::Int)
 
-    Fits the parameters of a Hidden Markov Model (HMM) using the Baum-Welch algorithm (aka, EM algorithm).
+Generate `n` samples from a Hidden Markov Model. Returns a tuple of the state sequence and the observation sequence.
 
 # Arguments
-- `hmm::AbstractHMM`: Hidden Markov Model (HMM) to be trained.
-- `data::Matrix{<:Real}`: Observational data.
-- `max_iters::Int=100`: Maximum number of iterations.
-- `tol::Float64=1e-6`: Tolerance for convergence.
+- `model::HiddenMarkovModel`: The Hidden Markov Model to sample from.
+- `data...`: The data to fit the Hidden Markov Model. Requires the same format as the emission model.
+- `n::Int`: The number of samples to generate.
 
-# Examples:
-```julia
-data = randn(100, 2)
-hmm = GaussianHMM(data, 2)
-baumWelch!(hmm, data)
-```
+# Returns
+- `state_sequence::Vector{Int}`: The state sequence, where each element is an integer 1:K.
+- `observation_sequence::Matrix{Float64}`: The observation sequence. This takes the form of the emission model's output.
 """
-function baumWelch!(
-    hmm::AbstractHMM, data::Matrix{<:Real}, max_iters::Int=100, tol::Float64=1e-6
+function sample(model::HiddenMarkovModel, X::Union{Matrix{<:Real},Nothing}=nothing; n::Int)
+    state_sequence = Vector{Int}(undef, n)
+    # Change to (dimension, time) ordering
+    observation_sequence = Matrix{Float64}(undef, model.B[1].output_dim, n)
+
+    # Initialize the first state and observation
+    state_sequence[1] = rand(Categorical(model.πₖ))
+    observation_sequence[:, 1] = if isnothing(X)
+        sample(model.B[state_sequence[1]])
+    else
+        sample(model.B[state_sequence[1]], X[:, 1])
+    end
+
+    # Sample the state paths and observations
+    for t in 2:n  # t represents time steps
+        state_sequence[t] = rand(Categorical(model.A[state_sequence[t - 1], :]))
+        observation_sequence[:, t] = if isnothing(X)
+            sample(model.B[state_sequence[t]])
+        else
+            sample(model.B[state_sequence[t]], X[:, t])
+        end
+    end
+
+    return state_sequence, observation_sequence
+end
+
+# New function for FB storage
+function emission_loglikelihoods!(model::HiddenMarkovModel, FB_storage::ForwardBackward, data...)
+    log_likelihoods = FB_storage.loglikelihoods
+
+    # Calculate observation wise likelihoods for all states
+    @threads for k in 1:model.K
+        log_likelihoods[k, :] .= loglikelihood(model.B[k], data...)
+    end
+end
+
+"""
+    loglikelihood(model::HiddenMarkovModel, data...)
+
+Calculate the log likelihood of the data given the Hidden Markov Model.
+
+# Arguments
+- `model::HiddenMarkovModel`: The Hidden Markov Model to calculate the log likelihood for.
+- `data...`: The data to calculate the log likelihood for. Requires the same format as the emission model.
+
+# Returns
+- `loglikelihood::Float64`: The log likelihood of the data given the Hidden Markov Model.
+"""
+function loglikelihood(model::HiddenMarkovModel, data...)
+    transposed_data = permutedims.(data) # Transpose the data to get the correct shape in EmissionModels.jl
+
+    lls = emission_loglikelihoods(model, transposed_data...)
+
+    # Run forward algorithm
+    α = forward(model, lls)
+    return logsumexp(α[:, end])
+end
+
+function forward!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
+    # Reference storage
+    α = FB_storage.α
+    loglikelihoods = FB_storage.loglikelihoods
+    A = model.A
+    πₖ = model.πₖ
+    K = model.K
+    time_steps = size(loglikelihoods, 2)
+
+    # Preallocate reusable arrays
+    values_to_sum = zeros(K)
+    log_A = log.(A)  # Precompute log of transition probabilities
+    log_πₖ = log.(πₖ)  # Precompute log of initial state probabilities
+
+    # Calculate α₁
+    @inbounds for k in 1:K
+        α[k, 1] = log_πₖ[k] + loglikelihoods[k, 1]
+    end
+
+    # Compute α for all time steps
+    @inbounds for t in 2:time_steps
+        for k in 1:K
+            for i in 1:K
+                values_to_sum[i] = log_A[i, k] + α[i, t - 1]
+            end
+            α[k, t] = logsumexp(values_to_sum) + loglikelihoods[k, t]
+        end
+    end
+end
+
+function backward!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
+    # Reference storage
+    β = FB_storage.β
+    loglikelihoods = FB_storage.loglikelihoods
+    A = model.A
+    K = model.K
+    time_steps = size(loglikelihoods, 2)
+    
+    # Preallocate reusable arrays
+    values_to_sum = zeros(K)
+    log_A = log.(A)
+    
+    # Initialize last column of β
+    @inbounds β[:, end] .= 0
+
+    # Compute β for all time steps
+    @inbounds for t in (time_steps - 1):-1:1
+        for i in 1:K
+            for j in 1:K
+                values_to_sum[j] = log_A[i, j] + loglikelihoods[j, t + 1] + β[j, t + 1]
+            end
+            β[i, t] = logsumexp(values_to_sum)
+        end
+    end
+end
+
+function calculate_γ!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
+    α = FB_storage.α
+    β = FB_storage.β
+
+    time_steps = size(α, 2)
+    FB_storage.γ = α .+ β
+    γ = FB_storage.γ
+
+    @inbounds for t in 1:time_steps
+        γ[:, t] .-= logsumexp(view(γ,:,t))
+    end
+end
+
+function calculate_ξ!(
+    model::HiddenMarkovModel,
+    FB_storage::ForwardBackward
 )
-    # Create variable to store the previous log-likelihood
-    lls = []
-    T, _ = size(data)
-    # initialize log-likelihood
+    α = FB_storage.α
+    β = FB_storage.β
+    loglikelihoods = FB_storage.loglikelihoods
+    ξ = FB_storage.ξ
+    A = model.A
+    log_A = log.(A)  # Precompute log transition probabilities
+    K = model.K
+    time_steps = size(α, 2)
+
+    # Preallocate reusable arrays
+    log_ξ_unnormalized = zeros(K, K)
+
+    @inbounds for t in 1:(time_steps - 1)
+        for i in 1:K
+            α_t = α[i, t]  # Cache α[i, t] for reuse
+            for j in 1:K
+                log_ξ_unnormalized[i, j] = α_t + log_A[i, j] + loglikelihoods[j, t + 1] + β[j, t + 1]
+            end
+        end
+        # Normalize the ξ values in log-space using log-sum-exp
+        log_norm_factor = logsumexp(log_ξ_unnormalized)
+        ξ[:, :, t] .= log_ξ_unnormalized .- log_norm_factor
+    end
+end
+
+function estep!(model::HiddenMarkovModel, data, FB_storage)
+    # compute lls of the observations
+    emission_loglikelihoods!(model, FB_storage, data...)
+
+    # run forward-backward algorithm
+    forward!(model, FB_storage)
+    backward!(model, FB_storage)
+    calculate_γ!(model, FB_storage)
+    calculate_ξ!(model, FB_storage)
+end
+
+function update_initial_state_distribution!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
+    # Update initial state probabilities
+    γ = FB_storage.γ
+    return model.πₖ .= exp.(γ[:, 1])
+end
+
+function update_transition_matrix!(
+    model::HiddenMarkovModel, FB_storage::ForwardBackward
+)
+    γ = FB_storage.γ
+    ξ = FB_storage.ξ
+    # Update transition probabilities -> @threading good here?
+    for i in 1:(model.K)
+        for j in 1:(model.K)
+            model.A[i, j] = exp(logsumexp(ξ[i, j, :]) - logsumexp(γ[i, 1:(end - 1)]))
+        end
+    end
+end
+
+function update_emissions!(model::HiddenMarkovModel, FB_storage::ForwardBackward, data)
+    # update regression models
+    w = exp.(permutedims(FB_storage.γ))
+    # check threading speed here
+    @threads for k in 1:(model.K)
+        fit!(model.B[k], data..., w[:, k])
+    end
+end
+
+function mstep!(model::HiddenMarkovModel, FB_storage::ForwardBackward, data)
+    # update initial state distribution
+    update_initial_state_distribution!(model, FB_storage)
+    # update transition matrix
+    update_transition_matrix!(model, FB_storage)
+    # update regression models
+    update_emissions!(model, FB_storage, data)
+end
+
+function mstep!(model::HiddenMarkovModel, FB_storage_vec::Vector{ForwardBackward{Float64}}, Aggregate_FB_storage::ForwardBackward, data)
+    # update initial state distribution
+    update_initial_state_distribution!(model, FB_storage_vec)
+    # update transition matrix
+    update_transition_matrix!(model, Aggregate_FB_storage)
+    # update regression models
+    update_emissions!(model, Aggregate_FB_storage, data)
+end
+
+function update_initial_state_distribution!(model::HiddenMarkovModel, FB_storage_vec::Vector{ForwardBackward{Float64}})
+    num_trials = length(FB_storage_vec)
+    return model.πₖ = mean([exp.(FB_storage_vec[i].γ[:, 1]) for i in 1:num_trials])
+end
+
+"""
+    fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Real}, Nothing}=nothing; max_iters::Int=100, tol::Float64=1e-6)
+
+Fit the Hidden Markov Model using the EM algorithm.
+
+# Arguments
+- `model::HiddenMarkovModel`: The Hidden Markov Model to fit.
+- `Y::Matrix{<:Real}`: The emission data.
+- `X::Union{Matrix{<:Real}, Nothing}=nothing`: Optional input data for fitting Switching Regression Models
+- `max_iters::Int=100`: The maximum number of iterations to run the EM algorithm.
+- `tol::Float64=1e-6`: When the log likelihood is improving by less than this value, the algorithm will stop.
+"""
+function fit!(
+    model::HiddenMarkovModel,
+    Y::Matrix{<:Real},
+    X::Union{Matrix{<:Real},Nothing}=nothing;
+    max_iters::Int=100,
+    tol::Float64=1e-6,
+)
+    lls = [-Inf]
+
+    data = X === nothing ? (Y,) : (X, Y)
+
+    # transpose data so that correct dimensions are passed to EmissionModels.jl, a bit hacky but works for now.
+    transpose_data = Matrix.(transpose.(data))
+
+    num_obs = size(transpose_data[1], 1)
+    # initialize forward backward storage
+    FB_storage = initialize_forward_backward(model, num_obs)
+
     log_likelihood = -Inf
     # Initialize progress bar
-    p = Progress(max_iters; dt=1, desc="Computing Baum-Welch...")
+    # p = Progress(max_iters; desc="Running EM algorithm...", barlen=50, showspeed=true)
     for iter in 1:max_iters
+        # next!(p)
         # E-Step
-        γ, ξ, α, β = E_step(hmm, data)
+        estep!(model, transpose_data, FB_storage)
+
         # Compute and update the log-likelihood
-        log_likelihood_current = logsumexp(α[T, :])
+        log_likelihood_current = logsumexp(FB_storage.α[:, end])
         push!(lls, log_likelihood_current)
-        # Update the progress bar
-        next!(p)
         if abs(log_likelihood_current - log_likelihood) < tol
-            finish!(p)
+            # finish!(p)
             return lls
         else
             log_likelihood = log_likelihood_current
         end
         # M-Step
-        M_step!(hmm, γ, ξ, data)
+        mstep!(model, FB_storage, transpose_data)
+
     end
-    finish!(p)
     return lls
 end
 
-function viterbi(hmm::AbstractHMM, data::Matrix{<:Real})
-    T, _ = size(data)
-    K = size(hmm.A, 1)  # Number of states
+"""
+    fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Real}, Nothing}=nothing; max_iters::Int=100, tol::Float64=1e-6)
+
+Fit the Hidden Markov Model to multiple trials of data using the EM algorithm.
+
+# Arguments
+- `model::HiddenMarkovModel`: The Hidden Markov Model to fit.
+- `Y::Vector{<:Matrix{<:Real}}`: The trialized emission data.
+- `X::Union{Vector{<:Matrix{<:Real}}, Nothing}=nothing`: Optional input data for fitting Switching Regression Models
+- `max_iters::Int=100`: The maximum number of iterations to run the EM algorithm.
+- `tol::Float64=1e-6`: When the log likelihood is improving by less than this value, the algorithm will stop.
+"""
+function fit!(
+    model::HiddenMarkovModel,
+    Y::Vector{<:Matrix{<:Real}},
+    X::Union{Vector{<:Matrix{<:Real}},Nothing}=nothing;
+    max_iters::Int=100,
+    tol::Float64=1e-6,
+)
+    lls = [-Inf]
+    data = X === nothing ? (Y,) : (X, Y)
+
+    # Initialize log_likelihood
+    log_likelihood = -Inf
+
+    # Transform each matrix in each tuple to the correct orientation
+    transposed_matrices = map(data_tuple -> Matrix.(transpose.(data_tuple)), data)
+    zipped_matrices = collect(zip(transposed_matrices...))
+    total_obs = sum(size(trial_mat[1], 1) for trial_mat in zipped_matrices)
+
+    # initialize a vector of ForwardBackward storage and an aggregate storage
+    FB_storage_vec = [initialize_forward_backward(model, size(trial_tuple[1],1)) for trial_tuple in zipped_matrices]
+    Aggregate_FB_storage = initialize_forward_backward(model, total_obs)
+    
+    p = Progress(max_iters; desc="Running EM algorithm...", barlen=50, showspeed=true)
+    for iter in 1:max_iters
+        # broadcast estep!() to all storage structs
+        output = estep!.(Ref(model), zipped_matrices, FB_storage_vec)
+
+        # collect storage stucts into one struct for m step
+        aggregate_forward_backward!(Aggregate_FB_storage, FB_storage_vec)
+
+        # Calculate log_likelihood
+        log_likelihood_current = logsumexp(Aggregate_FB_storage.α[:, end])
+        push!(lls, log_likelihood_current)
+        next!(p)
+
+        # Check for convergence
+        if abs(log_likelihood_current - log_likelihood) < tol
+            finish!(p)
+            break
+        else
+            log_likelihood = log_likelihood_current
+        end
+
+        # Get data trial tuples stacked for mstep!()
+        stacked_data = stack_tuples(zipped_matrices)
+
+        # M_step
+        mstep!(model, FB_storage_vec, Aggregate_FB_storage, stacked_data)
+    end
+
+    return lls
+end
+
+"""
+    class_probabilities(model::HiddenMarkovModel, data...)
+
+Calculate the class probabilities for each observation. Returns a matrix of size `(T, K)` where `K` is the number of states and `T` is the number of observations.
+
+# Arguments
+- `model::HiddenMarkovModel`: The Hidden Markov Model to calculate the class probabilities for.
+- `data...`: The data to calculate the class probabilities for. Requires the same format as the emission model loglikelihood() function.
+
+# Returns
+- `class_probabilities::Matrix{Float64}`: The class probabilities for each observation. Of shape `(T, K)`. Each row of the Matrix sums to 1.
+"""
+function class_probabilities(model::HiddenMarkovModel, data...)
+    γ, ξ, α, β = estep(model, data)
+    return exp.(γ)
+end
+
+"""
+    viterbi(model::HiddenMarkovModel, data...)
+
+Calculate the most likely sequence of states given the data.
+
+# Arguments
+- `model::HiddenMarkovModel`: The Hidden Markov Model to calculate the most likely sequence of states for.
+- `data...`: The data to calculate the most likely sequence of states for. Requires the same format as the emission model's loglikelihood() function.
+
+# Returns
+- `best_path::Vector{Int}`: The most likely sequence of states.
+"""
+function viterbi(model::HiddenMarkovModel, data...)
+    # Calculate observation wise likelihoods for all states
+    loglikelihoods_state_1 = loglikelihood(model.B[1], data...)
+    loglikelihoods = zeros(model.K, length(loglikelihoods_state_1))
+    loglikelihoods[:, 1] = loglikelihoods_state_1
+
+    @threads for k in 2:(model.K)
+        loglikelihoods[k, :] = loglikelihood(model.B[k], data...)
+    end
+
+    T = length(loglikelihoods_state_1)
+    K = size(model.A, 1)  # Number of states
+
     # Step 1: Initialization
-    viterbi = zeros(Float64, T, K)
-    backpointer = zeros(Int, T, K)
+    viterbi = zeros(Float64, K, T)
+    backpointer = zeros(Int, K, T)
     for i in 1:K
-        viterbi[1, i] = log(hmm.πₖ[i]) + loglikelihood(hmm.B[i], data[1, :])
-        backpointer[1, i] = 0
+        viterbi[i, 1] = log(model.πₖ[i]) + loglikelihoods[i, 1]
+        backpointer[i, 1] = 0
     end
 
     # Step 2: Recursion
@@ -284,167 +522,22 @@ function viterbi(hmm::AbstractHMM, data::Matrix{<:Real})
         for j in 1:K
             max_prob, max_state = -Inf, 0
             for i in 1:K
-                prob =
-                    viterbi[t - 1, i] +
-                    log(hmm.A[i, j]) +
-                    loglikelihood(hmm.B[j], data[t, :])
+                prob = viterbi[i, t - 1] + log(model.A[i, j]) + loglikelihoods[j, t]
                 if prob > max_prob
                     max_prob = prob
                     max_state = i
                 end
             end
-            viterbi[t, j] = max_prob
-            backpointer[t, j] = max_state
+            viterbi[j, t] = max_prob
+            backpointer[j, t] = max_state
         end
     end
 
     # Step 3: Termination
-    best_path_prob, best_last_state = findmax(viterbi[T, :])
+    best_path_prob, best_last_state = findmax(viterbi[:, T])
     best_path = [best_last_state]
     for t in T:-1:2
-        push!(best_path, backpointer[t, best_path[end]])
+        push!(best_path, backpointer[best_path[end], t])
     end
     return reverse(best_path)
 end
-
-function sample(hmm::GaussianHMM, n::Int)
-    # Number of states
-    K = size(hmm.A, 1)
-    # Initialize state and observation arrays
-    states = Vector{Int}(undef, n)
-    observations = Matrix{Float64}(undef, n, hmm.D)
-    # Start with a random state
-    states[1] = rand(1:K)
-    # Generate first observation
-    observations[1, :] = rand(MvNormal(hmm.B[states[1]].μ, hmm.B[states[1]].Σ))
-    for t in 2:n
-        # Transition to a new state
-        states[t] = StatsBase.sample(1:K, Weights(hmm.A[states[t - 1], :]))
-        # Generate observation
-        observations[t, :] = rand(MvNormal(hmm.B[states[t]].μ, hmm.B[states[t]].Σ))
-    end
-    return states, observations
-end
-
-"""
-This set of functions is for the Baum-Welch algorithm but uses the scaling factors version of the forward-backward algorithm. I'm keeping this here for now in case we want to use it later. 
-"""
-# function forward(hmm::AbstractHMM, data::AbstractArray)
-#     T = size(data, 1)
-#     K = size(hmm.A, 1)  # Number of states
-#     # Initialize the scaled α-matrix and scaling factors
-#     α = zeros(Float64, K, T)
-#     c = zeros(Float64, T)
-#     # Calculate α₁
-#     for k in 1:K
-#         α[k, 1] = hmm.πₖ[k] * likelihood(hmm.B[k], data[1, :]) # α₁(k) = πₖ(k) * Bₖ(y₁)
-#     end
-#     c[1] = 1 / (sum(α[:, 1]) + eps(Float64))
-#     α[:, 1] *= c[1]
-#     # Now perform the rest of the forward algorithm for t=2 to T
-#     for t in 2:T
-#         for j in 1:K
-#             α[j, t] = 0 d
-#             for i in 1:K
-#                 α[j, t] += α[i, t-1] * hmm.A[i, j] # αⱼ(t) = ∑ᵢ αᵢ(t-1) * Aᵢⱼ
-#             end
-#             α[j, t] *= likelihood(hmm.B[j], data[t, :])  # αⱼ(t) *= Bⱼ(yₜ)
-#         end
-#         c[t] = 1 / (sum(α[:, t]) + eps(Float64)) # Scale the α values
-#         α[:, t] *= c[t]
-#     end
-#     return α, c
-# end
-
-# function backward(hmm::AbstractHMM, data::AbstractArray, scaling_factors::Vector{Float64})
-#     T = size(data, 1)
-#     K = size(hmm.A, 1)  # Number of states
-#     # Initialize the scaled β matrix
-#     β = zeros(Float64, K, T)
-#     # Set last β values.
-#     β[:, T] .= 1  # βₖ(T) = 1 What should this be?
-#     # Calculate β, starting from T-1 and going backward to 1
-#     for t in T-1:-1:1
-#         for i in 1:K
-#             β[i, t] = 0
-#             for j in 1:K
-#                 β[i, t] += hmm.A[i, j] * likelihood(hmm.B[j], data[t+1, :]) * β[j, t+1] # βᵢ(t) = ∑ⱼ Aᵢⱼ * Bⱼ(yₜ₊₁) * βⱼ(t₊₁)
-#             end
-#             β[i, t] *= scaling_factors[t+1] # Scale the β values
-#         end
-#     end
-#     return β
-# end
-
-# function calculate_γ(hmm::AbstractHMM, α::Matrix{<:Real}, β::Matrix{<:Real})
-#     T = size(α, 2)
-#     γ = α .* β # γₖ(t) = αₖ(t) * βₖ(t)
-#     for t in 1:T
-#         γ[:, t] /= sum(γ[:, t]) # Normalize the γ values
-#     end
-#     return γ
-# end
-
-# function calculate_ξ(hmm::AbstractHMM, α::Matrix{<:Real}, β::Matrix{<:Real}, scaling_factors::Vector{Float64}, data::AbstractArray)
-#     T = size(data, 1)
-#     K = size(hmm.A, 1)
-#     ξ = zeros(Float64, K, K, T-1)
-#     for t in 1:T-1
-#         for i in 1:K
-#             for j in 1:K
-#                 ξ[i, j, t] = (scaling_factors[t+1]) * α[i, t] * hmm.A[i, j] * likelihood(hmm.B[j], data[t+1, :]) * β[j, t+1] # ξᵢⱼ(t) = αᵢ(t) * Aᵢⱼ * Bⱼ(yₜ₊₁) * βⱼ(t₊₁)
-#             end
-#         end
-#         ξ[:, :, t] /= sum(ξ[:, :, t]) # Normalize the ξ values
-#     end
-#     return ξ
-# end
-
-# function Estep(hmm::AbstractHMM, data::Matrix{<:Real})
-#     α, c = forward(hmm, data)
-#     β = backward(hmm, data, c)
-#     γ = calculate_γ(hmm, α, β)
-#     ξ = calculate_ξ(hmm, α, β, c, data)
-#     return γ, ξ, α, β, c
-# end
-
-# function M_step!(hmm::AbstractHMM, γ::Matrix{<:Real}, ξ::Array{Float64, 3}, data::Matrix{<:Real})
-#     K = size(hmm.A, 1)
-#     T = size(data, 1)
-#     # Update initial state probabilities
-#     hmm.πₖ .= γ[:, 1] / sum(γ[:, 1])
-#     # Update transition probabilities
-#     for i in 1:K
-#         for j in 1:K
-#             hmm.A[i, j] = sum(ξ[i, j, :]) / sum(γ[i, 1:T-1])
-#         end
-#     end
-#     # Update emission model 
-#     for k in 1:K
-#         hmm.B[k] = updateEmissionModel!(hmm.B[k], data, γ[k,:])
-#     end
-# end
-
-# function baumWelch!(hmm::AbstractHMM, data::Matrix{<:Real}, max_iters::Int=100, tol::Float64=1e-6)
-#     # Initialize log-likelihood
-#     ll_prev = -Inf
-#     # Initialize progress bar
-#     p = Progress(max_iters; dt=1, desc="Computing Baum-Welch...",)
-#     for iter in 1:max_iters
-#         # Update the progress bar
-#         next!(p; showvalues = [(:iteration, iter), (:log_likelihood, ll_prev)])
-#         # E-Step
-#         γ, ξ, α, β, c = Estep(hmm, data)
-#         # Compute and update the log-likelihood
-#         log_likelihood = sum(log.((1 ./ c)))
-#         println(log_likelihood)
-#         if abs(log_likelihood - ll_prev) < tol
-#             finish!(p)
-#             break
-#         else
-#             ll_prev = log_likelihood
-#         end
-#         # M-Step
-#         M_step!(hmm, γ, ξ, data)
-#     end
-# end

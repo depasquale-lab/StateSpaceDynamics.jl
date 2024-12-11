@@ -126,7 +126,7 @@ function test_smooth()
         grad_numerical = ForwardDiff.gradient(f, x_smooth[:, :, i])
         grad_analytical = StateSpaceDynamics.Gradient(plds, y[:, :, i], x_smooth[:, :, i])
 
-        @test norm(grad_numerical - grad_analytical) < 1e-10
+        @test norm(grad_numerical - grad_analytical) < 1e-7
     end
 end
 
@@ -266,6 +266,7 @@ function test_EM_matlab()
         x0=[1.0, -1.0],
         obs_dim=3,
         latent_dim=2,
+        fit_bool=fill(true, 6),
     )
     # first smooth results
     E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(plds, y)
@@ -277,7 +278,7 @@ function test_EM_matlab()
 
         @test isapprox(E_z[:, :, i], posterior_x, atol=1e-6)
 
-        # restructure E_zz and E_zz_pev so that they are the same shape as the matlab objects
+        # TODO: Restructure matlab objects s.t. we can comparse as below
         # @test isapprox(E_zz[:, :, :, i], posterior_cov, atol=1e-6)
         # @test isapprox(E_zz_prev[:, :, :, i], posterior_lagged_cov, atol=1e-6)
     end

@@ -12,8 +12,6 @@ using CSV
 using DataFrames
 using MAT
 
-print(pwd())
-
 """
 Package Wide Tests
 """
@@ -21,6 +19,106 @@ Package Wide Tests
 @testset "Package Wide Tests" begin
     Aqua.test_all(StateSpaceDynamics; ambiguities=false)
     @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
+end
+
+include("helper_functions.jl")
+"""
+Tests for LDS.jl
+"""
+
+include("LinearDynamicalSystems//GaussianLDS.jl")
+
+@testset "GaussianLDS Tests" begin
+    @testset "Constructor Tests" begin
+        test_lds_with_params()
+        test_lds_without_params()
+    end
+    @testset "Smoother tests" begin
+        test_Gradient()
+        test_Hessian()
+        test_smooth()
+    end
+    @testset "EM tests" begin
+        test_estep()
+        # test when ntrials=1
+        test_initial_observation_parameter_updates()
+        test_state_model_parameter_updates()
+        test_obs_model_params_updates()
+        # test when ntrials>1
+        test_initial_observation_parameter_updates(3)
+        test_state_model_parameter_updates(3)
+        test_obs_model_params_updates(3)
+        # test fit method using n=1 and n=3
+        test_EM()
+        test_EM(3)
+    end
+end
+
+"""
+Tests for PoissonLDS.jl
+"""
+
+include("LinearDynamicalSystems//PoissonLDS.jl")
+
+@testset "PoissonLDS Tests" begin
+    @testset "Constructor Tests" begin
+        test_PoissonLDS_with_params()
+        test_poisson_lds_without_params()
+    end
+    @testset "Smoother Tests" begin
+        test_Gradient()
+        test_Hessian()
+        test_smooth()
+    end
+    @testset "EM Tests" begin
+        test_parameter_gradient()
+        # test when ntrials=1
+        test_initial_observation_parameter_updates()
+        test_state_model_parameter_updates()
+        # test when n_trials>1
+        test_initial_observation_parameter_updates(3)
+        test_state_model_parameter_updates(3)
+        # test fit method using 1 trial and three trials
+        test_EM()
+        test_EM(3)
+        # test resutlts are same as matlab code
+        test_EM_matlab()
+    end
+end
+
+"""
+Tests for Switching Regression Models
+"""
+
+include("HiddenMarkovModels/GaussianHMM.jl")
+
+@testset "GaussianHMM Tests" begin
+    test_SwitchingGaussian_fit()
+    test_SwitchingGaussian_SingleState_fit()
+    test_kmeans_init()
+    test_trialized_GaussianHMM()
+end
+
+include("HiddenMarkovModels/SwitchingGaussianRegression.jl")
+
+@testset "Switching Gaussian Regression Tests" begin
+    test_SwitchingGaussianRegression_fit()
+    test_SwitchingGaussianRegression_SingleState_fit()
+    test_trialized_SwitchingGaussianRegression()
+end
+
+include("HiddenMarkovModels/SwitchingPoissonRegression.jl")
+
+@testset "Switching Poisson Regression Tests" begin
+    test_SwitchingPoissonRegression_fit()
+    test_trialized_SwitchingPoissonRegression()
+end
+
+include("HiddenMarkovModels/SwitchingBernoulliRegression.jl")
+
+@testset "Switching Bernoulli Regression Tests" begin
+    test_SwitchingBernoulliRegression()
+    test_trialized_SwitchingBernoulliRegression()
 end
 
 """
@@ -108,129 +206,51 @@ include("MixtureModels/PoissonMixtureModel.jl")
 end
 
 """
-Tests for HiddenMarkovModels.jl
+Tests for RegressionModels.jl
 """
 
-include("HiddenMarkovModels/HiddenMarkovModels.jl")
-
-@testset "HiddenMarkovModels.jl Tests" begin
-    test_toy_HMM()
-    test_GaussianHMM_constructor()
-    test_HMM_forward_and_back()
-    test_HMM_gamma_xi()
-    test_HMM_E_step()
-    test_HMM_M_step()
-    test_HMM_EM()
-end
-
-"""
-Tests for GaussianLDS.jl
-"""
-
-include("LinearDynamicalSystems//GaussianLDS.jl")
-
-@testset "GaussianLDS Tests" begin
-    @testset "Constructor Tests" begin
-        test_lds_with_params()
-        test_lds_without_params()
-    end
-    @testset "Smoother tests" begin
-        test_Gradient()
-        test_Hessian()
-        test_smooth()
-    end
-    @testset "EM tests" begin
-        test_estep()
-        # test when ntrials=1
-        test_initial_observation_parameter_updates()
-        test_state_model_parameter_updates()
-        test_obs_model_params_updates()
-        # test when ntrials>1
-        test_initial_observation_parameter_updates(3)
-        test_state_model_parameter_updates(3)
-        test_obs_model_params_updates(3)
-        # test fit method using n=1 and n=3
-        test_EM()
-        test_EM(3)
-    end
-end
-
-"""
-Tests for PoissonLDS.jl
-"""
-
-include("LinearDynamicalSystems//PoissonLDS.jl")
-
-@testset "PoissonLDS Tests" begin
-    @testset "Constructor Tests" begin
-        test_PoissonLDS_with_params()
-        test_poisson_lds_without_params()
-    end
-    @testset "Smoother Tests" begin
-        test_Gradient()
-        test_Hessian()
-        test_smooth()
-    end
-    @testset "EM Tests" begin
-        test_parameter_gradient()
-        # test when ntrials=1
-        test_initial_observation_parameter_updates()
-        test_state_model_parameter_updates()
-        # test when n_trials>1
-        test_initial_observation_parameter_updates(3)
-        test_state_model_parameter_updates(3)
-        # test fit method using 1 trial and three trials
-        test_EM()
-        test_EM(3)
-        # test resutlts are same as matlab code
-        test_EM_matlab()
-    end
-end
-
-"""
-Tests for Regression.jl
-"""
-
-include("Regression/GaussianRegression.jl")
+include("RegressionModels/GaussianRegression.jl")
 
 @testset "GaussianRegression Tests" begin
-    test_GaussianRegression_fit()
+    test_GaussianRegression_initialization()
     test_GaussianRegression_loglikelihood()
-    test_GaussianRegression_default_model()
-    test_GaussianRegression_intercept()
-    test_Gaussian_ll_gradient()
+    test_GaussianRegression_fit()
+    test_GaussianRegression_sample()
+    test_GaussianRegression_optimization()
+    test_GaussianRegression_sklearn()
 end
 
-include("Regression/BernoulliRegression.jl")
+include("RegressionModels/BernoulliRegression.jl")
 
 @testset "BernoulliRegression Tests" begin
-    test_BernoulliRegression_fit()
+    test_BernoulliRegression_initialization()
     test_BernoulliRegression_loglikelihood()
-    test_BernoulliRegression_empty_model()
-    test_BernoulliRegression_intercept()
-    test_Bernoulli_ll_gradient()
+    test_BernoulliRegression_fit()
+    test_BernoulliRegression_sample()
+    test_BernoulliRegression_optimization()
+    test_BernoulliRegression_sklearn()
 end
 
-include("Regression/PoissonRegression.jl")
+include("RegressionModels/PoissonRegression.jl")
 
 @testset "PoissonRegression Tests" begin
-    test_PoissonRegression_fit()
+    test_PoissonRegression_initialization()
     test_PoissonRegression_loglikelihood()
-    test_PoissonRegression_empty_model()
-    test_PoissonRegression_intercept()
-    test_Poisson_ll_gradient()
+    test_PoissonRegression_fit()
+    test_PoissonRegression_sample()
+    test_PoissonRegression_optimization()
+    test_PoissonRegression_sklearn()
 end
 
-"""
-Tests for Emissions.jl
-"""
+include("RegressionModels/AutoRegression.jl")
 
-include("Emissions/Emissions.jl")
-
-@testset "Emissions.jl Tests" begin
-    test_GaussianEmission()
-    test_regression_emissions()
-end
+# @testset "AutoRegression Tests" begin
+#     test_AutoRegression_loglikelihood()
+#     # test_AutoRegression_Σ()
+#     # test_AutoRegression_constructor()
+#     test_AutoRegression_standard_fit()
+#     test_AutoRegression_regularized_fit()
+# end
 
 """
 Tests for Utilities.jl
@@ -243,7 +263,6 @@ include("Utilities/Utilities.jl")
     test_kmeanspp_initialization()
     test_kmeans_clustering()
     test_block_tridgm()
-    test_interleave_reshape()
 end
 
 """
@@ -257,14 +276,4 @@ include("Preprocessing/Preprocessing.jl")
     test_PPCA_without_params()
     test_PPCA_E_and_M_Step()
     test_PPCA_fit()
-end
-
-"""
-Tests for MarkovRegression.jl
-"""
-
-include("MarkovRegression/MarkovRegression.jl")
-
-@testset "SwitchingRegression Tests" begin
-    test_HMMGLM_initialization()
 end

@@ -14,15 +14,15 @@ using Statistics
 using StatsBase
 using StatsFuns
 using SpecialFunctions
-using Base.Threads
+using Base.Threads: @threads
 
 include("GlobalTypes.jl")
 include("Utilities.jl")
-include("Regression.jl")
 include("LinearDynamicalSystems.jl")
-include("Emissions.jl")
+include("CompositeModel.jl")
+include("EmissionModels.jl")
 include("HiddenMarkovModels.jl")
-include("MarkovRegression.jl")
+include("HMMConstructors.jl")
 include("MixtureModels.jl")
 include("Preprocessing.jl")
 

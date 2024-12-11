@@ -2,52 +2,6 @@ export GaussianMixtureModel,
     PoissonMixtureModel, fit!, log_likelihood, sample, E_Step, M_Step!, MixtureModel
 
 """
-    sample(model::MixtureModel, n::Int)
-
-Draw `n` samples from the given mixture model.
-
-# Returns
-- A matrix or vector of samples (with shape 'n' by 'data dimension'), depending on mixture model type. 
-
-# Examples
-```julia
-# Gaussian Mixture Model example
-gmm = GaussianMixtureModel(3, 2)  # Create a Gaussian Mixture Model with 3 clusters and 2-dimensional data
-gmm_samples = sample(gmm, 100)  # Draw 100 samples from the Gaussian Mixture Model
-```
-"""
-function sample(mixture_model::MixtureModel, n::Int) end
-
-"""
-    fit!(model::MixtureModel, data::AbstractMatrix; <keyword arguments>)
-
-Fit the given mixture model to the data using the Expectation-Maximization (EM) algorithm. 
-
-# Arguments
-- `model::MixtureModel`: The mixture model to fit.
-- `data::AbstractMatrix`: The data matrix where rows correspond to data points.
-- `maxiter::Int=50`: The maximum number of iterations for the EM algorithm (default is 50).
-- `tol::Float64=1e-3`: The convergence tolerance for the log-likelihood (default is 1e-3).
-- `initialize_kmeans::Bool=true`: Whether to initialize the model parameters using KMeans (default is true).
-
-# Returns
-- The class probabilities (responsibilities) for each data point.
-
-# Examples
-```julia
-gmm = GaussianMixtureModel(3, 2)  # Create a Gaussian Mixture Model with 3 clusters and 2-dimensional data
-fit!(gmm, data)  # Fit the model to the data
-```
-"""
-function fit!(
-    gmm::MixtureModel,
-    data::AbstractMatrix;
-    maxiter::Int=50,
-    tol::Float64=1e-3,
-    initialize_kmeans::Bool=true,
-) end
-
-"""
     GaussianMixtureModel
 
 A Gaussian Mixture Model for clustering and density estimation.
@@ -111,12 +65,6 @@ function sample(gmm::GaussianMixtureModel, n::Int)
     return samples
 end
 
-# E-Step (Confirmed in Python)
-"""
-    Returns 
-        - `class_probabilities::Matrix{<:Real}`: Probability of each class for each data point.
-
-"""
 function E_Step(gmm::GaussianMixtureModel, data::Matrix{<:Real})
     N, _ = size(data)
     K = gmm.k
@@ -311,7 +259,6 @@ function PoissonMixtureModel(k::Int)
     return PoissonMixtureModel(k, λs, πs)
 end
 
-"""E-Step for PMM"""
 function E_Step(pmm::PoissonMixtureModel, data::Matrix{Int})
     N, _ = size(data)
     γ = zeros(N, pmm.k)
@@ -328,7 +275,6 @@ function E_Step(pmm::PoissonMixtureModel, data::Matrix{Int})
     return γ  # Return the responsibility matrix
 end
 
-"""M-Step for PMM"""
 function M_Step!(pmm::PoissonMixtureModel, data::Matrix{Int}, γ::Matrix{<:Real})
     N, _ = size(data)
 

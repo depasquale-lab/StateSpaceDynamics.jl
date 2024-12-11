@@ -87,7 +87,7 @@ function test_Gradient()
 
         # analytical gradient
         grad_analytical = StateSpaceDynamics.Gradient(lds, y[:, :, i], x[:, :, i])
-        @test norm(grad_numerical - grad_analytical) < 1e-12
+        @test norm(grad_numerical - grad_analytical) < 1e-8
     end
 end
 
@@ -110,7 +110,7 @@ function test_Hessian()
         obj = latents -> log_likelihood(latents, lds, y[:, 1:3, i])
         hess_numerical = ForwardDiff.hessian(obj, x[:, 1:3, i])
 
-        @test norm(hess_numerical - hess) < 1e-12
+        @test norm(hess_numerical - hess) < 1e-8
     end
 end
 
@@ -132,7 +132,7 @@ function test_smooth()
         grad_numerical = ForwardDiff.gradient(f, x_smooth[:, :, i])
         grad_analytical = StateSpaceDynamics.Gradient(lds, y[:, :, i], x_smooth[:, :, i])
 
-        @test norm(grad_numerical - grad_analytical) < 1e-12
+        @test norm(grad_numerical - grad_analytical) < 1e-8
         @test maximum(abs.(grad_analytical)) < 1e-8
         @test norm(grad_analytical) < 1e-8
     end

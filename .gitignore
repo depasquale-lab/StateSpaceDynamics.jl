@@ -11,6 +11,7 @@ test/*/notebooks
 # Documentation
 docs/build/
 docs/Manifest.toml
+test/*/notebooks
 
 # Julia-specific files
 Manifest.toml
@@ -19,3 +20,13 @@ notebooks/Manifest.toml
 # Specific Julia scripts
 notebooks/profiling.jl
 notebooks/benchmarking.ipynb
+notebooks/regression_debug.ipynb
+notebooks/benchmarking.jl
+notebooks/debugging.jl
+
+# Paper files
+/paper/jats
+
+# benchmarking files
+benchmarking/.CondaPkg
+benchmarking/benchmark.jl
