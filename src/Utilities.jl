@@ -1,5 +1,5 @@
 export kmeanspp_initialization,
-    kmeans_clustering, fit!, block_tridgm, block_tridiagonal_inverse
+    kmeans_clustering, fit!, block_tridgm, block_tridiagonal_inverse, block_tridiagonal_inverse_static
 export row_matrix, stabilize_covariance_matrix, valid_Σ, make_posdef!, gaussian_entropy
 
 # Matrix utilities
@@ -37,7 +37,69 @@ Compute the inverse of a block tridiagonal matrix.
 
 "An Accelerated Lambda Iteration Method for Multilevel Radiative Transfer” Rybicki, G.B., and Hummer, D.G., Astronomy and Astrophysics, 245, 171–181 (1991), Appendix B.
 """
-function block_tridiagonal_inverse(
+function block_tridiagonal_inverse(A::Vector{Matrix{T}},
+                                   B::Vector{Matrix{T}},
+                                   C::Vector{Matrix{T}}) where {T<:Real}
+    n = length(B)
+    block_size = size(B[1], 1)
+
+    # Initialize D and E arrays
+    D = Vector{Matrix{T}}(undef, n + 1)
+    E = Vector{Matrix{T}}(undef, n + 1)
+    D[1] = zeros(T, block_size, block_size)
+    E[n + 1] = zeros(T, block_size, block_size)
+
+    # Initialize λii and λij arrays
+    λii = Array{T}(undef, block_size, block_size, n)
+    λij = Array{T}(undef, block_size, block_size, n - 1)
+    identity = Matrix{T}(I, block_size, block_size)
+
+    # Add zero matrices to A and C
+    pushfirst!(A, zeros(T, block_size, block_size))
+    push!(C, zeros(T, block_size, block_size))
+
+    # Preallocate LU factorization arrays
+    lu_D = Vector{LU{T, Matrix{T}}}(undef, n)
+    lu_E = Vector{LU{T, Matrix{T}}}(undef, n)
+    lu_S = Vector{LU{T, Matrix{T}}}(undef, n)
+
+    # Forward sweep for D
+    @inbounds for i in 1:n
+        M = B[i] - A[i] * D[i]
+        lu_D[i] = lu(M)
+        D[i + 1] = lu_D[i] \ C[i]
+    end
+
+    # Backward sweep for E
+    @inbounds for i in n:-1:1
+        M = B[i] - C[i] * E[i + 1]
+        lu_E[i] = lu(M)
+        E[i] = lu_E[i] \ A[i]
+    end
+
+    # Compute λii
+    @inbounds for i in 1:n
+        term1 = identity - D[i + 1] * E[i + 1]
+        term2 = B[i] - A[i] * D[i]
+        S = term2 * term1
+        lu_S[i] = lu(S)
+        λii[:, :, i] = lu_S[i] \ identity
+    end
+
+    # Compute λij
+    @inbounds for i in 2:n
+        λij[:, :, i - 1] = E[i] * λii[:, :, i - 1]
+    end
+
+    return λii, -λij
+end
+
+"""
+    block_tridiagonal_inverse_static(A, B, C)
+
+Compute the inverse of a block tridiagonal matrix using static matrices. See `block_tridiagonal_inverse` for details.
+"""
+function block_tridiagonal_inverse_static(
     A::Vector{Matrix{T}}, B::Vector{Matrix{T}}, C::Vector{Matrix{T}}
 ) where {T<:Real}
     n = length(B)

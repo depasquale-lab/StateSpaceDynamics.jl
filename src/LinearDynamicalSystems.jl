@@ -543,15 +543,23 @@ function smooth(
     x = reshape(res.minimizer, D, T_steps)
 
     H, main, super, sub = Hessian(lds, y, x)
-    p_smooth, inverse_offdiag = block_tridiagonal_inverse(-sub, -main, -super)
+
+    # Get the second moments of the latent state path, use static matrices if the latent dimension is small
+    if lds.latent_dim > 10
+        p_smooth, inverse_offdiag = block_tridiagonal_inverse(-sub, -main, -super)
+    else
+        p_smooth, inverse_offdiag = block_tridiagonal_inverse_static(-sub, -main, -super)
+    end
 
     # Calculate the entropy, see utilities.jl for the function
     gauss_entropy = gaussian_entropy(Symmetric(H))
 
+    # Symmetrize the covariance matrices
     @inbounds for i in 1:T_steps
         p_smooth[:, :, i] .= 0.5 .* (p_smooth[:, :, i] .+ p_smooth[:, :, i]')
     end
 
+    # Add a zero matrix for later compatibility
     inverse_offdiag = cat(zeros(T, D, D), inverse_offdiag; dims=3)
 
     return x, p_smooth, inverse_offdiag, gauss_entropy
