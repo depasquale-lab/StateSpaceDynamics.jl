@@ -50,7 +50,7 @@ function test_SwitchingPoissonRegression_fit()
         isapprox(test_model.B[2].β, true_model.B[1].β; atol=0.1)
 
     # Test that the ll is always increasing (accept some numerical instability)
-    return any(diff(ll) .< -1e4) == false
+    return any(diff(ll) .< -1) == false
 end
 
 function test_trialized_SwitchingPoissonRegression()
@@ -117,7 +117,7 @@ function test_trialized_SwitchingPoissonRegression()
         isapprox(test_model.B[2].β, true_model.B[1].β; atol=0.1)
 
     # Test that the ll is always increasing (accept some numerical instability)
-    @test any(diff(ll) .< -1e4) == false
+    @test any(diff(ll) .< -1) == false
 end
 
 # Function to sample from initial state and transition matrix

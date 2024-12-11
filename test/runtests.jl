@@ -58,8 +58,7 @@ end
 Tests for PoissonLDS.jl
 """
 
-include("Line
-arDynamicalSystems//PoissonLDS.jl")
+include("LinearDynamicalSystems//PoissonLDS.jl")
 
 @testset "PoissonLDS Tests" begin
     @testset "Constructor Tests" begin

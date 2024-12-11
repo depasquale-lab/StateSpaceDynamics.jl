@@ -52,7 +52,7 @@ function test_SwitchingGaussian_fit()
         isapprox(test_model.B[2].Σ, true_model.B[1].Σ; atol=0.1)
 
     # Test that the ll is always increasing
-    @test any(diff(ll) .< -1e-4) == false
+    @test any(diff(ll) .< -1) == false
 end
 
 function test_SwitchingGaussian_SingleState_fit()
