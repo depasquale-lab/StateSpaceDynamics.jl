@@ -43,6 +43,20 @@ function initialize_forward_backward(model::HiddenMarkovModel, num_obs::Int)
     )
 end
 
+function aggregate_forward_backward!(
+    aggregated_FB::ForwardBackward{T}, 
+    FB_storages::Vector{ForwardBackward{T}}
+) where {T<:Real}
+    # Concatenate each field into the respective field in the aggregated struct
+    aggregated_FB.loglikelihoods .= hcat([fb.loglikelihoods for fb in FB_storages]...)
+    aggregated_FB.α .= hcat([fb.α for fb in FB_storages]...)
+    aggregated_FB.β .= hcat([fb.β for fb in FB_storages]...)
+    aggregated_FB.γ .= hcat([fb.γ for fb in FB_storages]...)
+    aggregated_FB.ξ = cat([fb.ξ for fb in FB_storages]..., dims=3)
+    
+end
+
+
 function initialize_transition_matrix(K::Int)
     # initialize a transition matrix
     A = zeros(Float64, K, K)
@@ -429,20 +443,7 @@ function mstep!(model::HiddenMarkovModel, FB_storage::ForwardBackward, data)
     # update transition matrix
     update_transition_matrix!(model, FB_storage)
     # update regression models
-    return update_emissions!(model, FB_storage, data)
-end
-
-# Trialized versions of functions
-function mstep!(
-    model::HiddenMarkovModel, γ::Vector{Matrix{Float64}}, ξ::Vector{Array{Float64,3}}, data
-)
-    # update initial state distribution
-    update_initial_state_distribution!(model, γ)
-    # update transition matrix
-    update_transition_matrix!(model, γ, ξ)
-    # update regression models
-    γ_exp = [exp.(γ_trial) for γ_trial in γ]
-    return update_emissions!(model, data, vcat(permutedims.(γ_exp)...))
+    update_emissions!(model, FB_storage, data)
 end
 
 function update_initial_state_distribution!(
@@ -552,19 +553,23 @@ function fit!(
     # Transform each matrix in each tuple to the correct orientation
     transposed_matrices = map(data_tuple -> Matrix.(transpose.(data_tuple)), data)
     zipped_matrices = collect(zip(transposed_matrices...))
+    total_obs = sum(size(trial_mat[1], 1) for trial_mat in zipped_matrices)
 
+    # initialize a vector of ForwardBackward storage and an aggregate storage
+    FB_storage_vec = [initialize_forward_backward(model, size(trial_tuple[1],1)) for trial_tuple in zipped_matrices]
+    Aggregate_FB_storage = initialize_forward_backward(model, total_obs)
+    
     p = Progress(max_iters; desc="Running EM algorithm...", barlen=50, showspeed=true)
     for iter in 1:max_iters
-        # estep
-        output = estep.(Ref(model), zipped_matrices)
-        γ, ξ, α, β = map(x -> x[1], output),
-        map(x -> x[2], output), map(x -> x[3], output),
-        map(x -> x[4], output)
+        # broadcast estep!() to all storage structs
+        output = estep!.(Ref(model), zipped_matrices, FB_storage_vec)
+
+        # collect storage stucts into one struct for m step
+        aggregate_forward_backward!(Aggregate_FB_storage, FB_storage_vec)
 
         # Calculate log_likelihood
-        log_likelihood_current = sum(map(α -> logsumexp(α[:, end]), α))
+        log_likelihood_current = logsumexp(Aggregate_FB_storage.α[:, end])
         push!(lls, log_likelihood_current)
-
         next!(p)
 
         # Check for convergence
@@ -579,7 +584,7 @@ function fit!(
         stacked_data = stack_tuples(zipped_matrices)
 
         # M_step
-        mstep!(model, γ, ξ, stacked_data)
+        mstep!(model, Aggregate_FB_storage, stacked_data)
     end
 
     return lls
