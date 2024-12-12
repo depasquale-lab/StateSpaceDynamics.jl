@@ -24,4 +24,4 @@ makedocs(;
     ]
 )
 
-deploydocs(; repo="github.com/depasquale-lab/StateSpaceDynamics.jl", devbranch="main")
+deploydocs(; repo="github.com/depasquale-lab/StateSpaceDynamics.jl", devbranch="documentation_dev")
