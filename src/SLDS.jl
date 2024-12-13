@@ -40,6 +40,7 @@ function sample(slds, T::Int)
     
 end
 
+#=
 function weighted_kalman_update(obs::Vector{Float64}, pred_means::Vector{Vector{Float64}}, 
                                  pred_covs::Vector{Matrix{Float64}}, 
                                  C::Matrix{Float64}, R::Matrix{Float64}, gamma_t::Vector{Float64})
@@ -169,3 +170,4 @@ function fit!(slds::SwitchingLinearDynamicalSystem, observations::Matrix{Float64
 
     return slds, elbo_values
 end
+=#
