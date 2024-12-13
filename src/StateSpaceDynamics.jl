@@ -25,5 +25,6 @@ include("HiddenMarkovModels.jl")
 include("HMMConstructors.jl")
 include("MixtureModels.jl")
 include("Preprocessing.jl")
+include("SLDS.jl")
 
 end
