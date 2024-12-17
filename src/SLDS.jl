@@ -74,3 +74,45 @@ function initialize_slds(;K::Int=2, d::Int=2, p::Int=10, seed::Int=42)
     return SwitchingLinearDynamicalSystem(A, B, πₖ, K)
 
 end
+
+function weighted_loglikelihood(
+    x::AbstractMatrix{T}, lds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{U},
+    h::Vector{Float64}  # h[t] responsibilities for state m
+) where {T<:Real, U<:Real, S<:GaussianStateModel{<:Real}, O<:GaussianObservationModel{<:Real}}
+
+    T_steps = size(y, 2)
+    A, Q, x0, P0 = lds.state_model.A, lds.state_model.Q, lds.state_model.x0, lds.state_model.P0
+    C, R = lds.obs_model.C, lds.obs_model.R 
+
+    # Pre-compute Cholesky factors for efficiency
+    R_chol = cholesky(Symmetric(R)).U
+    Q_chol = cholesky(Symmetric(Q)).U
+    P0_chol = cholesky(Symmetric(P0)).U
+
+    # Initial state contribution
+    dx0 = view(x, :, 1) - x0
+    # Replace dx0' * inv_P0 * dx0 with equivalent using Cholesky
+    ll = h[1] * sum(abs2, P0_chol \ dx0)
+
+    # Initialize temporary variables
+    temp_dx = zeros(T, size(x, 1))
+    temp_dy = zeros(promote_type(T, U), size(y, 1))
+
+    # Create temporaries with the same element type as x
+    temp_dx = zeros(T, size(x, 1))
+    temp_dy = zeros(promote_type(T, U), size(y, 1))
+
+    @inbounds for t in 1:T_steps
+        if t > 1
+            mul!(temp_dx, A, view(x, :, t-1), -1.0, false)
+            temp_dx .+= view(x, :, t)
+            # Replace temp_dx' * inv_Q * temp_dx
+            ll += h[t] * sum(abs2, Q_chol \ temp_dx)
+        end
+        mul!(temp_dy, C, view(x, :, t), -1.0, false)
+        temp_dy .+= view(y, :, t)
+        # Replace temp_dy' * inv_R * temp_dy
+        ll += h[t] * sum(abs2, R_chol \ temp_dy)
+    end
+    return -0.5 * ll
+end
