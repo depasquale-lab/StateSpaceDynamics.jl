@@ -17,6 +17,7 @@ Generate synthetic data with switching LDS models
 function sample(slds, T::Int)
     state_dim = slds.B[1].latent_dim
     obs_dim = slds.B[1].obs_dim
+    K = slds.K
 
     x = zeros(state_dim, T)  # Latent states
     y = zeros(obs_dim, T)   # Observations
@@ -24,13 +25,14 @@ function sample(slds, T::Int)
 
     # Sample initial mode
     z[1] = rand(Categorical(slds.πₖ / sum(slds.πₖ)))
+    #z[1] = sample(1:K, Weights(slds.πₖ))
     x[:, 1] = rand(MvNormal(zeros(state_dim), slds.B[z[1]].state_model.Q))
     y[:, 1] = rand(MvNormal(slds.B[z[1]].obs_model.C * x[:, 1], slds.B[z[1]].obs_model.R))
 
     for t in 2:T
         # Sample mode based on transition probabilities
         z[t] = rand(Categorical(slds.A[z[t-1], :] ./ sum(slds.A[z[t-1], :])))
-
+        #z[t] = sample(1:K, Weights(slds.A[z[t - 1], :]))
         # Update latent state and observation
         x[:, t] = rand(MvNormal(slds.B[z[t]].state_model.A * x[:, t-1], slds.B[z[t]].state_model.Q))
         y[:, t] = rand(MvNormal(slds.B[z[t]].obs_model.C * x[:, t], slds.B[z[t]].obs_model.R))
