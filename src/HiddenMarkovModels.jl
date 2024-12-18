@@ -297,14 +297,15 @@ function estep!(model::HiddenMarkovModel, data, FB_storage)
     calculate_ξ!(model, FB_storage)
 end
 
-function update_initial_state_distribution!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
+function update_initial_state_distribution!(model::Union{HiddenMarkovModel, 
+    SwitchingLinearDynamicalSystem}, FB_storage::ForwardBackward)
     # Update initial state probabilities
     γ = FB_storage.γ
     return model.πₖ .= exp.(γ[:, 1])
 end
 
 function update_transition_matrix!(
-    model::HiddenMarkovModel, FB_storage::ForwardBackward
+    model::Union{HiddenMarkovModel, SwitchingLinearDynamicalSystem}, FB_storage::ForwardBackward
 )
     γ = FB_storage.γ
     ξ = FB_storage.ξ
