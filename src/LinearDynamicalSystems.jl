@@ -935,12 +935,13 @@ Update the initial state mean of the Linear Dynamical System using the average a
 - The initial state mean is computed as the average of the first time step across all trials.
 """
 function update_initial_state_mean!(
-    lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}
+    lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, 
+    w::Vector{Float64}=ones(1)
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     if lds.fit_bool[1]
         x0_new = zeros(lds.latent_dim)
         for i in axes(E_z, 3)
-            x0_new .+= E_z[:, 1, i]
+            x0_new .+= w[1] * E_z[:, 1, i]
         end
         lds.state_model.x0 .= x0_new ./ size(E_z, 3)
     end
@@ -962,7 +963,8 @@ Update the initial state covariance of the Linear Dynamical System using the ave
 - The initial state covariance is computed as the average of the first time step across all trials.
 """
 function update_initial_state_covariance!(
-    lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}
+    lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}, 
+    w::Vector{Float64}=ones(1)
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     if lds.fit_bool[2]
         n_trials = size(E_z, 3)
@@ -970,7 +972,7 @@ function update_initial_state_covariance!(
         p0_new = zeros(T, state_dim, state_dim)
 
         for trial in 1:n_trials
-            p0_new .+= E_zz[:, :, 1, trial] - (lds.state_model.x0 * lds.state_model.x0')
+            p0_new .+= w[1] * (E_zz[:, :, 1, trial] - (lds.state_model.x0 * lds.state_model.x0'))
         end
 
         p0_new ./= n_trials
@@ -1176,14 +1178,15 @@ function mstep!(
     E_zz_prev::Array{T,4},
     p_smooth::Array{T,4},
     y::Array{T,3},
+    w::Vector{Float64}=ones(size(y, 2))
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     # get initial parameters
     old_params = vec(stateparams(lds))
     old_params = [old_params; vec(obsparams(lds))]
 
     # Update parameters
-    update_initial_state_mean!(lds, E_z)
-    update_initial_state_covariance!(lds, E_z, E_zz)
+    update_initial_state_mean!(lds, E_z, w)
+    update_initial_state_covariance!(lds, E_z, E_zz, w)
     update_A!(lds, E_zz, E_zz_prev)
     update_Q!(lds, E_zz, E_zz_prev)
     update_C!(lds, E_z, E_zz, y)

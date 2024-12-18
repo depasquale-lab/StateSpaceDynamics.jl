@@ -144,7 +144,9 @@ function fit!(
         #mstep!(model, FB_storage, transpose_data)
 
         # M-step
-        #Δparams = mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
+        #for k = 1:K
+            #Δparams = mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y, w)
+        #end
         # Update the log-likelihood vector and parameter difference
         #push!(mls, ml)
         #push!(param_diff, Δparams)
