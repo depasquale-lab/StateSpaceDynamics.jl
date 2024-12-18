@@ -75,16 +75,6 @@ function initialize_slds(;K::Int=2, d::Int=2, p::Int=10, seed::Int=42)
 
 end
 
-#havce a problem here becuase FB_storage is defined later and get an error
-#function variational_mstep!(model::SwitchingLinearDynamicalSystem, FB_storage::ForwardBackward, y)
-    # update initial state distribution
-#    update_initial_state_distribution!(model, FB_storage)
-    # update transition matrix
-#    update_transition_matrix!(model, FB_storage)
-    #need to add updates for LDSs#
-#end
-
-
 """
     fit!(slds::SwitchingLinearDynamicalSystem, y::Matrix{T}; 
          max_iter::Int=1000, 
@@ -144,9 +134,8 @@ function fit!(
         #mstep!(model, FB_storage, transpose_data)
 
         # M-step
-        #for k = 1:K
-            #Δparams = mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y, w)
-        #end
+        Δparams = mstep!(slds, E_z, E_zz, E_zz_prev, p_smooth, y, FB_storage, w)
+    
         # Update the log-likelihood vector and parameter difference
         #push!(mls, ml)
         #push!(param_diff, Δparams)
@@ -170,6 +159,7 @@ function fit!(
 end
 
 ##need a posteror x ss storage thing, like FB storage
+#havce a problem here becuase FB_storage is defined later and get an error
 
 function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB_storage)
 
@@ -181,7 +171,12 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB_s
 
     @threads for k in 1:model.K
         #3. compute xs from hs
-        smoothed_x, smoothed_p, _  = smooth(model.B[k], y, vec(hs[k,:]))
+        x_smooth, p_smooth, inverse_offdiag, total_entropy  = smooth(model.B[k], y, vec(hs[k,:]))
+        E_z, E_zz, E_zz_prev = sufficient_statistics(x_smooth, p_smooth, inverse_offdiag)
+        # calculate elbo
+        ml_total = calculate_elbo(lds, E_z, E_zz, E_zz_prev, p_smooth, y, total_entropy)
+        #need x_smooth, p_smooth, E_z, E_zz, E_zz_prev
+
     end
     #1. compute qs from xs, which will live as log_likelihoods in FB_storage
     variational_qs!([model.obs_model for model in model.B], FB_storage, y, smoothed_x, smoothed_p)
@@ -210,4 +205,39 @@ function variational_qs!(model::Vector{GaussianObservationModel}, FB_storage, y,
         end
     end 
 
+end
+
+function mstep!(
+    slds::SwitchingLinearDynamicalSystem{S,O},
+    E_z::Array{T,3},
+    E_zz::Array{T,4},
+    E_zz_prev::Array{T,4},
+    p_smooth::Array{T,4},
+    y::Array{T,3}, FB_storage, 
+    w::Vector{Float64}=ones(size(y, 2))
+) where {T<:Real}
+    # get initial parameters
+    old_params = vec(stateparams(lds))
+    old_params = [old_params; vec(obsparams(lds))]
+
+    #update initial state distribution
+    update_initial_state_distribution!(model, FB_storage)
+    #update transition matrix
+    update_transition_matrix!(model, FB_storage)
+
+    # Update LDS parameters
+    update_initial_state_mean!(lds, E_z, w)
+    update_initial_state_covariance!(lds, E_z, E_zz, w)
+    update_A!(lds, E_zz, E_zz_prev)
+    update_Q!(lds, E_zz, E_zz_prev)
+    update_C!(lds, E_z, E_zz, y)
+    update_R!(lds, E_z, E_zz, y)
+
+    # get new params
+    new_params = vec(stateparams(lds))
+    new_params = [new_params; vec(obsparams(lds))]
+
+    # calculate norm of parameter changes
+    norm_change = norm(new_params - old_params)
+    return norm_change
 end
