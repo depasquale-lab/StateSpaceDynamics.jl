@@ -169,6 +169,8 @@ function fit!(
     return mls, param_diff
 end
 
+##need a posteror x ss storage thing, like FB storage
+
 function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB_storage)
 
     K = model.K
@@ -192,7 +194,7 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB_s
 end
 
 
-function variational_qs!(model::Vector{GaussianObservationModel}, FB_storage::ForwardBackward, y, x, p)
+function variational_qs!(model::Vector{GaussianObservationModel}, FB_storage, y, x, p)
     log_likelihoods = FB_storage.loglikelihoods
 
     @threads for k in 1:model.K
