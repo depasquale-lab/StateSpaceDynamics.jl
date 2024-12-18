@@ -173,20 +173,18 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB_s
 
     K = model.K
     T = size(y, 2)
-
     γ = FB_storage.γ
+    hs = exp.(γ)
     log_likelihoods = FB_storage.loglikelihoods
 
-    #3. compute xs from hs
-    hs = exp.(γ)
-
-    #1. compute qs from xs
     @threads for k in 1:model.K
+        #3. compute xs from hs
         smoothed_x, smoothed_p, _  = smooth(model.B[k], y, vec(hs[k,:]))
-        emission_loglikelihoods!(k, model.B[k].obs_model, FB_storage, y, smoothed_x, smoothed_p)
     end
+    #1. compute qs from xs, which will live as log_likelihoods in FB_storage
+    variational_qs!([model.obs_model for model in model.B], FB_storage, y, smoothed_x, smoothed_p)
     
-    #2. compute hs from qs
+    #2. compute hs from qs, which will live as γ in FB_storage
     forward!(model, FB_storage)
     backward!(model, FB_storage)
     calculate_γ!(model, FB_storage)
@@ -194,16 +192,20 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB_s
 end
 
 
-function emission_loglikelihoods!(k, model::GaussianObservationModel, FB_storage::ForwardBackward, y, x, p)
+function variational_qs!(model::Vector{GaussianObservationModel}, FB_storage::ForwardBackward, y, x, p)
     log_likelihoods = FB_storage.loglikelihoods
 
-    R_chol = cholesky(Symmetric(model.R))
-    C = model.C
+    @threads for k in 1:model.K
 
-    @threads for t in 1:T
-        log_likelihoods[k, t] = -0.5 * (R_chol \ y[:,t])' * y[:,t] + 
-            (R_chol \ y[:,1])' * C * x[:,t] - 
-            0.5 * tr((R_chol \ C)' * C * p[:,:,t])
-    end
+        R_chol = cholesky(Symmetric(model[k].R))
+        C = model[k].C
+        C_Rinv = (R_chol \ C)'
+
+        @threads for t in 1:T
+            yt_Rinv = (R_chol \ y[:,t])'
+            log_likelihoods[k, t] = -0.5 * yt_Rinv * y[:,t] + 
+                yt_Rinv * C * x[:,t] - 0.5 * tr(C_Rinv * C * p[:,:,t])
+        end
+    end 
 
 end
