@@ -19,12 +19,12 @@ using Base.Threads: @threads
 include("GlobalTypes.jl")
 include("Utilities.jl")
 include("LinearDynamicalSystems.jl")
+include("SLDS.jl")
 include("CompositeModel.jl")
 include("EmissionModels.jl")
 include("HiddenMarkovModels.jl")
 include("HMMConstructors.jl")
 include("MixtureModels.jl")
 include("Preprocessing.jl")
-include("SLDS.jl")
 
 end

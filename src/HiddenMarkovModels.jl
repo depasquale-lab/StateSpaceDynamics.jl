@@ -32,7 +32,7 @@ mutable struct ForwardBackward{T<:Real}
     ξ::Array{T, 3}
 end
 
-function initialize_forward_backward(model::HiddenMarkovModel, num_obs::Int)
+function initialize_forward_backward(model::Union{HiddenMarkovModel, SwitchingLinearDynamicalSystem}, num_obs::Int)
     num_states = model.K
     ForwardBackward(
         zeros(num_states, num_obs),
@@ -188,7 +188,7 @@ function loglikelihood(model::HiddenMarkovModel, data...)
     return logsumexp(α[:, end])
 end
 
-function forward!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
+function forward!(model::Union{HiddenMarkovModel, SwitchingLinearDynamicalSystem}, FB_storage::ForwardBackward)
     # Reference storage
     α = FB_storage.α
     loglikelihoods = FB_storage.loglikelihoods
@@ -218,7 +218,7 @@ function forward!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
     end
 end
 
-function backward!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
+function backward!(model::Union{HiddenMarkovModel, SwitchingLinearDynamicalSystem}, FB_storage::ForwardBackward)
     # Reference storage
     β = FB_storage.β
     loglikelihoods = FB_storage.loglikelihoods
@@ -244,7 +244,7 @@ function backward!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
     end
 end
 
-function calculate_γ!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
+function calculate_γ!(model::Union{HiddenMarkovModel, SwitchingLinearDynamicalSystem}, FB_storage::ForwardBackward)
     α = FB_storage.α
     β = FB_storage.β
 
