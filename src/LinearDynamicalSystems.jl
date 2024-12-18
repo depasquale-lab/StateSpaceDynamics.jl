@@ -292,12 +292,14 @@ Calculate the complete-data log-likelihood of a linear dynamical system (LDS) gi
 - `x::AbstractMatrix{T}`: The state sequence of the LDS.
 - `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System.
 - `y::AbstractMatrix{T}`: The observed data.
+- `w::Vector{Float64}`: coeffcients to weight the data.
 
 # Returns
 - `ll::T`: The complete-data log-likelihood of the LDS.
 """
 function loglikelihood(
-    x::AbstractMatrix{T}, lds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{U}
+    x::AbstractMatrix{T}, lds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{U},
+    w::Vector{Float64}=ones(size(y, 2))
 ) where {T<:Real,U<:Real,S<:GaussianStateModel{<:Real},O<:GaussianObservationModel{<:Real}}
     T_steps = size(y, 2)
     A, Q, x0, P0 = lds.state_model.A,
@@ -313,7 +315,7 @@ function loglikelihood(
     # Initial state contribution
     dx0 = view(x, :, 1) - x0
     # Replace dx0' * inv_P0 * dx0 with equivalent using Cholesky
-    ll = sum(abs2, P0_chol \ dx0)
+    ll = w[1] * sum(abs2, P0_chol \ dx0)
 
     # Create temporaries with the same element type as x
     temp_dx = zeros(T, size(x, 1))
@@ -324,12 +326,12 @@ function loglikelihood(
             mul!(temp_dx, A, view(x, :, t-1), -1.0, false)
             temp_dx .+= view(x, :, t)
             # Replace temp_dx' * inv_Q * temp_dx
-            ll += sum(abs2, Q_chol \ temp_dx)
+            ll += w[t] * sum(abs2, Q_chol \ temp_dx)
         end
         mul!(temp_dy, C, view(x, :, t), -1.0, false)
         temp_dy .+= view(y, :, t)
         # Replace temp_dy' * inv_R * temp_dy
-        ll += sum(abs2, R_chol \ temp_dy)
+        ll += w[t] * sum(abs2, R_chol \ temp_dy)
     end
     return -0.5 * ll
 end
@@ -343,12 +345,14 @@ Compute the gradient of the log-likelihood with respect to the latent states for
 - `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System.
 - `y::AbstractMatrix{T}`: The observed data.
 - `x::AbstractMatrix{T}`: The latent states.
+- `w::Vector{Float64}`: coeffcients to weight the data.
 
 # Returns
 - `grad::Matrix{T}`: Gradient of the log-likelihood with respect to the latent states.
 """
 function Gradient(
-    lds::LinearDynamicalSystem{S,O}, y::Matrix{T}, x::Matrix{T}
+    lds::LinearDynamicalSystem{S,O}, y::Matrix{T}, x::Matrix{T},
+    w::Vector{Float64}=ones(size(y, 2))
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     # Dims etc.
     latent_dim, T_steps = size(x)
@@ -377,7 +381,7 @@ function Gradient(
     dx2 = x[:, 2] - A * x[:, 1]
     dy1 = y[:, 1] - C * x[:, 1]
 
-    grad[:, 1] .= A_inv_Q * dx2 + C_inv_R * dy1 - (P0_chol \ dx1)
+    grad[:, 1] .= w[2] * A_inv_Q * dx2 + w[1] * C_inv_R * dy1 - w[1] * (P0_chol \ dx1)
 
     # Middle time steps
     @inbounds for t in 2:(T_steps - 1)
@@ -385,14 +389,14 @@ function Gradient(
         dxt_next = x[:, t + 1] - A * x[:, t]
         dyt = y[:, t] - C * x[:, t]
 
-        grad[:, t] .= C_inv_R * dyt - (Q_chol \ dxt) + A_inv_Q * dxt_next
+        grad[:, t] .= w[t] * C_inv_R * dyt - w[t] * (Q_chol \ dxt) + w[t+1] * A_inv_Q * dxt_next
     end
 
     # Last time step
     dxT = x[:, T_steps] - A * x[:, T_steps - 1]
     dyT = y[:, T_steps] - C * x[:, T_steps]
 
-    grad[:, T_steps] .= C_inv_R * dyT - (Q_chol \ dxT)
+    grad[:, T_steps] .= w[T_steps] * (C_inv_R * dyT - (Q_chol \ dxT))
 
     return grad
 end
@@ -415,6 +419,7 @@ where ̂xₙ is the current smoothed state estimate, H is the Hessian matrix, an
 - `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System.
 - `y::AbstractMatrix{T}`: Matrix of observations.
 - `x::AbstractMatrix{T}`: Matrix of latent states.
+- `w::Vector{Float64}`: coeffcients to weight the data.
 
 # Returns
 - `H::Matrix{T}`: Hessian matrix of the log-likelihood.
@@ -426,7 +431,8 @@ where ̂xₙ is the current smoothed state estimate, H is the Hessian matrix, an
 - `x` is not used in this function, but is required to match the function signature of other Hessian calculations e.g., in PoissonLDS.
 """
 function Hessian(
-    lds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{T}, x::AbstractMatrix{T}
+    lds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{T}, x::AbstractMatrix{T},
+    w::Vector{Float64}=ones(size(y, 2))
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     A, Q, x0, P0 = lds.state_model.A,
     lds.state_model.Q, lds.state_model.x0,
@@ -457,16 +463,16 @@ function Hessian(
 
     # Build off-diagonals
     @inbounds for i in 1:(T_steps - 1)
-        H_sub[i] = H_sub_entry
-        H_super[i] = H_super_entry
+        H_sub[i] = w[i+1] * H_sub_entry
+        H_super[i] = w[i+1] * H_super_entry
     end
 
     # Build main diagonal
-    H_diag[1] = yt_given_xt + xt1_given_xt + x_t
+    H_diag[1] = w[1] * yt_given_xt + w[2] * xt1_given_xt + w[1] * x_t
     @inbounds for i in 2:(T_steps - 1)
-        H_diag[i] = yt_given_xt + xt_given_xt_1 + xt1_given_xt
+        H_diag[i] = w[i] * yt_given_xt + w[i] * xt_given_xt_1 + w[i+1] * xt1_given_xt
     end
-    H_diag[T_steps] = yt_given_xt + xt_given_xt_1
+    H_diag[T_steps] = w[T_steps] * (yt_given_xt + xt_given_xt_1)
 
     H = StateSpaceDynamics.block_tridgm(H_diag, H_super, H_sub)
 
@@ -481,6 +487,7 @@ This function performs direct smoothing for a linear dynamical system (LDS) give
 # Arguments
 - `lds::LinearDynamicalSystem{S,O}`: The LDS object representing the system parameters.
 - `y::Matrix{T}`: The observed data matrix.
+- `w::Vector{Float64}`: coeffcients to weight the data.
 
 # Returns
 - `x::Matrix{T}`: The optimal state estimate.
@@ -496,7 +503,7 @@ x, p_smooth, inverse_offdiag, Q_val = DirectSmoother(lds, y)
 ```
 """
 function smooth(
-    lds::LinearDynamicalSystem{S,O}, y::Matrix{T}
+    lds::LinearDynamicalSystem{S,O}, y::Matrix{T}, w::Vector{Float64}=ones(size(y, 2))
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     T_steps, D = size(y, 2), lds.latent_dim
 
@@ -505,18 +512,18 @@ function smooth(
 
     function nll(vec_x::Vector{T})
         x = reshape(vec_x, D, T_steps)
-        return -loglikelihood(x, lds, y)
+        return -loglikelihood(x, lds, y, w)
     end
 
     function g!(g::Vector{T}, vec_x::Vector{T})
         x = reshape(vec_x, D, T_steps)
-        grad = Gradient(lds, y, x)
+        grad = Gradient(lds, y, x, w)
         return g .= vec(-grad)
     end
 
     function h!(h::AbstractSparseMatrix, vec_x::Vector{T})
         x = reshape(vec_x, D, T_steps)
-        H, _, _, _ = Hessian(lds, y, x)
+        H, _, _, _ = Hessian(lds, y, x, w)
         copyto!(h, -H)
         return nothing
     end
@@ -542,7 +549,7 @@ function smooth(
     # Profit
     x = reshape(res.minimizer, D, T_steps)
 
-    H, main, super, sub = Hessian(lds, y, x)
+    H, main, super, sub = Hessian(lds, y, x, w)
 
     # Get the second moments of the latent state path, use static matrices if the latent dimension is small
     if lds.latent_dim > 10

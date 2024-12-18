@@ -23,6 +23,19 @@ end
 
 include("helper_functions.jl")
 """
+Tests for SLDS.jl
+"""
+
+include("LinearDynamicalSystems//SLDS.jl")
+
+@testset "SLDS Tests" begin
+    @testset "Smoother tests" begin
+        test_Gradient()
+        test_Hessian()
+    end
+end
+
+"""
 Tests for LDS.jl
 """
 
