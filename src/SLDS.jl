@@ -116,3 +116,67 @@ function weighted_loglikelihood(
     end
     return -0.5 * ll
 end
+
+
+"""
+    Gradient(lds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{T}, x::AbstractMatrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+
+Compute the gradient of the log-likelihood with respect to the latent states for a linear dynamical system.
+
+# Arguments
+- `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System.
+- `y::AbstractMatrix{T}`: The observed data.
+- `x::AbstractMatrix{T}`: The latent states.
+
+# Returns
+- `grad::Matrix{T}`: Gradient of the log-likelihood with respect to the latent states.
+"""
+function weighted_Gradient(
+    lds::LinearDynamicalSystem{S,O}, y::Matrix{T}, x::Matrix{T}, h::Vector{Float64}
+) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+    # Dims etc.
+    latent_dim, T_steps = size(x)
+    obs_dim, _ = size(y)
+    # Model Parameters
+    A, Q, x0, P0 = lds.state_model.A,
+    lds.state_model.Q, lds.state_model.x0,
+    lds.state_model.P0
+    C, R = lds.obs_model.C, lds.obs_model.R
+
+    # Compute Cholesky factors
+    R_chol = cholesky(Symmetric(R))
+    Q_chol = cholesky(Symmetric(Q))
+    P0_chol = cholesky(Symmetric(P0))
+
+    # Pre-compute common matrix products
+    # Instead of C' * inv(R), we can use: C' * (R_chol \ I)
+    # or equivalently: (R_chol \ C)'
+    C_inv_R = (R_chol \ C)'
+    A_inv_Q = (Q_chol \ A)'
+
+    grad = zeros(T, latent_dim, T_steps)
+
+    # First time step
+    dx1 = x[:, 1] - x0
+    dx2 = x[:, 2] - A * x[:, 1]
+    dy1 = y[:, 1] - C * x[:, 1]
+
+    grad[:, 1] .= h[1] * (A_inv_Q * dx2 + C_inv_R * dy1 - (P0_chol \ dx1))
+
+    # Middle time steps
+    @inbounds for t in 2:(T_steps - 1)
+        dxt = x[:, t] - A * x[:, t - 1]
+        dxt_next = x[:, t + 1] - A * x[:, t]
+        dyt = y[:, t] - C * x[:, t]
+
+        grad[:, t] .= h[t] * (C_inv_R * dyt - (Q_chol \ dxt) + A_inv_Q * dxt_next)
+    end
+
+    # Last time step
+    dxT = x[:, T_steps] - A * x[:, T_steps - 1]
+    dyT = y[:, T_steps] - C * x[:, T_steps]
+
+    grad[:, T_steps] .= h[T_steps] * (C_inv_R * dyT - (Q_chol \ dxT))
+
+    return grad
+end
