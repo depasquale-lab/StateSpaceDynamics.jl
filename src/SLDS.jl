@@ -106,14 +106,12 @@ function sample(slds, T::Int)
 
     # Sample initial mode
     z[1] = rand(Categorical(slds.πₖ / sum(slds.πₖ)))
-    #z[1] = sample(1:K, Weights(slds.πₖ))
     x[:, 1] = rand(MvNormal(zeros(state_dim), slds.B[z[1]].state_model.Q))
     y[:, 1] = rand(MvNormal(slds.B[z[1]].obs_model.C * x[:, 1], slds.B[z[1]].obs_model.R))
 
     for t in 2:T
         # Sample mode based on transition probabilities
         z[t] = rand(Categorical(slds.A[z[t-1], :] ./ sum(slds.A[z[t-1], :])))
-        #z[t] = sample(1:K, Weights(slds.A[z[t - 1], :]))
         # Update latent state and observation
         x[:, t] = rand(MvNormal(slds.B[z[t]].state_model.A * x[:, t-1], slds.B[z[t]].state_model.Q))
         y[:, t] = rand(MvNormal(slds.B[z[t]].obs_model.C * x[:, t], slds.B[z[t]].obs_model.R))
@@ -130,14 +128,19 @@ Initialize a Switching Linear Dynamical System with random parameters.
 function initialize_slds(;K::Int=2, d::Int=2, p::Int=10, seed::Int=42)
     Random.seed!(seed)
 
-    A = rand(K, K)
+    #A = rand(K, K)
+    A = zeros(K,K)
+    A[1,1] = 0.95
+    A[1,2] = 0.05
+    A[2,2] = 0.95
+    A[2,1] = 0.05
     A ./= sum(A, dims=2) # Normalize rows to sum to 1
 
     πₖ = rand(K)
     πₖ ./= sum(πₖ) # Normalize to sum to 1
 
     # set up the state parameters
-    A2 = 0.95 * [cos(0.25) -sin(0.25); sin(0.25) cos(0.25)] 
+    #A2 = 0.95 * [cos(0.25) -sin(0.25); sin(0.25) cos(0.25)] 
     Q = Matrix(0.1 * I(d))
 
     x0 = [0.0; 0.0]
@@ -148,9 +151,9 @@ function initialize_slds(;K::Int=2, d::Int=2, p::Int=10, seed::Int=42)
     R = Matrix(0.5 * I(p))
 
     B = [LinearDynamicalSystem(
-        GaussianStateModel(A2, Q, x0, P0),
+        GaussianStateModel(0.95 * [cos(f) -sin(f); sin(f) cos(f)], Q, x0, P0),
         GaussianObservationModel(C, R),
-        d, p, fill(true, 6  )) for _ in 1:K]
+        d, p, fill(true, 6  )) for (_,f) in zip(1:K, [0.1, 2.0])]
 
     return SwitchingLinearDynamicalSystem(A, B, πₖ, K)
 
@@ -224,7 +227,7 @@ function fit!(
     # Finish the progress bar if max_iter is reached
     finish!(prog)
 
-    return mls, param_diff
+    return mls, param_diff, FB, FS
 end
 
 
@@ -424,8 +427,8 @@ function mstep!(slds::SwitchingLinearDynamicalSystem,
 
     for k in 1:K
         # Update LDS parameters
-        update_initial_state_mean!(slds.B[k], FS[k].E_z, vec(hs[k,:]))
-        update_initial_state_covariance!(slds.B[k], FS[k].E_z, FS[k].E_zz, vec(hs[k,:]))
+        #update_initial_state_mean!(slds.B[k], FS[k].E_z, vec(hs[k,:]))
+        #update_initial_state_covariance!(slds.B[k], FS[k].E_z, FS[k].E_zz, vec(hs[k,:]))
         #update_A!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev, vec(hs[k,:]))
         #update_Q!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev, vec(hs[k,:]))
         #update_C!(slds.B[k], FS[k].E_z, FS[k].E_zz, y, vec(hs[k,:]))
