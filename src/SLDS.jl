@@ -158,28 +158,49 @@ function fit!(
     return mls, param_diff
 end
 
-##need a posteror x ss storage thing, like FB storage
+mutable struct FilterSmooth{T<:Real}
+    x_smooth::Matrix{T}
+    p_smooth::Array{T, 3}
+    E_z::Array{T, 3}
+    E_zz::Array{T, 4}
+    E_zz_prev::Array{T, 4}
+end
+
+function initialize_FilterSmooth(model::LinearDynamicalSystem, num_obs::Int)
+    num_states = model.latent_dim
+    ForwardBackward(
+        zeros(num_states, num_obs),
+        zeros(num_states, num_states, num_obs),
+        zeros(num_states, num_obs, 1),
+        zeros(num_states, num_states, num_obs, 1),
+    zeros(num_states, num_states, num_obs, 1)
+    )
+end
+
 #havce a problem here becuase FB_storage is defined later and get an error
 
-function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB_storage)
+function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB_storage, FilterSmooth)
 
     K = model.K
     T = size(y, 2)
     γ = FB_storage.γ
     hs = exp.(γ)
     log_likelihoods = FB_storage.loglikelihoods
+    ml_total = 0.
 
     @threads for k in 1:model.K
         #3. compute xs from hs
-        x_smooth, p_smooth, inverse_offdiag, total_entropy  = smooth(model.B[k], y, vec(hs[k,:]))
-        E_z, E_zz, E_zz_prev = sufficient_statistics(x_smooth, p_smooth, inverse_offdiag)
+        FilterSmooth[k].x_smooth, FilterSmooth[k].p_smooth, inverse_offdiag, total_entropy  = smooth(model.B[k], y, vec(hs[k,:]))
+        FilterSmooth[k].E_z, FilterSmooth[k].E_zz, FilterSmooth[k].E_zz_prev = 
+            sufficient_statistics(reshape(FilterSmooth[k].x_smooth, size(FilterSmooth[k].x_smooth)..., 1), 
+            reshape(FilterSmooth[k].p_smooth, size(FilterSmooth[k].p_smooth)..., 1), reshape(inverse_offdiag, inverse_offdiag..., 1))
         # calculate elbo
-        ml_total = calculate_elbo(lds, E_z, E_zz, E_zz_prev, p_smooth, y, total_entropy)
-        #need x_smooth, p_smooth, E_z, E_zz, E_zz_prev
+        ml_total += calculate_elbo(lds, FilterSmooth[k].E_z, FilterSmooth[k].E_zz, FilterSmooth[k].E_zz_prev, 
+            reshape(FilterSmooth[k].p_smooth, size(FilterSmooth[k].p_smooth)..., 1), y, total_entropy)
 
     end
     #1. compute qs from xs, which will live as log_likelihoods in FB_storage
-    variational_qs!([model.obs_model for model in model.B], FB_storage, y, smoothed_x, smoothed_p)
+    variational_qs!([model.obs_model for model in model.B], FB_storage, y, FilterSmooth)
     
     #2. compute hs from qs, which will live as γ in FB_storage
     forward!(model, FB_storage)
@@ -189,7 +210,7 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB_s
 end
 
 
-function variational_qs!(model::Vector{GaussianObservationModel}, FB_storage, y, x, p)
+function variational_qs!(model::Vector{GaussianObservationModel}, FB_storage, y, FilterSmooth)
     log_likelihoods = FB_storage.loglikelihoods
 
     @threads for k in 1:model.K
@@ -201,14 +222,14 @@ function variational_qs!(model::Vector{GaussianObservationModel}, FB_storage, y,
         @threads for t in 1:T
             yt_Rinv = (R_chol \ y[:,t])'
             log_likelihoods[k, t] = -0.5 * yt_Rinv * y[:,t] + 
-                yt_Rinv * C * x[:,t] - 0.5 * tr(C_Rinv * C * p[:,:,t])
+                yt_Rinv * C * FilterSmooth[k].x[:,t] - 0.5 * tr(C_Rinv * C * FilterSmooth[k].p[:,:,t])
         end
     end 
 
 end
 
 function mstep!(
-    slds::SwitchingLinearDynamicalSystem{S,O},
+    slds::SwitchingLinearDynamicalSystem,
     E_z::Array{T,3},
     E_zz::Array{T,4},
     E_zz_prev::Array{T,4},
