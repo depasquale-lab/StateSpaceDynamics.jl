@@ -11,6 +11,87 @@ mutable struct SwitchingLinearDynamicalSystem
 end
 
 
+
+""""
+    FilterSmooth{T<:Real}
+
+A mutable structure for storing smoothed estimates and associated covariance matrices in a filtering or smoothing algorithm.
+
+# Type Parameters
+- `T<:Real`: The numerical type used for all fields (e.g., `Float64`, `Float32`).
+
+# Fields
+- `x_smooth::Matrix{T}`  
+  The matrix containing smoothed state estimates over time. Each column typically represents the state vector at a given time step.
+
+- `p_smooth::Array{T, 3}`  
+  The posterior covariance matrices with dimensions (latent_dim, latent_dim, time_steps)
+
+- `E_z::Array{T, 3}`  
+  The expected latent states, size (state_dim, T, n_trials).
+
+- `E_zz::Array{T, 4}`  
+  The expected value of z_t * z_t', size (state_dim, state_dim, T, n_trials).
+
+- `E_zz_prev::Array{T, 4}`  
+  The expected value of z_t * z_{t-1}', size (state_dim, state_dim, T, n_trials).
+
+# Example
+```julia
+# Initialize a FilterSmooth object with Float64 type
+filter = FilterSmooth{Float64}(
+    x_smooth = zeros(10, 100),
+    p_smooth = zeros(10, 10, 100),
+    E_z = zeros(10, 5, 100),
+    E_zz = zeros(10, 10, 5, 100),
+    E_zz_prev = zeros(10, 10, 5, 100)
+)
+"""
+mutable struct FilterSmooth{T<:Real}
+    x_smooth::Matrix{T}
+    p_smooth::Array{T, 3}
+    E_z::Array{T, 3}
+    E_zz::Array{T, 4}
+    E_zz_prev::Array{T, 4}
+end
+
+
+"""
+    initialize_FilterSmooth(model::LinearDynamicalSystem, num_obs::Int) -> FilterSmooth{T}
+
+Initialize a `FilterSmooth` object for a given linear dynamical system model and number of observations.
+
+# Arguments
+- `model::LinearDynamicalSystem`:  
+  The linear dynamical system model containing system parameters, including the latent dimensionality (`latent_dim`).
+
+- `num_obs::Int`:  
+  The number of observations (time steps) for which to initialize the smoothing filters.
+
+# Returns
+- `FilterSmooth{T}`:  
+  A `FilterSmooth` instance with all fields initialized to zero arrays. The dimensions of the arrays are determined by the number of states (`latent_dim`) from the model and the specified number of observations (`num_obs`).
+
+# Example
+```julia
+# Assume `model` is an instance of LinearDynamicalSystem with latent_dim = 10
+num_observations = 100
+filter_smooth = initialize_FilterSmooth(model, num_observations)
+
+# `filter_smooth` now contains zero-initialized arrays for smoothing operations
+"""
+function initialize_FilterSmooth(model::LinearDynamicalSystem, num_obs::Int)
+    num_states = model.latent_dim
+    FilterSmooth(
+        zeros(num_states, num_obs),
+        zeros(num_states, num_states, num_obs),
+        zeros(num_states, num_obs, 1),
+        zeros(num_states, num_states, num_obs, 1),
+    zeros(num_states, num_states, num_obs, 1)
+    )
+end
+
+
 """
 Generate synthetic data with switching LDS models
 """
@@ -146,27 +227,60 @@ function fit!(
     return mls, param_diff
 end
 
-mutable struct FilterSmooth{T<:Real}
-    x_smooth::Matrix{T}
-    p_smooth::Array{T, 3}
-    E_z::Array{T, 3}
-    E_zz::Array{T, 4}
-    E_zz_prev::Array{T, 4}
-end
 
-function initialize_FilterSmooth(model::LinearDynamicalSystem, num_obs::Int)
-    num_states = model.latent_dim
-    FilterSmooth(
-        zeros(num_states, num_obs),
-        zeros(num_states, num_states, num_obs),
-        zeros(num_states, num_obs, 1),
-        zeros(num_states, num_states, num_obs, 1),
-    zeros(num_states, num_states, num_obs, 1)
-    )
-end
+"""
+    variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB, FS) -> Float64
 
+Compute the variational expectation (Evidence Lower Bound, ELBO) for a Switching Linear Dynamical System.
+
+# Arguments
+- `model::SwitchingLinearDynamicalSystem`:  
+  The switching linear dynamical system model containing parameters such as the number of regimes (`K`), system matrices (`B`), and observation models.
+
+- `y`:  
+  The observation data, typically a matrix where each column represents an observation at a specific time step.
+
+- `FB`:  
+  The forward-backward object that holds variables related to the forward and backward passes, including responsibilities (`γ`).
+
+- `FS`:  
+  An array of `FilterSmooth` objects, one for each regime, storing smoothed state estimates and covariances.
+
+# Returns
+- `Float64`:  
+  The total Evidence Lower Bound (ELBO) computed over all regimes and observations.
+
+# Description
+This function performs the variational expectation step for a Switching Linear Dynamical System by executing the following operations:
+
+1. **Extract Responsibilities**:  
+   Retrieves the responsibilities (`γ`) from the forward-backward object and computes their exponentials (`hs`).
+
+2. **Parallel Smoothing and Sufficient Statistics Calculation**:  
+   For each regime `k` from `1` to `model.K`, the function:
+   - Performs smoothing using the `smooth` function to obtain smoothed states (`x_smooth`), covariances (`p_smooth`), inverse off-diagonal terms, and total entropy.
+   - Computes sufficient statistics (`E_z`, `E_zz`, `E_zz_prev`) from the smoothed estimates.
+   - Calculates the ELBO contribution for the current regime and accumulates it into `ml_total`.
+
+3. **Update Variational Distributions**:  
+   - Computes the variational distributions (`qs`) from the smoothed states, which are stored as log-likelihoods in `FB`.
+   - Executes the forward and backward passes to update the responsibilities (`γ`) based on the new `qs`.
+   - Recalculates the responsibilities (`γ`) to reflect the updated variational distributions.
+
+4. **Return ELBO**:  
+   Returns the accumulated ELBO (`ml_total`), which quantifies the quality of the variational approximation.
+
+# Example
+```julia
+# Assume `model` is an instance of SwitchingLinearDynamicalSystem with K regimes
+# `y` is the observation matrix of size (num_features, num_time_steps)
+# `FB` is a pre-initialized ForwardBackward object
+# `FS` is an array of FilterSmooth objects, one for each regime
+
+elbo = variational_expectation!(model, y, FB, FS)
+println("Computed ELBO: ", elbo)
+"""
 #havce a problem here becuase FB is defined later and get an error
-
 function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB, FS)
 
     γ = FB.γ
@@ -198,6 +312,75 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB, 
 end
 
 
+"""
+    variational_qs!(model::Vector{GaussianObservationModel{T}}, FB, y, FS) where {T<:Real}
+
+Compute the variational distributions (`qs`) and update the log-likelihoods for a set of Gaussian observation models within a Forward-Backward framework.
+
+# Arguments
+- `model::Vector{GaussianObservationModel{T}}`  
+  A vector of Gaussian observation models, where each model defines the parameters for a specific regime or state in a Switching Linear Dynamical System. Each `GaussianObservationModel` should contain fields such as the observation matrix `C` and the observation noise covariance `R`.
+
+- `FB`  
+  The Forward-Backward object that holds variables related to the forward and backward passes of the algorithm. It must contain a mutable field `loglikelihoods`, which is a matrix where each entry `loglikelihoods[k, t]` corresponds to the log-likelihood of the observation at time `t` under regime `k`.
+
+- `y`  
+  The observation data matrix, where each column represents an observation vector at a specific time step. The dimensions are typically `(num_features, num_time_steps)`.
+
+- `FS`  
+  An array of `FilterSmooth` objects, one for each regime, that store smoothed state estimates (`x_smooth`) and their covariances (`p_smooth`). These are used to compute the expected sufficient statistics needed for updating the variational distributions.
+
+# Returns
+- `Nothing`  
+  The function performs in-place updates on the `FB.loglikelihoods` matrix. It does not return any value.
+
+# Description
+`variational_qs!` updates the log-likelihoods for each Gaussian observation model across all time steps based on the current smoothed state estimates. This is a critical step in variational inference algorithms for Switching Linear Dynamical Systems, where the goal is to approximate the posterior distributions over latent variables.
+
+The function operates as follows:
+
+1. **Initialization**:  
+   - Extracts the `loglikelihoods` matrix from the `FB` object.
+   - Determines the number of regimes (`K`) and the number of time steps (`T_steps`) from the `model` and observation matrix `y`.
+
+2. **Parallel Computation Across Regimes**:  
+   - Utilizes multi-threading (`@threads`) to iterate over each regime `k` in parallel.
+   - For each regime:
+     - Computes the Cholesky decomposition of the observation noise covariance matrix `R`.
+     - Precomputes `C_Rinv`, which is used in the log-likelihood calculation to improve computational efficiency.
+
+3. **Parallel Computation Across Time Steps**:  
+   - Within each regime, another level of multi-threading (`@threads`) iterates over each time step `t`.
+   - For each time step:
+     - Computes the transformed observation `yt_Rinv`.
+     - Calculates the log-likelihood `log_likelihoods[k, t]`
+     - Updates the `log_likelihoods` matrix with the computed value.
+
+# Example
+```julia
+# Define Gaussian observation models for each regime
+model = [
+    GaussianObservationModel(C = randn(5, 10), R = Matrix{Float64}(I, 5, 5)),
+    GaussianObservationModel(C = randn(5, 10), R = Matrix{Float64}(I, 5, 5))
+]
+
+# Initialize ForwardBackward object with a preallocated loglikelihoods matrix
+FB = ForwardBackward(loglikelihoods = zeros(Float64, length(model), 100))
+
+# Generate synthetic observation data (5 features, 100 time steps)
+y = randn(5, 100)
+
+# Initialize FilterSmooth objects for each regime
+FS = [
+    initialize_FilterSmooth(model[k], size(y, 2)) for k in 1:length(model)
+]
+
+# Compute variational distributions and update log-likelihoods
+variational_qs!(model, FB, y, FS)
+
+# Access the updated log-likelihoods
+println(FB.loglikelihoods)
+"""
 function variational_qs!(model::Vector{GaussianObservationModel{T}}, FB, y, FS
     ) where {T<:Real}
     log_likelihoods = FB.loglikelihoods
@@ -219,6 +402,9 @@ function variational_qs!(model::Vector{GaussianObservationModel{T}}, FB, y, FS
 
 end
 
+
+"""
+"""
 function mstep!(slds::SwitchingLinearDynamicalSystem,
     FS, y::Matrix{T}, FB) where {T<:Real}
 
