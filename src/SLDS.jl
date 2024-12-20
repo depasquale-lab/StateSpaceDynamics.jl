@@ -198,6 +198,8 @@ function fit!(
     K = slds.K
     T_step = size(y, 2)
     FB = initialize_forward_backward(slds, T_step)
+    #γ = FB.γ
+    #γ .= -100.
     FS = [initialize_FilterSmooth(slds.B[k], T_step) for k in 1:K]
 
     # Run EM
@@ -399,9 +401,18 @@ function variational_qs!(model::Vector{GaussianObservationModel{T}}, FB, y, FS
         @threads for t in 1:T_steps
             yt_Rinv = (R_chol \ y[:,t])'
             log_likelihoods[k, t] = -0.5 * yt_Rinv * y[:,t] + 
-                yt_Rinv * C * FS[k].x_smooth[:,t] - 0.5 * tr(C_Rinv * C * FS[k].p_smooth[:,:,t])
+                yt_Rinv * C * FS[k].E_z[:,t,1] - 0.5 * tr(C_Rinv * C * FS[k].E_zz[:,:,t,1])
         end
+
+        # Subtract max for numerical stability
+        log_likelihoods[k, :] .-= maximum(log_likelihoods[k, :])
+
     end 
+
+    # Convert to likelihoods, normalize, and back to log space
+    likelihoods = exp.(log_likelihoods)
+    normalized_probs = likelihoods ./ sum(likelihoods)
+    log_likelihoods = log.(normalized_probs)
 
 end
 
