@@ -312,8 +312,40 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB, 
     backward!(model, FB)
     calculate_γ!(model, FB)
 
+    ml_total += hmm_elbo(model, FB)
+
     return ml_total
 
+end
+
+
+"""
+"""
+function hmm_elbo(model::SwitchingLinearDynamicalSystem, FB)
+
+  # Extract necessary data
+  γ = FB.γ
+  ξ = FB.ξ
+  loglikelihoods = FB.loglikelihoods
+  A = model.A   # Transition matrix
+  πₖ = model.πₖ # Initial state distribution
+  time_steps = size(loglikelihoods, 2)
+
+  # Initial state probabilities
+  log_p_x_z = sum(exp.(γ[:, 1]) .* log.(πₖ))
+
+  # Transition term using ξ
+  for t in 1:(time_steps - 1)
+    log_p_x_z += sum(exp.(ξ[:, :, t]) .* log.(A))
+  end
+
+  # Emission term
+  log_p_x_z += sum(exp.(γ) .* loglikelihoods)
+
+  # 2. Compute log q(z)
+  log_q_z = sum(exp.(γ) .* γ)
+
+  log_p_x_z - log_q_z
 end
 
 
@@ -438,12 +470,12 @@ function mstep!(slds::SwitchingLinearDynamicalSystem,
 
     for k in 1:K
         # Update LDS parameters
-        #update_initial_state_mean!(slds.B[k], FS[k].E_z, vec(hs[k,:]))
-        #update_initial_state_covariance!(slds.B[k], FS[k].E_z, FS[k].E_zz, vec(hs[k,:]))
-        #update_A!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev, vec(hs[k,:]))
-        #update_Q!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev, vec(hs[k,:]))
-        #update_C!(slds.B[k], FS[k].E_z, FS[k].E_zz, y, vec(hs[k,:]))
-        #update_R!(slds.B[k], FS[k].E_z, FS[k].E_zz, y, vec(hs[k,:]))
+        update_initial_state_mean!(slds.B[k], FS[k].E_z)
+        update_initial_state_covariance!(slds.B[k], FS[k].E_z, FS[k].E_zz)
+        update_A!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
+        update_Q!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
+        update_C!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
+        #update_R!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
     end
 
     new_params = vec([stateparams(slds.B[k]) for k in 1:K])
