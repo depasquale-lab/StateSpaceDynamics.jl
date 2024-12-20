@@ -130,10 +130,10 @@ function initialize_slds(;K::Int=2, d::Int=2, p::Int=10, seed::Int=42)
 
     #A = rand(K, K)
     A = zeros(K,K)
-    A[1,1] = 0.95
-    A[1,2] = 0.05
-    A[2,2] = 0.95
-    A[2,1] = 0.05
+    A[1,1] = 0.96
+    A[1,2] = 0.04
+    A[2,2] = 0.96
+    A[2,1] = 0.04
     A ./= sum(A, dims=2) # Normalize rows to sum to 1
 
     πₖ = rand(K)
@@ -141,14 +141,14 @@ function initialize_slds(;K::Int=2, d::Int=2, p::Int=10, seed::Int=42)
 
     # set up the state parameters
     #A2 = 0.95 * [cos(0.25) -sin(0.25); sin(0.25) cos(0.25)] 
-    Q = Matrix(0.1 * I(d))
+    Q = Matrix(0.001 * I(d))
 
     x0 = [0.0; 0.0]
-    P0 = Matrix(0.1 * I(d))
+    P0 = Matrix(0.001 * I(d))
 
     # set up the observation parameters
     C = randn(p, d)
-    R = Matrix(0.5 * I(p))
+    R = Matrix(0.001 * I(p))
 
     B = [LinearDynamicalSystem(
         GaussianStateModel(0.95 * [cos(f) -sin(f); sin(f) cos(f)], Q, x0, P0),
