@@ -239,6 +239,43 @@ function GaussianLDS(;
     return LinearDynamicalSystem(state_model, obs_model, latent_dim, obs_dim, fit_bool)
 end
 
+
+"""
+    initialize_FilterSmooth(model::LinearDynamicalSystem, num_obs::Int) -> FilterSmooth{T}
+
+Initialize a `FilterSmooth` object for a given linear dynamical system model and number of observations.
+
+# Arguments
+- `model::LinearDynamicalSystem`:  
+  The linear dynamical system model containing system parameters, including the latent dimensionality (`latent_dim`).
+
+- `num_obs::Int`:  
+  The number of observations (time steps) for which to initialize the smoothing filters.
+
+# Returns
+- `FilterSmooth{T}`:  
+  A `FilterSmooth` instance with all fields initialized to zero arrays. The dimensions of the arrays are determined by the number of states (`latent_dim`) from the model and the specified number of observations (`num_obs`).
+
+# Example
+```julia
+# Assume `model` is an instance of LinearDynamicalSystem with latent_dim = 10
+num_observations = 100
+filter_smooth = initialize_FilterSmooth(model, num_observations)
+
+# `filter_smooth` now contains zero-initialized arrays for smoothing operations
+"""
+function initialize_FilterSmooth(model::LinearDynamicalSystem, num_obs::Int)
+    num_states = model.latent_dim
+    FilterSmooth(
+        zeros(num_states, num_obs),
+        zeros(num_states, num_states, num_obs),
+        zeros(num_states, num_obs, 1),
+        zeros(num_states, num_states, num_obs, 1),
+    zeros(num_states, num_states, num_obs, 1)
+    )
+end
+
+
 """
     sample(lds::LinearDynamicalSystem{S,O}, T_steps::Int, n_trials::Int) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
 
