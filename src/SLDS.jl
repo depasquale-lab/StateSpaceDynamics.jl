@@ -14,7 +14,7 @@ end
 """
 Generate synthetic data with switching LDS models
 """
-function sample(slds, T::Int)
+function sample(slds::SwitchingLinearDynamicalSystem, T::Int)
     state_dim = slds.B[1].latent_dim
     obs_dim = slds.B[1].obs_dim
     K = slds.K
@@ -98,8 +98,8 @@ Fit a Switching Linear Dynamical System using the variational Expectation-Maximi
 - `mls::Vector{T}`: Vector of log-likelihood values for each iteration.
 """
 function fit!(
-    slds::SwitchingLinearDynamicalSystem, y::Matrix{T}; max_iter::Int=1000, tol::Real=1e-12
-) where {T<:Real}
+    slds::SwitchingLinearDynamicalSystem, y::Matrix{T}; 
+    max_iter::Int=1000, tol::Real=1e-12) where {T<:Real}
 
     # Initialize log-likelihood
     prev_ml = -T(Inf)
@@ -204,13 +204,23 @@ This function performs the variational expectation step for a Switching Linear D
 elbo = variational_expectation!(model, y, FB, FS)
 println("Computed ELBO: ", elbo)
 """
-#havce a problem here becuase FB is defined later and get an error
 function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, 
   FB::ForwardBackward, FS::Vector{FilterSmooth{T}}) where {T<:Real}
 
     γ = FB.γ
     hs = exp.(γ)
     ml_total = 0.
+
+    #1. compute qs from xs, which will live as log_likelihoods in FB
+    variational_qs!([model.obs_model for model in model.B], FB, y, FS)
+    
+    #2. compute hs from qs, which will live as γ in FB
+    forward!(model, FB)
+    backward!(model, FB)
+    calculate_γ!(model, FB)
+
+    #ml_total += hmm_elbo(model, FB)
+    ml_total = logsumexp(FB.α[:, end])
 
     @threads for k in 1:model.K
         #3. compute xs from hs
@@ -220,19 +230,10 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y,
             reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1), 
             reshape(inverse_offdiag, size(inverse_offdiag)..., 1))
         # calculate elbo
-        ml_total += calculate_elbo(model.B[k], FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev, 
-            reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1), reshape(y, size(y)...,1), total_entropy)
+        #ml_total += calculate_elbo(model.B[k], FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev, 
+        #    reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1), reshape(y, size(y)...,1), total_entropy)
 
     end
-    #1. compute qs from xs, which will live as log_likelihoods in FB
-    variational_qs!([model.obs_model for model in model.B], FB, y, FS)
-    
-    #2. compute hs from qs, which will live as γ in FB
-    forward!(model, FB)
-    backward!(model, FB)
-    calculate_γ!(model, FB)
-
-    ml_total += hmm_elbo(model, FB)
 
     return ml_total
 
