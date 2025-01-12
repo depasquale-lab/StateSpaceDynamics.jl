@@ -3,56 +3,11 @@ export SwitchingLinearDynamicalSystem, fit!, sample, initialize_slds, variationa
 """
 Switching Linear Dynamical System
 """
-mutable struct SwitchingLinearDynamicalSystem
+mutable struct SwitchingLinearDynamicalSystem <: AbstractHMM
     A::Matrix{<:Real}                 # Transition matrix for mode switching
     B::Vector{LinearDynamicalSystem}  # Vector of Linear Dynamical System models
     πₖ::Vector{Float64}               # Initial state distribution
     K::Int                            # Number of modes
-end
-
-
-
-""""
-    FilterSmooth{T<:Real}
-
-A mutable structure for storing smoothed estimates and associated covariance matrices in a filtering or smoothing algorithm.
-
-# Type Parameters
-- `T<:Real`: The numerical type used for all fields (e.g., `Float64`, `Float32`).
-
-# Fields
-- `x_smooth::Matrix{T}`  
-  The matrix containing smoothed state estimates over time. Each column typically represents the state vector at a given time step.
-
-- `p_smooth::Array{T, 3}`  
-  The posterior covariance matrices with dimensions (latent_dim, latent_dim, time_steps)
-
-- `E_z::Array{T, 3}`  
-  The expected latent states, size (state_dim, T, n_trials).
-
-- `E_zz::Array{T, 4}`  
-  The expected value of z_t * z_t', size (state_dim, state_dim, T, n_trials).
-
-- `E_zz_prev::Array{T, 4}`  
-  The expected value of z_t * z_{t-1}', size (state_dim, state_dim, T, n_trials).
-
-# Example
-```julia
-# Initialize a FilterSmooth object with Float64 type
-filter = FilterSmooth{Float64}(
-    x_smooth = zeros(10, 100),
-    p_smooth = zeros(10, 10, 100),
-    E_z = zeros(10, 5, 100),
-    E_zz = zeros(10, 10, 5, 100),
-    E_zz_prev = zeros(10, 10, 5, 100)
-)
-"""
-mutable struct FilterSmooth{T<:Real}
-    x_smooth::Matrix{T}
-    p_smooth::Array{T, 3}
-    E_z::Array{T, 3}
-    E_zz::Array{T, 4}
-    E_zz_prev::Array{T, 4}
 end
 
 
@@ -286,7 +241,8 @@ elbo = variational_expectation!(model, y, FB, FS)
 println("Computed ELBO: ", elbo)
 """
 #havce a problem here becuase FB is defined later and get an error
-function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB, FS)
+function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, 
+  FB::ForwardBackward, FS::Vector{FilterSmooth{T}}) where {T<:Real}
 
     γ = FB.γ
     hs = exp.(γ)
@@ -321,7 +277,7 @@ end
 
 """
 """
-function hmm_elbo(model::SwitchingLinearDynamicalSystem, FB)
+function hmm_elbo(model::SwitchingLinearDynamicalSystem, FB::ForwardBackward)
 
   # Extract necessary data
   γ = FB.γ
@@ -418,8 +374,8 @@ variational_qs!(model, FB, y, FS)
 # Access the updated log-likelihoods
 println(FB.loglikelihoods)
 """
-function variational_qs!(model::Vector{GaussianObservationModel{T}}, FB, y, FS
-    ) where {T<:Real}
+function variational_qs!(model::Vector{GaussianObservationModel{T}}, FB::ForwardBackward, 
+  y, FS::Vector{FilterSmooth{T}}) where {T<:Real}
     log_likelihoods = FB.loglikelihoods
     K = length(model)
     T_steps = size(y, 2)
@@ -452,7 +408,7 @@ end
 """
 """
 function mstep!(slds::SwitchingLinearDynamicalSystem,
-    FS, y::Matrix{T}, FB) where {T<:Real}
+    FS::Vector{FilterSmooth{T}}, y::Matrix{T}, FB::ForwardBackward) where {T<:Real}
 
     K = slds.K
 

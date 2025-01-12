@@ -24,15 +24,8 @@ mutable struct HiddenMarkovModel <: AbstractHMM
     K::Int # number of states
 end
 
-mutable struct ForwardBackward{T<:Real}
-    loglikelihoods::Matrix{T}
-    α::Matrix{T}
-    β::Matrix{T}
-    γ::Matrix{T}
-    ξ::Array{T, 3}
-end
 
-function initialize_forward_backward(model::Union{HiddenMarkovModel, SwitchingLinearDynamicalSystem}, num_obs::Int)
+function initialize_forward_backward(model::AbstractHMM, num_obs::Int)
     num_states = model.K
     ForwardBackward(
         zeros(num_states, num_obs),
@@ -188,7 +181,7 @@ function loglikelihood(model::HiddenMarkovModel, data...)
     return logsumexp(α[:, end])
 end
 
-function forward!(model::Union{HiddenMarkovModel, SwitchingLinearDynamicalSystem}, FB_storage::ForwardBackward)
+function forward!(model::AbstractHMM, FB_storage::ForwardBackward)
     # Reference storage
     α = FB_storage.α
     loglikelihoods = FB_storage.loglikelihoods
@@ -218,7 +211,7 @@ function forward!(model::Union{HiddenMarkovModel, SwitchingLinearDynamicalSystem
     end
 end
 
-function backward!(model::Union{HiddenMarkovModel, SwitchingLinearDynamicalSystem}, FB_storage::ForwardBackward)
+function backward!(model::AbstractHMM, FB_storage::ForwardBackward)
     # Reference storage
     β = FB_storage.β
     loglikelihoods = FB_storage.loglikelihoods
@@ -244,7 +237,7 @@ function backward!(model::Union{HiddenMarkovModel, SwitchingLinearDynamicalSyste
     end
 end
 
-function calculate_γ!(model::Union{HiddenMarkovModel, SwitchingLinearDynamicalSystem}, FB_storage::ForwardBackward)
+function calculate_γ!(model::AbstractHMM, FB_storage::ForwardBackward)
     α = FB_storage.α
     β = FB_storage.β
 
@@ -297,15 +290,13 @@ function estep!(model::HiddenMarkovModel, data, FB_storage)
     calculate_ξ!(model, FB_storage)
 end
 
-function update_initial_state_distribution!(model::Union{HiddenMarkovModel, 
-    SwitchingLinearDynamicalSystem}, FB_storage::ForwardBackward)
+function update_initial_state_distribution!(model::AbstractHMM, FB_storage::ForwardBackward)
     # Update initial state probabilities
     γ = FB_storage.γ
     return model.πₖ .= exp.(γ[:, 1])
 end
 
-function update_transition_matrix!(
-    model::Union{HiddenMarkovModel, SwitchingLinearDynamicalSystem}, FB_storage::ForwardBackward
+function update_transition_matrix!(model::AbstractHMM, FB_storage::ForwardBackward
 )
     γ = FB_storage.γ
     ξ = FB_storage.ξ
