@@ -39,43 +39,75 @@ function sample(slds::SwitchingLinearDynamicalSystem, T::Int)
     
 end
 
-
 """
 Initialize a Switching Linear Dynamical System with random parameters.
 """
 function initialize_slds(;K::Int=2, d::Int=2, p::Int=10, seed::Int=42)
     Random.seed!(seed)
 
-    #A = rand(K, K)
-    A = zeros(K,K)
-    A[1,1] = 0.96
-    A[1,2] = 0.04
-    A[2,2] = 0.96
-    A[2,1] = 0.04
+    # Transition matrix
+    A = zeros(K, K)
+    A[1, 1] = 0.96
+    A[1, 2] = 0.04
+    A[2, 2] = 0.96
+    A[2, 1] = 0.04
     A ./= sum(A, dims=2) # Normalize rows to sum to 1
 
+    # Initial state probabilities
     πₖ = rand(K)
     πₖ ./= sum(πₖ) # Normalize to sum to 1
 
-    # set up the state parameters
-    #A2 = 0.95 * [cos(0.25) -sin(0.25); sin(0.25) cos(0.25)] 
+    # State parameters
     Q = Matrix(0.001 * I(d))
-
     x0 = [0.0; 0.0]
     P0 = Matrix(0.001 * I(d))
 
-    # set up the observation parameters
-    C = randn(p, d)
-    R = Matrix(0.001 * I(p))
-
+    # Define observation parameters separately for each state
     B = [LinearDynamicalSystem(
         GaussianStateModel(0.95 * [cos(f) -sin(f); sin(f) cos(f)], Q, x0, P0),
-        GaussianObservationModel(C, R),
-        d, p, fill(true, 6  )) for (_,f) in zip(1:K, [0.1, 2.0])]
+        GaussianObservationModel(randn(p, d), Matrix(0.001 * I(p))), # Different C and R for each state
+        d, p, fill(true, 6)) for (_, f) in zip(1:K, [0.1, 2.0])]
 
     return SwitchingLinearDynamicalSystem(A, B, πₖ, K)
-
 end
+
+
+"""
+Initialize a Switching Linear Dynamical System with random parameters.
+"""
+# function initialize_slds(;K::Int=2, d::Int=2, p::Int=10, seed::Int=42)
+#     Random.seed!(seed)
+
+#     #A = rand(K, K)
+#     A = zeros(K,K)
+#     A[1,1] = 0.96
+#     A[1,2] = 0.04
+#     A[2,2] = 0.96
+#     A[2,1] = 0.04
+#     A ./= sum(A, dims=2) # Normalize rows to sum to 1
+
+#     πₖ = rand(K)
+#     πₖ ./= sum(πₖ) # Normalize to sum to 1
+
+#     # set up the state parameters
+#     #A2 = 0.95 * [cos(0.25) -sin(0.25); sin(0.25) cos(0.25)] 
+#     Q = Matrix(0.001 * I(d))
+
+#     x0 = [0.0; 0.0]
+#     P0 = Matrix(0.001 * I(d))
+
+#     # set up the observation parameters
+#     C = randn(p, d)
+#     R = Matrix(0.001 * I(p))
+
+#     B = [LinearDynamicalSystem(
+#         GaussianStateModel(0.95 * [cos(f) -sin(f); sin(f) cos(f)], Q, x0, P0),
+#         GaussianObservationModel(C, R),
+#         d, p, fill(true, 6  )) for (_,f) in zip(1:K, [0.1, 2.0])]
+
+#     return SwitchingLinearDynamicalSystem(A, B, πₖ, K)
+
+# end
 
 """
     fit!(slds::SwitchingLinearDynamicalSystem, y::Matrix{T}; 
