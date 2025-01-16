@@ -237,6 +237,7 @@ function backward!(model::AbstractHMM, FB_storage::ForwardBackward)
     end
 end
 
+# The following functions take AbstractHMM to be compatible w/ sLDS
 function calculate_γ!(model::AbstractHMM, FB_storage::ForwardBackward)
     α = FB_storage.α
     β = FB_storage.β
@@ -251,7 +252,7 @@ function calculate_γ!(model::AbstractHMM, FB_storage::ForwardBackward)
 end
 
 function calculate_ξ!(
-    model::HiddenMarkovModel,
+    model::AbstractHMM,
     FB_storage::ForwardBackward
 )
     α = FB_storage.α
