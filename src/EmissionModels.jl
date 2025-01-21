@@ -279,12 +279,17 @@ function loglikelihood(
 )
     # Add intercept if specified
     Φ = model.include_intercept ? [ones(size(Φ, 1)) Φ] : Φ
+    
 
     # residuals
     residuals = Y - Φ * model.β
 
     # Calculate weighted least squares
     weighted_residuals = residuals .^ 2 .* w
+
+    if size(weighted_residuals,2) > 1
+        weighted_residuals = vec(sum(weighted_residuals, dims=2))
+    end
 
     return -0.5 .* weighted_residuals
 end
