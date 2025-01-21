@@ -355,7 +355,7 @@ function mstep!(slds::SwitchingLinearDynamicalSystem,
         update_A!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
         update_Q!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
         update_C!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
-        #update_R!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
+        update_R!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
     end
 
     new_params = vec([stateparams(slds.B[k]) for k in 1:K])

@@ -1166,7 +1166,7 @@ function update_R!(
         for trial in 1:n_trials
             @inbounds for t in 1:T_steps
                 # Compute innovation using pre-allocated arrays
-                yt = @view y[:, t, trial]
+                yt = w[t] * (@view y[:, t, trial])
                 zt = @view E_z[:, t, trial]
                 mul!(Czt, C, zt)
                 @. innovation = yt - Czt
