@@ -116,8 +116,6 @@ function fit!(
     K = slds.K
     T_step = size(y, 2)
     FB = initialize_forward_backward(slds, T_step)
-    #γ = FB.γ
-    #γ .= -100.
     FS = [initialize_FilterSmooth(slds.B[k], T_step) for k in 1:K]
 
     # Run EM
@@ -205,19 +203,6 @@ println("Computed ELBO: ", elbo)
 """
 function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::ForwardBackward, FS::Vector{FilterSmooth{T}}) where {T<:Real}
   
-  tol = 1e-6
-  # Get starting point for iterative E-step
-  γ = FB.γ
-  hs = exp.(γ)
-  ml_total = 0.
-
-  # Initialize to something higher than the tolerance
-  ml_diff = 1
-  ml_prev = -Inf
-  ml_storage = []
-  # while ml_diff > tol
-  # Reselt likelihood calculation if tolerance not reached
-  ml_total = 0.
   #1. compute qs from xs, which will live as log_likelihoods in FB
   variational_qs!([model.obs_model for model in model.B], FB, y, FS)
   #2. compute hs from qs, which will live as γ in FB
@@ -226,7 +211,6 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::
   calculate_γ!(model, FB)
   calculate_ξ!(model, FB)   # fixed this: Have to calculate this for the m_step update of transition matrix
   hs = exp.(FB.γ)
-  #ml_total += hmm_elbo(model, FB)
   ml_total = logsumexp(FB.α[:, end])
 
   for k in 1:model.K
@@ -236,50 +220,11 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::
           sufficient_statistics(reshape(FS[k].x_smooth, size(FS[k].x_smooth)..., 1), 
           reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1), 
           reshape(inverse_offdiag, size(inverse_offdiag)..., 1))
-      # calculate elbo
-      ml_total += calculate_elbo(model.B[k], FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev, 
-        reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1), reshape(y, size(y)...,1), total_entropy)
   end
-
-  # Set ml_total to the next iterations previous ml
-  ml_diff = ml_prev - ml_total
-  ml_prev = ml_total
-
-  # end  # while loop
 
   return ml_total
 
 end  # function
-
-
-"""
-"""
-function hmm_elbo(model::SwitchingLinearDynamicalSystem, FB::ForwardBackward)
-
-  # Extract necessary data
-  γ = FB.γ
-  ξ = FB.ξ
-  loglikelihoods = FB.loglikelihoods
-  A = model.A   # Transition matrix
-  πₖ = model.πₖ # Initial state distribution
-  time_steps = size(loglikelihoods, 2)
-
-  # Initial state probabilities
-  log_p_x_z = sum(exp.(γ[:, 1]) .* log.(πₖ))
-
-  # Transition term using ξ
-  for t in 1:(time_steps - 1)
-    log_p_x_z += sum(exp.(ξ[:, :, t]) .* log.(A))
-  end
-
-  # Emission term
-  log_p_x_z += sum(exp.(γ) .* loglikelihoods)
-
-  # 2. Compute log q(z)
-  log_q_z = sum(exp.(γ) .* γ)
-
-  log_p_x_z - log_q_z
-end
 
 
 """
