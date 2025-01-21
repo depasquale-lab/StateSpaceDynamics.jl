@@ -50,8 +50,6 @@ function mstep!(slds::SSD.SwitchingLinearDynamicalSystem,
     #update transition matrix
     SSD.update_transition_matrix!(slds, FB)
 
-    @infiltrate
-
     γ = FB.γ
     hs = exp.(γ)
 
@@ -120,11 +118,11 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::
     # Initialize to something higher than the tolerance
     ml_diff = 1
     ml_prev = -Inf
-    ml_storage = []
-
-    while ml_diff > tol
+    ml_storage = [-Inf]
+    # while ml_diff > tol
+    for i in 1:50
         # Reselt likelihood calculation if tolerance not reached
-        ml_total = 0
+        ml_total = 0.
         #1. compute qs from xs, which will live as log_likelihoods in FB
         variational_qs!([model.obs_model for model in model.B], FB, y, FS)
 
@@ -141,21 +139,26 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::
         for k in 1:model.K
             #3. compute xs from hs
             FS[k].x_smooth, FS[k].p_smooth, inverse_offdiag, total_entropy  = SSD.smooth(model.B[k], y, vec(hs[k,:]))
+
             FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev = 
                 SSD.sufficient_statistics(reshape(FS[k].x_smooth, size(FS[k].x_smooth)..., 1), 
                 reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1), 
                 reshape(inverse_offdiag, size(inverse_offdiag)..., 1))
+
             # calculate elbo
-            ml_total += SSD.calculate_elbo(model.B[k], FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev, 
+            val = SSD.calculate_elbo(model.B[k], FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev, 
             reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1), reshape(y, size(y)...,1), total_entropy)
+
+            @infiltrate
+            ml_total += val
         end
 
         # Set ml_total to the next iterations previous ml
         ml_diff = ml_prev - ml_total
         print(ml_total)
         ml_prev = ml_total
+        push!(ml_storage, ml_total)
     end  # while loop
-  
     return ml_total
   
   end  # function
@@ -180,8 +183,6 @@ function fiter!(
     #γ .= -100.
     FS = [SSD.initialize_FilterSmooth(slds.B[k], T_step) for k in 1:K]
 
-    @infiltrate
-
     # Run EM
     for i in 1:max_iter
         # E-step
@@ -189,7 +190,6 @@ function fiter!(
 
         # M-step
         Δparams = mstep!(slds, FS, y, FB)
-        @infiltrate
 
         # Update the log-likelihood vector and parameter difference
         push!(mls, ml)
