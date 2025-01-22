@@ -733,7 +733,7 @@ end
 """
     Q_obs(H, R, E_z, E_zz, y)
 
-Calculate the a single time step observation component of the Q-function for the EM algorithm in a Linear Dynamical System.
+Calculate the a single time step observation component of the Q-function for the EM algorithm in a Linear Dynamical System before the R^-1 is accounted for.
 
 # Arguments
 - `H::Matrix{<:Real}`: The observation matrix.
@@ -743,7 +743,7 @@ Calculate the a single time step observation component of the Q-function for the
 - `y::Vector{<:Real}`: The observed data at time t, size (obs_dim).
 
 # Returns
-- `q::Float64`: The observation component at time t of the Q-function.
+- `q::Float64`: The observation component at time t of the Q-function prior to R^-1.
 
 """
 function Q_obs(

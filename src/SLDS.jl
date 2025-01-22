@@ -203,6 +203,8 @@ println("Computed ELBO: ", elbo)
 """
 function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::ForwardBackward, FS::Vector{FilterSmooth{T}}) where {T<:Real}
   
+  ml_total = 0 
+  for i = 1:2
   #1. compute qs from xs, which will live as log_likelihoods in FB
   variational_qs!([model.obs_model for model in model.B], FB, y, FS)
   #2. compute hs from qs, which will live as γ in FB
@@ -220,6 +222,7 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::
           sufficient_statistics(reshape(FS[k].x_smooth, size(FS[k].x_smooth)..., 1), 
           reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1), 
           reshape(inverse_offdiag, size(inverse_offdiag)..., 1))
+  end
   end
 
   return ml_total
@@ -251,25 +254,6 @@ Compute the variational distributions (`qs`) and update the log-likelihoods for 
 
 # Description
 `variational_qs!` updates the log-likelihoods for each Gaussian observation model across all time steps based on the current smoothed state estimates. This is a critical step in variational inference algorithms for Switching Linear Dynamical Systems, where the goal is to approximate the posterior distributions over latent variables.
-
-The function operates as follows:
-
-1. **Initialization**:  
-   - Extracts the `loglikelihoods` matrix from the `FB` object.
-   - Determines the number of regimes (`K`) and the number of time steps (`T_steps`) from the `model` and observation matrix `y`.
-
-2. **Parallel Computation Across Regimes**:  
-   - Utilizes multi-threading (`@threads`) to iterate over each regime `k` in parallel.
-   - For each regime:
-     - Computes the Cholesky decomposition of the observation noise covariance matrix `R`.
-     - Precomputes `C_Rinv`, which is used in the log-likelihood calculation to improve computational efficiency.
-
-3. **Parallel Computation Across Time Steps**:  
-   - Within each regime, another level of multi-threading (`@threads`) iterates over each time step `t`.
-   - For each time step:
-     - Computes the transformed observation `yt_Rinv`.
-     - Calculates the log-likelihood `log_likelihoods[k, t]`
-     - Updates the `log_likelihoods` matrix with the computed value.
 
 # Example
 ```julia
@@ -306,31 +290,12 @@ function variational_qs!(model::Vector{GaussianObservationModel{T}}, FB::Forward
 
         R_chol = cholesky(Symmetric(model[k].R))
         C = model[k].C
-        #C_Rinv = (R_chol \ C)'
 
         @threads for t in 1:T_steps
-        #    yt_Rinv = (R_chol \ y[:,t])'
-        #    log_likelihoods[k, t] = -0.5 * yt_Rinv * y[:,t] + 
-        #        yt_Rinv * C * FS[k].E_z[:,t,1] - 0.5 * tr(C_Rinv * C * FS[k].E_zz[:,:,t,1])
-        #end
-        
-        # Use views in the loop
-        #@views for t in axes(y, 2)
           FB.loglikelihoods[k, t] = -0.5 * tr(R_chol \ Q_obs(C, FS[k].E_z[:,t,1], FS[k].E_zz[:,:,t,1], y[:,t]))
         end
-    
-        # Subtract max for numerical stability
-        #log_likelihoods[k, :] .-= maximum(log_likelihoods[k, :])
 
     end 
-
-    # Convert to likelihoods, normalize, and back to log space
-    #likelihoods = exp.(log_likelihoods)
-    # normalized_probs = likelihoods ./ sum(likelihoods)
-    #normalized_probs = likelihoods ./ sum(likelihoods, dims=1)  # fixed normalization of log likelihoods
-    # log_likelihoods = log.(normalized_probs)
-    #FB.loglikelihoods = log.(normalized_probs)  # fixed incorrect assignment to FB
-
 end
 
 
@@ -358,8 +323,8 @@ function mstep!(slds::SwitchingLinearDynamicalSystem,
         update_initial_state_mean!(slds.B[k], FS[k].E_z)
         update_initial_state_covariance!(slds.B[k], FS[k].E_z, FS[k].E_zz)
         update_A!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
-        update_Q!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
-        update_C!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
+        #update_Q!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
+        #update_C!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
         #update_R!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
     end
 
