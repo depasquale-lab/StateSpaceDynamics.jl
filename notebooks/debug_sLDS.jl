@@ -93,7 +93,7 @@ function variational_qs!(model::Vector{SSD.GaussianObservationModel{T}}, FB::SSD
               log_likelihoods[k, t] = -0.5 * yt_Rinv * y[:,t] + 
                   yt_Rinv * C * FS[k].E_z[:,t,1] - 0.5 * tr(C_Rinv * C * FS[k].E_zz[:,:,t,1])
           end
-          println("In variational qs")
+    
           
           
           # Subtract max for numerical stability
@@ -119,8 +119,11 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::
     ml_diff = 1
     ml_prev = -Inf
     ml_storage = [-Inf]
+    ml_hmm=0
+    ml_lds=0
+    ml_total=0
     # while ml_diff > tol
-    for i in 1:50
+    for i in 1:100
         # Reselt likelihood calculation if tolerance not reached
         ml_total = 0.
         #1. compute qs from xs, which will live as log_likelihoods in FB
@@ -135,7 +138,7 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::
 
         #ml_total += hmm_elbo(model, FB)
         ml_total = SSD.logsumexp(FB.α[:, end])
-
+        ml_hmm = ml_total
         for k in 1:model.K
             #3. compute xs from hs
             FS[k].x_smooth, FS[k].p_smooth, inverse_offdiag, total_entropy  = SSD.smooth(model.B[k], y, vec(hs[k,:]))
@@ -148,17 +151,21 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::
             # calculate elbo
             val = SSD.calculate_elbo(model.B[k], FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev, 
             reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1), reshape(y, size(y)...,1), total_entropy)
-
-            @infiltrate
+            ml_lds += val
             ml_total += val
         end
 
         # Set ml_total to the next iterations previous ml
         ml_diff = ml_prev - ml_total
-        print(ml_total)
+        
         ml_prev = ml_total
         push!(ml_storage, ml_total)
     end  # while loop
+
+    println(ml_hmm)
+    println(ml_lds)
+    println(ml_total)
+    @infiltrate
     return ml_total
   
   end  # function
@@ -210,4 +217,4 @@ end
   FB = StateSpaceDynamics.initialize_forward_backward(modeli, T)
   FS = [StateSpaceDynamics.initialize_FilterSmooth(modeli.B[k], T) for k in 1:K]
   
-  mls, param_diff, FB, FS = fiter!(modeli, y; max_iter=1)
+  mls, param_diff, FB, FS = fiter!(modeli, y; max_iter=2)
