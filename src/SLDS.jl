@@ -298,33 +298,38 @@ println(FB.loglikelihoods)
 """
 function variational_qs!(model::Vector{GaussianObservationModel{T}}, FB::ForwardBackward, 
   y, FS::Vector{FilterSmooth{T}}) where {T<:Real}
-    log_likelihoods = FB.loglikelihoods
-    K = length(model)
-    T_steps = size(y, 2)
+
+  T_steps = size(y, 2)
+  K = length(model)
 
     @threads for k in 1:K
 
         R_chol = cholesky(Symmetric(model[k].R))
         C = model[k].C
-        C_Rinv = (R_chol \ C)'
+        #C_Rinv = (R_chol \ C)'
 
         @threads for t in 1:T_steps
-            yt_Rinv = (R_chol \ y[:,t])'
-            log_likelihoods[k, t] = -0.5 * yt_Rinv * y[:,t] + 
-                yt_Rinv * C * FS[k].E_z[:,t,1] - 0.5 * tr(C_Rinv * C * FS[k].E_zz[:,:,t,1])
+        #    yt_Rinv = (R_chol \ y[:,t])'
+        #    log_likelihoods[k, t] = -0.5 * yt_Rinv * y[:,t] + 
+        #        yt_Rinv * C * FS[k].E_z[:,t,1] - 0.5 * tr(C_Rinv * C * FS[k].E_zz[:,:,t,1])
+        #end
+        
+        # Use views in the loop
+        #@views for t in axes(y, 2)
+          FB.loglikelihoods[k, t] = -0.5 * tr(R_chol \ Q_obs(C, FS[k].E_z[:,t,1], FS[k].E_zz[:,:,t,1], y[:,t]))
         end
-
+    
         # Subtract max for numerical stability
-        log_likelihoods[k, :] .-= maximum(log_likelihoods[k, :])
+        #log_likelihoods[k, :] .-= maximum(log_likelihoods[k, :])
 
     end 
 
     # Convert to likelihoods, normalize, and back to log space
-    likelihoods = exp.(log_likelihoods)
+    #likelihoods = exp.(log_likelihoods)
     # normalized_probs = likelihoods ./ sum(likelihoods)
-    normalized_probs = likelihoods ./ sum(likelihoods, dims=1)  # fixed normalization of log likelihoods
+    #normalized_probs = likelihoods ./ sum(likelihoods, dims=1)  # fixed normalization of log likelihoods
     # log_likelihoods = log.(normalized_probs)
-    FB.loglikelihoods = log.(normalized_probs)  # fixed incorrect assignment to FB
+    #FB.loglikelihoods = log.(normalized_probs)  # fixed incorrect assignment to FB
 
 end
 

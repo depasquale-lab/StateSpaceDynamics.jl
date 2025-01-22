@@ -733,6 +733,50 @@ end
 """
     Q_obs(H, R, E_z, E_zz, y)
 
+Calculate the a single time step observation component of the Q-function for the EM algorithm in a Linear Dynamical System.
+
+# Arguments
+- `H::Matrix{<:Real}`: The observation matrix.
+- `R::AbstractMatrix{<:Real}`: The observation noise covariance matrix (or its Cholesky factor).
+- `E_z::Vector{<:Real}`: The expected latent states at time t, size (state_dim).
+- `E_zz::Matrix{<:Real}`: The expected value of z_t * z_t' at time t, size (state_dim, state_dim).
+- `y::Vector{<:Real}`: The observed data at time t, size (obs_dim).
+
+# Returns
+- `q::Float64`: The observation component at time t of the Q-function.
+
+"""
+function Q_obs(
+    H::AbstractMatrix{<:Real},
+    E_z::AbstractVector{<:Real},
+    E_zz::AbstractMatrix{<:Real},
+    y::AbstractVector{<:Real},
+)
+
+    obs_dim = size(H, 1)
+
+    # Pre-allocate statistics
+    sum_yy = zeros(obs_dim, obs_dim)
+    sum_yz = zeros(obs_dim, size(E_z, 1))
+    
+    mul!(sum_yy, y, y', 1.0, 1.0)
+    mul!(sum_yz, y, E_z', 1.0, 1.0)
+
+    # Pre-allocate and compute final expression
+    temp = similar(sum_yy)
+    copyto!(temp, sum_yy)
+    mul!(temp, H, sum_yz', -1.0, 1.0)
+    temp .-= sum_yz * H'
+    mul!(temp, H * E_zz, H', 1.0, 1.0)
+        
+    return temp
+
+end
+
+
+"""
+    Q_obs(H, R, E_z, E_zz, y)
+
 Calculate the observation component of the Q-function for the EM algorithm in a Linear Dynamical System.
 
 # Arguments
@@ -761,32 +805,19 @@ function Q_obs(
     log_det_R = logdet(R_chol)
     const_term = obs_dim * log(2π)
 
-    # Pre-allocate statistics
-    sum_yy = zeros(obs_dim, obs_dim)
-    sum_yz = zeros(obs_dim, size(E_z, 1))
+    #Pre-allocate statistics
+    temp = zeros(obs_dim, obs_dim)
     
     # Use views in the loop
     @views for t in axes(y, 2)
-        y_t = y[:, t]
-        E_z_t = E_z[:, t]
-        mul!(sum_yy, y_t, y_t', 1.0, 1.0)
-        mul!(sum_yz, y_t, E_z_t', 1.0, 1.0)
+        temp += Q_obs(H, E_z[:,t], E_zz[:,:,t], y[:,t])
     end
-    
-    # Sum E_zz more efficiently
-    sum_E_zz = dropdims(sum(E_zz; dims=3); dims=3)
 
-    # Pre-allocate and compute final expression
-    temp = similar(sum_yy)
-    copyto!(temp, sum_yy)
-    mul!(temp, H, sum_yz', -1.0, 1.0)
-    temp .-= sum_yz * H'
-    mul!(temp, H * sum_E_zz, H', 1.0, 1.0)
-    
     Q_val = -0.5 * (T_step * (const_term + log_det_R) + tr(R_chol \ temp))
     
     return Q_val
 end
+
 
 """
     Q(A, Q, H, R, P0, x0, E_z, E_zz, E_zz_prev, y)
