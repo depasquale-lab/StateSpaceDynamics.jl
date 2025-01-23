@@ -121,7 +121,10 @@ function fit!(
     # Run EM
     for i in 1:max_iter
         # E-step
-        ml = variational_expectation!(slds, y, FB, FS)       
+        ml=0
+        for i = 1:10
+          ml = variational_expectation!(slds, y, FB, FS)
+        end      
 
         # M-step
         Δparams = mstep!(slds, FS, y, FB)
@@ -203,8 +206,6 @@ println("Computed ELBO: ", elbo)
 """
 function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::ForwardBackward, FS::Vector{FilterSmooth{T}}) where {T<:Real}
   
-  ml_total = 0 
-  for i = 1:2
   #1. compute qs from xs, which will live as log_likelihoods in FB
   variational_qs!([model.obs_model for model in model.B], FB, y, FS)
   #2. compute hs from qs, which will live as γ in FB
@@ -223,8 +224,6 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::
           reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1), 
           reshape(inverse_offdiag, size(inverse_offdiag)..., 1))
   end
-  end
-
   return ml_total
 
 end  # function
@@ -322,7 +321,7 @@ function mstep!(slds::SwitchingLinearDynamicalSystem,
         # Update LDS parameters
         update_initial_state_mean!(slds.B[k], FS[k].E_z)
         update_initial_state_covariance!(slds.B[k], FS[k].E_z, FS[k].E_zz)
-        update_A!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
+        #update_A!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
         #update_Q!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
         #update_C!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
         #update_R!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
