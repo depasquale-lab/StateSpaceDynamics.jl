@@ -1197,13 +1197,14 @@ function update_R!(
         for trial in 1:n_trials
             @inbounds for t in 1:T_steps
                 # Compute innovation using pre-allocated arrays
-                yt = w[t] * (@view y[:, t, trial])
+                yt = @view y[:, t, trial]
                 zt = @view E_z[:, t, trial]
                 mul!(Czt, C, zt)
-                @. innovation = yt - Czt
+                @. innovation = (yt - Czt)
                 
                 # Add innovation outer product
-                BLAS.ger!(one(T), innovation, innovation, R_new)
+                #BLAS.ger!(one(T), innovation, innovation, R_new)
+                mul!(R_new, innovation, innovation', w[t], one(T))  # R_new += w[t] * innovation * innovation'
                 
                 # Add correction term efficiently:
                 # First compute state_uncertainty = Σ_t - z_t*z_t'
@@ -1211,7 +1212,7 @@ function update_R!(
                 
                 # Then compute C * state_uncertainty * C' in steps:
                 mul!(temp_matrix, C, state_uncertainty)  # temp = C * state_uncertainty
-                mul!(R_new, temp_matrix, C', one(T), one(T))  # R_new += temp * C'
+                mul!(R_new, temp_matrix, C', w[t], one(T))  # R_new += w[t] * C * state_uncertainty * C'
             end
         end
         
