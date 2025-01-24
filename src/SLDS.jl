@@ -257,6 +257,7 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::
     calculate_ξ!(model, FB)   # fixed this: Have to calculate this for the m_step update of transition matrix
     hs = exp.(FB.γ)
     ml_total = logsumexp(FB.α[:, end])
+    #ml_total = hmm_elbo(model, FB)
 
     for k in 1:model.K
         #3. compute xs from hs
@@ -266,8 +267,8 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::
             reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1), 
             reshape(inverse_offdiag, size(inverse_offdiag)..., 1))
         # calculate elbo
-        ml_total += calculate_elbo(model.B[k], FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev, 
-         reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1), reshape(y, size(y)...,1), total_entropy)
+        #ml_total += calculate_elbo(model.B[k], FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev, 
+        # reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1), reshape(y, size(y)...,1), total_entropy)
     end
 
     # Set ml_total to the next iterations previous ml
@@ -399,16 +400,16 @@ function variational_qs!(model::Vector{GaussianObservationModel{T}}, FB::Forward
         end
 
         # Subtract max for numerical stability
-        log_likelihoods[k, :] .-= maximum(log_likelihoods[k, :])
+        #log_likelihoods[k, :] .-= maximum(log_likelihoods[k, :])
 
     end 
 
     # Convert to likelihoods, normalize, and back to log space
-    likelihoods = exp.(log_likelihoods)
+    #likelihoods = exp.(log_likelihoods)
     # normalized_probs = likelihoods ./ sum(likelihoods)
-    normalized_probs = likelihoods ./ sum(likelihoods, dims=1)  # fixed normalization of log likelihoods
+    #normalized_probs = likelihoods ./ sum(likelihoods, dims=1)  # fixed normalization of log likelihoods
     # log_likelihoods = log.(normalized_probs)
-    FB.loglikelihoods = log.(normalized_probs)  # fixed incorrect assignment to FB
+    #FB.loglikelihoods = log.(normalized_probs)  # fixed incorrect assignment to FB
 
 end
 
@@ -439,7 +440,7 @@ function mstep!(slds::SwitchingLinearDynamicalSystem,
         update_A!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
         update_Q!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
         update_C!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
-        #update_R!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
+        update_R!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
     end
 
     new_params = vec([stateparams(slds.B[k]) for k in 1:K])
