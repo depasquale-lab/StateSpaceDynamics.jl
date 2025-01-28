@@ -1043,7 +1043,7 @@ function update_initial_state_covariance!(
 
         p0_new ./= n_trials
 
-        lds.state_model.P0 = 0.5 * (p0_new + p0_new')
+        lds.state_model.P0 = make_posdef!(0.5 * (p0_new + p0_new'))
     end
 end
 
@@ -1122,7 +1122,7 @@ function update_Q!(
 
         Q_new ./= (n_trials * (T_steps - 1))
 
-        lds.state_model.Q = 0.5 * (Q_new + Q_new')
+        lds.state_model.Q = make_posdef!(0.5 * (Q_new + Q_new'))
     end
 end
 
@@ -1217,7 +1217,7 @@ function update_R!(
         end
         
         R_new ./= (n_trials * T_steps)
-        lds.obs_model.R = (R_new + R_new') / 2
+        lds.obs_model.R = make_posdef!((R_new + R_new') / 2)
     end
 end
 
