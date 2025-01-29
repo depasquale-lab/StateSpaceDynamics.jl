@@ -225,8 +225,8 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::
     calculate_γ!(model, FB)
     calculate_ξ!(model, FB)   # fixed this: Have to calculate this for the m_step update of transition matrix
     hs = exp.(FB.γ)
-    #ml_total = logsumexp(FB.α[:, end])
-    ml_total = hmm_elbo(model, FB)
+    ml_total = logsumexp(FB.α[:, end])
+    # ml_total = hmm_elbo(model, FB)
 
     for k in 1:model.K
         #3. compute xs from hs
@@ -342,7 +342,7 @@ function variational_qs!(model::Vector{GaussianObservationModel{T}}, FB::Forward
         R_chol = cholesky(Symmetric(model[k].R))
         C = model[k].C
 
-        @threads for t in 1:T_steps
+        @inbounds for t in 1:T_steps
           FB.loglikelihoods[k, t] = -0.5 * tr(R_chol \ Q_obs(C, FS[k].E_z[:,t,1], FS[k].E_zz[:,:,t,1], y[:,t]))
         end
 
@@ -371,12 +371,12 @@ function mstep!(slds::SwitchingLinearDynamicalSystem,
 
     for k in 1:K
         # Update LDS parameters
-        #update_initial_state_mean!(slds.B[k], FS[k].E_z)
-        #update_initial_state_covariance!(slds.B[k], FS[k].E_z, FS[k].E_zz)
-        #update_A!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
-        #update_Q!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
-        #update_C!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
-        update_R!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
+        update_initial_state_mean!(slds.B[k], FS[k].E_z)
+        update_initial_state_covariance!(slds.B[k], FS[k].E_z, FS[k].E_zz)
+        update_A!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
+        update_Q!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
+        update_C!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
+        # update_R!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
     end
 
     new_params = vec([stateparams(slds.B[k]) for k in 1:K])
