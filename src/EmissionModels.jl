@@ -327,11 +327,19 @@ function objective_gradient!(
     return G .= vec(grad_mat)
 end
 
-# Special handling for Gaussian regression to update variance
+# # Special handling for Gaussian regression to update variance
+# function post_optimization!(model::GaussianRegressionEmission, opt::RegressionOptimization)
+#     residuals = opt.y - opt.X * model.β
+#     Σ = (residuals' * Diagonal(opt.w) * residuals) / size(opt.X, 1)
+#     return model.Σ = 0.5 * (Σ + Σ')  # Ensure symmetry
+# end
+
 function post_optimization!(model::GaussianRegressionEmission, opt::RegressionOptimization)
     residuals = opt.y - opt.X * model.β
     Σ = (residuals' * Diagonal(opt.w) * residuals) / size(opt.X, 1)
-    return model.Σ = 0.5 * (Σ + Σ')  # Ensure symmetry
+    model.Σ = 0.5 * (Σ + Σ')  # Ensure symmetry
+    model.Σ = make_posdef!(model.Σ)
+    return model.Σ
 end
 
 """
