@@ -268,16 +268,11 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::
           sufficient_statistics(reshape(FS[k].x_smooth, size(FS[k].x_smooth)..., 1), 
           reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1), 
           reshape(inverse_offdiag, size(inverse_offdiag)..., 1))
-      # calculate elbo
-      ml_total += calculate_elbo(model.B[k], FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev, 
-        reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1), reshape(y, size(y)...,1), total_entropy)
   end
 
-  # Set ml_total to the next iterations previous ml
+
   ml_diff = ml_prev - ml_total
   ml_prev = ml_total
-
-  # end  # while loop
 
   return ml_total
 
@@ -442,7 +437,7 @@ function mstep!(slds::SwitchingLinearDynamicalSystem,
         update_A!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
         update_Q!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
         update_C!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
-        #update_R!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
+        # update_R!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
     end
 
     new_params = vec([stateparams(slds.B[k]) for k in 1:K])
