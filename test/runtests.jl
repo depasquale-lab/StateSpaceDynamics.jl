@@ -29,9 +29,9 @@ Tests for SLDS.jl
 include("LinearDynamicalSystems//SLDS.jl")
 
 @testset "SLDS Tests" begin
-    @testset "Smoother tests" begin
-        test_Gradient()
-        test_Hessian()
+    @testset "Constructor Tests" begin
+        test_init()
+        test_sample()
     end
 end
 

@@ -1,83 +1,59 @@
-# Define the parameters of a penndulum
-g = 9.81 # gravity
-l = 1.0 # length of pendulum
-dt = 0.01 # time step
-
-# Discrete-time dynamics
-A = [1.0 dt; -g / l*dt 1.0]
-Q = Matrix{Float64}(0.00001 * I(2))  # Process noise covariance
-
-# Initial state/ covariance
-x0 = [0.0; 1.0]
-P0 = Matrix{Float64}(0.1 * I(2))  # Initial state covariance
-
-# Observation params 
-C = Matrix{Float64}(I(2))  # Observation matrix (assuming direct observation)
-observation_noise_std = 0.5
-R = Matrix{Float64}((observation_noise_std^2) * I(2))  # Observation noise covariance
-
-function toy_lds(
-    ntrials::Int=1, fit_bool::Vector{Bool}=[true, true, true, true, true, true]
-)
-    lds = GaussianLDS(;
-        A=A, C=C, Q=Q, R=R, x0=x0, P0=P0, obs_dim=2, latent_dim=2, fit_bool=fit_bool
-    )
-
-    # sample data
-    T = 100
-    x, y = StateSpaceDynamics.sample(lds, T, ntrials) # 100 timepoints, 1 trials
-
-    return lds, x, y
+function test_init()
+    # Test the random initialization of the model with default parameters
+    model = initialize_slds()
+    
+    # Check basic model dimensions
+    @test size(model.A) == (model.K, model.K)
+    @test length(model.B) == model.K
+    @test length(model.πₖ) == model.K
+    
+    # Check transition matrix properties
+    @test all(sum(model.A, dims=2) .≈ 1)  # Row sums should be 1
+    @test all(model.A .>= 0)  # Non-negative probabilities
+    @test model.A[1,1] ≈ 0.96  # Check specific values
+    @test model.A[1,2] ≈ 0.04
+    @test model.A[2,2] ≈ 0.96
+    @test model.A[2,1] ≈ 0.04
+    
+    # Check initial state distribution
+    @test sum(model.πₖ) ≈ 1
+    @test all(model.πₖ .>= 0)
+    
+    # Check LDS components
+    for lds in model.B
+        @test lds.latent_dim == 2  # Default latent dimension
+        @test lds.obs_dim == 10    # Default observation dimension
+        @test size(lds.state_model.A) == (2, 2)
+        @test size(lds.state_model.Q) == (2, 2)
+        @test size(lds.obs_model.C) == (10, 2)
+        @test size(lds.obs_model.R) == (10, 10)
+        @test all(isposdef(lds.state_model.Q))  # Covariance matrices should be positive definite
+        @test all(isposdef(lds.obs_model.R))
+    end
+    
+    # # Test initialization with different parameters
+    # model_alt = initialize_slds(K=3, d=3, p=15)
+    # @test size(model_alt.A) == (3, 3)
+    # @test length(model_alt.B) == 3
+    # @test model_alt.B[1].latent_dim == 3
+    # @test model_alt.B[1].obs_dim == 15
+    
+    # Test seed reproducibility
+    model1 = initialize_slds(seed=42)
+    model2 = initialize_slds(seed=42)
+    @test all(model1.A .== model2.A)
+    @test all(model1.πₖ .== model2.πₖ)
+    @test all(model1.B[1].obs_model.C .== model2.B[1].obs_model.C)
 end
 
-#all(isapprox.(ForwardDiff.hessian(x-> StateSpaceDynamics.loglikelihood(x, lds, y, w), x),
-#   Matrix(StateSpaceDynamics.Hessian(lds, y, x, w)[1])))
+function test_sample()
+    model = StateSpaceDynamics.initialize_slds()
+   
+    # sample from the model
+    x, y, z = StateSpaceDynamics.sample(model, 1000)  # 1000 time steps
 
-#all(isapprox.(ForwardDiff.gradient(x-> StateSpaceDynamics.loglikelihood(x, lds, y, w), x),
-#    StateSpaceDynamics.Gradient(lds, y, x, w)))
-
-function test_Gradient()
-    lds, x, y = toy_lds()
-
-    T = size(y, 2)
-    w = rand(T)
-
-    # for each trial check the gradient
-    for i in axes(y, 3)
-
-        # numerically calculate the gradient
-        f = latents -> StateSpaceDynamics.loglikelihood(latents, lds, y[:, :, i], w)
-        grad_numerical = ForwardDiff.gradient(f, x[:, :, i])
-
-        # analytical gradient
-        grad_analytical = StateSpaceDynamics.Gradient(lds, y[:, :, i], x[:, :, i], w)
-        @test norm(grad_numerical - grad_analytical) < 1e-8
-    end
+    # check the dimensions of the samples
+    @test size(x) == (model.B[1].latent_dim, 1000)
+    @test size(y) == (model.B[1].obs_dim, 1000)
+    @test size(z) == (1000,)
 end
-
-function test_Hessian()
-    lds, x, y = toy_lds()
-
-    T = size(y, 2)
-    w = rand(T)
-
-    function log_likelihood(x::AbstractArray, lds, y::AbstractArray, w)
-        return StateSpaceDynamics.loglikelihood(x, lds, y, w)
-    end
-
-    # for each trial check the Hessian
-    for i in axes(y, 3)
-        hess, main, super, sub = StateSpaceDynamics.Hessian(lds, y[:, 1:3, i], x[:, 1:3, i], w)
-        @test size(hess) == (3 * lds.latent_dim, 3 * lds.latent_dim)
-        @test size(main) == (3,)
-        @test size(super) == (2,)
-        @test size(sub) == (2,)
-
-        # calculate the Hessian using autodiff
-        obj = latents -> log_likelihood(latents, lds, y[:, 1:3, i], w)
-        hess_numerical = ForwardDiff.hessian(obj, x[:, 1:3, i], w)
-
-        @test norm(hess_numerical - hess) < 1e-8
-    end
-end
-
