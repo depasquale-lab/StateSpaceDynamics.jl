@@ -147,9 +147,8 @@ function fit!(
 
     K = slds.K
     T_step = size(y, 2)
+    
     FB = initialize_forward_backward(slds, T_step)
-    #γ = FB.γ
-    #γ .= -100.
     FS = [initialize_FilterSmooth(slds.B[k], T_step) for k in 1:K]
 
     # Run EM
@@ -236,8 +235,9 @@ elbo = variational_expectation!(model, y, FB, FS)
 println("Computed ELBO: ", elbo)
 """
 function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::ForwardBackward, FS::Vector{FilterSmooth{T}}) where {T<:Real}
-  
+  # For now a hardcoded tolerance
   tol = 1e-6
+
   # Get starting point for iterative E-step
   γ = FB.γ
   hs = exp.(γ)
@@ -247,36 +247,35 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::
   ml_diff = 1
   ml_prev = -Inf
   ml_storage = []
-  # while ml_diff > tol
-  # Reselt likelihood calculation if tolerance not reached
-  ml_total = 0.
-  #1. compute qs from xs, which will live as log_likelihoods in FB
-  variational_qs!([model.obs_model for model in model.B], FB, y, FS)
-  #2. compute hs from qs, which will live as γ in FB
-  forward!(model, FB)
-  backward!(model, FB)
-  calculate_γ!(model, FB)
-  calculate_ξ!(model, FB)   # fixed this: Have to calculate this for the m_step update of transition matrix
-  hs = exp.(FB.γ)
-  #ml_total += hmm_elbo(model, FB)
-  ml_total = logsumexp(FB.α[:, end])
+  while ml_diff > tol
+    #1. compute qs from xs, which will live as log_likelihoods in FB
+    variational_qs!([model.obs_model for model in model.B], FB, y, FS)
+    #2. compute hs from qs, which will live as γ in FB
+    forward!(model, FB)
+    backward!(model, FB)
+    calculate_γ!(model, FB)
+    calculate_ξ!(model, FB)   # fixed this: Have to calculate this for the m_step update of transition matrix
+    hs = exp.(FB.γ)
+    ml_total = logsumexp(FB.α[:, end])
+    # ml_total = hmm_elbo(model, FB)
 
-  for k in 1:model.K
-      #3. compute xs from hs
-      FS[k].x_smooth, FS[k].p_smooth, inverse_offdiag, total_entropy  = smooth(model.B[k], y, vec(hs[k,:]))
-      FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev = 
-          sufficient_statistics(reshape(FS[k].x_smooth, size(FS[k].x_smooth)..., 1), 
-          reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1), 
-          reshape(inverse_offdiag, size(inverse_offdiag)..., 1))
-  end
+    for k in 1:model.K
+        #3. compute xs from hs
+        FS[k].x_smooth, FS[k].p_smooth, inverse_offdiag, total_entropy  = smooth(model.B[k], y, vec(hs[k,:]))
+        FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev = 
+            sufficient_statistics(reshape(FS[k].x_smooth, size(FS[k].x_smooth)..., 1), 
+            reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1), 
+            reshape(inverse_offdiag, size(inverse_offdiag)..., 1))
+    end
+    
+    # Set ml_total to the next iterations previous ml
+    ml_diff = ml_prev - ml_total
+    ml_prev = ml_total
 
-
-  ml_diff = ml_prev - ml_total
-  ml_prev = ml_total
+  end  # while loop
 
   return ml_total
-
-end  # function
+end 
 
 
 """
