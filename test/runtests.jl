@@ -33,6 +33,10 @@ include("LinearDynamicalSystems//SLDS.jl")
         test_init()
         test_sample()
     end
+
+    @testset "vEM Tests" begin
+        test_vEstep()
+    end
 end
 
 """
