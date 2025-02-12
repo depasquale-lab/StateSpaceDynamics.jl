@@ -109,9 +109,23 @@ function fit!(
 
     K = slds.K
     T_step = size(y, 2)
-
+    
+    # INIT THE FILTER SMOOTH AND FB STRUCTS
     FB = initialize_forward_backward(slds, T_step)
     FS = [initialize_FilterSmooth(slds.B[k], T_step) for k in 1:K]
+
+    # From the paper, we initialize the parameters by running the Kalman Smoother for each model. I would assume we need to set the initial hₜ as well.
+    FB.γ = log.(ones(size(y)) * 0.5)
+
+    # Run the Kalman Smoother for each model
+    for k in 1:slds.K
+      #3. compute xs from hs
+      FS[k].x_smooth, FS[k].p_smooth, inverse_offdiag, total_entropy = smooth(slds.B[k], y, exp.(FB.γ[k,:]))
+      FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev =
+          sufficient_statistics(reshape(FS[k].x_smooth, size(FS[k].x_smooth)..., 1),
+          reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1),
+          reshape(inverse_offdiag, size(inverse_offdiag)..., 1))
+    end
 
     # Run EM
     for i in 1:max_iter
@@ -131,7 +145,7 @@ function fit!(
         # Check convergence
         if abs(ml - prev_ml) < tol
             finish!(prog)
-            return mls, param_diff
+            return mls, param_diff, FB, FS
         end
 
         prev_ml = ml
@@ -339,36 +353,51 @@ variational_qs!(model, FB, y, FS)
 # Access the updated log-likelihoods
 println(FB.loglikelihoods)
 """
-function variational_qs!(model::Vector{GaussianObservationModel{T}}, FB::ForwardBackward, 
+function variational_qs!(model::Vector{GaussianObservationModel{T}}, FB::ForwardBackward,
   y, FS::Vector{FilterSmooth{T}}) where {T<:Real}
-    log_likelihoods = FB.loglikelihoods
-    K = length(model)
-    T_steps = size(y, 2)
+  
+  log_likelihoods = FB.loglikelihoods
+  K = length(model)
+  T_steps = size(y, 2)
+  
+  # Pre-compute constants and allocate temporary storage
+  temp_storage = zeros(T, K)
+  
+  @threads for k in 1:K
+      # Compute Cholesky decomposition once per model
+      R_chol = cholesky(Symmetric(model[k].R))
+      C = model[k].C
+      C_Rinv = (R_chol \ C)'
+      
+      @inbounds for t in 1:T_steps
+          # Compute transformed observation
+          yt_Rinv = (R_chol \ y[:,t])'
+          
+          # Compute log likelihood components
+          observation_term = -0.5 * yt_Rinv * y[:,t]
+          cross_term = yt_Rinv * C * FS[k].E_z[:,t,1]
+          covariance_term = -0.5 * tr(C_Rinv * C * FS[k].E_zz[:,:,t,1])
+          
+          # Store log likelihood
+          log_likelihoods[k, t] = observation_term + cross_term + covariance_term
+      end
+  end
 
-    @threads for k in 1:K
-
-        R_chol = cholesky(Symmetric(model[k].R))
-        C = model[k].C
-        C_Rinv = (R_chol \ C)'
-
-        @threads for t in 1:T_steps
-            yt_Rinv = (R_chol \ y[:,t])'
-            log_likelihoods[k, t] = -0.5 * yt_Rinv * y[:,t] + 
-                yt_Rinv * C * FS[k].E_z[:,t,1] - 0.5 * tr(C_Rinv * C * FS[k].E_zz[:,:,t,1])
-        end
-
-        # Subtract max for numerical stability
-        log_likelihoods[k, :] .-= maximum(log_likelihoods[k, :])
-
-    end 
-
-    # Convert to likelihoods, normalize, and back to log space
-    likelihoods = exp.(log_likelihoods)
-    # normalized_probs = likelihoods ./ sum(likelihoods)
-    normalized_probs = likelihoods ./ sum(likelihoods, dims=1)  # fixed normalization of log likelihoods
-    # log_likelihoods = log.(normalized_probs)
-    FB.loglikelihoods = log.(normalized_probs)  # fixed incorrect assignment to FB
-
+  # Normalize log likelihoods using log-sum-exp trick for each time step
+  @inbounds for t in 1:T_steps
+      # Get slice of log likelihoods for current time step
+      log_probs_t = view(log_likelihoods, :, t)
+      
+      # Compute log-sum-exp stable normalization
+      max_log_prob = maximum(log_probs_t)
+      log_norm = max_log_prob + log(sum(exp.(log_probs_t .- max_log_prob)))
+      
+      # Normalize the probabilities in log space
+      log_probs_t .-= log_norm
+  end
+  
+  # Update the FB storage
+  FB.loglikelihoods = log_likelihoods
 end
 
 
@@ -398,7 +427,7 @@ function mstep!(slds::SwitchingLinearDynamicalSystem,
         update_A!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
         update_Q!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
         update_C!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
-        # update_R!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
+        update_R!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
     end
 
     new_params = vec([stateparams(slds.B[k]) for k in 1:K])

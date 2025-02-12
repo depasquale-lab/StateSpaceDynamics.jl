@@ -1350,7 +1350,7 @@ function PoissonLDS(;
     end
 
     state_model = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0, latent_dim=latent_dim)
-    obs_model = PoissonObservationModel(;
+    obs_model = PoissonObservationModel(; 
         C=C, log_d=log_d, obs_dim=obs_dim, latent_dim=latent_dim
     )
     return LinearDynamicalSystem(state_model, obs_model, latent_dim, obs_dim, fit_bool)

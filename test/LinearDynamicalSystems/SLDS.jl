@@ -118,7 +118,7 @@ function test_vEstep()
     # Test 5: Check numerical properties of the final ELBO
     @test !isnan(ml_total)
     @test !isinf(ml_total)
-    @test ml_total > -Inf  # ELBO should be finite
+    @test ml_total > -Inf # ELBO should be finite
     
     # Test 6: Check convergence
     @test length(mls) > 1  # Should have multiple iterations
