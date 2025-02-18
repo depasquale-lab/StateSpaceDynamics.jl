@@ -39,42 +39,36 @@ function sample(slds::SwitchingLinearDynamicalSystem, T::Int)
     
 end
 
-
 """
 Initialize a Switching Linear Dynamical System with random parameters.
 """
 function initialize_slds(;K::Int=2, d::Int=2, p::Int=10, seed::Int=42)
     Random.seed!(seed)
 
-    #A = rand(K, K)
-    A = zeros(K,K)
-    A[1,1] = 0.96
-    A[1,2] = 0.04
-    A[2,2] = 0.96
-    A[2,1] = 0.04
+    # Transition matrix
+    A = zeros(K, K)
+    A[1, 1] = 0.96
+    A[1, 2] = 0.04
+    A[2, 2] = 0.96
+    A[2, 1] = 0.04
     A ./= sum(A, dims=2) # Normalize rows to sum to 1
 
+    # Initial state probabilities
     πₖ = rand(K)
     πₖ ./= sum(πₖ) # Normalize to sum to 1
 
-    # set up the state parameters
-    #A2 = 0.95 * [cos(0.25) -sin(0.25); sin(0.25) cos(0.25)] 
+    # State parameters
     Q = Matrix(0.001 * I(d))
-
     x0 = [0.0; 0.0]
     P0 = Matrix(0.001 * I(d))
 
-    # set up the observation parameters
-    C = randn(p, d)
-    R = Matrix(0.001 * I(p))
-
+    # Define observation parameters separately for each state
     B = [LinearDynamicalSystem(
         GaussianStateModel(0.95 * [cos(f) -sin(f); sin(f) cos(f)], Q, x0, P0),
-        GaussianObservationModel(C, R),
-        d, p, fill(true, 6  )) for (_,f) in zip(1:K, [0.1, 2.0])]
+        GaussianObservationModel(randn(p, d), Matrix(0.001 * I(p))), # Different C and R for each state
+        d, p, fill(true, 6)) for (_, f) in zip(1:K, [0.1, 2.0])]
 
     return SwitchingLinearDynamicalSystem(A, B, πₖ, K)
-
 end
 
 """
@@ -115,16 +109,28 @@ function fit!(
 
     K = slds.K
     T_step = size(y, 2)
+    
+    # INIT THE FILTER SMOOTH AND FB STRUCTS
     FB = initialize_forward_backward(slds, T_step)
     FS = [initialize_FilterSmooth(slds.B[k], T_step) for k in 1:K]
+
+    # From the paper, we initialize the parameters by running the Kalman Smoother for each model. I would assume we need to set the initial hₜ as well.
+    FB.γ = log.(ones(size(y)) * 0.5)
+
+    # Run the Kalman Smoother for each model
+    for k in 1:slds.K
+      #3. compute xs from hs
+      FS[k].x_smooth, FS[k].p_smooth, inverse_offdiag, total_entropy = smooth(slds.B[k], y, exp.(FB.γ[k,:]))
+      FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev =
+          sufficient_statistics(reshape(FS[k].x_smooth, size(FS[k].x_smooth)..., 1),
+          reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1),
+          reshape(inverse_offdiag, size(inverse_offdiag)..., 1))
+    end
 
     # Run EM
     for i in 1:max_iter
         # E-step
-        ml=0
-        for i = 1:10
-          ml = variational_expectation!(slds, y, FB, FS)
-        end      
+        ml, _ = variational_expectation!(slds, y, FB, FS)       
 
         # M-step
         Δparams = mstep!(slds, FS, y, FB)
@@ -139,7 +145,7 @@ function fit!(
         # Check convergence
         if abs(ml - prev_ml) < tol
             finish!(prog)
-            return mls, param_diff
+            return mls, param_diff, FB, FS
         end
 
         prev_ml = ml
@@ -205,50 +211,47 @@ elbo = variational_expectation!(model, y, FB, FS)
 println("Computed ELBO: ", elbo)
 """
 function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::ForwardBackward, FS::Vector{FilterSmooth{T}}) where {T<:Real}
-  
+  # For now a hardcoded tolerance
   tol = 1e-6
   # Get starting point for iterative E-step
   γ = FB.γ
   hs = exp.(γ)
   ml_total = 0.
-
   # Initialize to something higher than the tolerance
   ml_diff = 1
   ml_prev = -Inf
   ml_storage = []
-  while ml_diff > tol
-    #1. compute qs from xs, which will live as log_likelihoods in FB
-    variational_qs!([model.obs_model for model in model.B], FB, y, FS)
-    #2. compute hs from qs, which will live as γ in FB
-    forward!(model, FB)
-    backward!(model, FB)
-    calculate_γ!(model, FB)
-    calculate_ξ!(model, FB)   # fixed this: Have to calculate this for the m_step update of transition matrix
-    hs = exp.(FB.γ)
-    ml_total = logsumexp(FB.α[:, end])
-    # ml_total = hmm_elbo(model, FB)
-
-    for k in 1:model.K
-        #3. compute xs from hs
-        FS[k].x_smooth, FS[k].p_smooth, inverse_offdiag, total_entropy  = smooth(model.B[k], y, vec(hs[k,:]))
-        FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev = 
-            sufficient_statistics(reshape(FS[k].x_smooth, size(FS[k].x_smooth)..., 1), 
-            reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1), 
-            reshape(inverse_offdiag, size(inverse_offdiag)..., 1))
-        # calculate elbo
-        #ml_total += calculate_elbo(model.B[k], FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev, 
-        # reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1), reshape(y, size(y)...,1), total_entropy)
-    end
-    
-    # Set ml_total to the next iterations previous ml
-    ml_diff = ml_prev - ml_total
-    ml_prev = ml_total
-
-  end  # while loop
-
-  return ml_total
-
-end  # function
+  
+  while abs(ml_diff) > tol  # Changed to use absolute value
+      #1. compute qs from xs, which will live as log_likelihoods in FB
+      variational_qs!([model.obs_model for model in model.B], FB, y, FS)
+      
+      #2. compute hs from qs, which will live as γ in FB
+      forward!(model, FB)
+      backward!(model, FB)
+      calculate_γ!(model, FB)
+      calculate_ξ!(model, FB)   # needed for m_step update of transition matrix
+      hs = exp.(FB.γ)
+      
+      ml_total = logsumexp(FB.α[:, end])
+      push!(ml_storage, ml_total)
+      
+      for k in 1:model.K
+          #3. compute xs from hs
+          FS[k].x_smooth, FS[k].p_smooth, inverse_offdiag, total_entropy = smooth(model.B[k], y, vec(hs[k,:]))
+          FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev =
+              sufficient_statistics(reshape(FS[k].x_smooth, size(FS[k].x_smooth)..., 1),
+              reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1),
+              reshape(inverse_offdiag, size(inverse_offdiag)..., 1))
+      end
+     
+      # Calculate difference between current and previous ml_total
+      ml_diff = ml_total - ml_prev  # Changed order of subtraction
+      ml_prev = ml_total
+  end
+  
+  return ml_total, ml_storage
+end
 
 
 """
@@ -331,22 +334,51 @@ variational_qs!(model, FB, y, FS)
 # Access the updated log-likelihoods
 println(FB.loglikelihoods)
 """
-function variational_qs!(model::Vector{GaussianObservationModel{T}}, FB::ForwardBackward, 
+function variational_qs!(model::Vector{GaussianObservationModel{T}}, FB::ForwardBackward,
   y, FS::Vector{FilterSmooth{T}}) where {T<:Real}
-
-  T_steps = size(y, 2)
+  
+  log_likelihoods = FB.loglikelihoods
   K = length(model)
+  T_steps = size(y, 2)
+  
+  # Pre-compute constants and allocate temporary storage
+  temp_storage = zeros(T, K)
+  
+  @threads for k in 1:K
+      # Compute Cholesky decomposition once per model
+      R_chol = cholesky(Symmetric(model[k].R))
+      C = model[k].C
+      C_Rinv = (R_chol \ C)'
+      
+      @inbounds for t in 1:T_steps
+          # Compute transformed observation
+          yt_Rinv = (R_chol \ y[:,t])'
+          
+          # Compute log likelihood components
+          observation_term = -0.5 * yt_Rinv * y[:,t]
+          cross_term = yt_Rinv * C * FS[k].E_z[:,t,1]
+          covariance_term = -0.5 * tr(C_Rinv * C * FS[k].E_zz[:,:,t,1])
+          
+          # Store log likelihood
+          log_likelihoods[k, t] = observation_term + cross_term + covariance_term
+      end
+  end
 
-    @threads for k in 1:K
-
-        R_chol = cholesky(Symmetric(model[k].R))
-        C = model[k].C
-
-        @inbounds for t in 1:T_steps
-          FB.loglikelihoods[k, t] = -0.5 * tr(R_chol \ Q_obs(C, FS[k].E_z[:,t,1], FS[k].E_zz[:,:,t,1], y[:,t]))
-        end
-
-    end 
+  # Normalize log likelihoods using log-sum-exp trick for each time step
+  @inbounds for t in 1:T_steps
+      # Get slice of log likelihoods for current time step
+      log_probs_t = view(log_likelihoods, :, t)
+      
+      # Compute log-sum-exp stable normalization
+      max_log_prob = maximum(log_probs_t)
+      log_norm = max_log_prob + log(sum(exp.(log_probs_t .- max_log_prob)))
+      
+      # Normalize the probabilities in log space
+      log_probs_t .-= log_norm
+  end
+  
+  # Update the FB storage
+  FB.loglikelihoods = log_likelihoods
 end
 
 
@@ -376,7 +408,7 @@ function mstep!(slds::SwitchingLinearDynamicalSystem,
         update_A!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
         update_Q!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
         update_C!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
-        # update_R!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
+        update_R!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
     end
 
     new_params = vec([stateparams(slds.B[k]) for k in 1:K])

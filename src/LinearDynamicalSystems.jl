@@ -1254,8 +1254,8 @@ function mstep!(
     old_params = [old_params; vec(obsparams(lds))]
 
     # Update parameters
-    update_initial_state_mean!(lds, E_z, w)
-    update_initial_state_covariance!(lds, E_z, E_zz, w)
+    update_initial_state_mean!(lds, E_z)
+    update_initial_state_covariance!(lds, E_z, E_zz)
     update_A!(lds, E_zz, E_zz_prev)
     update_Q!(lds, E_zz, E_zz_prev)
     update_C!(lds, E_z, E_zz, y)
@@ -1381,7 +1381,7 @@ function PoissonLDS(;
     end
 
     state_model = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0, latent_dim=latent_dim)
-    obs_model = PoissonObservationModel(;
+    obs_model = PoissonObservationModel(; 
         C=C, log_d=log_d, obs_dim=obs_dim, latent_dim=latent_dim
     )
     return LinearDynamicalSystem(state_model, obs_model, latent_dim, obs_dim, fit_bool)
