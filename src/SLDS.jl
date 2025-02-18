@@ -334,51 +334,22 @@ variational_qs!(model, FB, y, FS)
 # Access the updated log-likelihoods
 println(FB.loglikelihoods)
 """
-function variational_qs!(model::Vector{GaussianObservationModel{T}}, FB::ForwardBackward,
+function variational_qs!(model::Vector{GaussianObservationModel{T}}, FB::ForwardBackward, 
   y, FS::Vector{FilterSmooth{T}}) where {T<:Real}
-  
-  log_likelihoods = FB.loglikelihoods
-  K = length(model)
-  T_steps = size(y, 2)
-  
-  # Pre-compute constants and allocate temporary storage
-  temp_storage = zeros(T, K)
-  
-  @threads for k in 1:K
-      # Compute Cholesky decomposition once per model
-      R_chol = cholesky(Symmetric(model[k].R))
-      C = model[k].C
-      C_Rinv = (R_chol \ C)'
-      
-      @inbounds for t in 1:T_steps
-          # Compute transformed observation
-          yt_Rinv = (R_chol \ y[:,t])'
-          
-          # Compute log likelihood components
-          observation_term = -0.5 * yt_Rinv * y[:,t]
-          cross_term = yt_Rinv * C * FS[k].E_z[:,t,1]
-          covariance_term = -0.5 * tr(C_Rinv * C * FS[k].E_zz[:,:,t,1])
-          
-          # Store log likelihood
-          log_likelihoods[k, t] = observation_term + cross_term + covariance_term
-      end
-  end
 
-  # Normalize log likelihoods using log-sum-exp trick for each time step
-  @inbounds for t in 1:T_steps
-      # Get slice of log likelihoods for current time step
-      log_probs_t = view(log_likelihoods, :, t)
-      
-      # Compute log-sum-exp stable normalization
-      max_log_prob = maximum(log_probs_t)
-      log_norm = max_log_prob + log(sum(exp.(log_probs_t .- max_log_prob)))
-      
-      # Normalize the probabilities in log space
-      log_probs_t .-= log_norm
-  end
-  
-  # Update the FB storage
-  FB.loglikelihoods = log_likelihoods
+  T_steps = size(y, 2)
+  K = length(model)
+
+    @threads for k in 1:K
+
+        R_chol = cholesky(Symmetric(model[k].R))
+        C = model[k].C
+
+        @inbounds for t in 1:T_steps
+          FB.loglikelihoods[k, t] = -0.5 * tr(R_chol \ Q_obs(C, FS[k].E_z[:,t,1], FS[k].E_zz[:,:,t,1], y[:,t]))
+        end
+
+    end 
 end
 
 
