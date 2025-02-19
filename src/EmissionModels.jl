@@ -715,35 +715,73 @@ function AutoRegressionEmission(;
     return model
 end
 
+"""
+    construct_AR_feature_matrix(data::Matrix{Float64}, order::Int) -> Matrix{Float64}
 
-function AR_to_Gaussian_data(Y_prev::Matrix{<:Real})
-    # take each row of Y_prev and stack them horizontally to form the input row matrix Φ_gaussian
-    Φ_gaussian = vcat([Y_prev[i, :] for i in 1:size(Y_prev, 1)]...)
-    Φ_gaussian = reshape(Φ_gaussian, 1, :)
+Construct an autoregressive (AR) feature matrix from input time series data.
 
-    return Φ_gaussian
+# Arguments
+- `data::Matrix{Float64}`: A matrix of size `(num_feats, T)`, where `num_feats` is the number of features, and `T` is the number of timepoints.
+- `order::Int`: The autoregressive order, determining how many past timepoints are included for each time step.
+
+# Returns
+- `Matrix{Float64}`: A transformed feature matrix of size `(num_feats * (order + 1), T - order)`, where each column contains stacked feature vectors from the current and past `order` timepoints.
+
+# Example
+```julia
+data = rand(3, 10)  # 3 features, 10 timepoints
+order = 2
+AR_feats = construct_AR_feature_matrix(data, order)
+size(AR_feats)  # (3 * (2 + 1), 10 - 2) => (9, 8)
+"""
+function construct_AR_feature_matrix(data::Matrix{Float64}, order::Int)
+    # Original data dimensions
+    num_feats, T = size(data)
+
+    # AR feature matrix initialization
+    num_feats_AR = num_feats * (order+1)
+    T_AR = T - order
+    AR_feats_matrix = zeros(Float64, num_feats_AR, T_AR)
+
+    # Fill in the AR_feats_matrix
+    for iter = order+1:T
+        AR_feats_matrix[:, iter-order] = reshape(data[:, iter-order:iter], :, 1)
+    end
+
+    return AR_feats_matrix
+
 end
 
-function AR_to_Gaussian_data(Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
-    order = size(Y_prev, 1)
-    output_dim = size(Y_prev, 2)
-    Φ_gaussian = zeros(size(Y, 1), output_dim * order)
+"""
+    construct_AR_feature_matrix(data::Vector{Matrix{Float64}}, order::Int) -> Vector{Matrix{Float64}}
 
-    for i in 1:size(Y, 1)
-        Φ_gaussian[i, :] = AR_to_Gaussian_data(Y_prev)
+Constructs autoregressive (AR) feature matrices for multiple trials of time series data. Each trial is represented as a matrix, and the function applies the same AR transformation to each trial independently.
 
+# Arguments
+- `data::Vector{Matrix{Float64}}`: A vector of matrices, where each matrix represents a trial of time series data with dimensions `(num_feats, T)`, where `num_feats` is the number of features and `T` is the number of timepoints.
+- `order::Int`: The autoregressive order, determining how many past timepoints are included for each time step.
 
-        old_part = Y_prev[2:end, :]
-        new_part = Y[i, :]
+# Returns
+- `Vector{Matrix{Float64}}`: A vector of transformed feature matrices, where each matrix has dimensions `(num_feats * (order + 1), T - order)`, containing stacked feature vectors from the current and past `order` timepoints.
 
-        old_part = reshape(old_part, order - 1, output_dim)
-        new_part = reshape(new_part, 1, output_dim)
-
-        Y_prev = vcat(old_part, new_part)
+# Example
+```julia
+data = [rand(3, 10) for _ in 1:5]  # 5 trials, each with 3 features and 10 timepoints
+order = 2
+AR_feats_trials = construct_AR_feature_matrix(data, order)
+size(AR_feats_trials[1])  # (9, 8), same transformation applied per trial
+"""
+function construct_AR_feature_matrix(data::Vector{Matrix{Float64}}, order::Int)
+    # Initialize feature vector
+    AR_feats_matrices = Vector{Matrix{Float64}}(undef, length(data))
+    
+    # Compute AR feature matrix for each trial
+    for trial_idx in eachindex(data)
+        print(data[trial_idx])
+        AR_feats_matrices[trial_idx] = construct_AR_feature_matrix(data[trial_idx], order)
     end
-   
 
-    return Φ_gaussian
+    return AR_feats_matrices
 end
 
 """
@@ -802,12 +840,12 @@ Calculate the log likelihood of the data `Y` given the autoregressive emission m
 - `Vector{Float64}`: A vector of log likelihoods, one for each observation in the data.
 """
 
-function loglikelihood(model::AutoRegressiveEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
-    # confirm that the model has valid parameters
-    Φ_gaussian = AR_to_Gaussian_data(Y_prev, Y)
+# function loglikelihood(model::AutoRegressiveEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
+#     # confirm that the model has valid parameters
+#     Φ_gaussian = AR_to_Gaussian_data(Y_prev, Y)
 
-    return loglikelihood(model.innerGaussianRegression, Φ_gaussian, Y)
-end
+#     return loglikelihood(model.innerGaussianRegression, Φ_gaussian, Y)
+# end
 
 """
     SwitchingAutoRegression(; K::Int, output_dim::Int, order::Int, include_intercept::Bool=true, β::Matrix{<:Real}=if include_intercept zeros(output_dim * order + 1, output_dim) else zeros(output_dim * order, output_dim) end, Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim), λ::Float64=0.0, A::Matrix{<:Real}=initialize_transition_matrix(K), πₖ::Vector{Float64}=initialize_state_distribution(K))
