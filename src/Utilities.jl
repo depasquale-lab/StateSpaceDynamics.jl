@@ -514,3 +514,30 @@ function gaussian_entropy(H::Symmetric{T}) where T <: Real
     logdet_H = 2 * sum(log.(diag(F)))
     return 0.5 * (n * log(2π) + logdet_H)
 end
+
+function Base.getproperty(model::AutoRegressiveEmission, sym::Symbol)
+    if sym === :β
+        return model.innerGaussianRegression.β
+    elseif sym === :Σ
+        return model.innerGaussianRegression.Σ
+    elseif sym === :include_intercept
+        return model.innerGaussianRegression.include_intercept
+    elseif sym === :λ
+        return model.innerGaussianRegression.λ
+    else # fallback to getfield
+        return getfield(model, sym)
+    end
+end
+
+# define setters for innerGaussianRegression fields
+function Base.setproperty!(model::AutoRegressiveEmission, sym::Symbol, value)
+    if sym === :β
+        model.innerGaussianRegression.β = value
+    elseif sym === :Σ
+        model.innerGaussianRegression.Σ = value
+    elseif sym === :λ
+        model.innerGaussianRegression.λ = value
+    else # fallback to setfield!
+        setfield!(model, sym, value)
+    end
+end
