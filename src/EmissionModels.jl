@@ -294,8 +294,218 @@ function loglikelihood(
     return -0.5 .* weighted_residuals
 end
 
+
+"""
+    AutoRegressionEmission <: EmissionModel
+
+A mutable struct representing an autoregressive emission model, which wraps around an `AutoRegression` model.
+
+# Fields
+- `inner_model::AutoRegression`: The underlying autoregressive model used for the emissions.
+"""
+mutable struct AutoRegressionEmission <: AutoRegressiveEmission
+    output_dim::Int
+    order::Int
+    innerGaussianRegression::GaussianRegressionEmission
+end
+
+function AutoRegressionEmission(; 
+    output_dim::Int, 
+    order::Int, 
+    include_intercept::Bool = true, 
+    β::Matrix{<:Real} = if include_intercept zeros(output_dim * order + 1, output_dim) else zeros(output_dim * order, output_dim) end,
+    Σ::Matrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim),
+    λ::Float64=0.0)
+
+    innerGaussianRegression = GaussianRegressionEmission(
+        input_dim=output_dim * order, 
+        output_dim=output_dim, 
+        β=β,
+        Σ=Σ,
+        include_intercept=include_intercept, 
+        λ=λ)
+
+    model = AutoRegressionEmission(output_dim, order, innerGaussianRegression)
+
+
+    return model
+end
+
+"""
+    construct_AR_feature_matrix(data::Matrix{Float64}, order::Int) -> Matrix{Float64}
+
+Construct an autoregressive (AR) feature matrix from input time series data.
+
+# Arguments
+- `data::Matrix{Float64}`: A matrix of size `(num_feats, T)`, where `num_feats` is the number of features, and `T` is the number of timepoints.
+- `order::Int`: The autoregressive order, determining how many past timepoints are included for each time step.
+
+# Returns
+- `Matrix{Float64}`: A transformed feature matrix of size `(num_feats * (order + 1), T - order)`, where each column contains stacked feature vectors from the current and past `order` timepoints.
+
+# Example
+```julia
+data = rand(3, 10)  # 3 features, 10 timepoints
+order = 2
+AR_feats = construct_AR_feature_matrix(data, order)
+size(AR_feats)  # (3 * (2 + 1), 10 - 2) => (9, 8)
+"""
+function construct_AR_feature_matrix(data::Matrix{Float64}, order::Int, include_intercept=true)
+    # If intercept is needed, prepend a row of ones
+    if include_intercept
+        data = vcat(ones(1, size(data, 2)), data)
+    end
+
+    # Original data dimensions
+    num_feats, T = size(data)
+
+    # AR feature matrix initialization
+    num_feats_AR = num_feats * (order+1)
+    T_AR = T - order
+    AR_feats_matrix = zeros(Float64, num_feats_AR, T_AR)
+
+    # Fill in the AR_feats_matrix
+    for iter = order+1:T
+        AR_feats_matrix[:, iter-order] = reshape(data[:, iter-order:iter], :, 1)
+    end
+
+    return AR_feats_matrix
+
+end
+
+"""
+    construct_AR_feature_matrix(data::Vector{Matrix{Float64}}, order::Int) -> Vector{Matrix{Float64}}
+
+Constructs autoregressive (AR) feature matrices for multiple trials of time series data. Each trial is represented as a matrix, and the function applies the same AR transformation to each trial independently.
+
+# Arguments
+- `data::Vector{Matrix{Float64}}`: A vector of matrices, where each matrix represents a trial of time series data with dimensions `(num_feats, T)`, where `num_feats` is the number of features and `T` is the number of timepoints.
+- `order::Int`: The autoregressive order, determining how many past timepoints are included for each time step.
+
+# Returns
+- `Vector{Matrix{Float64}}`: A vector of transformed feature matrices, where each matrix has dimensions `(num_feats * (order + 1), T - order)`, containing stacked feature vectors from the current and past `order` timepoints.
+
+# Example
+```julia
+data = [rand(3, 10) for _ in 1:5]  # 5 trials, each with 3 features and 10 timepoints
+order = 2
+AR_feats_trials = construct_AR_feature_matrix(data, order)
+size(AR_feats_trials[1])  # (9, 8), same transformation applied per trial
+"""
+function construct_AR_feature_matrix(data::Vector{Matrix{Float64}}, order::Int)
+    # Initialize feature vector
+    AR_feats_matrices = Vector{Matrix{Float64}}(undef, length(data))
+    
+    # Compute AR feature matrix for each trial
+    for trial_idx in eachindex(data)
+        print(data[trial_idx])
+        AR_feats_matrices[trial_idx] = construct_AR_feature_matrix(data[trial_idx], order)
+    end
+
+    return AR_feats_matrices
+end
+
+"""
+    sample(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim))
+
+Generate a sample from the given autoregressive emission model using the previous observations `Y_prev`, and append it to the provided observation sequence.
+
+# Arguments
+- `model::AutoRegressionEmission`: The autoregressive emission model to sample from.
+- `Y_prev::Matrix{<:Real}`: The matrix of previous observations, where each row represents an observation.
+- `observation_sequence::Matrix{<:Real}`: The sequence of observations to which the new sample will be appended (defaults to an empty matrix with appropriate dimensions).
+
+# Returns
+- `Matrix{Float64}`: The updated observation sequence with the new sample appended.
+"""
+function sample(model::AutoRegressionEmission, X::Matrix{<:Real})
+    # Extract the last column of X as input
+    last_observation = X[:, end]
+
+    # Sample new observation using the Gaussian regression emission function
+    new_observation = sample(model.innerGaussianRegression, last_observation)
+    new_observation = reshape(new_observation, :, 1)
+
+    # Append the new sample as a new column
+    X = hcat(X, new_observation)
+
+    return X, new_observation
+end
+
+"""
+    loglikelihood(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
+
+Calculate the log likelihood of the data `Y` given the autoregressive emission model and the previous observations `Y_prev`.
+
+# Arguments
+- `model::AutoRegressionEmission`: The autoregressive emission model for which to calculate the log likelihood.
+- `Y_prev::Matrix{<:Real}`: The matrix of previous observations, where each row represents an observation.
+- `Y::Matrix{<:Real}`: The data matrix, where each row represents an observation.
+
+# Returns
+- `Vector{Float64}`: A vector of log likelihoods, one for each observation in the data.
+"""
+function loglikelihood(
+    model::AutoRegressionEmission,
+    X::Matrix{<:Real},
+    Y::Matrix{<:Real},
+    w::Vector{Float64}=ones(size(Y, 1)),
+)
+    return loglikelihood(model.innerGaussianRegression, X, Y, w)
+end
+
+"""
+    SwitchingAutoRegression(; K::Int, output_dim::Int, order::Int, include_intercept::Bool=true, β::Matrix{<:Real}=if include_intercept zeros(output_dim * order + 1, output_dim) else zeros(output_dim * order, output_dim) end, Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim), λ::Float64=0.0, A::Matrix{<:Real}=initialize_transition_matrix(K), πₖ::Vector{Float64}=initialize_state_distribution(K))
+
+Create a Switching AutoRegression Model
+
+# Arguments
+- `K::Int`: The number of hidden states.
+- `output_dim::Int`: The dimensionality of the output data.
+- `order::Int`: The order of the autoregressive model.
+- `include_intercept::Bool=true`: Whether to include an intercept in the regression model.
+- `β::Matrix{<:Real}`: The autoregressive coefficients (defaults to zeros).
+- `Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim)`: The covariance matrix for the autoregressive model (defaults to an identity matrix).
+- `λ::Float64=0.0`: Regularization parameter for the regression (defaults to zero).
+- `A::Matrix{<:Real}=initialize_transition_matrix(K)`: The transition matrix of the HMM (Defaults to a random initialization). 
+- `πₖ::Vector{Float64}=initialize_state_distribution(K)`: The initial state distribution of the HMM (Defaults to a random initialization).
+
+# Returns
+- `::HiddenMarkovModel`: A Switching AutoRegression Model
+"""
+function SwitchingAutoRegression(;
+    K::Int,
+    output_dim::Int,
+    order::Int,
+    include_intercept::Bool=true,
+    β::Matrix{<:Real}=if include_intercept
+        zeros(output_dim * order + 1, output_dim)
+    else
+        zeros(output_dim * order, output_dim)
+    end,
+    Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim),
+    λ::Float64=0.0,
+    A::Matrix{<:Real}=initialize_transition_matrix(K),
+    πₖ::Vector{Float64}=initialize_state_distribution(K),
+)
+    # Create the emissions
+    emissions = [
+        AutoRegressionEmission(;
+            output_dim=output_dim,
+            order=order,
+            include_intercept=include_intercept,
+            β=β,
+            Σ=Σ,
+            λ=λ,
+        ) for _ in 1:K
+    ]
+    # Return the HiddenMarkovModel
+    return HiddenMarkovModel(; K=K, B=emissions, A=A, πₖ=πₖ)
+end
+
+
 function objective(
-    opt::RegressionOptimization{GaussianRegressionEmission}, β_vec::Vector{T}
+    opt::Union{RegressionOptimization{GaussianRegressionEmission}, RegressionOptimization{AutoRegressionEmission}}, β_vec::Vector{T}
 ) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     residuals = opt.y - opt.X * β_mat
@@ -311,7 +521,7 @@ end
 
 function objective_gradient!(
     G::Vector{Float64},
-    opt::RegressionOptimization{GaussianRegressionEmission},
+    opt::Union{RegressionOptimization{GaussianRegressionEmission}, RegressionOptimization{AutoRegressionEmission}},
     β_vec::Vector{T},
 ) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
@@ -644,256 +854,6 @@ function fit!(
     post_optimization!(model, opt_problem)
 
     return model
-end
-
-# pass in inner model and original data
-# reshape the data into gaussian regression data
-
-"""
-    AutoRegressionEmission <: EmissionModel
-
-A mutable struct representing an autoregressive emission model, which wraps around an `AutoRegression` model.
-
-# Fields
-- `inner_model::AutoRegression`: The underlying autoregressive model used for the emissions.
-"""
-mutable struct AutoRegressionEmission <: AutoRegressiveEmission
-    output_dim::Int
-    order::Int
-    innerGaussianRegression::GaussianRegressionEmission
-end
-
-# move these to utils at some point
-# define getters for innerGaussianRegression fields
-function Base.getproperty(model::AutoRegressiveEmission, sym::Symbol)
-    if sym === :β
-        return model.innerGaussianRegression.β
-    elseif sym === :Σ
-        return model.innerGaussianRegression.Σ
-    elseif sym === :include_intercept
-        return model.innerGaussianRegression.include_intercept
-    elseif sym === :λ
-        return model.innerGaussianRegression.λ
-    else # fallback to getfield
-        return getfield(model, sym)
-    end
-end
-
-# define setters for innerGaussianRegression fields
-function Base.setproperty!(model::AutoRegressiveEmission, sym::Symbol, value)
-    if sym === :β
-        model.innerGaussianRegression.β = value
-    elseif sym === :Σ
-        model.innerGaussianRegression.Σ = value
-    elseif sym === :λ
-        model.innerGaussianRegression.λ = value
-    else # fallback to setfield!
-        setfield!(model, sym, value)
-    end
-end
-
-
-function AutoRegressionEmission(; 
-    output_dim::Int, 
-    order::Int, 
-    include_intercept::Bool = true, 
-    β::Matrix{<:Real} = if include_intercept zeros(output_dim * order + 1, output_dim) else zeros(output_dim * order, output_dim) end,
-    Σ::Matrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim),
-    λ::Float64=0.0)
-
-    innerGaussianRegression = GaussianRegressionEmission(
-        input_dim=output_dim * order, 
-        output_dim=output_dim, 
-        β=β,
-        Σ=Σ,
-        include_intercept=include_intercept, 
-        λ=λ)
-
-    model = AutoRegressionEmission(output_dim, order, innerGaussianRegression)
-
-
-    return model
-end
-
-"""
-    construct_AR_feature_matrix(data::Matrix{Float64}, order::Int) -> Matrix{Float64}
-
-Construct an autoregressive (AR) feature matrix from input time series data.
-
-# Arguments
-- `data::Matrix{Float64}`: A matrix of size `(num_feats, T)`, where `num_feats` is the number of features, and `T` is the number of timepoints.
-- `order::Int`: The autoregressive order, determining how many past timepoints are included for each time step.
-
-# Returns
-- `Matrix{Float64}`: A transformed feature matrix of size `(num_feats * (order + 1), T - order)`, where each column contains stacked feature vectors from the current and past `order` timepoints.
-
-# Example
-```julia
-data = rand(3, 10)  # 3 features, 10 timepoints
-order = 2
-AR_feats = construct_AR_feature_matrix(data, order)
-size(AR_feats)  # (3 * (2 + 1), 10 - 2) => (9, 8)
-"""
-function construct_AR_feature_matrix(data::Matrix{Float64}, order::Int)
-    # Original data dimensions
-    num_feats, T = size(data)
-
-    # AR feature matrix initialization
-    num_feats_AR = num_feats * (order+1)
-    T_AR = T - order
-    AR_feats_matrix = zeros(Float64, num_feats_AR, T_AR)
-
-    # Fill in the AR_feats_matrix
-    for iter = order+1:T
-        AR_feats_matrix[:, iter-order] = reshape(data[:, iter-order:iter], :, 1)
-    end
-
-    return AR_feats_matrix
-
-end
-
-"""
-    construct_AR_feature_matrix(data::Vector{Matrix{Float64}}, order::Int) -> Vector{Matrix{Float64}}
-
-Constructs autoregressive (AR) feature matrices for multiple trials of time series data. Each trial is represented as a matrix, and the function applies the same AR transformation to each trial independently.
-
-# Arguments
-- `data::Vector{Matrix{Float64}}`: A vector of matrices, where each matrix represents a trial of time series data with dimensions `(num_feats, T)`, where `num_feats` is the number of features and `T` is the number of timepoints.
-- `order::Int`: The autoregressive order, determining how many past timepoints are included for each time step.
-
-# Returns
-- `Vector{Matrix{Float64}}`: A vector of transformed feature matrices, where each matrix has dimensions `(num_feats * (order + 1), T - order)`, containing stacked feature vectors from the current and past `order` timepoints.
-
-# Example
-```julia
-data = [rand(3, 10) for _ in 1:5]  # 5 trials, each with 3 features and 10 timepoints
-order = 2
-AR_feats_trials = construct_AR_feature_matrix(data, order)
-size(AR_feats_trials[1])  # (9, 8), same transformation applied per trial
-"""
-function construct_AR_feature_matrix(data::Vector{Matrix{Float64}}, order::Int)
-    # Initialize feature vector
-    AR_feats_matrices = Vector{Matrix{Float64}}(undef, length(data))
-    
-    # Compute AR feature matrix for each trial
-    for trial_idx in eachindex(data)
-        print(data[trial_idx])
-        AR_feats_matrices[trial_idx] = construct_AR_feature_matrix(data[trial_idx], order)
-    end
-
-    return AR_feats_matrices
-end
-
-"""
-    sample(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}; observation_sequence::Matrix{<:Real}=Matrix{Float64}(undef, 0, model.output_dim))
-
-Generate a sample from the given autoregressive emission model using the previous observations `Y_prev`, and append it to the provided observation sequence.
-
-# Arguments
-- `model::AutoRegressionEmission`: The autoregressive emission model to sample from.
-- `Y_prev::Matrix{<:Real}`: The matrix of previous observations, where each row represents an observation.
-- `observation_sequence::Matrix{<:Real}`: The sequence of observations to which the new sample will be appended (defaults to an empty matrix with appropriate dimensions).
-
-# Returns
-- `Matrix{Float64}`: The updated observation sequence with the new sample appended.
-"""
-
-function sample(model::AutoRegressiveEmission, Φ::Union{Matrix{<:Real}, Vector{<:Real}})
-    # Create the design matrix Φ using past observations
-    Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
-    order = model.order
-    output_dim = model.output_dim
-
-    # Ensure Y_prev matches the AR order
-    if size(Φ, 1) < order
-        error("Y_prev must have at least as many rows as the AR order.")
-    end
-
-    # Ensure Φ is a 2D matrix even if it's a single sample
-    Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
-
-    # Flatten the last `order` rows of Y_prev to construct Φ
-    Φ = reshape(Φ', 1, :)
-
-    # Add intercept column if specified -> need to do this before reshape so that you include enough 1s in flattened vector
-    if model.include_intercept
-        Φ = hcat(ones(size(Φ, 1)), Φ)
-    end
-
-    # Ensure the noise dimensions match the output dimension and sample size
-    noise = rand(MvNormal(zeros(model.output_dim), model.Σ), size(Φ, 1))'
-
-    return Φ * model.β + noise
-end
-
-"""
-    loglikelihood(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
-
-Calculate the log likelihood of the data `Y` given the autoregressive emission model and the previous observations `Y_prev`.
-
-# Arguments
-- `model::AutoRegressionEmission`: The autoregressive emission model for which to calculate the log likelihood.
-- `Y_prev::Matrix{<:Real}`: The matrix of previous observations, where each row represents an observation.
-- `Y::Matrix{<:Real}`: The data matrix, where each row represents an observation.
-
-# Returns
-- `Vector{Float64}`: A vector of log likelihoods, one for each observation in the data.
-"""
-
-# function loglikelihood(model::AutoRegressiveEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
-#     # confirm that the model has valid parameters
-#     Φ_gaussian = AR_to_Gaussian_data(Y_prev, Y)
-
-#     return loglikelihood(model.innerGaussianRegression, Φ_gaussian, Y)
-# end
-
-"""
-    SwitchingAutoRegression(; K::Int, output_dim::Int, order::Int, include_intercept::Bool=true, β::Matrix{<:Real}=if include_intercept zeros(output_dim * order + 1, output_dim) else zeros(output_dim * order, output_dim) end, Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim), λ::Float64=0.0, A::Matrix{<:Real}=initialize_transition_matrix(K), πₖ::Vector{Float64}=initialize_state_distribution(K))
-
-Create a Switching AutoRegression Model
-
-# Arguments
-- `K::Int`: The number of hidden states.
-- `output_dim::Int`: The dimensionality of the output data.
-- `order::Int`: The order of the autoregressive model.
-- `include_intercept::Bool=true`: Whether to include an intercept in the regression model.
-- `β::Matrix{<:Real}`: The autoregressive coefficients (defaults to zeros).
-- `Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim)`: The covariance matrix for the autoregressive model (defaults to an identity matrix).
-- `λ::Float64=0.0`: Regularization parameter for the regression (defaults to zero).
-- `A::Matrix{<:Real}=initialize_transition_matrix(K)`: The transition matrix of the HMM (Defaults to a random initialization). 
-- `πₖ::Vector{Float64}=initialize_state_distribution(K)`: The initial state distribution of the HMM (Defaults to a random initialization).
-
-# Returns
-- `::HiddenMarkovModel`: A Switching AutoRegression Model
-"""
-function SwitchingAutoRegression(;
-    K::Int,
-    output_dim::Int,
-    order::Int,
-    include_intercept::Bool=true,
-    β::Matrix{<:Real}=if include_intercept
-        zeros(output_dim * order + 1, output_dim)
-    else
-        zeros(output_dim * order, output_dim)
-    end,
-    Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim),
-    λ::Float64=0.0,
-    A::Matrix{<:Real}=initialize_transition_matrix(K),
-    πₖ::Vector{Float64}=initialize_state_distribution(K),
-)
-    # Create the emissions
-    emissions = [
-        AutoRegressionEmission(;
-            output_dim=output_dim,
-            order=order,
-            include_intercept=include_intercept,
-            β=β,
-            Σ=Σ,
-            λ=λ,
-        ) for _ in 1:K
-    ]
-    # Return the HiddenMarkovModel
-    return HiddenMarkovModel(; K=K, B=emissions, A=A, πₖ=πₖ)
 end
 
 """

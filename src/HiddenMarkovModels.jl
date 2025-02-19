@@ -130,30 +130,50 @@ Generate `n` samples from a Hidden Markov Model. Returns a tuple of the state se
 - `state_sequence::Vector{Int}`: The state sequence, where each element is an integer 1:K.
 - `observation_sequence::Matrix{Float64}`: The observation sequence. This takes the form of the emission model's output.
 """
-function sample(model::HiddenMarkovModel, X::Union{Matrix{<:Real},Nothing}=nothing; n::Int)
-    state_sequence = Vector{Int}(undef, n)
-    # Change to (dimension, time) ordering
-    observation_sequence = Matrix{Float64}(undef, model.B[1].output_dim, n)
+function sample(model::HiddenMarkovModel, X::Union{Matrix{<:Real},Nothing}=nothing; n::Int, autoregressive::Bool=false)
+    
+    if autoregressive ==false
+        state_sequence = Vector{Int}(undef, n)
+        # Change to (dimension, time) ordering
+        observation_sequence = Matrix{Float64}(undef, model.B[1].output_dim, n)
 
-    # Initialize the first state and observation
-    state_sequence[1] = rand(Categorical(model.πₖ))
-    observation_sequence[:, 1] = if isnothing(X)
-        sample(model.B[state_sequence[1]])
-    else
-        sample(model.B[state_sequence[1]], X[:, 1])
-    end
-
-    # Sample the state paths and observations
-    for t in 2:n  # t represents time steps
-        state_sequence[t] = rand(Categorical(model.A[state_sequence[t - 1], :]))
-        observation_sequence[:, t] = if isnothing(X)
-            sample(model.B[state_sequence[t]])
+        # Initialize the first state and observation
+        state_sequence[1] = rand(Categorical(model.πₖ))
+        observation_sequence[:, 1] = if isnothing(X)
+            sample(model.B[state_sequence[1]])
         else
-            sample(model.B[state_sequence[t]], X[:, t])
+            sample(model.B[state_sequence[1]], X[:, 1])
         end
-    end
 
-    return state_sequence, observation_sequence
+        # Sample the state paths and observations
+        for t in 2:n  # t represents time steps
+            state_sequence[t] = rand(Categorical(model.A[state_sequence[t - 1], :]))
+            observation_sequence[:, t] = if isnothing(X)
+                sample(model.B[state_sequence[t]])
+            else
+                sample(model.B[state_sequence[t]], X[:, t])
+            end
+        end
+
+        return state_sequence, observation_sequence
+    else
+        state_sequence = Vector{Int}(undef, n)
+        # Change to (dimension, time) ordering
+        observation_sequence = Matrix{Float64}(undef, model.B[1].output_dim, n)
+
+        # Initialize the first state and observation
+        state_sequence[1] = rand(Categorical(model.πₖ))
+        X, observation_sequence[:,1] = sample(model.B[state_sequence[1]], X)
+
+        # Sample the state paths and observations
+        for t in 2:n  # t represents time steps
+            state_sequence[t] = rand(Categorical(model.A[state_sequence[t - 1], :]))
+            X, observation_sequence[:, t] = sample(model.B[state_sequence[t]], X)
+        end
+
+        return state_sequence, observation_sequence
+
+    end
 end
 
 # New function for FB storage
