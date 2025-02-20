@@ -244,13 +244,19 @@ end
 
 include("RegressionModels/AutoRegression.jl")
 
-# @testset "AutoRegression Tests" begin
-#     test_AutoRegression_loglikelihood()
-#     # test_AutoRegression_Σ()
-#     # test_AutoRegression_constructor()
-#     test_AutoRegression_standard_fit()
-#     test_AutoRegression_regularized_fit()
-# end
+@testset "AutoRegression Tests" begin
+    test_AR_emission_initialization()
+end
+
+include("HiddenMarkovModels/AutoRegressionHMM.jl")
+
+@testset "AutoRegressive HMM Tests" begin
+    test_ARHMM_sampling()
+    test_ARHMM_fit()
+    test_timeseries_to_AR_feature_matrix()
+    test_trialized_timeseries_to_AR_feature_matrix()
+end
+
 
 """
 Tests for Utilities.jl
@@ -263,6 +269,7 @@ include("Utilities/Utilities.jl")
     test_kmeanspp_initialization()
     test_kmeans_clustering()
     test_block_tridgm()
+    test_autoregressive_setters_and_getters()
 end
 
 """
