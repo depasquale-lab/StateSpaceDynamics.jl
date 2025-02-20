@@ -73,3 +73,33 @@ function test_block_tridgm()
         end
     end
 end
+
+function test_autoregressive_setters_and_getters()
+
+    # Define AR emission
+    AR = AutoRegressionEmission(output_dim=2, order=1, include_intercept=false, β=rand(4,4))
+
+    # Define parameters
+    β = rand(4,4)
+    Σ = rand(4,4)
+    λ = 1.0
+
+    # Set parameters of inner gaussian regression of AR emission using defined parameters
+    AR.β, AR.Σ, AR.λ = β, Σ, λ
+
+    # Test that the inner gaussian has these parameters
+    @test AR.innerGaussianRegression.β == β
+    @test AR.innerGaussianRegression.Σ == Σ
+    @test AR.innerGaussianRegression.λ == λ
+
+    # Test the getters now 
+    @test AR.innerGaussianRegression.β == AR.β
+    @test AR.innerGaussianRegression.Σ == AR.Σ
+    @test AR.innerGaussianRegression.λ == AR.λ
+
+    # Test setting innerGaussianRegression directly
+    GR = GaussianRegressionEmission(input_dim=1, output_dim=2, include_intercept=false, β=2*rand(1, 2))
+    AR.innerGaussianRegression = GR
+    @test AR.innerGaussianRegression == GR
+
+end
