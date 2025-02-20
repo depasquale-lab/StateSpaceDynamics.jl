@@ -499,77 +499,113 @@ function fit!(
     return lls
 end
 
+
 """
-    class_probabilities(model::HiddenMarkovModel, data...)
-
-Calculate the class probabilities for each observation. Returns a matrix of size `(T, K)` where `K` is the number of states and `T` is the number of observations.
-
-# Arguments
-- `model::HiddenMarkovModel`: The Hidden Markov Model to calculate the class probabilities for.
-- `data...`: The data to calculate the class probabilities for. Requires the same format as the emission model loglikelihood() function.
-
-# Returns
-- `class_probabilities::Matrix{Float64}`: The class probabilities for each observation. Of shape `(T, K)`. Each row of the Matrix sums to 1.
+Documentation pending for single trial and trialized class_probabilities functions
 """
-function class_probabilities(model::HiddenMarkovModel, data...)
-    γ, ξ, α, β = estep(model, data)
-    return exp.(γ)
+function class_probabilities(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Real},Nothing}=nothing;)
+    data = X === nothing ? (Y,) : (X, Y)
+    # transpose data so that correct dimensions are passed to EmissionModels.jl, a bit hacky but works for now.
+    transpose_data = Matrix.(transpose.(data))
+    num_obs = size(transpose_data[1], 1)
+    # initialize forward backward storage
+    FB_storage = initialize_forward_backward(model, num_obs)
+
+    # Get class probabilities using Estep
+    estep!(model, transpose_data, FB_storage)
+
+    return exp.(FB_storage.γ)
 end
 
-"""
-    viterbi(model::HiddenMarkovModel, data...)
-
-Calculate the most likely sequence of states given the data.
-
-# Arguments
-- `model::HiddenMarkovModel`: The Hidden Markov Model to calculate the most likely sequence of states for.
-- `data...`: The data to calculate the most likely sequence of states for. Requires the same format as the emission model's loglikelihood() function.
-
-# Returns
-- `best_path::Vector{Int}`: The most likely sequence of states.
-"""
-function viterbi(model::HiddenMarkovModel, data...)
-    # Calculate observation wise likelihoods for all states
-    loglikelihoods_state_1 = loglikelihood(model.B[1], data...)
-    loglikelihoods = zeros(model.K, length(loglikelihoods_state_1))
-    loglikelihoods[:, 1] = loglikelihoods_state_1
-
-    @threads for k in 2:(model.K)
-        loglikelihoods[k, :] = loglikelihood(model.B[k], data...)
+function class_probabilities(
+    model::HiddenMarkovModel,
+    Y_trials::Vector{<:Matrix{<:Real}},
+    X_trials::Union{Vector{<:Matrix{<:Real}}, Nothing} = nothing
+)
+    n_trials = length(Y_trials)
+    # Preallocate storage for class probabilities
+    all_class_probs = Vector{Matrix{Float64}}(undef, n_trials)
+    # Loop through each trial and compute class probabilities
+    for i in 1:n_trials
+        Y = Y_trials[i]
+        X = X_trials === nothing ? nothing : X_trials[i]
+        all_class_probs[i] = class_probabilities(model, Y, X)
     end
 
-    T = length(loglikelihoods_state_1)
-    K = size(model.A, 1)  # Number of states
+    return all_class_probs
+end
 
-    # Step 1: Initialization
-    viterbi = zeros(Float64, K, T)
-    backpointer = zeros(Int, K, T)
-    for i in 1:K
-        viterbi[i, 1] = log(model.πₖ[i]) + loglikelihoods[i, 1]
-        backpointer[i, 1] = 0
+
+"""
+Pending documentation for session wide and trialized viterbi functions
+"""
+
+function viterbi(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Real},Nothing}=nothing;)
+    data = X === nothing ? (Y,) : (X, Y)
+
+    # transpose data so that correct dimensions are passed to EmissionModels.jl, a bit hacky but works for now.
+    transpose_data = Matrix.(transpose.(data))
+    num_obs = size(transpose_data[1], 1)
+    FB_storage = initialize_forward_backward(model, num_obs)
+
+    # Estep to get loglikelihoods for each emission model at each timepoint
+    estep!(model, transpose_data, FB_storage)
+
+    # Number of states and timepoints
+    num_states = length(model.πₖ)
+    num_timepoints = size(FB_storage.loglikelihoods, 2)
+
+    # Initialize viterbi_storage with log probabilities and backpointer matrix
+    viterbi_storage = zeros(Float64, num_states, num_timepoints)
+    backpointers = zeros(Int, num_states, num_timepoints)
+
+    # Initialization step (t = 1)
+    for s in 1:num_states
+        viterbi_storage[s, 1] = log(model.πₖ[s]) + FB_storage.loglikelihoods[s, 1]
     end
 
-    # Step 2: Recursion
-    for t in 2:T
-        for j in 1:K
-            max_prob, max_state = -Inf, 0
-            for i in 1:K
-                prob = viterbi[i, t - 1] + log(model.A[i, j]) + loglikelihoods[j, t]
-                if prob > max_prob
-                    max_prob = prob
-                    max_state = i
-                end
-            end
-            viterbi[j, t] = max_prob
-            backpointer[j, t] = max_state
+    # Recursion step
+    for t in 2:num_timepoints
+        for s in 1:num_states
+            # Calculate the log-probability for each previous state transitioning to current state
+            log_probs = viterbi_storage[:, t-1] .+ log.(model.A[:, s])  # Previous state's prob + transition
+            # Find the maximum log-probability and the corresponding state
+            max_prob, max_state = findmax(log_probs)
+            viterbi_storage[s, t] = max_prob + FB_storage.loglikelihoods[s, t]
+            backpointers[s, t] = max_state
         end
     end
 
-    # Step 3: Termination
-    best_path_prob, best_last_state = findmax(viterbi[:, T])
-    best_path = [best_last_state]
-    for t in T:-1:2
-        push!(best_path, backpointer[best_path[end], t])
+    # Backtracking step
+    best_path = zeros(Int, num_timepoints)
+    # Start with the state that has the highest probability at the last timepoint
+    _, best_last_state = findmax(viterbi_storage[:, end])
+    best_path[end] = best_last_state
+
+    # Trace back the best path
+    for t in num_timepoints-1:-1:1
+        best_path[t] = backpointers[best_path[t+1], t+1]
     end
-    return reverse(best_path)
+
+    return best_path
 end
+
+
+function viterbi(
+    model::HiddenMarkovModel,
+    Y::Vector{<:Matrix{<:Real}},
+    X::Union{Vector{<:Matrix{<:Real}},Nothing}=nothing
+)
+    # Storage for each trials viterbi path
+    viterbi_paths = Vector{Vector{Int}}(undef, length(Y))
+
+    # Run session viterbi on each trial
+    for i in 1:length(Y)
+        Xi = X === nothing ? nothing : X[i]
+        viterbi_paths[i] = viterbi(model, Y[i], Xi)
+    end
+
+    return viterbi_paths
+end
+
+
