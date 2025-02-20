@@ -232,9 +232,12 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::
       calculate_γ!(model, FB)
       calculate_ξ!(model, FB)   # needed for m_step update of transition matrix
       hs = exp.(FB.γ)
-      
-      ml_total = logsumexp(FB.α[:, end])
-      push!(ml_storage, ml_total)
+      ml_total = 0.0
+      # ml_total = logsumexp(FB.α[:, end])
+
+      # elbo from the discret state model
+      hmm_contribution = hmm_elbo(model, FB)
+      ml_total += hmm_contribution
       
       for k in 1:model.K
           #3. compute xs from hs
@@ -243,8 +246,14 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::
               sufficient_statistics(reshape(FS[k].x_smooth, size(FS[k].x_smooth)..., 1),
               reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1),
               reshape(inverse_offdiag, size(inverse_offdiag)..., 1))
+
+          # Calculate the ELBO contribution for the current SSM
+          elbo = calculate_elbo(model.B[k], FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev, reshape(FS[k].p_smooth, (size(FS[k].p_smooth)..., 1)), reshape(y, (size(y)..., 1)), total_entropy, vec(hs[k,:]))
+          ml_total += elbo
       end
      
+      push!(ml_storage, ml_total)
+      
       # Calculate difference between current and previous ml_total
       ml_diff = ml_total - ml_prev  # Changed order of subtraction
       ml_prev = ml_total

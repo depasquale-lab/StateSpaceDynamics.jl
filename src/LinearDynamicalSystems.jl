@@ -796,24 +796,28 @@ function Q_obs(
     E_z::AbstractMatrix{<:Real},
     E_zz::AbstractArray{<:Real,3},
     y::AbstractMatrix{<:Real},
+    weights::Vector{Float64}=ones(size(y, 2))
 )
     obs_dim = size(H, 1)
     T_step = size(E_z, 2)
-
+    
     # Pre-compute constants
     R_chol = cholesky(Symmetric(R))
     log_det_R = logdet(R_chol)
     const_term = obs_dim * log(2π)
-
+    
     #Pre-allocate statistics
     temp = zeros(obs_dim, obs_dim)
     
     # Use views in the loop
     @views for t in axes(y, 2)
-        temp += Q_obs(H, E_z[:,t], E_zz[:,:,t], y[:,t])
+        temp += weights[t] * Q_obs(H, E_z[:,t], E_zz[:,:,t], y[:,t])
     end
 
-    Q_val = -0.5 * (T_step * (const_term + log_det_R) + tr(R_chol \ temp))
+    # Weight the constant terms by the sum of weights
+    total_weight = sum(weights)
+    
+    Q_val = -0.5 * (total_weight * (const_term + log_det_R) + tr(R_chol \ temp))
     
     return Q_val
 end
@@ -850,9 +854,10 @@ function Q_function(
     E_zz::AbstractArray{<:Real,3},
     E_zz_prev::AbstractArray{<:Real,3},
     y::AbstractMatrix{<:Real},
+    weights::Vector{Float64}=ones(size(y, 2))
 )
     Q_val_state = Q_state(A, Q, P0, x0, E_z, E_zz, E_zz_prev)
-    Q_val_obs = Q_obs(C, R, E_z, E_zz, y)
+    Q_val_obs = Q_obs(C, R, E_z, E_zz, y, weights)
     return Q_val_state + Q_val_obs
 end
 
@@ -964,6 +969,7 @@ function calculate_elbo(
     p_smooth::Array{T,4},
     y::Array{T,3},
     total_entropy::Float64,
+    weights::Vector{Float64}=ones(size(y, 2))
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     n_trials = size(y, 3)
     Q_vals = zeros(T, n_trials)
@@ -981,6 +987,7 @@ function calculate_elbo(
             view(E_zz, :, :, :, trial),
             view(E_zz_prev, :, :, :, trial),
             view(y, :, :, trial),
+            weights
         )
     end
 
