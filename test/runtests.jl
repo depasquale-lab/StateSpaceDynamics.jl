@@ -284,3 +284,10 @@ include("Preprocessing/Preprocessing.jl")
     test_PPCA_E_and_M_Step()
     test_PPCA_fit()
 end
+
+include("HiddenMarkovModels/State_Labellers.jl")
+
+@testset "Viterbi and Class Probability Tests" begin
+    test_viterbi_GaussianHMM()
+    test_class_probabilities()
+end
