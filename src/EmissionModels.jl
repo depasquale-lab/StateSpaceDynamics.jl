@@ -350,7 +350,7 @@ order = 2
 AR_feats = construct_AR_feature_matrix(data, order)
 size(AR_feats)  # (3 * (2 + 1), 10 - 2) => (9, 8)
 """
-function construct_AR_feature_matrix(data::Matrix{Float64}, order::Int, include_intercept=true)
+function construct_AR_feature_matrix(data::Matrix{Float64}, order::Int, include_intercept=false)
     # If intercept is needed, prepend a row of ones
     if include_intercept
         data = vcat(ones(1, size(data, 2)), data)
@@ -392,14 +392,14 @@ order = 2
 AR_feats_trials = construct_AR_feature_matrix(data, order)
 size(AR_feats_trials[1])  # (9, 8), same transformation applied per trial
 """
-function construct_AR_feature_matrix(data::Vector{Matrix{Float64}}, order::Int)
+function construct_AR_feature_matrix(data::Vector{Matrix{Float64}}, order::Int, include_intercept=false)
     # Initialize feature vector
     AR_feats_matrices = Vector{Matrix{Float64}}(undef, length(data))
     
     # Compute AR feature matrix for each trial
     for trial_idx in eachindex(data)
         print(data[trial_idx])
-        AR_feats_matrices[trial_idx] = construct_AR_feature_matrix(data[trial_idx], order)
+        AR_feats_matrices[trial_idx] = construct_AR_feature_matrix(data[trial_idx], order, include_intercept)
     end
 
     return AR_feats_matrices
