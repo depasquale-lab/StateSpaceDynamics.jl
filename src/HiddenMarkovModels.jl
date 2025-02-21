@@ -186,28 +186,6 @@ function emission_loglikelihoods!(model::HiddenMarkovModel, FB_storage::ForwardB
     end
 end
 
-"""
-    loglikelihood(model::HiddenMarkovModel, data...)
-
-Calculate the log likelihood of the data given the Hidden Markov Model.
-
-# Arguments
-- `model::HiddenMarkovModel`: The Hidden Markov Model to calculate the log likelihood for.
-- `data...`: The data to calculate the log likelihood for. Requires the same format as the emission model.
-
-# Returns
-- `loglikelihood::Float64`: The log likelihood of the data given the Hidden Markov Model.
-"""
-function loglikelihood(model::HiddenMarkovModel, data...)
-    transposed_data = permutedims.(data) # Transpose the data to get the correct shape in EmissionModels.jl
-
-    lls = emission_loglikelihoods(model, transposed_data...)
-
-    # Run forward algorithm
-    α = forward(model, lls)
-    return logsumexp(α[:, end])
-end
-
 function forward!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
     # Reference storage
     α = FB_storage.α
@@ -501,7 +479,17 @@ end
 
 
 """
-Documentation pending for single trial and trialized class_probabilities functions
+    function class_probabilities(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Real},Nothing}=nothing;)
+
+Calculate the class probabilities at each time point using forward backward algorithm
+
+# Arguments
+- `model::HiddenMarkovModel`: The Hidden Markov Model to fit.
+- `Y::Matrix{<:Real}`: The emission data
+- `X::Union{Matrix{<:Real},Nothing}=nothing`: Optional input data for fitting Switching Regression Models
+
+# Returns
+- `class_probabilities::Matrix{Float64}`: The class probabilities at each timepoint
 """
 function class_probabilities(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Real},Nothing}=nothing;)
     data = X === nothing ? (Y,) : (X, Y)
@@ -517,6 +505,19 @@ function class_probabilities(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Uni
     return exp.(FB_storage.γ)
 end
 
+"""
+    function class_probabilities(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}}, X::Union{Vector{<:Matrix{<:Real}},Nothing}=nothing;)
+
+Calculate the class probabilities at each time point using forward backward algorithm on multiple trials of data
+
+# Arguments
+- `model::HiddenMarkovModel`: The Hidden Markov Model to fit.
+- `Y::Vectpr{<:Matrix{<:Real}}`: The trials of emission data
+- `X::Union{Vector{<:Matrix{<:Real}},Nothing}=nothing`: Optional trials of input data for fitting Switching Regression Models
+
+# Returns
+- `class_probabilities::Vector{<:Matrix{Float64}}`: Each trial's class probabilities at each timepoint
+"""
 function class_probabilities(
     model::HiddenMarkovModel,
     Y_trials::Vector{<:Matrix{<:Real}},
@@ -537,9 +538,18 @@ end
 
 
 """
-Pending documentation for session wide and trialized viterbi functions
-"""
+    viterbi(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Real},Nothing}=nothing;)
 
+Get most likely class labels using the Viterbi algorithm
+
+# Arguments
+- `model::HiddenMarkovModel`: The Hidden Markov Model to fit.
+- `Y::Matrix{<:Real}`: The emission data
+- `X::Union{Matrix{<:Real},Nothing}=nothing`: Optional input data for fitting Switching Regression Models
+
+# Returns
+- `best_path::Vector{Float64}`: The most likely state label at each timepoint
+"""
 function viterbi(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Real},Nothing}=nothing;)
     data = X === nothing ? (Y,) : (X, Y)
 
@@ -590,7 +600,19 @@ function viterbi(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:
     return best_path
 end
 
+"""
+    viterbi(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}}, X::Union{Vector{<:Matrix{<:Real}},Nothing}=nothing;)
 
+Get most likely class labels using the Viterbi algorithm for multiple trials of data
+
+# Arguments
+- `model::HiddenMarkovModel`: The Hidden Markov Model to fit.
+- `Y::Vectpr{<:Matrix{<:Real}}`: The trials of emission data
+- `X::Union{Vector{<:Matrix{<:Real}},Nothing}=nothing`: Optional trials of input data for fitting Switching Regression Models
+
+# Returns
+- `best_path::Vector{<:Vector{Float64}}`: Each trial's best state path
+"""
 function viterbi(
     model::HiddenMarkovModel,
     Y::Vector{<:Matrix{<:Real}},
