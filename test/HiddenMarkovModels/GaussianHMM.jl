@@ -166,3 +166,22 @@ function test_trialized_GaussianHMM()
     @test isapprox(est_model.B[2].Σ, true_model.B[2].Σ; atol=0.1) ||
         isapprox(est_model.B[2].Σ, true_model.B[1].Σ; atol=0.1)
 end
+
+function test_incomplete_initialization()
+    # Create Guassian Emission Models
+    output_dim = 2
+    μ = [0.0, 0.0]
+    Σ = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
+    emission_1 = GaussianEmission(output_dim, μ, Σ)
+
+    μ = [2.0, 1.0]
+    Σ = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
+    emission_2 = GaussianEmission(output_dim, μ, Σ)
+
+    # initialize with one emission model even though K is 2
+    model = HiddenMarkovModel(K=2, emission=emission_1)
+
+    # test that the deep copying of the one emissoin model works
+    @test model.B[1].μ == model.B[2].μ
+    @test model.B[1].Σ == model.B[2].Σ
+end
