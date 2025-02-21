@@ -80,6 +80,12 @@ function HiddenMarkovModel(;
 
     # if B does not have all K emission models, then fill in the rest with deep copies of "emission"
     if !isnothing(emission) && length(B) < K
+        @warn """
+        User did not provide as many emmission models as the function expects (K=$K).
+        Filling in the rest with deep copies of the provided emission model.
+        If this is not the desired behavior, specify all the emission models in the 'B=Vector{EmissionModel}' argument 
+        rather than 'emission'
+        """
         for i in (length(B) + 1):K
             push!(B, deepcopy(emission))
         end
