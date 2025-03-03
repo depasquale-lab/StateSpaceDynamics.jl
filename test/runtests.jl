@@ -2,12 +2,125 @@ using StateSpaceDynamics
 using Distributions
 using ForwardDiff
 using LinearAlgebra
+using Optim
 using Random
 using StatsFuns
 using SpecialFunctions
 using Test
+using Aqua
+using CSV
+using DataFrames
+using MAT
 
-Random.seed!(1234)
+"""
+Package Wide Tests
+"""
+
+@testset "Package Wide Tests" begin
+    Aqua.test_all(StateSpaceDynamics; ambiguities=false)
+    @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
+end
+
+include("helper_functions.jl")
+"""
+Tests for LDS.jl
+"""
+
+include("LinearDynamicalSystems//GaussianLDS.jl")
+
+@testset "GaussianLDS Tests" begin
+    @testset "Constructor Tests" begin
+        test_lds_with_params()
+        test_lds_without_params()
+    end
+    @testset "Smoother tests" begin
+        test_Gradient()
+        test_Hessian()
+        test_smooth()
+    end
+    @testset "EM tests" begin
+        test_estep()
+        # test when ntrials=1
+        test_initial_observation_parameter_updates()
+        test_state_model_parameter_updates()
+        test_obs_model_params_updates()
+        # test when ntrials>1
+        test_initial_observation_parameter_updates(3)
+        test_state_model_parameter_updates(3)
+        test_obs_model_params_updates(3)
+        # test fit method using n=1 and n=3
+        test_EM()
+        test_EM(3)
+    end
+end
+
+"""
+Tests for PoissonLDS.jl
+"""
+
+include("LinearDynamicalSystems//PoissonLDS.jl")
+
+@testset "PoissonLDS Tests" begin
+    @testset "Constructor Tests" begin
+        test_PoissonLDS_with_params()
+        test_poisson_lds_without_params()
+    end
+    @testset "Smoother Tests" begin
+        test_Gradient()
+        test_Hessian()
+        test_smooth()
+    end
+    @testset "EM Tests" begin
+        test_parameter_gradient()
+        # test when ntrials=1
+        test_initial_observation_parameter_updates()
+        test_state_model_parameter_updates()
+        # test when n_trials>1
+        test_initial_observation_parameter_updates(3)
+        test_state_model_parameter_updates(3)
+        # test fit method using 1 trial and three trials
+        test_EM()
+        test_EM(3)
+        # test resutlts are same as matlab code
+        test_EM_matlab()
+    end
+end
+
+"""
+Tests for Switching Regression Models
+"""
+
+include("HiddenMarkovModels/GaussianHMM.jl")
+
+@testset "GaussianHMM Tests" begin
+    test_SwitchingGaussian_fit()
+    test_SwitchingGaussian_SingleState_fit()
+    test_kmeans_init()
+    test_trialized_GaussianHMM()
+    test_incomplete_initialization()
+end
+
+include("HiddenMarkovModels/SwitchingGaussianRegression.jl")
+
+@testset "Switching Gaussian Regression Tests" begin
+    test_SwitchingGaussianRegression_fit()
+    test_SwitchingGaussianRegression_SingleState_fit()
+    test_trialized_SwitchingGaussianRegression()
+end
+
+include("HiddenMarkovModels/SwitchingPoissonRegression.jl")
+
+@testset "Switching Poisson Regression Tests" begin
+    test_SwitchingPoissonRegression_fit()
+    test_trialized_SwitchingPoissonRegression()
+end
+
+include("HiddenMarkovModels/SwitchingBernoulliRegression.jl")
+
+@testset "Switching Bernoulli Regression Tests" begin
+    test_SwitchingBernoulliRegression()
+    test_trialized_SwitchingBernoulliRegression()
+end
 
 """
 Tests for MixtureModels.jl
@@ -18,13 +131,8 @@ include("MixtureModels/PoissonMixtureModel.jl")
 
 @testset "MixtureModels.jl Tests" begin
     # Test GaussianMixtureModel
-
-    
     # Initialize test models
-
-
     # Standard GaussianMixtureModel model
-
     # Number of clusters
     k = 3
     # Dimension of data points
@@ -33,14 +141,9 @@ include("MixtureModels/PoissonMixtureModel.jl")
     standard_gmm = GaussianMixtureModel(k, data_dim)
     # Generate sample data
     standard_data = randn(10, data_dim)
-
     # Test constructor method of GaussianMixtureModel
     test_GaussianMixtureModel_properties(standard_gmm, k, data_dim)
-
-
-
     # Vector-data GaussianMixtureModel model
-
     # Number of clusters
     k = 2
     # Dimension of data points
@@ -48,17 +151,14 @@ include("MixtureModels/PoissonMixtureModel.jl")
     # Construct gmm
     vector_gmm = GaussianMixtureModel(k, data_dim)
     # Generate sample data
-    vector_data = randn(1000,)
+    vector_data = randn(1000)
     # Test constructor method of GaussianMixtureModel
     test_GaussianMixtureModel_properties(vector_gmm, k, data_dim)
-  
+
     # Test EM methods of the GaussianMixtureModels
 
     # Paired data and GaussianMixtureModels to test
-    tester_set = [
-        (standard_gmm, standard_data), 
-        (vector_gmm, vector_data),
-        ]
+    tester_set = [(standard_gmm, standard_data), (vector_gmm, vector_data)]
 
     for (gmm, data) in tester_set
         k = gmm.k
@@ -76,24 +176,24 @@ include("MixtureModels/PoissonMixtureModel.jl")
         gmm = GaussianMixtureModel(k, data_dim)
         test_log_likelihood(gmm, data)
     end
-  
+
     # Test PoissonMixtureModel
     k = 3  # Number of clusters
-    
+
     # Simulate some Poisson-distributed data using the sample function
     # First, define a temporary PMM for sampling purposes
     temp_pmm = PoissonMixtureModel(k)
     temp_pmm.λₖ = [5.0, 10.0, 15.0]  # Assign some λ values for generating data
-    temp_pmm.πₖ = [1/3, 1/3, 1/3]  # Equal mixing coefficients for simplicity
+    temp_pmm.πₖ = [1 / 3, 1 / 3, 1 / 3]  # Equal mixing coefficients for simplicity
     data = StateSpaceDynamics.sample(temp_pmm, 300)  # Generate sample data
-    
+
     standard_pmm = PoissonMixtureModel(k)
-    
+
     # Conduct tests
     test_PoissonMixtureModel_properties(standard_pmm, k)
-    
+
     tester_set = [(standard_pmm, data)]
-    
+
     for (pmm, data) in tester_set
         pmm = PoissonMixtureModel(k)
         testPoissonMixtureModel_EStep(pmm, data)
@@ -107,82 +207,57 @@ include("MixtureModels/PoissonMixtureModel.jl")
 end
 
 """
-Tests for HiddenMarkovModels.jl
+Tests for RegressionModels.jl
 """
 
-include("HiddenMarkovModels/HiddenMarkovModels.jl")
-
-@testset "HiddenMarkovModels.jl Tests" begin
-    test_toy_HMM()
-    test_GaussianHMM_constructor()
-    test_HMM_forward_and_back()
-    test_HMM_gamma_xi()
-    test_HMM_E_step()
-    test_HMM_M_step()
-    test_HMM_EM()
-end
-
-"""
-Tests for LDS.jl
-"""
-
-include("LDS/LDS.jl")
-
-@testset "LDS.jl Tests" begin
-    test_LDS_with_params()
-    test_LDS_without_params()
-    test_LDS_E_Step()
-    test_LDS_M_Step!()
-    test_LDS_EM()
-    test_direct_smoother()
-    test_LDS_gradient()
-    test_LDS_Hessian()
-end
-
-"""
-Tests for Regression.jl
-""" 
-
-include("Regression/GaussianRegression.jl")
+include("RegressionModels/GaussianRegression.jl")
 
 @testset "GaussianRegression Tests" begin
-    test_GaussianRegression_fit()
+    test_GaussianRegression_initialization()
     test_GaussianRegression_loglikelihood()
-    test_GaussianRegression_default_model()
-    test_GaussianRegression_intercept()
-    test_Gaussian_ll_gradient()
+    test_GaussianRegression_fit()
+    test_GaussianRegression_sample()
+    test_GaussianRegression_optimization()
+    test_GaussianRegression_sklearn()
 end
 
-include("Regression/BernoulliRegression.jl")
+include("RegressionModels/BernoulliRegression.jl")
 
 @testset "BernoulliRegression Tests" begin
-    test_BernoulliRegression_fit()
+    test_BernoulliRegression_initialization()
     test_BernoulliRegression_loglikelihood()
-    test_BernoulliRegression_empty_model()
-    test_BernoulliRegression_intercept()
-    test_Bernoulli_ll_gradient()
+    test_BernoulliRegression_fit()
+    test_BernoulliRegression_sample()
+    test_BernoulliRegression_optimization()
+    test_BernoulliRegression_sklearn()
 end
 
-include("Regression/PoissonRegression.jl")
+include("RegressionModels/PoissonRegression.jl")
 
 @testset "PoissonRegression Tests" begin
-    test_PoissonRegression_fit()
+    test_PoissonRegression_initialization()
     test_PoissonRegression_loglikelihood()
-    test_PoissonRegression_empty_model()
-    test_PoissonRegression_intercept()
-    test_Poisson_ll_gradient()
+    test_PoissonRegression_fit()
+    test_PoissonRegression_sample()
+    test_PoissonRegression_optimization()
+    test_PoissonRegression_sklearn()
 end
 
-"""
-Tests for Emissions.jl
-"""
+include("RegressionModels/AutoRegression.jl")
 
-include("Emissions/Emissions.jl")
-
-@testset "Emissions.jl Tests" begin
-    test_GaussianEmission()
-    test_regression_emissions()
+@testset "AutoRegression Tests" begin
+    test_AR_emission_initialization()
 end
+
+include("HiddenMarkovModels/AutoRegressionHMM.jl")
+
+@testset "AutoRegressive HMM Tests" begin
+    test_ARHMM_sampling()
+    test_ARHMM_fit()
+    test_timeseries_to_AR_feature_matrix()
+    test_trialized_timeseries_to_AR_feature_matrix()
+end
+
 
 """
 Tests for Utilities.jl
@@ -195,7 +270,7 @@ include("Utilities/Utilities.jl")
     test_kmeanspp_initialization()
     test_kmeans_clustering()
     test_block_tridgm()
-    test_interleave_reshape()
+    test_autoregressive_setters_and_getters()
 end
 
 """
@@ -211,12 +286,9 @@ include("Preprocessing/Preprocessing.jl")
     test_PPCA_fit()
 end
 
-"""
-Tests for MarkovRegression.jl
-"""
+include("HiddenMarkovModels/State_Labellers.jl")
 
-include("MarkovRegression/MarkovRegression.jl")
-
-@testset "SwitchingRegression Tests" begin
-    test_HMMGLM_initialization()
+@testset "Viterbi and Class Probability Tests" begin
+    test_viterbi_GaussianHMM()
+    test_class_probabilities()
 end

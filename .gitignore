@@ -1,9 +1,32 @@
-.vscode
-.idea
-/tests/ssm_testing_notebook.ipynb
-*.csv
+# IDE and editor files
+.vscode/
+.idea/
 .DS_Store
+
+# Jupyter notebooks
+/tests/ssm_testing_notebook.ipynb
+test/*/notebooks
+/notebooks/*csv
+
+# Documentation
 docs/build/
-Manifest.toml
 docs/Manifest.toml
 test/*/notebooks
+
+# Julia-specific files
+Manifest.toml
+notebooks/Manifest.toml
+
+# Specific Julia scripts
+notebooks/profiling.jl
+notebooks/benchmarking.ipynb
+notebooks/regression_debug.ipynb
+notebooks/benchmarking.jl
+notebooks/debugging.jl
+
+# Paper files
+/paper/jats
+
+# benchmarking files
+benchmarking/.CondaPkg
+benchmarking/benchmark.jl

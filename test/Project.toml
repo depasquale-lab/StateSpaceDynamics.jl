@@ -1,0 +1,18 @@
+[deps]
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+Coverage = "a2441757-f6aa-5fb2-8edb-039e3f45d037"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+JuliaFormatter = "98e50ef6-434e-11e9-1051-2b60c6c9e899"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+MAT = "23992714-dd62-5051-b70f-ba57cb901cac"
+Optim = "429524aa-4258-5aef-a3af-852621145aeb"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
+StatsFuns = "4c63d2b9-4356-54db-8cca-17b64c39e42c"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[compat]
+Aqua = "0.8"
