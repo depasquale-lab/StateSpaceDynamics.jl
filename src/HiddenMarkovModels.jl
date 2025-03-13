@@ -325,8 +325,8 @@ function update_transition_matrix!(
 )
     for j in 1:(model.K)
         for k in 1:(model.K)
-            num = exp(logsumexp(vcat([FB_trial.ξ[j, k, 2:end] for FB_trial in FB_storage_vec]...)))
-            denom = exp.(logsumexp(vcat([FB_trial.ξ[j, :, 2:end]' for FB_trial in FB_storage_vec]...)))  # this logsumexp takes care of both sums in denom
+            num = exp(logsumexp(vcat([FB_trial.ξ[j, k, :] for FB_trial in FB_storage_vec]...)))
+            denom = exp.(logsumexp(vcat([FB_trial.ξ[j, :, :] for FB_trial in FB_storage_vec]...)))  # this logsumexp takes care of both sums in denom
             model.A[j,k] = num / denom
         end
     end
@@ -461,7 +461,7 @@ function fit!(
         aggregate_forward_backward!(Aggregate_FB_storage, FB_storage_vec)
 
         # Calculate log_likelihood
-        log_likelihood_current = logsumexp(Aggregate_FB_storage.α[:, end])
+        log_likelihood_current = sum([logsumexp(FB_vec.α[:, end]) / size(FB_vec.α, 2) for FB_vec in FB_storage_vec])
         push!(lls, log_likelihood_current)
         next!(p)
 
@@ -482,7 +482,6 @@ function fit!(
 
     return lls
 end
-
 
 """
     function class_probabilities(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Real},Nothing}=nothing;)
