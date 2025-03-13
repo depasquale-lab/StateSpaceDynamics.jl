@@ -1049,8 +1049,10 @@ function update_initial_state_covariance!(
         end
 
         p0_new ./= n_trials
+        p0_new .= 0.5 * (p0_new + p0_new')
 
-        lds.state_model.P0 = make_posdef!(0.5 * (p0_new + p0_new'))
+        # Set the new P0 matrix
+        lds.state_model.P0 = p0_new
     end
 end
 
@@ -1128,8 +1130,10 @@ function update_Q!(
         end
 
         Q_new ./= (n_trials * (T_steps - 1))
+        Q_new = 0.5 * (Q_new + Q_new')  # Symmetrize
 
-        lds.state_model.Q = make_posdef!(0.5 * (Q_new + Q_new'))
+        # Set the new Q matrix
+        lds.state_model.Q = Q_new
     end
 end
 
@@ -1224,7 +1228,10 @@ function update_R!(
         end
         
         R_new ./= (n_trials * T_steps)
-        lds.obs_model.R = make_posdef!((R_new + R_new') / 2)
+        R_new .= 0.5 * (R_new + R_new')  # Symmetrize
+
+        # Set the new R matrix
+        lds.obs_model.R = R_new
     end
 end
 
@@ -1453,6 +1460,7 @@ Calculate the complete-data log-likelihood of a Poisson Linear Dynamical System 
 - `x::Matrix{T}`: The latent state variables. Dimensions: (latent_dim, T_steps)
 - `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System model.
 - `y::Matrix{T}`: The observed data. Dimensions: (obs_dim, T_steps)
+- `w::Vector{T}`: Weights for each observation in the log-likelihood calculation. Not currently used.
 
 # Returns
 - `ll::T`: The log-likelihood value.
@@ -1465,7 +1473,7 @@ ll = loglikelihood(x, lds, y)
 ```
 """
 function loglikelihood(
-    x::AbstractMatrix{T}, plds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{U}
+    x::AbstractMatrix{T}, plds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{U}, w::Vector{U}=ones(size(y, 2))
 ) where {U<:Real,T<:Real,S<:GaussianStateModel{<:Real},O<:PoissonObservationModel{<:Real}}
     # Convert the log firing rate to firing rate
     d = exp.(plds.obs_model.log_d)
@@ -1537,6 +1545,7 @@ Calculate the gradient of the log-likelihood of a Poisson Linear Dynamical Syste
 - `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System model.
 - `y::Matrix{T}`: The observed data. Dimensions: (obs_dim, T_steps)
 - `x::Matrix{T}`: The latent state variables. Dimensions: (latent_dim, T_steps)
+- `w::Vector{T}`: Weights for each observation in the log-likelihood calculation. Not currently used.
 
 # Returns
 - `grad::Matrix{T}`: The gradient of the log-likelihood. Dimensions: (latent_dim, T_steps)
@@ -1546,7 +1555,7 @@ The gradient is computed with respect to the latent states x. Each row of the re
 corresponds to the gradient for a single time step.
 """
 function Gradient(
-    lds::LinearDynamicalSystem{S,O}, y::Matrix{T}, x::Matrix{T}
+    lds::LinearDynamicalSystem{S,O}, y::Matrix{T}, x::Matrix{T}, w::Vector{T}=ones(size(y, 2))
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     # Extract model parameters
     A, Q = lds.state_model.A, lds.state_model.Q
@@ -1601,6 +1610,7 @@ of the log-likelihood with respect to the latent states.
 - `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System with Poisson observations.
 - `y::AbstractMatrix{T}`: The observed data. Dimensions: (obs_dim, T_steps)
 - `x::AbstractMatrix{T}`: The current estimate of latent states. Dimensions: (latent_dim, T_steps)
+- `w::Vector{T}`: Weights for each observation in the log-likelihood calculation. Not currently used.
 
 # Returns
 - `H::Matrix{T}`: The full Hessian matrix.
@@ -1610,7 +1620,7 @@ of the log-likelihood with respect to the latent states.
 
 """
 function Hessian(
-    lds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{T}, x::AbstractMatrix{T}
+    lds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{T}, x::AbstractMatrix{T}, w::Vector{T}=ones(size(y, 2))
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     # Extract model components
     A, Q = lds.state_model.A, lds.state_model.Q

@@ -92,7 +92,7 @@ Fit a Switching Linear Dynamical System using the variational Expectation-Maximi
 """
 function fit!(
     slds::SwitchingLinearDynamicalSystem, y::Matrix{T}; 
-    max_iter::Int=1000, tol::Real=1e-12) where {T<:Real}
+    max_iter::Int=1000, tol::Real=1e-3) where {T<:Real}
 
     # Initialize log-likelihood
     prev_ml = -T(Inf)
@@ -262,134 +262,6 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::
   return ml_total, ml_storage
 end
 
-# function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::ForwardBackward, FS::Vector{FilterSmooth{T}}) where {T<:Real}
-#   # For now a hardcoded tolerance
-#   tol = 1e-6
-#   # Get starting point for iterative E-step
-#   γ = FB.γ
-#   hs = exp.(γ)
-#   ml_total = 0.
-#   # Initialize to something higher than the tolerance
-#   ml_diff = 1
-#   ml_prev = -Inf
-#   ml_storage = []
-#   iter_count = 0
- 
-#   while abs(ml_diff) > tol && iter_count < 100  # Added iteration limit as safety
-#       iter_count += 1
-#       println("Iteration: $iter_count")
-      
-#       #1. compute qs from xs
-#       println("Step 1: Computing qs from xs")
-#       variational_qs!([model.obs_model for model in model.B], FB, y, FS)
-      
-#       #2. compute hs from qs
-#       println("Step 2: Computing hs from qs")
-#       forward!(model, FB)
-#       if any(isnan, FB.α)
-#           println("NaN detected in FB.α after forward pass")
-#           break
-#       end
-      
-#       backward!(model, FB)
-#       if any(isnan, FB.β)
-#           println("NaN detected in FB.β after backward pass")
-#           break
-#       end
-      
-#       calculate_γ!(model, FB)
-#       if any(isnan, FB.γ)
-#           println("NaN detected in FB.γ")
-#           break
-#       end
-      
-#       calculate_ξ!(model, FB)
-#       if any(isnan, FB.ξ)
-#           println("NaN detected in FB.ξ")
-#           break
-#       end
-      
-#       hs = exp.(FB.γ)
-#       if any(isnan, hs)
-#           println("NaN detected in hs = exp.(FB.γ)")
-#           break
-#       end
-      
-#       ml_total = 0.0
-      
-#       # HMM contribution
-#       println("Computing HMM ELBO contribution")
-#       hmm_contribution = hmm_elbo(model, FB)
-#       if isnan(hmm_contribution)
-#           println("NaN detected in hmm_elbo contribution")
-#           break
-#       end
-#       println("HMM contribution: $hmm_contribution")
-#       ml_total += hmm_contribution
-      
-#       # Continuous SSM contributions
-#       println("Computing SSM ELBO contributions")
-#       for k in 1:model.K
-#           println("  Processing SSM component $k")
-#           #3. compute xs from hs
-#           FS[k].x_smooth, FS[k].p_smooth, inverse_offdiag, total_entropy = smooth(model.B[k], y, vec(hs[k,:]))
-          
-#           # Check for NaNs after smoothing
-#           if any(isnan, FS[k].x_smooth) || any(isnan, FS[k].p_smooth) || any(isnan, inverse_offdiag)
-#               println("NaN detected after smoothing in component $k")
-#               println("  x_smooth contains NaN: $(any(isnan, FS[k].x_smooth))")
-#               println("  p_smooth contains NaN: $(any(isnan, FS[k].p_smooth))")
-#               println("  inverse_offdiag contains NaN: $(any(isnan, inverse_offdiag))")
-#               break
-#           end
-          
-#           # Compute sufficient statistics
-#           FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev =
-#               sufficient_statistics(reshape(FS[k].x_smooth, size(FS[k].x_smooth)..., 1),
-#               reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1),
-#               reshape(inverse_offdiag, size(inverse_offdiag)..., 1))
-          
-#           # Check for NaNs in sufficient statistics
-#           if any(isnan, FS[k].E_z) || any(isnan, FS[k].E_zz) || any(isnan, FS[k].E_zz_prev)
-#               println("NaN detected in sufficient statistics for component $k")
-#               break
-#           end
-          
-#           # Calculate ELBO for this component
-#           elbo = calculate_elbo(model.B[k], FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev, 
-#                               reshape(FS[k].p_smooth, (size(FS[k].p_smooth)..., 1)), 
-#                               reshape(y, (size(y)..., 1)), 
-#                               total_entropy, 
-#                               vec(hs[k,:]))
-          
-#           if isnan(elbo)
-#               println("NaN detected in ELBO calculation for component $k")
-#               break
-#           end
-          
-#           println("  SSM $k contribution: $elbo")
-#           ml_total += elbo
-#       end
-      
-#       if isnan(ml_total)
-#           println("NaN detected in ml_total")
-#           break
-#       end
-      
-#       push!(ml_storage, ml_total)
-#       println("Current ELBO: $ml_total")
-      
-#       # Calculate difference
-#       ml_diff = ml_total - ml_prev
-#       ml_prev = ml_total
-#       println("ELBO difference: $ml_diff")
-#       println("--------------------------")
-#   end
- 
-#   return ml_total, ml_storage
-# end
-
-
 """
 """
 function hmm_elbo(model::SwitchingLinearDynamicalSystem, FB::ForwardBackward; ϵ::Float64=1e-10)
@@ -532,7 +404,9 @@ function mstep!(slds::SwitchingLinearDynamicalSystem,
         update_A!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
         update_Q!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
         update_C!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
-        update_R!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
+
+        # In this case, we are not updating R. Empirically we have found this matrix causes numerical instability, and we can fix without loss of generality. In future, we can search for alternative estiamtors for R. 
+        # update_R!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
     end
 
     new_params = vec([stateparams(slds.B[k]) for k in 1:K])
