@@ -19,7 +19,6 @@ using Base.Threads: @threads
 include("GlobalTypes.jl")
 include("Utilities.jl")
 include("LinearDynamicalSystems.jl")
-include("CompositeModel.jl")
 include("EmissionModels.jl")
 include("HiddenMarkovModels.jl")
 include("HMMConstructors.jl")
