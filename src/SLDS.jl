@@ -42,33 +42,67 @@ end
 """
 Initialize a Switching Linear Dynamical System with random parameters.
 """
-function initialize_slds(;K::Int=2, d::Int=2, p::Int=10, seed::Int=42)
-    Random.seed!(seed)
-
-    # Transition matrix
-    A = zeros(K, K)
-    A[1, 1] = 0.96
-    A[1, 2] = 0.04
-    A[2, 2] = 0.96
-    A[2, 1] = 0.04
-    A ./= sum(A, dims=2) # Normalize rows to sum to 1
-
-    # Initial state probabilities
-    πₖ = rand(K)
-    πₖ ./= sum(πₖ) # Normalize to sum to 1
-
-    # State parameters
-    Q = Matrix(0.001 * I(d))
-    x0 = [0.0; 0.0]
-    P0 = Matrix(0.001 * I(d))
-
-    # Define observation parameters separately for each state
-    B = [LinearDynamicalSystem(
-        GaussianStateModel(0.95 * [cos(f) -sin(f); sin(f) cos(f)], Q, x0, P0),
-        GaussianObservationModel(randn(p, d), Matrix(0.001 * I(p))), # Different C and R for each state
-        d, p, fill(true, 6)) for (_, f) in zip(1:K, [0.1, 2.0])]
-
-    return SwitchingLinearDynamicalSystem(A, B, πₖ, K)
+function initialize_slds(;K::Int=2, d::Int=2, p::Int=10, self_bias::Float64=5.0, seed::Int=42)
+  Random.seed!(seed)
+  
+  # Transition matrix using Dirichlet with self-bias
+  A = zeros(K, K)
+  for i in 1:K
+      # Create concentration parameters with higher value for self-transition
+      alpha = ones(K)
+      alpha[i] = self_bias  # Bias toward self-transition
+      
+      # Sample from Dirichlet distribution
+      A[i, :] = rand(Dirichlet(alpha))
+  end
+  
+  # Initial state probabilities
+  πₖ = rand(Dirichlet(ones(K)))
+  
+  # State parameters
+  Q = Matrix(0.001 * I(d))
+  x0 = zeros(d)
+  P0 = Matrix(0.001 * I(d))
+  
+  # Define observation parameters separately for each state
+  B = Vector{LinearDynamicalSystem}(undef, K)
+  
+  # Generate state matrices with different dynamics for each state
+  for k in 1:K
+      # Create rotation angles for each 2D subspace in the state space
+      F = Matrix{Float64}(I, d, d)
+      
+      # Parameter to make each state model unique
+      angle_factor = 2π * (k-1) / K
+      
+      # Add rotation components in 2D subspaces
+      for i in 1:2:d-1
+          if i+1 <= d  # Ensure we have a pair
+              # Create a 2D rotation with different angles for each state
+              theta = 0.1 + angle_factor + (i-1)*0.2
+              rotation = 0.95 * [cos(theta) -sin(theta); sin(theta) cos(theta)]
+              F[i:i+1, i:i+1] = rotation
+          end
+      end
+      
+      # If d is odd, add a scaling factor to the last dimension
+      if d % 2 == 1
+          F[d, d] = 0.95
+      end
+      
+      # Create state model with the designed dynamics
+      state_model = GaussianStateModel(F, Q, x0, P0)
+      
+      # Observation matrix - random for each state
+      C = randn(p, d)
+      R = Matrix(0.001 * I(p))
+      obs_model = GaussianObservationModel(C, R)
+      
+      # Create linear dynamical system for this state
+      B[k] = LinearDynamicalSystem(state_model, obs_model, d, p, fill(true, 6))
+  end
+  
+  return SwitchingLinearDynamicalSystem(A, B, πₖ, K)
 end
 
 """
@@ -279,31 +313,19 @@ function hmm_elbo(model::SwitchingLinearDynamicalSystem, FB::ForwardBackward; ϵ
   
   # Initial state probabilities
   log_p_x_z = sum(exp.(γ[:, 1]) .* log.(safe_πₖ))
-  if isnan(log_p_x_z)
-    println("Initial state probabilities is NaN.")
-  end
   
   # Transition term using ξ
   for t in 1:(time_steps - 1)
     log_p_x_z += sum(exp.(ξ[:, :, t]) .* log.(safe_A))
-    if isnan(log_p_x_z)
-      println("Transition term is NaN at time $t.")
-    end
   end
   
   # Emission term
   log_p_x_z += sum(exp.(γ) .* loglikelihoods)
-  if isnan(log_p_x_z)
-    println("Emission term is NaN.")
-  end
   
   # 2. Compute log q(z)
   # Here too we need to avoid log(0) for γ entries
   safe_γ = clamp.(γ, -log(1/ϵ), log(1/ϵ))  # Limit extremes in log space
   log_q_z = sum(exp.(γ) .* safe_γ)
-  if isnan(log_q_z)
-    println("log q(z) is NaN.")
-  end
   
   log_p_x_z - log_q_z
 end

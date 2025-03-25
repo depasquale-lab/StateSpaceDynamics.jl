@@ -11,29 +11,25 @@ y_t &= g(x_t)
 \end{align*}
 ```
 
-where $x_t$ is the latent state at time $t$, $y_t$ is the observed data at time $t$, $f$ is the state transition function, $g$ is the observation function. In the linear case, $f$ and $g$ are linear functions. The way we have written the above expression, we haven't made an explicit statement about the noise distribution--and this is on purpose. While the classic Linear-Gaussian Dynamical System (i.e., the Kalman Filter/Smoother), is often the immedate assumption, there's nothing mathematically preventing us from assuming othe rnoise 
+where $x_t$ is the latent state at time $t$, $y_t$ is the observed data at time $t$, $f$ is the state transition function, $g$ is the observation function. In the linear case, $f$ and $g$ are linear functions. The way we have written the above expression, we haven't made an explicit statement about the noise distribution--and this is on purpose. While the classic Linear-Gaussian Dynamical System (i.e., the Kalman Filter/Smoother), is often the immedate assumption, there's nothing mathematically preventing us from assuming other noise.
 
-## The Filtering Problem
+## The Gaussian Linear Dynamical System
 
-In LDS models, one of the three major problems is filtering. Specifically, we are interested in estiamting the latent state $x_t$ given the observed data $y_1, \ldots, y_t$. Otherwise stated, we want to solve the following integral:
-
-
-## The Smoothing Problem
-
-## The Prediction Problem
-
-
-When the state and observation noise are Gaussian, the LDS is a Gaussian LDS, often refered to as the Kalman filter/smoother. This model can be described as follows:
+The Gaussian Linear Dynamical System (GLDS) is the canonical state-space model. It is often defined two equivalent ways:
 
 ```math
-\begin{align*}
-x_{t+1} &\sim \mathcal{N}(A x_t + b, Q)\\
-y_t &\sim \mathcal{N}(C x_t + d, R) 
-\end{align*}
+X_t ~ \mathcal{N}(AX_{t-1}, Q)
+Y_t ~ \mathcal{N}(CX_t, R)
 ```
 
-where $A$ is the state transition matrix, $C$ is the observation matrix, $b$ and $d$ are bias terms, and $Q$ and $R$ are the state and observation noise covariance matrices, respectively.
+where A is the state transition matrix, Q is the process noise covariance, C is the observation matrix, and R is the observation noise covariance. Equivalently, we can write it in equation form:
 
+```math
+X_t = AX_{t-1} + \epsilon_t
+Y_t = CX_t + \eta_t
+```
+
+where $\epsilon_t \sim \mathcal{N}(0, Q)$ and $\eta_t \sim \mathcal{N}(0, R)$.
 
 
 ```@autodocs
