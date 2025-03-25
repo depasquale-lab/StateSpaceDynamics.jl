@@ -4,13 +4,11 @@ EmissionModels.jl
 This module implements various emission models for state space modeling, including:
 - Gaussian emissions
 - Regression-based emissions (Gaussian, Bernoulli, Poisson)
-- Composite emissions
 """
 
 # Exports
 export EmissionModel, RegressionEmission
 export GaussianEmission, GaussianRegressionEmission, BernoulliRegressionEmission, PoissonRegressionEmission, AutoRegressionEmission
-export CompositeModelEmission
 export sample, loglikelihood, fit!
 
 #=
@@ -854,64 +852,4 @@ function fit!(
     post_optimization!(model, opt_problem)
 
     return model
-end
-
-"""
-    CompositeModelEmission <: EmissionModel
-
-A mutable struct representing a composite emission model that combines multiple emission models.
-
-# Fields
-- `inner_model::CompositeModel`: The underlying composite model used for the emissions.
-"""
-mutable struct CompositeModelEmission <: EmissionModel
-    inner_model::CompositeModel
-end
-
-function sample(
-    model::CompositeModelEmission,
-    input_data::Vector{};
-    observation_sequence::Vector{}=Vector(),
-)
-    if isempty(observation_sequence)
-        for i in 1:length(model.components)
-            push!(observation_sequence, (sample(model.components[i], input_data[i]...),))
-        end
-    else
-        for i in 1:length(model.components)
-            observation_sequence[i] = (
-                sample(
-                    model.components[i],
-                    input_data[i]...;
-                    observation_sequence=observation_sequence[i][1],
-                ),
-            )
-        end
-    end
-
-    return observation_sequence
-end
-
-function loglikelihood(
-    model::CompositeModelEmission, input_data::Vector{}, output_data::Vector{}
-)
-    loglikelihoods = Vector{}(undef, length(model.components))
-
-    for i in 1:length(model.components)
-        loglikelihoods[i] = loglikelihood(
-            model.components[i], input_data[i]..., output_data[i]...
-        )
-    end
-    return sum(loglikelihoods; dims=1)[1]
-end
-
-function fit!(
-    model::CompositeModelEmission,
-    input_data::Vector{},
-    output_data::Vector{},
-    w::Vector{Float64}=Vector{Float64}(),
-)
-    for i in 1:length(model.components)
-        fit!!(model.components[i], input_data[i]..., output_data[i]..., w)
-    end
 end

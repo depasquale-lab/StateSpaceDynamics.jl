@@ -24,15 +24,7 @@ mutable struct HiddenMarkovModel <: AbstractHMM
     K::Int # number of states
 end
 
-mutable struct ForwardBackward{T<:Real}
-    loglikelihoods::Matrix{T}
-    α::Matrix{T}
-    β::Matrix{T}
-    γ::Matrix{T}
-    ξ::Array{T, 3}
-end
-
-function initialize_forward_backward(model::HiddenMarkovModel, num_obs::Int)
+function initialize_forward_backward(model::AbstractHMM, num_obs::Int)
     num_states = model.K
     ForwardBackward(
         zeros(num_states, num_obs),
@@ -192,7 +184,7 @@ function emission_loglikelihoods!(model::HiddenMarkovModel, FB_storage::ForwardB
     end
 end
 
-function forward!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
+function forward!(model::AbstractHMM, FB_storage::ForwardBackward)
     # Reference storage
     α = FB_storage.α
     loglikelihoods = FB_storage.loglikelihoods
@@ -222,7 +214,7 @@ function forward!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
     end
 end
 
-function backward!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
+function backward!(model::AbstractHMM, FB_storage::ForwardBackward)
     # Reference storage
     β = FB_storage.β
     loglikelihoods = FB_storage.loglikelihoods
@@ -248,7 +240,7 @@ function backward!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
     end
 end
 
-function calculate_γ!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
+function calculate_γ!(model::AbstractHMM, FB_storage::ForwardBackward)
     α = FB_storage.α
     β = FB_storage.β
 
@@ -262,7 +254,7 @@ function calculate_γ!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
 end
 
 function calculate_ξ!(
-    model::HiddenMarkovModel,
+    model::AbstractHMM,
     FB_storage::ForwardBackward
 )
     α = FB_storage.α
@@ -325,8 +317,8 @@ function update_transition_matrix!(
 )
     for j in 1:(model.K)
         for k in 1:(model.K)
-            num = exp(logsumexp(vcat([FB_trial.ξ[j, k, :] for FB_trial in FB_storage_vec]...)))
-            denom = exp.(logsumexp(vcat([FB_trial.ξ[j, :, :] for FB_trial in FB_storage_vec]...)))  # this logsumexp takes care of both sums in denom
+            num = exp(logsumexp(vcat([FB_trial.ξ[j, k, 2:end] for FB_trial in FB_storage_vec]...)))
+            denom = exp.(logsumexp(vcat([FB_trial.ξ[j, :, 2:end]' for FB_trial in FB_storage_vec]...)))  # this logsumexp takes care of both sums in denom
             model.A[j,k] = num / denom
         end
     end
@@ -461,7 +453,7 @@ function fit!(
         aggregate_forward_backward!(Aggregate_FB_storage, FB_storage_vec)
 
         # Calculate log_likelihood
-        log_likelihood_current = sum([logsumexp(FB_vec.α[:, end]) for FB_vec in FB_storage_vec])
+        log_likelihood_current = logsumexp(Aggregate_FB_storage.α[:, end])
         push!(lls, log_likelihood_current)
         next!(p)
 
@@ -482,6 +474,7 @@ function fit!(
 
     return lls
 end
+
 
 """
     function class_probabilities(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Union{Matrix{<:Real},Nothing}=nothing;)
@@ -634,5 +627,3 @@ function viterbi(
 
     return viterbi_paths
 end
-
-
