@@ -60,7 +60,7 @@ In StateSpaceDynamics.jl, we directly maximize the complete-data log-likelihood 
 \underset{x}{\text{argmax}}  \left[ \log p(x_0) + \sum_{t=2}^T \log p(x_t \mid x_{t-1}) + \sum_{t=1}^T \log p(y_t \mid x_t) \right]
 ```
 
-This MAP estimation approach has the same computational complexity as traditional Kalman filtering and smoothing — \( \mathcal{O}(T) \) — but is significantly more flexible. Notably, it can handle **nonlinear observations** and **non-Gaussian noise** while still yielding **exact MAP estimates**, unlike approximate techniques such as the Extended Kalman Filter (EKF) or Unscented Kalman Filter (UKF).
+This MAP estimation approach has the same computational complexity as traditional Kalman filtering and smoothing — $ \mathcal{O}(T) $ — but is significantly more flexible. Notably, it can handle **nonlinear observations** and **non-Gaussian noise** while still yielding **exact MAP estimates**, unlike approximate techniques such as the Extended Kalman Filter (EKF) or Unscented Kalman Filter (UKF).
 
 ## Newton's Method for Latent State Optimization
 
@@ -72,7 +72,7 @@ x^{(i+1)} = x^{(i)} - \left[ \nabla^2 \mathcal{L}(x^{(i)}) \right]^{-1} \nabla \
 
 Where:
 
-- \( \mathcal{L}(x) \) is the complete-data log-likelihood:
+- $\mathcal{L}(x)$ is the complete-data log-likelihood:
 
 ```math
 \mathcal{L}(x) = \log p(x_0) + \sum_{t=2}^T \log p(x_t \mid x_{t-1}) + \sum_{t=1}^T \log p(y_t \mid x_t)
@@ -81,14 +81,14 @@ Where:
 - $\nabla \mathcal{L}(x)$ is the gradient of the full log-likelihood with respect to all latent states,
 - $\nabla^2 \mathcal{L}(x)$ is the Hessian of the full log-likelihood.
 
-This update is performed over the entire latent state sequence \( x_{1:T} \), and repeated until convergence.
+This update is performed over the entire latent state sequence $ x_{1:T} $, and repeated until convergence.
 
-For **Gaussian models**, \( \mathcal{L}(x) \) is quadratic and Newton's method converges in a single step — recovering the exact Kalman smoother solution. But, for **non-Gaussian models**, the Hessian is not constant and the optimization is more complex. However, the MAP estimate can still be computed efficiently using the same approach as the optimization problem is still convex.
+For **Gaussian models**, $ \mathcal{L}(x) $ is quadratic and Newton's method converges in a single step — recovering the exact Kalman smoother solution. But, for **non-Gaussian models**, the Hessian is not constant and the optimization is more complex. However, the MAP estimate can still be computed efficiently using the same approach as the optimization problem is still convex.
 
 
 # Laplace Approximation of Posterior for Non-Conjugate Observation Models
 
-In the case of non-Gaussian observations, we can use a Laplace approximation to compute the posterior distribution of the latent states. Notably, in the case of Gaussian Observations (which is conjugate with the Gaussian state model), the posterior is also Gaussian, and is the exact posterior. However, for non-Gaussian observations, we can approximate the posterior using a Gaussian distribution centered at the MAP estimate of the latent states. This approxiamtion is given by:
+In the case of non-Gaussian observations, we can use a Laplace approximation to compute the posterior distribution of the latent states. Notably, in the case of Gaussian Observations (which is conjugate with the Gaussian state model), the posterior is also Gaussian, and is the exact posterior. However, for non-Gaussian observations, we can approximate the posterior using a Gaussian distribution centered at the MAP estimate of the latent states. This approximation is given by:
 
 ```math 
 
@@ -105,4 +105,4 @@ Despite, the requirement of inverting a Hessian of diomension (d x T) x (d x T),
 
 # Learning in Linear Dynamical Systems
 
-Given the latent strucutre of state-space models, we must rely on either the Expectation-Maximization (EM) or Variational Inference (VI) approaches to learn the parameters of the model. StateSpaceDynamics.jl uses both EM and VI approaches. In the case of LDS models, we can use Laplace EM, where we approxiamte the posterior of the latent state path with the Laplace approxiamtion, as outlined in the previous section. Using the approxiamte posteriors (or exact in the Gaussian case!) we can use the closed form solution for the parameters of the model.
+Given the latent structure of state-space models, we must rely on either the Expectation-Maximization (EM) or Variational Inference (VI) approaches to learn the parameters of the model. StateSpaceDynamics.jl supports both EM and VI. For LDS models, we can use Laplace EM, where we approximate the posterior of the latent state path using the Laplace approximation as outlined above. Using these approximate posteriors (or exact ones in the Gaussian case), we can apply closed-form updates for the model parameters.
