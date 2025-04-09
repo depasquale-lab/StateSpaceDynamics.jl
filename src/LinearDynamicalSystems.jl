@@ -275,6 +275,30 @@ function initialize_FilterSmooth(model::LinearDynamicalSystem, num_obs::Int)
     )
 end
 
+"""
+    sample_posterior(FS::FilterSmooth, lds::LinearDynamicalSystem, n::Int=1)
+
+    Sample from the posterior distribution of the latent states of an LDS model.
+
+
+"""
+function sampleposterior(FS::FilterSmooth, lds::LinearDynamicalSystem, n::Int)
+    D, T = size(FS.E_z)
+
+    # Pre-allocate array for the samples
+    x̂ = zeros(D, T, n)
+
+    # Sample from the continuous posterior
+    for sample in n
+        for state in 1:T
+        # Sample from the Multivariate Normalize
+        x̂[:, state, sample] .= rand(MvNormal(FS.E_z[:, state], FS.E_zz[:, :, state]))
+        end
+    end
+
+    return x̂
+end
+
 
 """
     sample(lds::LinearDynamicalSystem{S,O}, T_steps::Int, n_trials::Int) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
