@@ -34,8 +34,8 @@ Where:
 - $\mu_k$ is the mean of the emission distribution for state $k$
 - $\Sigma_k$ is the covariance of the emission distribution for state $k$
 
-# What is a Hidden Markov Model - Generalized Linear Model
-A **Hidden Markov Model - Generalized Linear Model (HMM-GLM)** - also known as **Switching Regression Model** - is an extension to classic HMMs where the emission models are state-dependent GLMs that link an observed input to an observed output. This formulation allows each hidden state to define its own regression relationship between inputs and outputs, enabling the model to capture complex, state-dependent dynamics in the data. Currently, StateSpaceDynamics.jl support Gaussian, Bernoulli, Poisson, and Autoregressive GLMs as emission models.
+# What is a Generalized Linear Model - Hidden Markov Model
+A **Hidden Markov Model - Generalized Linear Model (GLM-HMM)** - also known as **Switching Regression Model** - is an extension to classic HMMs where the emission models are state-dependent GLMs that link an observed input to an observed output. This formulation allows each hidden state to define its own regression relationship between inputs and outputs, enabling the model to capture complex, state-dependent dynamics in the data. Currently, StateSpaceDynamics.jl support Gaussian, Bernoulli, Poisson, and Autoregressive GLMs as emission models.
 
 The generative model is as follows:
 
@@ -79,7 +79,7 @@ Where:
 
 # Learning in an HMM
 
-`StateSpaceDynamics.jl` implements Expectation-Maximization (EM) for parameter learning in both HMMs and HMM-GLMs. EM is an iterative method for finding maximum likelihood estimates of the parameters in graphical models with hidden variables. 
+`StateSpaceDynamics.jl` implements Expectation-Maximization (EM) for parameter learning in both HMMs and GLM-HMMs. EM is an iterative method for finding maximum likelihood estimates of the parameters in graphical models with hidden variables. 
 
 ### Expectation Step (E-step)
 In the **expectation step (E-step)**, we calculate the posterior distribution of the latent states given the current parameters of the model:
