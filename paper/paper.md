@@ -78,7 +78,7 @@ For the subsequent benchmarking experiments, we compared `StateSpaceDyamics.jl`,
 
 # Author contributions
 
-RS (Ryan Senne) was the primary developer of StateSpaceDynamics.jl, implementing the core algorithms, designing the package architecture, and writing the manuscript. ZL (Zachary Loschinskey) was the secondary developer, whose contributions include optimizing and extending HMM/HMM-GLM functionality, implementing core multi-trial EM algorithms, and assisting with sLDS development. CL (Carson Loughridge) and JF (James Fourie) contributed to package development, including implementation of key features, testing, and documentation. BDD (Brian D. DePasquale) conceived the project, provided theoretical guidance and technical oversight throughout development, secured funding, and supervised the work. All authors reviewed and approved the final manuscript.
+RS (Ryan Senne) was the primary developer of `StateSpaceDynamics.jl`, implementing the core algorithms, designing the package architecture, and writing the manuscript. ZL (Zachary Loschinskey) was the secondary developer, whose contributions include optimizing and extending HMM/HMM-GLM functionality, implementing core multi-trial EM algorithms, and assisting with sLDS development. CL (Carson Loughridge) and JF (James Fourie) contributed to package development, including implementation of key features, testing, and documentation. BDD (Brian D. DePasquale) conceived the project, provided theoretical guidance and technical oversight throughout development, secured funding, and supervised the work. All authors reviewed and approved the final manuscript.
 
 # Acknowledgements
 
