@@ -114,3 +114,8 @@ The **Viterbi** algorithm is used for **best state sequence labeling**. It finds
 # Reference
 
 For a complete mathematical formulation of the relevant HMM and HMM-GLM learning and inference algorithms, we recommend **Pattern Recognition and Machine Learning, Chapter 13** by **Christopher Bishop**.
+
+```@autodocs
+Modules = [StateSpaceDynamics]
+Pages   = ["HiddenMarkovModels.jl"]
+```
