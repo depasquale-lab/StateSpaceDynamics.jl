@@ -839,7 +839,6 @@ function fit!(
         f_abstol=1e-8,
         f_reltol=1e-8,
         g_abstol=1e-8,
-        g_reltol=1e-8,
     )
 
     # Run optimization

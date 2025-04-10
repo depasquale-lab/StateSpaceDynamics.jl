@@ -578,7 +578,7 @@ function smooth(
     td = TwiceDifferentiable(nll, g!, h!, X₀, initial_f, inital_g, initial_h)
 
     # set up Optim.Options
-    opts = Optim.Options(; g_tol=1e-8, x_tol=1e-8, f_tol=1e-8, iterations=100)
+    opts = Optim.Options(; g_abstol=1e-8, x_abstol=1e-8, f_abstol=1e-8, iterations=100)
 
     # Go!
     res = optimize(td, X₀, Newton(; linesearch=LineSearches.BackTracking()), opts)
@@ -1989,8 +1989,16 @@ function update_observation_model!(
             return gradient_observation_model!(grad, C, log_d, E_z, P_smooth, y)
         end
 
+        opts = Optim.Options(
+            x_reltol=1e-12,
+            x_abstol=1e-12,
+            g_abstol=1e-12,
+            f_reltol=1e-12,
+            f_abstol=1e-12,
+        )
+
         # use CG result as inital guess for LBFGS
-        result = optimize(f, g!, params, LBFGS(;linesearch=LineSearches.MoreThuente()))
+        result = optimize(f, g!, params, LBFGS(;linesearch=LineSearches.MoreThuente()), opts)
 
         # Update the parameters
         C_size = plds.obs_dim * plds.latent_dim

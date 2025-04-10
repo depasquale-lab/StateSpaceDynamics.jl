@@ -106,3 +106,8 @@ Despite, the requirement of inverting a Hessian of diomension (d x T) x (d x T),
 # Learning in Linear Dynamical Systems
 
 Given the latent structure of state-space models, we must rely on either the Expectation-Maximization (EM) or Variational Inference (VI) approaches to learn the parameters of the model. StateSpaceDynamics.jl supports both EM and VI. For LDS models, we can use Laplace EM, where we approximate the posterior of the latent state path using the Laplace approximation as outlined above. Using these approximate posteriors (or exact ones in the Gaussian case), we can apply closed-form updates for the model parameters.
+
+```@autodocs
+Modules = [StateSpaceDynamics]
+Pages   = ["LinearDynamicalSystems.jl"]
+```
