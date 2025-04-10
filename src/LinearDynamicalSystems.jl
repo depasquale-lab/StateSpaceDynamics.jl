@@ -1989,8 +1989,16 @@ function update_observation_model!(
             return gradient_observation_model!(grad, C, log_d, E_z, P_smooth, y)
         end
 
+        opts = Optim.Options(
+            x_reltol=1e-8,
+            x_abstol=1e-8,
+            g_abstol=1e-8,
+            f_reltol=1e-8,
+            f_abstol=1e-8,
+        )
+
         # use CG result as inital guess for LBFGS
-        result = optimize(f, g!, params, LBFGS(;linesearch=LineSearches.MoreThuente()))
+        result = optimize(f, g!, params, LBFGS(;linesearch=LineSearches.MoreThuente()), opts)
 
         # Update the parameters
         C_size = plds.obs_dim * plds.latent_dim
