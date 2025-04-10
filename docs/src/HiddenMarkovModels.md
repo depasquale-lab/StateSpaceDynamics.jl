@@ -1,6 +1,6 @@
 # What is a Hidden Markov Model?
 
-A **Hidden Markov Model (HMM)** is a graphical model that describes how systems change over time. When modeling a time series with $T$ observations using an HMM, we assume that the observed data $x_{1:T}$ depends on hidden states $z_{1:T}$ that are not observed. Specifically, an HMM is a type of **state-space model** in which the hidden states are discrete.
+A **Hidden Markov Model (HMM)** is a graphical model that describes how systems change over time. When modeling a time series with $T$ observations using an HMM, we assume that the observed data $y_{1:T}$ depends on hidden states $x_{1:T}$ that are not observed. Specifically, an HMM is a type of **state-space model** in which the hidden states are discrete.
 
 The three components of an HMM are as follows:
 - **An initial state distribution ($\pi$):** which hidden states we are likely to start in.
@@ -10,23 +10,23 @@ The three components of an HMM are as follows:
 The generative model is given by:
 
 $$
-z_1 \sim \text{Cat}(\pi) \\
-z_t \mid z_{t-1} \sim \text{Cat}(A_{z_{t-1}, :}) \\
-x_t \mid z_t \sim p(x_t \mid \theta_{z_t})
+x_1 \sim \text{Cat}(\pi) \\
+x_t \mid x_{t-1} \sim \text{Cat}(A_{x_{t-1}, :}) \\
+y_t \mid x_t \sim p(y_t \mid \theta_{x_t})
 $$
 
 Where:
 
-- $z_t$ is the hidden (discrete) state at time $t$
-- $x_t$ is the observed data at time $t$
+- $x_t$ is the hidden (discrete) state at time $t$
+- $y_t$ is the observed data at time $t$
 - $\pi$ is the initial state distribution
 - $A$ is the state transition matrix
-- $\theta_{z_t}$ are the parameters of the emission distribution for state $z_t$
+- $\theta_{x_t}$ are the parameters of the emission distribution for state $x_t$
 
 The emission model can take many forms: Gaussian, Poisson, Bernoulli, categorical, etc... In the case of a Gaussian emission distribution, this becomes:
 
 $$
-x_t \mid (z_t = k) \sim \mathcal{N}(\mu_k, \Sigma_k)
+y_t \mid (x_t = k) \sim \mathcal{N}(\mu_k, \Sigma_k)
 $$
 
 Where:
@@ -40,24 +40,24 @@ A **Hidden Markov Model - Generalized Linear Model (HMM-GLM)** - also known as *
 The generative model is as follows:
 
 $$
-z_1 \sim \text{Cat}(\pi) \\
-z_t \mid z_{t-1} \sim \text{Cat}(A_{z_{t-1}, :}) \\
-x_t \mid z_t, u_t \sim p(x_t \mid \theta_{z_t}, u_t)
+x_1 \sim \text{Cat}(\pi) \\
+x_t \mid x_{t-1} \sim \text{Cat}(A_{x_{t-1}, :}) \\
+y_t \mid x_t, u_t \sim p(y_t \mid \theta_{x_t}, u_t)
 $$
 
 Where:
 
-- $z_t$ is the hidden (discrete) state at time $t$
-- $x_t$ is the observed output at time $t$
+- $x_t$ is the hidden (discrete) state at time $t$
+- $y_t$ is the observed output at time $t$
 - $u_t$ is the observed input (covariate) at time $t$
-- $\theta_{z_t}$ are the parameters of the GLM emission model for state $z_t$
+- $\theta_{x_t}$ are the parameters of the GLM emission model for state $x_t$
 
 ### Example Emission Models
 
 For example, if the emission is a Gaussian GLM:
 
 $$
-x_t \mid (z_t = k), u_t \sim \mathcal{N}(\mu_k + \beta_k^\top u_t, \sigma_k^2)
+y_t \mid (x_t = k), u_t \sim \mathcal{N}(\mu_k + \beta_k^\top u_t, \sigma_k^2)
 $$
 
 Where:
@@ -68,7 +68,7 @@ Where:
 If the emission is Bernoulli (for binary outputs):
 
 $$
-x_t \mid (z_t = k), u_t \sim \text{Bernoulli} \left( \sigma \left( \mu_k + \beta_k^\top u_t \right) \right)
+y_t \mid (x_t = k), u_t \sim \text{Bernoulli} \left( \sigma \left( \mu_k + \beta_k^\top u_t \right) \right)
 $$
 
 Where:
@@ -85,13 +85,13 @@ Where:
 In the **expectation step (E-step)**, we calculate the posterior distribution of the latent states given the current parameters of the model:
 
 $$
-p(Z \mid X, \theta_{\text{old}})
+p(X \mid Y, \theta_{\text{old}})
 $$
 
 We use dynamic programming to efficiently calculate this posterior using the **forward** and **backward** recursions for HMMs. This posterior is then used to construct the expectation of the complete data log-likelihood, also known as the **Q-function**:
 
 $$
-Q(\theta, \theta_{\text{old}}) = \sum_z p(Z \mid X, \theta_{\text{old}}) \ln p(X, Z \mid \theta)
+Q(\theta, \theta_{\text{old}}) = \sum_X p(X \mid Y, \theta_{\text{old}}) \ln p(Y, X \mid \theta)
 $$
 
 ### Maximization Step (M-step)
