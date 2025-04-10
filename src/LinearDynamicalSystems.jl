@@ -1990,11 +1990,11 @@ function update_observation_model!(
         end
 
         opts = Optim.Options(
-            x_reltol=1e-8,
-            x_abstol=1e-8,
-            g_abstol=1e-8,
-            f_reltol=1e-8,
-            f_abstol=1e-8,
+            x_reltol=1e-12,
+            x_abstol=1e-12,
+            g_abstol=1e-12,
+            f_reltol=1e-12,
+            f_abstol=1e-12,
         )
 
         # use CG result as inital guess for LBFGS
