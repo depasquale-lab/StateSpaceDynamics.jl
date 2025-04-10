@@ -293,14 +293,14 @@ function estep!(model::HiddenMarkovModel, data, FB_storage)
     calculate_ξ!(model, FB_storage)
 end
 
-function update_initial_state_distribution!(model::HiddenMarkovModel, FB_storage::ForwardBackward)
+function update_initial_state_distribution!(model::AbstractHMM, FB_storage::ForwardBackward)
     # Update initial state probabilities
     γ = FB_storage.γ
     return model.πₖ .= exp.(γ[:, 1])
 end
 
 function update_transition_matrix!(
-    model::HiddenMarkovModel, FB_storage::ForwardBackward
+    model::AbstractHMM, FB_storage::ForwardBackward
 )
     γ = FB_storage.γ
     ξ = FB_storage.ξ
@@ -313,7 +313,7 @@ function update_transition_matrix!(
 end
 
 function update_transition_matrix!(
-    model::HiddenMarkovModel, FB_storage_vec::Vector{ForwardBackward{Float64}}
+    model::AbstractHMM, FB_storage_vec::Vector{ForwardBackward{Float64}}
 )
     for j in 1:(model.K)
         for k in 1:(model.K)
@@ -324,7 +324,7 @@ function update_transition_matrix!(
     end
 end
 
-function update_emissions!(model::HiddenMarkovModel, FB_storage::ForwardBackward, data)
+function update_emissions!(model::AbstractHMM, FB_storage::ForwardBackward, data)
     # update regression models
     w = exp.(permutedims(FB_storage.γ))
     # check threading speed here
@@ -333,7 +333,7 @@ function update_emissions!(model::HiddenMarkovModel, FB_storage::ForwardBackward
     end
 end
 
-function mstep!(model::HiddenMarkovModel, FB_storage::ForwardBackward, data)
+function mstep!(model::AbstractHMM, FB_storage::ForwardBackward, data)
     # update initial state distribution
     update_initial_state_distribution!(model, FB_storage)
     # update transition matrix
@@ -342,7 +342,7 @@ function mstep!(model::HiddenMarkovModel, FB_storage::ForwardBackward, data)
     update_emissions!(model, FB_storage, data)
 end
 
-function mstep!(model::HiddenMarkovModel, FB_storage_vec::Vector{ForwardBackward{Float64}}, Aggregate_FB_storage::ForwardBackward, data)
+function mstep!(model::AbstractHMM, FB_storage_vec::Vector{ForwardBackward{Float64}}, Aggregate_FB_storage::ForwardBackward, data)
     # update initial state distribution
     update_initial_state_distribution!(model, FB_storage_vec)
     # update transition matrix
@@ -351,7 +351,7 @@ function mstep!(model::HiddenMarkovModel, FB_storage_vec::Vector{ForwardBackward
     update_emissions!(model, Aggregate_FB_storage, data)
 end
 
-function update_initial_state_distribution!(model::HiddenMarkovModel, FB_storage_vec::Vector{ForwardBackward{Float64}})
+function update_initial_state_distribution!(model::AbstractHMM, FB_storage_vec::Vector{ForwardBackward{Float64}})
     num_trials = length(FB_storage_vec)
     return model.πₖ = mean([exp.(FB_storage_vec[i].γ[:, 1]) for i in 1:num_trials])
 end

@@ -578,7 +578,7 @@ function smooth(
     td = TwiceDifferentiable(nll, g!, h!, X₀, initial_f, inital_g, initial_h)
 
     # set up Optim.Options
-    opts = Optim.Options(; g_tol=1e-8, x_tol=1e-8, f_tol=1e-8, iterations=100)
+    opts = Optim.Options(; g_abstol=1e-8, x_abstol=1e-8, f_abstol=1e-8, iterations=100)
 
     # Go!
     res = optimize(td, X₀, Newton(; linesearch=LineSearches.BackTracking()), opts)
