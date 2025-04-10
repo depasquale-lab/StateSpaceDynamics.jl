@@ -17,6 +17,7 @@ makedocs(;
         "Models" => [
             "Linear Dynamical Systems" => "LinearDynamicalSystems.md",
             "Hidden Markov Models" => "HiddenMarkovModels.md",
+            "Switching Linear Dynamical Systems" => "SLDS.md",
             "EmissionModels" => "EmissionModels.md",
             "Mixture Models" => "MixtureModels.md",
         ],
