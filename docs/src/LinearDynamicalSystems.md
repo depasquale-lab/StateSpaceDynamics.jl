@@ -13,10 +13,12 @@ The **Gaussian Linear Dynamical System** — typically just referred to as an LD
 
 The generative model is given by:
 
-$$
-x_t \sim \mathcal{N}(A x_{t-1}, Q) \\
-y_t \sim \mathcal{N}(C x_t, R)
-$$
+```math
+\begin{align}
+    x_t &\sim \mathcal{N}(A x_{t-1}, Q) \\
+    y_t &\sim \mathcal{N}(C x_t, R)
+\end{align}
+```
 
 Where:
 
@@ -29,10 +31,12 @@ Where:
 
 This can equivalently be written in equation form:
 
-$$
-x_t = A x_{t-1} + \epsilon_t \\
-y_t = C x_t + \eta_t
-$$
+```math
+\begin{align}
+    x_t &= A x_{t-1} + \epsilon_t \\
+    y_t &= C x_t + \eta_t
+\end{align}
+```
 
 Where:
 
@@ -91,9 +95,7 @@ For **Gaussian models**, $ \mathcal{L}(x) $ is quadratic and Newton's method con
 In the case of non-Gaussian observations, we can use a Laplace approximation to compute the posterior distribution of the latent states. Notably, in the case of Gaussian Observations (which is conjugate with the Gaussian state model), the posterior is also Gaussian, and is the exact posterior. However, for non-Gaussian observations, we can approximate the posterior using a Gaussian distribution centered at the MAP estimate of the latent states. This approximation is given by:
 
 ```math 
-
 p(x \mid y) \approx \mathcal{N}(x^{(*)}, -\left[ \nabla^2 \mathcal{L}(x^{(*)}) \right]^{-1})
-
 ```
 
 Where:
