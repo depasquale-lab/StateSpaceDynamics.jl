@@ -11,21 +11,20 @@ The three components of an HMM are as follows:
 The generative model is given by:
 
 ```math
-\begin{align}
+\begin{align*}
     x_1 &\sim \text{Cat}(\pi) \\
     x_t &\mid x_{t-1} \sim \text{Cat}(A_{x_{t-1}, :}) \\
     y_t &\mid x_t \sim p(y_t \mid \theta_{x_t})
-\end{align}
+\end{align*}
 ```
-
 
 Where:
 
-- $x_t$ is the hidden (discrete) state at time $t$
-- $y_t$ is the observed data at time $t$
-- $\pi$ is the initial state distribution
-- $A$ is the state transition matrix
-- $\theta_{x_t}$ are the parameters of the emission distribution for state $x_t$
+- ``x_t`` is the hidden (discrete) state at time $t$
+- ``y_t`` is the observed data at time $t$
+- ``\pi`` is the initial state distribution
+- ``\mathbf{A}`` is the state transition matrix
+- ``\theta_{x_t}`` are the parameters of the emission distribution for state $x_t$
 
 The emission model can take many forms: Gaussian, Poisson, Bernoulli, categorical, etc... In the case of a Gaussian emission distribution, this becomes:
 
@@ -35,8 +34,8 @@ y_t \mid (x_t = k) \sim \mathcal{N}(\mu_k, \Sigma_k)
 
 Where:
 
-- $\mu_k$ is the mean of the emission distribution for state $k$
-- $\Sigma_k$ is the covariance of the emission distribution for state $k$
+- ``\mu_k`` is the mean of the emission distribution for state $k$
+- ``\Sigma_k`` is the covariance of the emission distribution for state $k$
 
 # What is a Generalized Linear Model - Hidden Markov Model
 
@@ -45,19 +44,19 @@ A **Hidden Markov Model - Generalized Linear Model (GLM-HMM)** - also known as *
 The generative model is as follows:
 
 ```math
-\begin{align}
+\begin{align*}
     x_1 &\sim \text{Cat}(\pi) \\
     x_t &\mid x_{t-1} \sim \text{Cat}(A_{x_{t-1}, :}) \\
     y_t &\mid x_t, u_t \sim p(y_t \mid \theta_{x_t}, u_t)
-\end{align}
+\end{align*}
 ```
 
 Where:
 
-- $x_t$ is the hidden (discrete) state at time $t$
-- $y_t$ is the observed output at time $t$
-- $u_t$ is the observed input (covariate) at time $t$
-- $\theta_{x_t}$ are the parameters of the GLM emission model for state $x_t$
+- ``x_t`` is the hidden (discrete) state at time $t$
+- ``y_t`` is the observed output at time $t$
+- ``$u_t$`` is the observed input (covariate) at time $t$
+- ``\theta_{x_t}`` are the parameters of the GLM emission model for state $x_t$
 
 ### Example Emission Models
 
@@ -69,9 +68,9 @@ y_t \mid (x_t = k), u_t \sim \mathcal{N}(\mu_k + \beta_k^\top u_t, \sigma_k^2)
 
 Where:
 
-- $\beta_k$ are the regression weights for state $k$
-- $\sigma_k^2$ is the state-dependent variance
-- $\mu_k$ is the state-dependent bias
+- ``\beta_k`` are the regression weights for state $k$
+- ``\sigma_k^2`` is the state-dependent variance
+- ``\mu_k`` is the state-dependent bias
 
 If the emission is Bernoulli (for binary outputs):
 
@@ -81,9 +80,9 @@ y_t \mid (x_t = k), u_t \sim \text{Bernoulli} \left( \sigma \left( \mu_k + \beta
 
 Where:
 
-- $\beta_k$ are the regression weights for state $k$
-- $\sigma(\cdot)$ is the logistic sigmoid function for binary outputs
-- $\mu_k$ is the state-dependent bias
+- ``\beta_k`` are the regression weights for state $k$
+- ``\sigma(\cdot)`` is the logistic sigmoid function for binary outputs
+- ``\mu_k`` is the state-dependent bias
 
 # Learning in an HMM
 

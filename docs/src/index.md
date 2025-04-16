@@ -32,13 +32,14 @@ In their most general form, state space models can be written as:
 \end{align*}
 ```
 
-where $x_t$ is the latent state at time $t$ and $y_t$ is the observed data at time $t$.
+where ``x_t`` is the latent state at time ``t`` and ``y_t`` is the observed data at time ``t``.
 
 ### Example: Linear Dynamical Systems
 
 A fundamental example is the Linear Dynamical System (LDS), which combines linear dynamics with Gaussian noise. The LDS can be expressed in two equivalent forms:
 
 1. Equation form:
+
 ```math
 \begin{align*}
     x_{t+1} &= A x_t + b + \epsilon_t \\
@@ -53,6 +54,7 @@ where:
  * ``\boldsymbol{\epsilon}_t`` and ``\boldsymbol{\delta}_t`` are Gaussian noise terms with covariances ``\mathbf{Q}`` and ``\mathbf{R}`` respectively
 
 2. Distributional form:
+
 ```math
 \begin{align*}
     x_{t+1} &\sim \mathcal{N}(A x_t + b, Q) \\
@@ -60,7 +62,7 @@ where:
 \end{align*}
 ```
 
-where $Q$ and $R$ are the state and observation noise covariance matrices, respectively.
+where ``\mathbf{Q}`` and ``\mathbf{R}`` are the state and observation noise covariance matrices, respectively.
 
 ## Models Implemented
 
