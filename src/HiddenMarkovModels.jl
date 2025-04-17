@@ -453,7 +453,7 @@ function fit!(
         aggregate_forward_backward!(Aggregate_FB_storage, FB_storage_vec)
 
         # Calculate log_likelihood
-        log_likelihood_current = sum([logsumexp(FB_vec.α[:, end]) / size(FB_vec.α, 2) for FB_vec in FB_storage_vec])
+        log_likelihood_current = sum([logsumexp(FB_vec.α[:, end]) for FB_vec in FB_storage_vec])
         push!(lls, log_likelihood_current)
         next!(p)
 
