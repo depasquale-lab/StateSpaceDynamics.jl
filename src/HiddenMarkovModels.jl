@@ -318,7 +318,7 @@ function update_transition_matrix!(
     for j in 1:(model.K)
         for k in 1:(model.K)
             num = exp(logsumexp(vcat([FB_trial.ξ[j, k, :] for FB_trial in FB_storage_vec]...)))
-            denom = exp.(logsumexp(vcat([FB_trial.ξ[j, :, :] for FB_trial in FB_storage_vec]...)))  # this logsumexp takes care of both sums in denom
+            denom = exp.(logsumexp(vcat([FB_trial.ξ[j, :, :]' for FB_trial in FB_storage_vec]...)))  # this logsumexp takes care of both sums in denom
             model.A[j,k] = num / denom
         end
     end
