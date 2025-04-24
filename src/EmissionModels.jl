@@ -602,7 +602,7 @@ function sample(model::BernoulliRegressionEmission, Φ::Union{Matrix{<:Real},Vec
     Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
 
     # add intercept if specified
-    if model.include_intercept && size(Φ, 2) == length(model.β) - 1
+    if model.include_intercept && size(Φ, 2) == size(model.β,1) - 1
         Φ = hcat(ones(size(Φ, 1)), Φ)
     end
 
@@ -632,7 +632,7 @@ function loglikelihood(
     w::Vector{Float64}=ones(size(Y, 1)),
 )
     # add intercept if specified and not already included
-    if model.include_intercept && size(Φ, 2) == length(model.β) - 1
+    if model.include_intercept && size(Φ, 2) == size(model.β,1) - 1
         Φ = hcat(ones(size(Φ, 1)), Φ)
     end
 
@@ -732,7 +732,7 @@ function sample(model::PoissonRegressionEmission, Φ::Union{Matrix{<:Real},Vecto
     Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
 
     # add intercept if specified
-    if model.include_intercept && size(Φ, 2) == length(model.β) - 1
+    if model.include_intercept && size(Φ, 2) == size(model.β,1) - 1
         Φ = hcat(ones(size(Φ, 1)), Φ)
     end
 
@@ -766,7 +766,7 @@ function loglikelihood(
     w::Vector{Float64}=ones(size(Y, 1)),
 )
     # add intercept if specified
-    if model.include_intercept && size(Φ, 2) == length(model.β) - 1
+    if model.include_intercept && size(Φ, 2) == size(model.β,1) - 1
         Φ = hcat(ones(size(Φ, 1)), Φ)
     end
 
