@@ -65,7 +65,7 @@ function HiddenMarkovModel(;
     K::Int,
     B::Vector=Vector(),
     emission=nothing,
-    A::AbstractMatrix{<:Real}=initialize_transition_matrix(K),
+    A::AbstractMatrix{Float64}=initialize_transition_matrix(K),
     πₖ::Vector{Float64}=initialize_state_distribution(K),
 )
 
@@ -376,12 +376,12 @@ Fit the Hidden Markov Model using the EM algorithm.
 - `max_iters::Int=100`: The maximum number of iterations to run the EM algorithm.
 - `tol::Float64=1e-6`: When the log likelihood is improving by less than this value, the algorithm will stop.
 """
-function fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Matrix{<:Real}; max_iters::Int=100, tol::Float64=1e-6,)
-    fit!(model, to_f64(Y), to_f64(X); max_iters=max_iters, tol=tol)
+function fit!(model::HiddenMarkovModel, Y::Matrix{Float64}, X::Matrix{<:Real}; max_iters::Int=100, tol::Float64=1e-6,)
+    fit!(model, Y, to_f64(X); max_iters=max_iters, tol=tol)
 end 
 
-function fit!(model::HiddenMarkovModel, Y::Matrix{<:Real}; max_iters::Int=100, tol::Float64=1e-6,)
-    fit!(model, to_f64(Y), nothing; max_iters=max_iters, tol=tol)
+function fit!(model::HiddenMarkovModel, Y::Matrix{Float64}; max_iters::Int=100, tol::Float64=1e-6,)
+    fit!(model, Y, nothing; max_iters=max_iters, tol=tol)
 end
 
 function fit!(
@@ -439,12 +439,12 @@ Fit the Hidden Markov Model to multiple trials of data using the EM algorithm.
 - `max_iters::Int=100`: The maximum number of iterations to run the EM algorithm.
 - `tol::Float64=1e-6`: When the log likelihood is improving by less than this value, the algorithm will stop.
 """
-function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}}, X::Vector{<:Matrix{<:Real}}; max_iters::Int=100, tol::Float64=1e-6,)
-    fit!(model, to_f64(Y), to_f64(X); max_iters=max_iters, tol=tol)
+function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{Float64}}, X::Vector{<:Matrix{<:Real}}; max_iters::Int=100, tol::Float64=1e-6,)
+    fit!(model, Y, to_f64(X); max_iters=max_iters, tol=tol)
 end 
 
-function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}}; max_iters::Int=100, tol::Float64=1e-6)
-    fit!(model, to_f64(Y), nothing; max_iters=max_iters, tol=tol)
+function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{Float64}}; max_iters::Int=100, tol::Float64=1e-6)
+    fit!(model, Y, nothing; max_iters=max_iters, tol=tol)
 end 
 
 function fit!(
@@ -573,12 +573,12 @@ Get most likely class labels using the Viterbi algorithm
 # Returns
 - `best_path::Vector{Float64}`: The most likely state label at each timepoint
 """
-function viterbi(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Matrix{<:Real};)
-    viterbi(model, to_f64(Y), to_f64(X);)
+function viterbi(model::HiddenMarkovModel, Y::Matrix{Float64}, X::Matrix{<:Real};)
+    viterbi(model, Y, to_f64(X);)
 end 
 
-function viterbi(model::HiddenMarkovModel, Y::Matrix{<:Real};)
-    viterbi(model, to_f64(Y), nothing)
+function viterbi(model::HiddenMarkovModel, Y::Matrix{Float64};)
+    viterbi(model, Y, nothing)
 end 
 
 function viterbi(model::HiddenMarkovModel, Y::Matrix{Float64}, X::Union{Matrix{Float64},Nothing};)
@@ -644,12 +644,12 @@ Get most likely class labels using the Viterbi algorithm for multiple trials of 
 # Returns
 - `best_path::Vector{<:Vector{Float64}}`: Each trial's best state path
 """
-function viterbi(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}}, X::Vector{<:Matrix{<:Real}};)
-    viterbi(model, to_f64(Y), to_f64(X);)
+function viterbi(model::HiddenMarkovModel, Y::Vector{<:Matrix{Float64}}, X::Vector{<:Matrix{<:Real}};)
+    viterbi(model, Y, to_f64(X);)
 end 
 
-function viterbi(model::HiddenMarkovModel, Y::Vector{<:Matrix{<:Real}};)
-    viterbi(model, to_f64(Y), nothing)
+function viterbi(model::HiddenMarkovModel, Y::Vector{<:Matrix{Float64}};)
+    viterbi(model, Y, nothing)
 end 
 
 function viterbi(
