@@ -140,7 +140,7 @@ function SwitchingBernoulliRegression(
     include_intercept::Bool,
     β::Matrix{<:Real}, 
     λ::Float64,
-    A::Matrix{Float64l},
+    A::Matrix{Float64},
     πₖ::Vector{Float64},)
 
     SwitchingBernoulliRegression(;
