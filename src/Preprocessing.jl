@@ -73,7 +73,7 @@ ppca = ProbabilisticPCA(K=1, D=2)
 E_Step(ppca, rand(10, 2))
 ```
 """
-function E_Step(ppca::ProbabilisticPCA, X::Matrix{<:Real})
+function E_Step(ppca::ProbabilisticPCA, X::Matrix{Float54})
     # get dims
     N, _ = size(X)
     # preallocate E_zz and E_zz
@@ -108,7 +108,7 @@ M_Step!(ppca, rand(10, 2), E_z, E_zzᵀ)
 ```
 """
 function M_Step!(
-    ppca::ProbabilisticPCA, X::Matrix{<:Real}, E_z::AbstractArray, E_zz::AbstractArray
+    ppca::ProbabilisticPCA, X::Matrix{Float64}, E_z::AbstractArray, E_zz::AbstractArray
 )
     # get dims
     N, D = size(X)
@@ -143,6 +143,10 @@ loglikelihood(ppca, rand(10, 2))
 ```
 """
 function loglikelihood(ppca::ProbabilisticPCA, X::Matrix{<:Real})
+    loglikelihood(ppca, to_f64(X))
+end 
+
+function loglikelihood(ppca::ProbabilisticPCA, X::Matrix{Float64})
     # get dims
     N, D = size(X)
     # calculate C and S
@@ -172,6 +176,13 @@ ppca = ProbabilisticPCA(K=1, D=2)
 fit!(ppca, rand(10, 2))
 ```
 """
+function fit!(
+    ppca::ProbabilisticPCA, X::Matrix{<:Real}, max_iters::Int=100, tol::Float64=1e-6
+)
+    fit!(ppca, to_f64(X), max_iters, tol)
+end 
+
+
 function fit!(
     ppca::ProbabilisticPCA, X::Matrix{Float64}, max_iters::Int=100, tol::Float64=1e-6
 )

@@ -64,7 +64,7 @@ Create a Switching Gaussian Regression Model
 function SwitchingGaussianRegression(; 
     K::Int, 
     input_dim::Int, 
-    output_dim::Int; 
+    output_dim::Int, 
     include_intercept::Bool=true, 
     β::Matrix{<:Real}=if include_intercept
         zeros(input_dim + 1, output_dim)
