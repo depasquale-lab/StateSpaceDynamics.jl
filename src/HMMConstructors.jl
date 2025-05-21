@@ -61,18 +61,18 @@ Create a Switching Gaussian Regression Model
 # Returns
 - `::HiddenMarkovModel`: A Switching Gaussian Regression Model
 """
-function SwitchingGaussianRegression(; 
-    K::Int, 
-    input_dim::Int, 
-    output_dim::Int, 
-    include_intercept::Bool=true, 
-    β::Matrix{<:Real},    
-    Σ::Matrix{<:Real}, 
-    λ::Float64=0.0,
-    A::Matrix{Float64}=initialize_transition_matrix(K),
-    πₖ::Vector{Float64}=initialize_state_distribution(K),)
+function SwitchingGaussianRegression( 
+    K::Int,
+    input_dim::Int,
+    output_dim::Int,
+    include_intercept::Bool,
+    β::Matrix{<:Real},
+    Σ::Matrix{<:Real},
+    λ::Float64,
+    A::Matrix{Float64},
+    πₖ::Vector{Float64},)
 
-    SwitchingGaussianRegression(
+    SwitchingGaussianRegression(; 
         K=K, 
         input_dim=input_dim, 
         output_dim=output_dim, 
@@ -133,15 +133,15 @@ Create a Switching Bernoulli Regression Model
 # Returns
 - `::HiddenMarkovModel`: A Switching Bernoulli Regression Model
 """
-function SwitchingBernoulliRegression(;
+function SwitchingBernoulliRegression(
     K::Int,
     input_dim::Int,
     output_dim::Int,
-    include_intercept::Bool=true,
+    include_intercept::Bool,
     β::Matrix{<:Real}, 
-    λ::Float64=0.0,
-    A::Matrix{Float64l}=initialize_transition_matrix(K),
-    πₖ::Vector{Float64}=initialize_state_distribution(K),)
+    λ::Float64,
+    A::Matrix{Float64l},
+    πₖ::Vector{Float64},)
 
     SwitchingBernoulliRegression(;
         K=K, 
@@ -180,15 +180,15 @@ function SwitchingBernoulliRegression(;
 end
 
 
-function SwitchingPoissonRegression(;
+function SwitchingPoissonRegression(
     K::Int, 
     input_dim::Int, 
-    output_dim::Int=1,
-    include_intercept::Bool=true,
+    output_dim::Int,
+    include_intercept::Bool,
     β::Matrix{<:Real},
-    λ::Float64=0.0, 
-    A::Matrix{Float64}=initialize_transition_matrix(K),
-    πₖ::Vector{Float64}=initialize_state_distribution(K),
+    λ::Float64, 
+    A::Matrix{Float64}, 
+    πₖ::Vector{Float64},
 )
     SwitchingPoissonRegression(;
         K=K, 
