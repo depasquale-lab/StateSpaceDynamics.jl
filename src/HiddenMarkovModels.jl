@@ -16,15 +16,11 @@ A Hidden Markov Model (HMM) with custom emissions.
 - `A::Matrix{<:Real}`: Transition matrix.
 - `πₖ::Vector{Float64}`: Initial state distribution.
 """
-mutable struct HiddenMarkovModel{T<:Real} <: AbstractHMM
-    A:: Matrix{T} # transition matrix
+mutable struct HiddenMarkovModel <: AbstractHMM
+    A:: Matrix{Float64} # transition matrix
     B::Vector{EmissionModel} # Vector of emission Models
     πₖ::Vector{Float64} # initial state distribution
     K::Int # number of states
-
-    function HiddenMarkovModel(A::Matrix{Float64}, B::Vector{EmissionModel}, πₖ::Vector{Float64}, K::Int)
-        new{Float64}(A, B, πₖ, K)
-    end
 end
 
 function initialize_forward_backward(model::AbstractHMM, num_obs::Int)
@@ -89,9 +85,8 @@ function HiddenMarkovModel(;
 
     emission_models = B
     #emission_models = Emission.(B)
-
-    A64  = to_f64(A)
-    model = HiddenMarkovModel(A64, emission_models, πₖ, K)
+    
+    model = HiddenMarkovModel(A, emission_models, πₖ, K)
 
     # check that the transition matrix is the proper shape
     @assert size(model.A) == (model.K, model.K)
