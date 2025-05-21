@@ -37,7 +37,7 @@ end
 function aggregate_forward_backward!(
     aggregated_FB::ForwardBackward{T}, 
     FB_storages::Vector{ForwardBackward{T}}
-) where {T<:Real}
+) where {T<:Float64}
     # Concatenate each field into the respective field in the aggregated struct
     aggregated_FB.loglikelihoods .= hcat([fb.loglikelihoods for fb in FB_storages]...)
     aggregated_FB.α .= hcat([fb.α for fb in FB_storages]...)
@@ -85,7 +85,7 @@ function HiddenMarkovModel(;
 
     emission_models = B
     #emission_models = Emission.(B)
-    
+
     model = HiddenMarkovModel(A, emission_models, πₖ, K)
 
     # check that the transition matrix is the proper shape
@@ -136,7 +136,7 @@ function sample(model::HiddenMarkovModel; n::Int, autoregressive::Bool=false)
     sample(model, nothing; n=n, autoregressive=autoregressive)
 end
 
-function sample(model::HiddenMarkovModel, X::Union{Matrix{<:Float64},Nothing}=nothing; n::Int, autoregressive::Bool=false)
+function sample(model::HiddenMarkovModel, X::Union{Matrix{Float64},Nothing}; n::Int, autoregressive::Bool=false)
     
     if autoregressive ==false
         state_sequence = Vector{Int}(undef, n)
@@ -387,7 +387,7 @@ end
 function fit!(
     model::HiddenMarkovModel,
     Y::Matrix{Float64},
-    X::Union{Matrix{Float64},Nothing}=nothing;
+    X::Union{Matrix{Float64},Nothing};
     max_iters::Int=100,
     tol::Float64=1e-6,
 )
@@ -450,7 +450,7 @@ end
 function fit!(
     model::HiddenMarkovModel,
     Y::Vector{<:Matrix{Float64}},
-    X::Union{Vector{<:Matrix{Float64}},Nothing}=nothing;
+    X::Union{Vector{<:Matrix{Float64}},Nothing};
     max_iters::Int=100,
     tol::Float64=1e-6,
 )
@@ -578,10 +578,10 @@ function viterbi(model::HiddenMarkovModel, Y::Matrix{<:Real}, X::Matrix{<:Real};
 end 
 
 function viterbi(model::HiddenMarkovModel, Y::Matrix{<:Real};)
-    viterbi(model, to_f64(Y))
+    viterbi(model, to_f64(Y), nothing)
 end 
 
-function viterbi(model::HiddenMarkovModel, Y::Matrix{Float64}, X::Union{Matrix{Float64},Nothing}=nothing;)
+function viterbi(model::HiddenMarkovModel, Y::Matrix{Float64}, X::Union{Matrix{Float64},Nothing};)
     data = X === nothing ? (Y,) : (X, Y)
 
     # transpose data so that correct dimensions are passed to EmissionModels.jl, a bit hacky but works for now.
@@ -655,7 +655,7 @@ end
 function viterbi(
     model::HiddenMarkovModel,
     Y::Vector{<:Matrix{Float64}},
-    X::Union{Vector{<:Matrix{Float64}},Nothing}=nothing
+    X::Union{Vector{<:Matrix{Float64}},Nothing};
 )
     # Storage for each trials viterbi path
     viterbi_paths = Vector{Vector{Int}}(undef, length(Y))
