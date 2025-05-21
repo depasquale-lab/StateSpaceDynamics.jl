@@ -66,15 +66,11 @@ function SwitchingGaussianRegression(;
     input_dim::Int, 
     output_dim::Int, 
     include_intercept::Bool=true, 
-    β::Matrix{<:Real}=if include_intercept
-        zeros(input_dim + 1, output_dim)
-    else
-        zeros(input_dim, output_dim)
-    end,
-    Σ::Matrix{<:Real} = I(output_dim),
+    β::Matrix{<:Real},    
+    Σ::Matrix{<:Real}, 
     λ::Float64=0.0,
     A::Matrix{Float64}=initialize_transition_matrix(K),
-    πₖ::Vector{Float64}=initialize_state_distribution(K))
+    πₖ::Vector{Float64}=initialize_state_distribution(K),)
 
     SwitchingGaussianRegression(
         K=K, 
@@ -140,15 +136,11 @@ Create a Switching Bernoulli Regression Model
 function SwitchingBernoulliRegression(;
     K::Int,
     input_dim::Int,
-    output_dim::Int=1,
+    output_dim::Int,
     include_intercept::Bool=true,
-    β::Matrix{<:Real}=if include_intercept
-        zeros(input_dim + 1, output_dim)
-    else
-        zeros(input_dim, output_dim)
-    end,
+    β::Matrix{<:Real}, 
     λ::Float64=0.0,
-    A::Matrix{Float64}=initialize_transition_matrix(K),
+    A::Matrix{Float64l}=initialize_transition_matrix(K),
     πₖ::Vector{Float64}=initialize_state_distribution(K),)
 
     SwitchingBernoulliRegression(;
@@ -168,13 +160,9 @@ function SwitchingBernoulliRegression(;
     input_dim::Int,
     output_dim::Int=1,
     include_intercept::Bool=true,
-    β::Matrix{Float64}=if include_intercept
-        zeros(input_dim + 1, output_dim)
-    else
-        zeros(input_dim, output_dim)
-    end,
+    β::Matrix{Float64},
     λ::Float64=0.0,
-    A::Matrix{Float64}=initialize_transition_matrix(K),
+    A::AbstractMatrix{<:Real}=initialize_transition_matrix(K),
     πₖ::Vector{Float64}=initialize_state_distribution(K),
 )
     # Create emission models
@@ -192,17 +180,12 @@ function SwitchingBernoulliRegression(;
 end
 
 
-
 function SwitchingPoissonRegression(;
     K::Int, 
     input_dim::Int, 
     output_dim::Int=1,
     include_intercept::Bool=true,
-    β::Matrix{<:Real}=if include_intercept
-        zeros(input_dim + 1, output_dim)
-    else
-        zeros(input_dim, output_dim)
-    end,
+    β::Matrix{<:Real},
     λ::Float64=0.0, 
     A::Matrix{Float64}=initialize_transition_matrix(K),
     πₖ::Vector{Float64}=initialize_state_distribution(K),
