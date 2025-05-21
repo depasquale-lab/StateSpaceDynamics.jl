@@ -73,7 +73,7 @@ ppca = ProbabilisticPCA(K=1, D=2)
 E_Step(ppca, rand(10, 2))
 ```
 """
-function E_Step(ppca::ProbabilisticPCA, X::Matrix{Float54})
+function E_Step(ppca::ProbabilisticPCA, X::Matrix{Float64})
     # get dims
     N, _ = size(X)
     # preallocate E_zz and E_zz
