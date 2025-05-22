@@ -226,12 +226,12 @@ function GaussianRegressionEmission(;
     input_dim::Int,
     output_dim::Int,
     include_intercept::Bool=true,
-    β::Matrix{<:Real}=if include_intercept
+    β::AbstractMatrix{<:Real}=if include_intercept
         zeros(input_dim + 1, output_dim)
     else
         zeros(input_dim, output_dim)
     end,
-    Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim),
+    Σ::AbstractMatrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim),
     λ::Float64=0.0,
 )
     βf = to_f64(β)
@@ -605,7 +605,7 @@ function BernoulliRegressionEmission(;
     input_dim::Int,
     output_dim::Int,
     include_intercept::Bool=true,
-    β::Matrix{<:Real}=if include_intercept
+    β::AbstractMatrix{<:Real}=if include_intercept
         zeros(input_dim + 1, output_dim)
     else
         zeros(input_dim, output_dim)
@@ -756,7 +756,7 @@ function PoissonRegressionEmission(;
     input_dim::Int,
     output_dim::Int,
     include_intercept::Bool=true,
-    β::Matrix{<:Real}=if include_intercept
+    β::AbstractMatrix{<:Real}=if include_intercept
         zeros(input_dim + 1, output_dim)
     else
         zeros(input_dim, output_dim)
