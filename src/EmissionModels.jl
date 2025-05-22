@@ -220,42 +220,34 @@ mutable struct GaussianRegressionEmission <: RegressionEmission
     Σ::Matrix{Float64} # covariance matrix of the model 
     include_intercept::Bool # whether to include an intercept term; if true, the first column of β is assumed to be the intercept/bias
     λ::Float64 # regularization parameter
+
+    function GaussianRegressionEmission(; 
+        input_dim::Int,
+        output_dim::Int,
+        include_intercept::Bool=true,
+        β::Matrix{<:Real},
+        Σ::Matrix{<:Real}, 
+        λ::Float64,
+    )
+        βf = to_f64(β)
+        Σf = to_f64(Σ)
+        new(input_dim, output_dim, βf, Σf, include_intercept, λ)   
+    end 
 end
 
 function GaussianRegressionEmission(;
     input_dim::Int,
     output_dim::Int,
     include_intercept::Bool=true,
-    β::Matrix{Float64}=if include_intercept
+    β::Matrix{<:Real}=if include_intercept
         zeros(input_dim + 1, output_dim)
     else
         zeros(input_dim, output_dim)
     end,
-    Σ::Matrix{Float64}=Matrix{Float64}(I, output_dim, output_dim),
+    Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim),
     λ::Float64=0.0,
 )
     GaussianRegressionEmission(input_dim, output_dim, β, Σ, include_intercept, λ)
-end
-
-function GaussianRegressionEmission(; 
-    input_dim::Int,
-    output_dim::Int,
-    include_intercept::Bool=true,
-    β::Matrix{<:Real},
-    Σ::Matrix{<:Real}, 
-    λ::Float64=0.0,
-)
-    βf = to_f64(β)
-    Σf = to_f64(Σ)
-
-    GaussianRegressionEmission(
-        input_dim=input_dim, 
-        output_dim=output_dim, 
-        include_intercept=include_intercept, 
-        β=βf, 
-        Σ=Σf, 
-        λ=λ, 
-    )
 end
 
 """
@@ -342,7 +334,6 @@ function loglikelihood(
 
     return -0.5 .* weighted_residuals
 end
-
 
 """
     AutoRegressionEmission <: EmissionModel
@@ -618,13 +609,25 @@ mutable struct BernoulliRegressionEmission <: RegressionEmission
     β::Matrix{Float64} 
     include_intercept::Bool # whether to include an intercept term; if true, the first column of β is assumed to be the intercept/bias
     λ::Float64 # regularization parameter
+
+    function BernoulliRegressionEmission(
+        input_dim::Int,
+        output_dim::Int,
+        β::Matrix{<:Real},
+        include_intercept::Bool,
+        λ::Float64,
+    )
+        βf = to_f64(β)
+    
+        new(input_dim, output_dim, βf, include_intercept, λ)
+    end
 end
 
 function BernoulliRegressionEmission(;
     input_dim::Int,
     output_dim::Int,
     include_intercept::Bool=true,
-    β::Matrix{Float64}=if include_intercept
+    β::Matrix{<:Real}=if include_intercept
         zeros(input_dim + 1, output_dim)
     else
         zeros(input_dim, output_dim)
@@ -632,24 +635,6 @@ function BernoulliRegressionEmission(;
     λ::Float64=0.0,
 )
     return BernoulliRegressionEmission(input_dim, output_dim, β, include_intercept, λ)
-end
-
-function BernoulliRegressionEmission(; 
-    input_dim::Int,
-    output_dim::Int,
-    include_intercept::Bool,
-    β::Matrix{<:Real},
-    λ::Float64,
-)
-    βf = to_f64(β)
-
-    BernoulliRegressionEmission(
-        input_dim=input_dim, 
-        output_dim=output_dim, 
-        β=βf, 
-        include_intercept=include_intercept, 
-        λ=λ, 
-    )
 end
 
 """
@@ -787,13 +772,24 @@ mutable struct PoissonRegressionEmission <: RegressionEmission
     β::Matrix{Float64}
     include_intercept::Bool
     λ::Float64
+
+    function PoissonRegressionEmission( 
+        input_dim::Int,
+        output_dim::Int,
+        β::Matrix{<:Real}, 
+        include_intercept::Bool,
+        λ::Float64=0.0,
+    )
+        βf = to_f64(β)
+        new(input_dim, output_dim, β, include_intercept, λ)
+    end
 end
 
 function PoissonRegressionEmission(;
     input_dim::Int,
     output_dim::Int,
     include_intercept::Bool=true,
-    β::Matrix{Float64}=if include_intercept
+    β::Matrix{<:Real}=if include_intercept
         zeros(input_dim + 1, output_dim)
     else
         zeros(input_dim, output_dim)
@@ -801,23 +797,6 @@ function PoissonRegressionEmission(;
     λ::Float64=0.0,
 )
     return PoissonRegressionEmission(input_dim, output_dim, β, include_intercept, λ)
-end
-
-function PoissonRegressionEmission(; 
-    input_dim::Int,
-    output_dim::Int,
-    include_intercept::Bool,
-    β::Matrix{<:Real}, 
-    λ::Float64=0.0,
-)
-    βf = to_f64(β)
-    PoissonRegressionEmission( 
-        input_dim=input_dim, 
-        output_dim=output_dim, 
-        include_intercept=include_intercept, 
-        β=βf, 
-        λ=λ, 
-    )
 end
 
 """
