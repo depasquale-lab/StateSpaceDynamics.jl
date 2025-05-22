@@ -233,10 +233,10 @@ function GaussianRegressionEmission(;
     end,
     Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim),
     λ::Float64=0.0,
-
+)
     βf = to_f64(β)
     Σf = to_f64(Σ)
-)
+
     GaussianRegressionEmission(input_dim, output_dim, βf, Σf, include_intercept, λ)
 end
 
