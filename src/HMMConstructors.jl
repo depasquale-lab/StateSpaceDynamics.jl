@@ -61,53 +61,31 @@ Create a Switching Gaussian Regression Model
 # Returns
 - `::HiddenMarkovModel`: A Switching Gaussian Regression Model
 """
-function SwitchingGaussianRegression( 
-    K::Int,
-    input_dim::Int,
-    output_dim::Int,
-    include_intercept::Bool,
-    β::Matrix{<:Real},
-    Σ::Matrix{<:Real},
-    λ::Float64,
-    A::Matrix{Float64},
-    πₖ::Vector{Float64},)
-
-    SwitchingGaussianRegression(; 
-        K=K, 
-        input_dim=input_dim, 
-        output_dim=output_dim, 
-        include_intercept=include_intercept, 
-        β=to_f64(β), 
-        Σ=to_f64(Σ), 
-        λ=λ, 
-        A=A, 
-        πₖ=πₖ
-    )
-end
-
 function SwitchingGaussianRegression(;
     K::Int,
     input_dim::Int,
     output_dim::Int,
     include_intercept::Bool=true,
-    β::Matrix{Float64}=if include_intercept
+    β::Matrix{<:Real}=if include_intercept
         zeros(input_dim + 1, output_dim)
     else
         zeros(input_dim, output_dim)
     end,
-    Σ::Matrix{Float64} = I(output_dim),
+    Σ::AbstractMatrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim),
     λ::Float64=0.0,
     A::Matrix{Float64}=initialize_transition_matrix(K),
     πₖ::Vector{Float64}=initialize_state_distribution(K),
 )
+    βf = to_f64(β)
+    Σf = to_f64(Σ)
     # Create emission models
     emissions = [
         GaussianRegressionEmission(;
             input_dim=input_dim,
             output_dim=output_dim,
             include_intercept=include_intercept,
-            β=β,
-            Σ=Σ,
+            β=βf,
+            Σ=Σf,
             λ=λ,
         ) for _ in 1:K
     ]
@@ -133,44 +111,27 @@ Create a Switching Bernoulli Regression Model
 # Returns
 - `::HiddenMarkovModel`: A Switching Bernoulli Regression Model
 """
-function SwitchingBernoulliRegression(
-    K::Int,
-    input_dim::Int,
-    output_dim::Int,
-    include_intercept::Bool,
-    β::Matrix{<:Real}, 
-    λ::Float64,
-    A::Matrix{Float64},
-    πₖ::Vector{Float64},)
-
-    SwitchingBernoulliRegression(;
-        K=K, 
-        input_dim=input_dim, 
-        output_dim=output_dim, 
-        include_intercept=include_intercept, 
-        β = to_f64(β), 
-        λ=λ,
-        A=A, 
-        πₖ=πₖ
-    )
-end
-
 function SwitchingBernoulliRegression(;
     K::Int,
     input_dim::Int,
     output_dim::Int=1,
     include_intercept::Bool=true,
-    β::Matrix{Float64},
+    β::Matrix{<:Real}=if include_intercept
+        zeros(input_dim + 1, output_dim)
+    else
+        zeros(input_dim, output_dim)
+    end,
     λ::Float64=0.0,
     A::AbstractMatrix{<:Real}=initialize_transition_matrix(K),
     πₖ::Vector{Float64}=initialize_state_distribution(K),
 )
+    βf = to_f64(β)
     # Create emission models
     emissions = [
         BernoulliRegressionEmission(;
             input_dim=input_dim,
             include_intercept=include_intercept,
-            β=β,
+            β=βf,
             λ=λ,
             output_dim=output_dim,
         ) for _ in 1:K
@@ -180,34 +141,12 @@ function SwitchingBernoulliRegression(;
 end
 
 
-function SwitchingPoissonRegression(
-    K::Int, 
-    input_dim::Int, 
-    output_dim::Int,
-    include_intercept::Bool,
-    β::Matrix{<:Real},
-    λ::Float64, 
-    A::Matrix{Float64}, 
-    πₖ::Vector{Float64},
-)
-    SwitchingPoissonRegression(;
-        K=K, 
-        input_dim=input_dim, 
-        output_dim=output_dim, 
-        include_intercept=include_intercept, 
-        β = to_f64(β), 
-        λ=λ, 
-        A=A, 
-        πₖ=πₖ
-    )
-end 
-
 function SwitchingPoissonRegression(;
     K::Int,
     input_dim::Int,
     output_dim::Int=1,
     include_intercept::Bool=true,
-    β::Matrix{Float64}=if include_intercept
+    β::Matrix{<:Real}=if include_intercept
         zeros(input_dim + 1, output_dim)
     else
         zeros(input_dim, output_dim)
@@ -216,14 +155,14 @@ function SwitchingPoissonRegression(;
     A::Matrix{Float64}=initialize_transition_matrix(K),
     πₖ::Vector{Float64}=initialize_state_distribution(K),
 )
-
+    βf=to_f64(β)
     # Create emission models
     emissions = [
         PoissonRegressionEmission(;
             input_dim=input_dim,
             output_dim=output_dim,
             include_intercept=include_intercept,
-            β=β,
+            β=βf,
             λ=λ,
         ) for _ in 1:K
     ]

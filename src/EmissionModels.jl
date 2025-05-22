@@ -161,7 +161,7 @@ Calculate L2 regularization term for regression coefficients.
 # Returns
 - `Float64`: The regularization term value
 """
-function calc_regularization(β::Matrix{Float64}, λ::Float64, include_intercept::Bool=true)
+function calc_regularization(β::AbstractMatrix{T}, λ::Float64, include_intercept::Bool=true) where {T<:Number}
     # calculate L2 penalty
     if include_intercept
         regularization = 0.5 * λ * sum(abs2, β[2:end, :])
@@ -183,8 +183,8 @@ Calculate gradient of L2 regularization term for regression coefficients.
 - `include_intercept::Bool`: Whether to exclude the intercept term from regularization
 """
 function calc_regularization_gradient(
-    β::Matrix{Float64}, λ::Float64, include_intercept::Bool=true
-)
+    β::AbstractMatrix{T}, λ::Float64, include_intercept::Bool=true
+) where {T<:Number}
     # calculate the gradient of the regularization component
     regularization = zeros(size(β))
 
@@ -301,6 +301,15 @@ function loglikelihood(
 )
     w = ones(size(Y,1))                   
     return loglikelihood(model, Φ, Y, w)  
+end
+
+function loglikelihood(
+    model::GaussianRegressionEmission,
+    Φ::Matrix{<:Real},
+    Y::Matrix{<:Real},
+    w::AbstractVector{<:Real},
+)
+    loglikelihood(model, to_f64(Φ), to_f64(Y), to_f64(w), )
 end
 
 function loglikelihood(
@@ -480,7 +489,7 @@ function loglikelihood(
     Y::Matrix{<:Real},
     w::Vector{Float64}=ones(size(Y, 1)),
 )
-    return loglikelihood(model.innerGaussianRegression, X, Y, w)
+    return loglikelihood(model.innerGaussianRegression, to_f64(X), to_f64(Y), to_f64(w))
 end
 
 """
@@ -534,8 +543,8 @@ end
 
 
 function objective(
-    opt::Union{RegressionOptimization{GaussianRegressionEmission}, RegressionOptimization{AutoRegressionEmission}}, β_vec::Vector{T}
-) where {T<:AbstractFloat}
+    opt::Union{RegressionOptimization{GaussianRegressionEmission}, RegressionOptimization{AutoRegressionEmission}}, β_vec::AbstractVector{T}
+) where {T<:Number}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     residuals = opt.y - opt.X * β_mat
     w_reshaped = reshape(opt.w, :, 1)
@@ -551,8 +560,8 @@ end
 function objective_gradient!(
     G::Vector{Float64},
     opt::Union{RegressionOptimization{GaussianRegressionEmission}, RegressionOptimization{AutoRegressionEmission}},
-    β_vec::Vector{T},
-) where {T<:AbstractFloat}
+    β_vec::AbstractVector{T},
+) where {T<:Number}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     residuals = opt.y - opt.X * β_mat
 
@@ -679,6 +688,15 @@ end
 
 function loglikelihood(
     model::BernoulliRegressionEmission,
+    Φ::Matrix{<:Real},
+    Y::Matrix{<:Real},
+    w::AbstractVector{<:Real},
+)
+    loglikelihood(model, to_f64(Φ), to_f64(Y), to_f64(w), )
+end
+
+function loglikelihood(
+    model::BernoulliRegressionEmission,
     Φ::Matrix{Float64},
     Y::Matrix{Float64},
     w::Vector{Float64},
@@ -703,8 +721,8 @@ end
 
 # Bernoulli Regression Implementation
 function objective(
-    opt::RegressionOptimization{BernoulliRegressionEmission}, β_vec::Vector{T}
-) where {T<:AbstractFloat}
+    opt::RegressionOptimization{BernoulliRegressionEmission},  β_vec::AbstractVector{T},
+) where {T<:Number}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     p = logistic.(opt.X * β_mat)
 
@@ -719,8 +737,8 @@ end
 function objective_gradient!(
     G::Vector{Float64},
     opt::RegressionOptimization{BernoulliRegressionEmission},
-    β_vec::Vector{T},
-) where {T<:AbstractFloat}
+    β_vec::AbstractVector{T},
+) where {T<:Number}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     p = logistic.(opt.X * β_mat)
 
@@ -834,6 +852,15 @@ end
 
 function loglikelihood(
     model::PoissonRegressionEmission,
+    Φ::AbstractMatrix{<:Real},
+    Y::AbstractMatrix{<:Real},
+    w::AbstractVector{<:Real},
+)
+    loglikelihood(model, to_f64(Φ), to_f64(Y), to_f64(w), )
+end
+
+function loglikelihood(
+    model::PoissonRegressionEmission,
     Φ::Matrix{Float64},
     Y::Matrix{Float64},
     w::Vector{Float64},
@@ -859,8 +886,8 @@ end
 
 # Poisson Regression Implementation
 function objective(
-    opt::RegressionOptimization{PoissonRegressionEmission}, β_vec::Vector{T}
-) where {T<:AbstractFloat}
+    opt::RegressionOptimization{PoissonRegressionEmission}, β_vec::AbstractVector{T}
+) where {T<:Number}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
 
     η = clamp.(opt.X * β_mat, -30, 30)
@@ -878,8 +905,8 @@ end
 function objective_gradient!(
     G::Vector{Float64},
     opt::RegressionOptimization{PoissonRegressionEmission},
-    β_vec::Vector{T},
-) where {T<:AbstractFloat}
+    β_vec::AbstractVector{T},
+) where {T<:Number}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     η = clamp.(opt.X * β_mat, -30, 30)
     rate = exp.(η)
@@ -908,14 +935,23 @@ function fit!(
     y::Matrix{Float64},
 )
     w = ones(size(y,1))
-    return fit!(model, X, y, w)
+    fit!(model, X, y, w)
+end 
+
+function fit!(
+    model::RegressionEmission,
+    X::Matrix{<:Real},
+    y::Matrix{<:Real},
+    w::AbstractVector{<:Real}
+)
+    fit!(model, to_f64(X), to_f64(y), to_f64(w))
 end 
 
 function fit!(
     model::RegressionEmission,
     X::Matrix{Float64},
     y::Matrix{Float64},
-    w::Vector{Float64},
+    w::AbstractVector{Float64},
 )
     opt_problem = create_optimization(model, X, y, w)
 
