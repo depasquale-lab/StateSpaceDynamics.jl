@@ -222,24 +222,6 @@ mutable struct GaussianRegressionEmission <: RegressionEmission
     λ::Float64 # regularization parameter
 end
 
-function GaussianRegressionEmission(
-    input_dim::Int,
-    output_dim::Int,
-    include_intercept::Bool,
-    β::Matrix{<:Real},
-    Σ::Matrix{<:Real}, 
-    λ::Float64,
-)
-    GaussianRegressionEmission(; 
-        input_dim=input_dim, 
-        output_dim=output_dim, 
-        include_intercept=include_intercept, 
-        β=to_f64(β), 
-        Σ=to_f64(Σ), 
-        λ=λ, 
-    )
-end
-
 function GaussianRegressionEmission(;
     input_dim::Int,
     output_dim::Int,
@@ -252,7 +234,28 @@ function GaussianRegressionEmission(;
     Σ::Matrix{Float64}=Matrix{Float64}(I, output_dim, output_dim),
     λ::Float64=0.0,
 )
-    return GaussianRegressionEmission(input_dim, output_dim, β, Σ, include_intercept, λ)
+    GaussianRegressionEmission(input_dim, output_dim, β, Σ, include_intercept, λ)
+end
+
+function GaussianRegressionEmission(; 
+    input_dim::Int,
+    output_dim::Int,
+    include_intercept::Bool=true,
+    β::Matrix{<:Real},
+    Σ::Matrix{<:Real}, 
+    λ::Float64=0.0,
+)
+    βf = to_f64(β)
+    Σf = to_f64(Σ)
+
+    GaussianRegressionEmission(
+        input_dim=input_dim, 
+        output_dim=output_dim, 
+        include_intercept=include_intercept, 
+        β=βf, 
+        Σ=Σf, 
+        λ=λ, 
+    )
 end
 
 """
@@ -304,7 +307,9 @@ function loglikelihood(
     Φ::Matrix{<:Real}, 
     Y::Matrix{<:Real},
 )
-    loglikelihood(model, to_f64(Φ), to_f64(Y))
+    Φf = to_f64(Φ)
+    Yf = to_f64(Y)
+    loglikelihood(model, Φf, Yf)
 end
 
 function loglikelihood(
@@ -461,7 +466,7 @@ Generate a sample from the given autoregressive emission model using the previou
 # Returns
 - `Matrix{Float64}`: The updated observation sequence with the new sample appended.
 """
-function sample(model::AutoRegressionEmission, X::Matrix{<:Real})
+function sample(model::AutoRegressionEmission, X::Matrix{Float64})
     # Extract the last column of X as input
     last_observation = X[:, end]
 
@@ -615,22 +620,6 @@ mutable struct BernoulliRegressionEmission <: RegressionEmission
     λ::Float64 # regularization parameter
 end
 
-function BernoulliRegressionEmission(
-    input_dim::Int,
-    output_dim::Int,
-    include_intercept::Bool,
-    β::Matrix{<:Real},
-    λ::Float64,
-)
-    BernoulliRegressionEmission(; 
-        input_dim=input_dim, 
-        output_dim=output_dim, 
-        β=to_f64(β), 
-        include_intercept=include_intercept, 
-        λ=λ, 
-    )
-end
-
 function BernoulliRegressionEmission(;
     input_dim::Int,
     output_dim::Int,
@@ -643,6 +632,24 @@ function BernoulliRegressionEmission(;
     λ::Float64=0.0,
 )
     return BernoulliRegressionEmission(input_dim, output_dim, β, include_intercept, λ)
+end
+
+function BernoulliRegressionEmission(; 
+    input_dim::Int,
+    output_dim::Int,
+    include_intercept::Bool,
+    β::Matrix{<:Real},
+    λ::Float64,
+)
+    βf = to_f64(β)
+
+    BernoulliRegressionEmission(
+        input_dim=input_dim, 
+        output_dim=output_dim, 
+        β=βf, 
+        include_intercept=include_intercept, 
+        λ=λ, 
+    )
 end
 
 """
@@ -782,22 +789,6 @@ mutable struct PoissonRegressionEmission <: RegressionEmission
     λ::Float64
 end
 
-function PoissonRegressionEmission(
-    input_dim::Int,
-    output_dim::Int,
-    include_intercept::Bool,
-    β::Matrix{<:Real}, 
-    λ::Float64,
-)
-    PoissonRegressionEmission(; 
-        input_dim=input_dim, 
-        output_dim=output_dim, 
-        include_intercept=include_intercept, 
-        β=to_f64(β), 
-        λ=λ, 
-    )
-end
-
 function PoissonRegressionEmission(;
     input_dim::Int,
     output_dim::Int,
@@ -810,6 +801,23 @@ function PoissonRegressionEmission(;
     λ::Float64=0.0,
 )
     return PoissonRegressionEmission(input_dim, output_dim, β, include_intercept, λ)
+end
+
+function PoissonRegressionEmission(; 
+    input_dim::Int,
+    output_dim::Int,
+    include_intercept::Bool,
+    β::Matrix{<:Real}, 
+    λ::Float64=0.0,
+)
+    βf = to_f64(β)
+    PoissonRegressionEmission( 
+        input_dim=input_dim, 
+        output_dim=output_dim, 
+        include_intercept=include_intercept, 
+        β=βf, 
+        λ=λ, 
+    )
 end
 
 """
@@ -861,15 +869,6 @@ Calculate the log-likelihood of a Poisson regression model.
 # Returns
 - `loglikelihood::Float64`: Log-likelihood of the model.
 """
-function sample(
-    model::PoissonRegressionEmission, 
-    Φ::Matrix{<:Real}, 
-    Y::Matrix{Float64}, 
-    w::Vector{Float64}=ones(size(Y, 1))
-)
-    sample(model, to_f64(Φ), Y, w)
-end
-
 function loglikelihood(
     model::PoissonRegressionEmission,
     Φ::Matrix{<:Real},
