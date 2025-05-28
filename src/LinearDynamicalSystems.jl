@@ -1,5 +1,7 @@
 export GaussianLDS, PoissonLDS, sample, smooth, fit!
 
+export calculate_elbo, update_C!
+
 """
     GaussianStateModel{T<:Real} <: AbstractStateModel
 
@@ -881,7 +883,9 @@ Compute sufficient statistics for the EM algorithm in a Linear Dynamical System.
 - For single-trial data, use inputs with n_trials = 1.
 """
 function sufficient_statistics(
-    x_smooth::Array{T,3}, p_smooth::Array{T,4}, p_smooth_t1::Array{T,4}
+    x_smooth::AbstractArray{T,3},
+    p_smooth::AbstractArray{T,4},
+    p_smooth_t1::AbstractArray{T,4},
 ) where {T<:Real}
     latent_dim, T_steps, n_trials = size(x_smooth)
 
@@ -963,13 +967,13 @@ Calculate the Evidence Lower Bound (ELBO) for a Linear Dynamical System.
 """
 function calculate_elbo(
     lds::LinearDynamicalSystem{S,O},
-    E_z::Array{T,3},
-    E_zz::Array{T,4},
-    E_zz_prev::Array{T,4},
-    p_smooth::Array{T,4},
-    y::Array{T,3},
+    E_z::AbstractArray{T,3},
+    E_zz::AbstractArray{T,4},
+    E_zz_prev::AbstractArray{T,4},
+    p_smooth::AbstractArray{T,4},
+    y::AbstractArray{T,3},
     total_entropy::Float64,
-    weights::Vector{Float64}=ones(size(y, 2))
+    weights::AbstractVector{Float64}=ones(size(y, 2))
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     n_trials = size(y, 3)
     Q_vals = zeros(T, n_trials)
@@ -1154,9 +1158,12 @@ Update the observation matrix C of the Linear Dynamical System.
 - The result is averaged across all trials.
 """
 function update_C!(
-    lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}, y::Array{T,3},
+    lds::LinearDynamicalSystem{<:GaussianStateModel{T},<:GaussianObservationModel{T}},  
+    E_z::Array{T,3}, 
+    E_zz::Array{T,4}, 
+    y::Array{T,3},
     w::Vector{Float64}=ones(size(y, 2))
-) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+) where {T<:Real}
     if lds.fit_bool[5]
         n_trials, T_steps = size(y, 3), size(y, 2)
 
@@ -1391,7 +1398,7 @@ function PoissonLDS(;
         )
     end
     if obs_dim == 0 && (isempty(C) || isempty(log_d))
-        ethrow(ArgumentError("Must provide obs_dim if C or log_d is not provided."))
+        throw(ArgumentError("Must provide obs_dim if C or log_d is not provided."))
     end
 
     state_model = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0, latent_dim=latent_dim)

@@ -295,8 +295,8 @@ end
 
 function update_initial_state_distribution!(model::AbstractHMM, FB_storage::ForwardBackward)
     # Update initial state probabilities
-    γ = FB_storage.γ
-    return model.πₖ .= exp.(γ[:, 1])
+    broadcast!(exp, model.πₖ, view(FB_storage.γ, :, 1))
+    return model.πₖ
 end
 
 function update_transition_matrix!(
@@ -353,7 +353,13 @@ end
 
 function update_initial_state_distribution!(model::AbstractHMM, FB_storage_vec::Vector{ForwardBackward{Float64}})
     num_trials = length(FB_storage_vec)
-    return model.πₖ = mean([exp.(FB_storage_vec[i].γ[:, 1]) for i in 1:num_trials])
+
+    #adjust πₖ to element wise averaging from vector wide averaging 
+    agg = reduce(+, (exp.(fb.γ[:, 1]) for fb in FB_storage_vec))
+
+    model.πₖ .= agg ./ num_trials
+
+    return model.πₖ
 end
 
 """

@@ -191,7 +191,6 @@ function fit!(
     return mls, param_diff, FB, FS
 end
 
-
 """
     variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB, FS) -> Float64
 
@@ -274,16 +273,35 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::
       ml_total += hmm_contribution
       
       for k in 1:model.K
-          #3. compute xs from hs
+
+          # compute xs from hs
           FS[k].x_smooth, FS[k].p_smooth, inverse_offdiag, total_entropy = smooth(model.B[k], y, vec(hs[k,:]))
+
+          p_smooth_prev = reshape(
+            inverse_offdiag,
+            (size(inverse_offdiag)..., 1)
+          )
+
           FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev =
               sufficient_statistics(reshape(FS[k].x_smooth, size(FS[k].x_smooth)..., 1),
               reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1),
-              reshape(inverse_offdiag, size(inverse_offdiag)..., 1))
+              p_smooth_prev)
+
+          y3d = reshape(y,(size(y)..., 1))
+          ps3d = reshape(FS[k].p_smooth, (size(FS[k].p_smooth)..., 1))
 
           # Calculate the ELBO contribution for the current SSM
-          elbo = calculate_elbo(model.B[k], FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev, reshape(FS[k].p_smooth, (size(FS[k].p_smooth)..., 1)), reshape(y, (size(y)..., 1)), total_entropy, vec(hs[k,:]))
-          ml_total += elbo
+          elbo_k = calculate_elbo(
+              model.B[k],
+              FS[k].E_z, 
+              FS[k].E_zz, 
+              FS[k].E_zz_prev, 
+              ps3d,
+              y3d,
+              total_entropy, 
+              vec(hs[k,:]))
+
+          ml_total += elbo_k
       end
      
       push!(ml_storage, ml_total)

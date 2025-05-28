@@ -335,7 +335,8 @@ Perform K-means clustering on the input data.
 function kmeans_clustering(
     data::Matrix{<:Real}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6
 )
-    N, _ = size(data)
+    dims = size(data)
+    N = dims[1]
     centroids = kmeanspp_initialization(data, k_means)  # Assuming you have this function defined
     labels = zeros(Int, N)
     for iter in 1:max_iters
