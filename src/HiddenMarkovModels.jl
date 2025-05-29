@@ -227,7 +227,7 @@ function backward!(model::AbstractHMM, FB_storage::ForwardBackward)
     log_A = log.(A)
     
     # Initialize last column of β
-    @inbounds β[:, end] .= 0
+    @inbounds fill!(view(β, :, time_steps), zero(eltype(β)))
 
     # Compute β for all time steps
     @inbounds for t in (time_steps - 1):-1:1

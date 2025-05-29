@@ -22,7 +22,7 @@ fit!(gmm, data)
 mutable struct GaussianMixtureModel <: MixtureModel
     k::Int # Number of clusters
     μₖ::Matrix{<:Real} # Means of each cluster
-    Σₖ::Array{Matrix{<:Real},1} # Covariance matrices of each cluster
+    Σₖ::Array{Matrix{Float64},1} # Covariance matrices of each cluster
     πₖ::Vector{Float64} # Mixing coefficients
 end
 
@@ -45,7 +45,7 @@ Draw 'n' samples from gmm. Returns a Matrix{<:Real}, where each row is a data po
 """
 function sample(gmm::GaussianMixtureModel, n::Int)
     # Determine the number of samples from each component
-    component_samples = rand(Multinomial(n, gmm.πₖ), 1)
+    component_samples = rand(Multinomial(n, gmm.πₖ)) 
 
     # Initialize a container for all samples
     samples = Matrix{Float64}(undef, n, size(gmm.μₖ, 2))
@@ -97,7 +97,7 @@ function M_Step!(
 
     for k in 1:K
         N_k[k] = sum(γ[:, k])
-        μₖ[k, :] = (γ[:, k]' * data) ./ N_k[k]
+        μₖ[k, :] .= (data' * γ[:, k]) ./ N_k[k]
     end
 
     for k in 1:K
@@ -363,7 +363,7 @@ Draw 'n' samples from pmm. Returns a Vector{Int} of length n.
 """
 function sample(pmm::PoissonMixtureModel, n::Int)
     # Determine the number of samples from each component
-    component_samples = rand(Multinomial(n, pmm.πₖ), 1)
+    component_samples = rand(Multinomial(n, pmm.πₖ))
 
     # Initialize a container for all samples
     samples = Vector{Int}(undef, n)

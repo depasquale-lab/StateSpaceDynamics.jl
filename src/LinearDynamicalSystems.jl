@@ -1,7 +1,7 @@
 export GaussianLDS, PoissonLDS, sample, smooth, fit!
-
 export calculate_elbo, update_C!
 
+using LinearAlgebra.BLAS
 """
     GaussianStateModel{T<:Real} <: AbstractStateModel
 
@@ -1159,10 +1159,10 @@ Update the observation matrix C of the Linear Dynamical System.
 """
 function update_C!(
     lds::LinearDynamicalSystem{<:GaussianStateModel{T},<:GaussianObservationModel{T}},  
-    E_z::Array{T,3}, 
-    E_zz::Array{T,4}, 
-    y::Array{T,3},
-    w::Vector{Float64}=ones(size(y, 2))
+    E_z::AbstractArray{T,3}, 
+    E_zz::AbstractArray{T,4}, 
+    y::AbstractArray{T,3},
+    w::AbstractVector{T} = ones(size(y, 2))
 ) where {T<:Real}
     if lds.fit_bool[5]
         n_trials, T_steps = size(y, 3), size(y, 2)
@@ -1198,42 +1198,35 @@ Update the observation noise covariance matrix R of the Linear Dynamical System.
 - The result is averaged across all trials.
 """
 function update_R!(
-    lds::LinearDynamicalSystem{S,O}, E_z::Array{T,3}, E_zz::Array{T,4}, y::Array{T,3},
-    w::Vector{Float64}=ones(size(y, 2))
+    lds::LinearDynamicalSystem{S,O}, 
+    E_z::Array{T,3}, 
+    E_zz::Array{T,4}, 
+    y::Array{T,3},
+    w::AbstractVector{<:Real}=ones(size(y, 2))
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+
     if lds.fit_bool[6]
         obs_dim, T_steps, n_trials = size(y)
         R_new = zeros(T, obs_dim, obs_dim)
         C = lds.obs_model.C
         
         # Pre-allocate all temporary arrays
-        innovation = zeros(T, obs_dim)
-        Czt = zeros(T, obs_dim)
-        temp_matrix = zeros(T, obs_dim, size(C, 2))  # For storing C * state_uncertainty
+        innovation = similar(R_new, obs_dim)
         
         # Reorganize as sum of outer products
-        for trial in 1:n_trials
-            @inbounds for t in 1:T_steps
-                # Compute innovation using pre-allocated arrays
-                yt = @view y[:, t, trial]
-                zt = @view E_z[:, t, trial]
-                mul!(Czt, C, zt)
-                @. innovation = (yt - Czt)
-                
-                # Add innovation outer product
-                #BLAS.ger!(one(T), innovation, innovation, R_new)
-                mul!(R_new, innovation, innovation', w[t], one(T))  # R_new += w[t] * innovation * innovation'
-                
-                # Add correction term efficiently:
-                # First compute state_uncertainty = Σ_t - z_t*z_t'
-                state_uncertainty = view(E_zz, :, :, t, trial) - zt * zt'
-                
-                # Then compute C * state_uncertainty * C' in steps:
-                mul!(temp_matrix, C, state_uncertainty)  # temp = C * state_uncertainty
-                mul!(R_new, temp_matrix, C', w[t], one(T))  # R_new += w[t] * C * state_uncertainty * C'
-            end
-        end
-        
+        for trial in 1:n_trials, t in 1:T_steps
+
+            yt = @view y[:, t, trial]
+            zt = @view E_z[:, t, trial]
+            innovation .= yt .- (C * zt)
+
+            ger!(w[t], innovation, innovation, R_new)
+
+            Σt = Array(@view E_zz[:, :, t, trial])  
+            state_uncertainty = Σt .- zt * zt'
+            R_new .+= w[t] .* (C * state_uncertainty * C')
+        end 
+
         R_new ./= (n_trials * T_steps)
         R_new .= 0.5 * (R_new + R_new')  # Symmetrize
 
@@ -1980,7 +1973,8 @@ function update_observation_model!(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     if plds.fit_bool[5]
 
-        params = vcat(vec(plds.obs_model.C), plds.obs_model.log_d)
+        # params = vcat(vec(plds.obs_model.C), plds.obs_model.log_d)
+        params = collect(vcat(plds.obs_model.C[:], plds.obs_model.log_d))
 
         function f(params::Vector{T})
             C_size = plds.obs_dim * plds.latent_dim
