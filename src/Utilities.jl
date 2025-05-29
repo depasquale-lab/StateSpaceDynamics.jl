@@ -541,3 +541,8 @@ function Base.setproperty!(model::AutoRegressiveEmission, sym::Symbol, value)
         setfield!(model, sym, value)
     end
 end
+
+#define to_f64 (multiple dispatch) to convert private functions to f64 types 
+to_f64(M::AbstractArray{<:Real}) = Float64.(M)
+to_f64(::Nothing) = nothing
+to_f64(V::AbstractVector{<:AbstractMatrix{<:Real}}) = [ to_f64(M) for M in V ]

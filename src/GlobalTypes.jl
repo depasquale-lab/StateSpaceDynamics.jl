@@ -5,12 +5,6 @@ The purpose of this file is to provide a common place for all global types to be
 export MixtureModel, EmissionModel, AbstractHMM, DynamicalSystem, to_f64
 
 # Create abstract types here 
-
-#define to_f64 (multiple dispatch) to convert private functions to f64 types 
-to_f64(M::AbstractArray{<:Real}) = Float64.(M)
-to_f64(::Nothing) = nothing
-to_f64(V::AbstractVector{<:AbstractMatrix{<:Real}}) = [ to_f64(M) for M in V ]
-
 """
 Abstract type for Mixture Models. I.e. GMM's, etc.
 """
