@@ -153,10 +153,11 @@ function sample(model::HiddenMarkovModel, X::Union{Matrix{Float64},Nothing}; n::
         # Sample the state paths and observations
         for t in 2:n  # t represents time steps
             state_sequence[t] = rand(Categorical(model.A[state_sequence[t - 1], :]))
-            observation_sequence[:, t] = if isnothing(X)
-                sample(model.B[state_sequence[t]])
+            if isnothing(X)
+                observation_sequence[:, t] = sample(model.B[state_sequence[t]])
             else
-                sample(model.B[state_sequence[t]], X[:, t])
+                xt = @view X[:, t]
+                observation_sequence[:, t] = sample(model.B[state_sequence[t]], xt)
             end
         end
 

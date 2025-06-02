@@ -31,8 +31,14 @@ function sample(slds::SwitchingLinearDynamicalSystem, T::Int)
         # Sample mode based on transition probabilities
         z[t] = rand(Categorical(slds.A[z[t-1], :] ./ sum(slds.A[z[t-1], :])))
         # Update latent state and observation
-        x[:, t] = rand(MvNormal(slds.B[z[t]].state_model.A * x[:, t-1], slds.B[z[t]].state_model.Q))
-        y[:, t] = rand(MvNormal(slds.B[z[t]].obs_model.C * x[:, t], slds.B[z[t]].obs_model.R))
+        x_prev = @view x[:, t-1]
+        x[:, t] = rand(
+          MvNormal(slds.B[z[t]].state_model.A * x_prev, slds.B[z[t]].state_model.Q)
+        )
+        x_curr = @view x[:, t]
+        y[:, t] = rand(
+          MvNormal(slds.B[z[t]].obs_model.C * x_curr, slds.B[z[t]].obs_model.R)
+        )
     end
 
     return x, y, z
@@ -406,9 +412,13 @@ function variational_qs!(model::Vector{GaussianObservationModel{T}}, FB::Forward
         C = model[k].C
 
         @inbounds for t in 1:T_steps
-          FB.loglikelihoods[k, t] = -0.5 * tr(R_chol \ Q_obs(C, FS[k].E_z[:,t,1], FS[k].E_zz[:,:,t,1], y[:,t]))
-        end
+          
+          z_view   = @view FS[k].E_z[:, t, 1]
+          Ezz_view = @view FS[k].E_zz[:, :, t, 1]
+          y_view   = @view y[:, t]
 
+          FB.loglikelihoods[k, t] = -0.5 * tr(R_chol \ Q_obs(C, z_view, Ezz_view, y_view))
+        end
     end 
 end
 
