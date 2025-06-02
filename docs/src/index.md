@@ -107,7 +107,7 @@ x_smoothed = smooth(lds, y)
 
 If you encounter a bug or would like to contribute to the package, come find us on Github.
 
-- [rsenne/ssm_julia](https://github.com/depasquale-lab/StateSpaceDynamics.jl)
+- [depasquale-lab/StateSpaceDynamics.jl](https://github.com/depasquale-lab/StateSpaceDynamics.jl)
 
 ## Citing StateSpaceDynamics.jl
 
