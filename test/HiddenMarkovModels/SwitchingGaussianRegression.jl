@@ -169,3 +169,115 @@ function sample_states(num_samples, initial_probs, transition_matrix)
     end
     return states
 end
+
+function test_sample_non_f64_SwitchingGaussianRegression()
+
+    emission_1 = GaussianRegressionEmission(;
+        input_dim=3, output_dim=1, include_intercept=true, β=reshape([3, 2, 2, 3], :, 1)
+    )
+
+    # Create Switching Regression Model
+    true_model = SwitchingGaussianRegression(;
+        K=1, input_dim=3, output_dim=1, include_intercept=true
+    )
+
+    true_model.B[1] = emission_1
+
+    # Sample from the model
+    n = 1000
+    Φ_int = randn(3, n)
+    Φ_f32  = Float32.(randn(3, n))
+
+    # Int features
+    labels_int, Y_int = StateSpaceDynamics.sample(true_model, Φ_int; n=n)
+    @test length(labels_int) == n
+    @test eltype(Y_int) == Float64
+    @test size(Y_int) == (1, n)
+
+    # Float32 features
+    labels_f32, Y_f32 = StateSpaceDynamics.sample(true_model, Φ_f32; n=n)
+    @test length(labels_f32) == n
+    @test eltype(Y_f32) == Float64
+    @test size(Y_f32) == (1, n)
+end
+
+function test_fit_nonf64_SwitchingGaussianRegression()
+ 
+    model = SwitchingGaussianRegression(;
+        K=2, input_dim=1, output_dim=1, include_intercept=true
+    )
+    model.B[1].β = [100; 100;;]
+    model.B[2].β = [-100; -100;;]
+    model.B[1].Σ = [2.0;;]
+    model.B[2].Σ = [3.0;;]
+
+    # Define initial state probabilities (π) and transition matrix (A)
+    initial_probs = [0.6, 0.4]
+    transition_matrix = [0.9 0.1; 0.4 0.6]
+
+    n = 1000 # Number of samples per trial
+    num_trials = 50  # Number of trials
+    n1_std = 1.0
+    n2_std = 0.5
+
+    # Vectors to store generated data
+    Xtrials = Vector{Matrix{Float64}}(undef, num_trials)
+    Ytrials = Vector{Matrix{Float64}}(undef, num_trials)
+
+    for trial in 1:num_trials
+        # Random input data
+        x_data = randn(1, n)  # Random input data for this trial
+        Xtrials[t] = x_data
+
+        # Generate state sequence
+        state_sequence = sample_states(n, initial_probs, transition_matrix)
+        trial_labels[trial] = state_sequence
+
+        # Generate output data based on state and linear relationships
+        y_data = zeros(1, n)
+        for i in 1:n
+            if state_sequence[i] == 1
+                y_data[i] =
+                    (model.B[1].β[2] * x_data[i] + model.B[1].β[1]) + (randn() * n1_std)
+            else
+                y_data[i] =
+                    (model.B[2].β[2] * x_data[i] + model.B[2].β[1]) + (randn() * n2_std)
+            end
+        end
+        Y[trial] = y_data
+    end
+
+    all_X = vcat(Xtrials...)       
+    all_X = reshape(all_X, 1, :)      
+    all_X = all_X'                   
+
+    all_Y = vcat(Ytrials...)
+    all_Y = reshape(all_Y, 1, :)      
+    all_Y = all_Y'
+
+    all_Y_int  = Int.(round.(all_Y))
+    all_Y_f32  = Float32.(all_Y)
+
+    all_X_int  = Int.(round.(all_X))
+    all_X_f32  = Float32.(all_X)
+
+    # Int data
+    model_int = SwitchingGaussianRegression(; K=2, input_dim=1, output_dim=1)
+    ll_int = StateSpaceDynamics.fit!(model_int, all_Y_int, all_X_int; max_iters=200)
+    
+    @test eltype(ll_int) == Float64
+    @test eltype(model_int.B[1].β) == Float64
+    @test eltype(model_int.B[1].Σ) == Float64
+    @test eltype(model_int.B[2].β) == Float64
+    @test eltype(model_int.B[2].Σ) == Float64
+    @test eltype(model_int.A) == Float64
+
+    # Float32 data
+    model_f32 = SwitchingGaussianRegression(; K=2, input_dim=1, output_dim=1)
+    ll_f32 = StateSpaceDynamics.fit!(model_f32, all_Y_f32, all_X_f32; max_iters=200)
+
+    @test eltype(ll_f32) == Float64
+    @test eltype(model_f32.B[1].β) == Float64
+    @test eltype(model_f32.B[1].Σ) == Float64
+    @test eltype(model_f32.A) == Float64
+end

@@ -23,7 +23,7 @@ GaussianEmission model with mean and covariance.
 mutable struct GaussianEmission <: EmissionModel
     output_dim::Int # dimension of the data
     μ::Vector{Float64}  # mean 
-    Σ::Matrix{Float64}  # covariance matrix
+    Σ::AbstractMatrix{Float64}  # covariance matrix
 end
 
 """
@@ -41,7 +41,7 @@ Functon to create a GaussianEmission with given output dimension, mean, and cova
 function GaussianEmission(;
     output_dim::Int,
     μ::Vector{Float64}=zeros(output_dim),
-    Σ::Matrix{Float64}=Matrix{Float64}(I, output_dim, output_dim),
+    Σ::AbstractMatrix{Float64}=Matrix{Float64}(I, output_dim, output_dim),
 )
     return GaussianEmission(output_dim, μ, Σ)
 end
@@ -93,6 +93,10 @@ Fit a GaussianEmission model to the data `Y`.
 function fit!(model::GaussianEmission, Y::Matrix{<:Real}, w::Vector{Float64})
     fit!(model, to_f64(Y), w)
 end 
+
+function fit!(model::GaussianEmission, Y::Matrix{<:Real})
+    fit!(model, to_f64(Y))  
+end
 
 function fit!(
     model::GaussianEmission, Y::Matrix{Float64}, w::Vector{Float64}=ones(size(Y, 1))
@@ -217,7 +221,7 @@ mutable struct GaussianRegressionEmission <: RegressionEmission
     input_dim::Int
     output_dim::Int
     β::Matrix{Float64} # coefficient matrix of the model. Shape input_dim by output_dim. Column one is coefficients for target one, etc. The first row are the intercept terms, if included. 
-    Σ::Matrix{Float64} # covariance matrix of the model 
+    Σ::AbstractMatrix{Float64} # covariance matrix of the model 
     include_intercept::Bool # whether to include an intercept term; if true, the first column of β is assumed to be the intercept/bias
     λ::Float64 # regularization parameter
 end
@@ -353,7 +357,7 @@ function AutoRegressionEmission(;
     order::Int, 
     include_intercept::Bool = true, 
     β::Matrix{<:Real} = if include_intercept zeros(output_dim * order + 1, output_dim) else zeros(output_dim * order, output_dim) end,
-    Σ::Matrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim),
+    Σ::AbstractMatrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim),
     λ::Float64=0.0)
 
     innerGaussianRegression = GaussianRegressionEmission(
@@ -521,7 +525,7 @@ function SwitchingAutoRegression(;
     else
         zeros(output_dim * order, output_dim)
     end,
-    Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim),
+    Σ::AbstractMatrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim),
     λ::Float64=0.0,
     A::Matrix{Float64}=initialize_transition_matrix(K),
     πₖ::Vector{Float64}=initialize_state_distribution(K),

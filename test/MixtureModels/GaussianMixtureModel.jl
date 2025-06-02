@@ -83,3 +83,67 @@ function test_log_likelihood(
         ll_prev = ll
     end
 end
+
+
+function testGaussianMixtureModel_Dispatch()
+    @testset "GaussianMixtureModel Dispatch Tests" begin
+        # Build a simple 1D GMM with known parameters
+        k = 2
+        data_dim = 1
+        base_gmm = GaussianMixtureModel(k, data_dim)
+        base_gmm.μₖ .= reshape([0.0, 5.0], 2, 1)
+        base_gmm.Σₖ = [Matrix{Float64}(I, 1, 1) for _ in 1:k]
+        base_gmm.πₖ .= [0.5, 0.5]
+
+        # Sample N points from base_gmm (Float64 matrix (N×1))
+        N = 1000
+        raw_samples = StateSpaceDynamics.sample(base_gmm, N)
+        @test size(raw_samples) == (N, 1)
+        @test eltype(raw_samples) == Float64
+
+        data_f64 = raw_samples
+
+        # Convert to Int and Float32
+        data_int = Int.(round.(data_f64))
+        data_f32 = Float32.(data_f64)
+        @test eltype(data_int) == Int
+        @test eltype(data_f32) == Float32
+
+        # (A) fit! on Int data
+        gmm_int = GaussianMixtureModel(k, data_dim)
+        ll_int = fit!(
+            gmm_int,
+            data_int;
+            maxiter=100,
+            tol=1e-4,
+            initialize_kmeans=true
+        )
+        @test eltype(ll_int) == Float64
+        @test eltype(gmm_int.μₖ)   == Float64
+        @test all(eltype.(gmm_int.Σₖ) .== Float64) 
+        @test eltype(gmm_int.πₖ)  == Float64
+
+        # (B) fit! on Float32 data
+        gmm_f32 = GaussianMixtureModel(k, data_dim)
+        ll_f32 = fit!(
+            gmm_f32,
+            data_f32;
+            maxiter=100,
+            tol=1e-4,
+            initialize_kmeans=false
+        )
+        @test eltype(ll_f32) == Float64
+        @test eltype(gmm_f32.μₖ)   == Float64
+        @test all(eltype.(gmm_f32.Σₖ) .== Float64)
+        @test eltype(gmm_f32.πₖ)  == Float64
+
+        # (C) log_likelihood dispatch on Int/Float32
+        ll_f64_ref = log_likelihood(gmm_f32, data_f64)
+        ll_int2    = log_likelihood(gmm_f32, data_int)
+        ll_f322    = log_likelihood(gmm_f32, data_f32)
+
+        @test isa(ll_f64_ref, Float64)
+        @test isa(ll_int2, Float64)
+        @test isa(ll_f322, Float64)
+    end
+end

@@ -2,8 +2,7 @@ export HiddenMarkovModel, fit!, sample, loglikelihood, viterbi
 export kmeans_init!
 
 # for unit tests
-export estep
-export class_probabilities
+export estep, class_probabilities
 """
     HiddenMarkovModel
 
@@ -376,12 +375,16 @@ Fit the Hidden Markov Model using the EM algorithm.
 - `max_iters::Int=100`: The maximum number of iterations to run the EM algorithm.
 - `tol::Float64=1e-6`: When the log likelihood is improving by less than this value, the algorithm will stop.
 """
-function fit!(model::HiddenMarkovModel, Y::Matrix{Float64}, X::Matrix{<:Real}; max_iters::Int=100, tol::Float64=1e-6,)
-    fit!(model, Y, to_f64(X); max_iters=max_iters, tol=tol)
-end 
+function fit!(model::HiddenMarkovModel,
+              Y::AbstractMatrix{<:Real},
+              X::Union{AbstractMatrix{<:Real},Nothing}=nothing;
+              max_iters::Int=100,
+              tol::Float64=1e-6)
 
-function fit!(model::HiddenMarkovModel, Y::Matrix{Float64}; max_iters::Int=100, tol::Float64=1e-6,)
-    fit!(model, Y, nothing; max_iters=max_iters, tol=tol)
+  Y64 = to_f64(Y)
+  X64 = X === nothing ? nothing : to_f64(X)
+
+  fit!(model, Y64, X64; max_iters=max_iters, tol=tol)
 end
 
 function fit!(
@@ -439,13 +442,16 @@ Fit the Hidden Markov Model to multiple trials of data using the EM algorithm.
 - `max_iters::Int=100`: The maximum number of iterations to run the EM algorithm.
 - `tol::Float64=1e-6`: When the log likelihood is improving by less than this value, the algorithm will stop.
 """
-function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{Float64}}, X::Vector{<:Matrix{<:Real}}; max_iters::Int=100, tol::Float64=1e-6,)
-    fit!(model, Y, to_f64(X); max_iters=max_iters, tol=tol)
-end 
+function fit!(model::HiddenMarkovModel,
+              Ys::Vector{<:AbstractMatrix{<:Real}},
+              Xs::Union{Vector{<:AbstractMatrix{<:Real}},Nothing}=nothing;
+              max_iters::Int=100,
+              tol::Float64=1e-6)
 
-function fit!(model::HiddenMarkovModel, Y::Vector{<:Matrix{Float64}}; max_iters::Int=100, tol::Float64=1e-6)
-    fit!(model, Y, nothing; max_iters=max_iters, tol=tol)
-end 
+  Ys64 = map(to_f64, Ys)
+  Xs64 = Xs === nothing ? nothing : map(to_f64, Xs)
+  fit!(model, Ys64, Xs64; max_iters=max_iters, tol=tol)
+end
 
 function fit!(
     model::HiddenMarkovModel,
