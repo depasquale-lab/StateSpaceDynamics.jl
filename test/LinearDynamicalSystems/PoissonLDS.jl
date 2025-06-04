@@ -137,8 +137,8 @@ function test_parameter_gradient()
     E_z, E_zz, E_zz_prev, x_smooth, P_smooth, elbo = StateSpaceDynamics.estep(plds, y)
 
     # params
-    C, log_d = plds.obs_model.C, plds.obs_model.log_d
-    params = vcat(vec(C), log_d)
+    C, log_d = plds.obs_model.C, plds.obs_model.log_d 
+    params = vcat(vec(C), log_d) 
 
     # get analytical gradient
     grad_analytical = StateSpaceDynamics.gradient_observation_model!(
@@ -148,14 +148,16 @@ function test_parameter_gradient()
     # get numerical gradient
     function f(params::AbstractVector{<:Real})
         C_size = plds.obs_dim * plds.latent_dim
-        log_d = params[(end - plds.obs_dim + 1):end]
-        C = reshape(params[1:C_size], plds.obs_dim, plds.latent_dim)
-        return -StateSpaceDynamics.Q_observation_model(C, log_d, E_z, P_smooth, y)
+
+        C_raw     = reshape(params[1:C_size], plds.obs_dim, plds.latent_dim)
+        log_d_raw = params[(C_size + 1) : (C_size + plds.obs_dim)]
+        
+        return -StateSpaceDynamics.Q_observation_model(C_raw, log_d_raw, E_z, P_smooth, y)
     end
 
-    grad = ForwardDiff.gradient(f, params)
+    grad_numerical = ForwardDiff.gradient(f, params)
 
-    @test isapprox(grad, grad_analytical, rtol=1e-5, atol=1e-5)
+    @test isapprox(grad_numerical, grad_analytical, rtol=1e-5, atol=1e-5)
 end
 
 function test_initial_observation_parameter_updates(ntrials::Int=1)
