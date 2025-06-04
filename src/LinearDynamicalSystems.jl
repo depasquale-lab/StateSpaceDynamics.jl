@@ -1998,7 +1998,7 @@ function update_observation_model!(
         )
 
         # use CG result as inital guess for LBFGS
-        result = optimize(f, g!, params, LBFGS(;linesearch=LineSearches.MoreThuente()), opts)
+        result = optimize(f, g!, params, LBFGS(), opts)
 
         # Update the parameters
         C_size = plds.obs_dim * plds.latent_dim
