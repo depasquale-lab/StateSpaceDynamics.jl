@@ -605,7 +605,7 @@ function smooth(
     opts = Optim.Options(; g_abstol=1e-8, x_abstol=1e-8, f_abstol=1e-8, iterations=100)
 
     # Go!
-    res = optimize(td, X₀, Newton(; linesearch=LineSearches.BackTracking()), opts)
+    res = optimize(td, X₀, Newton(;linesearch=LineSearches.BackTracking()), opts)
 
     # Profit
     x = reshape(res.minimizer, D, tsteps)
@@ -1426,56 +1426,6 @@ function PoissonLDS(;
 end
 
 """
-    sample(lds::LinearDynamicalSystem{S,O}, tsteps::Int, ntrials::Int) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
-
-Sample from a Poisson Linear Dynamical System (LDS) model for multiple trials.
-
-# Arguments
-- `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System model.
-- `tsteps::Int`: The number of time steps to sample for each trial.
-- `ntrials::Int`: The number of trials to sample.
-
-# Returns
-- `x::Array{T, 3}`: The latent state variables. Dimensions: (latent_dim, tsteps, ntrials)
-- `y::Array{Int, 3}`: The observed data. Dimensions: (obs_dim, tsteps, ntrials)
-
-# Examples
-```julia
-lds = LinearDynamicalSystem(obs_dim=4, latent_dim=3)
-x, y = sample(lds, 100, 10)  # 10 trials, 100 time steps each
-```
-"""
-function sample(
-    lds::LinearDynamicalSystem{S,O}, tsteps::Int, ntrials::Int
-) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    # Extract model components
-    A, Q = lds.state_model.A, lds.state_model.Q
-    C, log_d = lds.obs_model.C, lds.obs_model.log_d
-    x0, P0 = lds.state_model.x0, lds.state_model.P0
-
-    # Convert log_d to d i.e. non-log space
-    d = exp.(log_d)
-
-    # Pre-allocate arrays (now in column-major order)
-    x = zeros(T, lds.latent_dim, tsteps, ntrials)
-    y = zeros(T, lds.obs_dim, tsteps, ntrials)
-
-    for k in 1:ntrials
-        # Sample the initial state
-        x[:, 1, k] = rand(MvNormal(x0, P0))
-        y[:, 1, k] = rand.(Poisson.(exp.(C * x[:, 1, k] .+ d)))
-
-        # Sample the rest of the states
-        for t in 2:tsteps
-            x[:, t, k] = rand(MvNormal(A * x[:, t - 1, k], Q))
-            y[:, t, k] = rand.(Poisson.(exp.(C * x[:, t, k] + d)))
-        end
-    end
-
-    return x, y
-end
-
-"""
     loglikelihood(x::Matrix{T}, lds::LinearDynamicalSystem{S,O}, y::Matrix{T}) where {T<:Real, S<:GaussianStateModel, O<:PoissonObservationModel}
 
 Calculate the complete-data log-likelihood of a Poisson Linear Dynamical System model for a single trial. 
@@ -2022,7 +1972,7 @@ function update_observation_model!(
         )
 
         # use CG result as inital guess for LBFGS
-        result = optimize(f, g!, params, LBFGS(), opts)
+        result = optimize(f, g!, params, LBFGS(;linesearch=LineSearches.HagerZhang()), opts)
 
         # Update the parameters
         C_size = plds.obs_dim * plds.latent_dim

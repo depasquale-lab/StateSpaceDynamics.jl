@@ -1,6 +1,7 @@
 export kmeanspp_initialization,
     kmeans_clustering, fit!, block_tridgm, block_tridiagonal_inverse, block_tridiagonal_inverse_static
 export row_matrix, stabilize_covariance_matrix, valid_Σ, make_posdef!, gaussian_entropy
+export random_rotation_matrix
 
 # Matrix utilities
 
@@ -513,6 +514,20 @@ function gaussian_entropy(H::Symmetric{T}) where T <: Real
     F = cholesky(-H)
     logdet_H = 2 * sum(log.(diag(F)))
     return 0.5 * (n * log(2π) + logdet_H)
+end
+
+"""
+    random_rotation_matrix(n::Int)
+
+Generate a random rotation matrix of size `n x n`.
+
+# Arguments
+- `n::Int`: The size of the rotation matrix.
+"""
+function random_rotation_matrix(n::Int)
+    # Generate a random orthogonal matrix using QR decomposition
+    Q, _ = qr(randn(n, n))
+    return Q
 end
 
 function Base.getproperty(model::AutoRegressiveEmission, sym::Symbol)
