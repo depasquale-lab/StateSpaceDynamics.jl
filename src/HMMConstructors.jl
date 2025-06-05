@@ -19,9 +19,9 @@ Create a Hidden Markov Model with Gaussian Emissions
 function GaussianHMM(;
     K::Int,
     output_dim::Int,
-    A::Matrix{Float64}=initialize_transition_matrix(K),
-    πₖ::Vector{Float64}=initialize_state_distribution(K),
-)
+    A::Matrix{T}=initialize_transition_matrix(K),
+    πₖ::Vector{T}=initialize_state_distribution(K),
+) where {T<:Float64}
     # Create emission models
     emissions = [GaussianEmission(; output_dim=output_dim) for _ in 1:K]
     # Return constructed GaussianHMM
@@ -66,16 +66,16 @@ function SwitchingGaussianRegression(;
     input_dim::Int,
     output_dim::Int,
     include_intercept::Bool=true,
-    β::Matrix{<:Real}=if include_intercept
+    β::Matrix{Float64}=if include_intercept
         zeros(input_dim + 1, output_dim)
     else
         zeros(input_dim, output_dim)
     end,
-    Σ::AbstractMatrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim),
+    Σ::AbstractMatrix{Float64} = Matrix{Float64}(I, output_dim, output_dim),
     λ::Float64=0.0,
     A::Matrix{Float64}=initialize_transition_matrix(K),
     πₖ::Vector{Float64}=initialize_state_distribution(K),
-)
+) 
     βf = to_f64(β)
     Σf = to_f64(Σ)
     # Create emission models
@@ -116,15 +116,15 @@ function SwitchingBernoulliRegression(;
     input_dim::Int,
     output_dim::Int=1,
     include_intercept::Bool=true,
-    β::Matrix{<:Real}=if include_intercept
+    β::AbstractMatrix{Float64}=if include_intercept
         zeros(input_dim + 1, output_dim)
     else
         zeros(input_dim, output_dim)
     end,
     λ::Float64=0.0,
-    A::AbstractMatrix{<:Real}=initialize_transition_matrix(K),
-    πₖ::Vector{Float64}=initialize_state_distribution(K),
-)
+    A::AbstractMatrix{Float64}=initialize_transition_matrix(K),
+    πₖ::AbstractVector{Float64}=initialize_state_distribution(K),
+) 
     βf = to_f64(β)
     # Create emission models
     emissions = [
@@ -146,7 +146,7 @@ function SwitchingPoissonRegression(;
     input_dim::Int,
     output_dim::Int=1,
     include_intercept::Bool=true,
-    β::Matrix{<:Real}=if include_intercept
+    β::Matrix{Float64}=if include_intercept
         zeros(input_dim + 1, output_dim)
     else
         zeros(input_dim, output_dim)
@@ -154,7 +154,7 @@ function SwitchingPoissonRegression(;
     λ::Float64=0.0,
     A::Matrix{Float64}=initialize_transition_matrix(K),
     πₖ::Vector{Float64}=initialize_state_distribution(K),
-)
+) 
     βf=to_f64(β)
     # Create emission models
     emissions = [

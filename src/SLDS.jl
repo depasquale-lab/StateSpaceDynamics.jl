@@ -2,10 +2,10 @@ export SwitchingLinearDynamicalSystem, fit!, sample, initialize_slds, variationa
 """
 Switching Linear Dynamical System
 """
-mutable struct SwitchingLinearDynamicalSystem <: AbstractHMM
-    A::Matrix{Float64}                 # Transition matrix for mode switching
-    B::Vector{LinearDynamicalSystem}  # Vector of Linear Dynamical System models
-    πₖ::Vector{Float64}               # Initial state distribution
+mutable struct SwitchingLinearDynamicalSystem{T<:Float64} <: AbstractHMM
+    A::AbstractMatrix{T}                 # Transition matrix for mode switching
+    B::AbstractVector{LinearDynamicalSystem}  # Vector of Linear Dynamical System models
+    πₖ::AbstractVector{T}               # Initial state distribution
     K::Int                            # Number of modes
 end
 
@@ -108,7 +108,7 @@ function initialize_slds(;K::Int=2, d::Int=2, p::Int=10, self_bias::Float64=5.0,
       B[k] = LinearDynamicalSystem(state_model, obs_model, d, p, fill(true, 6))
   end
   
-  return SwitchingLinearDynamicalSystem(A, B, πₖ, K)
+  return SwitchingLinearDynamicalSystem{Float64}(A, B, πₖ, K)
 end
 
 """
@@ -400,8 +400,12 @@ variational_qs!(model, FB, y, FS)
 # Access the updated log-likelihoods
 println(FB.loglikelihoods)
 """
-function variational_qs!(model::Vector{GaussianObservationModel{T}}, FB::ForwardBackward, 
-  y, FS::Vector{FilterSmooth{T}}) where {T<:Float64}
+function variational_qs!(
+  model::Vector{<:GaussianObservationModel{T, <:AbstractMatrix{T}}}, 
+  FB::ForwardBackward, 
+  y::AbstractArray{T}, 
+  FS::Vector{FilterSmooth{T}}
+) where {T<:Float64}
 
   T_steps = size(y, 2)
   K = length(model)

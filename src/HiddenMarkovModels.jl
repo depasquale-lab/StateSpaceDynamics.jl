@@ -15,10 +15,10 @@ A Hidden Markov Model (HMM) with custom emissions.
 - `A::Matrix{<:Real}`: Transition matrix.
 - `πₖ::Vector{Float64}`: Initial state distribution.
 """
-mutable struct HiddenMarkovModel <: AbstractHMM
-    A:: Matrix{Float64} # transition matrix
+mutable struct HiddenMarkovModel{T<:Float64} <: AbstractHMM
+    A:: Matrix{T} # transition matrix
     B::Vector{EmissionModel} # Vector of emission Models
-    πₖ::Vector{Float64} # initial state distribution
+    πₖ::Vector{T} # initial state distribution
     K::Int # number of states
 end
 
@@ -62,11 +62,11 @@ end
 
 function HiddenMarkovModel(;
     K::Int,
-    B::Vector=Vector(),
+    B::AbstractVector=Vector(),
     emission=nothing,
-    A::AbstractMatrix{Float64}=initialize_transition_matrix(K),
-    πₖ::Vector{Float64}=initialize_state_distribution(K),
-)
+    A::AbstractMatrix{T}=initialize_transition_matrix(K),
+    πₖ::AbstractVector{T}=initialize_state_distribution(K),
+) where {T<:Float64}
 
     # if B does not have all K emission models, then fill in the rest with deep copies of "emission"
     if !isnothing(emission) && length(B) < K
@@ -85,7 +85,7 @@ function HiddenMarkovModel(;
     emission_models = B
     #emission_models = Emission.(B)
 
-    model = HiddenMarkovModel(A, emission_models, πₖ, K)
+    model = HiddenMarkovModel{T}(A, emission_models, πₖ, K)
 
     # check that the transition matrix is the proper shape
     @assert size(model.A) == (model.K, model.K)
@@ -101,7 +101,7 @@ function HiddenMarkovModel(;
     return model
 end
 
-function kmeans_init!(model::HiddenMarkovModel, data::Matrix{T}) where {T<:Real}
+function kmeans_init!(model::HiddenMarkovModel, data::Matrix{T}) where {T<:Float64}
     num_states = model.K
     # run k-means 
     means, labels = kmeans_clustering(permutedims(data), num_states) # permute dims to interface with kmenas clustering function 
@@ -321,8 +321,8 @@ function update_transition_matrix!(
 end
 
 function update_transition_matrix!(
-    model::AbstractHMM, FB_storage_vec::Vector{ForwardBackward{Float64}}
-)
+    model::AbstractHMM, FB_storage_vec::Vector{ForwardBackward{T}}
+) where {T<:Float64}
     for j in 1:(model.K)
         for k in 1:(model.K)
             num = exp(logsumexp(vcat([FB_trial.ξ[j, k, :] for FB_trial in FB_storage_vec]...)))
@@ -350,7 +350,7 @@ function mstep!(model::AbstractHMM, FB_storage::ForwardBackward, data)
     update_emissions!(model, FB_storage, data)
 end
 
-function mstep!(model::AbstractHMM, FB_storage_vec::Vector{ForwardBackward{Float64}}, Aggregate_FB_storage::ForwardBackward, data)
+function mstep!(model::AbstractHMM, FB_storage_vec::Vector{ForwardBackward{T}}, Aggregate_FB_storage::ForwardBackward, data) where {T<:Float64}
     # update initial state distribution
     update_initial_state_distribution!(model, FB_storage_vec)
     # update transition matrix
@@ -359,7 +359,7 @@ function mstep!(model::AbstractHMM, FB_storage_vec::Vector{ForwardBackward{Float
     update_emissions!(model, Aggregate_FB_storage, data)
 end
 
-function update_initial_state_distribution!(model::AbstractHMM, FB_storage_vec::Vector{ForwardBackward{Float64}})
+function update_initial_state_distribution!(model::AbstractHMM, FB_storage_vec::Vector{ForwardBackward{T}}) where {T<:Float64}
     num_trials = length(FB_storage_vec)
     return model.πₖ = mean([exp.(FB_storage_vec[i].γ[:, 1]) for i in 1:num_trials])
 end
@@ -444,10 +444,10 @@ Fit the Hidden Markov Model to multiple trials of data using the EM algorithm.
 - `tol::Float64=1e-6`: When the log likelihood is improving by less than this value, the algorithm will stop.
 """
 function fit!(model::HiddenMarkovModel,
-              Ys::Vector{<:AbstractMatrix{<:Real}},
-              Xs::Union{Vector{<:AbstractMatrix{<:Real}},Nothing}=nothing;
+              Ys::Vector{<:AbstractMatrix{T}},
+              Xs::Union{Vector{<:AbstractMatrix{T}},Nothing}=nothing;
               max_iters::Int=100,
-              tol::Float64=1e-6)
+              tol::Float64=1e-6) where {T<:Real}
 
   Ys64 = map(to_f64, Ys)
   Xs64 = Xs === nothing ? nothing : map(to_f64, Xs)
@@ -456,11 +456,11 @@ end
 
 function fit!(
     model::HiddenMarkovModel,
-    Y::Vector{<:Matrix{Float64}},
-    X::Union{Vector{<:Matrix{Float64}},Nothing};
+    Y::Vector{<:Matrix{T}},
+    X::Union{Vector{<:Matrix{T}},Nothing};
     max_iters::Int=100,
-    tol::Float64=1e-6,
-)
+    tol::T=1e-6,
+) where {T<:Float64}
     lls = [-Inf]
     data = X === nothing ? (Y,) : (X, Y)
 
@@ -521,7 +521,10 @@ Calculate the class probabilities at each time point using forward backward algo
 # Returns
 - `class_probabilities::Matrix{Float64}`: The class probabilities at each timepoint
 """
-function class_probabilities(model::HiddenMarkovModel, Y::Matrix{Float64}, X::Union{Matrix{Float64},Nothing}=nothing;)
+function class_probabilities(
+    model::HiddenMarkovModel, 
+    Y::Matrix{Float64}, 
+    X::Union{Matrix{Float64},Nothing}=nothing;)
     data = X === nothing ? (Y,) : (X, Y)
     # transpose data so that correct dimensions are passed to EmissionModels.jl, a bit hacky but works for now.
     transpose_data = Matrix.(transpose.(data))
