@@ -722,7 +722,7 @@ Generate `n` samples from a Poisson regression model. Returns a matrix of size `
 - `n::Int=size(Φ, 1)`: Number of samples to generate.
 
 # Returns
-- `Y::Matrix{Float64}`: Matrix of samples of shape `(n, 1)`.
+- `Y::Matrix{<:Real}`: Matrix of samples of shape `(n, 1)`.
 """
 function sample(model::PoissonRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
     # Ensure Φ is a 2D matrix even if it's a single sample

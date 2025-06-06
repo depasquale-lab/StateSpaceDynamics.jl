@@ -1,5 +1,4 @@
 export GaussianLDS, PoissonLDS, sample, smooth, fit!
-import ForwardDiff
 
 """
     GaussianStateModel{T<:Real} <: AbstractStateModel
@@ -277,7 +276,7 @@ function initialize_FilterSmooth(model::LinearDynamicalSystem, num_obs::Int)
 end
 
 """
-    sample(lds::LinearDynamicalSystem{S,O}, T_steps::Int, n_trials::Int) where {T<:Float64, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+    sample(lds::LinearDynamicalSystem{S,O}, T_steps::Int, n_trials::Int) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
 
 Sample from a Linear Dynamical System (LDS) model for multiple trials.
 
@@ -647,7 +646,7 @@ x, p_smooth, inverse_offdiag = smooth(lds, y)
 """
 function smooth(
     lds::LinearDynamicalSystem{S,O}, y::Array{T,3}
-) where {T<:Real,S<:GaussianStateModel{<:Float64},O<:AbstractObservationModel{<:Float64}}
+) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     obs_dim, T_steps, n_trials = size(y)
     latent_dim = lds.latent_dim
 

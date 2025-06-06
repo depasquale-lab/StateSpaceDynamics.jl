@@ -16,7 +16,7 @@ A Hidden Markov Model (HMM) with custom emissions.
 - `πₖ::Vector{Float64}`: Initial state distribution.
 """
 mutable struct HiddenMarkovModel <: AbstractHMM
-    A:: Matrix{<:Real} # transition matrix
+    A::Matrix{<:Real} # transition matrix
     B::Vector{EmissionModel} # Vector of emission Models
     πₖ::Vector{Float64} # initial state distribution
     K::Int # number of states
@@ -64,7 +64,7 @@ function HiddenMarkovModel(;
     K::Int,
     B::Vector=Vector(),
     emission=nothing,
-    A::AbstractMatrix{<:Real}=initialize_transition_matrix(K),
+    A::Matrix{<:Real}=initialize_transition_matrix(K),
     πₖ::Vector{Float64}=initialize_state_distribution(K),
 )
 
@@ -425,7 +425,7 @@ Fit the Hidden Markov Model to multiple trials of data using the EM algorithm.
 function fit!(
     model::HiddenMarkovModel,
     Y::Vector{<:Matrix{<:Real}},
-    X::Union{Vector{<:Matrix{<:Real}},Nothing};
+    X::Union{Vector{<:Matrix{<:Real}},Nothing}=nothing;
     max_iters::Int=100,
     tol::Float64=1e-6,
 )

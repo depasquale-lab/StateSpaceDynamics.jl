@@ -85,7 +85,7 @@ function E_Step(gmm::GaussianMixtureModel, data::Matrix{<:Real})
 end
 
 function M_Step!(
-    gmm::GaussianMixtureModel, data::Matrix{<:Float64}, class_probabilities::Matrix{<:Real}
+    gmm::GaussianMixtureModel, data::Matrix{<:Real}, class_probabilities::Matrix{<:Real}
 )
     N, D = size(data)
     K = gmm.k
