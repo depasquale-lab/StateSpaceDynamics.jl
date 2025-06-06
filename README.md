@@ -5,12 +5,14 @@
 [![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 [![Code Style: Blue](https://img.shields.io/badge/code%20style-blue-4495d1.svg)](https://github.com/JuliaDiff/BlueStyle)
 [![](https://img.shields.io/badge/docs-dev-blue.svg)](https://depasquale-lab.github.io/StateSpaceDynamics.jl/dev/)
+[![](https://img.shields.io/badge/docs-stable-blue.svg)](https://depasquale-lab.github.io/StateSpaceDynamics.jl/stable)
+[![status](https://joss.theoj.org/papers/0bcb7b5a500055bb4f9fc5aec65c177b/status.svg)](https://joss.theoj.org/papers/0bcb7b5a500055bb4f9fc5aec65c177b)
 
 ## Description
 
 StateSpaceDynamics.jl is a comprehensive and self-contained Julia package for working with probabilistic state space models (SSMs). It implements a wide range of state-space models, taking inspiration from the [SSM](https://github.com/lindermanlab/ssm) package written in Python by the Linderman Lab. This package is designed to be fast, flexible, and all-encompassing, leveraging Julia's speed and expressiveness to provide researchers and data scientists with a powerful toolkit for state-space modeling.
 
-This package is geared towards applications in neuroscience, so the models incorparate a certain neuroscience flavor (e.g., many of our models are trialized as common in experiemntal paradigms). However, the models are general enough to be used in other fields such as finance, robotics, and many other domains involving sequential data analysis.
+This package is geared towards applications in neuroscience, so the models incorparate a certain neuroscience flavor (e.g., many of our models are trialized as common in experimental paradigms). However, the models are general enough to be used in other fields such as finance, robotics, and many other domains involving sequential data analysis.
 
 We are continuously working to expand our model offerings. If you have suggestions for additional models or features, please open an issue on our GitHub repository.
 
@@ -74,7 +76,7 @@ fit!(plds, observations)
   - [x] Gaussian Linear Dynamical Systems (Kalman Filter)
   - [x] Poisson Linear Dynamical Systems (PLDS)
   - [ ] PFLDS
-  - [ ] Switching Linear Dynamical Systems (SLDS)
+  - [x] Switching Linear Dynamical Systems (SLDS)
   - [ ] Recurrent Switching Linear Dynamical Systems (rSLDS)
 - [x] Generalized Linear Models (Not state space models but needed for HMM-GLMs)
   - [x] Gaussian GLMs
@@ -90,7 +92,7 @@ fit!(plds, observations)
 
 ## Related Packages
 
-- [HiddenMarkovModels.jl](https://github.com/maxmouchet/HiddenMarkovModels.jl): A Julia package for Hidden Markov Models.
+- [HiddenMarkovModels.jl](https://github.com/maxmouchet/HiddenMarkovModels.jl): A Julia package for Hidden Markov Models. We recommend this package if you are   exclusively interested in HMMs. We plan to integrate with this package in the future.
 
 - [StateSpaceLearning.jl](https://github.com/LAMPSPUC/StateSpaceLearning.jl) : A Julia package for time series analysis using state space models.
 
