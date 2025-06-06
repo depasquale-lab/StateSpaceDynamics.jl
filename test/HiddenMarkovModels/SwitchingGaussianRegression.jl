@@ -2,10 +2,10 @@ function test_SwitchingGaussianRegression_fit()
     Random.seed!(1234)
     # Create Emission Models
     emission_1 = GaussianRegressionEmission(;
-        input_dim=3, output_dim=1, include_intercept=true, β=reshape([3, 2, 2, 3], :, 1)
+        input_dim=3, output_dim=1, include_intercept=true, β=reshape([3.0, 2.0, 2.0, 3.0], :, 1)
     )
     emission_2 = GaussianRegressionEmission(;
-        input_dim=3, output_dim=1, include_intercept=true, β=reshape([-4, -2, 3, 2], :, 1)
+        input_dim=3, output_dim=1, include_intercept=true, β=reshape([-4.0, -2.0, 3.0, 2.0], :, 1)
     )
 
     # Create Switching Regression Model
