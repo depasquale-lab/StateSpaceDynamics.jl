@@ -13,13 +13,13 @@ Probabilistic PCA model from Bishop's Pattern Recognition and Machine Learning.
     D: Number of features
     z: Latent variables
 """
-mutable struct ProbabilisticPCA
-    W::Matrix{<:AbstractFloat} # weight matrix
-    σ²::AbstractFloat # noise variance
-    μ::Matrix{<:AbstractFloat} # mean of the data
+mutable struct ProbabilisticPCA{T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector{T}}
+    W::M # weight matrix
+    σ²::T # noise variance
+    μ::V # mean of the data
     k::Int # number of latent dimensions
     D::Int # dimension of the data
-    z::Matrix{<:AbstractFloat} # latent variables
+    z::M # latent variables
 end
 
 """
@@ -42,20 +42,47 @@ end
 # ppca = ProbabilisticPCA(W=rand(2, 1), σ²=0.1, μ=rand(2), k=1, D=2)
 # ```
 # """
-function ProbabilisticPCA(;
-    W::Matrix{<:AbstractFloat}=Matrix{Float64}(undef, 0, 0),
-    μ::Matrix{<:AbstractFloat}=Matrix{Float64}(undef, 0, 0),
-    σ²::AbstractFloat=0.0,
+function ProbabilisticPCA(
+    ::Type{T} = Float64;
+    W::Union{AbstractMatrix{T}, Nothing} = nothing,
+    μ::Union{AbstractVector{T}, Nothing} = nothing, 
+    σ²::Union{T, Nothing} = nothing,
     k::Int,
-    D::Int,
-)
-    # if W is not provided, initialize it randomly
-    W = isempty(W) ? rand(D, k) / sqrt(k) : W
-    # if σ² is not provided, initialize it randomly
-    σ² = σ² === 0.0 ? abs(rand()) : σ²
-    # add empty z
-    z = Matrix{Float64}(undef, 0, 0)
-    return ProbabilisticPCA(W, σ², μ, k, D, z)
+    D::Int
+) where {T<:Real}
+    
+    # Initialize W with proper type
+    if W === nothing
+        W_matrix = randn(T, D, k) / sqrt(T(k))
+    else
+        @assert size(W) == (D, k) "W must have size ($D, $k)"
+        W_matrix = W
+    end
+    
+    # Initialize μ with proper type
+    if μ === nothing
+        μ_vector = zeros(T, D)  # Will be set during fitting
+    else
+        @assert length(μ) == D "μ must have length $D"
+        μ_vector = μ
+    end
+    
+    # Initialize σ²
+    if σ² === nothing
+        σ²_val = one(T)  # Default to 1.0 in type T
+    else
+        @assert σ² > zero(T) "σ² must be positive"
+        σ²_val = σ²
+    end
+    
+    # Empty latent variables - will be allocated during fitting
+    z_matrix = Matrix{T}(undef, 0, k)
+    
+    # Infer matrix and vector types from the actual objects
+    M = typeof(W_matrix)
+    V = typeof(μ_vector)
+    
+    return ProbabilisticPCA{T, M, V}(W_matrix, σ²_val, μ_vector, k, D, z_matrix)
 end
 
 """
@@ -73,20 +100,31 @@ ppca = ProbabilisticPCA(K=1, D=2)
 E_Step(ppca, rand(10, 2))
 ```
 """
-function E_Step(ppca::ProbabilisticPCA, X::Matrix{<:Real})
+function estep(ppca::ProbabilisticPCA, X::Matrix{T}) where {T <: Real}
     # get dims
-    N, _ = size(X)
-    # preallocate E_zz and E_zz
-    E_z = zeros(N, ppca.k)
-    E_zz = zeros(N, ppca.k, ppca.k)
+    N, D = size(X)
+    @assert D == ppca.D "Data dimension mismatch: expected $(ppca.D), got $D"
+    
+    # preallocate E_z and E_zz
+    E_z = zeros(T, N, ppca.k)
+    E_zz = zeros(T, N, ppca.k, ppca.k)
+    
     # calculate M
     M = ppca.W' * ppca.W + (ppca.σ² * I(ppca.k))
-    M_inv = cholesky(M).U \ (cholesky(M).L \ I)
+    M_chol = cholesky(Symmetric(M))  # More stable than manual inversion
+    
     # calculate E_z and E_zz
     for i in 1:N
-        E_z[i, :] = M_inv * ppca.W' * (X[i, :] - ppca.μ')
-        E_zz[i, :, :] = (ppca.σ² * M_inv) + (E_z[i, :] * E_z[i, :]')
+        # Center the data point
+        centered_xi = X[i, :] - ppca.μ
+        
+        # E[z_i] = M^{-1} W^T (x_i - μ)
+        E_z[i, :] = M_chol \ (ppca.W' * centered_xi)
+        
+        # E[z_i z_i^T] = σ² M^{-1} + E[z_i] E[z_i]^T
+        E_zz[i, :, :] = ppca.σ² * inv(M_chol) + E_z[i, :] * E_z[i, :]'
     end
+    
     return E_z, E_zz
 end
 
@@ -107,24 +145,43 @@ E_z, E_zz = E_Step(ppca, rand(10, 2))
 M_Step!(ppca, rand(10, 2), E_z, E_zzᵀ)
 ```
 """
-function M_Step!(
-    ppca::ProbabilisticPCA, X::Matrix{<:Real}, E_z::AbstractArray, E_zz::AbstractArray
-)
+function mstep!(
+    ppca::ProbabilisticPCA, X::Matrix{T}, E_z::AbstractArray{T}, E_zz::AbstractArray{T}
+) where {T <: Real}
     # get dims
     N, D = size(X)
-    # update W and σ²
-    running_sum_W = zeros(D, ppca.k)
-    running_sum_σ² = 0.0
-    WW = ppca.W' * ppca.W
+    
+    # Calculate the sum of E[z_i z_i^T] across all samples
+    sum_E_zz = sum(E_zz, dims=1)[1, :, :]  # Shape: (k, k)
+    
+    # Calculate the numerator: Σᵢ (xᵢ - μ) E[zᵢ]ᵀ
+    numerator = zeros(T, D, ppca.k)
     for i in 1:N
-        running_sum_W += (X[i, :] - ppca.μ') * E_z[i, :]'
-        running_sum_σ² +=
-            sum((X[i, :] - ppca.μ') .^ 2) -
-            sum((2 * E_z[i, :]' * ppca.W' * (X[i, :] - ppca.μ'))) + tr(E_zz[i, :, :] * WW)
+        centered_xi = X[i, :] - ppca.μ
+        numerator += centered_xi * E_z[i, :]'
     end
+    
+    # Update W: W_new = numerator / sum_E_zz
+    ppca.W .= Matrix{eltype(ppca.W)}(numerator / sum_E_zz)
+    
+    # Update σ²
+    running_sum_σ² = zero(T)
+    WW = ppca.W' * ppca.W
+    
+    for i in 1:N
+        centered_xi = X[i, :] - ppca.μ
+        
+        running_sum_σ² += 
+            sum(abs2, centered_xi) -  # ||x_i - μ||²
+            2 * dot(E_z[i, :], ppca.W' * centered_xi) +  # 2 * E[z_i]^T W^T (x_i - μ)
+            tr(E_zz[i, :, :] * WW)  # tr(E[z_i z_i^T] W^T W)
+    end
+    
+    # Update parameters
     ppca.z = E_z
-    ppca.W = running_sum_W * pinv(sum(E_zz; dims=1)[1, :, :])
-    return ppca.σ² = running_sum_σ² / (N * D)
+    ppca.σ² = running_sum_σ² / (N * D)
+    
+    return ppca
 end
 
 """
@@ -145,18 +202,33 @@ loglikelihood(ppca, rand(10, 2))
 function loglikelihood(ppca::ProbabilisticPCA, X::Matrix{<:Real})
     # get dims
     N, D = size(X)
-    # calculate C and S
-    C = ppca.W * ppca.W' + (ppca.σ² * I(D))
-    # center the data
-    X = X .- ppca.μ
-    S = sum([X[i, :] * X[i, :]' for i in axes(X, 1)]) / N
-    # calculate log-likelihood
-    ll = -(N / 2) * (D * log(2 * π) + logdet(C) + tr(pinv(C) * S))
-    return ll
+    @assert D == ppca.D "Data dimension mismatch"
+    
+    # calculate C
+    C = ppca.W * ppca.W' + ppca.σ² * I(D)
+    
+    X_centered = X .- ppca.μ'  # μ' makes it a row vector for broadcasting
+    
+    # Calculate sample covariance matrix more efficiently
+    S = (X_centered' * X_centered) / N
+    
+    try
+        # Use Cholesky for numerical stability
+        C_chol = cholesky(Symmetric(C))
+        log_det_C = logdet(C_chol)
+        trace_term = tr(C_chol \ S)
+        
+        # calculate log-likelihood
+        ll = -(N / 2) * (D * log(2π) + log_det_C + trace_term)
+        return ll
+    catch e
+        @warn "Covariance matrix is not positive definite" e
+        return -Inf
+    end
 end
 
 """
-    fit!(model::ProbabilisticPCA, X::Matrix{<:AbstractFloat}, max_iter::Int=100, tol::AbstractFloat=1e-6)
+    fit!(model::ProbabilisticPCA, X::Matrix{<:Real}, max_iter::Int=100, tol::AbstractFloat=1e-6)
 
 Fit the PPCA model to the data using the EM algorithm.
 
@@ -173,18 +245,20 @@ fit!(ppca, rand(10, 2))
 ```
 """
 function fit!(
-    ppca::ProbabilisticPCA, X::Matrix{Float64}, max_iters::Int=100, tol::Float64=1e-6
+    ppca::ProbabilisticPCA, X::Matrix{<:Real}, max_iters::Int=100, tol::Float64=1e-6
 )
-    # initialize the μ if not done 
-    ppca.μ = mean(X; dims=1)
+    if all(iszero, ppca.μ)
+        ppca.μ .= vec(mean(X; dims=1))
+    end
+
     # initiliaze the log-likelihood
     lls = []
     prev_ll = -Inf
     prog = Progress(max_iters; desc="Fitting Probabilistic PCA...")
 
     for i in 1:max_iters
-        E_z, E_zz = E_Step(ppca, X)
-        M_Step!(ppca, X, E_z, E_zz)
+        E_z, E_zz = estep(ppca, X)
+        mstep!(ppca, X, E_z, E_zz)
 
         ll = loglikelihood(ppca, X)
         push!(lls, ll)
