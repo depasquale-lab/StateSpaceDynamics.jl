@@ -311,15 +311,12 @@ function sample(
     for trial in 1:n_trials
         x[:, 1, trial] = rand(MvNormal(x0, P0))
 
-        x1_view = @view x[:, 1, trial]
-        y[:, 1, trial] = rand(MvNormal(C * x1_view, R))
+        y[:, 1, trial] = rand(MvNormal(C * @view(x[:, 1, trial]), R))
 
         for t in 2:T_steps
-            x_prev = @view x[:, t-1, trial]
-            x[:, t, trial] = rand(MvNormal(A * x_prev, Q))
+            x[:, t, trial] = rand(MvNormal(A * @view(x[:, t-1, trial]), Q))
 
-            x_current = @view x[:, t, trial]
-            y[:, t, trial] = rand(MvNormal(C * x_current, R))
+            y[:, t, trial] = rand(MvNormal(C * @view(x[:, t, trial]), R))
         end
     end
 
@@ -429,18 +426,8 @@ function Gradient(
     grad[:, 1] .= A_inv_Q * dx2 + w[1] * C_inv_R * dy1 - (P0_chol \ dx1)
 
     # Middle time steps
-    @inbounds for t in 2:(T_steps - 1)
-
-        x_prev = @view x[:, t - 1]
-        x_curr = @view x[:, t]
-        x_next = @view x[:, t + 1]
-        y_curr = @view y[:, t]
-
-        dxt = x_curr .- A * x_prev
-        dxt_next = x_next .- A * x_curr
-        dyt = y_curr .- C * x_curr
-
-        grad[:, t] .= w[t] * C_inv_R * dyt - (Q_chol \ dxt) + (A_inv_Q * dxt_next)
+    @views @inbounds for t in 2:(T_steps - 1)
+        grad[:, t] .= w[t] * C_inv_R * (y[:, t] .- C * x[:, t]) - (Q_chol \ (x[:, t] .- A * x[:, t - 1])) + (A_inv_Q * (x[:, t + 1] .- A * x[:, t]))
     end
 
     # Last time step
@@ -1177,14 +1164,9 @@ function update_C!(
         sum_zz = zeros(T, size(E_zz)[1:2])
 
         for trial in 1:n_trials
-            @inbounds for t in 1:T_steps
-
-                y_view   = @view y[:, t, trial]  
-                Ez_view  = @view E_z[:, t, trial]    
-                Ezz_view = @view E_zz[:, :, t, trial]
-                
-                sum_yz .+= w[t] * (y_view * Ez_view')
-                sum_zz .+= w[t] * Ezz_view
+            @views @inbounds for t in 1:T_steps
+                sum_yz .+= w[t] * (y[:, t, trial]* E_z[:, t, trial]')
+                sum_zz .+= w[t] * E_zz[:, :, t, trial]
             end
         end
 
@@ -1224,12 +1206,10 @@ function update_R!(
         
         # Reorganize as sum of outer products
         for trial in 1:n_trials
-            @inbounds for t in 1:T_steps
+            @views @inbounds for t in 1:T_steps
                 # Compute innovation using pre-allocated arrays
-                yt = @view y[:, t, trial]
-                zt = @view E_z[:, t, trial]
-                mul!(Czt, C, zt)
-                @. innovation = (yt - Czt)
+                mul!(Czt, C, E_z[:, t, trial])
+                @. innovation = (y[:, t, trial] - Czt)
                 
                 # Add innovation outer product
                 #BLAS.ger!(one(T), innovation, innovation, R_new)
@@ -1237,8 +1217,7 @@ function update_R!(
                 
                 # Add correction term efficiently:
                 # First compute state_uncertainty = Σ_t - z_t*z_t'
-                state_uncertainty = view(E_zz, :, :, t, trial) - zt * zt'
-                
+                state_uncertainty = view(E_zz, :, :, t, trial) - (E_z[:, t, trial]) * ( E_z[:, t, trial])'
                 # Then compute C * state_uncertainty * C' in steps:
                 mul!(temp_matrix, C, state_uncertainty)  # temp = C * state_uncertainty
                 mul!(R_new, temp_matrix, C', w[t], one(T))  # R_new += w[t] * C * state_uncertainty * C'
@@ -1454,20 +1433,15 @@ function sample(
     x = zeros(T, lds.latent_dim, T_steps, n_trials)
     y = zeros(T, lds.obs_dim, T_steps, n_trials)
 
-    for k in 1:n_trials
+    @views for k in 1:n_trials
         # Sample the initial state
         x[:, 1, k] = rand(MvNormal(x0, P0))
-
-        x1_view = @view x[:, 1, k]
-        y[:, 1, k] = rand.(Poisson.(exp.(C * x1_view .+ d)))
+        y[:, 1, k] = rand.(Poisson.(exp.(C * x[:, 1, k] .+ d)))
 
         # Sample the rest of the states
         for t in 2:T_steps
-            x_prev = @view x[:, t - 1, k]
-            x[:, t, k] = rand(MvNormal(A * x_prev, Q))
-
-            x_curr = @view x[:, t, k]
-            y[:, t, k] = rand.(Poisson.(exp.(C * x_curr + d)))
+            x[:, t, k] = rand(MvNormal(A * x[:, t - 1, k], Q))
+            y[:, t, k] = rand.(Poisson.(exp.(C * x[:, t, k] + d)))
         end
     end
 
@@ -1510,24 +1484,25 @@ function loglikelihood(
     inv_Q = inv(plds.state_model.Q)
 
     # Calculate p(yₜ|xₜ)
-    pygivenx_sum = zero(T)
-    @inbounds for t in 1:T_steps
-        x_view = @view x[:, t]
-        y_view = @view y[:, t]
-        temp = plds.obs_model.C * x_view .+ d
-        pygivenx_sum += dot(y_view, temp) - sum(exp.(temp))
+    C = plds.obs_model.C
+    n_obs = size(C, 1)
+    temp  = Vector{eltype(C)}(undef, n_obs) 
+
+    pygivenx_sum = zero(T)  
+    @views @inbounds for t in 1:T_steps
+        temp = plds.obs_model.C * x[:, t] .+ d
+        pygivenx_sum += dot(y[:, t], temp) - sum(exp, temp)
     end
 
     # Calculate p(x₁)
-    dx1 = x[:, 1] .- plds.state_model.x0
+    dx1 = @view(x[:, 1]) .- plds.state_model.x0
     px1 = -T(0.5) * dot(dx1, inv_p0 * dx1)
 
     # Calculate p(xₜ|xₜ₋₁)
     pxtgivenxt1_sum = zero(T)
-    @inbounds for t in 2:T_steps
-        x_prev = @view x[:, t - 1]         
-        x_curr = @view x[:, t]
-        temp = x_curr .- (plds.state_model.A * x_prev)
+    A = plds.state_model.A
+    @views @inbounds for t in 2:T_steps
+        temp = x[:, t] .- (A * x[:, t - 1])
         pxtgivenxt1_sum += -T(0.5) * dot(temp, inv_Q * temp)
     end
 
@@ -1562,10 +1537,8 @@ function loglikelihood(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     # Calculate the log-likelihood over all trials
     ll = zeros(size(y, 3))
-    @threads for n in axes(y, 3)
-        x_view = @view x[:, :, n]
-        y_view = @view y[:, :, n]
-        ll[n] .= loglikelihood(x_view, plds, y_view)
+    @views @threads for n in axes(y, 3)
+        ll[n] .= loglikelihood(x[:, :, n], plds, y[:, :, n])
     end
     return sum(ll)
 end
@@ -1610,33 +1583,24 @@ function Gradient(
     grad = zeros(lds.latent_dim, T_steps)
 
     # Calculate gradient for each time step
-    @inbounds for t in 1:T_steps
-
-        x_t = @view x[:, t]
-        y_t = @view y[:, t]
+    @views @inbounds for t in 1:T_steps
 
         # Common term for all time steps
-        temp = exp.(C * x_t .+ d)
-        common_term = C' * (y_t - temp)
+        temp = exp.(C * x[:, t] .+ d)
+        common_term = C' * (y[:, t] - temp)
 
         if t == 1
-            # First time step
-            x_1 = x_t                        
-            x_2 = @view x[:, 2]
+            # First time step                      
             grad[:, t] .=
-                common_term + A' * inv_Q * (x_2 .- A * x_1) - inv_P0 * (x_1 .- x0)
+                common_term + A' * inv_Q * (x[:, 2] .- A * x[:, t]) - inv_P0 * (x[:, t] .- x0)
         elseif t == T_steps
-            # Last time step
-            x_curr = x_t                      
-            x_prev = @view x[:, T_steps - 1]
-            grad[:, t] .= common_term - inv_Q * (x_curr .- A * x_prev)
+            # Last time step                    
+            grad[:, t] .= common_term - inv_Q * (x[:, t] .- A * x[:, T_steps - 1])
         else
             # Intermediate time steps
-            x_prev = @view x[:, t - 1]      
-            x_next = @view x[:, t + 1] 
             grad[:, t] .=
-                common_term + A' * inv_Q * (x_next .- A * x_t) -
-            inv_Q * (x_t .- A * x_prev)
+                common_term + A' * inv_Q * (x[:, t + 1] .- A * x[:, t]) -
+            inv_Q * (x[:, t] .- A * x[:, t - 1])
         end
     end
 
@@ -1705,9 +1669,8 @@ function Hessian(
     # Calculate the main diagonal
     H_diag = Vector{Matrix{T}}(undef, T_steps)
 
-    @inbounds for t in 1:T_steps
-        x_view = @view x[:, t]
-        λ = exp.(C * x_view .+ d)
+    @views @inbounds for t in 1:T_steps
+        λ = exp.(C * x[:, t] .+ d)
         if t == 1
             H_diag[t] = x_t + xt1_given_xt + calculate_poisson_hess(C, λ)
         elseif t == T_steps
@@ -1958,16 +1921,13 @@ function gradient_observation_model!(
         # Local temporary arrays for each thread
         local_grad = zeros(T, length(grad))
         
-        for t in 1:time_steps
-            # Use views for all array slices
-            z_t = @view E_z[:, t, k]
-            P_t = @view P_smooth[:, :, t, k]
-            y_t = @view y[:, t, k]
+        @views for t in 1:time_steps
             
             # Compute h = C * z_t + d in-place
-            mul!(h, C, z_t)
-            h .+= d
+            mul!(h, C, E_z[:, t, k])
+            @. h .+= d
             
+            P_t = P_smooth[:, :, t, k] 
             # Compute ρ more efficiently using local storage
             @inbounds for i in 1:obs_dim
                 # Compute one row of CP at a time
@@ -1979,17 +1939,18 @@ function gradient_observation_model!(
             @. λ = exp(h + ρ)
             
             # Gradient computation with fewer allocations
-            @inbounds for j in 1:latent_dim
-                Pj = @view P_t[:, j]
+            @views @inbounds for j in 1:latent_dim 
                 for i in 1:obs_dim
                     idx = (j - 1) * obs_dim + i
-                    CP_term = dot(C[i, :], Pj)
-                    local_grad[idx] += y_t[i] * z_t[j] - λ[i] * (z_t[j] + CP_term)
+                    CP_term = dot(C[i, :], P_t[:, j])
+                    y_t = y[:, t, k] 
+                    z_t = E_z[:, t, k]    
+                    local_grad[idx] += y_t[i]*z_t[j] - λ[i]*(z_t[j] + CP_term)
                 end
             end
             
             # Update log_d gradient
-            @views local_grad[(end - obs_dim + 1):end] .+= (y_t .- λ) .* d
+            @views local_grad[(end - obs_dim + 1):end] .+= (y[:, t, k] .- λ) .* d
         end
         
         # Thread-safe update of global gradient
