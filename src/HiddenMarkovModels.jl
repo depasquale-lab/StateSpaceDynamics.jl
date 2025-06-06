@@ -127,7 +127,7 @@ Generate `n` samples from a Hidden Markov Model. Returns a tuple of the state se
 - `state_sequence::Vector{Int}`: The state sequence, where each element is an integer 1:K.
 - `observation_sequence::Matrix{Float64}`: The observation sequence. This takes the form of the emission model's output.
 """
-function sample(model::HiddenMarkovModel, X::Union{Matrix{<:Real},Nothing}=nothing; n::Int, autoregressive::Bool=false) 
+function sample(model::HiddenMarkovModel, X::Union{Matrix{<:Real},Nothing}=nothing; n::Int, autoregressive::Bool=false)  
     if autoregressive ==false
         state_sequence = Vector{Int}(undef, n)
         # Change to (dimension, time) ordering
@@ -147,8 +147,7 @@ function sample(model::HiddenMarkovModel, X::Union{Matrix{<:Real},Nothing}=nothi
             if isnothing(X)
                 observation_sequence[:, t] = sample(model.B[state_sequence[t]])
             else
-                xt = @view X[:, t]
-                observation_sequence[:, t] = sample(model.B[state_sequence[t]], xt)
+                observation_sequence[:, t] = sample(model.B[state_sequence[t]], X[:, t])
             end
         end
 
