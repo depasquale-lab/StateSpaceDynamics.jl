@@ -17,10 +17,10 @@ A Hidden Markov Model (HMM) with custom emissions.
 - `A::Matrix{<:Real}`: Transition matrix.
 - `πₖ::Vector{Float64}`: Initial state distribution.
 """
-mutable struct HiddenMarkovModel <: AbstractHMM
-    A::Matrix{<:Real} # transition matrix
-    B::Vector{EmissionModel} # Vector of emission Models
-    πₖ::Vector{Float64} # initial state distribution
+mutable struct HiddenMarkovModel{T<:Real, V<:AbstractVector{T}, M<:AbstractMatrix{T}, VE<:AbstractVector{<:EmissionModel}} <: AbstractHMM
+    A::M # transition matrix
+    B::VE # Vector of emission Models
+    πₖ::V # initial state distribution
     K::Int # number of states
 end
 
@@ -35,10 +35,20 @@ function initialize_forward_backward(model::AbstractHMM, num_obs::Int)
     )
 end
 
-function aggregate_forward_backward!(
-    aggregated_FB::ForwardBackward{T}, 
-    FB_storages::Vector{ForwardBackward{T}}
+function ForwardBackward(
+    loglikelihoods::Matrix{T},
+    α::Matrix{T},
+    β::Matrix{T},
+    γ::Matrix{T},
+    ξ::Array{T,3}
 ) where {T<:Real}
+    ForwardBackward{T, Vector{T}, Matrix{T}, Array{T,3}}(loglikelihoods, α, β, γ, ξ)
+end
+
+function aggregate_forward_backward!(
+    aggregated_FB::ForwardBackward, 
+    FB_storages::Vector{<:ForwardBackward}
+)
     # Concatenate each field into the respective field in the aggregated struct
     aggregated_FB.loglikelihoods .= hcat([fb.loglikelihoods for fb in FB_storages]...)
     aggregated_FB.α .= hcat([fb.α for fb in FB_storages]...)
@@ -64,11 +74,11 @@ end
 
 function HiddenMarkovModel(;
     K::Int,
-    B::Vector=Vector(),
+    B::AbstractVector{<:EmissionModel} = EmissionModel[],
     emission=nothing,
-    A::Matrix{<:Real}=initialize_transition_matrix(K),
-    πₖ::Vector{Float64}=initialize_state_distribution(K),
-)
+    A::AbstractMatrix{T}=initialize_transition_matrix(K),
+    πₖ::AbstractVector{T}=initialize_state_distribution(K),
+) where {T<:Real}
 
     # if B does not have all K emission models, then fill in the rest with deep copies of "emission"
     if !isnothing(emission) && length(B) < K
@@ -313,7 +323,7 @@ function update_transition_matrix!(
 end
 
 function update_transition_matrix!(
-    model::AbstractHMM, FB_storage_vec::Vector{ForwardBackward{Float64}}
+    model::AbstractHMM, FB_storage_vec::Vector{<:ForwardBackward}
 )
     for j in 1:(model.K)
         for k in 1:(model.K)
@@ -342,7 +352,7 @@ function mstep!(model::AbstractHMM, FB_storage::ForwardBackward, data)
     update_emissions!(model, FB_storage, data)
 end
 
-function mstep!(model::AbstractHMM, FB_storage_vec::Vector{ForwardBackward{Float64}}, Aggregate_FB_storage::ForwardBackward, data)
+function mstep!(model::AbstractHMM, FB_storage_vec::Vector{<:ForwardBackward}, Aggregate_FB_storage::ForwardBackward, data)
     # update initial state distribution
     update_initial_state_distribution!(model, FB_storage_vec)
     # update transition matrix
@@ -351,7 +361,7 @@ function mstep!(model::AbstractHMM, FB_storage_vec::Vector{ForwardBackward{Float
     update_emissions!(model, Aggregate_FB_storage, data)
 end
 
-function update_initial_state_distribution!(model::AbstractHMM, FB_storage_vec::Vector{ForwardBackward{Float64}})
+function update_initial_state_distribution!(model::AbstractHMM, FB_storage_vec::Vector{<:ForwardBackward})
     num_trials = length(FB_storage_vec)
     return model.πₖ = mean([exp.(FB_storage_vec[i].γ[:, 1]) for i in 1:num_trials])
 end
