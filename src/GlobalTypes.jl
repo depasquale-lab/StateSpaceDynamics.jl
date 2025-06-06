@@ -2,7 +2,7 @@
 The purpose of this file is to provide a common place for all global types to be defined. This is to avoid circular dependencies between files.
 """
 
-export MixtureModel, EmissionModel, AbstractHMM, DynamicalSystem, to_f64
+export MixtureModel, EmissionModel, AbstractHMM, DynamicalSystem
 
 # Create abstract types here 
 """

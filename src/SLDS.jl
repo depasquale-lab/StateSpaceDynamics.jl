@@ -3,7 +3,7 @@ export SwitchingLinearDynamicalSystem, fit!, sample, initialize_slds, variationa
 Switching Linear Dynamical System
 """
 mutable struct SwitchingLinearDynamicalSystem <: AbstractHMM
-    A::Matrix{Float64}                 # Transition matrix for mode switching
+    A::Matrix{<:Real}                 # Transition matrix for mode switching
     B::Vector{LinearDynamicalSystem}  # Vector of Linear Dynamical System models
     πₖ::Vector{Float64}               # Initial state distribution
     K::Int                            # Number of modes
@@ -131,11 +131,8 @@ Fit a Switching Linear Dynamical System using the variational Expectation-Maximi
 - `mls::Vector{T}`: Vector of log-likelihood values for each iteration.
 """
 function fit!(
-    slds::SwitchingLinearDynamicalSystem, 
-    y::AbstractMatrix{Float64}; 
-    max_iter::Int=1000, 
-    tol::Float64=1e-3
-  )
+    slds::SwitchingLinearDynamicalSystem, y::Matrix{T}; 
+    max_iter::Int=1000, tol::Real=1e-3) where {T<:Real}
 
     # Initialize log-likelihood
     prev_ml = -T(Inf)
@@ -200,17 +197,6 @@ function fit!(
     return mls, param_diff, FB, FS
 end
 
-function fit!(
-    slds::SwitchingLinearDynamicalSystem,
-    y::AbstractMatrix{T};
-    max_iter::Int = 1000,
-    tol::Float64 = 1e-3,
-) where {T<:Real}
-    y64 = to_f64(y)
-    fit!(slds, y64; max_iter=max_iter, tol=tol)
-end
-
-
 """
     variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB, FS) -> Float64
 
@@ -263,7 +249,8 @@ This function performs the variational expectation step for a Switching Linear D
 elbo = variational_expectation!(model, y, FB, FS)
 println("Computed ELBO: ", elbo)
 """
-function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::ForwardBackward, FS::Vector{FilterSmooth{T}}) where {T<:Float64}
+function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, 
+  FB::ForwardBackward, FS::Vector{FilterSmooth{T}}) where {T<:Real} 
   # For now a hardcoded tolerance
   tol = 1e-6
   # Get starting point for iterative E-step
@@ -401,7 +388,7 @@ variational_qs!(model, FB, y, FS)
 println(FB.loglikelihoods)
 """
 function variational_qs!(model::Vector{GaussianObservationModel{T}}, FB::ForwardBackward, 
-  y, FS::Vector{FilterSmooth{T}}) where {T<:Float64}
+  y, FS::Vector{FilterSmooth{T}}) where {T<:Real}
 
   T_steps = size(y, 2)
   K = length(model)
@@ -426,7 +413,7 @@ end
 """
 """
 function mstep!(slds::SwitchingLinearDynamicalSystem,
-    FS::Vector{FilterSmooth{T}}, y::Matrix{T}, FB::ForwardBackward) where {T<:Float64}
+    FS::Vector{FilterSmooth{T}}, y::Matrix{T}, FB::ForwardBackward) where {T<:Real}
 
     K = slds.K
 

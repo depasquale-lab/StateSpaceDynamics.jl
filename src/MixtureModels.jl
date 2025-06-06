@@ -21,8 +21,8 @@ fit!(gmm, data)
 """
 mutable struct GaussianMixtureModel <: MixtureModel
     k::Int # Number of clusters
-    μₖ::Matrix{<:Float64} # Means of each cluster
-    Σₖ::Array{Matrix{<:Float64},1} # Covariance matrices of each cluster
+    μₖ::Matrix{<:Real} # Means of each cluster
+    Σₖ::Array{Matrix{<:Real},1} # Covariance matrices of each cluster
     πₖ::Vector{Float64} # Mixing coefficients
 end
 
@@ -65,7 +65,7 @@ function sample(gmm::GaussianMixtureModel, n::Int)
     return samples
 end
 
-function E_Step(gmm::GaussianMixtureModel, data::Matrix{<:Float64})
+function E_Step(gmm::GaussianMixtureModel, data::Matrix{<:Real})
     N, _ = size(data)
     K = gmm.k
     γ = zeros(N, K)
@@ -122,10 +122,6 @@ Compute the log-likelihood of the data given the Gaussian Mixture Model (GMM). T
 - `Float64`: The log-likelihood of the data given the model.
 """
 function log_likelihood(gmm::GaussianMixtureModel, data::Matrix{<:Real})
-    log_likelihood(gmm, to_f64(data))
-end
- 
-function log_likelihood(gmm::GaussianMixtureModel, data::Matrix{<:Float64})
     N, K = size(data, 1), gmm.k
     ll = 0.0
     for n in 1:N
@@ -166,21 +162,6 @@ class_probabilities = fit!(gmm, data, maxiter=100, tol=1e-4, initialize_kmeans=t
 function fit!(
     gmm::GaussianMixtureModel,
     data::Matrix{<:Real};
-    maxiter::Int, 
-    tol::Float64, 
-    initialize_kmeans::Bool, 
-)
-    fit!(gmm, 
-        to_f64(data), 
-        maxiter=maxiter, 
-        tol=tol, 
-        initialize_kmeans=initialize_kmeans
-    )
-end 
-
-function fit!(
-    gmm::GaussianMixtureModel,
-    data::Matrix{<:Float64};
     maxiter::Int=50,
     tol::Float64=1e-3,
     initialize_kmeans::Bool=false,

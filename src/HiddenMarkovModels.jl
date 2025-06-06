@@ -16,7 +16,7 @@ A Hidden Markov Model (HMM) with custom emissions.
 - `πₖ::Vector{Float64}`: Initial state distribution.
 """
 mutable struct HiddenMarkovModel <: AbstractHMM
-    A:: Matrix{Float64} # transition matrix
+    A:: Matrix{<:Real} # transition matrix
     B::Vector{EmissionModel} # Vector of emission Models
     πₖ::Vector{Float64} # initial state distribution
     K::Int # number of states
@@ -36,7 +36,7 @@ end
 function aggregate_forward_backward!(
     aggregated_FB::ForwardBackward{T}, 
     FB_storages::Vector{ForwardBackward{T}}
-) where {T<:Float64}
+) where {T<:Real}
     # Concatenate each field into the respective field in the aggregated struct
     aggregated_FB.loglikelihoods .= hcat([fb.loglikelihoods for fb in FB_storages]...)
     aggregated_FB.α .= hcat([fb.α for fb in FB_storages]...)
@@ -64,7 +64,7 @@ function HiddenMarkovModel(;
     K::Int,
     B::Vector=Vector(),
     emission=nothing,
-    A::AbstractMatrix{Float64}=initialize_transition_matrix(K),
+    A::AbstractMatrix{<:Real}=initialize_transition_matrix(K),
     πₖ::Vector{Float64}=initialize_state_distribution(K),
 )
 
@@ -127,16 +127,7 @@ Generate `n` samples from a Hidden Markov Model. Returns a tuple of the state se
 - `state_sequence::Vector{Int}`: The state sequence, where each element is an integer 1:K.
 - `observation_sequence::Matrix{Float64}`: The observation sequence. This takes the form of the emission model's output.
 """
-function sample(model::HiddenMarkovModel, X::AbstractMatrix{<:Real}; n::Int, autoregressive::Bool=false)
-    sample(model, to_f64(X); n=n, autoregressive=autoregressive)
-end
-
-function sample(model::HiddenMarkovModel; n::Int, autoregressive::Bool=false)
-    sample(model, nothing; n=n, autoregressive=autoregressive)
-end
-
-function sample(model::HiddenMarkovModel, X::Union{Matrix{Float64},Nothing}; n::Int, autoregressive::Bool=false)
-    
+function sample(model::HiddenMarkovModel, X::Union{Matrix{<:Real},Nothing}=nothing; n::Int, autoregressive::Bool=false) 
     if autoregressive ==false
         state_sequence = Vector{Int}(undef, n)
         # Change to (dimension, time) ordering
@@ -376,22 +367,10 @@ Fit the Hidden Markov Model using the EM algorithm.
 - `max_iters::Int=100`: The maximum number of iterations to run the EM algorithm.
 - `tol::Float64=1e-6`: When the log likelihood is improving by less than this value, the algorithm will stop.
 """
-function fit!(model::HiddenMarkovModel,
-              Y::AbstractMatrix{<:Real},
-              X::Union{AbstractMatrix{<:Real},Nothing}=nothing;
-              max_iters::Int=100,
-              tol::Float64=1e-6)
-
-  Y64 = to_f64(Y)
-  X64 = X === nothing ? nothing : to_f64(X)
-
-  fit!(model, Y64, X64; max_iters=max_iters, tol=tol)
-end
-
 function fit!(
     model::HiddenMarkovModel,
-    Y::Matrix{Float64},
-    X::Union{Matrix{Float64},Nothing};
+    Y::Matrix{<:Real},
+    X::Union{Matrix{<:Real},Nothing}=nothing;
     max_iters::Int=100,
     tol::Float64=1e-6,
 )
@@ -443,21 +422,10 @@ Fit the Hidden Markov Model to multiple trials of data using the EM algorithm.
 - `max_iters::Int=100`: The maximum number of iterations to run the EM algorithm.
 - `tol::Float64=1e-6`: When the log likelihood is improving by less than this value, the algorithm will stop.
 """
-function fit!(model::HiddenMarkovModel,
-              Ys::Vector{<:AbstractMatrix{<:Real}},
-              Xs::Union{Vector{<:AbstractMatrix{<:Real}},Nothing}=nothing;
-              max_iters::Int=100,
-              tol::Float64=1e-6)
-
-  Ys64 = map(to_f64, Ys)
-  Xs64 = Xs === nothing ? nothing : map(to_f64, Xs)
-  fit!(model, Ys64, Xs64; max_iters=max_iters, tol=tol)
-end
-
 function fit!(
     model::HiddenMarkovModel,
-    Y::Vector{<:Matrix{Float64}},
-    X::Union{Vector{<:Matrix{Float64}},Nothing};
+    Y::Vector{<:Matrix{<:Real}},
+    X::Union{Vector{<:Matrix{<:Real}},Nothing};
     max_iters::Int=100,
     tol::Float64=1e-6,
 )
@@ -521,7 +489,8 @@ Calculate the class probabilities at each time point using forward backward algo
 # Returns
 - `class_probabilities::Matrix{Float64}`: The class probabilities at each timepoint
 """
-function class_probabilities(model::HiddenMarkovModel, Y::Matrix{Float64}, X::Union{Matrix{Float64},Nothing}=nothing;)
+function class_probabilities(model::HiddenMarkovModel, Y::Matrix{<:Real}, 
+    X::Union{Matrix{<:Real},Nothing}=nothing;)
     data = X === nothing ? (Y,) : (X, Y)
     # transpose data so that correct dimensions are passed to EmissionModels.jl, a bit hacky but works for now.
     transpose_data = Matrix.(transpose.(data))
@@ -550,8 +519,8 @@ Calculate the class probabilities at each time point using forward backward algo
 """
 function class_probabilities(
     model::HiddenMarkovModel,
-    Y_trials::Vector{<:Matrix{Float64}},
-    X_trials::Union{Vector{<:Matrix{Float64}}, Nothing} = nothing
+    Y_trials::Vector{<:Matrix{<:Real}},
+    X_trials::Union{Vector{<:Matrix{<:Real}}, Nothing} = nothing
 )
     n_trials = length(Y_trials)
     # Preallocate storage for class probabilities
@@ -580,15 +549,8 @@ Get most likely class labels using the Viterbi algorithm
 # Returns
 - `best_path::Vector{Float64}`: The most likely state label at each timepoint
 """
-function viterbi(model::HiddenMarkovModel, Y::Matrix{Float64}, X::Matrix{<:Real};)
-    viterbi(model, Y, to_f64(X);)
-end 
-
-function viterbi(model::HiddenMarkovModel, Y::Matrix{Float64};)
-    viterbi(model, Y, nothing)
-end 
-
-function viterbi(model::HiddenMarkovModel, Y::Matrix{Float64}, X::Union{Matrix{Float64},Nothing};)
+function viterbi(model::HiddenMarkovModel, Y::Matrix{<:Real}, 
+    X::Union{Matrix{<:Real},Nothing}=nothing;)
     data = X === nothing ? (Y,) : (X, Y)
 
     # transpose data so that correct dimensions are passed to EmissionModels.jl, a bit hacky but works for now.
@@ -651,18 +613,10 @@ Get most likely class labels using the Viterbi algorithm for multiple trials of 
 # Returns
 - `best_path::Vector{<:Vector{Float64}}`: Each trial's best state path
 """
-function viterbi(model::HiddenMarkovModel, Y::Vector{<:Matrix{Float64}}, X::Vector{<:Matrix{<:Real}};)
-    viterbi(model, Y, to_f64(X);)
-end 
-
-function viterbi(model::HiddenMarkovModel, Y::Vector{<:Matrix{Float64}};)
-    viterbi(model, Y, nothing)
-end 
-
 function viterbi(
     model::HiddenMarkovModel,
-    Y::Vector{<:Matrix{Float64}},
-    X::Union{Vector{<:Matrix{Float64}},Nothing};
+    Y::Vector{<:Matrix{<:Real}},
+    X::Union{Vector{<:Matrix{<:Real}},Nothing}=nothing
 )
     # Storage for each trials viterbi path
     viterbi_paths = Vector{Vector{Int}}(undef, length(Y))

@@ -115,8 +115,6 @@ include("HiddenMarkovModels/GaussianHMM.jl")
     test_kmeans_init()
     test_trialized_GaussianHMM()
     test_incomplete_initialization()
-    test_sample_non_f64()
-    test_fit_non_f64()
 end
 
 include("HiddenMarkovModels/SwitchingGaussianRegression.jl")
@@ -125,7 +123,6 @@ include("HiddenMarkovModels/SwitchingGaussianRegression.jl")
     test_SwitchingGaussianRegression_fit()
     test_SwitchingGaussianRegression_SingleState_fit()
     test_trialized_SwitchingGaussianRegression()
-    test_sample_non_f64_SwitchingGaussianRegression()
 end
 
 include("HiddenMarkovModels/SwitchingPoissonRegression.jl")
@@ -133,8 +130,6 @@ include("HiddenMarkovModels/SwitchingPoissonRegression.jl")
 @testset "Switching Poisson Regression Tests" begin
     test_SwitchingPoissonRegression_fit()
     test_trialized_SwitchingPoissonRegression()
-    test_sample_non_f64_SwitchingPoissonRegression()
-    test_fit_non_f64_SwitchingPoissonRegression()
 end
 
 include("HiddenMarkovModels/SwitchingBernoulliRegression.jl")
@@ -142,8 +137,6 @@ include("HiddenMarkovModels/SwitchingBernoulliRegression.jl")
 @testset "Switching Bernoulli Regression Tests" begin
     test_SwitchingBernoulliRegression()
     test_trialized_SwitchingBernoulliRegression()
-    test_sample_non_float64()
-    test_fit_non_float_SwitchingBernoulliRegression()
 end
 
 """
@@ -228,10 +221,6 @@ include("MixtureModels/PoissonMixtureModel.jl")
         pmm = PoissonMixtureModel(k)
         test_log_likelihood(pmm, data)
     end
-end
-
-@testset "MixtureModels Dispatch" begin
-    testGaussianMixtureModel_Dispatch()
 end
 
 """

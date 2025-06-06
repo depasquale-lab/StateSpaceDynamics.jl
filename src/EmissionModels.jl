@@ -22,8 +22,8 @@ GaussianEmission model with mean and covariance.
 """
 mutable struct GaussianEmission <: EmissionModel
     output_dim::Int # dimension of the data
-    μ::Vector{Float64}  # mean 
-    Σ::AbstractMatrix{Float64}  # covariance matrix
+    μ::Vector{<:Real}  # mean 
+    Σ::Matrix{<:Real}  # covariance matrix
 end
 
 """
@@ -33,21 +33,21 @@ Functon to create a GaussianEmission with given output dimension, mean, and cova
 
 # Arguments
 - `output_dim::Int`: The output dimension of the emission
-- `μ::Vector{Float64}=zeros(output_dim)`: The mean of the Gaussian
-- `Σ::Matrix{Float64}=Matrix{Float64}(I, output_dim, output_dim))`: The covariance matrix of the Gaussian
+- `μ::Vector{<:Real}=zeros(output_dim)`: The mean of the Gaussian
+- `Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim))`: The covariance matrix of the Gaussian
 
 # Returns
 """
 function GaussianEmission(;
     output_dim::Int,
-    μ::Vector{Float64}=zeros(output_dim),
-    Σ::AbstractMatrix{Float64}=Matrix{Float64}(I, output_dim, output_dim),
+    μ::Vector{<:Real}=zeros(output_dim),
+    Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim),
 )
     return GaussianEmission(output_dim, μ, Σ)
 end
 
 """
-    loglikelihood(model::GaussianEmission, Y::Matrix{Float64})
+    loglikelihood(model::GaussianEmission, Y::Matrix{<:Real})
 
 Calculate the log likelihood of the data `Y` given the Gaussian emission model.
 
@@ -59,10 +59,6 @@ Calculate the log likelihood of the data `Y` given the Gaussian emission model.
 - `Vector{Float64}`: A vector of log likelihoods, one for each observation in the data.
 """
 function loglikelihood(model::GaussianEmission, Y::Matrix{<:Real})
-    loglikelihood(model, to_f64(Y))
-end
-
-function loglikelihood(model::GaussianEmission, Y::Matrix{Float64})
     # Create MvNormal distribution with the model parameters
     dist = MvNormal(model.μ, model.Σ)
 
@@ -90,16 +86,8 @@ Fit a GaussianEmission model to the data `Y`.
 - `Y::Matrix{<:Real}`: Data to fit the model to. Should be a matrix of size `(n, output_dim)`.
 - `w::Vector{Float64}=ones(size(Y, 1))`: Weights for the data. Should be a vector of size `n`.
 """
-function fit!(model::GaussianEmission, Y::Matrix{<:Real}, w::Vector{Float64})
-    fit!(model, to_f64(Y), w)
-end 
-
-function fit!(model::GaussianEmission, Y::Matrix{<:Real})
-    fit!(model, to_f64(Y))  
-end
-
 function fit!(
-    model::GaussianEmission, Y::Matrix{Float64}, w::Vector{Float64}=ones(size(Y, 1))
+    model::GaussianEmission, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1))
 )
     weighted_sum = sum(Y .* w; dims=1)
     new_mean = weighted_sum[:] ./ sum(w)
@@ -124,8 +112,8 @@ Holds the optimization problem data for regression emissions.
 """
 struct RegressionOptimization{T<:RegressionEmission}
     model::T
-    X::Matrix{Float64}
-    y::Matrix{Float64}
+    X::Matrix{<:Real}
+    y::Matrix{<:Real}
     w::Vector{Float64}
     β_shape::Tuple{Int,Int}  # Added to track original shape
 end
@@ -142,7 +130,7 @@ function create_optimization(
     end
 
     β_shape = size(model.β)
-    return RegressionOptimization(model, to_f64(X), to_f64(y), w, β_shape)
+    return RegressionOptimization(model, X, y, w, β_shape)
 end
 
 # Helper functions for reshaping
@@ -158,14 +146,14 @@ post_optimization!(model::RegressionEmission, opt::RegressionOptimization) = not
 Calculate L2 regularization term for regression coefficients.
 
 # Arguments
-- `β::Matrix{Float64}`: Coefficient matrix
+- `β::Matrix{<:Real}`: Coefficient matrix
 - `λ::Float64`: Regularization parameter
 - `include_intercept::Bool`: Whether to exclude the intercept term from regularization
 
 # Returns
 - `Float64`: The regularization term value
 """
-function calc_regularization(β::AbstractMatrix{T}, λ::Float64, include_intercept::Bool=true) where {T<:Number}
+function calc_regularization(β::Matrix{<:Real}, λ::Float64, include_intercept::Bool=true)
     # calculate L2 penalty
     if include_intercept
         regularization = 0.5 * λ * sum(abs2, β[2:end, :])
@@ -187,8 +175,8 @@ Calculate gradient of L2 regularization term for regression coefficients.
 - `include_intercept::Bool`: Whether to exclude the intercept term from regularization
 """
 function calc_regularization_gradient(
-    β::AbstractMatrix{T}, λ::Float64, include_intercept::Bool=true
-) where {T<:Number}
+    β::Matrix{<:Real}, λ::Float64, include_intercept::Bool=true
+) 
     # calculate the gradient of the regularization component
     regularization = zeros(size(β))
 
@@ -220,8 +208,8 @@ A Gaussian regression Emission model.
 mutable struct GaussianRegressionEmission <: RegressionEmission
     input_dim::Int
     output_dim::Int
-    β::Matrix{Float64} # coefficient matrix of the model. Shape input_dim by output_dim. Column one is coefficients for target one, etc. The first row are the intercept terms, if included. 
-    Σ::AbstractMatrix{Float64} # covariance matrix of the model 
+    β::Matrix{<:Real} # coefficient matrix of the model. Shape input_dim by output_dim. Column one is coefficients for target one, etc. The first row are the intercept terms, if included. 
+    Σ::Matrix{<:Real} # covariance matrix of the model 
     include_intercept::Bool # whether to include an intercept term; if true, the first column of β is assumed to be the intercept/bias
     λ::Float64 # regularization parameter
 end
@@ -230,18 +218,15 @@ function GaussianRegressionEmission(;
     input_dim::Int,
     output_dim::Int,
     include_intercept::Bool=true,
-    β::AbstractMatrix{<:Real}=if include_intercept
+    β::Matrix{<:Real}=if include_intercept
         zeros(input_dim + 1, output_dim)
     else
         zeros(input_dim, output_dim)
     end,
-    Σ::AbstractMatrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim),
+    Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim),
     λ::Float64=0.0,
 )
-    βf = to_f64(β)
-    Σf = to_f64(Σ)
-
-    GaussianRegressionEmission(input_dim, output_dim, βf, Σf, include_intercept, λ)
+    return GaussianRegressionEmission(input_dim, output_dim, β, Σ, include_intercept, λ)
 end
 
 """
@@ -251,17 +236,13 @@ Generate `n` samples from a Gaussian regression model. Returns a matrix of size 
 
 # Arguments
 - `model::GaussianRegressionEmission`: Gaussian regression model.
-- `Φ::Matrix{Float64}`: Design matrix of shape `(n, input_dim)`.
+- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
 - `n::Int=size(Φ, 1)`: Number of samples to generate.
 
 # Returns
 - `Y::Matrix{<:Real}`: Matrix of samples of shape `(n, output_dim)`.
 """
-function sample(model::GaussianRegressionEmission, Φ::AbstractVecOrMat{<:Real} )
-    sample(model, to_f64(Φ))
-end
-  
-function sample(model::GaussianRegressionEmission, Φ::Union{Matrix{Float64},Vector{Float64}})
+function sample(model::GaussianRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
     # Ensure Φ is a 2D matrix even if it's a single sample
     Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
 
@@ -289,38 +270,10 @@ Calculate the log likelihood of the data `Y` given the Gaussian regression emiss
 - `Vector{Float64}`: A vector of log likelihoods, one for each observation in the data.
 """
 function loglikelihood(
-    model::GaussianRegressionEmission, 
-    Φ::Matrix{<:Real}, 
-    Y::Matrix{<:Real},
-)
-    Φf = to_f64(Φ)
-    Yf = to_f64(Y)
-    loglikelihood(model, Φf, Yf)
-end
-
-function loglikelihood(
-    model::GaussianRegressionEmission,
-    Φ::Matrix{Float64},
-    Y::Matrix{Float64},
-)
-    w = ones(size(Y,1))                   
-    return loglikelihood(model, Φ, Y, w)  
-end
-
-function loglikelihood(
     model::GaussianRegressionEmission,
     Φ::Matrix{<:Real},
     Y::Matrix{<:Real},
-    w::AbstractVector{<:Real},
-)
-    loglikelihood(model, to_f64(Φ), to_f64(Y), to_f64(w), )
-end
-
-function loglikelihood(
-    model::GaussianRegressionEmission,
-    Φ::Matrix{Float64},
-    Y::Matrix{Float64},
-    w::Vector{Float64},
+    w::Vector{Float64}=ones(size(Y, 1)),
 )
     # Add intercept if specified
     Φ = model.include_intercept ? [ones(size(Φ, 1)) Φ] : Φ
@@ -357,14 +310,14 @@ function AutoRegressionEmission(;
     order::Int, 
     include_intercept::Bool = true, 
     β::Matrix{<:Real} = if include_intercept zeros(output_dim * order + 1, output_dim) else zeros(output_dim * order, output_dim) end,
-    Σ::AbstractMatrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim),
+    Σ::Matrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim),
     λ::Float64=0.0)
 
     innerGaussianRegression = GaussianRegressionEmission(
         input_dim=output_dim * order, 
         output_dim=output_dim, 
-        β=to_f64(β),
-        Σ=to_f64(Σ),
+        β=β,
+        Σ=Σ,
         include_intercept=include_intercept, 
         λ=λ)
 
@@ -460,7 +413,7 @@ Generate a sample from the given autoregressive emission model using the previou
 # Returns
 - `Matrix{Float64}`: The updated observation sequence with the new sample appended.
 """
-function sample(model::AutoRegressionEmission, X::Matrix{Float64})
+function sample(model::AutoRegressionEmission, X::Matrix{<:Real})
     # Extract the last column of X as input
     last_observation = X[:, end]
 
@@ -493,7 +446,7 @@ function loglikelihood(
     Y::Matrix{<:Real},
     w::Vector{Float64}=ones(size(Y, 1)),
 )
-    return loglikelihood(model.innerGaussianRegression, to_f64(X), to_f64(Y), to_f64(w))
+    return loglikelihood(model.innerGaussianRegression, X, Y, w)
 end
 
 """
@@ -509,7 +462,7 @@ Create a Switching AutoRegression Model
 - `β::Matrix{<:Real}`: The autoregressive coefficients (defaults to zeros).
 - `Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim)`: The covariance matrix for the autoregressive model (defaults to an identity matrix).
 - `λ::Float64=0.0`: Regularization parameter for the regression (defaults to zero).
-- `A::Matrix{Float64}=initialize_transition_matrix(K)`: The transition matrix of the HMM (Defaults to a random initialization). 
+- `A::Matrix{<:Real}=initialize_transition_matrix(K)`: The transition matrix of the HMM (Defaults to a random initialization). 
 - `πₖ::Vector{Float64}=initialize_state_distribution(K)`: The initial state distribution of the HMM (Defaults to a random initialization).
 
 # Returns
@@ -525,9 +478,9 @@ function SwitchingAutoRegression(;
     else
         zeros(output_dim * order, output_dim)
     end,
-    Σ::AbstractMatrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim),
+    Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim),
     λ::Float64=0.0,
-    A::Matrix{Float64}=initialize_transition_matrix(K),
+    A::Matrix{<:Real}=initialize_transition_matrix(K),
     πₖ::Vector{Float64}=initialize_state_distribution(K),
 )
     # Create the emissions
@@ -536,8 +489,8 @@ function SwitchingAutoRegression(;
             output_dim=output_dim,
             order=order,
             include_intercept=include_intercept,
-            β=to_f64(β),
-            Σ=to_f64(Σ),
+            β=β,
+            Σ=Σ,
             λ=λ,
         ) for _ in 1:K
     ]
@@ -547,8 +500,8 @@ end
 
 
 function objective(
-    opt::Union{RegressionOptimization{GaussianRegressionEmission}, RegressionOptimization{AutoRegressionEmission}}, β_vec::AbstractVector{T}
-) where {T<:Number}
+    opt::Union{RegressionOptimization{GaussianRegressionEmission}, RegressionOptimization{AutoRegressionEmission}}, β_vec::Vector{T}
+) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     residuals = opt.y - opt.X * β_mat
     w_reshaped = reshape(opt.w, :, 1)
@@ -564,8 +517,8 @@ end
 function objective_gradient!(
     G::Vector{Float64},
     opt::Union{RegressionOptimization{GaussianRegressionEmission}, RegressionOptimization{AutoRegressionEmission}},
-    β_vec::AbstractVector{T},
-) where {T<:Number}
+    β_vec::Vector{T},
+) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     residuals = opt.y - opt.X * β_mat
 
@@ -609,7 +562,7 @@ A Bernoulli regression model.
 mutable struct BernoulliRegressionEmission <: RegressionEmission
     input_dim::Int
     output_dim::Int
-    β::Matrix{Float64} 
+    β::Matrix{<:Real} 
     include_intercept::Bool # whether to include an intercept term; if true, the first column of β is assumed to be the intercept/bias
     λ::Float64 # regularization parameter
 end
@@ -618,14 +571,14 @@ function BernoulliRegressionEmission(;
     input_dim::Int,
     output_dim::Int,
     include_intercept::Bool=true,
-    β::AbstractMatrix{<:Real}=if include_intercept
+    β::Matrix{<:Real}=if include_intercept
         zeros(input_dim + 1, output_dim)
     else
         zeros(input_dim, output_dim)
     end,
     λ::Float64=0.0,
 )
-    return BernoulliRegressionEmission(input_dim, output_dim, to_f64(β), include_intercept, λ)
+    return BernoulliRegressionEmission(input_dim, output_dim, β, include_intercept, λ)
 end
 
 """
@@ -641,11 +594,7 @@ Generate `n` samples from a Bernoulli regression model. Returns a matrix of size
 # Returns
 - `Y::Matrix{<:Real}`: Matrix of samples of shape `(n, 1)`.
 """
-function sample(model::BernoulliRegressionEmission, Φ::AbstractVecOrMat{<:Real})
-    sample(model, to_f64(Φ))
-end
-
-function sample(model::BernoulliRegressionEmission, Φ::Union{Matrix{Float64},Vector{Float64}})
+function sample(model::BernoulliRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
     # Ensure Φ is a 2D matrix even if it's a single sample
     Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
 
@@ -674,36 +623,10 @@ Calculate the log likelihood of the data `Y` given the Bernoulli regression emis
 - `Vector{Float64}`: A vector of log likelihoods, one for each observation in the data.
 """
 function loglikelihood(
-    model::BernoulliRegressionEmission, 
-    Φ::Matrix{<:Real}, 
-    Y::Matrix{<:Real}
-)
-    loglikelihood(model, to_f64(Φ), to_f64(Y))
-end
-
-function loglikelihood(
-    model::BernoulliRegressionEmission, 
-    Φ::Matrix{Float64}, 
-    Y::Matrix{Float64}
-)
-    w = ones(size(Y,1))                   
-    return loglikelihood(model, Φ, Y, w)  
-end
-
-function loglikelihood(
     model::BernoulliRegressionEmission,
     Φ::Matrix{<:Real},
     Y::Matrix{<:Real},
-    w::AbstractVector{<:Real},
-)
-    loglikelihood(model, to_f64(Φ), to_f64(Y), to_f64(w), )
-end
-
-function loglikelihood(
-    model::BernoulliRegressionEmission,
-    Φ::Matrix{Float64},
-    Y::Matrix{Float64},
-    w::Vector{Float64},
+    w::Vector{Float64}=ones(size(Y, 1)),
 )
     # add intercept if specified and not already included
     if model.include_intercept && size(Φ, 2) == size(model.β,1) - 1
@@ -725,8 +648,8 @@ end
 
 # Bernoulli Regression Implementation
 function objective(
-    opt::RegressionOptimization{BernoulliRegressionEmission},  β_vec::AbstractVector{T},
-) where {T<:Number}
+    opt::RegressionOptimization{BernoulliRegressionEmission},  β_vec::Vector{T},
+) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     p = logistic.(opt.X * β_mat)
 
@@ -741,8 +664,8 @@ end
 function objective_gradient!(
     G::Vector{Float64},
     opt::RegressionOptimization{BernoulliRegressionEmission},
-    β_vec::AbstractVector{T},
-) where {T<:Number}
+    β_vec::Vector{T},
+) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     p = logistic.(opt.X * β_mat)
 
@@ -769,7 +692,7 @@ A Poisson regression model.
 mutable struct PoissonRegressionEmission <: RegressionEmission
     input_dim::Int
     output_dim::Int
-    β::Matrix{Float64}
+    β::Matrix{<:Real}
     include_intercept::Bool
     λ::Float64
 end
@@ -778,14 +701,14 @@ function PoissonRegressionEmission(;
     input_dim::Int,
     output_dim::Int,
     include_intercept::Bool=true,
-    β::AbstractMatrix{<:Real}=if include_intercept
+    β::Matrix{<:Real}=if include_intercept
         zeros(input_dim + 1, output_dim)
     else
         zeros(input_dim, output_dim)
     end,
     λ::Float64=0.0,
 )
-    return PoissonRegressionEmission(input_dim, output_dim, to_f64(β), include_intercept, λ)
+    return PoissonRegressionEmission(input_dim, output_dim, β, include_intercept, λ)
 end
 
 """
@@ -801,11 +724,7 @@ Generate `n` samples from a Poisson regression model. Returns a matrix of size `
 # Returns
 - `Y::Matrix{Float64}`: Matrix of samples of shape `(n, 1)`.
 """
-function sample(model::PoissonRegressionEmission, Φ::AbstractVecOrMat{<:Real} )
-    sample(model, to_f64(Φ))
-end
-
-function sample(model::PoissonRegressionEmission, Φ::Union{Matrix{Float64},Vector{Float64}})
+function sample(model::PoissonRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
     # Ensure Φ is a 2D matrix even if it's a single sample
     Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
 
@@ -841,33 +760,7 @@ function loglikelihood(
     model::PoissonRegressionEmission,
     Φ::Matrix{<:Real},
     Y::Matrix{<:Real},
-)
-    loglikelihood(model, to_f64(Φ), to_f64(Y))
-end
-
-function loglikelihood(
-    model::PoissonRegressionEmission, 
-    Φ::Matrix{Float64}, 
-    Y::Matrix{Float64}
-)
-    w = ones(size(Y,1))                   
-    return loglikelihood(model, Φ, Y, w)  
-end
-
-function loglikelihood(
-    model::PoissonRegressionEmission,
-    Φ::AbstractMatrix{<:Real},
-    Y::AbstractMatrix{<:Real},
-    w::AbstractVector{<:Real},
-)
-    loglikelihood(model, to_f64(Φ), to_f64(Y), to_f64(w), )
-end
-
-function loglikelihood(
-    model::PoissonRegressionEmission,
-    Φ::Matrix{Float64},
-    Y::Matrix{Float64},
-    w::Vector{Float64},
+    w::Vector{Float64}=ones(size(Y, 1)),
 )
     # add intercept if specified
     if model.include_intercept && size(Φ, 2) == size(model.β,1) - 1
@@ -890,8 +783,8 @@ end
 
 # Poisson Regression Implementation
 function objective(
-    opt::RegressionOptimization{PoissonRegressionEmission}, β_vec::AbstractVector{T}
-) where {T<:Number}
+    opt::RegressionOptimization{PoissonRegressionEmission}, β_vec::Vector{T}
+) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
 
     η = clamp.(opt.X * β_mat, -30, 30)
@@ -909,8 +802,8 @@ end
 function objective_gradient!(
     G::Vector{Float64},
     opt::RegressionOptimization{PoissonRegressionEmission},
-    β_vec::AbstractVector{T},
-) where {T<:Number}
+    β_vec::Vector{T},
+) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     η = clamp.(opt.X * β_mat, -30, 30)
     rate = exp.(η)
@@ -929,33 +822,7 @@ function fit!(
     model::RegressionEmission,
     X::Matrix{<:Real},
     y::Matrix{<:Real},
-)
-    fit!(model, to_f64(X), to_f64(y))
-end 
-
-function fit!(
-    model::RegressionEmission,
-    X::Matrix{Float64},
-    y::Matrix{Float64},
-)
-    w = ones(size(y,1))
-    fit!(model, X, y, w)
-end 
-
-function fit!(
-    model::RegressionEmission,
-    X::Matrix{<:Real},
-    y::Matrix{<:Real},
-    w::AbstractVector{<:Real}
-)
-    fit!(model, to_f64(X), to_f64(y), to_f64(w))
-end 
-
-function fit!(
-    model::RegressionEmission,
-    X::Matrix{Float64},
-    y::Matrix{Float64},
-    w::AbstractVector{Float64},
+    w::Vector{Float64}=ones(size(y, 1)),
 )
     opt_problem = create_optimization(model, X, y, w)
 

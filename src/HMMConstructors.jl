@@ -2,14 +2,14 @@ export GaussianHMM,
     SwitchingGaussianRegression, SwitchingBernoulliRegression, SwitchingPoissonRegression
 
 """
-    GaussianHMM(; K::Int, output_dim::Int, A::Matrix{Float64}=initialize_transition_matrix(K), πₖ::Vector{Float64}=initialize_state_distribution(K))
+    GaussianHMM(; K::Int, output_dim::Int, A::Matrix{<:Real}=initialize_transition_matrix(K), πₖ::Vector{Float64}=initialize_state_distribution(K))
 
 Create a Hidden Markov Model with Gaussian Emissions
 
 # Arguments
 - `K::Int`: The number of hidden states
 - `output_dim::Int`: The dimensionality of the observation
-- `A::Matrix{Float64}=initialize_transition_matrix(K)`: The transition matrix of the HMM (defaults to random initialization)
+- `A::Matrix{<:Real}=initialize_transition_matrix(K)`: The transition matrix of the HMM (defaults to random initialization)
 - `πₖ::Vector{Float64}=initialize_state_distribution(K)`: The initial state distribution of the HMM (defaults to random initialization)
 
 # Returns
@@ -19,7 +19,7 @@ Create a Hidden Markov Model with Gaussian Emissions
 function GaussianHMM(;
     K::Int,
     output_dim::Int,
-    A::Matrix{Float64}=initialize_transition_matrix(K),
+    A::Matrix{<:Real}=initialize_transition_matrix(K),
     πₖ::Vector{Float64}=initialize_state_distribution(K),
 )
     # Create emission models
@@ -52,10 +52,10 @@ Create a Switching Gaussian Regression Model
 - `input_dim::Int`: The dimensionality of the input features.
 - `output_dim::Int`: The dimensionality of the output predictions.
 - `include_intercept::Bool`: Whether to include an intercept in the regression model (default is `true`).
-- `β::Matrix{Float64}`: The regression coefficients (defaults to zeros based on `input_dim` and `output_dim`).
+- `β::Matrix{<:Real}`: The regression coefficients (defaults to zeros based on `input_dim` and `output_dim`).
 - `Σ::Matrix{<:Real}`: The covariance matrix of the Gaussian emissions (defaults to an identity matrix).
 - `λ::Float64`: The regularization parameter for the regression (default is `0.0`).
-- `A::Matrix{Float64}`: The transition matrix of the Hidden Markov Model (defaults to random initialization).
+- `A::Matrix{<:Real}`: The transition matrix of the Hidden Markov Model (defaults to random initialization).
 - `πₖ::Vector{Float64}`: The initial state distribution of the Hidden Markov Model (defaults to random initialization).
 
 # Returns
@@ -71,21 +71,19 @@ function SwitchingGaussianRegression(;
     else
         zeros(input_dim, output_dim)
     end,
-    Σ::AbstractMatrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim),
+    Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim),
     λ::Float64=0.0,
-    A::Matrix{Float64}=initialize_transition_matrix(K),
+    A::Matrix{<:Real}=initialize_transition_matrix(K),
     πₖ::Vector{Float64}=initialize_state_distribution(K),
 )
-    βf = to_f64(β)
-    Σf = to_f64(Σ)
     # Create emission models
     emissions = [
         GaussianRegressionEmission(;
             input_dim=input_dim,
             output_dim=output_dim,
             include_intercept=include_intercept,
-            β=βf,
-            Σ=Σf,
+            β=β,
+            Σ=Σ,
             λ=λ,
         ) for _ in 1:K
     ]
@@ -122,16 +120,15 @@ function SwitchingBernoulliRegression(;
         zeros(input_dim, output_dim)
     end,
     λ::Float64=0.0,
-    A::AbstractMatrix{<:Real}=initialize_transition_matrix(K),
+    A::Matrix{<:Real}=initialize_transition_matrix(K),
     πₖ::Vector{Float64}=initialize_state_distribution(K),
 )
-    βf = to_f64(β)
     # Create emission models
     emissions = [
         BernoulliRegressionEmission(;
             input_dim=input_dim,
             include_intercept=include_intercept,
-            β=βf,
+            β=β,
             λ=λ,
             output_dim=output_dim,
         ) for _ in 1:K
@@ -152,17 +149,16 @@ function SwitchingPoissonRegression(;
         zeros(input_dim, output_dim)
     end,
     λ::Float64=0.0,
-    A::Matrix{Float64}=initialize_transition_matrix(K),
+    A::Matrix{<:Real}=initialize_transition_matrix(K),
     πₖ::Vector{Float64}=initialize_state_distribution(K),
 )
-    βf=to_f64(β)
     # Create emission models
     emissions = [
         PoissonRegressionEmission(;
             input_dim=input_dim,
             output_dim=output_dim,
             include_intercept=include_intercept,
-            β=βf,
+            β=β,
             λ=λ,
         ) for _ in 1:K
     ]
