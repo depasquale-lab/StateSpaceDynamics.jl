@@ -1,4 +1,4 @@
-export HiddenMarkovModel, fit!, sample, loglikelihood, viterbi
+export HiddenMarkovModel, fit!, loglikelihood, viterbi
 export kmeans_init!
 
 # for unit tests
