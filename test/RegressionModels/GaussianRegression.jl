@@ -79,12 +79,12 @@ function test_GaussianRegression_sample()
 
     # Test single sample
     X_test = randn(1, 2)
-    sample_single = StateSpaceDynamics.sample(model, X_test)
+    sample_single = rand(model, X_test)
     @test size(sample_single) == (1, 1)
 
     # Test multiple samples
     X_test = randn(10, 2)
-    samples = StateSpaceDynamics.sample(model, X_test)
+    samples = rand(model, X_test)
     @test size(samples) == (10, 1)
 end
 

@@ -18,7 +18,7 @@ function test_SwitchingGaussian_fit()
 
     # Sample from the model
     n = 50000
-    true_labels, data = StateSpaceDynamics.sample(true_model; n=n)
+    true_labels, data = rand(true_model; n=n)
 
     # Fit a gaussian hmm to the data
     test_model = StateSpaceDynamics.GaussianHMM(; K=2, output_dim=2)
@@ -68,7 +68,7 @@ function test_SwitchingGaussian_SingleState_fit()
     true_model.B[1] = emission_1
     # Sample from the model
     n = 20000
-    true_labels, data = StateSpaceDynamics.sample(true_model; n=n)
+    true_labels, data = rand(true_model; n=n)
 
     # Fit a new gaussian hmm to the data
     test_model = GaussianHMM(; K=1, output_dim=3)
@@ -138,7 +138,7 @@ function test_trialized_GaussianHMM()
     trial_labels = Vector{Vector{Int}}(undef, num_trials)
 
     for i in 1:num_trials
-        true_labels, data = StateSpaceDynamics.sample(true_model; n=n)  # Generate data and labels
+        true_labels, data = rand(true_model; n=n)  # Generate data and labels
         Y[i] = data  # Store data matrix for the ith trial
     end
 

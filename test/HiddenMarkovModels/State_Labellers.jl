@@ -30,7 +30,7 @@ function test_viterbi_GaussianHMM()
 
     # Run 100 sampling trials
     for i in 1:n_trials
-        true_labels, data = StateSpaceDynamics.sample(true_model, n=n_samples)
+        true_labels, data = rand(true_model, n=n_samples)
         all_true_labels[i] = true_labels
         all_data[i] = data
     end
@@ -79,7 +79,7 @@ function test_class_probabilities()
 
     # Run sampling trials
     for i in 1:n_trials
-        true_labels, data = StateSpaceDynamics.sample(true_model, n=n_samples)
+        true_labels, data = rand(true_model, n=n_samples)
         all_true_labels[i] = true_labels
         all_data[i] = data
     end

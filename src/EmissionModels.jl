@@ -71,9 +71,13 @@ end
 
 Generate `n` samples from a Gaussian model. Returns a matrix of size `(n, output_dim)`.
 """
-function sample(model::GaussianEmission; n::Int=1)
-    raw_samples = rand(MvNormal(model.μ, model.Σ), n)
+function Random.rand(rng::AbstractRNG, model::GaussianEmission; n::Int=1)
+    raw_samples = rand(rng, MvNormal(model.μ, model.Σ), n)
     return Matrix(raw_samples')
+end
+
+function Random.rand(model::GaussianEmission; kwargs...)
+    return rand(Random.default_rng(), model; kwargs...)
 end
 
 """
@@ -242,18 +246,17 @@ Generate `n` samples from a Gaussian regression model. Returns a matrix of size 
 # Returns
 - `Y::Matrix{<:Real}`: Matrix of samples of shape `(n, output_dim)`.
 """
-function sample(model::GaussianRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
-    # Ensure Φ is a 2D matrix even if it's a single sample
+function Random.rand(rng::AbstractRNG, model::GaussianRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
     Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
-
-    # Add intercept column if specified
     if model.include_intercept
         Φ = hcat(ones(size(Φ, 1)), Φ)
     end
-
-    # Ensure the noise dimensions match the output dimension and sample size
-    noise = rand(MvNormal(zeros(model.output_dim), model.Σ), size(Φ, 1))'
+    noise = rand(rng, MvNormal(zeros(model.output_dim), model.Σ), size(Φ, 1))'
     return Φ * model.β + noise
+end
+
+function Random.rand(model::GaussianRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
+    return rand(Random.default_rng(), model, Φ)
 end
 
 """
@@ -416,18 +419,22 @@ Generate a sample from the given autoregressive emission model using the previou
 # Returns
 - `Matrix{Float64}`: The updated observation sequence with the new sample appended.
 """
-function sample(model::AutoRegressionEmission, X::Matrix{<:Real})
+function Random.rand(rng::AbstractRNG, model::AutoRegressionEmission, X::Matrix{<:Real})
     # Extract the last column of X as input
     last_observation = X[:, end]
 
-    # Sample new observation using the Gaussian regression emission function
-    new_observation = sample(model.innerGaussianRegression, last_observation)
+    # Sample new observation using the inner Gaussian regression model
+    new_observation = rand(rng, model.innerGaussianRegression, last_observation)
     new_observation = reshape(new_observation, :, 1)
 
     # Append the new sample as a new column
     X = hcat(X, new_observation)
 
     return X, new_observation
+end
+
+function Random.rand(model::AutoRegressionEmission, X::Matrix{<:Real})
+    return rand(Random.default_rng(), model, X)
 end
 
 """
@@ -597,18 +604,17 @@ Generate `n` samples from a Bernoulli regression model. Returns a matrix of size
 # Returns
 - `Y::Matrix{<:Real}`: Matrix of samples of shape `(n, 1)`.
 """
-function sample(model::BernoulliRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
-    # Ensure Φ is a 2D matrix even if it's a single sample
+function Random.rand(rng::AbstractRNG, model::BernoulliRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
     Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
-
-    # add intercept if specified
     if model.include_intercept && size(Φ, 2) == length(model.β) - 1
         Φ = hcat(ones(size(Φ, 1)), Φ)
     end
-
-    Y = rand.(Bernoulli.(logistic.(Φ * model.β)))
-
+    Y = rand.(rng, Bernoulli.(logistic.(Φ * model.β)))
     return float.(reshape(Y, :, 1))
+end
+
+function Random.rand(model::BernoulliRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
+    return rand(Random.default_rng(), model, Φ)
 end
 
 """
@@ -727,22 +733,17 @@ Generate `n` samples from a Poisson regression model. Returns a matrix of size `
 # Returns
 - `Y::Matrix{<:Real}`: Matrix of samples of shape `(n, 1)`.
 """
-function sample(model::PoissonRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
-    # Ensure Φ is a 2D matrix even if it's a single sample
+function Random.rand(rng::AbstractRNG, model::PoissonRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
     Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
-
-    # add intercept if specified
     if model.include_intercept && size(Φ, 2) == length(model.β) - 1
         Φ = hcat(ones(size(Φ, 1)), Φ)
     end
+    Y = rand.(rng, Poisson.(exp.(Φ * model.β)))
+    return Float64.(reshape(Y, :, 1))
+end
 
-    Y = rand.(Poisson.(exp.(Φ * model.β)))
-
-    # convert Y 
-    Y = reshape(Y, :, 1)
-    Y = Float64.(Y)
-
-    return Y
+function Random.rand(model::PoissonRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
+    return rand(Random.default_rng(), model, Φ)
 end
 
 """

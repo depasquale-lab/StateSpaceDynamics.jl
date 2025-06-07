@@ -18,7 +18,7 @@ function test_SwitchingPoissonRegression_fit()
     # Sample from the HMM
     n = 20000
     Φ = randn(3, n)
-    true_labels, data = StateSpaceDynamics.sample(true_model, Φ; n=n)
+    true_labels, data = rand(true_model, Φ; n=n)
 
     # Create a new SwitchingPoissonRegression and try to recover parameters
     test_model = SwitchingPoissonRegression(; K=2, input_dim=3, output_dim=1)
@@ -81,7 +81,7 @@ function test_trialized_SwitchingPoissonRegression()
 
     # Sample data for each trial
     for i in 1:num_trials
-        true_labels_trials[i], data_trials[i] = StateSpaceDynamics.sample(
+        true_labels_trials[i], data_trials[i] = rand(
             true_model, Φ_trials[i]; n=trial_length
         )
     end
