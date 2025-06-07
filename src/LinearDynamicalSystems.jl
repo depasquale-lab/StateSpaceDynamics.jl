@@ -382,7 +382,7 @@ function loglikelihood(
     temp_dx = zeros(T, size(x, 1))
     temp_dy = zeros(promote_type(T, U), size(y, 1))
 
-    @inbounds for t in 1:tsteps
+    for t in 1:tsteps
         if t > 1
             mul!(temp_dx, A, view(x, :, t-1), -1.0, false)
             temp_dx .+= view(x, :, t)
@@ -445,7 +445,7 @@ function Gradient(
     grad[:, 1] .= A_inv_Q * dx2 + w[1] * C_inv_R * dy1 - (P0_chol \ dx1)
 
     # Middle time steps
-    @inbounds for t in 2:(tsteps - 1)
+    for t in 2:(tsteps - 1)
         dxt = x[:, t] - A * x[:, t - 1]
         dxt_next = x[:, t + 1] - A * x[:, t]
         dyt = y[:, t] - C * x[:, t]
@@ -523,14 +523,14 @@ function Hessian(
     x_t = -inv_P0
 
     # Build off-diagonals
-    @inbounds for i in 1:(tsteps - 1)
+    for i in 1:(tsteps - 1)
         H_sub[i] = H_sub_entry
         H_super[i] = H_super_entry
     end
 
     # Build main diagonal
     H_diag[1] = w[1] * yt_given_xt + xt1_given_xt + x_t
-    @inbounds for i in 2:(tsteps - 1)
+    for i in 2:(tsteps - 1)
         H_diag[i] = w[i] * yt_given_xt + xt_given_xt_1 + xt1_given_xt
     end
     H_diag[tsteps] = w[tsteps] * (yt_given_xt) + xt_given_xt_1
@@ -623,7 +623,7 @@ function smooth(
     gauss_entropy = gaussian_entropy(Symmetric(H))
 
     # Symmetrize the covariance matrices
-    @inbounds for i in 1:tsteps
+    for i in 1:tsteps
         p_smooth[:, :, i] .= 0.5 .* (p_smooth[:, :, i] .+ p_smooth[:, :, i]')
     end
 
@@ -735,7 +735,7 @@ function Q_state(
     sum_E_zz_prev_time = zeros(state_dim, state_dim)
     
     # Compute sums with views
-    @inbounds for t in 2:T_step
+    for t in 2:T_step
         sum_E_zz_current .+= view(E_zz, :, :, t)
         sum_E_zz_prev_cross .+= view(E_zz_prev, :, :, t)
         sum_E_zz_prev_time .+= view(E_zz, :, :, t-1)
@@ -914,7 +914,7 @@ function sufficient_statistics(
     E_zz_prev = similar(p_smooth)
 
     for trial in 1:ntrials
-        @inbounds for t in 1:tsteps
+        for t in 1:tsteps
             E_zz[:, :, t, trial] .=
                 p_smooth[:, :, t, trial] + x_smooth[:, t, trial] * x_smooth[:, t, trial]'
             if t > 1
@@ -1138,7 +1138,7 @@ function update_Q!(
         A = lds.state_model.A
 
         for trial in 1:ntrials
-            @inbounds for t in 2:tsteps
+            for t in 2:tsteps
                 # Get current state covariance and previous-current cross covariance
                 Σt = E_zz[:, :, t, trial]          # E[z_t z_t']
                 Σt_prev = E_zz[:, :, t - 1, trial]   # E[z_{t-1} z_{t-1}']
@@ -1188,7 +1188,7 @@ function update_C!(
         sum_zz = zeros(T, size(E_zz)[1:2])
 
         for trial in 1:ntrials
-            @inbounds for t in 1:tsteps
+            for t in 1:tsteps
                 sum_yz .+= w[t] * y[:, t, trial] * E_z[:, t, trial]'
                 sum_zz .+= w[t] * E_zz[:, :, t, trial]
             end
@@ -1230,7 +1230,7 @@ function update_R!(
         
         # Reorganize as sum of outer products
         for trial in 1:ntrials
-            @inbounds for t in 1:tsteps
+            for t in 1:tsteps
                 # Compute innovation using pre-allocated arrays
                 yt = @view y[:, t, trial]
                 zt = @view E_z[:, t, trial]
@@ -1459,7 +1459,7 @@ function loglikelihood(
 
     # Calculate p(yₜ|xₜ)
     pygivenx_sum = zero(T)
-    @inbounds for t in 1:tsteps
+    for t in 1:tsteps
         temp = plds.obs_model.C * x[:, t] .+ d
         pygivenx_sum += dot(y[:, t], temp) - sum(exp.(temp))
     end
@@ -1470,7 +1470,7 @@ function loglikelihood(
 
     # Calculate p(xₜ|xₜ₋₁)
     pxtgivenxt1_sum = zero(T)
-    @inbounds for t in 2:tsteps
+    for t in 2:tsteps
         temp = x[:, t] .- (plds.state_model.A * x[:, t - 1])
         pxtgivenxt1_sum += -T(0.5) * dot(temp, inv_Q * temp)
     end
@@ -1550,7 +1550,7 @@ function Gradient(
     grad = zeros(lds.latent_dim, tsteps)
 
     # Calculate gradient for each time step
-    @inbounds for t in 1:tsteps
+    for t in 1:tsteps
         # Common term for all time steps
         common_term = C' * (y[:, t] - exp.(C * x[:, t] .+ d))
 
@@ -1616,7 +1616,7 @@ function Hessian(
     H_sub = Vector{typeof(H_sub_entry)}(undef, tsteps - 1)
     H_super = Vector{typeof(H_super_entry)}(undef, tsteps - 1)
 
-    @inbounds for i in 1:(tsteps - 1)
+    for i in 1:(tsteps - 1)
         H_sub[i] = H_sub_entry
         H_super[i] = H_super_entry
     end
@@ -1634,7 +1634,7 @@ function Hessian(
     # Calculate the main diagonal
     H_diag = Vector{Matrix{T}}(undef, tsteps)
 
-    @inbounds for t in 1:tsteps
+    for t in 1:tsteps
         λ = exp.(C * x[:, t] .+ d)
         if t == 1
             H_diag[t] = x_t + xt1_given_xt + calculate_poisson_hess(C, λ)
@@ -1737,7 +1737,7 @@ function Q_observation_model(
     # sum over trials
     @threads for k in 1:trials
         # sum over time-points
-        @inbounds for t in 1:time_steps
+        for t in 1:time_steps
             # Mean term
             h .= (C * E_z[:, t, k]) .+ d
 
@@ -1897,7 +1897,7 @@ function gradient_observation_model!(
             h .+= d
             
             # Compute ρ more efficiently using local storage
-            @inbounds for i in 1:obs_dim
+            for i in 1:obs_dim
                 # Compute one row of CP at a time
                 mul!(CP_row, P_t', C[i, :])
                 ρ[i] = T(0.5) * dot(C[i, :], CP_row)
@@ -1907,7 +1907,7 @@ function gradient_observation_model!(
             @. λ = exp(h + ρ)
             
             # Gradient computation with fewer allocations
-            @inbounds for j in 1:latent_dim
+            for j in 1:latent_dim
                 Pj = @view P_t[:, j]
                 for i in 1:obs_dim
                     idx = (j - 1) * obs_dim + i

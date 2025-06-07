@@ -1,4 +1,4 @@
-export HiddenMarkovModel, fit!, loglikelihood, viterbi
+export HiddenMarkovModel, fit!, rand, loglikelihood, viterbi
 export kmeans_init!
 
 # for unit tests
@@ -201,12 +201,12 @@ function forward!(model::AbstractHMM, FB_storage::ForwardBackward)
     log_πₖ = log.(πₖ)  # Precompute log of initial state probabilities
 
     # Calculate α₁
-    @inbounds for k in 1:K
+    for k in 1:K
         α[k, 1] = log_πₖ[k] + loglikelihoods[k, 1]
     end
 
     # Compute α for all time steps
-    @inbounds for t in 2:time_steps
+    for t in 2:time_steps
         for k in 1:K
             for i in 1:K
                 values_to_sum[i] = log_A[i, k] + α[i, t - 1]
@@ -229,10 +229,10 @@ function backward!(model::AbstractHMM, FB_storage::ForwardBackward)
     log_A = log.(A)
     
     # Initialize last column of β
-    @inbounds β[:, end] .= 0
+    β[:, end] .= 0
 
     # Compute β for all time steps
-    @inbounds for t in (time_steps - 1):-1:1
+    for t in (time_steps - 1):-1:1
         for i in 1:K
             for j in 1:K
                 values_to_sum[j] = log_A[i, j] + loglikelihoods[j, t + 1] + β[j, t + 1]
@@ -250,7 +250,7 @@ function calculate_γ!(model::AbstractHMM, FB_storage::ForwardBackward)
     FB_storage.γ = α .+ β
     γ = FB_storage.γ
 
-    @inbounds for t in 1:time_steps
+    for t in 1:time_steps
         γ[:, t] .-= logsumexp(view(γ,:,t))
     end
 end
@@ -271,7 +271,7 @@ function calculate_ξ!(
     # Preallocate reusable arrays
     log_ξ_unnormalized = zeros(K, K)
 
-    @inbounds for t in 1:(time_steps - 1)
+    for t in 1:(time_steps - 1)
         for i in 1:K
             α_t = α[i, t]  # Cache α[i, t] for reuse
             for j in 1:K

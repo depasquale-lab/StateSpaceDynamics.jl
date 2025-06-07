@@ -65,21 +65,21 @@ function block_tridiagonal_inverse(A::Vector{Matrix{T}},
     lu_S = Vector{LU{T, Matrix{T}}}(undef, n)
 
     # Forward sweep for D
-    @inbounds for i in 1:n
+    for i in 1:n
         M = B[i] - A[i] * D[i]
         lu_D[i] = lu(M)
         D[i + 1] = lu_D[i] \ C[i]
     end
 
     # Backward sweep for E
-    @inbounds for i in n:-1:1
+    for i in n:-1:1
         M = B[i] - C[i] * E[i + 1]
         lu_E[i] = lu(M)
         E[i] = lu_E[i] \ A[i]
     end
 
     # Compute λii
-    @inbounds for i in 1:n
+    for i in 1:n
         term1 = identity - D[i + 1] * E[i + 1]
         term2 = B[i] - A[i] * D[i]
         S = term2 * term1
@@ -88,7 +88,7 @@ function block_tridiagonal_inverse(A::Vector{Matrix{T}},
     end
 
     # Compute λij
-    @inbounds for i in 2:n
+    for i in 2:n
         λij[:, :, i - 1] = E[i] * λii[:, :, i - 1]
     end
 
@@ -130,21 +130,21 @@ function block_tridiagonal_inverse_static(
     C_extended = vcat(C_static, [(@SMatrix zeros(T, N, N))])
 
     # Forward sweep for D
-    @inbounds for i in 1:n
+    for i in 1:n
         M = B_static[i] - A_extended[i] * D[i]
         lu_M = lu(M)  # LU factorization directly on static matrix
         D[i + 1] = lu_M \ C_extended[i]
     end
 
     # Backward sweep for E
-    @inbounds for i in n:-1:1
+    for i in n:-1:1
         M = B_static[i] - C_extended[i] * E[i + 1]
         lu_M = lu(M)  # LU factorization directly on static matrix
         E[i] = lu_M \ A_extended[i]
     end
 
     # Compute λii
-    @inbounds for i in 1:n
+    for i in 1:n
         term1 = identity_static - D[i + 1] * E[i + 1]
         term2 = B_static[i] - A_extended[i] * D[i]
         S = term2 * term1
@@ -153,7 +153,7 @@ function block_tridiagonal_inverse_static(
     end
 
     # Compute λij
-    @inbounds for i in 2:n
+    for i in 2:n
         λij[:, :, i - 1] = Matrix(E[i] * SMatrix{N,N,T,N2}(λii[:, :, i - 1]))
     end
 
@@ -210,7 +210,7 @@ function block_tridgm(
     idx = 1
 
     # Fill main diagonal blocks
-    @inbounds for block_idx in 1:n
+    for block_idx in 1:n
         block = main_diag[block_idx]
         base = (block_idx - 1) * m
 
@@ -224,7 +224,7 @@ function block_tridgm(
     end
 
     # Fill upper and lower diagonal blocks simultaneously
-    @inbounds for block_idx in 1:(n - 1)
+    for block_idx in 1:(n - 1)
         upper_block = upper_diag[block_idx]
         lower_block = lower_diag[block_idx]
 
