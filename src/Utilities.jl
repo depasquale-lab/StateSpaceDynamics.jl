@@ -289,7 +289,7 @@ function kmeanspp_initialization(data::Matrix{<:Real}, k_means::Int)
         dists = zeros(N)
         for i in 1:N
             dists[i] = minimum([
-                euclidean_distance(data[i, :], centroids[:, j]) for j in 1:(k - 1)
+                euclidean_distance(@view(data[i, :]), @view(centroids[:, j])) for j in 1:(k - 1)
             ])
         end
         probs = dists .^ 2
@@ -335,37 +335,56 @@ Perform K-means clustering on the input data.
 function kmeans_clustering(
     data::Matrix{<:Real}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6
 )
-    N, _ = size(data)
-    centroids = kmeanspp_initialization(data, k_means)  # Assuming you have this function defined
+    N, D = size(data)
+    centroids = kmeanspp_initialization(data, k_means)
     labels = zeros(Int, N)
+
     for iter in 1:max_iters
         # Assign each data point to the nearest cluster
-        labels .= [
-            argmin([euclidean_distance(x, c) for c in eachcol(centroids)]) for
-            x in eachrow(data)
-        ]
-        # Cache old centroids for convergence check
-        old_centroids = centroids
-        # Update the centroids
-        new_centroids = zeros(size(centroids))
+        @inbounds for i in 1:N
+            x_i = @view data[i, :]
+            min_k, min_dist = 1, euclidean_distance(x_i, @view centroids[:, 1])
+            for k in 2:k_means
+                c_k = @view centroids[:, k]
+                dist = euclidean_distance(x_i, c_k)
+                if dist < min_dist
+                    min_dist = dist
+                    min_k = k
+                end
+            end
+            labels[i] = min_k
+        end
+
+        # Cache old centroids and initialize new ones
+        old_centroids = copy(centroids)
+        new_centroids = zeros(Float64, D, k_means)
+
+        # Update each centroid
         for k in 1:k_means
-            points_in_cluster = data[labels .== k, :]
-            if isempty(points_in_cluster)
-                # If a cluster has no points, reinitialize its centroid
-                new_centroids[:, k] = data[rand(1:N), :]
+            inds = findall(labels .== k)
+            if isempty(inds)
+                new_centroids[:, k] .= @view data[rand(1:N), :]
             else
-                new_centroids[:, k] = mean(points_in_cluster; dims=1)
+                cluster_data = @view data[inds, :]
+                new_centroids[:, k] .= vec(mean(cluster_data; dims=1))
             end
         end
+
         centroids .= new_centroids
-        # Check for convergence
-        if maximum([
-            euclidean_distance(centroids[:, i], old_centroids[:, i]) for i in 1:k_means
-        ]) < tol
-            # println("Converged after $iter iterations")
+
+        # Check convergence
+        converged = true
+        for k in 1:k_means
+            if euclidean_distance(@view(centroids[:, k]), @view(old_centroids[:, k])) > tol
+                converged = false
+                break
+            end
+        end
+        if converged
             break
         end
     end
+
     return centroids, labels
 end
 

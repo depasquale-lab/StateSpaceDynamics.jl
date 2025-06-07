@@ -268,15 +268,19 @@ function calculate_ξ!(
     log_ξ_unnormalized = zeros(K, K)
 
     @inbounds for t in 1:(time_steps - 1)
-        for i in 1:K
-            α_t = α[i, t]  # Cache α[i, t] for reuse
-            for j in 1:K
-                log_ξ_unnormalized[i, j] = α_t + log_A[i, j] + loglikelihoods[j, t + 1] + β[j, t + 1]
+        @views begin
+            for i in 1:K
+                α_t = α[i, t]  # scalar, reuse as-is
+                for j in 1:K
+                    log_ξ_unnormalized[i, j] = α_t + log_A[i, j] + loglikelihoods[j, t + 1] + β[j, t + 1]
+                end
             end
+
+            # Normalize log-space ξ with logsumexp over a view
+            log_norm_factor = logsumexp(log_ξ_unnormalized)
+
+            ξ[:, :, t] .= log_ξ_unnormalized .- log_norm_factor
         end
-        # Normalize the ξ values in log-space using log-sum-exp
-        log_norm_factor = logsumexp(log_ξ_unnormalized)
-        ξ[:, :, t] .= log_ξ_unnormalized .- log_norm_factor
     end
 end
 
@@ -302,10 +306,11 @@ function update_transition_matrix!(
 )
     γ = FB_storage.γ
     ξ = FB_storage.ξ
-    # Update transition probabilities -> @threading good here?
-    for i in 1:(model.K)
-        for j in 1:(model.K)
-            model.A[i, j] = exp(logsumexp(ξ[i, j, :]) - logsumexp(γ[i, 1:(end - 1)]))
+    for i in 1:model.K
+        for j in 1:model.K
+            model.A[i, j] = exp(
+                logsumexp(@view ξ[i, j, :]) - logsumexp(@view γ[i, 1:end-1])
+            )
         end
     end
 end
@@ -313,21 +318,25 @@ end
 function update_transition_matrix!(
     model::AbstractHMM, FB_storage_vec::Vector{ForwardBackward{Float64}}
 )
-    for j in 1:(model.K)
-        for k in 1:(model.K)
-            num = exp(logsumexp(vcat([FB_trial.ξ[j, k, :] for FB_trial in FB_storage_vec]...)))
-            denom = exp.(logsumexp(vcat([FB_trial.ξ[j, :, :]' for FB_trial in FB_storage_vec]...)))  # this logsumexp takes care of both sums in denom
-            model.A[j,k] = num / denom
+    for j in 1:model.K
+        for k in 1:model.K
+            # Numerator: aggregated ξ[j, k, :]
+            num = exp(logsumexp(vcat([@view FB_trial.ξ[j, k, :] for FB_trial in FB_storage_vec]...)))
+
+            # Denominator: aggregated ξ[j, :, :] over all t
+            denom = exp(logsumexp(vcat([
+                vec(@view FB_trial.γ[j, 1:end-1]) for FB_trial in FB_storage_vec
+            ]...)))
+
+            model.A[j, k] = num / denom
         end
     end
 end
 
 function update_emissions!(model::AbstractHMM, FB_storage::ForwardBackward, data)
-    # update regression models
-    w = exp.(permutedims(FB_storage.γ))
-    # check threading speed here
-    @threads for k in 1:(model.K)
-        fit!(model.B[k], data..., w[:, k])
+    w = exp.(permutedims(FB_storage.γ))  # size (T, K)
+    @threads for k in 1:model.K
+        fit!(model.B[k], data..., @view w[:, k])
     end
 end
 
@@ -368,8 +377,8 @@ Fit the Hidden Markov Model using the EM algorithm.
 """
 function fit!(
     model::HiddenMarkovModel,
-    Y::Matrix{<:Real},
-    X::Union{Matrix{<:Real},Nothing}=nothing;
+    Y::AbstractMatrix{<:Real},
+    X::Union{AbstractMatrix{<:Real},Nothing}=nothing;
     max_iters::Int=100,
     tol::Float64=1e-6,
 )
@@ -423,8 +432,8 @@ Fit the Hidden Markov Model to multiple trials of data using the EM algorithm.
 """
 function fit!(
     model::HiddenMarkovModel,
-    Y::Vector{<:Matrix{<:Real}},
-    X::Union{Vector{<:Matrix{<:Real}},Nothing}=nothing;
+    Y::Vector{<:AbstractMatrix{<:Real}},
+    X::Union{Vector{<:AbstractMatrix{<:Real}},Nothing}=nothing;
     max_iters::Int=100,
     tol::Float64=1e-6,
 )
@@ -552,46 +561,44 @@ function viterbi(model::HiddenMarkovModel, Y::Matrix{<:Real},
     X::Union{Matrix{<:Real},Nothing}=nothing;)
     data = X === nothing ? (Y,) : (X, Y)
 
-    # transpose data so that correct dimensions are passed to EmissionModels.jl, a bit hacky but works for now.
-    transpose_data = Matrix.(transpose.(data))
+    # transpose data so that correct dimensions are passed to EmissionModels.jl
+    transpose_data = Matrix.(transpose.(data))  # You could consider a view here too if you're memory-sensitive
+
     num_obs = size(transpose_data[1], 1)
     FB_storage = initialize_forward_backward(model, num_obs)
 
-    # Estep to get loglikelihoods for each emission model at each timepoint
     estep!(model, transpose_data, FB_storage)
 
-    # Number of states and timepoints
     num_states = length(model.πₖ)
     num_timepoints = size(FB_storage.loglikelihoods, 2)
 
-    # Initialize viterbi_storage with log probabilities and backpointer matrix
     viterbi_storage = zeros(Float64, num_states, num_timepoints)
     backpointers = zeros(Int, num_states, num_timepoints)
 
-    # Initialization step (t = 1)
+    # Initialization
     for s in 1:num_states
         viterbi_storage[s, 1] = log(model.πₖ[s]) + FB_storage.loglikelihoods[s, 1]
     end
 
-    # Recursion step
+    # Recursion
     for t in 2:num_timepoints
         for s in 1:num_states
-            # Calculate the log-probability for each previous state transitioning to current state
-            log_probs = viterbi_storage[:, t-1] .+ log.(model.A[:, s])  # Previous state's prob + transition
-            # Find the maximum log-probability and the corresponding state
+            v_prev = @view viterbi_storage[:, t - 1]
+            A_col = @view model.A[:, s]
+    
+            log_probs = v_prev .+ log.(A_col)
             max_prob, max_state = findmax(log_probs)
+    
             viterbi_storage[s, t] = max_prob + FB_storage.loglikelihoods[s, t]
             backpointers[s, t] = max_state
         end
     end
 
-    # Backtracking step
+    # Backtracking
     best_path = zeros(Int, num_timepoints)
-    # Start with the state that has the highest probability at the last timepoint
-    _, best_last_state = findmax(viterbi_storage[:, end])
+    _, best_last_state = findmax(@view viterbi_storage[:, end])
     best_path[end] = best_last_state
 
-    # Trace back the best path
     for t in num_timepoints-1:-1:1
         best_path[t] = backpointers[best_path[t+1], t+1]
     end
