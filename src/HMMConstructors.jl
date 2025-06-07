@@ -137,6 +137,7 @@ function SwitchingBernoulliRegression(;
     return HiddenMarkovModel(; K=K, B=emissions, A=A, πₖ=πₖ)
 end
 
+
 function SwitchingPoissonRegression(;
     K::Int,
     input_dim::Int,
@@ -151,7 +152,6 @@ function SwitchingPoissonRegression(;
     A::Matrix{<:Real}=initialize_transition_matrix(K),
     πₖ::Vector{Float64}=initialize_state_distribution(K),
 )
-
     # Create emission models
     emissions = [
         PoissonRegressionEmission(;
