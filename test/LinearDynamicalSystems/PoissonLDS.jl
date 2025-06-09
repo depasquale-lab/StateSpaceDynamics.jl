@@ -36,6 +36,123 @@ function test_plds_properties(poisson_lds)
     @test size(poisson_lds.obs_model.log_d) == (poisson_lds.obs_dim,)
 end
 
+function test_pobs_initalization_types()
+    # Int
+    C_int = [1 2; 3 4]
+    log_d_int = [5, 6]
+
+    pom_int = PoissonObservationModel(
+      C = C_int,
+      log_d = log_d_int,
+      obs_dim = 2,
+      latent_dim = 2
+    )
+
+    @test eltype(pom_int.C) === Int
+    @test eltype(pom_int.log_d) === Int
+    @test size(pom_int.C) == (2, 2)
+    @test length(pom_int.log_d) == 2
+
+
+    # Float32
+    C_f32     = Float32[1 2; 3 4]
+    log_d_f32 = Float32[0.5, 0.6]
+
+    pom_f32 = PoissonObservationModel(
+      C = C_f32,
+      log_d = log_d_f32,
+      obs_dim = 2,
+      latent_dim = 2
+    )
+
+    @test eltype(pom_f32.C) === Float32
+    @test eltype(pom_f32.log_d) === Float32
+    @test size(pom_f32.C) == (2, 2)
+    @test length(pom_f32.log_d) == 2
+
+
+    # BigFloat
+    C_bf = BigFloat[1 2; 3 4]
+    log_d_bf = BigFloat[0.1, 0.2]
+
+    pom_bf = PoissonObservationModel(
+      C = C_bf,
+      log_d = log_d_bf,
+      obs_dim = 2,
+      latent_dim = 2
+    )
+
+    @test eltype(pom_bf.C) === BigFloat
+    @test eltype(pom_bf.log_d) === BigFloat
+    @test size(pom_bf.C) == (2, 2)
+    @test length(pom_bf.log_d) == 2
+
+end
+
+function test_plds_init_types()
+    # Int
+    A_int = [1 2; 3 4]
+    C_int = [1 0; 0 1]
+    Q_int = [2 0; 0 2]
+    log_d_int = [7, 8]
+    x0_int = [5, 6]
+    P0_int = [4 0; 0 4]
+
+    plds_int = PoissonLDS(Int;
+        A = A_int, C = C_int,
+        Q = Q_int, log_d = log_d_int,
+        x0 = x0_int, P0 = P0_int,
+        obs_dim = 2, latent_dim = 2
+    )
+
+    @test eltype(plds_int.state_model.A) === Int
+    @test eltype(plds_int.state_model.Q) === Int
+    @test eltype(plds_int.state_model.x0) === Int
+    @test eltype(plds_int.state_model.P0) === Int
+    @test eltype(plds_int.obs_model.C) === Int
+    @test eltype(plds_int.obs_model.log_d) === Int
+    @test plds_int.latent_dim  == 2
+    @test plds_int.obs_dim == 2
+
+    # Float32
+    A_f32 = Float32[1 2; 3 4]
+    C_f32 = Float32[1 0; 0 1]
+    Q_f32 = Float32[2 0; 0 2]
+    log_d_f32 = Float32[0.5, 1.5]
+    x0_f32 = Float32[0.7, 0.8]
+    P0_f32 = Float32[4 0; 0 4]
+
+    plds_f32 = PoissonLDS(Float32;
+        A = A_f32, C = C_f32,
+        Q = Q_f32, log_d = log_d_f32,
+        x0 = x0_f32, P0 = P0_f32,
+        obs_dim = 2, latent_dim = 2
+    )
+
+    @test eltype(plds_f32.state_model.A) === Float32
+    @test eltype(plds_f32.obs_model.C) === Float32
+    @test eltype(plds_f32.obs_model.log_d) === Float32
+
+    # BigFloat
+    A_bf = BigFloat[1 2; 3 4]
+    C_bf = BigFloat[1 0; 0 1]
+    Q_bf = BigFloat[2 0; 0 2]
+    log_d_bf = BigFloat[0.1, 0.2]
+    x0_bf = BigFloat[0.3, 0.4]
+    P0_bf = BigFloat[4 0; 0 4]
+
+    plds_bf = PoissonLDS(BigFloat;
+        A = A_bf, C = C_bf,
+        Q = Q_bf, log_d = log_d_bf,
+        x0 = x0_bf, P0 = P0_bf,
+        obs_dim = 2, latent_dim = 2
+    )
+
+    @test eltype(plds_bf.state_model.A) === BigFloat
+    @test eltype(plds_bf.obs_model.C) === BigFloat
+    @test eltype(plds_bf.obs_model.log_d) === BigFloat
+end
+
 function test_PoissonLDS_with_params()
     poisson_lds, _, _ = toy_PoissonLDS()
     test_plds_properties(poisson_lds)

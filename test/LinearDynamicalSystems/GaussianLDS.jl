@@ -45,6 +45,134 @@ function test_lds_properties(lds)
     @test size(lds.state_model.P0) == (lds.latent_dim, lds.latent_dim)
 end
 
+function test_gaussian_obs_initalization_types()
+    # Int
+    A_int = [1 2; 3 4]
+    Q_int = [1 0; 0 1]
+    x0_int = [5; 6]
+    P0_int = [2 0; 0 2]
+
+    gsm_int = GaussianStateModel(
+        A = A_int,
+        Q = Q_int,
+        x0 = x0_int,
+        P0 = P0_int,
+        latent_dim = 2
+    )
+
+    @test eltype(gsm_int.A) === Int
+    @test eltype(gsm_int.Q) === Int
+    @test eltype(gsm_int.x0) === Int
+    @test eltype(gsm_int.P0) === Int
+
+
+    # Float32
+    A_f32 = Float32[1 2; 3 4]
+    Q_f32 = Float32[1 0; 0 1]
+    x0_f32 = Float32[0.5; 0.6]
+    P0_f32 = Float32[0.2 0; 0 0.2]
+
+    gsm_f32 = GaussianStateModel(
+        A = A_f32,
+        Q = Q_f32,
+        x0 = x0_f32,
+        P0 = P0_f32,
+        latent_dim = 2
+    )
+
+    @test eltype(gsm_f32.A)   === Float32
+    @test eltype(gsm_f32.Q)   === Float32
+    @test eltype(gsm_f32.x0)  === Float32
+    @test eltype(gsm_f32.P0)  === Float32
+
+
+    # BigFloat
+    A_bf = BigFloat[1 2; 3 4]
+    Q_bf = BigFloat[1 0; 0 1]
+    x0_bf = BigFloat[0.1; 0.2]
+    P0_bf = BigFloat[0.3 0; 0 0.3]
+
+    gsm_bf = GaussianStateModel(
+        A = A_bf,
+        Q = Q_bf,
+        x0 = x0_bf,
+        P0 = P0_bf,
+        latent_dim = 2
+    )
+
+    @test eltype(gsm_bf.A) === BigFloat
+    @test eltype(gsm_bf.Q) === BigFloat
+    @test eltype(gsm_bf.x0) === BigFloat
+    @test eltype(gsm_bf.P0) === BigFloat
+end
+
+function test_gaussian_lds_init_types()
+    # Int
+    A_int = [1 2; 3 4]
+    C_int = [1 0; 0 1]
+    Q_int = [2 0; 0 2]
+    R_int = [3 0; 0 3]
+    x0_int = [5, 6]
+    P0_int = [4 0; 0 4]
+
+    gls_int = GaussianLDS(Int;
+        A = A_int, C = C_int, Q = Q_int, R = R_int,
+        x0 = x0_int, P0 = P0_int,
+        obs_dim = 2, latent_dim = 2
+    )
+
+    @test eltype(gls_int.state_model.A) === Int
+    @test eltype(gls_int.state_model.Q) === Int
+    @test eltype(gls_int.state_model.x0) === Int
+    @test eltype(gls_int.state_model.P0) === Int
+    @test eltype(gls_int.obs_model.C) === Int
+    @test eltype(gls_int.obs_model.R) === Int
+    @test gls_int.latent_dim == 2
+    @test gls_int.obs_dim == 2
+
+    # Float32
+    A_f32 = Float32[1 2; 3 4]
+    C_f32 = Float32[1 0; 0 1]
+    Q_f32 = Float32[2 0; 0 2]
+    R_f32 = Float32[3 0; 0 3]
+    x0_f32 = Float32[0.5, 1.5]
+    P0_f32 = Float32[4 0; 0 4]
+
+    gls_f32 = GaussianLDS(Float32;
+        A = A_f32, C = C_f32, Q = Q_f32, R = R_f32,
+        x0 = x0_f32, P0 = P0_f32,
+        obs_dim = 2, latent_dim = 2
+    )
+
+    @test eltype(gls_f32.state_model.A) === Float32
+    @test eltype(gls_f32.state_model.Q) === Float32
+    @test eltype(gls_f32.state_model.x0) === Float32
+    @test eltype(gls_f32.state_model.P0) === Float32
+    @test eltype(gls_f32.obs_model.C) === Float32
+    @test eltype(gls_f32.obs_model.R) === Float32
+
+    # BigFloat
+    A_bf = BigFloat[1 2; 3 4]
+    C_bf = BigFloat[1 0; 0 1]
+    Q_bf = BigFloat[2 0; 0 2]
+    R_bf = BigFloat[3 0; 0 3]
+    x0_bf = BigFloat[0.1, 0.2]
+    P0_bf = BigFloat[4 0; 0 4]
+
+    gls_bf = GaussianLDS(BigFloat;
+        A = A_bf, C = C_bf, Q = Q_bf, R = R_bf,
+        x0 = x0_bf, P0 = P0_bf,
+        obs_dim = 2, latent_dim = 2
+    )
+
+    @test eltype(gls_bf.state_model.A) === BigFloat
+    @test eltype(gls_bf.state_model.Q) === BigFloat
+    @test eltype(gls_bf.state_model.x0) === BigFloat
+    @test eltype(gls_bf.state_model.P0) === BigFloat
+    @test eltype(gls_bf.obs_model.C) === BigFloat
+    @test eltype(gls_bf.obs_model.R) === BigFloat
+end
+
 function test_lds_with_params()
     lds, _, _ = toy_lds()
     test_lds_properties(lds)

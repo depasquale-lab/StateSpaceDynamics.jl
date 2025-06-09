@@ -1,5 +1,8 @@
 export GaussianLDS, PoissonLDS, sample, smooth, fit!
 
+# export for test suite 
+export GaussianStateModel, PoissonObservationModel 
+
 """
     GaussianStateModel{T<:Real} <: AbstractStateModel
 
