@@ -7,7 +7,7 @@ C = [0.6 0.6; 0.6 0.6; 0.6 0.6] .* 2
 log_d = log.([0.1, 0.1, 0.1])
 
 function toy_PoissonLDS(
-    n_trials::Int=1, fit_bool::Vector{Bool}=[true, true, true, true, true, true]
+    ntrials::Int=1, fit_bool::Vector{Bool}=[true, true, true, true, true, true]
 )
     poisson_lds = PoissonLDS(;
         A=A, C=C, Q=Q, x0=x0, P0=p0, log_d=log_d, obs_dim=3, latent_dim=2, fit_bool=fit_bool
@@ -15,7 +15,7 @@ function toy_PoissonLDS(
 
     # sample data
     T = 100
-    x, y = StateSpaceDynamics.sample(poisson_lds, T, n_trials) # 100 timepoints, ntrials
+    x, y = StateSpaceDynamics.rand(poisson_lds; tsteps=T, ntrials=ntrials) # 100 timepoints, ntrials
 
     return poisson_lds, x, y
 end

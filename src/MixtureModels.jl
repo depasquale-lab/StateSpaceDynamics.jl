@@ -43,26 +43,26 @@ end
 """
 Draw 'n' samples from gmm. Returns a Matrix{<:Real}, where each row is a data point.
 """
-function sample(gmm::GaussianMixtureModel, n::Int)
-    # Determine the number of samples from each component
-    component_samples = rand(Multinomial(n, gmm.πₖ), 1)
-
-    # Initialize a container for all samples
+function Random.rand(rng::AbstractRNG, gmm::GaussianMixtureModel, n::Int)
+    component_samples = rand(rng, Multinomial(n, gmm.πₖ), 1)
     samples = Matrix{Float64}(undef, n, size(gmm.μₖ, 2))
     start_idx = 1
 
-    for i in 1:(gmm.k)
+    for i in 1:gmm.k
         num_samples = component_samples[i]
         if num_samples > 0
-            # Sample all at once from the i-th Gaussian component
             dist = MvNormal(gmm.μₖ[i, :], gmm.Σₖ[i])
-            samples[start_idx:(start_idx + num_samples - 1), :] = transpose(
-                rand(dist, num_samples)
+            samples[start_idx:(start_idx + num_samples - 1), :] .= transpose(
+                rand(rng, dist, num_samples)
             )
             start_idx += num_samples
         end
     end
     return samples
+end
+
+function Random.rand(gmm::GaussianMixtureModel, n::Int)
+    return rand(Random.default_rng(), gmm, n)
 end
 
 function E_Step(gmm::GaussianMixtureModel, data::Matrix{<:Real})
@@ -361,24 +361,24 @@ end
 Draw 'n' samples from pmm. Returns a Vector{Int} of length n.
 
 """
-function sample(pmm::PoissonMixtureModel, n::Int)
-    # Determine the number of samples from each component
-    component_samples = rand(Multinomial(n, pmm.πₖ), 1)
-
-    # Initialize a container for all samples
+function Random.rand(rng::AbstractRNG, pmm::PoissonMixtureModel, n::Int)
+    component_samples = rand(rng, Multinomial(n, pmm.πₖ), 1)
     samples = Vector{Int}(undef, n)
     start_idx = 1
 
-    for i in 1:(pmm.k)
+    for i in 1:pmm.k
         num_samples = component_samples[i]
         if num_samples > 0
-            # Sample all at once from the i-th Poisson component
-            λ = pmm.λₖ[i] # λ for the i-th component
-            samples[start_idx:(start_idx + num_samples - 1)] = rand(Poisson(λ), num_samples)
+            λ = pmm.λₖ[i]
+            samples[start_idx:(start_idx + num_samples - 1)] .= rand(rng, Poisson(λ), num_samples)
             start_idx += num_samples
         end
     end
     return samples
+end
+
+function Random.rand(pmm::PoissonMixtureModel, n::Int)
+    return rand(Random.default_rng(), pmm, n)
 end
 
 # Handle vector data by reshaping it into a 2D matrix with a single column

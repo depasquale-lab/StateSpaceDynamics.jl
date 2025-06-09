@@ -1,4 +1,4 @@
-export HiddenMarkovModel, fit!, sample, loglikelihood, viterbi
+export HiddenMarkovModel, fit!, rand, loglikelihood, viterbi
 export kmeans_init!
 
 # for unit tests
@@ -127,49 +127,52 @@ Generate `n` samples from a Hidden Markov Model. Returns a tuple of the state se
 - `state_sequence::Vector{Int}`: The state sequence, where each element is an integer 1:K.
 - `observation_sequence::Matrix{Float64}`: The observation sequence. This takes the form of the emission model's output.
 """
-function sample(model::HiddenMarkovModel, X::Union{Matrix{<:Real},Nothing}=nothing; n::Int, autoregressive::Bool=false)  
-    if autoregressive ==false
-        state_sequence = Vector{Int}(undef, n)
-        # Change to (dimension, time) ordering
-        observation_sequence = Matrix{Float64}(undef, model.B[1].output_dim, n)
+function Random.rand(
+    rng::AbstractRNG,
+    model::HiddenMarkovModel,
+    X::Union{Matrix{<:Real}, Nothing}=nothing;
+    n::Int,
+    autoregressive::Bool=false,
+)
 
-        # Initialize the first state and observation
-        state_sequence[1] = rand(Categorical(model.πₖ))
-        observation_sequence[:, 1] = if isnothing(X)
-            sample(model.B[state_sequence[1]])
-        else
-            sample(model.B[state_sequence[1]], X[:, 1])
+    state_sequence = Vector{Int}(undef, n)
+    observation_sequence = Matrix{Float64}(undef, model.B[1].output_dim, n)
+
+    if !autoregressive
+        # Sample initial state
+        state_sequence[1] = rand(rng, Categorical(model.πₖ))
+        observation_sequence[:, 1] = isnothing(X) ?
+            rand(rng, model.B[state_sequence[1]]) :
+            rand(rng, model.B[state_sequence[1]], X[:, 1])
+
+        # Sample remaining steps
+        for t in 2:n
+            state_sequence[t] = rand(rng, Categorical(model.A[state_sequence[t - 1], :]))
+            observation_sequence[:, t] = isnothing(X) ?
+                rand(rng, model.B[state_sequence[t]]) :
+                rand(rng, model.B[state_sequence[t]], X[:, t])
         end
-
-        # Sample the state paths and observations
-        for t in 2:n  # t represents time steps
-            state_sequence[t] = rand(Categorical(model.A[state_sequence[t - 1], :]))
-            if isnothing(X)
-                observation_sequence[:, t] = sample(model.B[state_sequence[t]])
-            else
-                observation_sequence[:, t] = sample(model.B[state_sequence[t]], X[:, t])
-            end
-        end
-
-        return state_sequence, observation_sequence
     else
-        state_sequence = Vector{Int}(undef, n)
-        # Change to (dimension, time) ordering
-        observation_sequence = Matrix{Float64}(undef, model.B[1].output_dim, n)
+        # Autoregressive case
+        state_sequence[1] = rand(rng, Categorical(model.πₖ))
+        X, observation_sequence[:, 1] = rand(rng, model.B[state_sequence[1]], X)
 
-        # Initialize the first state and observation
-        state_sequence[1] = rand(Categorical(model.πₖ))
-        X, observation_sequence[:,1] = sample(model.B[state_sequence[1]], X)
-
-        # Sample the state paths and observations
-        for t in 2:n  # t represents time steps
-            state_sequence[t] = rand(Categorical(model.A[state_sequence[t - 1], :]))
-            X, observation_sequence[:, t] = sample(model.B[state_sequence[t]], X)
+        for t in 2:n
+            state_sequence[t] = rand(rng, Categorical(model.A[state_sequence[t - 1], :]))
+            X, observation_sequence[:, t] = rand(rng, model.B[state_sequence[t]], X)
         end
-
-        return state_sequence, observation_sequence
-
     end
+
+    return state_sequence, observation_sequence
+end
+
+function Random.rand(
+    model::HiddenMarkovModel,
+    X::Union{Matrix{<:Real}, Nothing}=nothing;
+    n::Int,
+    autoregressive::Bool=false,
+)
+    return rand(Random.default_rng(), model, X; n=n, autoregressive=autoregressive)
 end
 
 # New function for FB storage
@@ -197,12 +200,12 @@ function forward!(model::AbstractHMM, FB_storage::ForwardBackward)
     log_πₖ = log.(πₖ)  # Precompute log of initial state probabilities
 
     # Calculate α₁
-    @inbounds for k in 1:K
+    for k in 1:K
         α[k, 1] = log_πₖ[k] + loglikelihoods[k, 1]
     end
 
     # Compute α for all time steps
-    @inbounds for t in 2:time_steps
+    for t in 2:time_steps
         for k in 1:K
             for i in 1:K
                 values_to_sum[i] = log_A[i, k] + α[i, t - 1]
@@ -225,10 +228,10 @@ function backward!(model::AbstractHMM, FB_storage::ForwardBackward)
     log_A = log.(A)
     
     # Initialize last column of β
-    @inbounds β[:, end] .= 0
+    β[:, end] .= 0
 
     # Compute β for all time steps
-    @inbounds for t in (time_steps - 1):-1:1
+    for t in (time_steps - 1):-1:1
         for i in 1:K
             for j in 1:K
                 values_to_sum[j] = log_A[i, j] + loglikelihoods[j, t + 1] + β[j, t + 1]
@@ -246,7 +249,7 @@ function calculate_γ!(model::AbstractHMM, FB_storage::ForwardBackward)
     FB_storage.γ = α .+ β
     γ = FB_storage.γ
 
-    @inbounds for t in 1:time_steps
+    for t in 1:time_steps
         γ[:, t] .-= logsumexp(view(γ,:,t))
     end
 end
@@ -267,7 +270,7 @@ function calculate_ξ!(
     # Preallocate reusable arrays
     log_ξ_unnormalized = zeros(K, K)
 
-    @inbounds for t in 1:(time_steps - 1)
+    for t in 1:(time_steps - 1)
         @views begin
             for i in 1:K
                 α_t = α[i, t]  # scalar, reuse as-is

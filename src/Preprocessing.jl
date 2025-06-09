@@ -158,6 +158,27 @@ function loglikelihood(ppca::ProbabilisticPCA, X::Matrix{<:Real})
     return ll
 end
 
+function Random.rand(rng::AbstractRNG, ppca::ProbabilisticPCA, n::Int)
+    # z ~ N(0, I) in latent space
+    z = rand(rng, MvNormal(zeros(ppca.k), I), n)  # (k, n)
+
+    # noise ε ~ N(0, σ² I) in data space
+    ε = rand(rng, MvNormal(zeros(ppca.D), ppca.σ² * I), n)  # (D, n)
+
+    # x = W z + μ + ε
+    # Convert μ to (D, 1) to broadcast correctly
+    μ = ppca.μ
+    μ = size(μ, 2) == 1 ? μ : reshape(μ, ppca.D, 1)
+
+    X = ppca.W * z .+ μ + ε
+    return X, z
+end
+
+function Random.rand(ppca::ProbabilisticPCA, n::Int)
+    return rand(Random.default_rng(), ppca, n)
+end
+
+
 """
     fit!(model::ProbabilisticPCA, X::Matrix{<:AbstractFloat}, max_iter::Int=100, tol::AbstractFloat=1e-6)
 

@@ -1,4 +1,4 @@
-export SwitchingLinearDynamicalSystem, fit!, sample, initialize_slds, variational_expectation!
+export SwitchingLinearDynamicalSystem, fit!, initialize_slds, variational_expectation!
 """
 Switching Linear Dynamical System
 """
@@ -13,19 +13,19 @@ end
 """
 Generate synthetic data with switching LDS models
 """
-function sample(slds::SwitchingLinearDynamicalSystem, T::Int)
+function Random.rand(rng::AbstractRNG, slds::SwitchingLinearDynamicalSystem, T::Int)
     state_dim = slds.B[1].latent_dim
     obs_dim = slds.B[1].obs_dim
     K = slds.K
 
     x = zeros(state_dim, T)  # Latent states
-    y = zeros(obs_dim, T)   # Observations
-    z = zeros(Int, T)       # Mode sequence
+    y = zeros(obs_dim, T)    # Observations
+    z = zeros(Int, T)        # Mode sequence
 
     # Sample initial mode
-    z[1] = rand(Categorical(slds.πₖ / sum(slds.πₖ)))
-    x[:, 1] = rand(MvNormal(zeros(state_dim), slds.B[z[1]].state_model.Q))
-    y[:, 1] = rand(MvNormal(slds.B[z[1]].obs_model.C * x[:, 1], slds.B[z[1]].obs_model.R))
+    z[1] = rand(rng, Categorical(slds.πₖ / sum(slds.πₖ)))
+    x[:, 1] = rand(rng, MvNormal(zeros(state_dim), slds.B[z[1]].state_model.Q))
+    y[:, 1] = rand(rng, MvNormal(slds.B[z[1]].obs_model.C * x[:, 1], slds.B[z[1]].obs_model.R))
 
     @views for t in 2:T
         # Sample mode based on transition probabilities
@@ -40,7 +40,10 @@ function sample(slds::SwitchingLinearDynamicalSystem, T::Int)
     end
 
     return x, y, z
-    
+end
+
+function Random.rand(slds::SwitchingLinearDynamicalSystem, T::Int)
+    return rand(Random.default_rng(), slds, T)
 end
 
 """
