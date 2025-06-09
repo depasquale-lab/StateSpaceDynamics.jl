@@ -49,6 +49,8 @@ include("LinearDynamicalSystems//GaussianLDS.jl")
     @testset "Constructor Tests" begin
         test_lds_with_params()
         test_lds_without_params()
+        test_gaussian_obs_initalization_types()
+        test_gaussian_lds_init_types()
     end
     @testset "Smoother tests" begin
         test_Gradient()
@@ -81,6 +83,8 @@ include("LinearDynamicalSystems//PoissonLDS.jl")
     @testset "Constructor Tests" begin
         test_PoissonLDS_with_params()
         test_poisson_lds_without_params()
+        test_pobs_initalization_types()
+        test_plds_init_types()
     end
     @testset "Smoother Tests" begin
         test_Gradient()
