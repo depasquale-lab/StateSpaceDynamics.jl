@@ -100,7 +100,7 @@ ppca = ProbabilisticPCA(K=1, D=2)
 E_Step(ppca, rand(10, 2))
 ```
 """
-function estep(ppca::ProbabilisticPCA, X::Matrix{T}) where {T <: Real}
+function estep(ppca::ProbabilisticPCA, X::Matrix{T}) where {T <:Real}
     # get dims
     N, D = size(X)
     @assert D == ppca.D "Data dimension mismatch: expected $(ppca.D), got $D"
@@ -147,7 +147,7 @@ M_Step!(ppca, rand(10, 2), E_z, E_zzᵀ)
 """
 function mstep!(
     ppca::ProbabilisticPCA, X::Matrix{T}, E_z::AbstractArray{T}, E_zz::AbstractArray{T}
-) where {T <: Real}
+) where {T <:Real}
     # get dims
     N, D = size(X)
     
