@@ -40,9 +40,12 @@ Functon to create a GaussianEmission with given output dimension, mean, and cova
 """
 function GaussianEmission(; 
     output_dim::Int,
-    μ::AbstractVector{T}=zeros(Float64, output_dim),
-    Σ::AbstractMatrix{T}=Matrix{Float64}(I, output_dim, output_dim),
-) where {T<:Real}
+    μ::AbstractVector,
+    Σ::AbstractMatrix,
+)
+    if !check_same_type(μ[1], Σ[1])
+        error("μ and Σ must be of the same element type. Got $(eltype(μ)) and $(eltype(Σ))")
+    end
     return GaussianEmission(output_dim, μ, Σ)
 end
 

@@ -19,11 +19,10 @@ Create a Hidden Markov Model with Gaussian Emissions
 function GaussianHMM(;
     K::Int,
     output_dim::Int,
-    A::AbstractMatrix{T}=initialize_transition_matrix(K),
-    πₖ::AbstractVector{T}=initialize_state_distribution(K),
+    A::AbstractMatrix{T},
+    πₖ::AbstractVector{T},
+    emissions::AbstractVector
 ) where {T<:Real}
-    # Create emission models
-    emissions = [GaussianEmission(; output_dim=output_dim) for _ in 1:K]
     # Return constructed GaussianHMM
     return HiddenMarkovModel(; K=K, B=emissions, A=A, πₖ=πₖ)
 end

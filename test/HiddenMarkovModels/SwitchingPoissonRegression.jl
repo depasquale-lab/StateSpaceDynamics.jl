@@ -2,10 +2,10 @@ function test_SwitchingPoissonRegression_fit()
     Random.seed!(1234)
     # Create the emission models
     emission_1 = PoissonRegressionEmission(;
-        input_dim=3, output_dim=1, include_intercept=true, β=reshape([4, 3, 2, 4], :, 1)
+        input_dim=3, output_dim=1, include_intercept=true, β=reshape([4.0, 3.0, 2.0, 4.0], :, 1)
     )
     emission_2 = PoissonRegressionEmission(;
-        input_dim=3, output_dim=1, include_intercept=true, β=reshape([-4, -2, 1, 3], :, 1)
+        input_dim=3, output_dim=1, include_intercept=true, β=reshape([-4.0, -2.0, 1.0, 3.0], :, 1)
     )
 
     # Initialize the SwitchingPoissonRegression
@@ -60,10 +60,10 @@ function test_trialized_SwitchingPoissonRegression()
 
     # Create the emission models
     emission_1 = PoissonRegressionEmission(;
-        input_dim=3, output_dim=1, include_intercept=true, β=reshape([4, 3, 2, 4], :, 1)
+        input_dim=3, output_dim=1, include_intercept=true, β=reshape([4.0, 3.0, 2.0, 4.0], :, 1)
     )
     emission_2 = PoissonRegressionEmission(;
-        input_dim=3, output_dim=1, include_intercept=true, β=reshape([-4, -2, 1, 3], :, 1)
+        input_dim=3, output_dim=1, include_intercept=true, β=reshape([-4.0, -2.0, 1.0, 3.0], :, 1)
     )
 
     # Initialize the SwitchingPoissonRegression model

@@ -61,7 +61,7 @@ function test_SwitchingGaussianRegression_SingleState_fit()
     Random.seed!(1234)
     # Create Emission Models
     emission_1 = GaussianRegressionEmission(;
-        input_dim=3, output_dim=1, include_intercept=true, β=reshape([3, 2, 2, 3], :, 1)
+        input_dim=3, output_dim=1, include_intercept=true, β=reshape([3.0, 2.0, 2.0, 3.0], :, 1)
     )
 
     # Create Switching Regression Model
@@ -98,8 +98,8 @@ function test_trialized_SwitchingGaussianRegression()
     model = SwitchingGaussianRegression(;
         K=2, input_dim=1, output_dim=1, include_intercept=true
     )
-    model.B[1].β = [100; 100;;]
-    model.B[2].β = [-100; -100;;]
+    model.B[1].β = [100.0; 100.0;;]
+    model.B[2].β = [-100.0; -100.0;;]
     model.B[1].Σ = [2.0;;]
     model.B[2].Σ = [3.0;;]
 

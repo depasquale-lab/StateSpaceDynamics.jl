@@ -53,10 +53,10 @@ function test_trialized_SwitchingBernoulliRegression()
 
     # Create the emission models
     emission_1 = StateSpaceDynamics.BernoulliRegressionEmission(;
-        input_dim=2, output_dim=1, include_intercept=true, β=reshape([3, 1, 2], :, 1)
+        input_dim=2, output_dim=1, include_intercept=true, β=reshape([3.0, 1.0, 2.0], :, 1)
     )
     emission_2 = StateSpaceDynamics.BernoulliRegressionEmission(;
-        input_dim=2, output_dim=1, include_intercept=true, β=reshape([-3, -2, 0.1], :, 1)
+        input_dim=2, output_dim=1, include_intercept=true, β=reshape([-3.0, -2.0, 0.1], :, 1)
     )
 
     # Initialize the SwitchingPoissonRegression model
