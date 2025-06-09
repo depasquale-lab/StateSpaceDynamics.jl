@@ -81,11 +81,11 @@ function E_Step(ppca::ProbabilisticPCA, X::Matrix{<:Real})
     E_zz = zeros(N, ppca.k, ppca.k)
     # calculate M
     M = ppca.W' * ppca.W + (ppca.σ² * I(ppca.k))
-    M_inv = cholesky(M).U \ (cholesky(M).L \ I)
+    M_inv = cholesky(M).U \ (cholesky(M).L \ I(ppca.k))
     # calculate E_z and E_zz
-    for i in 1:N
-        E_z[i, :] = M_inv * ppca.W' * (X[i, :] - ppca.μ')
-        E_zz[i, :, :] = (ppca.σ² * M_inv) + (E_z[i, :] * E_z[i, :]')
+    @views for i in 1:N
+        E_z[i, :] = M_inv * ppca.W' * (X[i, :] .- ppca.μ')
+        E_zz[i, :, :] = (ppca.σ² * M_inv) + (E_z[i, :]  * E_z[i, :]')
     end
     return E_z, E_zz
 end
@@ -117,10 +117,13 @@ function M_Step!(
     running_sum_σ² = 0.0
     WW = ppca.W' * ppca.W
     for i in 1:N
-        running_sum_W += (X[i, :] - ppca.μ') * E_z[i, :]'
-        running_sum_σ² +=
-            sum((X[i, :] - ppca.μ') .^ 2) -
-            sum((2 * E_z[i, :]' * ppca.W' * (X[i, :] - ppca.μ'))) + tr(E_zz[i, :, :] * WW)
+        centered = @view(X[i, :])  .- ppca.μ' 
+        running_sum_W .+= centered * @view(E_z[i, :])'
+
+        running_sum_σ² += 
+            sum(centered .^ 2) -
+            sum((2.0 .* (@view(E_z[i, :])' * ppca.W')) .* centered') +
+            tr(@view(E_zz[i, :, :])  * WW)
     end
     ppca.z = E_z
     ppca.W = running_sum_W * pinv(sum(E_zz; dims=1)[1, :, :])
