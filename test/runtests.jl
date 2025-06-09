@@ -301,6 +301,7 @@ include("Preprocessing/Preprocessing.jl")
     test_PPCA_without_params()
     test_PPCA_E_and_M_Step()
     test_PPCA_fit()
+    test_PPCA_samples()
 end
 
 include("HiddenMarkovModels/State_Labellers.jl")

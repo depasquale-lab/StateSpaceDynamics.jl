@@ -170,8 +170,8 @@ function Random.rand(rng::AbstractRNG, ppca::ProbabilisticPCA, n::Int)
     μ = ppca.μ
     μ = size(μ, 2) == 1 ? μ : reshape(μ, ppca.D, 1)
 
-    X = ppca.W * z + μ .+ ε
-    return X'
+    X = ppca.W * z .+ μ + ε
+    return X, z
 end
 
 function Random.rand(ppca::ProbabilisticPCA, n::Int)
