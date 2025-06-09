@@ -49,6 +49,7 @@ function GaussianStateModel(;
     return GaussianStateModel{T}(A, Q, x0, P0)
 end
 
+
 """
     GaussianObservationModel{T<:Real} <: AbstractObservationModel
 
@@ -118,11 +119,11 @@ Construct a PoissonObservationModel with the given parameters or random initiali
 - `obs_dim::Int`: Dimension of the observations (required if any matrix is not provided.)
 - `latent_dim::Int`: Dimension of the latent state (required if C is not provided.)
 """
-function PoissonObservationModel(;
-    C::Matrix{T}=Matrix{T}(undef, 0, 0),
-    log_d::Vector{T}=Vector{T}(undef, 0),
+function PoissonObservationModel(; 
+    C::Matrix{T}=Matrix{T}(undef,0,0),
+    log_d::Vector{T}=Vector{T}(undef,0),
     obs_dim::Int=0,
-    latent_dim::Int=0,
+    latent_dim::Int=0
 ) where {T<:Real}
     if obs_dim == 0 && (isempty(C) || isempty(log_d))
         throw(ArgumentError("Must provide obs_dim if C or log_d is not provided."))
@@ -239,7 +240,6 @@ function GaussianLDS(;
     return LinearDynamicalSystem(state_model, obs_model, latent_dim, obs_dim, fit_bool)
 end
 
-
 """
     initialize_FilterSmooth(model::LinearDynamicalSystem, num_obs::Int) -> FilterSmooth{T}
 
@@ -274,7 +274,6 @@ function initialize_FilterSmooth(model::LinearDynamicalSystem, num_obs::Int)
     zeros(num_states, num_states, num_obs, 1)
     )
 end
-
 
 """
     Random.rand(rng::AbstractRNG, lds::LinearDynamicalSystem; tsteps::Int, ntrials::Int)
@@ -359,7 +358,9 @@ Calculate the complete-data log-likelihood of a linear dynamical system (LDS) gi
 - `ll::T`: The complete-data log-likelihood of the LDS.
 """
 function loglikelihood(
-    x::AbstractMatrix{T}, lds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{U},
+    x::AbstractMatrix{T}, 
+    lds::LinearDynamicalSystem{S,O}, 
+    y::AbstractMatrix{U},
     w::Vector{Float64}=ones(size(y, 2))
 ) where {T<:Real,U<:Real,S<:GaussianStateModel{<:Real},O<:GaussianObservationModel{<:Real}}
     tsteps = size(y, 2)
@@ -412,7 +413,7 @@ Compute the gradient of the log-likelihood with respect to the latent states for
 - `grad::Matrix{T}`: Gradient of the log-likelihood with respect to the latent states.
 """
 function Gradient(
-    lds::LinearDynamicalSystem{S,O}, y::Matrix{T}, x::Matrix{T},
+    lds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{T}, x::AbstractMatrix{T},
     w::Vector{Float64}=ones(size(y, 2))
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     # Dims etc.
@@ -445,12 +446,8 @@ function Gradient(
     grad[:, 1] .= A_inv_Q * dx2 + w[1] * C_inv_R * dy1 - (P0_chol \ dx1)
 
     # Middle time steps
-    for t in 2:(tsteps - 1)
-        dxt = x[:, t] - A * x[:, t - 1]
-        dxt_next = x[:, t + 1] - A * x[:, t]
-        dyt = y[:, t] - C * x[:, t]
-
-        grad[:, t] .= w[t] * C_inv_R * dyt - (Q_chol \ dxt) + A_inv_Q * dxt_next
+    @views for t in 2:(tsteps - 1)
+        grad[:, t] .= w[t] * C_inv_R * (y[:, t] .- C * x[:, t]) - (Q_chol \ (x[:, t] .- A * x[:, t - 1])) + (A_inv_Q * (x[:, t + 1] .- A * x[:, t]))
     end
 
     # Last time step
@@ -564,7 +561,7 @@ x, p_smooth, inverse_offdiag, Q_val = DirectSmoother(lds, y)
 ```
 """
 function smooth(
-    lds::LinearDynamicalSystem{S,O}, y::Matrix{T}, w::Vector{Float64}=ones(size(y, 2))
+    lds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{T}, w::Vector{Float64}=ones(size(y, 2))
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     tsteps, D = size(y, 2), lds.latent_dim
 
@@ -623,7 +620,7 @@ function smooth(
     gauss_entropy = gaussian_entropy(Symmetric(H))
 
     # Symmetrize the covariance matrices
-    for i in 1:tsteps
+    @views for i in 1:tsteps
         p_smooth[:, :, i] .= 0.5 .* (p_smooth[:, :, i] .+ p_smooth[:, :, i]')
     end
 
@@ -676,13 +673,14 @@ function smooth(
     inverse_offdiag = Array{T,4}(undef, latent_dim, latent_dim, tsteps, ntrials)
     total_entropy = 0.0
 
-    @threads for trial in 1:ntrials
+    @views @threads for trial in 1:ntrials
         x_sm, p_sm, p_prev, ent = smooth(lds, y[:, :, trial])
         total_entropy += ent
         x_smooth[:, :, trial] .= x_sm
         p_smooth[:, :, :, trial] .= p_sm
         inverse_offdiag[:, :, :, trial] .= p_prev
     end
+    
 
     return x_smooth, p_smooth, inverse_offdiag, total_entropy
 end
@@ -776,7 +774,6 @@ function Q_obs(
     E_zz::AbstractMatrix{<:Real},
     y::AbstractVector{<:Real},
 )
-
     obs_dim = size(H, 1)
 
     # Pre-allocate statistics
@@ -914,16 +911,17 @@ function sufficient_statistics(
     E_zz_prev = similar(p_smooth)
 
     for trial in 1:ntrials
-        for t in 1:tsteps
-            E_zz[:, :, t, trial] .=
-                p_smooth[:, :, t, trial] + x_smooth[:, t, trial] * x_smooth[:, t, trial]'
+        @views for t in 1:tsteps
+            xt = view(x_smooth, :, t, trial)
+            pt = view(p_smooth, :, :, t, trial)
+            E_zz[:, :, t, trial] .= pt .+ xt * xt'
             if t > 1
-                E_zz_prev[:, :, t, trial] .=
-                    p_smooth_t1[:, :, t, trial] +
-                    x_smooth[:, t, trial] * x_smooth[:, t - 1, trial]'
+                xtm1 = view(x_smooth, :, t - 1, trial)
+                pt1 = view(p_smooth_t1, :, :, t, trial)
+                E_zz_prev[:, :, t, trial] .= pt1 .+ xt * xtm1'
             end
         end
-        E_zz_prev[:, :, 1, trial] .= 0
+        @views E_zz_prev[:, :, 1, trial] .= 0
     end
 
     return E_z, E_zz, E_zz_prev
@@ -1038,7 +1036,7 @@ function update_initial_state_mean!(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     if lds.fit_bool[1]
         x0_new = zeros(lds.latent_dim)
-        for i in axes(E_z, 3)
+        @views for i in axes(E_z, 3)
             x0_new .+= E_z[:, 1, i]
         end
         lds.state_model.x0 .= x0_new ./ size(E_z, 3)
@@ -1069,7 +1067,7 @@ function update_initial_state_covariance!(
         p0_new = zeros(T, state_dim, state_dim)
 
         for trial in 1:ntrials
-            p0_new .+= E_zz[:, :, 1, trial] - (lds.state_model.x0 * lds.state_model.x0')
+            p0_new .+= @view(E_zz[:, :, 1, trial]) - (lds.state_model.x0 * lds.state_model.x0')
         end
 
         p0_new ./= ntrials
@@ -1105,8 +1103,8 @@ function update_A!(
         E_zz_prev_sum = zeros(state_dim, state_dim)
 
         for trial in axes(E_zz, 4)
-            E_zz_sum .+= sum(E_zz[:, :, 1:(end - 1), trial]; dims=3)
-            E_zz_prev_sum .+= sum(E_zz_prev[:, :, :, trial]; dims=3)
+            E_zz_sum .+= sum(@view(E_zz[:, :, 1:(end - 1), trial]); dims=3)
+            E_zz_prev_sum .+= sum(@view(E_zz_prev[:, :, :, trial]); dims=3)
         end
 
         lds.state_model.A = E_zz_prev_sum / E_zz_sum
@@ -1130,33 +1128,28 @@ Update the process noise covariance matrix Q of the Linear Dynamical System.
 """
 function update_Q!(
     lds::LinearDynamicalSystem{S,O}, E_zz::Array{T,4}, E_zz_prev::Array{T,4}
-) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+) where {T<:Real, S<:GaussianStateModel{T}, O<:AbstractObservationModel{T}}
+
     if lds.fit_bool[4]
         ntrials, tsteps = size(E_zz, 4), size(E_zz, 3)
         state_dim = size(E_zz, 1)
         Q_new = zeros(T, state_dim, state_dim)
         A = lds.state_model.A
 
-        for trial in 1:ntrials
+         @views for trial in 1:ntrials
             for t in 2:tsteps
-                # Get current state covariance and previous-current cross covariance
-                Σt = E_zz[:, :, t, trial]          # E[z_t z_t']
-                Σt_prev = E_zz[:, :, t - 1, trial]   # E[z_{t-1} z_{t-1}']
-                Σt_cross = E_zz_prev[:, :, t, trial] # E[z_t z_{t-1}']
+                Σt       = view(E_zz, :, :, t, trial)
+                Σt_prev  = view(E_zz, :, :, t - 1, trial)
+                Σt_cross = view(E_zz_prev, :, :, t, trial)
 
-                # Compute innovation: actual state minus predicted state
-                # Q = E[(z_t - Az_{t-1})(z_t - Az_{t-1})']
                 innovation_cov = Σt - Σt_cross * A' - A * Σt_cross' + A * Σt_prev * A'
-
-                # This is equivalent to E[(z_t - Az_{t-1})(z_t - Az_{t-1})']
                 Q_new .+= innovation_cov
             end
         end
 
         Q_new ./= (ntrials * (tsteps - 1))
-        Q_new = 0.5 * (Q_new + Q_new')  # Symmetrize
+        Q_new .= 0.5 * (Q_new + Q_new')  # Symmetrize in-place
 
-        # Set the new Q matrix
         lds.state_model.Q = Q_new
     end
 end
@@ -1188,8 +1181,8 @@ function update_C!(
         sum_zz = zeros(T, size(E_zz)[1:2])
 
         for trial in 1:ntrials
-            for t in 1:tsteps
-                sum_yz .+= w[t] * y[:, t, trial] * E_z[:, t, trial]'
+            @views for t in 1:tsteps
+                sum_yz .+= w[t] * (y[:, t, trial]* E_z[:, t, trial]')
                 sum_zz .+= w[t] * E_zz[:, :, t, trial]
             end
         end
@@ -1230,12 +1223,10 @@ function update_R!(
         
         # Reorganize as sum of outer products
         for trial in 1:ntrials
-            for t in 1:tsteps
+            @views for t in 1:tsteps
                 # Compute innovation using pre-allocated arrays
-                yt = @view y[:, t, trial]
-                zt = @view E_z[:, t, trial]
-                mul!(Czt, C, zt)
-                @. innovation = (yt - Czt)
+                mul!(Czt, C, E_z[:, t, trial])
+                @. innovation = (y[:, t, trial] - Czt)
                 
                 # Add innovation outer product
                 #BLAS.ger!(one(T), innovation, innovation, R_new)
@@ -1243,8 +1234,7 @@ function update_R!(
                 
                 # Add correction term efficiently:
                 # First compute state_uncertainty = Σ_t - z_t*z_t'
-                state_uncertainty = view(E_zz, :, :, t, trial) - zt * zt'
-                
+                state_uncertainty = view(E_zz, :, :, t, trial) - (E_z[:, t, trial]) * ( E_z[:, t, trial])'
                 # Then compute C * state_uncertainty * C' in steps:
                 mul!(temp_matrix, C, state_uncertainty)  # temp = C * state_uncertainty
                 mul!(R_new, temp_matrix, C', w[t], one(T))  # R_new += w[t] * C * state_uncertainty * C'
@@ -1447,8 +1437,11 @@ ll = loglikelihood(x, lds, y)
 ```
 """
 function loglikelihood(
-    x::AbstractMatrix{T}, plds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{U}, w::Vector{U}=ones(size(y, 2))
-) where {U<:Real,T<:Real,S<:GaussianStateModel{<:Real},O<:PoissonObservationModel{<:Real}}
+    x::AbstractMatrix{T}, 
+    plds::LinearDynamicalSystem{S,O}, 
+    y::AbstractMatrix{U}, 
+    w::Vector{U}=ones(size(y, 2))
+) where {T<:Real,U<:Real,S<:GaussianStateModel{<:Real},O<:PoissonObservationModel{<:Real}}
     # Convert the log firing rate to firing rate
     d = exp.(plds.obs_model.log_d)
     tsteps = size(y, 2)
@@ -1458,20 +1451,25 @@ function loglikelihood(
     inv_Q = inv(plds.state_model.Q)
 
     # Calculate p(yₜ|xₜ)
-    pygivenx_sum = zero(T)
-    for t in 1:tsteps
-        temp = plds.obs_model.C * x[:, t] .+ d
-        pygivenx_sum += dot(y[:, t], temp) - sum(exp.(temp))
+    C = plds.obs_model.C
+    n_obs = size(C, 1)
+    temp  = Vector{eltype(C)}(undef, n_obs) 
+
+    pygivenx_sum = zero(T)  
+    @views for t in 1:tsteps
+        temp = C * x[:, t] .+ d
+        pygivenx_sum += dot(y[:, t], temp) - sum(exp, temp)
     end
 
     # Calculate p(x₁)
-    dx1 = x[:, 1] .- plds.state_model.x0
+    dx1 = @view(x[:, 1]) .- plds.state_model.x0
     px1 = -T(0.5) * dot(dx1, inv_p0 * dx1)
 
     # Calculate p(xₜ|xₜ₋₁)
     pxtgivenxt1_sum = zero(T)
-    for t in 2:tsteps
-        temp = x[:, t] .- (plds.state_model.A * x[:, t - 1])
+    A = plds.state_model.A
+    @views for t in 2:tsteps
+        temp = x[:, t] .- (A * x[:, t - 1])
         pxtgivenxt1_sum += -T(0.5) * dot(temp, inv_Q * temp)
     end
 
@@ -1500,11 +1498,13 @@ ll = loglikelihood(x, lds, y)
 ```
 """
 function loglikelihood(
-    x::Array{T,3}, plds::LinearDynamicalSystem{O,S}, y::Array{T,3}
+    x::Array{T,3}, 
+    plds::LinearDynamicalSystem{O,S}, 
+    y::Array{T,3}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     # Calculate the log-likelihood over all trials
     ll = zeros(size(y, 3))
-    @threads for n in axes(y, 3)
+    @views @threads for n in axes(y, 3)
         ll[n] .= loglikelihood(x[:, :, n], plds, y[:, :, n])
     end
     return sum(ll)
@@ -1529,7 +1529,7 @@ The gradient is computed with respect to the latent states x. Each row of the re
 corresponds to the gradient for a single time step.
 """
 function Gradient(
-    lds::LinearDynamicalSystem{S,O}, y::Matrix{T}, x::Matrix{T}, w::Vector{T}=ones(size(y, 2))
+    lds::LinearDynamicalSystem{S,O}, y::AbstractMatrix{T}, x::AbstractMatrix{T}, w::Vector{T}=ones(size(y, 2))
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     # Extract model parameters
     A, Q = lds.state_model.A, lds.state_model.Q
@@ -1550,22 +1550,24 @@ function Gradient(
     grad = zeros(lds.latent_dim, tsteps)
 
     # Calculate gradient for each time step
-    for t in 1:tsteps
+    @views for t in 1:tsteps
+
         # Common term for all time steps
-        common_term = C' * (y[:, t] - exp.(C * x[:, t] .+ d))
+        temp = exp.(C * x[:, t] .+ d)
+        common_term = C' * (y[:, t] - temp)
 
         if t == 1
-            # First time step
+            # First time step                      
             grad[:, t] .=
-                common_term + A' * inv_Q * (x[:, 2] - A * x[:, 1]) - inv_P0 * (x[:, 1] - x0)
+                common_term + A' * inv_Q * (x[:, 2] .- A * x[:, t]) - inv_P0 * (x[:, t] .- x0)
         elseif t == tsteps
-            # Last time step
-            grad[:, t] .= common_term - inv_Q * (x[:, t] - A * x[:, t - 1])
+            # Last time step                    
+            grad[:, t] .= common_term - inv_Q * (x[:, t] .- A * x[:, tsteps - 1])
         else
             # Intermediate time steps
             grad[:, t] .=
-                common_term + A' * inv_Q * (x[:, t + 1] - A * x[:, t]) -
-                inv_Q * (x[:, t] - A * x[:, t - 1])
+                common_term + A' * inv_Q * (x[:, t + 1] .- A * x[:, t]) -
+            inv_Q * (x[:, t] .- A * x[:, t - 1])
         end
     end
 
@@ -1634,7 +1636,7 @@ function Hessian(
     # Calculate the main diagonal
     H_diag = Vector{Matrix{T}}(undef, tsteps)
 
-    for t in 1:tsteps
+    @views for t in 1:tsteps
         λ = exp.(C * x[:, t] .+ d)
         if t == 1
             H_diag[t] = x_t + xt1_given_xt + calculate_poisson_hess(C, λ)
@@ -1681,7 +1683,7 @@ function Q_state(
     Q_val = 0.0
 
     # Calcualte over trials
-    @threads for k in axes(E_z, 3)
+    @views @threads for k in axes(E_z, 3)
         Q_val += Q_state(
             A, Q, P0, x0, E_z[:, :, k], E_zz[:, :, :, k], E_zz_prev[:, :, :, k]
         )
@@ -1712,47 +1714,40 @@ function Q_observation_model(
     P_smooth::AbstractArray{U,4},
     y::Array{U,3},
 ) where {T<:Real,U<:Real}
-    # Get dimensions
     obs_dim, state_dim = size(C)
 
-    # Re-parametrize log_d
     d = exp.(log_d)
-
-    # Compute Q
     Q_val = zero(T)
     trials = size(E_z, 3)
     time_steps = size(E_z, 2)
 
-    # Pre-allocate
     h = Vector{T}(undef, obs_dim)
     ρ = Vector{T}(undef, obs_dim)
-    CC = Matrix{T}(undef, obs_dim, state_dim^2)
+    CC = zeros(T, obs_dim, state_dim^2)
 
-    # calculate CC term
-    CC = zeros(T, size(C, 1), size(C, 2)^2)
-    for i in axes(C, 1)
+    for i in 1:obs_dim
         CC[i, :] .= vec(C[i, :] * C[i, :]')
     end
 
-    # sum over trials
     @threads for k in 1:trials
-        # sum over time-points
-        for t in 1:time_steps
-            # Mean term
-            h .= (C * E_z[:, t, k]) .+ d
+        @views for t in 1:time_steps
+            Ez_t = view(E_z, :, t, k)
+            P_t  = view(P_smooth, :, :, t, k)
+            y_t  = view(y, :, t, k)
 
-            # calculate rho
-            ρ .= T(0.5) .* CC * vec(P_smooth[:, :, t, k])
+            mul!(h, C, Ez_t)          # h = C * E_z[:, t, k]
+            h .+= d
 
+            ρ .= T(0.5) .* CC * vec(P_t)
             ŷ = exp.(h .+ ρ)
 
-            # calculate the Q-value
-            Q_val += sum((y[:, t, k] .* h) .- ŷ)
+            Q_val += sum(y_t .* h .- ŷ)
         end
     end
 
     return Q_val
 end
+
 
 """
     Q_function(A::Matrix{T}, Q::Matrix{T}, C::Matrix{T}, log_d::Vector{T}, x0::Vector{T}, P0::Matrix{T}, E_z::Matrix{T}, E_zz::Array{T, 3}, E_zz_prev::Array{T, 3}, P_smooth::Array{T, 3}, y::Matrix{T})
@@ -1886,16 +1881,13 @@ function gradient_observation_model!(
         # Local temporary arrays for each thread
         local_grad = zeros(T, length(grad))
         
-        for t in 1:time_steps
-            # Use views for all array slices
-            z_t = @view E_z[:, t, k]
-            P_t = @view P_smooth[:, :, t, k]
-            y_t = @view y[:, t, k]
+        @views for t in 1:time_steps
             
             # Compute h = C * z_t + d in-place
-            mul!(h, C, z_t)
-            h .+= d
+            mul!(h, C, E_z[:, t, k])
+            @. h .+= d
             
+            P_t = P_smooth[:, :, t, k] 
             # Compute ρ more efficiently using local storage
             for i in 1:obs_dim
                 # Compute one row of CP at a time
@@ -1907,17 +1899,18 @@ function gradient_observation_model!(
             @. λ = exp(h + ρ)
             
             # Gradient computation with fewer allocations
-            for j in 1:latent_dim
-                Pj = @view P_t[:, j]
+            @views for j in 1:latent_dim 
                 for i in 1:obs_dim
                     idx = (j - 1) * obs_dim + i
-                    CP_term = dot(C[i, :], Pj)
-                    local_grad[idx] += y_t[i] * z_t[j] - λ[i] * (z_t[j] + CP_term)
+                    CP_term = dot(C[i, :], P_t[:, j])
+                    y_t = y[:, t, k] 
+                    z_t = E_z[:, t, k]    
+                    local_grad[idx] += y_t[i]*z_t[j] - λ[i]*(z_t[j] + CP_term)
                 end
             end
             
             # Update log_d gradient
-            @views local_grad[(end - obs_dim + 1):end] .+= (y_t .- λ) .* d
+            @views local_grad[(end - obs_dim + 1):end] .+= (y[:, t, k] .- λ) .* d
         end
         
         # Thread-safe update of global gradient

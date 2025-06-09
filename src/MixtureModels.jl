@@ -72,7 +72,7 @@ function E_Step(gmm::GaussianMixtureModel, data::Matrix{<:Real})
     log_γ = zeros(N, K)
     class_probabilities = zeros(N, K)
 
-    for n in 1:N
+    @views for n in 1:N
         for k in 1:K
             distribution = MvNormal(gmm.μₖ[k, :], gmm.Σₖ[k])
             log_γ[n, k] = log(gmm.πₖ[k]) + logpdf(distribution, data[n, :])
@@ -95,12 +95,12 @@ function M_Step!(
     μₖ = zeros(K, D)
     Σₖ = zeros(D, D, K)
 
-    for k in 1:K
+    @views for k in 1:K
         N_k[k] = sum(γ[:, k])
         μₖ[k, :] = (γ[:, k]' * data) ./ N_k[k]
     end
 
-    for k in 1:K
+    @views for k in 1:K
         x_n = data .- μₖ[k, :]'
         Σₖ[:, :, k] = ((γ[:, k] .* x_n)' * x_n ./ (N_k[k] + I * 1e-6)) + (I * 1e-6)
         if !ishermitian(Σₖ[:, :, k])
@@ -124,7 +124,7 @@ Compute the log-likelihood of the data given the Gaussian Mixture Model (GMM). T
 function log_likelihood(gmm::GaussianMixtureModel, data::Matrix{<:Real})
     N, K = size(data, 1), gmm.k
     ll = 0.0
-    for n in 1:N
+    @views for n in 1:N
         log_probabilities = [
             log(gmm.πₖ[k]) + logpdf(MvNormal(gmm.μₖ[k, :], gmm.Σₖ[k]), data[n, :]) for
             k in 1:K
@@ -263,7 +263,7 @@ function E_Step(pmm::PoissonMixtureModel, data::Matrix{Int})
     N, _ = size(data)
     γ = zeros(N, pmm.k)
 
-    for n in 1:N
+    @views for n in 1:N
         for k in 1:(pmm.k)
             λk = pmm.λₖ[k]
             log_γnk = log(pmm.πₖ[k]) + logpdf(Poisson(λk), data[n, 1])
@@ -278,7 +278,7 @@ end
 function M_Step!(pmm::PoissonMixtureModel, data::Matrix{Int}, γ::Matrix{<:Real})
     N, _ = size(data)
 
-    for k in 1:(pmm.k)
+    @views for k in 1:(pmm.k)
         Nk = sum(γ[:, k])
         pmm.λₖ[k] = sum(γ[:, k] .* data) / Nk  # Update λk
         pmm.πₖ[k] = Nk / N  # Update mixing coefficient
