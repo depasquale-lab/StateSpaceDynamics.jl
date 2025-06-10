@@ -1,4 +1,7 @@
-export GaussianLDS, PoissonLDS, rand, smooth, fit!
+# Public API
+export GaussianLDS, PoissonLDS, LinearDynamicalSystem
+export GaussianStateModel, GaussianObservationModel, PoissonObservationModel
+export rand, smooth, fit!
 
 """
     GaussianStateModel{T<:Real} <: AbstractStateModel
@@ -150,7 +153,7 @@ Represents a unified Linear Dynamical System with customizable state and observa
 - `obs_dim::Int`: Dimension of the observations
 - `fit_bool::Vector{Bool}`: Vector indicating which parameters to fit during optimization
 """
-struct LinearDynamicalSystem{S<:AbstractStateModel,O<:AbstractObservationModel}
+struct LinearDynamicalSystem{S<:AbstractStateModel, O<:AbstractObservationModel}
     state_model::S
     obs_model::O
     latent_dim::Int
@@ -275,20 +278,7 @@ function initialize_FilterSmooth(model::LinearDynamicalSystem, num_obs::Int)
     )
 end
 
-"""
-    Random.rand(rng::AbstractRNG, lds::LinearDynamicalSystem; tsteps::Int, ntrials::Int)
-
-Sample directly from a Linear Dynamical System.
-
-# Arguments
-- `rng::AbstractRNG`: Random number generator
-- `lds::LinearDynamicalSystem`: The LDS model
-- `tsteps::Int`: Number of time steps to sample
-- `ntrials::Int`: Number of trials to sample
-
-# Returns
-- `Tuple{Array,Array}`: Latent states and observations
-"""
+# For Gaussian LDS
 function Random.rand(rng::AbstractRNG, lds::LinearDynamicalSystem{S,O}; tsteps::Int, ntrials::Int) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     A, Q, x0, P0 = lds.state_model.A, lds.state_model.Q, lds.state_model.x0, lds.state_model.P0
     C, R = lds.obs_model.C, lds.obs_model.R
@@ -338,7 +328,28 @@ function Random.rand(rng::AbstractRNG, lds::LinearDynamicalSystem{S,O}; tsteps::
     return x, y
 end
 
-# Backward compatibility for LDS
+"""
+    Random.rand(lds::LinearDynamicalSystem; tsteps::Int, ntrials::Int)
+
+Sample latent states and observations from a linear dynamical system using the default random number generator.
+
+This is a convenience wrapper around `Random.rand(rng, lds; tsteps, ntrials)`.
+
+# Arguments
+- `lds::LinearDynamicalSystem`: The system to simulate.
+- `tsteps::Int`: Number of time steps to simulate.
+- `ntrials::Int`: Number of independent trials.
+
+# Returns
+- `(x, y)`: A tuple containing:
+  - `x::Array{T,3}`: Simulated latent states, of shape `(latent_dim, tsteps, ntrials)`
+  - `y::Array{T,3}`: Simulated observations, of shape `(obs_dim, tsteps, ntrials)`
+
+# Examples
+```julia
+lds = GaussianLDS(obs_dim=3, latent_dim=2)
+x, y = rand(lds; tsteps=100, ntrials=10)
+"""
 function Random.rand(lds::LinearDynamicalSystem; kwargs...)
     return rand(Random.default_rng(), lds; kwargs...)
 end
@@ -1299,23 +1310,23 @@ function mstep!(
 end
 
 """
-    fit!(lds::LinearDynamicalSystem{S,O}, y::Matrix{T}; 
+    fit!(lds::LinearDynamicalSystem{S,O}, y::Array{T,3}; 
          max_iter::Int=1000, 
-         tol::Real=1e-12, 
-         ) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+         tol::Real=1e-12
+    ) where {T<:Real, S<:GaussianStateModel{T}, O<:AbstractObservationModel{T}}
 
-Fit a Linear Dynamical System using the Expectation-Maximization (EM) algorithm with Kalman smoothing.
+Fit a Linear Dynamical System to a collection of trials using the Expectation-Maximization (EM) algorithm with Kalman smoothing.
 
 # Arguments
 - `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System to be fitted.
-- `y::Matrix{T}`: Observed data, size (obs_dim, tsteps).
+- `y::Array{T,3}`: Observed data of shape `(obs_dim, tsteps, n_trials)`.
 
 # Keyword Arguments
-- `max_iter::Int=1000`: Maximum number of EM iterations.
-- `tol::Real=1e-12`: Convergence tolerance for log-likelihood change.
+- `max_iter`: Maximum number of EM iterations (default: `1000`).
+- `tol`: Convergence tolerance for the change in log-likelihood (default: `1e-12`).
 
 # Returns
-- `mls::Vector{T}`: Vector of log-likelihood values for each iteration.
+- `mls::Vector{T}`: Log-likelihood at each iteration of the EM algorithm.
 """
 function fit!(
     lds::LinearDynamicalSystem{S,O}, y::Array{T,3}; max_iter::Int=1000, tol::Real=1e-12

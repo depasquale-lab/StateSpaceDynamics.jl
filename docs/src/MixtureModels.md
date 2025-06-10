@@ -1,4 +1,5 @@
 # Mixture Models
+
 ```@meta
 CollapsedDocStrings = true
 ```

@@ -1,5 +1,5 @@
 export GaussianMixtureModel,
-    PoissonMixtureModel, fit!, log_likelihood, sample, E_Step, M_Step!, MixtureModel
+    PoissonMixtureModel, fit!, log_likelihood,  E_Step, M_Step!, MixtureModel
 
 """
     GaussianMixtureModel

@@ -105,9 +105,7 @@ x_smoothed = smooth(lds, y)
 
 ## Contributing
 
-If you encounter a bug or would like to contribute to the package, come find us on Github.
-
-- [depasquale-lab/StateSpaceDynamics.jl](https://github.com/depasquale-lab/StateSpaceDynamics.jl)
+If you encounter a bug or would like to contribute to the package, please [open an issue](https://github.com/depasquale-lab/StateSpaceDynamics.jl/issues) on our GitHub repository. Once the suggested change has received positive feedback feel free to submit a PR adhering to the [blue](https://github.com/JuliaDiff/BlueStyle) style guide.
 
 ## Citing StateSpaceDynamics.jl
 
