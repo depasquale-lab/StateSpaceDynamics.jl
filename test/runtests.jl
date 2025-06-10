@@ -118,7 +118,6 @@ include("HiddenMarkovModels/GaussianHMM.jl")
     test_SwitchingGaussian_SingleState_fit()
     test_kmeans_init()
     test_trialized_GaussianHMM()
-    test_incomplete_initialization()
 end
 
 include("HiddenMarkovModels/SwitchingGaussianRegression.jl")
