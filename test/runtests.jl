@@ -28,16 +28,16 @@ Tests for SLDS.jl
 
 include("LinearDynamicalSystems//SLDS.jl")
 
-# @testset "SLDS Tests" begin
-#     @testset "Constructor Tests" begin
-#         test_init()
-#         test_sample()
-#     end
+@testset "SLDS Tests" begin
+    @testset "Constructor Tests" begin
+        test_init()
+        test_sample()
+    end
 
-#     @testset "vEM Tests" begin
-#         test_vEstep()
-#     end
-# end
+    @testset "vEM Tests" begin
+        test_vEstep()
+    end
+end
 
 """
 Tests for LDS.jl
