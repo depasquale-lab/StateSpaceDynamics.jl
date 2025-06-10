@@ -19,7 +19,7 @@ end
 
 function test_PoissonRegression_initialization()
     # Test with default parameters
-    model = PoissonRegressionEmission(; input_dim=2, output_dim=1)
+    model = PoissonRegressionEmission(; input_dim=2, output_dim=1, include_intercept=true, β=reshape([0.2, 0.5, 0.5],:,1), λ=0.0)
 
     @test model.input_dim == 2
     @test model.output_dim == 1
@@ -28,16 +28,14 @@ function test_PoissonRegression_initialization()
     @test model.λ == 0.0
 
     # Test without intercept
-    model_no_intercept = PoissonRegressionEmission(;
-        input_dim=2, output_dim=1, include_intercept=false
-    )
+    model_no_intercept = PoissonRegressionEmission(; input_dim=2, output_dim=1, include_intercept=false, β=reshape([0.2, 0.5],:,1), λ=0.01)
     @test size(model_no_intercept.β) == (2, 1)
 end
 
 function test_PoissonRegression_fit()
     X, y, true_β, n = PoissonRegression_simulation()
 
-    model = PoissonRegressionEmission(; input_dim=2, output_dim=1)
+    model = PoissonRegressionEmission(; input_dim=2, output_dim=1, include_intercept=true, β=reshape([0.2, 0.5, 0.5],:,1), λ=0.01)
     fit!(model, X, y)
 
     # Check if the fitted coefficients are close to the true coefficients
@@ -52,7 +50,7 @@ end
 function test_PoissonRegression_loglikelihood()
     X, y, true_β, n = PoissonRegression_simulation()
 
-    model = PoissonRegressionEmission(; input_dim=2, output_dim=1)
+    model = PoissonRegressionEmission(; input_dim=2, output_dim=1, include_intercept=true, β=reshape([0.2, 0.5, 0.5],:,1), λ=0.01)
     fit!(model, X, y)
 
     # Test full dataset loglikelihood
@@ -75,11 +73,7 @@ end
 function test_PoissonRegression_optimization()
     X, y, true_β, n = PoissonRegression_simulation()
 
-    model = PoissonRegressionEmission(;
-        input_dim=2,
-        output_dim=1,
-        λ=0.1,  # Add regularization for testing
-    )
+    model = PoissonRegressionEmission(; input_dim=2, output_dim=1, include_intercept=true, β=reshape([0.2, 0.5, 0.5],:,1), λ=0.01)
 
     # Test objective function
     β_vec = vec(model.β)
@@ -99,7 +93,7 @@ function test_PoissonRegression_optimization()
 end
 
 function test_PoissonRegression_sample()
-    model = PoissonRegressionEmission(; input_dim=2, output_dim=1)
+    model = PoissonRegressionEmission(; input_dim=2, output_dim=1, include_intercept=true, β=reshape([0.2, 0.5, 0.5],:,1), λ=0.01)
 
     # Test single sample
     X_test = randn(1, 2)
@@ -119,25 +113,25 @@ function test_PoissonRegression_sklearn()
     w = [1.0, 1.0, 1.0, 0.1]
 
     # test the regression with no weights and no regularization
-    base_model = PoissonRegressionEmission(; input_dim=1, output_dim=1, λ=0.0)
+    base_model = PoissonRegressionEmission(; input_dim=1, output_dim=1, include_intercept=true, β=reshape([0.2, 0.5],:,1), λ=0.0)
     fit!(base_model, X, y)
 
     @test isapprox(base_model.β, [-2.405, 0.7125], atol=1e-3)
 
     # now test with regularization
-    regularized_model = PoissonRegressionEmission(; input_dim=1, output_dim=1, λ=1.0)
+    regularized_model = PoissonRegressionEmission(; input_dim=1, output_dim=1, include_intercept=true, β=reshape([0.2, 0.5],:,1), λ=1.0)
     fit!(regularized_model, X, y)
 
     @test_broken isapprox(regularized_model.β, [-1.1618, 0.3195], atol=1e-3)
 
     # test with regularization
-    weighted_model = PoissonRegressionEmission(; input_dim=1, output_dim=1)
+    weighted_model = PoissonRegressionEmission(; input_dim=1, output_dim=1, include_intercept=true, β=reshape([0.2, 0.5],:,1), λ=0.0)
     fit!(weighted_model, X, y, w)
 
     @test isapprox(weighted_model.β, [-3.8794, 1.3505], atol=1e-3)
 
-    # test with weights and refularization
-    rw_model = PoissonRegressionEmission(; input_dim=1, output_dim=1, λ=1.0)
+    # test with weights and regularization
+    rw_model = PoissonRegressionEmission(; input_dim=1, output_dim=1, include_intercept=true, β=reshape([0.2, 0.5],:,1), λ=1.0)
     fit!(rw_model, X, y, w)
 
     @test_broken isapprox(rw_model.β, [-1.3611, 0.4338], atol=1e-3)
