@@ -293,7 +293,7 @@ Sample directly from a Linear Dynamical System.
 # Returns
 - `Tuple{Array,Array}`: Latent states and observations
 """
-function Random.rand(rng::AbstractRNG, lds::LinearDynamicalSystem{S,O}; tsteps::Int, ntrials::Int) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+function Random.rand(rng::AbstractRNG, lds::LinearDynamicalSystem{T,S,O}; tsteps::Int, ntrials::Int) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     A, Q, x0, P0 = lds.state_model.A, lds.state_model.Q, lds.state_model.x0, lds.state_model.P0
     C, R = lds.obs_model.C, lds.obs_model.R
 
@@ -314,7 +314,7 @@ function Random.rand(rng::AbstractRNG, lds::LinearDynamicalSystem{S,O}; tsteps::
 end
 
 # For Poisson LDS
-function Random.rand(rng::AbstractRNG, lds::LinearDynamicalSystem{S,O}; tsteps::Int, ntrials::Int) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
+function Random.rand(rng::AbstractRNG, lds::LinearDynamicalSystem{T,S,O}; tsteps::Int, ntrials::Int) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     # Extract model components
     A, Q = lds.state_model.A, lds.state_model.Q
     C, log_d = lds.obs_model.C, lds.obs_model.log_d
@@ -363,7 +363,7 @@ Calculate the complete-data log-likelihood of a linear dynamical system (LDS) gi
 """
 function loglikelihood(
     x::AbstractMatrix{T}, 
-    lds::LinearDynamicalSystem{S,O}, 
+    lds::LinearDynamicalSystem{U,S,O}, 
     y::AbstractMatrix{U},
     w::Vector{Float64}=ones(size(y, 2))
 ) where {T<:Real,U<:Real,S<:GaussianStateModel{<:Real},O<:GaussianObservationModel{<:Real}}
@@ -644,12 +644,12 @@ This function performs direct smoothing for a linear dynamical system (LDS) give
 
 # Arguments
 - `lds::LinearDynamicalSystem{T,S,O}`: The LDS object representing the system parameters.
-- `y::AbstractArray{T,3}`: The observed data array with dimensions (obs_dim, tiem_steps, n_trials).
+- `y::AbstractArray{T,3}`: The observed data array with dimensions (obs_dim, tsteps, ntrials).
 
 # Returns
-- `x::AbstractArray{T,3}`: The optimal state estimates with dimensions (n_trials, time_steps, latent_dim).
-- `p_smooth::AbstractArray{T,4}`: The posterior covariance matrices with dimensions (latent_dim, latent_dim, time_steps, n_trials).
-- `inverse_offdiag::AbstractArray{T,4}`: The inverse off-diagonal matrices with dimensions (latent_dim, latent_dim, time_steps, n_trials).
+- `x::AbstractArray{T,3}`: The optimal state estimates with dimensions (ntrials, tsteps, latent_dim).
+- `p_smooth::AbstractArray{T,4}`: The posterior covariance matrices with dimensions (latent_dim, latent_dim, tsteps, ntrials).
+- `inverse_offdiag::AbstractArray{T,4}`: The inverse off-diagonal matrices with dimensions (latent_dim, latent_dim, tsteps, ntrials).
 
 # Example
 ```julia
@@ -715,7 +715,7 @@ function Q_state(
     E_zz::AbstractArray{T,3},
     E_zz_prev::AbstractArray{T,3},
 ) where {T<:Real}
-    T_step = size(E_z, 2)
+    tstep = size(E_z, 2)
     state_dim = size(A, 1)
     
     # Pre-compute constants and decompositions once
@@ -740,7 +740,7 @@ function Q_state(
     sum_E_zz_prev_time = zeros(T, state_dim, state_dim)
     
     # Compute sums with views
-    for t in 2:T_step
+    for t in 2:tstep
         sum_E_zz_current .+= view(E_zz, :, :, t)
         sum_E_zz_prev_cross .+= view(E_zz_prev, :, :, t)
         sum_E_zz_prev_time .+= view(E_zz, :, :, t-1)
@@ -753,7 +753,7 @@ function Q_state(
     mul!(temp, A, sum_E_zz_prev_time * A', T(1.0), T(1.0))
     
     # Add remaining time steps
-    Q_val += T(-0.5) * ((T_step - 1) * log_det_Q + tr(Q_chol \ temp))
+    Q_val += T(-0.5) * ((tstep - 1) * log_det_Q + tr(Q_chol \ temp))
     
     return Q_val
 end
@@ -828,7 +828,7 @@ function Q_obs(
     weights::Vector{T}=ones(size(y, 2))
 ) where {T<:Real}
     obs_dim = size(H, 1)
-    T_step = size(E_z, 2)
+    tstep = size(E_z, 2)
     
     # Pre-compute constants
     R_chol = cholesky(Symmetric(R))
@@ -896,14 +896,14 @@ end
 Compute sufficient statistics for the EM algorithm in a Linear Dynamical System.
 
 # Arguments
-- `x_smooth::AbstractArray{T,3}`: Smoothed state estimates, size (state_dim, state_dim, T_steps, n_trials)
-- `p_smooth::AbstractArray{T,4}`: Smoothed state covariances, size (state_dim, state_dim, T_steps, n_trials, state_dim)
-- `p_smooth_t1::AbstractArray{T,4}`: Lag-one covariance smoother, size (state_dim, state_dim, T_steps, n_trials, state_dim)
+- `x_smooth::AbstractArray{T,3}`: Smoothed state estimates, size (state_dim, state_dim, tsteps, ntrials)
+- `p_smooth::AbstractArray{T,4}`: Smoothed state covariances, size (state_dim, state_dim, tsteps, ntrials, state_dim)
+- `p_smooth_t1::AbstractArray{T,4}`: Lag-one covariance smoother, size (state_dim, state_dim, tsteps, ntrials, state_dim)
 
 # Returns
-- `E_z::AbstractArray{T,3}`: Expected latent states, size (state_dim, state_dim, T_steps, n_trials)
-- `E_zz::AbstractArray{T,4}`: Expected z_t * z_t', size (state_dim, state_dim, T_steps, n_trials, state_dim)
-- `E_zz_prev::AbstractArray{T,4}`: Expected z_t * z_{t-1}', size (state_dim, state_dim, T_steps, n_trials, state_dim)
+- `E_z::AbstractArray{T,3}`: Expected latent states, size (state_dim, state_dim, tsteps, ntrials)
+- `E_zz::AbstractArray{T,4}`: Expected z_t * z_t', size (state_dim, state_dim, tsteps, ntrials, state_dim)
+- `E_zz_prev::AbstractArray{T,4}`: Expected z_t * z_{t-1}', size (state_dim, state_dim, tsteps, ntrials, state_dim)
 
 # Note
 - The function computes the expected values for all trials.
@@ -942,15 +942,15 @@ Perform the E-step of the EM algorithm for a Linear Dynamical System, treating a
 
 # Arguments
 - `lds::LinearDynamicalSystem{T,S,O}`: The Linear Dynamical System struct
-- `y::AbstractArray{T,3}`: Observed data, size (obs_dim, T_steps, n_trials)
-    Note: For single-trial data, use y[1:1, :, :] to create a 3D array with n_trials = 1
+- `y::AbstractArray{T,3}`: Observed data, size (obs_dim, tsteps, ntrials)
+    Note: For single-trial data, use y[1:1, :, :] to create a 3D array with ntrials = 1
 
 # Returns
-- `E_z::AbstractArray{T,3}`: Expected latent states, size (state_dim, state_dim, T_steps, n_trials)
-- `E_zz::AbstractArray{T,4}`: Expected z_t * z_t', size (state_dim, state_dim, T_steps, n_trials, state_dim)
-- `E_zz_prev::AbstractArray{T,4}`: Expected z_t * z_{t-1}', size (state_dim, state_dim, T_steps, n_trials, state_dim)
-- `x_smooth::AbstractArray{T,3}`: Smoothed state estimates, size (state_dim, state_dim, T_steps, n_trials)
-- `p_smooth::AbstractArray{T,4}`: Smoothed state covariances, size (state_dim, state_dim, T_steps, n_trials, state_dim)
+- `E_z::AbstractArray{T,3}`: Expected latent states, size (state_dim, state_dim, tsteps, ntrials)
+- `E_zz::AbstractArray{T,4}`: Expected z_t * z_t', size (state_dim, state_dim, tsteps, ntrials, state_dim)
+- `E_zz_prev::AbstractArray{T,4}`: Expected z_t * z_{t-1}', size (state_dim, state_dim, tsteps, ntrials, state_dim)
+- `x_smooth::AbstractArray{T,3}`: Smoothed state estimates, size (state_dim, state_dim, tsteps, ntrials)
+- `p_smooth::AbstractArray{T,4}`: Smoothed state covariances, size (state_dim, state_dim, tsteps, ntrials, state_dim)
 - `ml::T`: Total marginal likelihood (log-likelihood) of the data across all trials
 
 # Note
@@ -979,11 +979,11 @@ Calculate the Evidence Lower Bound (ELBO) for a Linear Dynamical System.
 
 # Arguments
 - `lds::LinearDynamicalSystem{T,S,O}`: The Linear Dynamical System struct
-- `E_z::AbstractArray{T,3}`: Expected latent states, size (state_dim, state_dim, T_steps, n_trials)
-- `E_zz::AbstractArray{T,4}`: Expected z_t * z_t', size (state_dim, state_dim, T_steps, n_trials, state_dim)
-- `E_zz_prev::AbstractArray{T,4}`: Expected z_t * z_{t-1}', size (state_dim, state_dim, T_steps, n_trials, state_dim)
-- `p_smooth::AbstractArray{T,4}`: Smoothed state covariances, size (state_dim, state_dim, T_steps, n_trials, state_dim)
-- `y::AbstractArray{T,3}`: Observed data, size (obs_dim, T_steps, n_trials)
+- `E_z::AbstractArray{T,3}`: Expected latent states, size (state_dim, state_dim, tsteps, ntrials)
+- `E_zz::AbstractArray{T,4}`: Expected z_t * z_t', size (state_dim, state_dim, tsteps, ntrials, state_dim)
+- `E_zz_prev::AbstractArray{T,4}`: Expected z_t * z_{t-1}', size (state_dim, state_dim, tsteps, ntrials, state_dim)
+- `p_smooth::AbstractArray{T,4}`: Smoothed state covariances, size (state_dim, state_dim, tsteps, ntrials, state_dim)
+- `y::AbstractArray{T,3}`: Observed data, size (obs_dim, tsteps, ntrials)
 
 # Returns
 - `elbo::T`: The Evidence Lower Bound (ELBO) for the LDS.
@@ -1032,7 +1032,7 @@ Update the initial state mean of the Linear Dynamical System using the average a
 
 # Arguments
 - `lds::LinearDynamicalSystem{T,S,O}`: The Linear Dynamical System struct
-- `E_z::AbstractArray{T,3}`: Expected latent states, size (state_dim, state_dim, T_steps, n_trials)
+- `E_z::AbstractArray{T,3}`: Expected latent states, size (state_dim, state_dim, tsteps, ntrials)
 
 # Note
 - This function modifies `lds` in-place.
@@ -1058,8 +1058,8 @@ Update the initial state covariance of the Linear Dynamical System using the ave
 
 # Arguments
 - `lds::LinearDynamicalSystem{T,S,O}`: The Linear Dynamical System struct
-- `E_z::AbstractArray{T,3}`: Expected latent states, size (state_dim, state_dim, T_steps, n_trials)
-- `E_zz::AbstractArray{T,4}`: Expected z_t * z_t', size (state_dim, state_dim, T_steps, n_trials, state_dim)
+- `E_z::AbstractArray{T,3}`: Expected latent states, size (state_dim, state_dim, tsteps, ntrials)
+- `E_zz::AbstractArray{T,4}`: Expected z_t * z_t', size (state_dim, state_dim, tsteps, ntrials, state_dim)
 
 # Note
 - This function modifies `lds` in-place.
@@ -1093,8 +1093,8 @@ Update the transition matrix A of the Linear Dynamical System.
 
 # Arguments
 - `lds::LinearDynamicalSystem{T,S,O}`: The Linear Dynamical System struct
-- `E_zz::Array{T, 4}`: Expected z_t * z_t', size (state_dim, state_dim, T_steps, n_trials)
-- `E_zz_prev::Array{T, 4}`: Expected z_t * z_{t-1}', size (state_dim, state_dim, T_steps, n_trials)
+- `E_zz::Array{T, 4}`: Expected z_t * z_t', size (state_dim, state_dim, tsteps, ntrials)
+- `E_zz_prev::Array{T, 4}`: Expected z_t * z_{t-1}', size (state_dim, state_dim, tsteps, ntrials)
 
 # Note
 - This function modifies `lds` in-place.
@@ -1126,8 +1126,8 @@ Update the process noise covariance matrix Q of the Linear Dynamical System.
 
 # Arguments
 - `lds::LinearDynamicalSystem{T,S,O}`: The Linear Dynamical System struct
-- `E_zz::Array{T, 4}`: Expected z_t * z_t', size (state_dim, state_dim, T_steps, n_trials)
-- `E_zz_prev::Array{T, 4}`: Expected z_t * z_{t-1}', size (state_dim, state_dim, T_steps, n_trials)
+- `E_zz::Array{T, 4}`: Expected z_t * z_t', size (state_dim, state_dim, tsteps, ntrials)
+- `E_zz_prev::Array{T, 4}`: Expected z_t * z_{t-1}', size (state_dim, state_dim, tsteps, ntrials)
 
 # Note
 - This function modifies `lds` in-place.
@@ -1168,9 +1168,9 @@ Update the observation matrix C of the Linear Dynamical System.
 
 # Arguments
 - `lds::LinearDynamicalSystem{T,S,O}`: The Linear Dynamical System struct
-- `E_z::AbstractArray{T,3}`: Expected latent states, size (state_dim, state_dim, T_steps, n_trials)
-- `E_zz::AbstractArray{T,4}`: Expected z_t * z_t', size (state_dim, state_dim, T_steps, n_trials)
-- `y::AbstractArray{T,3}`: Observed data, size (obs_dim, T_steps, n_trials)
+- `E_z::AbstractArray{T,3}`: Expected latent states, size (state_dim, state_dim, tsteps, ntrials)
+- `E_zz::AbstractArray{T,4}`: Expected z_t * z_t', size (state_dim, state_dim, tsteps, ntrials)
+- `y::AbstractArray{T,3}`: Observed data, size (obs_dim, tsteps, ntrials)
 
 # Note
 - This function modifies `lds` in-place.
@@ -1205,9 +1205,9 @@ Update the observation noise covariance matrix R of the Linear Dynamical System.
 
 # Arguments
 - `lds::LinearDynamicalSystem{T,S,O}`: The Linear Dynamical System struct
-- `E_z::AbstractArray{T,3}`: Expected latent states, size (state_dim, state_dim, T_steps, n_trials)
-- `E_zz::AbstractArray{T,4}`: Expected z_t * z_t', size (state_dim, state_dim, T_steps, n_trials)
-- `y::AbstractArray{T,3}`: Observed data, size (obs_dim, T_steps, n_trials)
+- `E_z::AbstractArray{T,3}`: Expected latent states, size (state_dim, state_dim, tsteps, ntrials)
+- `E_zz::AbstractArray{T,4}`: Expected z_t * z_t', size (state_dim, state_dim, tsteps, ntrials)
+- `y::AbstractArray{T,3}`: Observed data, size (obs_dim, tsteps, ntrials)
 
 # Note
 - This function modifies `lds` in-place.
@@ -1263,11 +1263,11 @@ Perform the M-step of the EM algorithm for a Linear Dynamical System with multi-
 
 # Arguments
 - `lds::LinearDynamicalSystem{T,S,O}`: The Linear Dynamical System struct
-- `E_z::AbstractArray{T,3}`: Expected latent states, size (state_dim, state_dim, T_steps, n_trials)
-- `E_zz::AbstractArray{T,4}`: Expected z_t * z_t', size (state_dim, state_dim, T_steps, n_trials)
-- `E_zz_prev::AbstractArray{T,4}`: Expected z_t * z_{t-1}', size (state_dim, state_dim, T_steps, n_trials)
-- `p_smooth::AbstractArray{T,4}`: Smoothed state covariances, size (state_dim, state_dim, T_steps, n_trials) (not used)
-- `y::AbstractArray{T,3}`: Observed data, size (obs_dim, T_steps, n_trials)
+- `E_z::AbstractArray{T,3}`: Expected latent states, size (state_dim, state_dim, tsteps, ntrials)
+- `E_zz::AbstractArray{T,4}`: Expected z_t * z_t', size (state_dim, state_dim, tsteps, ntrials)
+- `E_zz_prev::AbstractArray{T,4}`: Expected z_t * z_{t-1}', size (state_dim, state_dim, tsteps, ntrials)
+- `p_smooth::AbstractArray{T,4}`: Smoothed state covariances, size (state_dim, state_dim, tsteps, ntrials) (not used)
+- `y::AbstractArray{T,3}`: Observed data, size (obs_dim, tsteps, ntrials)
 
 # Note
 - This function modifies `lds` in-place by updating all model parameters.
@@ -1315,7 +1315,7 @@ Fit a Linear Dynamical System using the Expectation-Maximization (EM) algorithm 
 
 # Arguments
 - `lds::LinearDynamicalSystem{T,S,O}`: The Linear Dynamical System to be fitted.
-- `y::AbstractMatrix{T}`: Observed data, size (obs_dim, T_steps).
+- `y::AbstractMatrix{T}`: Observed data, size (obs_dim, tsteps).
 
 # Keyword Arguments
 - `max_iter::Int=1000`: Maximum number of EM iterations.
@@ -1428,9 +1428,9 @@ end
 Calculate the complete-data log-likelihood of a Poisson Linear Dynamical System model for a single trial. 
 
 # Arguments
-- `x::AbstractMatrix{T}`: The latent state variables. Dimensions: (latent_dim, T_steps)
+- `x::AbstractMatrix{T}`: The latent state variables. Dimensions: (latent_dim, tsteps)
 - `lds::LinearDynamicalSystem{T,S,O}`: The Linear Dynamical System model.
-- `y::AbstractMatrix{T}`: The observed data. Dimensions: (obs_dim, T_steps)
+- `y::AbstractMatrix{T}`: The observed data. Dimensions: (obs_dim, tsteps)
 - `w::Vector{T}`: Weights for each observation in the log-likelihood calculation. Not currently used.
 
 # Returns
@@ -1487,9 +1487,9 @@ end
 Calculate the complete-data log-likelihood of a Poisson Linear Dynamical System model for multiple trials.
 
 # Arguments
-- `x::Array{T, 3}`: The latent state variables. Dimensions: (latent_dim, T_Steps, n_trials)
+- `x::Array{T, 3}`: The latent state variables. Dimensions: (latent_dim, tsteps, ntrials)
 - `lds::LinearDynamicalSystem{T,S,O}`: The Linear Dynamical System model.
-- `y::Array{T, 3}`: The observed data. Dimensions: (obs_dim, T_steps, n_trials)
+- `y::Array{T, 3}`: The observed data. Dimensions: (obs_dim, tsteps, ntrials)
 
 # Returns
 - `ll::T`: The log-likelihood value.
@@ -1519,12 +1519,12 @@ Calculate the gradient of the log-likelihood of a Poisson Linear Dynamical Syste
 
 # Arguments
 - `lds::LinearDynamicalSystem{T,S,O}`: The Linear Dynamical System model.
-- `y::AbstractMatrix{T}`: The observed data. Dimensions: (obs_dim, T_steps)
-- `x::AbstractMatrix{T}`: The latent state variables. Dimensions: (latent_dim, T_steps)
+- `y::AbstractMatrix{T}`: The observed data. Dimensions: (obs_dim, tsteps)
+- `x::AbstractMatrix{T}`: The latent state variables. Dimensions: (latent_dim, tsteps)
 - `w::Vector{T}`: Weights for each observation in the log-likelihood calculation. Not currently used.
 
 # Returns
-- `grad::AbstractMatrix{T}`: The gradient of the log-likelihood. Dimensions: (latent_dim, T_steps)
+- `grad::AbstractMatrix{T}`: The gradient of the log-likelihood. Dimensions: (latent_dim, tsteps)
 
 # Note
 The gradient is computed with respect to the latent states x. Each row of the returned gradient
@@ -1549,7 +1549,7 @@ function Gradient(
     inv_Q = inv(Q)
 
     # Pre-allocate gradient
-    grad = zeros(T, lds.latent_dim, T_steps)
+    grad = zeros(T, lds.latent_dim, tsteps)
 
     # Calculate gradient for each time step
     @views for t in 1:tsteps
@@ -1586,8 +1586,8 @@ of the log-likelihood with respect to the latent states.
 
 # Arguments
 - `lds::LinearDynamicalSystem{T,S,O}`: The Linear Dynamical System with Poisson observations.
-- `y::AbstractMatrix{T}`: The observed data. Dimensions: (obs_dim, T_steps)
-- `x::AbstractMatrix{T}`: The current estimate of latent states. Dimensions: (latent_dim, T_steps)
+- `y::AbstractMatrix{T}`: The observed data. Dimensions: (obs_dim, tsteps)
+- `x::AbstractMatrix{T}`: The current estimate of latent states. Dimensions: (latent_dim, tsteps)
 - `w::Vector{T}`: Weights for each observation in the log-likelihood calculation. Not currently used.
 
 # Returns
@@ -1721,7 +1721,7 @@ function Q_observation_model(
     d = exp.(log_d)
     Q_val = zero(T)
     trials = size(E_z, 3)
-    time_steps = size(E_z, 2)
+    tsteps = size(E_z, 2)
 
     h = Vector{T}(undef, obs_dim)
     ρ = Vector{T}(undef, obs_dim)
@@ -1732,7 +1732,7 @@ function Q_observation_model(
     end
 
     @threads for k in 1:trials
-        @views for t in 1:time_steps
+        @views for t in 1:tsteps
             Ez_t = view(E_z, :, t, k)
             P_t  = view(P_smooth, :, :, t, k)
             y_t  = view(y, :, t, k)
@@ -1801,11 +1801,11 @@ Calculate the Evidence Lower Bound (ELBO) for a Poisson Linear Dynamical System 
 
 # Arguments
 - `plds::LinearDynamicalSystem{T,S,O}`: The PLDS model.
-- `E_z::Array{T, 3}`: Expected values of latent states. Dimensions: (state_dim, t_steps, n_trials).
-- `E_zz::Array{T, 4}`: Expected values of latent state outer products. Dimensions: (state_dim, state_dim, t_steps, n_trials).
-- `E_zz_prev::Array{T, 4}`: Expected values of latent state outer products with previous time step. Dimensions: (state dimension, state dimension, t_steps-1, n_trials).
-- `P_smooth::Array{T, 4}`: Smoothed covariance matrices. Dimensions: (state dimension, state dimension, t_steps, n_trials).
-- `y::Array{T, 3}`: Observed data. Dimensions: (obs_dim, t_steps, n_trials).
+- `E_z::Array{T, 3}`: Expected values of latent states. Dimensions: (state_dim, tsteps, ntrials).
+- `E_zz::Array{T, 4}`: Expected values of latent state outer products. Dimensions: (state_dim, state_dim, tsteps, ntrials).
+- `E_zz_prev::Array{T, 4}`: Expected values of latent state outer products with previous time step. Dimensions: (state dimension, state dimension, tsteps-1, ntrials).
+- `P_smooth::Array{T, 4}`: Smoothed covariance matrices. Dimensions: (state dimension, state dimension, tsteps, ntrials).
+- `y::Array{T, 3}`: Observed data. Dimensions: (obs_dim, tsteps, ntrials).
 
 # Returns
 - `elbo::Float64`: The calculated Evidence Lower Bound.
@@ -1869,7 +1869,7 @@ function gradient_observation_model!(
 ) where {T<:Real}
     d = exp.(log_d)
     obs_dim, latent_dim = size(C)
-    latent_dim, time_steps, trials = size(E_z)
+    latent_dim, tsteps, trials = size(E_z)
     
     # Pre-allocate shared temporary arrays
     h = zeros(T, obs_dim)
@@ -1883,7 +1883,7 @@ function gradient_observation_model!(
         # Local temporary arrays for each thread
         local_grad = zeros(T, length(grad))
         
-        @views for t in 1:time_steps
+        @views for t in 1:tsteps
             
             # Compute h = C * z_t + d in-place
             mul!(h, C, E_z[:, t, k])
@@ -1929,9 +1929,9 @@ Update the observation model parameters of a Poisson Linear Dynamical System usi
 
 # Arguments
 - `plds::LinearDynamicalSystem{T,S,O}`: The Poisson Linear Dynamical System model.
-- `E_z::Array{T, 3}`: The expected latent states. Dimensions: (latent_dim, T_Steps, n_trials)
-- `P_smooth::Array{T, 4}`: The smoothed state covariances. Dimensions: (latent_dim, T_Steps, n_trials, latent_dim)
-- `y::Array{T, 3}`: The observed data. Dimensions: (obs_dim, T_steps, n_trials)
+- `E_z::Array{T, 3}`: The expected latent states. Dimensions: (latent_dim, tsteps, ntrials)
+- `P_smooth::Array{T, 4}`: The smoothed state covariances. Dimensions: (latent_dim, tsteps, ntrials, latent_dim)
+- `y::Array{T, 3}`: The observed data. Dimensions: (obs_dim, tsteps, ntrials)
 
 # Note
 This function modifies `plds` in-place by updating the observation model parameters (C and log_d).
@@ -1985,11 +1985,11 @@ Perform the M-step of the EM algorithm for a Poisson Linear Dynamical System wit
 
 # Arguments
 - `plds::LinearDynamicalSystem{T,S,O}`: The Poisson Linear Dynamical System struct.
-- `E_z::AbstractArray{T,3}`: Expected latent states, size (state_dim, state_dim, T_steps, n_trials)
-- `E_zz::AbstractArray{T,4}`: Expected z_t * z_t', size (state_dim, state_dim, T_steps, n_trials)
-- `E_zz_prev::AbstractArray{T,4}`: Expected z_t * z_{t-1}', size (state_dim, state_dim, T_steps, n_trials)
-- `p_smooth::AbstractArray{T,4}`: Smoothed state covariances, size (state_dim, state_dim, T_steps, n_trials)
-- `y::AbstractArray{T,3}`: Observed data, size (obs_dim, T_steps, n_trials)
+- `E_z::AbstractArray{T,3}`: Expected latent states, size (state_dim, state_dim, tsteps, ntrials)
+- `E_zz::AbstractArray{T,4}`: Expected z_t * z_t', size (state_dim, state_dim, tsteps, ntrials)
+- `E_zz_prev::AbstractArray{T,4}`: Expected z_t * z_{t-1}', size (state_dim, state_dim, tsteps, ntrials)
+- `p_smooth::AbstractArray{T,4}`: Smoothed state covariances, size (state_dim, state_dim, tsteps, ntrials)
+- `y::AbstractArray{T,3}`: Observed data, size (obs_dim, tsteps, ntrials)
 
 # Note
 - This function modifies `plds` in-place by updating all model parameters.

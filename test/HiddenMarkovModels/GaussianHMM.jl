@@ -169,7 +169,7 @@ function test_trialized_GaussianHMM()
 
     # Run 100 sampling trials
     for i in 1:n_trials
-        true_labels, data = StateSpaceDynamics.sample(true_model, n=n_samples)
+        true_labels, data = rand(true_model, n=n_samples)
         all_true_labels[i] = true_labels
         all_data[i] = data
     end
