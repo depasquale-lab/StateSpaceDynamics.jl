@@ -21,7 +21,7 @@ function test_SwitchingGaussianRegression_fit()
     # Sample from the model
     n = 20000
     Φ = randn(3, n)
-    true_labels, data = StateSpaceDynamics.sample(true_model, Φ; n=n)
+    true_labels, data = rand(true_model, Φ; n=n)
 
     # Try to fit a new model to the data
     test_model = StateSpaceDynamics.SwitchingGaussianRegression(;
@@ -75,7 +75,7 @@ function test_SwitchingGaussianRegression_SingleState_fit()
     # Sample from the model
     n = 20000
     Φ = randn(3, n)
-    true_labels, data = StateSpaceDynamics.sample(true_model, Φ; n=n)
+    true_labels, data = rand(true_model, Φ; n=n)
 
     # Try to fit a new model to the data
     test_model = StateSpaceDynamics.SwitchingGaussianRegression(;

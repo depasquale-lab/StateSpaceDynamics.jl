@@ -202,7 +202,7 @@ include("MixtureModels/PoissonMixtureModel.jl")
     temp_pmm = PoissonMixtureModel(k)
     temp_pmm.λₖ = [5.0, 10.0, 15.0]  # Assign some λ values for generating data
     temp_pmm.πₖ = [1 / 3, 1 / 3, 1 / 3]  # Equal mixing coefficients for simplicity
-    data = StateSpaceDynamics.sample(temp_pmm, 300)  # Generate sample data
+    data = rand(temp_pmm, 300)  # Generate sample data
 
     standard_pmm = PoissonMixtureModel(k)
 
@@ -301,6 +301,7 @@ include("Preprocessing/Preprocessing.jl")
     test_PPCA_without_params()
     test_PPCA_E_and_M_Step()
     test_PPCA_fit()
+    test_PPCA_samples()
 end
 
 include("HiddenMarkovModels/State_Labellers.jl")

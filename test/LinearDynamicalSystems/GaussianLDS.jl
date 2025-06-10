@@ -25,7 +25,7 @@ function toy_lds(
 
     # sample data
     T = 100
-    x, y = StateSpaceDynamics.sample(lds, T, ntrials) # 100 timepoints, 1 trials
+    x, y = StateSpaceDynamics.rand(lds; tsteps=T, ntrials=ntrials) # 100 timepoints, 1 trials
 
     return lds, x, y
 end
