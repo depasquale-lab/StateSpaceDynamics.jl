@@ -31,9 +31,12 @@ StateSpaceDynamics.jl is designed to be user friendly with intuitive syntax. Bel
 ```julia
 using StateSpaceDynamics
 using LinearAlgebra
+using Random
+
+# Set seed for reproducibility
+rng = MersenneTwister(42)
 
 # create a toy system
-
 # initial conditions
 x0 = [1.0, -1.0] # initial state
 P0 = Matrix(Diagonal([0.1, 0.1])) # initial state covariance
@@ -51,7 +54,7 @@ tSteps = 100
 trials = 10
 
 true_plds = PoissonLDS(;A=A, Q=Q, C=C, log_d=log_d, x0=x0, P0=P0, obs_dim=3, latent_dim=2)
-latents, observations = sample(true_plds, tSteps, trials)
+latents, observations = rand(rng, true_plds; tsteps=tSteps, ntrials=trials)
 
 # fit the model 
 plds = PoissonLDS(;obs_dim=3, latent_dim=2)

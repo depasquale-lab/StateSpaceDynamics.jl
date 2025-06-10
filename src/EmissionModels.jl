@@ -9,7 +9,7 @@ This module implements various emission models for state space modeling, includi
 # Exports
 export EmissionModel, RegressionEmission
 export GaussianEmission, GaussianRegressionEmission, BernoulliRegressionEmission, PoissonRegressionEmission, AutoRegressionEmission
-export sample, loglikelihood, fit!
+export loglikelihood, fit!
 
 #=
 Gaussian Emission Models
@@ -51,13 +51,13 @@ end
 
 
 """
-    loglikelihood(model::GaussianEmission, Y::Matrix{<:Real})
+    loglikelihood(model::GaussianEmission, Y::AbstractMatrix{<:Real})
 
 Calculate the log likelihood of the data `Y` given the Gaussian emission model.
 
 # Arguments
 - `model::GaussianEmission`: The Gaussian emission model for which to calculate the log likelihood.
-- `Y::Matrix{<:Real}`: The data matrix, where each row represents an observation.
+- `Y::AbstractMatrix{<:Real}`: The data matrix, where each row represents an observation.
 
 # Returns
 - `Vector{Float64}`: A vector of log likelihoods, one for each observation in the data.
@@ -67,7 +67,7 @@ function loglikelihood(model::GaussianEmission, Y::AbstractMatrix{T}) where {T<:
     dist = MvNormal(model.μ, model.Σ)
 
     # Calculate log likelihood for each observation
-    return [logpdf(dist, Y[i, :]) for i in axes(Y, 1)]
+    return [logpdf(dist, @view(Y[i, :])) for i in axes(Y, 1)]
 end
 
 """
@@ -75,20 +75,24 @@ end
 
 Generate `n` samples from a Gaussian model. Returns a matrix of size `(n, output_dim)`.
 """
-function sample(model::GaussianEmission; n::Int=1)
-    raw_samples = rand(MvNormal(model.μ, model.Σ), n)
+function Random.rand(rng::AbstractRNG, model::GaussianEmission; n::Int=1)
+    raw_samples = rand(rng, MvNormal(model.μ, model.Σ), n)
     return Matrix(raw_samples')
 end
 
+function Random.rand(model::GaussianEmission; kwargs...)
+    return rand(Random.default_rng(), model; kwargs...)
+end
+
 """
-    fit!(model::GaussianEmission, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    fit!(model::GaussianEmission, Y::AbstractMatrix{<:Real}, w::AbstractVector{Float64}=ones(size(Y, 1)))
 
 Fit a GaussianEmission model to the data `Y`. 
 
 # Arguments
 - `model::GaussianEmission`: Gaussian model to fit.
-- `Y::Matrix{<:Real}`: Data to fit the model to. Should be a matrix of size `(n, output_dim)`.
-- `w::Vector{Float64}=ones(size(Y, 1))`: Weights for the data. Should be a vector of size `n`.
+- `Y::AbstractMatrix{<:Real}`: Data to fit the model to. Should be a matrix of size `(n, output_dim)`.
+- `w::AbstractVector{Float64}=ones(size(Y, 1))`: Weights for the data. Should be a vector of size `n`.
 """
 function fit!(
     model::GaussianEmission, Y::AbstractMatrix{T}, w::AbstractVector{T}=ones(size(Y, 1))
@@ -162,7 +166,7 @@ Calculate L2 regularization term for regression coefficients.
 function calc_regularization(β::AbstractMatrix{T}, λ::T, include_intercept::Bool=true) where {T<:AbstractFloat}
     # calculate L2 penalty
     if include_intercept
-        regularization = 0.5 * λ * sum(abs2, β[2:end, :])
+        regularization = 0.5 * λ * sum(abs2, @view(β[2:end, :]))
     else
         regularization = 0.5 * λ * sum(abs2, β)
     end
@@ -187,7 +191,7 @@ function calc_regularization_gradient(
     regularization = zeros(size(β))
 
     if include_intercept
-        regularization[2:end, :] .= λ * β[2:end, :]
+        regularization[2:end, :] .= λ * @view(β[2:end, :])
     else
         regularization .= λ * β
     end
@@ -240,41 +244,40 @@ end
 
 
 """
-    sample(model::GaussianRegressionEmission, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
+    sample(model::GaussianRegressionEmission, Φ::AbstractMatrix{<:Real}; n::Int=size(Φ, 1))
 
 Generate `n` samples from a Gaussian regression model. Returns a matrix of size `(n, output_dim)`.
 
 # Arguments
 - `model::GaussianRegressionEmission`: Gaussian regression model.
-- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
+- `Φ::AbstractMatrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
 - `n::Int=size(Φ, 1)`: Number of samples to generate.
 
 # Returns
-- `Y::Matrix{<:Real}`: Matrix of samples of shape `(n, output_dim)`.
+- `Y::AbstractMatrix{<:Real}`: Matrix of samples of shape `(n, output_dim)`.
 """
-function sample(model::GaussianRegressionEmission, Φ::Union{Matrix{T},Vector{T}}) where {T<:AbstractFloat}
-    # Ensure Φ is a 2D matrix even if it's a single sample
+function Random.rand(rng::AbstractRNG, model::GaussianRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
     Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
-
-    # Add intercept column if specified
     if model.include_intercept
         Φ = hcat(ones(size(Φ, 1)), Φ)
     end
-
-    # Ensure the noise dimensions match the output dimension and sample size
-    noise = rand(MvNormal(zeros(model.output_dim), model.Σ), size(Φ, 1))'
+    noise = rand(rng, MvNormal(zeros(model.output_dim), model.Σ), size(Φ, 1))'
     return Φ * model.β + noise
 end
 
+function Random.rand(model::GaussianRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
+    return rand(Random.default_rng(), model, Φ)
+end
+
 """
-    loglikelihood(model::GaussianRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real})
+    loglikelihood(model::GaussianRegressionEmission, Φ::AbstractMatrix{<:Real}, Y::AbstractMatrix{<:Real})
 
 Calculate the log likelihood of the data `Y` given the Gaussian regression emission model and the input features `Φ`.
 
 # Arguments
 - `model::GaussianRegressionEmission`: The Gaussian regression emission model for which to calculate the log likelihood.
-- `Φ::Matrix{<:Real}`: The input features matrix (Observations x Features).
-- `Y::Matrix{<:Real}`: The data matrix (Observations x Features).
+- `Φ::AbstractMatrix{<:Real}`: The input features matrix (Observations x Features).
+- `Y::AbstractMatrix{<:Real}`: The data matrix (Observations x Features).
 
 # Returns
 - `Vector{Float64}`: A vector of log likelihoods, one for each observation in the data.
@@ -288,7 +291,6 @@ function loglikelihood(
     # Add intercept if specified
     Φ = model.include_intercept ? [ones(size(Φ, 1)) Φ] : Φ
     
-
     # residuals
     residuals = Y - Φ * model.β
 
@@ -301,7 +303,6 @@ function loglikelihood(
 
     return -0.5 .* weighted_residuals
 end
-
 
 """
     AutoRegressionEmission <: EmissionModel
@@ -373,7 +374,7 @@ function construct_AR_feature_matrix(data::AbstractMatrix{T}, order::Int, includ
     AR_feats_matrix = zeros(T, num_feats_AR, T_AR)
 
     # Fill in the AR_feats_matrix
-    for iter = order+1:t
+    @views for iter = order+1:T
         AR_feats_matrix[:, iter-order] = reshape(data[:, iter-order:iter], :, 1)
     end
 
@@ -405,8 +406,7 @@ function construct_AR_feature_matrix(data::AbstractVector{<:AbstractMatrix{T}}, 
     AR_feats_matrices = Vector{Matrix{T}}(undef, length(data))
     
     # Compute AR feature matrix for each trial
-    for trial_idx in eachindex(data)
-        print(data[trial_idx])
+    @views for trial_idx in eachindex(data)
         AR_feats_matrices[trial_idx] = construct_AR_feature_matrix(data[trial_idx], order, include_intercept)
     end
 
@@ -426,12 +426,12 @@ Generate a sample from the given autoregressive emission model using the previou
 # Returns
 - `Matrix{Float64}`: The updated observation sequence with the new sample appended.
 """
-function sample(model::AutoRegressionEmission, X::AbstractMatrix{T}) where {T<:AbstractFloat}
+function Random.rand(rng::AbstractRNG, model::AutoRegressionEmission, X::Matrix{<:Real})
     # Extract the last column of X as input
     last_observation = X[:, end]
 
-    # Sample new observation using the Gaussian regression emission function
-    new_observation = sample(model.innerGaussianRegression, last_observation)
+    # Sample new observation using the inner Gaussian regression model
+    new_observation = rand(rng, model.innerGaussianRegression, last_observation)
     new_observation = reshape(new_observation, :, 1)
 
     # Append the new sample as a new column
@@ -440,15 +440,19 @@ function sample(model::AutoRegressionEmission, X::AbstractMatrix{T}) where {T<:A
     return X, new_observation
 end
 
+function Random.rand(model::AutoRegressionEmission, X::Matrix{<:Real})
+    return rand(Random.default_rng(), model, X)
+end
+
 """
-    loglikelihood(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::Matrix{<:Real})
+    loglikelihood(model::AutoRegressionEmission, Y_prev::Matrix{<:Real}, Y::AbstractMatrix{<:Real})
 
 Calculate the log likelihood of the data `Y` given the autoregressive emission model and the previous observations `Y_prev`.
 
 # Arguments
 - `model::AutoRegressionEmission`: The autoregressive emission model for which to calculate the log likelihood.
 - `Y_prev::Matrix{<:Real}`: The matrix of previous observations, where each row represents an observation.
-- `Y::Matrix{<:Real}`: The data matrix, where each row represents an observation.
+- `Y::AbstractMatrix{<:Real}`: The data matrix, where each row represents an observation.
 
 # Returns
 - `Vector{Float64}`: A vector of log likelihoods, one for each observation in the data.
@@ -577,42 +581,41 @@ end
 
 
 """
-    sample(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
+    sample(model::BernoulliRegressionEmission, Φ::AbstractMatrix{<:Real}; n::Int=size(Φ, 1))
 
 Generate `n` samples from a Bernoulli regression model. Returns a matrix of size `(n, 1)`.
 
 # Arguments
 - `model::BernoulliRegressionEmission`: Bernoulli regression model.
-- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
+- `Φ::AbstractMatrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
 - `n::Int=size(Φ, 1)`: Number of samples to generate.
 
 # Returns
-- `Y::Matrix{<:Real}`: Matrix of samples of shape `(n, 1)`.
+- `Y::AbstractMatrix{<:Real}`: Matrix of samples of shape `(n, 1)`.
 """
-function sample(model::BernoulliRegressionEmission, Φ::Union{Matrix{T},Vector{T}}) where {T<:Real}
-    # Ensure Φ is a 2D matrix even if it's a single sample
+function Random.rand(rng::AbstractRNG, model::BernoulliRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
     Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
-
-    # add intercept if specified
-    if model.include_intercept && size(Φ, 2) == size(model.β,1) - 1
+    if model.include_intercept && size(Φ, 2) == length(model.β) - 1
         Φ = hcat(ones(size(Φ, 1)), Φ)
     end
-
-    Y = rand.(Bernoulli.(logistic.(Φ * model.β)))
-
+    Y = rand.(rng, Bernoulli.(logistic.(Φ * model.β)))
     return float.(reshape(Y, :, 1))
 end
 
+function Random.rand(model::BernoulliRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
+    return rand(Random.default_rng(), model, Φ)
+end
+
 """
-    loglikelihood(model::BernoulliRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    loglikelihood(model::BernoulliRegressionEmission, Φ::AbstractMatrix{<:Real}, Y::AbstractMatrix{<:Real}, w::AbstractVector{Float64}=ones(size(Y, 1)))
 
 Calculate the log likelihood of the data `Y` given the Bernoulli regression emission model and the input features `Φ`. Optionally, a vector of weights `w` can be provided.
 
 # Arguments
 - `model::BernoulliRegressionEmission`: The Bernoulli regression emission model for which to calculate the log likelihood.
-- `Φ::Matrix{<:Real}`: The input features matrix (Observations x Features).
-- `Y::Matrix{<:Real}`: The data matrix (Observations x Features).
-- `w::Vector{Float64}`: A vector of weights corresponding to each observation (defaults to a vector of ones).
+- `Φ::AbstractMatrix{<:Real}`: The input features matrix (Observations x Features).
+- `Y::AbstractMatrix{<:Real}`: The data matrix (Observations x Features).
+- `w::AbstractVector{Float64}`: A vector of weights corresponding to each observation (defaults to a vector of ones).
 
 # Returns
 - `Vector{Float64}`: A vector of log likelihoods, one for each observation in the data.
@@ -709,46 +712,41 @@ function PoissonRegressionEmission(;
 end
 
 """
-    sample(model::PoissonRegressionEmission, Φ::Matrix{<:Real}; n::Int=size(Φ, 1))
+    sample(model::PoissonRegressionEmission, Φ::AbstractMatrix{<:Real}; n::Int=size(Φ, 1))
 
 Generate `n` samples from a Poisson regression model. Returns a matrix of size `(n, 1)`.
 
 # Arguments
 - `model::PoissonRegressionEmission`: Poisson regression model.
-- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
+- `Φ::AbstractMatrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
 - `n::Int=size(Φ, 1)`: Number of samples to generate.
 
 # Returns
-- `Y::Matrix{<:Real}`: Matrix of samples of shape `(n, 1)`.
+- `Y::AbstractMatrix{<:Real}`: Matrix of samples of shape `(n, 1)`.
 """
-function sample(model::PoissonRegressionEmission, Φ::Union{Matrix{T},Vector{T}}) where {T<:Real}
-    # Ensure Φ is a 2D matrix even if it's a single sample
+function Random.rand(rng::AbstractRNG, model::PoissonRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
     Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
-
-    # add intercept if specified
-    if model.include_intercept && size(Φ, 2) == size(model.β,1) - 1
+    if model.include_intercept && size(Φ, 2) == length(model.β) - 1
         Φ = hcat(ones(size(Φ, 1)), Φ)
     end
+    Y = rand.(rng, Poisson.(exp.(Φ * model.β)))
+    return Float64.(reshape(Y, :, 1))
+end
 
-    Y = rand.(Poisson.(exp.(Φ * model.β)))
-
-    # convert Y 
-    Y = reshape(Y, :, 1)
-    Y = Float64.(Y)
-
-    return Y
+function Random.rand(model::PoissonRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
+    return rand(Random.default_rng(), model, Φ)
 end
 
 """
-    loglikelihood(model::PoissonRegressionEmission, Φ::Matrix{<:Real}, Y::Matrix{<:Real}, w::Vector{Float64}=ones(size(Y, 1)))
+    loglikelihood(model::PoissonRegressionEmission, Φ::AbstractMatrix{<:Real}, Y::AbstractMatrix{<:Real}, w::AbstractVector{Float64}=ones(size(Y, 1)))
 
 Calculate the log-likelihood of a Poisson regression model.
 
 # Arguments
 - `model::PoissonRegressionEmission`: Poisson regression model.
-- `Φ::Matrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
-- `Y::Matrix{<:Real}`: Response matrix of shape `(n, 1)`.
-- `w::Vector{Float64}`: Weights of the data points. Should be a vector of size `n`.
+- `Φ::AbstractMatrix{<:Real}`: Design matrix of shape `(n, input_dim)`.
+- `Y::AbstractMatrix{<:Real}`: Response matrix of shape `(n, 1)`.
+- `w::AbstractVector{Float64}`: Weights of the data points. Should be a vector of size `n`.
 
 # Returns
 - `loglikelihood::Float64`: Log-likelihood of the model.

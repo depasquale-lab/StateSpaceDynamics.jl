@@ -20,7 +20,7 @@ function test_SwitchingBernoulliRegression()
     # Sample from the model
     n = 30000
     Φ = randn(2, n)
-    true_labels, data = StateSpaceDynamics.sample(true_model, Φ; n=n)
+    true_labels, data = rand(true_model, Φ; n=n)
 
     # Fit a new Bernoulli Regression Model to the data
     test_model = StateSpaceDynamics.SwitchingBernoulliRegression(; K=2, input_dim=2, λ=1.0)
@@ -74,7 +74,7 @@ function test_trialized_SwitchingBernoulliRegression()
 
     # Sample data for each trial
     for i in 1:num_trials
-        true_labels_trials[i], data_trials[i] = StateSpaceDynamics.sample(
+        true_labels_trials[i], data_trials[i] = rand(
             true_model, Φ_trials[i]; n=trial_length
         )
     end

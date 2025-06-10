@@ -20,7 +20,7 @@ function test_SwitchingGaussian_fit()
 
     # Sample from the model
     n = 50000
-    true_labels, data = StateSpaceDynamics.sample(true_model; n=n)
+    true_labels, data = rand(true_model; n=n)
 
     # Initialize a new GaussianHMM
     μ_1 = rand(output_dim)
@@ -73,7 +73,7 @@ function test_SwitchingGaussian_SingleState_fit()
 
     # Sample from the model
     n = 20000
-    true_labels, data = StateSpaceDynamics.sample(true_model; n=n)
+    true_labels, data = rand(true_model; n=n)
 
     # Fit new model
     μ_1 = [1.0, -1.0]

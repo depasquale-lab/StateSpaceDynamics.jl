@@ -111,18 +111,11 @@ function estep(ppca::ProbabilisticPCA, X::Matrix{T}) where {T <:Real}
     
     # calculate M
     M = ppca.W' * ppca.W + (ppca.σ² * I(ppca.k))
-    M_chol = cholesky(Symmetric(M))  # More stable than manual inversion
-    
+    M_inv = cholesky(M).U \ (cholesky(M).L \ I(ppca.k))
     # calculate E_z and E_zz
-    for i in 1:N
-        # Center the data point
-        centered_xi = X[i, :] - ppca.μ
-        
-        # E[z_i] = M^{-1} W^T (x_i - μ)
-        E_z[i, :] = M_chol \ (ppca.W' * centered_xi)
-        
-        # E[z_i z_i^T] = σ² M^{-1} + E[z_i] E[z_i]^T
-        E_zz[i, :, :] = ppca.σ² * inv(M_chol) + E_z[i, :] * E_z[i, :]'
+    @views for i in 1:N
+        E_z[i, :] = M_inv * ppca.W' * (X[i, :] .- ppca.μ')
+        E_zz[i, :, :] = (ppca.σ² * M_inv) + (E_z[i, :]  * E_z[i, :]')
     end
     
     return E_z, E_zz
@@ -157,8 +150,13 @@ function mstep!(
     # Calculate the numerator: Σᵢ (xᵢ - μ) E[zᵢ]ᵀ
     numerator = zeros(T, D, ppca.k)
     for i in 1:N
-        centered_xi = X[i, :] - ppca.μ
-        numerator += centered_xi * E_z[i, :]'
+        centered = @view(X[i, :])  .- ppca.μ' 
+        running_sum_W .+= centered * @view(E_z[i, :])'
+
+        running_sum_σ² += 
+            sum(centered .^ 2) -
+            sum((2.0 .* (@view(E_z[i, :])' * ppca.W')) .* centered') +
+            tr(@view(E_zz[i, :, :])  * WW)
     end
     
     # Update W: W_new = numerator / sum_E_zz
@@ -168,7 +166,7 @@ function mstep!(
     running_sum_σ² = zero(T)
     WW = ppca.W' * ppca.W
     
-    for i in 1:N
+    @views for i in 1:N
         centered_xi = X[i, :] - ppca.μ
         
         running_sum_σ² += 
@@ -226,6 +224,27 @@ function loglikelihood(ppca::ProbabilisticPCA, X::Matrix{<:Real})
         return -Inf
     end
 end
+
+function Random.rand(rng::AbstractRNG, ppca::ProbabilisticPCA, n::Int)
+    # z ~ N(0, I) in latent space
+    z = rand(rng, MvNormal(zeros(ppca.k), I), n)  # (k, n)
+
+    # noise ε ~ N(0, σ² I) in data space
+    ε = rand(rng, MvNormal(zeros(ppca.D), ppca.σ² * I), n)  # (D, n)
+
+    # x = W z + μ + ε
+    # Convert μ to (D, 1) to broadcast correctly
+    μ = ppca.μ
+    μ = size(μ, 2) == 1 ? μ : reshape(μ, ppca.D, 1)
+
+    X = ppca.W * z .+ μ + ε
+    return X, z
+end
+
+function Random.rand(ppca::ProbabilisticPCA, n::Int)
+    return rand(Random.default_rng(), ppca, n)
+end
+
 
 """
     fit!(model::ProbabilisticPCA, X::Matrix{<:Real}, max_iter::Int=100, tol::AbstractFloat=1e-6)

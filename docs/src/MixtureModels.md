@@ -19,7 +19,6 @@ GaussianMixtureModel
 GaussianMixtureModel(k::Int, data_dim::Int)
 fit!(gmm::GaussianMixtureModel, data::Matrix{<:Real}; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=false)
 log_likelihood(gmm::GaussianMixtureModel, data::Matrix{<:Real})
-sample(gmm::GaussianMixtureModel, n::Int)
 ```
 
 ## Poisson Mixture Model
@@ -28,5 +27,4 @@ PoissonMixtureModel
 PoissonMixtureModel(k::Int)
 fit!(pmm::PoissonMixtureModel, data::Matrix{Int64}; maxiter::Int=50, tol::Float64=1e-3,initialize_kmeans::Bool=false)
 log_likelihood(pmm::PoissonMixtureModel, data::Matrix{Int64})
-sample(pmm::PoissonMixtureModel, n::Int)
 ```
