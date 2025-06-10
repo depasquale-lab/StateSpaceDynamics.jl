@@ -70,3 +70,24 @@ function test_PPCA_fit()
     ll = StateSpaceDynamics.loglikelihood(ppca, X)
     @test size(ll) == ()
 end
+
+function test_PPCA_samples()
+    W = rand(3, 2)
+    σ² = 0.5
+    μ = randn(3, 1)
+    ppca = ProbabilisticPCA(W, σ², μ, 2, 3, Matrix{Float64}(undef, 0, 0))
+
+    X, z = rand(ppca, 10000)
+
+    @test size(X) == (3, 10000)
+    @test size(z) == (2, 10000)
+
+    # Test empirical mean
+    empirical_mean = mean(X; dims=2)
+    @test all(isapprox.(empirical_mean, μ; atol=0.05))
+
+    # Test noise level
+    residuals = X .- (W * z .+ μ)
+    residual_norm = norm(residuals) / √(ppca.D * size(X, 2))
+    @test abs(residual_norm - sqrt(σ²)) < 0.05
+end

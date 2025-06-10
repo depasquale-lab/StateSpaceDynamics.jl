@@ -48,7 +48,7 @@ function test_sample()
     model = StateSpaceDynamics.initialize_slds()
    
     # sample from the model
-    x, y, z = StateSpaceDynamics.sample(model, 1000)  # 1000 time steps
+    x, y, z = rand(model, 1000)  # 1000 time steps
 
     # check the dimensions of the samples
     @test size(x) == (model.B[1].latent_dim, 1000)
@@ -60,7 +60,7 @@ function test_vEstep()
     # get a model
     model = StateSpaceDynamics.initialize_slds()
     # sample from the model
-    x, y, z = StateSpaceDynamics.sample(model, 1000)  # 1000 time steps
+    x, y, z = rand(model, 1000)  # 1000 time steps
     # just a few vars
     K = model.K
     T_step = 1000

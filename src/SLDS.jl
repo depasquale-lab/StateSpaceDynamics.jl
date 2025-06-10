@@ -1,4 +1,4 @@
-export SwitchingLinearDynamicalSystem, fit!, sample, initialize_slds, variational_expectation!
+export SwitchingLinearDynamicalSystem, fit!, initialize_slds, variational_expectation!
 """
 Switching Linear Dynamical System
 """
@@ -13,30 +13,37 @@ end
 """
 Generate synthetic data with switching LDS models
 """
-function sample(slds::SwitchingLinearDynamicalSystem, T::Int)
+function Random.rand(rng::AbstractRNG, slds::SwitchingLinearDynamicalSystem, T::Int)
     state_dim = slds.B[1].latent_dim
     obs_dim = slds.B[1].obs_dim
     K = slds.K
 
     x = zeros(state_dim, T)  # Latent states
-    y = zeros(obs_dim, T)   # Observations
-    z = zeros(Int, T)       # Mode sequence
+    y = zeros(obs_dim, T)    # Observations
+    z = zeros(Int, T)        # Mode sequence
 
     # Sample initial mode
-    z[1] = rand(Categorical(slds.πₖ / sum(slds.πₖ)))
-    x[:, 1] = rand(MvNormal(zeros(state_dim), slds.B[z[1]].state_model.Q))
-    y[:, 1] = rand(MvNormal(slds.B[z[1]].obs_model.C * x[:, 1], slds.B[z[1]].obs_model.R))
+    z[1] = rand(rng, Categorical(slds.πₖ / sum(slds.πₖ)))
+    x[:, 1] = rand(rng, MvNormal(zeros(state_dim), slds.B[z[1]].state_model.Q))
+    y[:, 1] = rand(rng, MvNormal(slds.B[z[1]].obs_model.C * x[:, 1], slds.B[z[1]].obs_model.R))
 
-    for t in 2:T
+    @views for t in 2:T
         # Sample mode based on transition probabilities
         z[t] = rand(Categorical(slds.A[z[t-1], :] ./ sum(slds.A[z[t-1], :])))
         # Update latent state and observation
-        x[:, t] = rand(MvNormal(slds.B[z[t]].state_model.A * x[:, t-1], slds.B[z[t]].state_model.Q))
-        y[:, t] = rand(MvNormal(slds.B[z[t]].obs_model.C * x[:, t], slds.B[z[t]].obs_model.R))
+        x[:, t] = rand(
+          MvNormal(slds.B[z[t]].state_model.A * x[:, t-1], slds.B[z[t]].state_model.Q)
+        )
+        y[:, t] = rand(
+          MvNormal(slds.B[z[t]].obs_model.C * x[:, t], slds.B[z[t]].obs_model.R)
+        )
     end
 
     return x, y, z
-    
+end
+
+function Random.rand(slds::SwitchingLinearDynamicalSystem, T::Int)
+    return rand(Random.default_rng(), slds, T)
 end
 
 """
@@ -191,7 +198,6 @@ function fit!(
     return mls, param_diff, FB, FS
 end
 
-
 """
     variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB, FS) -> Float64
 
@@ -244,7 +250,8 @@ This function performs the variational expectation step for a Switching Linear D
 elbo = variational_expectation!(model, y, FB, FS)
 println("Computed ELBO: ", elbo)
 """
-function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::ForwardBackward, FS::Vector{FilterSmooth{T}}) where {T<:Real}
+function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, 
+  FB::ForwardBackward, FS::Vector{FilterSmooth{T}}) where {T<:Real} 
   # For now a hardcoded tolerance
   tol = 1e-6
   # Get starting point for iterative E-step
@@ -392,10 +399,9 @@ function variational_qs!(model::Vector{GaussianObservationModel{T}}, FB::Forward
         R_chol = cholesky(Symmetric(model[k].R))
         C = model[k].C
 
-        @inbounds for t in 1:T_steps
-          FB.loglikelihoods[k, t] = -0.5 * tr(R_chol \ Q_obs(C, FS[k].E_z[:,t,1], FS[k].E_zz[:,:,t,1], y[:,t]))
+        @views @inbounds for t in 1:T_steps
+          FB.loglikelihoods[k, t] = -0.5 * tr(R_chol \ Q_obs(C, FS[k].E_z[:, t, 1], FS[k].E_zz[:, :, t, 1], y[:, t]))
         end
-
     end 
 end
 
