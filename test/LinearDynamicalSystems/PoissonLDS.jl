@@ -36,7 +36,7 @@ function test_plds_properties(poisson_lds)
     @test size(poisson_lds.obs_model.log_d) == (poisson_lds.obs_dim,)
 end
 
-function test_pobs_initalization_types()
+function test_pobs_constructor_type_preservation()
     # Int
     C_int = [1 2; 3 4]
     log_d_int = [5, 6]
@@ -86,10 +86,9 @@ function test_pobs_initalization_types()
     @test eltype(pom_bf.log_d) === BigFloat
     @test size(pom_bf.C) == (2, 2)
     @test length(pom_bf.log_d) == 2
-
 end
 
-function test_plds_init_types()
+function test_plds_constructor_type_preservation()()
     # Int
     A_int = [1 2; 3 4]
     C_int = [1 0; 0 1]
@@ -152,6 +151,127 @@ function test_plds_init_types()
     @test eltype(plds_bf.obs_model.C) === BigFloat
     @test eltype(plds_bf.obs_model.log_d) === BigFloat
 end
+
+function test_poisson_sample_type_preservation()
+    
+    # Float32
+    A_f32 = Matrix{Float32}(I, 2, 2)
+    C_f32 = Matrix{Float32}(I, 2, 2)
+    Q_f32 = Matrix{Float32}(I, 2, 2)
+    log_d32 = zeros(Float32, 2)
+    x0_f32 = fill(one(Float32), 2)
+    P0_f32 = Matrix{Float32}(I, 2, 2)
+
+    fit_bool::Vector{Bool}=[true, true, true, true, true, true]
+
+    plds_f32 = PoissonLDS(Float32;
+        A     = A_f32,
+        C     = C_f32,
+        Q     = Q_f32,
+        log_d     = log_d32,
+        x0    = x0_f32,
+        P0    = P0_f32,
+        fit_bool = fit_bool,
+        obs_dim    = 2,
+        latent_dim = 2
+    )
+
+    x_f32, y_f32 = StateSpaceDynamics.sample(plds_f32, 50, 3)
+
+    @test eltype(x_f32) === Float32
+    @test eltype(y_f32) === Float32
+    @test size(x_f32) == (2, 50, 3)
+    @test size(y_f32) == (2, 50, 3)
+
+    # BigFloat
+    A_bf = Matrix{BigFloat}(I, 2, 2)
+    C_bf = Matrix{BigFloat}(I, 2, 2)
+    Q_bf = Matrix{BigFloat}(I, 2, 2)
+    log_bf = zeros(BigFloat, 2)
+    x0_bf = fill(one(BigFloat), 2)
+    P0_bf = Matrix{BigFloat}(I, 2, 2)
+
+    plds_bf = PoissonLDS(BigFloat;
+        A = A_bf,
+        C = C_bf,
+        Q = Q_bf,
+        log_d = log_bf,
+        x0 = x0_bf,
+        P0 = P0_bf,
+        obs_dim = 2,
+        latent_dim = 2
+    )
+    x_bf, y_bf = StateSpaceDynamics.sample(plds_bf, 50, 3)
+
+    @test eltype(x_bf) === BigFloat
+    @test eltype(y_bf) === BigFloat
+    @test size(x_bf) == (2, 50, 3)
+    @test size(y_bf) == (2, 50, 3)
+end
+
+function test_poisson_fit_type_preservation()
+    for T in (Float32, BigFloat)   
+        A     = Matrix{T}(I, 2, 2)
+        C     = Matrix{T}(I, 2, 2)
+        Q     = Matrix{T}(I, 2, 2)
+        log_d = zeros(T, 2)
+        x0    = fill(one(T), 2)
+        P0    = Matrix{T}(I, 2, 2)
+
+        lds = PoissonLDS(T;
+            A         = A,
+            C         = C,
+            Q         = Q,
+            log_d     = log_d,
+            x0        = x0,
+            P0        = P0,
+            obs_dim    = 2,
+            latent_dim = 2
+        )
+        
+        x, y = StateSpaceDynamics.sample(lds, 50, 3)
+
+        mls, param_diff = fit!(lds, y; max_iter = 10, tol = 1e-6)
+
+        @test eltype(mls) === T
+        @test eltype(param_diff) === T
+    end 
+end 
+
+function test_poisson_loglikelihood_type_preservation()
+    for T in (Float32, BigFloat)
+        
+        A     = Matrix{T}(I, 2, 2)
+        C     = Matrix{T}(I, 2, 2)
+        Q     = Matrix{T}(I, 2, 2)
+        log_d = zeros(T, 2)
+        x0    = fill(one(T), 2)
+        P0    = Matrix{T}(I, 2, 2)
+
+        lds = PoissonLDS(T;
+            A         = A,
+            C         = C,
+            Q         = Q,
+            log_d     = log_d,
+            x0        = x0,
+            P0        = P0,
+            obs_dim    = 2,
+            latent_dim = 2
+        )
+
+        x, y = StateSpaceDynamics.sample(lds, 50, 1)
+        x_mat = x[:, :, 1]  
+        y_mat = y[:, :, 1]  
+
+        ll = StateSpaceDynamics.loglikelihood(x_mat, lds, y_mat)
+
+        if ll isa Number
+            @test typeof(ll) === T
+        else
+            @test eltype(ll) === T
+        end
+    end
+end 
 
 function test_PoissonLDS_with_params()
     poisson_lds, _, _ = toy_PoissonLDS()
