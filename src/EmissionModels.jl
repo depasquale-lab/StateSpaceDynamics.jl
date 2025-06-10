@@ -40,9 +40,12 @@ Functon to create a GaussianEmission with given output dimension, mean, and cova
 """
 function GaussianEmission(; 
     output_dim::Int,
-    μ::AbstractVector{T}=zeros(Float64, output_dim),
-    Σ::AbstractMatrix{T}=Matrix{Float64}(I, output_dim, output_dim),
-) where {T<:Real}
+    μ::AbstractVector,
+    Σ::AbstractMatrix,
+)
+    if !check_same_type(μ[1], Σ[1])
+        error("μ and Σ must be of the same element type. Got $(eltype(μ)) and $(eltype(Σ))")
+    end
     return GaussianEmission(output_dim, μ, Σ)
 end
 
@@ -110,21 +113,23 @@ Regression Emission Models
     RegressionOptimization{T<:RegressionEmission}
 
 Holds the optimization problem data for regression emissions.
+
+This handle is inclusive to X and y being different types for Poisson and Bernoulli models
 """
-struct RegressionOptimization{R<:RegressionEmission, T<:Real, V<:AbstractVector{T}, MX<:AbstractMatrix{<:Real}, MY<:AbstractMatrix{<:Real}}
+struct RegressionOptimization{R<:RegressionEmission, V<:AbstractVector{<:AbstractFloat}, MX<:AbstractMatrix{<:AbstractFloat}, MY<:AbstractMatrix{<:AbstractFloat}}
     model::R
     X::MX
     y::MY
     w::V
-    β_shape::Tuple{Int,Int}  # Added to track original shape
+    β_shape::Tuple{Int, Int}  # Added to track original shape
 end
 
 # Unified interface for creating optimization problems
 function create_optimization(
     model::RegressionEmission,
-    X::AbstractMatrix{<:Real},
-    y::AbstractMatrix{<:Real},
-    w::Vector{<:Real}=ones(size(y, 1)),
+    X::AbstractMatrix{<:AbstractFloat},
+    y::AbstractMatrix{<:AbstractFloat},
+    w::Vector{<:AbstractFloat}=ones(size(y, 1)),
 )
     if model.include_intercept
         X = hcat(ones(size(X, 1)), X)
@@ -154,7 +159,7 @@ Calculate L2 regularization term for regression coefficients.
 # Returns
 - `Float64`: The regularization term value
 """
-function calc_regularization(β::AbstractMatrix{T}, λ::Float64, include_intercept::Bool=true) where {T<:Real}
+function calc_regularization(β::AbstractMatrix{T}, λ::T, include_intercept::Bool=true) where {T<:AbstractFloat}
     # calculate L2 penalty
     if include_intercept
         regularization = 0.5 * λ * sum(abs2, β[2:end, :])
@@ -177,7 +182,7 @@ Calculate gradient of L2 regularization term for regression coefficients.
 """
 function calc_regularization_gradient(
     β::AbstractMatrix{T}, λ::T, include_intercept::Bool=true
-) where {T<:Real}
+) where {T<:AbstractFloat}
     # calculate the gradient of the regularization component
     regularization = zeros(size(β))
 
@@ -206,7 +211,7 @@ A Gaussian regression Emission model.
 - `Σ::Matrix{<:Real} = Matrix{Float64}(I, output_dim, output_dim)`: Covariance matrix of the model.
 - `λ::Float64 = 0.0`: Regularization parameter.
 """
-mutable struct GaussianRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: RegressionEmission
+mutable struct GaussianRegressionEmission{T<:AbstractFloat, M<:AbstractMatrix{T}} <: RegressionEmission
     input_dim::Int
     output_dim::Int
     β::M # coefficient matrix of the model. Shape input_dim by output_dim. Column one is coefficients for target one, etc. The first row are the intercept terms, if included. 
@@ -215,32 +220,21 @@ mutable struct GaussianRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: Regr
     λ::T # regularization parameter
 end
 
-function GaussianRegressionEmission(; 
+# This may look redundant, but this is to enforce types to be how we like
+function GaussianRegressionEmission(;
     input_dim::Int,
     output_dim::Int,
     include_intercept::Bool=true,
-    β::Union{Nothing, AbstractMatrix}=nothing,
-    Σ::Union{Nothing, AbstractMatrix}=nothing,
-    λ::Union{Nothing, Real}=nothing
+    β::AbstractMatrix,
+    Σ::AbstractMatrix,
+    λ::AbstractFloat
 )
-    # Infer T from β or default to Float64
-    T = isnothing(β) ? Float64 : eltype(β)
 
-    # Initialize β if not provided
-    β_val = isnothing(β) ? (
-        include_intercept ? zeros(T, input_dim + 1, output_dim) : zeros(T, input_dim, output_dim)
-    ) : β
+    if !check_same_type(β[1], Σ[1], λ)
+        error("β, Σ, and λ must be of the same element type. Got $(eltype(β)), $(eltype(Σ)), and $(eltype(λ))")
+    end
 
-    # Convert β to Float64 (or T) to avoid type mismatches
-    β_val = Float64.(β_val)
-
-    # Initialize Σ and λ if not provided
-    Σ_val = isnothing(Σ) ? Matrix{Float64}(I, output_dim, output_dim) : Σ
-    Σ_val = Float64.(Σ_val)
-
-    λ_val = isnothing(λ) ? 0.0 : float(λ)
-
-    return GaussianRegressionEmission(input_dim, output_dim, β_val, Σ_val, include_intercept, λ_val)
+    return GaussianRegressionEmission(input_dim, output_dim, β, Σ, include_intercept, λ)
 end
 
 
@@ -258,7 +252,7 @@ Generate `n` samples from a Gaussian regression model. Returns a matrix of size 
 # Returns
 - `Y::Matrix{<:Real}`: Matrix of samples of shape `(n, output_dim)`.
 """
-function sample(model::GaussianRegressionEmission, Φ::Union{Matrix{T},Vector{T}}) where {T<:Real}
+function sample(model::GaussianRegressionEmission, Φ::Union{Matrix{T},Vector{T}}) where {T<:AbstractFloat}
     # Ensure Φ is a 2D matrix even if it's a single sample
     Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
 
@@ -290,7 +284,7 @@ function loglikelihood(
     Φ::AbstractMatrix{T},
     Y::AbstractMatrix{T},
     w::AbstractVector{T}=ones(size(Y, 1)),
-) where {T<:Real}
+) where {T<:AbstractFloat}
     # Add intercept if specified
     Φ = model.include_intercept ? [ones(size(Φ, 1)) Φ] : Φ
     
@@ -327,29 +321,18 @@ function AutoRegressionEmission(;
     output_dim::Int, 
     order::Int, 
     include_intercept::Bool = true, 
-    β::Union{Nothing, AbstractMatrix} = nothing,
-    Σ::Union{Nothing, AbstractMatrix} = nothing,
-    λ::Union{Nothing, Real} = nothing
+    β::AbstractMatrix,
+    Σ::AbstractMatrix,
+    λ::AbstractFloat
 )
-    input_dim = output_dim * order
-
-    β_val = isnothing(β) ? (
-        include_intercept ? zeros(Float64, input_dim + 1, output_dim) : zeros(Float64, input_dim, output_dim)
-    ) : Float64.(β)  # convert β to Float64 elements
-
-    T = eltype(β_val)  # this should now be Float64
-
-    Σ_val = isnothing(Σ) ? Matrix{Float64}(I, output_dim, output_dim) : Float64.(Σ)
-
-    λ_val = isnothing(λ) ? 0.0 : float(λ)
 
     innerGaussianRegression = GaussianRegressionEmission(
-        input_dim=input_dim, 
+        input_dim=output_dim, 
         output_dim=output_dim, 
-        β=β_val,
-        Σ=Σ_val,
+        β=β,
+        Σ=Σ,
         include_intercept=include_intercept, 
-        λ=λ_val
+        λ=λ
     )
 
     return AutoRegressionEmission(output_dim, order, innerGaussianRegression)
@@ -375,7 +358,7 @@ order = 2
 AR_feats = construct_AR_feature_matrix(data, order)
 size(AR_feats)  # (3 * (2 + 1), 10 - 2) => (9, 8)
 """
-function construct_AR_feature_matrix(data::AbstractMatrix{T}, order::Int, include_intercept=false) where {T<:Real}
+function construct_AR_feature_matrix(data::AbstractMatrix{T}, order::Int, include_intercept=false) where {T<:AbstractFloat}
     # If intercept is needed, prepend a row of ones
     if include_intercept
         data = vcat(ones(1, size(data, 2)), data)
@@ -417,7 +400,7 @@ order = 2
 AR_feats_trials = construct_AR_feature_matrix(data, order)
 size(AR_feats_trials[1])  # (9, 8), same transformation applied per trial
 """
-function construct_AR_feature_matrix(data::AbstractVector{<:AbstractMatrix{T}}, order::Int, include_intercept=false) where {T<:Real}
+function construct_AR_feature_matrix(data::AbstractVector{<:AbstractMatrix{T}}, order::Int, include_intercept=false) where {T<:AbstractFloat}
     # Initialize feature vector
     AR_feats_matrices = Vector{Matrix{T}}(undef, length(data))
     
@@ -443,7 +426,7 @@ Generate a sample from the given autoregressive emission model using the previou
 # Returns
 - `Matrix{Float64}`: The updated observation sequence with the new sample appended.
 """
-function sample(model::AutoRegressionEmission, X::AbstractMatrix{T}) where {T<:Real}
+function sample(model::AutoRegressionEmission, X::AbstractMatrix{T}) where {T<:AbstractFloat}
     # Extract the last column of X as input
     last_observation = X[:, end]
 
@@ -475,7 +458,7 @@ function loglikelihood(
     X::AbstractMatrix{T},
     Y::AbstractMatrix{T},
     w::Vector{T}=ones(size(Y, 1)),
-) where {T<:Real}
+) where {T<:AbstractFloat}
     return loglikelihood(model.innerGaussianRegression, X, Y, w)
 end
 
@@ -500,41 +483,17 @@ Create a Switching AutoRegression Model
 """
 function SwitchingAutoRegression(;
     K::Int,
-    output_dim::Int,
-    order::Int,
-    include_intercept::Bool = true,
-    β::Union{Nothing, AbstractMatrix} = nothing,
-    Σ::Union{Nothing, AbstractMatrix} = nothing,
-    λ::Float64 = 0.0,
-    A::Union{Nothing, AbstractMatrix} = nothing,
-    πₖ::Union{Nothing, AbstractVector} = nothing,
+    A::AbstractMatrix,
+    πₖ::AbstractVector,
+    emissions::AbstractVector
 )
-    input_dim = output_dim * order
-    β_val = isnothing(β) ? (include_intercept ? zeros(input_dim + 1, output_dim) : zeros(input_dim, output_dim)) : β
-    T = eltype(β_val)
-
-    Σ_val = isnothing(Σ) ? Matrix{T}(I, output_dim, output_dim) : Σ
-    A_val = isnothing(A) ? initialize_transition_matrix(K) : A
-    πₖ_val = isnothing(πₖ) ? initialize_state_distribution(K) : πₖ
-
-    emissions = [
-        AutoRegressionEmission(;
-            output_dim=output_dim,
-            order=order,
-            include_intercept=include_intercept,
-            β=β_val,
-            Σ=Σ_val,
-            λ=λ,
-        ) for _ in 1:K
-    ]
-
-    return HiddenMarkovModel(; K=K, B=emissions, A=A_val, πₖ=πₖ_val)
+    return HiddenMarkovModel(; K=K, B=emissions, A=A, πₖ=πₖ)
 end
 
 
 function objective(
     opt::Union{RegressionOptimization{<:GaussianRegressionEmission}, RegressionOptimization{<:AutoRegressionEmission}}, β_vec::AbstractVector{T}
-) where {T<:Real}
+) where {T<:AbstractFloat}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     residuals = opt.y - opt.X * β_mat
     w_reshaped = reshape(opt.w, :, 1)
@@ -551,7 +510,7 @@ function objective_gradient!(
     G::AbstractVector{T},
     opt::Union{RegressionOptimization{<:GaussianRegressionEmission}, RegressionOptimization{<:AutoRegressionEmission}},
     β_vec::AbstractVector{T},
-) where {T<:Real}
+) where {T<:AbstractFloat}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     residuals = opt.y - opt.X * β_mat
 

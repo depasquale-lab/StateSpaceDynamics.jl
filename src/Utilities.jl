@@ -2,6 +2,16 @@ export kmeanspp_initialization,
     kmeans_clustering, fit!, block_tridgm, block_tridiagonal_inverse, block_tridiagonal_inverse_static
 export row_matrix, stabilize_covariance_matrix, valid_Σ, make_posdef!, gaussian_entropy
 
+# Type checking utilities
+function check_same_type(args...)
+    if length(args) ≤ 1
+        return true  # trivial case
+    end
+    first_type = typeof(args[1])
+    all(x -> typeof(x) == first_type, args)
+end
+
+
 # Matrix utilities
 
 """
