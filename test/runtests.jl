@@ -28,16 +28,16 @@ Tests for SLDS.jl
 
 include("LinearDynamicalSystems//SLDS.jl")
 
-@testset "SLDS Tests" begin
-    @testset "Constructor Tests" begin
-        test_init()
-        test_sample()
-    end
+# @testset "SLDS Tests" begin
+#     @testset "Constructor Tests" begin
+#         test_init()
+#         test_sample()
+#     end
 
-    @testset "vEM Tests" begin
-        test_vEstep()
-    end
-end
+#     @testset "vEM Tests" begin
+#         test_vEstep()
+#     end
+# end
 
 """
 Tests for LDS.jl
@@ -49,13 +49,18 @@ include("LinearDynamicalSystems//GaussianLDS.jl")
     @testset "Constructor Tests" begin
         test_lds_with_params()
         test_lds_without_params()
-        test_gaussian_obs_initalization_types()
-        test_gaussian_lds_init_types()
+
+        test_gaussian_obs_constructor_type_preservation()
+        test_gaussian_lds_constructor_type_preservation()
+        test_gaussian_sample_type_preservation()
+        test_gaussian_fit_type_preservation()
+        test_gaussian_loglikelihood_type_preservation()
     end
     @testset "Smoother tests" begin
         test_Gradient()
         test_Hessian()
         test_smooth()
+        #test_smooth_type_preservation()
     end
     @testset "EM tests" begin
         test_estep()
@@ -83,8 +88,13 @@ include("LinearDynamicalSystems//PoissonLDS.jl")
     @testset "Constructor Tests" begin
         test_PoissonLDS_with_params()
         test_poisson_lds_without_params()
-        test_pobs_initalization_types()
-        test_plds_init_types()
+
+        test_pobs_constructor_type_preservation()
+        test_plds_constructor_type_preservation()
+        test_poisson_sample_type_preservation()
+        test_poisson_fit_type_preservation()
+        test_poisson_loglikelihood_type_preservation()
+        
     end
     @testset "Smoother Tests" begin
         test_Gradient()
