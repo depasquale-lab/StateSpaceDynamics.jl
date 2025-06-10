@@ -3,10 +3,10 @@ export SwitchingLinearDynamicalSystem, fit!, sample, initialize_slds, variationa
 Switching Linear Dynamical System
 """
 mutable struct SwitchingLinearDynamicalSystem{T<:Real,M<:AbstractMatrix{T}, V<:AbstractVector{T}, VL<:AbstractVector{<:LinearDynamicalSystem}} <: AbstractHMM
-    A::M                # Transition matrix for mode switching
-    B::VL # Vector of Linear Dynamical System models
-    πₖ::V            # Initial state distribution
-    K::Int                            # Number of modes
+    A::M  # Transition matrix for mode switching
+    B::VL  # Vector of Linear Dynamical System models
+    πₖ::V  # Initial state distribution
+    K::Int  # Number of modes
 end
 
 
@@ -43,66 +43,66 @@ end
 Initialize a Switching Linear Dynamical System with random parameters.
 """
 function initialize_slds(;K::Int=2, d::Int=2, p::Int=10, self_bias::Float64=5.0, seed::Int=42)
-  Random.seed!(seed)
-  
-  # Transition matrix using Dirichlet with self-bias
-  A = zeros(K, K)
-  for i in 1:K
-      # Create concentration parameters with higher value for self-transition
-      alpha = ones(K)
-      alpha[i] = self_bias  # Bias toward self-transition
-      
-      # Sample from Dirichlet distribution
-      A[i, :] = rand(Dirichlet(alpha))
-  end
-  
-  # Initial state probabilities
-  πₖ = rand(Dirichlet(ones(K)))
-  
-  # State parameters
-  Q = Matrix(0.001 * I(d))
-  x0 = zeros(d)
-  P0 = Matrix(0.001 * I(d))
-  
-  # Define observation parameters separately for each state
-  B = Vector{LinearDynamicalSystem}(undef, K)
-  
-  # Generate state matrices with different dynamics for each state
-  for k in 1:K
-      # Create rotation angles for each 2D subspace in the state space
-      F = Matrix{Float64}(I, d, d)
-      
-      # Parameter to make each state model unique
-      angle_factor = 2π * (k-1) / K
-      
-      # Add rotation components in 2D subspaces
-      for i in 1:2:d-1
-          if i+1 <= d  # Ensure we have a pair
-              # Create a 2D rotation with different angles for each state
-              theta = 0.1 + angle_factor + (i-1)*0.2
-              rotation = 0.95 * [cos(theta) -sin(theta); sin(theta) cos(theta)]
-              F[i:i+1, i:i+1] = rotation
-          end
-      end
-      
-      # If d is odd, add a scaling factor to the last dimension
-      if d % 2 == 1
-          F[d, d] = 0.95
-      end
-      
-      # Create state model with the designed dynamics
-      state_model = GaussianStateModel(F, Q, x0, P0)
-      
-      # Observation matrix - random for each state
-      C = randn(p, d)
-      R = Matrix(0.001 * I(p))
-      obs_model = GaussianObservationModel(C, R)
-      
-      # Create linear dynamical system for this state
-      B[k] = LinearDynamicalSystem(state_model, obs_model, d, p, fill(true, 6))
-  end
-  
-  return SwitchingLinearDynamicalSystem(A, B, πₖ, K)
+    Random.seed!(seed)
+    
+    # Transition matrix using Dirichlet with self-bias
+    A = zeros(K, K)
+    for i in 1:K
+        # Create concentration parameters with higher value for self-transition
+        alpha = ones(K)
+        alpha[i] = self_bias  # Bias toward self-transition
+        
+        # Sample from Dirichlet distribution
+        A[i, :] = rand(Dirichlet(alpha))
+    end
+    
+    # Initial state probabilities
+    πₖ = rand(Dirichlet(ones(K)))
+    
+    # State parameters
+    Q = Matrix(0.001 * I(d))
+    x0 = zeros(d)
+    P0 = Matrix(0.001 * I(d))
+    
+    # Define observation parameters separately for each state
+    B = Vector{LinearDynamicalSystem}(undef, K)
+    
+    # Generate state matrices with different dynamics for each state
+    for k in 1:K
+        # Create rotation angles for each 2D subspace in the state space
+        F = Matrix{Float64}(I, d, d)
+        
+        # Parameter to make each state model unique
+        angle_factor = 2π * (k-1) / K
+        
+        # Add rotation components in 2D subspaces
+        for i in 1:2:d-1
+            if i+1 <= d  # Ensure we have a pair
+                # Create a 2D rotation with different angles for each state
+                theta = 0.1 + angle_factor + (i-1)*0.2
+                rotation = 0.95 * [cos(theta) -sin(theta); sin(theta) cos(theta)]
+                F[i:i+1, i:i+1] = rotation
+            end
+        end
+        
+        # If d is odd, add a scaling factor to the last dimension
+        if d % 2 == 1
+            F[d, d] = 0.95
+        end
+        
+        # Create state model with the designed dynamics
+        state_model = GaussianStateModel(F, Q, x0, P0)
+        
+        # Observation matrix - random for each state
+        C = randn(p, d)
+        R = Matrix(0.001 * I(p))
+        obs_model = GaussianObservationModel(C, R)
+        
+        # Create linear dynamical system for this state
+        B[k] = LinearDynamicalSystem(state_model, obs_model, d, p, fill(true, 6))
+    end
+    
+    return SwitchingLinearDynamicalSystem(A, B, πₖ, K)
 end
 
 """
@@ -125,8 +125,8 @@ Fit a Switching Linear Dynamical System using the variational Expectation-Maximi
 - `mls::Vector{T}`: Vector of log-likelihood values for each iteration.
 """
 function fit!(
-    slds::AbstractHMM, y::Matrix{T}; 
-    max_iter::Int=1000, tol::Real=1e-3) where {T<:Real}
+    slds::AbstractHMM, y::AbstractMatrix{T}; max_iter::Int=1000, tol::Real=1e-3
+)where {T<:Real}
 
     # Initialize log-likelihood
     prev_ml = -T(Inf)
@@ -244,7 +244,11 @@ This function performs the variational expectation step for a Switching Linear D
 elbo = variational_expectation!(model, y, FB, FS)
 println("Computed ELBO: ", elbo)
 """
-function variational_expectation!(model::AbstractHMM, y, FB::ForwardBackward, FS::Vector{FilterSmooth{T}}) where {T<:Real}
+function variational_expectation!(
+  model::AbstractHMM, 
+  y::AbstractMatrix{T}, 
+  FB::ForwardBackward, 
+  FS::Vector{FilterSmooth{T}}) where {T<:Real}
   # For now a hardcoded tolerance
   tol = 1e-6
   # Get starting point for iterative E-step
@@ -381,8 +385,11 @@ variational_qs!(model, FB, y, FS)
 # Access the updated log-likelihoods
 println(FB.loglikelihoods)
 """
-function variational_qs!(model::AbstractVector{<:GaussianObservationModel{T, <:AbstractMatrix{T}}}, FB::ForwardBackward, 
-  y, FS::Vector{FilterSmooth{T}}) where {T<:Real}
+function variational_qs!(
+  model::AbstractVector{<:GaussianObservationModel{T, <:AbstractMatrix{T}}}, 
+  FB::ForwardBackward, 
+  y::AbstractMatrix{T}, 
+  FS::Vector{FilterSmooth{T}}) where {T<:Real}
 
   T_steps = size(y, 2)
   K = length(model)
@@ -403,7 +410,9 @@ end
 """
 """
 function mstep!(slds::AbstractHMM,
-    FS::Vector{FilterSmooth{T}}, y::Matrix{T}, FB::ForwardBackward) where {T<:Real}
+    FS::Vector{FilterSmooth{T}}, 
+    y::AbstractMatrix{T}, 
+    FB::ForwardBackward) where {T<:Real}
 
     K = slds.K
 
