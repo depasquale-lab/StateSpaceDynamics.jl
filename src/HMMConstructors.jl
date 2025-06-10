@@ -62,31 +62,10 @@ Create a Switching Gaussian Regression Model
 """
 function SwitchingGaussianRegression(;
     K::Int,
-    input_dim::Int,
-    output_dim::Int,
-    include_intercept::Bool=true,
-    β::Matrix{<:Real}=if include_intercept
-        zeros(input_dim + 1, output_dim)
-    else
-        zeros(input_dim, output_dim)
-    end,
-    Σ::Matrix{<:Real}=Matrix{Float64}(I, output_dim, output_dim),
-    λ::Float64=0.0,
-    A::Matrix{<:Real}=initialize_transition_matrix(K),
-    πₖ::Vector{Float64}=initialize_state_distribution(K),
+    emissions::AbstractVector,
+    A::AbstractMatrix,
+    πₖ::AbstractVector,
 )
-    # Create emission models
-    emissions = [
-        GaussianRegressionEmission(;
-            input_dim=input_dim,
-            output_dim=output_dim,
-            include_intercept=include_intercept,
-            β=β,
-            Σ=Σ,
-            λ=λ,
-        ) for _ in 1:K
-    ]
-
     # Return the HiddenMarkovModel
     return HiddenMarkovModel(; K=K, B=emissions, A=A, πₖ=πₖ)
 end
