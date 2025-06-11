@@ -483,14 +483,14 @@ function gaussian_entropy(H::Symmetric{BigFloat, <:AbstractSparseMatrix})
 end
 
 """
-    random_rotation_matrix(n::Int)
+    random_rotation_matrix(n)
 
 Generate a random rotation matrix of size `n x n`.
 """
 function random_rotation_matrix(n::Int)
     # Generate a random orthogonal matrix using QR decomposition
     Q, _ = qr(randn(n, n))
-    return Q
+    return Matrix(Q)
 end
 
 """

@@ -8,11 +8,11 @@ function test_PPCA_with_params()
    
     # create "data"
     num_obs = 100 
-    X = randn(num_obs, D)
-    μ_vector = vec(mean(X; dims=1))
+    X = randn(D, num_obs)
+    μ_vector = vec(mean(X; dims=2))
 
     # create PPCA struct
-    ppca = ProbabilisticPCA(W, σ², μ_vector, k, D, Matrix{T}(undef, 0, 0) )
+    ppca = ProbabilisticPCA(W, σ², μ_vector)
 
     # Check if parameters are set correctly
     @test size(ppca.W) == (D, k)
@@ -31,16 +31,16 @@ function test_PPCA_E_and_M_Step()
     T = eltype(W)
    
     num_obs = 100 
-    X = randn(num_obs, D)
-    μ_vector = vec(mean(X; dims=1))
+    X = randn(D, num_obs)
+    μ_vector = vec(mean(X; dims=2))
 
-    ppca = ProbabilisticPCA(W, σ², μ_vector, k, D, Matrix{T}(undef, 0, 0))
+    ppca = ProbabilisticPCA(W, σ², μ_vector)
 
     # run E-step    
     E_z, E_zz = StateSpaceDynamics.estep(ppca, X)
     # check dimensions
-    @test size(E_z) == (100, k)
-    @test size(E_zz) == (100, k, k)
+    @test size(E_z) == (k, 100)
+    @test size(E_zz) == (k, k, 100)
     # run M-step, but first save the old parameters
     W_old = copy(ppca.W)  # ← THIS IS THE KEY FIX
     σ²_old = copy(ppca.σ²)
@@ -60,13 +60,13 @@ function test_PPCA_fit()
     T = eltype(W)
    
     num_obs = 100 
-    X = randn(num_obs, D)
-    μ_vector = vec(mean(X; dims=1))
+    X = randn(D, num_obs)
+    μ_vector = vec(mean(X; dims=2))
 
     M = typeof(W)
     V = typeof(μ_vector)
 
-    ppca = ProbabilisticPCA{T, M, V}(W, σ², μ_vector, k, D, Matrix{T}(undef, 0, 0))
+    ppca = ProbabilisticPCA(W, σ², μ_vector)
 
     # fit the model
     ll = fit!(ppca, X)
@@ -74,7 +74,7 @@ function test_PPCA_fit()
     @test ppca.σ² > 0
     @test size(ppca.W) == (D, k)
     @test size(ppca.μ) == (D,)
-    @test size(ppca.z) == (num_obs, k)
+    @test size(ppca.z) == (k, num_obs)
     # check loglikelihood only increases
     @test all(diff(ll) .> 0)
     # also check that the loglikelihood is a scalar
@@ -90,10 +90,10 @@ function test_PPCA_samples()
 
     σ² = 0.5
     num_obs = 100 
-    X = randn(num_obs, D)
+    X = randn(D, num_obs)
     μ = randn(3)
 
-    ppca = ProbabilisticPCA(W, σ², μ, k, D, Matrix{T}(undef, 0, 0))
+    ppca = ProbabilisticPCA(W, σ², μ)
 
     X, z = rand(ppca, 10000)
 

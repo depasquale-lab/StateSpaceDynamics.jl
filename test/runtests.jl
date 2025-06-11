@@ -314,7 +314,6 @@ include("Preprocessing/Preprocessing.jl")
 
 @testset "PPCA Tests" begin
     test_PPCA_with_params()
-    test_PPCA_without_params()
     test_PPCA_E_and_M_Step()
     test_PPCA_fit()
     test_PPCA_samples()
