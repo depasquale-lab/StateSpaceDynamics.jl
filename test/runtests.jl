@@ -128,6 +128,7 @@ include("HiddenMarkovModels/GaussianHMM.jl")
     test_SwitchingGaussian_SingleState_fit()
     test_kmeans_init()
     test_trialized_GaussianHMM()
+    test_SwitchingGaussian_fit_float32()
 end
 
 include("HiddenMarkovModels/SwitchingGaussianRegression.jl")
@@ -136,6 +137,7 @@ include("HiddenMarkovModels/SwitchingGaussianRegression.jl")
     test_SwitchingGaussianRegression_fit()
     test_SwitchingGaussianRegression_SingleState_fit()
     test_trialized_SwitchingGaussianRegression()
+    # test_SwitchingGaussianRegression_fit_float32()
 end
 
 include("HiddenMarkovModels/SwitchingPoissonRegression.jl")
@@ -143,6 +145,7 @@ include("HiddenMarkovModels/SwitchingPoissonRegression.jl")
 @testset "Switching Poisson Regression Tests" begin
     test_SwitchingPoissonRegression_fit()
     test_trialized_SwitchingPoissonRegression()
+    # test_SwitchingPoissonRegression_fit_float32()
 end
 
 include("HiddenMarkovModels/SwitchingBernoulliRegression.jl")
