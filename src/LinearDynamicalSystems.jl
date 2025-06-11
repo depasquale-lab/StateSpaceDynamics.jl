@@ -1,7 +1,4 @@
-export GaussianLDS, PoissonLDS, rand, smooth, fit!
-
-# export for test suite 
-export GaussianStateModel, PoissonObservationModel 
+export LinearDynamicalSystem, GaussianStateModel, GaussianObservationModel, PoissonObservationModel, rand, smooth, fit!
 
 """
     GaussianStateModel{T<:Real} <: AbstractStateModel
@@ -14,44 +11,12 @@ Represents the state model of a Linear Dynamical System with Gaussian noise.
 - `x0::Vector{T}`: Initial state
 - `P0::AbstractMatrix{T}`: Initial state covariance
 """
-mutable struct GaussianStateModel{T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector{T}} <: AbstractStateModel{T}
+Base.@kwdef mutable struct GaussianStateModel{T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector{T}} <: AbstractStateModel{T}
     A::M
     Q::M
     x0::V
     P0::M 
 end
-
-"""
-    GaussianStateModel(; A, Q, x0, P0, latent_dim)
-
-Construct a GaussianStateModel with the given parameters or random initializations.
-
-# Arguments
-- `A::Matrix{T}=Matrix{T}(undef, 0, 0)`: Transition matrix
-- `Q::Matrix{T}=Matrix{T}(undef, 0, 0)`: Process noise covariance
-- `x0::Vector{T}=Vector{T}(undef, 0)`: Initial state
-- `P0::Matrix{T}=Matrix{T}(undef, 0, 0)`: Initial state covariance
-- `latent_dim::Int`: Dimension of the latent state (required if any matrix is not provided.)
-"""
-function GaussianStateModel(;
-    A::AbstractMatrix{T}=Matrix{T}(undef, 0, 0),
-    Q::AbstractMatrix{T}=Matrix{T}(undef, 0, 0),
-    x0::AbstractVector{T}=Vector{T}(undef, 0),
-    P0::AbstractMatrix{T}=Matrix{T}(undef, 0, 0),
-    latent_dim::Int=0,
-) where {T<:Real}
-    if latent_dim == 0 && (isempty(A) || isempty(Q) || isempty(x0) || isempty(P0))
-        throw(ArgumentError("Must provide latent_dim if any matrix is not provided."))
-    end
-
-    A = isempty(A) ? randn(T, latent_dim, latent_dim) : A
-    Q = isempty(Q) ? Matrix{T}(I, latent_dim, latent_dim) : Q
-    x0 = isempty(x0) ? randn(T, latent_dim) : x0
-    P0 = isempty(P0) ? Matrix{T}(I, latent_dim, latent_dim) : P0
-
-    return GaussianStateModel{T, typeof(A), typeof(x0)}(A, Q, x0, P0)
-end
-
 
 """
     GaussianObservationModel{T<:Real} <: AbstractObservationModel
@@ -62,43 +27,9 @@ Represents the observation model of a Linear Dynamical System with Gaussian nois
 - `C::AbstractMatrix{T}`: Observation matrix
 - `R::AbstractMatrix{T}`: Observation noise covariance
 """
-mutable struct GaussianObservationModel{T<:Real, M<:AbstractMatrix{T}} <: AbstractObservationModel{T}
+Base.@kwdef mutable struct GaussianObservationModel{T<:Real, M<:AbstractMatrix{T}} <: AbstractObservationModel{T}
     C::M
     R::M
-end
-
-"""
-    GaussianObservationModel(; C, R, obs_dim, latent_dim)
-
-Construct a GaussianObservationModel with the given parameters or random initializations.
-
-# Arguments
-- `C::Matrix{T}=Matrix{T}(undef, 0, 0)`: Observation matrix
-- `R::Matrix{T}=Matrix{T}(undef, 0, 0)`: Observation noise covariance
-- `obs_dim::Int`: Dimension of the observations (required if C or R is not provided.)
-- `latent_dim::Int`: Dimension of the latent state (required if C is not provided.)
-"""
-function GaussianObservationModel(;
-    C::AbstractMatrix{T}=Matrix{T}(undef, 0, 0),
-    R::AbstractMatrix{T}=Matrix{T}(undef, 0, 0),
-    obs_dim::Int=0,
-    latent_dim::Int=0,
-) where {T<:Real}
-    if obs_dim == 0 && (isempty(C) || isempty(R))
-        throw(ArgumentError("Must provide obs_dim if C or R is not provided."))
-    end
-    if latent_dim == 0 && isempty(C)
-        throw(ArgumentError("Must provide latent_dim if C is not provided."))
-    end
-
-    C = isempty(C) ? randn(T, obs_dim, latent_dim) : C
-    R = isempty(R) ? Matrix{T}(I, obs_dim, obs_dim) : R
-
-    if !check_same_type(C[1], R[1])
-        error("C and R must be of the same element type. Got $(eltype(C[1])) and $(eltype(R[1]))")
-    end
-
-    return GaussianObservationModel(C, R)
 end
 
 """
@@ -110,43 +41,9 @@ Represents the observation model of a Linear Dynamical System with Poisson obser
 - `C::AbstractMatrix{T}`: Observation matrix
 - `log_d::AbstractVector{T}`: Mean firing rate vector (log space)
 """
-mutable struct PoissonObservationModel{T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector{T}} <: AbstractObservationModel{T}
+Base.@kwdef mutable struct PoissonObservationModel{T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector{T}} <: AbstractObservationModel{T}
     C::M
     log_d::V
-end
-
-"""
-    PoissonObservationModel(; C, log_d, obs_dim, latent_dim)
-
-Construct a PoissonObservationModel with the given parameters or random initializations.
-
-# Arguments
-- `C::Matrix{T}=Matrix{T}(undef, 0, 0)`: Observation matrix
-- `log_d::Vector{T}=Vector{T}(undef, 0)`: Mean firing rate vector (log space)
-- `obs_dim::Int`: Dimension of the observations (required if any matrix is not provided.)
-- `latent_dim::Int`: Dimension of the latent state (required if C is not provided.)
-"""
-function PoissonObservationModel(;
-    C::AbstractMatrix{T}=Matrix{T}(undef, 0, 0),
-    log_d::AbstractVector{T}=Vector{T}(undef, 0),
-    obs_dim::Int=0,
-    latent_dim::Int=0
-) where {T<:Real}
-    if obs_dim == 0 && (isempty(C) || isempty(log_d))
-        throw(ArgumentError("Must provide obs_dim if C or log_d is not provided."))
-    end
-    if latent_dim == 0 && isempty(C)
-        throw(ArgumentError("Must provide latent_dim if C is not provided."))
-    end
-
-    C = isempty(C) ? randn(T, obs_dim, latent_dim) : C
-    log_d = isempty(log_d) ? randn(T, obs_dim) : log_d
-
-    if !check_same_type(C[1], log_d[1])
-        error("C and log_d must be of the same element type. Got $(eltype(C[1])) and $(eltype(log_d[1]))")
-    end
-
-    return PoissonObservationModel(C, log_d)
 end
 
 """
@@ -161,14 +58,13 @@ Represents a unified Linear Dynamical System with customizable state and observa
 - `obs_dim::Int`: Dimension of the observations
 - `fit_bool::Vector{Bool}`: Vector indicating which parameters to fit during optimization
 """
-struct LinearDynamicalSystem{T<:Real, S<:AbstractStateModel{T}, O<:AbstractObservationModel{T}}
+Base.@kwdef struct LinearDynamicalSystem{T<:Real, S<:AbstractStateModel{T}, O<:AbstractObservationModel{T}}
     state_model::S
     obs_model::O
     latent_dim::Int
     obs_dim::Int
     fit_bool::Vector{Bool}
 end
-
 
 """
     stateparams(lds::LinearDynamicalSystem{S,O}) where {S<:AbstractStateModel,O<:AbstractObservationModel}
@@ -210,46 +106,6 @@ function obsparams(
     elseif isa(lds.obs_model, PoissonObservationModel)
         return [lds.obs_model.C, lds.obs_model.log_d]
     end
-end
-
-"""
-    GaussianLDS(; A, C, Q, R, x0, P0, fit_bool, obs_dim, latent_dim)
-
-Construct a Linear Dynamical System with Gaussian state and observation models.
-
-# Arguments
-- `A::Matrix{T}=Matrix{T}(undef, 0, 0)`: Transition matrix
-- `C::Matrix{T}=Matrix{T}(undef, 0, 0)`: Observation matrix
-- `Q::Matrix{T}=Matrix{T}(undef, 0, 0)`: Process noise covariance
-- `R::Matrix{T}=Matrix{T}(undef, 0, 0)`: Observation noise covariance
-- `x0::Vector{T}=Vector{T}(undef, 0)`: Initial state
-- `P0::Matrix{T}=Matrix{T}(undef, 0, 0)`: Initial state covariance
-- `fit_bool::Vector{Bool}=fill(true, 6)`: Vector indicating which parameters to fit during optimization
-- `obs_dim::Int`: Dimension of the observations (required if C or R is not provided.)
-- `latent_dim::Int`: Dimension of the latent state (required if A, Q, x0, P0, or C is not provided.)
-"""
-function GaussianLDS(::Type{T}=Float64;
-    A::AbstractMatrix{T}=Matrix{T}(undef, 0, 0),
-    C::AbstractMatrix{T}=Matrix{T}(undef, 0, 0),
-    Q::AbstractMatrix{T}=Matrix{T}(undef, 0, 0),
-    R::AbstractMatrix{T}=Matrix{T}(undef, 0, 0),
-    x0::AbstractVector{T}=Vector{T}(undef, 0),
-    P0::AbstractMatrix{T}=Matrix{T}(undef, 0, 0),
-    fit_bool::Vector{Bool}=fill(true, 6),
-    obs_dim::Int=0,
-    latent_dim::Int=0,
-) where {T<:Real}
-    if latent_dim == 0 &&
-        (isempty(A) || isempty(Q) || isempty(x0) || isempty(P0) || isempty(C))
-        throw(ArgumentError("Must provide latent_dim if any matrix is not provided."))
-    end
-    if obs_dim == 0 && (isempty(C) || isempty(R))
-        throw(ArgumentError("Must provide obs_dim if C or R is not provided."))
-    end
-
-    state_model = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0, latent_dim=latent_dim)
-    obs_model = GaussianObservationModel(; C=C, R=R, obs_dim=obs_dim, latent_dim=latent_dim)
-    return LinearDynamicalSystem(state_model, obs_model, latent_dim, obs_dim, fit_bool)
 end
 
 """
@@ -1442,50 +1298,6 @@ function fit!(
     return mls, param_diff
 end
 
-"""
-    PoissonLDS(; A, C, Q, log_d, x0, P0, refractory_period, fit_bool, obs_dim, latent_dim)
-
-Construct a Linear Dynamical System with Gaussian state and Poisson observation models.
-
-# Arguments
-- `A::Matrix{T}=Matrix{T}(undef, 0, 0)`: Transition matrix
-- `C::Matrix{T}=Matrix{T}(undef, 0, 0)`: Observation matrix
-- `Q::Matrix{T}=Matrix{T}(undef, 0, 0)`: Process noise covariance
-- `log_d::Vector{T}=Vector{T}(undef, 0)`: Mean firing rate vector (log space)
-- `x0::Vector{T}=Vector{T}(undef, 0)`: Initial state
-- `P0::Matrix{T}=Matrix{T}(undef, 0, 0)`: Initial state covariance
-- `refractory_period::Int=1`: Refractory period
-- `fit_bool::Vector{Bool}=fill(true, 7)`: Vector indicating which parameters to fit during optimization
-- `obs_dim::Int`: Dimension of the observations (required if C, D, or log_d is not provided.)
-- `latent_dim::Int`: Dimension of the latent state (required if A, Q, x0, P0, or C is not provided.)
-"""
-function PoissonLDS(::Type{T} = Float64;
-    A::AbstractMatrix{T}=Matrix{T}(undef, 0, 0),
-    C::AbstractMatrix{T}=Matrix{T}(undef, 0, 0),
-    Q::AbstractMatrix{T}=Matrix{T}(undef, 0, 0),
-    log_d::AbstractVector{T}=Vector{T}(undef, 0),
-    x0::AbstractVector{T}=Vector{T}(undef, 0),
-    P0::AbstractMatrix{T}=Matrix{T}(undef, 0, 0),
-    fit_bool::Vector{Bool}=fill(true, 6),
-    obs_dim::Int=0,
-    latent_dim::Int=0,
-) where {T<:Real}
-    if latent_dim == 0 &&
-        (isempty(A) || isempty(Q) || isempty(x0) || isempty(P0) || isempty(C))
-        throw(
-            ArgumentError("Must provide latent_dim if A, Q, x0, P0, or C is not provided.")
-        )
-    end
-    if obs_dim == 0 && (isempty(C) || isempty(log_d))
-        ethrow(ArgumentError("Must provide obs_dim if C or log_d is not provided."))
-    end
-
-    state_model = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0, latent_dim=latent_dim)
-    obs_model = PoissonObservationModel(; 
-        C=C, log_d=log_d, obs_dim=obs_dim, latent_dim=latent_dim
-    )
-    return LinearDynamicalSystem(state_model, obs_model, latent_dim, obs_dim, fit_bool)
-end
 
 """
     loglikelihood(x::Matrix{T}, lds::LinearDynamicalSystem{S,O}, y::Matrix{T}) where {T<:Real, S<:GaussianStateModel, O<:PoissonObservationModel}

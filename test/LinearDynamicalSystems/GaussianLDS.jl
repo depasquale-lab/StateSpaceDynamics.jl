@@ -1,6 +1,6 @@
 const CHECKED_TYPES = [Float32, Float64, BigFloat]
 
-# Define the parameters of a penndulum
+# Define the parameters of a pendulum
 g = 9.81 # gravity
 l = 1.0 # length of pendulum
 dt = 0.01 # time step
@@ -21,8 +21,14 @@ R = Matrix{Float64}((observation_noise_std^2) * I(2))  # Observation noise covar
 function toy_lds(
     ntrials::Int=1, fit_bool::Vector{Bool}=[true, true, true, true, true, true]
 )
-    lds = GaussianLDS(;
-        A=A, C=C, Q=Q, R=R, x0=x0, P0=P0, obs_dim=2, latent_dim=2, fit_bool=fit_bool
+    gaussian_sm = GaussianStateModel(A=A, Q=Q, x0=x0, P0=P0)
+    gaussian_om = GaussianObservationModel(C=C, R=R)
+    lds = LinearDynamicalSystem(
+        state_model=gaussian_sm,
+        obs_model=gaussian_om,
+        latent_dim=2,
+        obs_dim=2,
+        fit_bool=fill(true, 6)
     )
 
     # sample data
@@ -59,14 +65,12 @@ function test_gaussian_obs_constructor_type_preservation()
         Q = Q_int,
         x0 = x0_int,
         P0 = P0_int,
-        latent_dim = 2
     )
 
     @test eltype(gsm_int.A) === Int
     @test eltype(gsm_int.Q) === Int
     @test eltype(gsm_int.x0) === Int
     @test eltype(gsm_int.P0) === Int
-
 
     # Float32
     A_f32 = Float32[1 2; 3 4]
@@ -78,15 +82,13 @@ function test_gaussian_obs_constructor_type_preservation()
         A = A_f32,
         Q = Q_f32,
         x0 = x0_f32,
-        P0 = P0_f32,
-        latent_dim = 2
+        P0 = P0_f32
     )
 
     @test eltype(gsm_f32.A)   === Float32
     @test eltype(gsm_f32.Q)   === Float32
     @test eltype(gsm_f32.x0)  === Float32
     @test eltype(gsm_f32.P0)  === Float32
-
 
     # BigFloat
     A_bf = BigFloat[1 2; 3 4]
@@ -98,8 +100,7 @@ function test_gaussian_obs_constructor_type_preservation()
         A = A_bf,
         Q = Q_bf,
         x0 = x0_bf,
-        P0 = P0_bf,
-        latent_dim = 2
+        P0 = P0_bf
     )
 
     @test eltype(gsm_bf.A) === BigFloat
@@ -117,10 +118,14 @@ function test_gaussian_lds_constructor_type_preservation()
     x0_int = [5, 6]
     P0_int = [4 0; 0 4]
 
-    gls_int = GaussianLDS(Int;
-        A = A_int, C = C_int, Q = Q_int, R = R_int,
-        x0 = x0_int, P0 = P0_int,
-        obs_dim = 2, latent_dim = 2
+    gsm_int = GaussianStateModel(A=A_int, Q=Q_int, x0=x0_int, P0=P0_int)
+    gom_int = GaussianObservationModel(C=C_int, R=R_int)
+    gls_int = LinearDynamicalSystem(
+        state_model=gsm_int,
+        obs_model=gom_int,
+        latent_dim=2,
+        obs_dim=2,
+        fit_bool=fill(true, 6)
     )
 
     @test eltype(gls_int.state_model.A) === Int
@@ -140,10 +145,14 @@ function test_gaussian_lds_constructor_type_preservation()
     x0_f32 = Float32[0.5, 1.5]
     P0_f32 = Float32[4 0; 0 4]
 
-    gls_f32 = GaussianLDS(Float32;
-        A = A_f32, C = C_f32, Q = Q_f32, R = R_f32,
-        x0 = x0_f32, P0 = P0_f32,
-        obs_dim = 2, latent_dim = 2
+    gsm_f32 = GaussianStateModel(A=A_f32, Q=Q_f32, x0=x0_f32, P0=P0_f32)
+    gom_f32 = GaussianObservationModel(C=C_f32, R=R_f32)
+    gls_f32 = LinearDynamicalSystem(
+        state_model=gsm_f32,
+        obs_model=gom_f32,
+        latent_dim=2,
+        obs_dim=2,
+        fit_bool=fill(true, 6)
     )
 
     @test eltype(gls_f32.state_model.A) === Float32
@@ -161,10 +170,14 @@ function test_gaussian_lds_constructor_type_preservation()
     x0_bf = BigFloat[0.1, 0.2]
     P0_bf = BigFloat[4 0; 0 4]
 
-    gls_bf = GaussianLDS(BigFloat;
-        A = A_bf, C = C_bf, Q = Q_bf, R = R_bf,
-        x0 = x0_bf, P0 = P0_bf,
-        obs_dim = 2, latent_dim = 2
+    gsm_bf = GaussianStateModel(A=A_bf, Q=Q_bf, x0=x0_bf, P0=P0_bf)
+    gom_bf = GaussianObservationModel(C=C_bf, R=R_bf)
+    gls_bf = LinearDynamicalSystem(
+        state_model=gsm_bf,
+        obs_model=gom_bf,
+        latent_dim=2,
+        obs_dim=2,
+        fit_bool=fill(true, 6)
     )
 
     @test eltype(gls_bf.state_model.A) === BigFloat
@@ -176,7 +189,6 @@ function test_gaussian_lds_constructor_type_preservation()
 end
 
 function test_gaussian_sample_type_preservation()
-    
     # Float32
     A_f32 = Matrix{Float32}(I, 2, 2)
     C_f32 = Matrix{Float32}(I, 2, 2)
@@ -185,15 +197,14 @@ function test_gaussian_sample_type_preservation()
     x0_f32 = fill(one(Float32), 2)
     P0_f32 = Matrix{Float32}(I, 2, 2)
 
-    gls_f32 = GaussianLDS(Float32;
-        A     = A_f32,
-        C     = C_f32,
-        Q     = Q_f32,
-        R     = R_f32,
-        x0    = x0_f32,
-        P0    = P0_f32,
-        obs_dim    = 2,
-        latent_dim = 2
+    gsm_f32 = GaussianStateModel(A=A_f32, Q=Q_f32, x0=x0_f32, P0=P0_f32)
+    gom_f32 = GaussianObservationModel(C=C_f32, R=R_f32)
+    gls_f32 = LinearDynamicalSystem(
+        state_model=gsm_f32,
+        obs_model=gom_f32,
+        latent_dim=2,
+        obs_dim=2,
+        fit_bool=fill(true, 6)
     )
 
     x_f32, y_f32 = rand(gls_f32; tsteps=50, ntrials=3)
@@ -211,16 +222,16 @@ function test_gaussian_sample_type_preservation()
     x0_bf = fill(one(BigFloat), 2)
     P0_bf = Matrix{BigFloat}(I, 2, 2)
 
-    gls_bf = GaussianLDS(BigFloat;
-        A     = A_bf,
-        C     = C_bf,
-        Q     = Q_bf,
-        R     = R_bf,
-        x0    = x0_bf,
-        P0    = P0_bf,
-        obs_dim    = 2,
-        latent_dim = 2
+    gsm_bf = GaussianStateModel(A=A_bf, Q=Q_bf, x0=x0_bf, P0=P0_bf)
+    gom_bf = GaussianObservationModel(C=C_bf, R=R_bf)
+    gls_bf = LinearDynamicalSystem(
+        state_model=gsm_bf,
+        obs_model=gom_bf,
+        latent_dim=2,
+        obs_dim=2,
+        fit_bool=fill(true, 6)
     )
+
     x_bf, y_bf = rand(gls_bf; tsteps=50, ntrials=3)
 
     @test eltype(x_bf) === BigFloat
@@ -231,7 +242,6 @@ end
 
 function test_gaussian_fit_type_preservation()
     for T in CHECKED_TYPES 
-                                 
         A  = Matrix{T}(I, 2, 2)
         C  = Matrix{T}(I, 2, 2)
         Q  = Matrix{T}(I, 2, 2)
@@ -239,15 +249,14 @@ function test_gaussian_fit_type_preservation()
         x0 = fill(one(T), 2)
         P0 = Matrix{T}(I, 2, 2)
 
-        lds = GaussianLDS(T;
-            A         = A,
-            C         = C,
-            Q         = Q,
-            R         = R,
-            x0        = x0,
-            P0        = P0,
-            obs_dim    = 2,
-            latent_dim = 2
+        gsm = GaussianStateModel(A=A, Q=Q, x0=x0, P0=P0)
+        gom = GaussianObservationModel(C=C, R=R)
+        lds = LinearDynamicalSystem(
+            state_model=gsm,
+            obs_model=gom,
+            latent_dim=2,
+            obs_dim=2,
+            fit_bool=fill(true, 6)
         )
         
         x, y = rand(lds; tsteps=50, ntrials=3)
@@ -261,7 +270,6 @@ end
 
 function test_gaussian_loglikelihood_type_preservation()
     for T in CHECKED_TYPES 
-        
         A  = Matrix{T}(I, 2, 2)
         C  = Matrix{T}(I, 2, 2)
         Q  = Matrix{T}(I, 2, 2)
@@ -269,15 +277,14 @@ function test_gaussian_loglikelihood_type_preservation()
         x0 = fill(one(T), 2)
         P0 = Matrix{T}(I, 2, 2)
 
-        lds = GaussianLDS(T;
-            A         = A,
-            C         = C,
-            Q         = Q,
-            R         = R,
-            x0        = x0,
-            P0        = P0,
-            obs_dim    = 2,
-            latent_dim = 2
+        gsm = GaussianStateModel(A=A, Q=Q, x0=x0, P0=P0)
+        gom = GaussianObservationModel(C=C, R=R)
+        lds = LinearDynamicalSystem(
+            state_model=gsm,
+            obs_model=gom,
+            latent_dim=2,
+            obs_dim=2,
+            fit_bool=fill(true, 6)
         )
 
         x, y = rand(lds; tsteps=50, ntrials=3)
@@ -310,27 +317,11 @@ function test_lds_with_params()
     @test lds.fit_bool == [true, true, true, true, true, true]
 end
 
-function test_lds_without_params()
-    lds = GaussianLDS(; obs_dim=2, latent_dim=2)
-    test_lds_properties(lds)
-
-    @test !isempty(lds.state_model.A)
-    @test !isempty(lds.state_model.Q)
-    @test !isempty(lds.obs_model.C)
-    @test !isempty(lds.obs_model.R)
-    @test !isempty(lds.state_model.x0)
-    @test !isempty(lds.state_model.P0)
-
-    # test error is thrown if nothing is passed
-    @test_throws ArgumentError GaussianLDS()
-end
-
 function test_Gradient()
     lds, x, y = toy_lds()
 
     # for each trial check the gradient
     for i in axes(y, 3)
-
         # numerically calculate the gradient
         f = latents -> StateSpaceDynamics.loglikelihood(latents, lds, y[:, :, i])
         grad_numerical = ForwardDiff.gradient(f, x[:, :, i])
@@ -536,8 +527,24 @@ function test_EM(n_trials::Int=1)
     # create a toy LDS
     lds, x, y = toy_lds(n_trials)
 
-    # create a randomly initialized LDS
-    lds_new = GaussianLDS(; obs_dim=2, latent_dim=2)
+    # Generate some easy params
+    A = Matrix{Float64}(I, 2, 2)
+    C = Matrix{Float64}(I, 2, 2)
+    Q = Matrix{Float64}(I, 2, 2)
+    R = Matrix{Float64}(I, 2, 2)
+    x0 = fill(one(Float64), 2)
+    P0 = Matrix{Float64}(I, 2, 2)
+
+    # create models using keyword constructors
+    gsm = GaussianStateModel(A=A, Q=Q, x0=x0, P0=P0)
+    gom = GaussianObservationModel(C=C, R=R)
+    lds_new = LinearDynamicalSystem(
+        state_model=gsm,
+        obs_model=gom,
+        latent_dim=2,
+        obs_dim=2,
+        fit_bool=fill(true, 6)  # all parameters are fit
+    )
 
     # run the EM algorithm for many iterations
     ml_total, norm_diff = fit!(lds_new, y; max_iter=100)
