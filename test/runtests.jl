@@ -58,7 +58,7 @@ include("LinearDynamicalSystems//GaussianLDS.jl")
         test_Gradient()
         test_Hessian()
         test_smooth()
-        #test_smooth_type_preservation()
+        test_smooth_type_preservation()
     end
     @testset "EM tests" begin
         test_estep()
@@ -90,7 +90,6 @@ include("LinearDynamicalSystems//PoissonLDS.jl")
         test_poisson_sample_type_preservation()
         test_poisson_fit_type_preservation()
         test_poisson_loglikelihood_type_preservation()
-        
     end
     @testset "Smoother Tests" begin
         test_Gradient()
