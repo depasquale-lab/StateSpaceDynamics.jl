@@ -1042,7 +1042,7 @@ Fit a Linear Dynamical System using the Expectation-Maximization (EM) algorithm 
 function fit!(
     lds::LinearDynamicalSystem{T,S,O},
     y::AbstractArray{T,3};
-    max_iter::Int=1000, tol::T=1e-12
+    max_iter::Int=1000, tol::Float64=1e-12
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     if eltype(y) !== T
         error("Observed data must be of type $(T); Got $(eltype(y)))")

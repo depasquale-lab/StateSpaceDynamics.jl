@@ -37,9 +37,9 @@ Compute the inverse of a block tridiagonal matrix.
 # Notes: This implementation is from the paper:
 "An Accelerated Lambda Iteration Method for Multilevel Radiative Transfer” Rybicki, G.B., and Hummer, D.G., Astronomy and Astrophysics, 245, 171–181 (1991), Appendix B.
 """
-function block_tridiagonal_inverse(A::Vector{AbstractMatrix{T}},
-                                   B::Vector{AbstractMatrix{T}},
-                                   C::Vector{AbstractMatrix{T}}) where {T<:Real}
+function block_tridiagonal_inverse(A::Vector{<:AbstractMatrix{T}},
+                                   B::Vector{<:AbstractMatrix{T}},
+                                   C::Vector{<:AbstractMatrix{T}}) where {T<:Real}
     n = length(B)
     block_size = size(B[1], 1)
 
@@ -100,9 +100,9 @@ end
 Compute the inverse of a block tridiagonal matrix using static matrices. See `block_tridiagonal_inverse` for details.
 """
 function block_tridiagonal_inverse_static(
-    A::Vector{AbstractMatrix{T}}, 
-    B::Vector{AbstractMatrix{T}},
-    C::Vector{AbstractMatrix{T}}
+    A::Vector{<:AbstractMatrix{T}}, 
+    B::Vector{<:AbstractMatrix{T}},
+    C::Vector{<:AbstractMatrix{T}}
 ) where {T<:Real}
     n = length(B)
     N = size(B[1], 1)
@@ -170,9 +170,9 @@ Construct a block tridiagonal matrix from three vectors of matrices.
 - `ErrorException` if the lengths of `upper_diag` and `lower_diag` are not one less than the length of `main_diag`.
 """
 function block_tridgm(
-    main_diag::Vector{Matrix{T}},
-    upper_diag::Vector{Matrix{T}},
-    lower_diag::Vector{Matrix{T}},
+    main_diag::Vector{<:AbstractMatrix{T}},
+    upper_diag::Vector{<:AbstractMatrix{T}},
+    lower_diag::Vector{<:AbstractMatrix{T}},
 ) where {T<:Real}
     # Input validation
     if length(upper_diag) != length(main_diag) - 1 ||

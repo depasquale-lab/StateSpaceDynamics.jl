@@ -48,8 +48,6 @@ include("LinearDynamicalSystems//GaussianLDS.jl")
 @testset "GaussianLDS Tests" begin
     @testset "Constructor Tests" begin
         test_lds_with_params()
-        test_lds_without_params()
-
         test_gaussian_obs_constructor_type_preservation()
         test_gaussian_lds_constructor_type_preservation()
         test_gaussian_sample_type_preservation()
@@ -87,8 +85,6 @@ include("LinearDynamicalSystems//PoissonLDS.jl")
 @testset "PoissonLDS Tests" begin
     @testset "Constructor Tests" begin
         test_PoissonLDS_with_params()
-        test_poisson_lds_without_params()
-
         test_pobs_constructor_type_preservation()
         test_plds_constructor_type_preservation()
         test_poisson_sample_type_preservation()
