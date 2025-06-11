@@ -472,6 +472,17 @@ function gaussian_entropy(H::Symmetric{T}) where {T<:Real}
 end
 
 """
+    gaussian_entropy(H::Symmetric{BigFloat, <:SparseMatrix})
+
+Specialized method for BigFloat sparse matrices using logdet.
+"""
+function gaussian_entropy(H::Symmetric{BigFloat, <:AbstractSparseMatrix})
+    n = size(H, 1)
+    logdet_H = logdet(-H)
+    return 0.5 * (n * log(BigFloat(2π)) + logdet_H)
+end
+
+"""
     random_rotation_matrix(n::Int)
 
 Generate a random rotation matrix of size `n x n`.
