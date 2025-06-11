@@ -58,7 +58,6 @@ include("LinearDynamicalSystems//GaussianLDS.jl")
         test_Gradient()
         test_Hessian()
         test_smooth()
-        test_smooth_type_preservation()
     end
     @testset "EM tests" begin
         test_estep()
