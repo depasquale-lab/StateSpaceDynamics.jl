@@ -37,6 +37,53 @@ function test_SwitchingPoissonRegression_fit()
     return any(diff(ll) .< -1e3) == false
 end
 
+function test_SwitchingPoissonRegression_fit_float32()
+    # Use Float32 for all parameters
+    β1 = reshape(Float32[4.0, 3.0, 2.0, 4.0], :, 1)
+    β2 = reshape(Float32[-4.0, -2.0, 1.0, 3.0], :, 1)
+
+    emission_1 = PoissonRegressionEmission(; input_dim=3, output_dim=1, include_intercept=true, β=β1, λ=0.0f0)
+    emission_2 = PoissonRegressionEmission(; input_dim=3, output_dim=1, include_intercept=true, β=β2, λ=0.0f0)
+
+    A = Float32[0.9 0.1; 0.2 0.8]
+    πₖ = Float32[0.7, 0.3]
+
+    true_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2])
+
+    # Sample from model
+    n = 20_000
+    Φ = randn(Float32, 3, n)
+    true_labels, data = rand(true_model, Φ; n=n)
+
+    # Initialize test model with different parameters
+    β1_test = reshape(Float32[3.0, 1.0, 1.0, 5.0], :, 1)
+    β2_test = reshape(Float32[-5.0, -1.0, 0.5, 2.0], :, 1)
+
+    emission_1 = PoissonRegressionEmission(; input_dim=3, output_dim=1, include_intercept=true, β=β1_test, λ=0.0f0)
+    emission_2 = PoissonRegressionEmission(; input_dim=3, output_dim=1, include_intercept=true, β=β2_test, λ=0.0f0)
+
+    A = Float32[0.7 0.3; 0.3 0.7]
+    πₖ = Float32[0.5, 0.5]
+
+    test_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2])
+
+    ll = StateSpaceDynamics.fit!(test_model, data, Φ; max_iters=200)
+
+    # Test transition matrix
+    @test isapprox(test_model.A, true_model.A; atol=0.1)
+
+    # Test emission fit (accounting for potential state label swaps)
+    @test isapprox(test_model.B[1].β, true_model.B[1].β; atol=0.1) ||
+          isapprox(test_model.B[1].β, true_model.B[2].β; atol=0.1)
+    @test isapprox(test_model.B[2].β, true_model.B[2].β; atol=0.1) ||
+          isapprox(test_model.B[2].β, true_model.B[1].β; atol=0.1)
+
+    # Test LL increases (allowing for small fluctuations due to Float32)
+    println(diff(ll))
+    @test all(diff(ll) .> -1e-3)
+end
+
+
 function test_trialized_SwitchingPoissonRegression()
     # Define parameters
     num_trials = 50  # Number of trials

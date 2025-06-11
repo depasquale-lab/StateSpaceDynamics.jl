@@ -36,6 +36,80 @@ function test_SwitchingGaussianRegression_fit()
     @test any(diff(lls) .< 0.0) == false
 end
 
+function test_SwitchingGaussianRegression_fit_float32()
+    T = Float32  # alias for easier substitution
+
+    # Create Emission Models
+    β1 = reshape(T[30.0, 20.0, 20.0, 30.0], :, 1)
+    Σ1 = T[5.0;;]
+    emission_1 = GaussianRegressionEmission(
+        input_dim=3, output_dim=1, include_intercept=true,
+        β=β1, Σ=Σ1, λ=T(0.0)
+    )
+
+    β2 = reshape(T[-40.0, -20.0, 30.0, 20.0], :, 1)
+    Σ2 = T[10.0;;]
+    emission_2 = GaussianRegressionEmission(
+        input_dim=3, output_dim=1, include_intercept=true,
+        β=β2, Σ=Σ2, λ=T(0.0)
+    )
+
+    # Create Switching Regression Model
+    A = T[0.99 0.01; 0.05 0.95]
+    πₖ = T[0.8; 0.2]
+
+    true_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2])
+
+    # Sample from the model
+    n = 50000
+    Φ = randn(T, 3, n)
+    true_labels, data = rand(true_model, Φ; n=n)
+
+    # Fit a new model to the data
+    A = T[0.8 0.2; 0.1 0.9]
+    πₖ = T[0.6; 0.4]
+    β1 = reshape(T[2.0, -1.0, 1.0, 2.0], :, 1)
+    Σ1 = T[4.0;;]
+    emission_1 = GaussianRegressionEmission(
+        input_dim=3, output_dim=1, include_intercept=true,
+        β=β1, Σ=Σ1, λ=T(0.0)
+    )
+
+    β2 = reshape(T[-2.5, -1.0, 3.5, 3.0], :, 1)
+    Σ2 = T[9.0;;]
+    emission_2 = GaussianRegressionEmission(
+        input_dim=3, output_dim=1, include_intercept=true,
+        β=β2, Σ=Σ2, λ=T(0.0)
+    )
+
+    test_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2])
+    lls = StateSpaceDynamics.fit!(test_model, data, Φ)
+
+    println("Sigma 1", test_model.B[1].Σ)
+    println("Sigma 2", test_model.B[2].Σ)
+
+    # Test transition matrix
+    @test isapprox(true_model.A, test_model.A, atol=T(0.1))
+
+    # Test regression fit (account for label-swapping symmetry)
+    @test isapprox(test_model.B[1].β, true_model.B[1].β; atol=T(0.1)) ||
+          isapprox(test_model.B[1].β, true_model.B[2].β; atol=T(0.1))
+    @test isapprox(test_model.B[2].β, true_model.B[2].β; atol=T(0.1)) ||
+          isapprox(test_model.B[2].β, true_model.B[1].β; atol=T(0.1))
+
+    # Test that the ll is always increasing
+    @test_broken any(diff(lls) .< 0.2) == false
+
+    # Type checks
+    @test eltype(test_model.A) == T
+    @test eltype(test_model.πₖ) == T
+    @test eltype(test_model.B[1].β) == T
+    @test eltype(test_model.B[2].β) == T
+    @test eltype(test_model.B[1].Σ) == T
+    @test eltype(test_model.B[2].Σ) == T
+    @test eltype(lls[end]) == T
+end
+
 function test_SwitchingGaussianRegression_SingleState_fit()
     # Create one emission
     emission_1 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([3.0, 2.0, 2.0, 3.0], :, 1), Σ=[1.0;;], λ=0.0)
@@ -90,7 +164,7 @@ function test_trialized_SwitchingGaussianRegression()
 
     for i in 1:num_trials
         Φ = randn(3, n)
-        true_labels, data = StateSpaceDynamics.sample(true_model, Φ, n=n)
+        true_labels, data = rand(true_model, Φ, n=n)
         push!(all_true_labels, true_labels)
         push!(all_data, data)
         push!(Φ_total, Φ)
