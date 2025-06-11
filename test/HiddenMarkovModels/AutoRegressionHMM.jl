@@ -72,7 +72,7 @@ function test_ARHMM_fit()
     Y = StateSpaceDynamics.construct_AR_feature_matrix(data, order, false)
     X = copy(Y[:, end])
     X = reshape(Y[:, end], 2, 1)
-    AR_labels, AR_data = rand(true_model, X, n=2000, autoregressive=true)
+    AR_labels, AR_data = rand(true_model, X, n=num_points, autoregressive=true)
     
     
     """
@@ -126,7 +126,7 @@ function test_timeseries_to_AR_feature_matrix()
 
     # Sample from the model
     n = 100
-    Φ = randn(2, n)
+    Φ = randn(3, n)
     true_labels, data = rand(true_model, Φ, n=n)
 
     # Sample from the AR HMM using its own emission models and a starting point
@@ -154,7 +154,7 @@ function test_trialized_timeseries_to_AR_feature_matrix()
     num_trials = 10
     # Sample from the model
     for i in 1:num_trials
-        Φ = randn(2, 100)
+        Φ = randn(3, 100)
         true_labels, data = rand(true_model, Φ, n=100)
         push!(all_data, data)
         push!(Φ_total, Φ)
