@@ -1,45 +1,46 @@
 function test_PPCA_with_params()
     # Set parameters
-    W = randn(3, 2)
+    D = 3
+    k = 2 
+    W = randn(D, k)
     σ² = 0.5
+    T = eltype(W)
+   
     # create "data"
-    X = randn(100, 3)
-    μ = vec(mean(X; dims=1))
-    # create PPCA object
-    ppca = ProbabilisticPCA(W, σ², μ, 2, 3, Matrix{Float64}(undef, 0, 0))
-    # Check if parameters are set correctly
-    @test ppca.W === W
-    @test ppca.σ² === σ²
-    @test ppca.μ === μ
-    @test ppca.D === 3
-    @test ppca.k === 2
-    @test isempty(ppca.z)
-end
+    num_obs = 100 
+    X = randn(num_obs, D)
+    μ_vector = vec(mean(X; dims=1))
 
-function test_PPCA_without_params()
-    # create ppca object
-    ppca = ProbabilisticPCA(; k=2, D=3)
+    # create PPCA struct
+    ppca = ProbabilisticPCA(W, σ², μ_vector, k, D, Matrix{T}(undef, 0, 0) )
+
     # Check if parameters are set correctly
-    @test size(ppca.W) == (3, 2)
-    @test ppca.σ² > 0
-    @test ppca.D == 3
-    @test ppca.k == 2
+    @test size(ppca.W) == (D, k)
+    @test ppca.σ² === σ²
+    @test ppca.D === D
+    @test ppca.k === k
     @test isempty(ppca.z)
 end
 
 function test_PPCA_E_and_M_Step()
-    # create ppca object
-    ppca = ProbabilisticPCA(; k=2, D=3)
-    # create data
-    X = randn(100, 3)
-    # assign μ, normally fit! does this
-    μ = vec(mean(X; dims=1))
-    ppca.μ = μ
-    # run E-step
+    # create ppca object 
+    D = 3
+    k = 2 
+    W = randn(D, k)
+    σ² = 0.5
+    T = eltype(W)
+   
+    num_obs = 100 
+    X = randn(num_obs, D)
+    μ_vector = vec(mean(X; dims=1))
+
+    ppca = ProbabilisticPCA(W, σ², μ_vector, k, D, Matrix{T}(undef, 0, 0))
+
+    # run E-step    
     E_z, E_zz = StateSpaceDynamics.estep(ppca, X)
     # check dimensions
-    @test size(E_z) == (100, 2)
-    @test size(E_zz) == (100, 2, 2)
+    @test size(E_z) == (100, k)
+    @test size(E_zz) == (100, k, k)
     # run M-step, but first save the old parameters
     W_old = copy(ppca.W)  # ← THIS IS THE KEY FIX
     σ²_old = copy(ppca.σ²)
@@ -47,22 +48,33 @@ function test_PPCA_E_and_M_Step()
     # check if the parameters are updated
     @test ppca.W != W_old
     @test ppca.σ² != σ²_old
-    @test ppca.μ == μ
+    @test ppca.μ == μ_vector
 end
 
 function test_PPCA_fit()
     # create ppca object
-    ppca = ProbabilisticPCA(; k=2, D=3)
-    # create data
-    X = randn(100, 3)
-    ppca.μ = vec(mean(X; dims=1))
+    D = 3
+    k = 2 
+    W = randn(D, k)
+    σ² = 0.5
+    T = eltype(W)
+   
+    num_obs = 100 
+    X = randn(num_obs, D)
+    μ_vector = vec(mean(X; dims=1))
+
+    M = typeof(W)
+    V = typeof(μ_vector)
+
+    ppca = ProbabilisticPCA{T, M, V}(W, σ², μ_vector, k, D, Matrix{T}(undef, 0, 0))
+
     # fit the model
     ll = fit!(ppca, X)
     # check if the parameters are updated
     @test ppca.σ² > 0
-    @test size(ppca.W) == (3, 2)
-    @test size(ppca.μ) == (3,)
-    @test size(ppca.z) == (100, 2)
+    @test size(ppca.W) == (D, k)
+    @test size(ppca.μ) == (D,)
+    @test size(ppca.z) == (num_obs, k)
     # check loglikelihood only increases
     @test all(diff(ll) .> 0)
     # also check that the loglikelihood is a scalar
@@ -71,10 +83,17 @@ function test_PPCA_fit()
 end
 
 function test_PPCA_samples()
-    W = rand(3, 2)
+    D = 3
+    k = 2 
+    W = randn(D, k)
+    T = eltype(W)
+
     σ² = 0.5
-    μ = randn(3, 1)
-    ppca = ProbabilisticPCA(W, σ², μ, 2, 3, Matrix{Float64}(undef, 0, 0))
+    num_obs = 100 
+    X = randn(num_obs, D)
+    μ = randn(3)
+
+    ppca = ProbabilisticPCA(W, σ², μ, k, D, Matrix{T}(undef, 0, 0))
 
     X, z = rand(ppca, 10000)
 

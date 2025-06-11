@@ -4,6 +4,11 @@ export row_matrix, stabilize_covariance_matrix, valid_Σ, make_posdef!, gaussian
 export random_rotation_matrix
 
 # Type checking utilities
+"""
+    check_same_type(args...)
+
+Utility function to check if n arguments share the same types. 
+"""
 function check_same_type(args...)
     if length(args) ≤ 1
         return true  # trivial case
@@ -19,12 +24,6 @@ end
     row_matrix(x::AbstractVector)
 
 Convert a vector to a row matrix.
-
-# Arguments
-- `x::AbstractVector`: The input vector.
-
-# Returns
-- A row matrix (1 × n) containing the elements of `x`.
 """
 function row_matrix(x::AbstractVector)
     return reshape(x, 1, length(x))
@@ -35,22 +34,12 @@ end
 
 Compute the inverse of a block tridiagonal matrix.
 
-# Arguments
-- `A`: Lower diagonal blocks.
-- `B`: Main diagonal blocks.
-- `C`: Upper diagonal blocks.
-
-# Returns
-- `λii`: Diagonal blocks of the inverse.
-- `λij`: Off-diagonal blocks of the inverse.
-
 # Notes: This implementation is from the paper:
-
 "An Accelerated Lambda Iteration Method for Multilevel Radiative Transfer” Rybicki, G.B., and Hummer, D.G., Astronomy and Astrophysics, 245, 171–181 (1991), Appendix B.
 """
-function block_tridiagonal_inverse(A::Vector{Matrix{T}},
-                                   B::Vector{Matrix{T}},
-                                   C::Vector{Matrix{T}}) where {T<:Real}
+function block_tridiagonal_inverse(A::Vector{AbstractMatrix{T}},
+                                   B::Vector{AbstractMatrix{T}},
+                                   C::Vector{AbstractMatrix{T}}) where {T<:Real}
     n = length(B)
     block_size = size(B[1], 1)
 
@@ -111,7 +100,9 @@ end
 Compute the inverse of a block tridiagonal matrix using static matrices. See `block_tridiagonal_inverse` for details.
 """
 function block_tridiagonal_inverse_static(
-    A::Vector{Matrix{T}}, B::Vector{Matrix{T}}, C::Vector{Matrix{T}}
+    A::Vector{AbstractMatrix{T}}, 
+    B::Vector{AbstractMatrix{T}},
+    C::Vector{AbstractMatrix{T}}
 ) where {T<:Real}
     n = length(B)
     N = size(B[1], 1)
@@ -174,14 +165,6 @@ end
     block_tridgm(main_diag::Vector{Matrix{T}}, upper_diag::Vector{Matrix{T}}, lower_diag::Vector{Matrix{T}}) where {T<:Real}
 
 Construct a block tridiagonal matrix from three vectors of matrices.
-
-# Arguments
-- `main_diag::Vector{Matrix{T}}`: Vector of matrices for the main diagonal.
-- `upper_diag::Vector{Matrix{T}}`: Vector of matrices for the upper diagonal.
-- `lower_diag::Vector{Matrix{T}}`: Vector of matrices for the lower diagonal.
-
-# Returns
-- A sparse matrix representing the block tridiagonal matrix.
 
 # Throws
 - `ErrorException` if the lengths of `upper_diag` and `lower_diag` are not one less than the length of `main_diag`.
@@ -262,36 +245,23 @@ function block_tridgm(
     return sparse(I, J, V, N, N, +)
 end
 
+
 # Initialization utilities
 """
     euclidean_distance(a::AbstractVector{Float64}, b::AbstractVector{Float64})
 
 Calculate the Euclidean distance between two points.
-
-# Arguments
-- `a::AbstractVector{Float64}`: The first point.
-- `b::AbstractVector{Float64}`: The second point.
-
-# Returns
-- The Euclidean distance between `a` and `b`.
 """
-function euclidean_distance(a::AbstractVector{Float64}, b::AbstractVector{Float64})
+function euclidean_distance(a::AbstractVector{T}, b::AbstractVector{T}) where {T<:Real}
     return sqrt(sum((a .- b) .^ 2))
 end
 
 """
-    kmeanspp_initialization(data::Matrix{<:Real}, k_means::Int)
+    kmeanspp_initialization(data::AbstractMatrix{T}, k_means::Int) where {T<:Real}
 
 Perform K-means++ initialization for cluster centroids.
-
-# Arguments
-- `data::Matrix{<:Real}`: The input data matrix where each row is a data point.
-- `k_means::Int`: The number of clusters.
-
-# Returns
-- A matrix of initial centroids for K-means clustering.
 """
-function kmeanspp_initialization(data::Matrix{<:Real}, k_means::Int)
+function kmeanspp_initialization(data::AbstractMatrix{T}, k_means::Int) where {T<:Real}
     N, D = size(data)
     centroids = zeros(D, k_means)
     rand_idx = rand(1:N)
@@ -312,30 +282,21 @@ function kmeanspp_initialization(data::Matrix{<:Real}, k_means::Int)
 end
 
 """
-    kmeanspp_initialization(data::Vector{Float64}, k_means::Int)
-
 Perform K-means++ initialization for cluster centroids on vector data.
-
-# Arguments
-- `data::Vector{Float64}`: The input data vector.
-- `k_means::Int`: The number of clusters.
-
-# Returns
-- A matrix of initial centroids for K-means clustering.
 """
-function kmeanspp_initialization(data::Vector{Float64}, k_means::Int)
+function kmeanspp_initialization(data::AbstractVector{T}, k_means::Int) where {T<:Real}
     # reshape data
     data = reshape(data, length(data), 1)
     return kmeanspp_initialization(data, k_means)
 end
 
 """
-    kmeans_clustering(data::Matrix{<:Real}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6)
+    kmeans_clustering(data::Matrix{T}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6) where {T<:Real}
 
 Perform K-means clustering on the input data.
 
 # Arguments
-- `data::Matrix{<:Real}`: The input data matrix where each row is a data point.
+- `data::Matrix{T}`: The input data matrix where each row is a data point.
 - `k_means::Int`: The number of clusters.
 - `max_iters::Int=100`: Maximum number of iterations.
 - `tol::Float64=1e-6`: Convergence tolerance.
@@ -344,8 +305,8 @@ Perform K-means clustering on the input data.
 - A tuple containing the final centroids and cluster labels for each data point.
 """
 function kmeans_clustering(
-    data::Matrix{<:Real}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6
-)
+    data::AbstractMatrix{T}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6
+) where {T<:Real}
     N, D = size(data)
     centroids = kmeanspp_initialization(data, k_means)
     labels = zeros(Int, N)
@@ -400,22 +361,11 @@ function kmeans_clustering(
 end
 
 """
-    kmeans_clustering(data::Vector{Float64}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6)
-
 Perform K-means clustering on vector data.
-
-# Arguments
-- `data::Vector{Float64}`: The input data vector.
-- `k_means::Int`: The number of clusters.
-- `max_iters::Int=100`: Maximum number of iterations.
-- `tol::Float64=1e-6`: Convergence tolerance.
-
-# Returns
-- A tuple containing the final centroids and cluster labels for each data point.
 """
 function kmeans_clustering(
-    data::Vector{Float64}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6
-)
+    data::AbstractVector{T}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6
+) where {T<:Real}
     # reshape data
     data = reshape(data, length(data), 1)
     return kmeans_clustering(data, k_means, max_iters, tol)
@@ -425,12 +375,6 @@ end
     logistic(x::Real)
 
 Calculate the logistic function in a numerically stable way.
-
-# Arguments
-- `x::Real`: The input value.
-
-# Returns
-- The result of the logistic function applied to `x`.
 """
 function logistic(x::Real)
     if x > 0
@@ -442,15 +386,9 @@ function logistic(x::Real)
 end
 
 """
-    make_posdef!(A::Matrix{T}) where {T}
+    make_posdef!(A::AbstractMatrix{T}) where {T<:Real}
 
 Ensure that a matrix is positive definite by adjusting its eigenvalues.
-
-# Arguments
-- `A::Matrix{T}`: The input matrix.
-
-# Returns
-- A positive definite matrix derived from `A`.
 """
 function make_posdef!(A::AbstractMatrix{T}; min_eigval::T=convert(T, 1e-6)) where {T<:Real}
     # Work with the symmetric part
@@ -483,14 +421,8 @@ end
     stabilize_covariance_matrix(Σ::Matrix{<:Real})
 
 Stabilize a covariance matrix by ensuring it is symmetric and positive definite.
-
-# Arguments
-- `Σ::Matrix{<:Real}`: The input covariance matrix.
-
-# Returns
-- A stabilized version of the input covariance matrix.
 """
-function stabilize_covariance_matrix(Σ::Matrix{<:Real})
+function stabilize_covariance_matrix(Σ::AbstractMatrix{T}) where {T<:Real}
     # check if the covariance is symmetric. If not, make it symmetric
     if !ishermitian(Σ)
         Σ = (Σ + Σ') * 0.5
@@ -502,7 +434,7 @@ function stabilize_covariance_matrix(Σ::Matrix{<:Real})
     return Σ
 end
 
-function valid_Σ(Σ::Matrix{<:Real})
+function valid_Σ(Σ::AbstractMatrix{T}) where {T<:Real}
     return ishermitian(Σ) && isposdef(Σ)
 end
 
@@ -528,17 +460,11 @@ function stack_tuples(d)
 end
 
 """
-    gaussian_entropy(H::Symmetric{T}) where T <: Real
+    gaussian_entropy(H::Symmetric{T}) where {T<:Real}
 
 Calculate the entropy of a Gaussian distribution with Hessian (i.e. negative precision) matrix `H`.
-
-# Arguments
-- `H::Symmetric{T}`: The Hessian matrix.
-
-# Returns
-- The entropy of the Gaussian distribution.
 """
-function gaussian_entropy(H::Symmetric{T}) where T <: Real
+function gaussian_entropy(H::Symmetric{T}) where {T<:Real}
     n = size(H, 1)
     F = cholesky(-H)
     logdet_H = 2 * sum(log.(diag(F)))
@@ -546,12 +472,20 @@ function gaussian_entropy(H::Symmetric{T}) where T <: Real
 end
 
 """
+    gaussian_entropy(H::Symmetric{BigFloat, <:SparseMatrix})
+
+Specialized method for BigFloat sparse matrices using logdet.
+"""
+function gaussian_entropy(H::Symmetric{BigFloat, <:AbstractSparseMatrix})
+    n = size(H, 1)
+    logdet_H = logdet(-H)
+    return 0.5 * (n * log(BigFloat(2π)) + logdet_H)
+end
+
+"""
     random_rotation_matrix(n::Int)
 
 Generate a random rotation matrix of size `n x n`.
-
-# Arguments
-- `n::Int`: The size of the rotation matrix.
 """
 function random_rotation_matrix(n::Int)
     # Generate a random orthogonal matrix using QR decomposition
@@ -559,6 +493,11 @@ function random_rotation_matrix(n::Int)
     return Q
 end
 
+"""
+    getproperty(model::AutoRegressiveEmission, sym::Symbol)
+
+Get various properties of 'innerGaussianRegression`. 
+"""
 function Base.getproperty(model::AutoRegressiveEmission, sym::Symbol)
     if sym === :β
         return model.innerGaussianRegression.β
@@ -573,6 +512,12 @@ function Base.getproperty(model::AutoRegressiveEmission, sym::Symbol)
     end
 end
 
+"""
+    setproperty!(model::AutoRegressiveEmission, sym::Symbol, value)
+
+Assign to properties of an `AutoRegressiveEmission` by forwarding certain symbols
+to its `innerGaussianRegression` field:
+"""
 # define setters for innerGaussianRegression fields
 function Base.setproperty!(model::AutoRegressiveEmission, sym::Symbol, value)
     if sym === :β

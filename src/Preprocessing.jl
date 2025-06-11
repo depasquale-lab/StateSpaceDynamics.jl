@@ -1,106 +1,33 @@
 export ProbabilisticPCA, loglikelihood, fit!
 
 """
-    mutable struct ProbabilisticPCA 
+    mutable struct ProbabilisticPCA{T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector{T}}
 
 Probabilistic PCA model from Bishop's Pattern Recognition and Machine Learning.
 
 # Fields:
     W: Weight matrix that maps from latent space to data space.
     σ²: Noise variance
-    μ: Mean of the data
+    μ: Mean of the data 
     k: Number of latent dimensions
-    D: Number of features
+    D: Dimension of the data 
     z: Latent variables
 """
 mutable struct ProbabilisticPCA{T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector{T}}
-    W::M # weight matrix
-    σ²::T # noise variance
-    μ::V # mean of the data
-    k::Int # number of latent dimensions
-    D::Int # dimension of the data
-    z::M # latent variables
-end
-
-"""
-#     ProbabilisticPCA(;W::Matrix{<:AbstractFloat}, σ²:: <: AbstractFloat, μ::Matrix{<:AbstractFloat}, k::Int, D::Int)
-
-# Constructor for ProbabilisticPCA model.
-
-# # Args:
-# - `W::Matrix{<:AbstractFloat}`: Weight matrix that maps from latent space to data space.
-# - `σ²:: <: AbstractFloat`: Noise variance
-# - `μ::Matrix{<:AbstractFloat}`: Mean of the data
-# - `k::Int`: Number of latent dimensions
-# - `D::Int`: Number of features
-
-# # Example:
-# ```julia
-# # PPCA with unknown parameters
-# ppca = ProbabilisticPCA(k=1, D=2)
-# # PPCA with known parameters
-# ppca = ProbabilisticPCA(W=rand(2, 1), σ²=0.1, μ=rand(2), k=1, D=2)
-# ```
-# """
-function ProbabilisticPCA(
-    ::Type{T} = Float64;
-    W::Union{AbstractMatrix{T}, Nothing} = nothing,
-    μ::Union{AbstractVector{T}, Nothing} = nothing, 
-    σ²::Union{T, Nothing} = nothing,
-    k::Int,
-    D::Int
-) where {T<:Real}
-    
-    # Initialize W with proper type
-    if W === nothing
-        W_matrix = randn(T, D, k) / sqrt(T(k))
-    else
-        @assert size(W) == (D, k) "W must have size ($D, $k)"
-        W_matrix = W
-    end
-    
-    # Initialize μ with proper type
-    if μ === nothing
-        μ_vector = zeros(T, D)  # Will be set during fitting
-    else
-        @assert length(μ) == D "μ must have length $D"
-        μ_vector = μ
-    end
-    
-    # Initialize σ²
-    if σ² === nothing
-        σ²_val = one(T)  # Default to 1.0 in type T
-    else
-        @assert σ² > zero(T) "σ² must be positive"
-        σ²_val = σ²
-    end
-    
-    # Empty latent variables - will be allocated during fitting
-    z_matrix = Matrix{T}(undef, 0, k)
-    
-    # Infer matrix and vector types from the actual objects
-    M = typeof(W_matrix)
-    V = typeof(μ_vector)
-    
-    return ProbabilisticPCA{T, M, V}(W_matrix, σ²_val, μ_vector, k, D, z_matrix)
+    W::M 
+    σ²::T 
+    μ::V
+    k::Int
+    D::Int 
+    z::M 
 end
 
 """
     E_Step(ppca::ProbabilisticPCA, X::Matrix{<:AbstractFloat})
 
 Expectation step of the EM algorithm for PPCA. See Bishop's Pattern Recognition and Machine Learning for more details.
-
-# Args:
-- `ppca::ProbabilisticPCA`: PPCA model
-- `X::Matrix{<:AbstractFloat}`: Data matrix
-
-# Examples:
-```julia
-ppca = ProbabilisticPCA(K=1, D=2)
-E_Step(ppca, rand(10, 2))
-```
 """
-function estep(ppca::ProbabilisticPCA, X::Matrix{T}) where {T <:Real}
+function estep(ppca::ProbabilisticPCA, X::Matrix{T}) where {T<:Real}
     # get dims
     N, D = size(X)
     @assert D == ppca.D "Data dimension mismatch: expected $(ppca.D), got $D"
@@ -114,44 +41,36 @@ function estep(ppca::ProbabilisticPCA, X::Matrix{T}) where {T <:Real}
     M_inv = cholesky(M).U \ (cholesky(M).L \ I(ppca.k))
     # calculate E_z and E_zz
     @views for i in 1:N
-        E_z[i, :] = M_inv * ppca.W' * (X[i, :] .- ppca.μ')
+        E_z[i, :] = M_inv * ppca.W' * (X[i, :] .- ppca.μ)
         E_zz[i, :, :] = (ppca.σ² * M_inv) + (E_z[i, :]  * E_z[i, :]')
     end
     
     return E_z, E_zz
 end
 
+
 """
     M_Step!(model::ProbabilisticPCA, X::Matrix{<:AbstractFloat}, E_z::Matrix{<:AbstractFloat}, E_zz::Array{<:AbstractFloat, 3}
+
 Maximization step of the EM algorithm for PPCA. See Bishop's Pattern Recognition and Machine Learning for more details.
-
-# Args:
-- `model::ProbabilisticPCA`: PPCA model
-- `X::Matrix{<:AbstractFloat}`: Data matrix
-- `E_z::Matrix{<:AbstractFloat}`: E[z]
-- `E_zz::Matrix{<:AbstractFloat}`: E[zz']
-
-# Examples:
-```julia
-ppca = ProbabilisticPCA(K=1, D=2)
-E_z, E_zz = E_Step(ppca, rand(10, 2))
-M_Step!(ppca, rand(10, 2), E_z, E_zzᵀ)
-```
 """
 function mstep!(
     ppca::ProbabilisticPCA, X::Matrix{T}, E_z::AbstractArray{T}, E_zz::AbstractArray{T}
-) where {T <:Real}
+) where {T<:Real}
     # get dims
     N, D = size(X)
     
     # Calculate the sum of E[z_i z_i^T] across all samples
     sum_E_zz = sum(E_zz, dims=1)[1, :, :]  # Shape: (k, k)
-    
-    # Calculate the numerator: Σᵢ (xᵢ - μ) E[zᵢ]ᵀ
+    WW = ppca.W' * ppca.W
+
     numerator = zeros(T, D, ppca.k)
+    running_sum_σ² = zero(T)
+
+    # Calculate the numerator: Σᵢ (xᵢ - μ) E[zᵢ]ᵀ
     for i in 1:N
-        centered = @view(X[i, :])  .- ppca.μ' 
-        running_sum_W .+= centered * @view(E_z[i, :])'
+        centered = @view(X[i, :])  .- ppca.μ
+        numerator .+= centered * @view(E_z[i, :])'
 
         running_sum_σ² += 
             sum(centered .^ 2) -
@@ -163,9 +82,6 @@ function mstep!(
     ppca.W .= Matrix{eltype(ppca.W)}(numerator / sum_E_zz)
     
     # Update σ²
-    running_sum_σ² = zero(T)
-    WW = ppca.W' * ppca.W
-    
     @views for i in 1:N
         centered_xi = X[i, :] - ppca.μ
         
@@ -182,22 +98,20 @@ function mstep!(
     return ppca
 end
 
+
 """
-    loglikelihood(model::ProbabilisticPCA, X::Matrix{<:AbstractFloat})
+    loglikelihood(model::ProbabilisticPCA, X::AbstractMatrix{T}) where {T<:Real}
     
 Calculate the log-likelihood of the data given the PPCA model.
 
 # Args:
 - `model::ProbabilisticPCA`: PPCA model
-- `X::Matrix{<:AbstractFloat}`: Data matrix
+- `X::AbstractMatrix{T}`: Data matrix
 
-# Examples:
-```julia
-ppca = ProbabilisticPCA(K=1, D=2)
-loglikelihood(ppca, rand(10, 2))
-```
+# Returns 
+- `ll`: Complete data log-likelihood 
 """
-function loglikelihood(ppca::ProbabilisticPCA, X::Matrix{<:Real})
+function loglikelihood(ppca::ProbabilisticPCA, X::AbstractMatrix{T}) where {T<:Real}
     # get dims
     N, D = size(X)
     @assert D == ppca.D "Data dimension mismatch"
@@ -247,25 +161,22 @@ end
 
 
 """
-    fit!(model::ProbabilisticPCA, X::Matrix{<:Real}, max_iter::Int=100, tol::AbstractFloat=1e-6)
+    fit!(ppca::ProbabilisticPCA, X::AbstractMatrix{T}, max_iter::Int=100, tol::AbstractFloat=1e-6)
 
 Fit the PPCA model to the data using the EM algorithm.
 
 # Args:
 - `model::ProbabilisticPCA`: PPCA model
-- `X::Matrix{<:AbstractFloat}`: Data matrix
+- `X::AbstractMatrix{T}`: Data matrix
 - `max_iter::Int`: Maximum number of iterations
 - `tol::AbstractFloat`: Tolerance for convergence
 
-# Examples:
-```julia
-ppca = ProbabilisticPCA(K=1, D=2)
-fit!(ppca, rand(10, 2))
-```
+# Returns
+- `lls::Vector{T}`: Vector of log-likelihood values for each iteration.
 """
 function fit!(
-    ppca::ProbabilisticPCA, X::Matrix{<:Real}, max_iters::Int=100, tol::Float64=1e-6
-)
+    ppca::ProbabilisticPCA, X::AbstractMatrix{T}, max_iters::Int=100, tol::Float64=1e-6
+) where {T<:Real}
     if all(iszero, ppca.μ)
         ppca.μ .= vec(mean(X; dims=1))
     end
