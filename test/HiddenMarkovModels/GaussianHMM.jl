@@ -56,6 +56,72 @@ function test_SwitchingGaussian_fit()
     @test any(diff(ll) .< -1) == false
 end
 
+function test_SwitchingGaussian_fit_float32()
+    output_dim = 2
+
+    # Define transition matrix and initial state probabilities as Float32
+    A = Float32[0.99 0.01; 0.05 0.95]
+    πₖ = Float32[0.5, 0.5]
+
+    # True emission models
+    μ_1 = Float32[0.0, 0.0]
+    Σ_1 = 0.1f0 * Matrix{Float32}(I, output_dim, output_dim)
+    emission_1 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)
+
+    μ_2 = Float32[2.0, 1.0]
+    Σ_2 = 0.2f0 * Matrix{Float32}(I, output_dim, output_dim)
+    emission_2 = GaussianEmission(output_dim=output_dim, μ=μ_2, Σ=Σ_2)
+
+    true_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
+
+    # Sample from the model
+    n = 50_000
+    true_labels, data = rand(true_model; n=n)
+
+    # Random initialization for fitting model
+    μ_1 = rand(Float32, output_dim)
+    Σ_1 = 0.3f0 * Matrix{Float32}(I, output_dim, output_dim)
+    emission_1 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)
+
+    μ_2 = rand(Float32, output_dim)
+    Σ_2 = 0.5f0 * Matrix{Float32}(I, output_dim, output_dim)
+    emission_2 = GaussianEmission(output_dim=output_dim, μ=μ_2, Σ=Σ_2)
+
+    A = Float32[0.8 0.2; 0.05 0.95]
+    πₖ = Float32[0.6, 0.4]
+    test_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
+
+    # Fit model
+    ll = StateSpaceDynamics.fit!(test_model, data)
+
+    # Compare transition matrix
+    @test isapprox(test_model.A, true_model.A, atol=0.1f0)
+
+    # Compare emission means
+    @test isapprox(test_model.B[1].μ, true_model.B[1].μ; atol=0.1f0) ||
+          isapprox(test_model.B[1].μ, true_model.B[2].μ; atol=0.1f0)
+    @test isapprox(test_model.B[2].μ, true_model.B[2].μ; atol=0.1f0) ||
+          isapprox(test_model.B[2].μ, true_model.B[1].μ; atol=0.1f0)
+
+    # Compare emission covariances
+    @test isapprox(test_model.B[1].Σ, true_model.B[1].Σ; atol=0.1f0) ||
+          isapprox(test_model.B[1].Σ, true_model.B[2].Σ; atol=0.1f0)
+    @test isapprox(test_model.B[2].Σ, true_model.B[2].Σ; atol=0.1f0) ||
+          isapprox(test_model.B[2].Σ, true_model.B[1].Σ; atol=0.1f0)
+
+    # Check log-likelihood is non-decreasing
+    @test all(diff(ll) .>= -1f0)
+
+        # Check that all learned parameters are Float32
+    @test eltype(test_model.A) == Float32
+    @test eltype(test_model.πₖ) == Float32
+    @test eltype(test_model.B[1].μ) == Float32
+    @test eltype(test_model.B[2].μ) == Float32
+    @test eltype(test_model.B[1].Σ) == Float32
+    @test eltype(test_model.B[2].Σ) == Float32
+    @test eltype(ll[end]) == Float32
+end
+
 function test_SwitchingGaussian_SingleState_fit()
     # Define the output dimensionality of the HMM
     output_dim = 2
