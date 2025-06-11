@@ -373,44 +373,46 @@ Calculate the complete-data log-likelihood of a linear dynamical system (LDS) gi
 - `ll::T`: The complete-data log-likelihood of the LDS.
 """
 function loglikelihood(
-    x::AbstractMatrix{T}, lds::LinearDynamicalSystem{T,S,O}, y::AbstractMatrix{T},
+    x::AbstractMatrix{U}, lds::LinearDynamicalSystem{T,S,O}, y::AbstractMatrix{T},
     w::Union{Nothing,AbstractVector{T}} = nothing
-) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+) where {U<:Real, T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+
     if w === nothing
-        w = ones(T, size(y,2)) 
-    elseif eltype(w) !== T
-        error("weights must be Vector{$(T)}; Got Vector{$(eltype(w))}")
+        w = ones(eltype(y), size(y, 2))
+    elseif eltype(w) !== eltype(y)
+        error("weights must be Vector{$(eltype(y))}; Got Vector{$(eltype(w))}")
     end
 
-    T_steps = size(y, 2)
+    tsteps = size(y, 2)
     A, Q, x0, P0 = lds.state_model.A, lds.state_model.Q, lds.state_model.x0, lds.state_model.P0
-    C, R = lds.obs_model.C, lds.obs_model.R 
+    C, R = lds.obs_model.C, lds.obs_model.R
 
-    # Pre-compute Cholesky factors
+    # Use symmetric Cholesky to allow AD with dual types
     R_chol = cholesky(Symmetric(R)).U
     Q_chol = cholesky(Symmetric(Q)).U
     P0_chol = cholesky(Symmetric(P0)).U
 
-    # Initial state contribution
-    dx0 = view(x, :, 1) - x0
+    dx0 = view(x, :, 1) .- x0
     ll = sum(abs2, P0_chol \ dx0)
 
-    # Create temporaries with compatible element types
-    temp_dx = zeros(T, size(x, 1)) 
-    temp_dy = zeros(T, size(y, 1))  
+    # Allocate temporary arrays with correct type
+    temp_dx = zeros(eltype(x), size(x, 1))
+    temp_dy = zeros(eltype(x), size(y, 1))
 
     for t in 1:tsteps
         if t > 1
-            mul!(temp_dx, A, view(x, :, t-1), -one(T), false)  
+            mul!(temp_dx, A, view(x, :, t-1), -one(eltype(x)), false)
             temp_dx .+= view(x, :, t)
             ll += sum(abs2, Q_chol \ temp_dx)
         end
-        mul!(temp_dy, C, view(x, :, t), -one(T), false)  
+        mul!(temp_dy, C, view(x, :, t), -one(eltype(x)), false)
         temp_dy .+= view(y, :, t)
         ll += w[t] * sum(abs2, R_chol \ temp_dy)
     end
-    return -T(0.5) * ll 
+
+    return -eltype(x)(0.5) * ll
 end
+
 
 """
     Gradient(lds::LinearDynamicalSystem{T,S,O}, y::AbstractMatrix{T}, x::AbstractMatrix{T}) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
@@ -613,9 +615,11 @@ function smooth(
         return g .= vec(-grad)
     end
 
-    function h!(h::AbstractSparseMatrix, vec_x::Vector{T})
+    function h!(h::AbstractMatrix{T}, vec_x::Vector{T}) where T
         x = reshape(vec_x, D, tsteps)
         H, _, _, _ = Hessian(lds, y, x, w)
+
+        # Use Symmetric to avoid Julia’s fallback to Hermitian
         copyto!(h, -H)
         return nothing
     end
@@ -650,7 +654,7 @@ function smooth(
         p_smooth, inverse_offdiag = block_tridiagonal_inverse_static(-sub, -main, -super)
     end
 
-    # Calculate the entropy, see utilities.jl for the function
+    # Calculate the entropy, see Utilities.jl for the function
     gauss_entropy = gaussian_entropy(Symmetric(H))
 
     # Symmetrize the covariance matrices
@@ -853,8 +857,11 @@ function Q_obs(
     E_z::AbstractMatrix{T},
     E_zz::AbstractArray{T,3},
     y::AbstractMatrix{T},
-    w::AbstractVector{T}, 
+    w::Union{Nothing,AbstractVector{T}} = nothing
 ) where {T<:Real}
+    if w === nothing
+        w = ones(T, size(y,2)) 
+    end 
 
     obs_dim = size(H, 1)
     tstep = size(E_z, 2)
@@ -869,11 +876,11 @@ function Q_obs(
     
     # Use views in the loop
     @views for t in axes(y, 2)
-        temp += weights[t] * Q_obs(H, E_z[:,t], E_zz[:,:,t], y[:,t])
+        temp += w[t] * Q_obs(H, E_z[:,t], E_zz[:,:,t], y[:,t])
     end
 
     # Weight the constant terms by the sum of weights
-    total_weight = sum(weights)
+    total_weight = sum(w)
     
     Q_val = T(-0.5) * (total_weight * (const_term + log_det_R) + tr(R_chol \ temp))
     
@@ -912,14 +919,14 @@ function Q_function(
     E_zz::AbstractArray{T,3},
     E_zz_prev::AbstractArray{T,3},
     y::AbstractMatrix{T},
-    weights::Union{Nothing,AbstractVector{T}} = nothing
+    w::Union{Nothing,AbstractVector{T}} = nothing
 ) where {T<:Real}
-    if weights === nothing
-        weights = ones(T, size(y,2)) 
+    if w === nothing
+        w = ones(T, size(y,2)) 
     end
      
     Q_val_state = Q_state(A, Q, P0, x0, E_z, E_zz, E_zz_prev)
-    Q_val_obs = Q_obs(C, R, E_z, E_zz, y, weights)
+    Q_val_obs = Q_obs(C, R, E_z, E_zz, y, w)
     return Q_val_state + Q_val_obs
 end
 
@@ -1035,7 +1042,7 @@ function calculate_elbo(
     p_smooth::AbstractArray{T,4},
     y::AbstractArray{T,3},
     total_entropy::T,
-    weights::Union{Nothing, AbstractVector{T}} = nothing, 
+    w::Union{Nothing, AbstractVector{T}} = nothing, 
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     if w === nothing
         w = ones(T, size(y,2)) 
@@ -1057,7 +1064,7 @@ function calculate_elbo(
             view(E_zz, :, :, :, trial),
             view(E_zz_prev, :, :, :, trial),
             view(y, :, :, trial),
-            weights
+            w
         )
     end
 
@@ -1502,16 +1509,17 @@ ll = loglikelihood(x, lds, y)
 ```
 """
 function loglikelihood(
-    x::AbstractMatrix{T}, 
+    x::AbstractMatrix{U}, 
     plds::LinearDynamicalSystem{T,S,O}, 
     y::AbstractMatrix{T}, 
     w::Union{Nothing,AbstractVector{T}}=nothing,
-) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
+) where {U<:Real,T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     if w === nothing
-        w = ones(T, size(y,2)) 
+        w = ones(U, size(y,2)) 
     elseif eltype(w) !== T
-        error("weights must be Vector{$(T)}; Got Vector{$(eltype(w))}")
+        error("weights must be Vector{$(U)}; Got Vector{$(eltype(w))}")
     end
+
     # Convert the log firing rate to firing rate
     d = exp.(plds.obs_model.log_d)
     tsteps = size(y, 2)
@@ -1522,25 +1530,26 @@ function loglikelihood(
 
     # Calculate p(yₜ|xₜ)
     C = plds.obs_model.C
-    n_obs = size(C, 1)
-    temp  = Vector{eltype(C)}(undef, n_obs) 
+    obs_dim, latent_dim = size(C)
+    temp  = Vector{eltype(x)}(undef, obs_dim) # Temporary vector for calculations
 
     pygivenx_sum = zero(T)  
     @views for t in 1:tsteps
-        temp = C * x[:, t] .+ d
+        temp .= C * x[:, t] .+ d
         pygivenx_sum += dot(y[:, t], temp) - sum(exp, temp)
     end
 
     # Calculate p(x₁)
     dx1 = @view(x[:, 1]) .- plds.state_model.x0
-    px1 = -T(0.5) * dot(dx1, inv_p0 * dx1)
+    px1 = -U(0.5) * dot(dx1, inv_p0 * dx1)
 
     # Calculate p(xₜ|xₜ₋₁)
-    pxtgivenxt1_sum = zero(T)
+    pxtgivenxt1_sum = zero(U)
     A = plds.state_model.A
+    temp = Vector{eltype(x)}(undef, latent_dim)  # Temporary vector for calculations
     @views for t in 2:tsteps
-        temp = x[:, t] .- (A * x[:, t - 1])
-        pxtgivenxt1_sum += -T(0.5) * dot(temp, inv_Q * temp)
+        temp .= x[:, t] .- (A * x[:, t - 1])
+        pxtgivenxt1_sum += -U(0.5) * dot(temp, inv_Q * temp)
     end
 
     # Return the log-posterior
@@ -1604,7 +1613,7 @@ function Gradient(
     x::AbstractMatrix{T}, 
     w::Union{Nothing, AbstractVector{T}}=nothing, 
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    if w==nothing
+    if w === nothing
         w = ones(T, size(y, 2))
     end 
     # Extract model parameters
@@ -1677,7 +1686,7 @@ function Hessian(
     x::AbstractMatrix{T}, 
     w::Union{Nothing, AbstractVector{T}}=nothing, 
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    if w == nothing
+    if w === nothing
         w=ones(T, size(y, 2))
     end 
     # Extract model components
