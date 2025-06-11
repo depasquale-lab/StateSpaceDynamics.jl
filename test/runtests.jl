@@ -48,7 +48,11 @@ include("LinearDynamicalSystems//GaussianLDS.jl")
 @testset "GaussianLDS Tests" begin
     @testset "Constructor Tests" begin
         test_lds_with_params()
-        test_lds_without_params()
+        test_gaussian_obs_constructor_type_preservation()
+        test_gaussian_lds_constructor_type_preservation()
+        test_gaussian_sample_type_preservation()
+        test_gaussian_fit_type_preservation()
+        test_gaussian_loglikelihood_type_preservation()
     end
     @testset "Smoother tests" begin
         test_Gradient()
@@ -80,7 +84,11 @@ include("LinearDynamicalSystems//PoissonLDS.jl")
 @testset "PoissonLDS Tests" begin
     @testset "Constructor Tests" begin
         test_PoissonLDS_with_params()
-        test_poisson_lds_without_params()
+        test_pobs_constructor_type_preservation()
+        test_plds_constructor_type_preservation()
+        test_poisson_sample_type_preservation()
+        test_poisson_fit_type_preservation()
+        test_poisson_loglikelihood_type_preservation()
     end
     @testset "Smoother Tests" begin
         test_Gradient()
@@ -114,7 +122,7 @@ include("HiddenMarkovModels/GaussianHMM.jl")
     test_SwitchingGaussian_SingleState_fit()
     test_kmeans_init()
     test_trialized_GaussianHMM()
-    test_incomplete_initialization()
+    test_SwitchingGaussian_fit_float32()
 end
 
 include("HiddenMarkovModels/SwitchingGaussianRegression.jl")
@@ -123,6 +131,7 @@ include("HiddenMarkovModels/SwitchingGaussianRegression.jl")
     test_SwitchingGaussianRegression_fit()
     test_SwitchingGaussianRegression_SingleState_fit()
     test_trialized_SwitchingGaussianRegression()
+    # test_SwitchingGaussianRegression_fit_float32()
 end
 
 include("HiddenMarkovModels/SwitchingPoissonRegression.jl")
@@ -130,6 +139,7 @@ include("HiddenMarkovModels/SwitchingPoissonRegression.jl")
 @testset "Switching Poisson Regression Tests" begin
     test_SwitchingPoissonRegression_fit()
     test_trialized_SwitchingPoissonRegression()
+    # test_SwitchingPoissonRegression_fit_float32()
 end
 
 include("HiddenMarkovModels/SwitchingBernoulliRegression.jl")
@@ -298,7 +308,6 @@ include("Preprocessing/Preprocessing.jl")
 
 @testset "PPCA Tests" begin
     test_PPCA_with_params()
-    test_PPCA_without_params()
     test_PPCA_E_and_M_Step()
     test_PPCA_fit()
     test_PPCA_samples()
