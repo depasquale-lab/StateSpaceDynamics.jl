@@ -452,7 +452,7 @@ Ensure that a matrix is positive definite by adjusting its eigenvalues.
 # Returns
 - A positive definite matrix derived from `A`.
 """
-function make_posdef!(A::AbstractMatrix{T}; min_eigval::T=1e-6) where {T<:Real}
+function make_posdef!(A::AbstractMatrix{T}; min_eigval::T=convert(T, 1e-6)) where {T<:Real}
     # Work with the symmetric part
     B = Symmetric((A + A') / 2)
 
