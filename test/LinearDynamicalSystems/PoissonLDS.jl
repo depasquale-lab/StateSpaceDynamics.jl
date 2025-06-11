@@ -211,7 +211,7 @@ function test_poisson_sample_type_preservation()
 end
 
 function test_poisson_fit_type_preservation()
-    for T in (Float64,) # (Float32, BigFloat) same issue as in GaussianLDS.jl
+    for T in CHECKED_TYPES
         A     = Matrix{T}(I, 2, 2)
         C     = Matrix{T}(I, 2, 2)
         Q     = Matrix{T}(I, 2, 2)
@@ -240,7 +240,7 @@ function test_poisson_fit_type_preservation()
 end 
 
 function test_poisson_loglikelihood_type_preservation()
-    for T in (Float32, BigFloat)
+    for T in CHECKED_TYPES
         
         A     = Matrix{T}(I, 2, 2)
         C     = Matrix{T}(I, 2, 2)

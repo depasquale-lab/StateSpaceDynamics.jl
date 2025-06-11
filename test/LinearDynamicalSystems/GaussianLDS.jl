@@ -1,3 +1,5 @@
+const CHECKED_TYPES = [Float32, Float64, BigFloat]
+
 # Define the parameters of a penndulum
 g = 9.81 # gravity
 l = 1.0 # length of pendulum
@@ -228,8 +230,8 @@ function test_gaussian_sample_type_preservation()
 end
 
 function test_gaussian_fit_type_preservation()
-    for T in (Float64,) # Float32 and BigFLoat do not work because of lack of coverage in SparseArrays/LinearAlgebra. Need to fix upstream.
-                        # See GitHub issue: https://github.com/JuliaSparse/SparseArrays.jl/issues/634            
+    for T in CHECKED_TYPES 
+                                 
         A  = Matrix{T}(I, 2, 2)
         C  = Matrix{T}(I, 2, 2)
         Q  = Matrix{T}(I, 2, 2)
@@ -258,7 +260,7 @@ function test_gaussian_fit_type_preservation()
 end
 
 function test_gaussian_loglikelihood_type_preservation()
-    for T in (Float32, BigFloat)
+    for T in CHECKED_TYPES 
         
         A  = Matrix{T}(I, 2, 2)
         C  = Matrix{T}(I, 2, 2)

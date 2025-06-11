@@ -620,7 +620,7 @@ function smooth(
         H, _, _, _ = Hessian(lds, y, x, w)
 
         # Use Symmetric to avoid Julia’s fallback to Hermitian
-        copyto!(h, -H)
+        copyto!(h, -Symmetric(H))
         return nothing
     end
 
@@ -1041,7 +1041,7 @@ function calculate_elbo(
     E_zz_prev::AbstractArray{T,4},
     p_smooth::AbstractArray{T,4},
     y::AbstractArray{T,3},
-    total_entropy::T,
+    total_entropy::AbstractFloat,
     w::Union{Nothing, AbstractVector{T}} = nothing, 
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     if w === nothing
@@ -1367,7 +1367,7 @@ function mstep!(
 end
 
 """
-    fit!(lds::LinearDynamicalSystem{T,S,O}, y::AbstractMatrix{T}; 
+    fit!(lds, y}; 
          max_iter::Int=1000, 
          tol::Real=1e-12, 
          ) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
@@ -1699,8 +1699,8 @@ function Hessian(
 
     # Pre-compute a few things
     tsteps = size(y, 2)
-    inv_Q = pinv(Q)
-    inv_P0 = pinv(P0)
+    inv_Q = inv(Symmetric(Q))
+    inv_P0 = inv(Symmetric(P0))
 
     # Calculate super and sub diagonals
     H_sub_entry = inv_Q * A
@@ -1916,7 +1916,7 @@ function calculate_elbo(
     E_zz_prev::AbstractArray{T,4},
     P_smooth::AbstractArray{T,4},
     y::AbstractArray{T,3},
-    total_entropy::T,
+    total_entropy::AbstractFloat,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     # Set up parameters
     A, Q, x0, p0 = plds.state_model.A,
