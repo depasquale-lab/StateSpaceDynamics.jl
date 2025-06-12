@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Gaussian Mixture Model Example · StateSpaceDynamics.jl</title><meta name="title" content="Gaussian Mixture Model Example · StateSpaceDynamics.jl"/><meta property="og:title" content="Gaussian Mixture Model Example · StateSpaceDynamics.jl"/><meta property="twitter:title" content="Gaussian Mixture Model Example · StateSpaceDynamics.jl"/><meta name="description" content="Documentation for StateSpaceDynamics.jl."/><meta property="og:description" content="Documentation for StateSpaceDynamics.jl."/><meta property="twitter:description" content="Documentation for StateSpaceDynamics.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="StateSpaceDynamics.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">StateSpaceDynamics.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Models</span><ul><li><a class="tocitem" href="../../LinearDynamicalSystems/">Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../HiddenMarkovModels/">Hidden Markov Models</a></li><li><a class="tocitem" href="../../SLDS/">Switching Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../EmissionModels/">EmissionModels</a></li><li><a class="tocitem" href="../../MixtureModels/">Mixture Models</a></li></ul></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../gaussian_latent_dynamics_example/">Gaussian LDS Example</a></li><li><a class="tocitem" href="../poisson_latent_dynamics_example/">Poisson LDS Example</a></li><li><a class="tocitem" href="../hidden_markov_model_example/">Hidden Markov Model Example</a></li><li><a class="tocitem" href="../gaussian_glm_hmm_example/">Gaussian GLM-GMM Example</a></li><li class="is-active"><a class="tocitem" href>Gaussian Mixture Model Example</a><ul class="internal"><li><a class="tocitem" href="#Simulating-and-Fitting-a-Gaussian-Mixture-Model"><span>Simulating and Fitting a Gaussian Mixture Model</span></a></li><li><a class="tocitem" href="#Load-Packages"><span>Load Packages</span></a></li></ul></li><li><a class="tocitem" href="../poisson_mixture_model_example/">Poisson Mixture Model Example</a></li></ul></li><li><a class="tocitem" href="../../Misc/">Miscellaneous</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Gaussian Mixture Model Example</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Gaussian Mixture Model Example</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/blob/main/docs/examples/GaussianMixtureModel.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h2 id="Simulating-and-Fitting-a-Gaussian-Mixture-Model"><a class="docs-heading-anchor" href="#Simulating-and-Fitting-a-Gaussian-Mixture-Model">Simulating and Fitting a Gaussian Mixture Model</a><a id="Simulating-and-Fitting-a-Gaussian-Mixture-Model-1"></a><a class="docs-heading-anchor-permalink" href="#Simulating-and-Fitting-a-Gaussian-Mixture-Model" title="Permalink"></a></h2><p>This tutorial demonstrates how to use <code>StateSpaceDynamics.jl</code> to simulate a latent linear dynamical system and fit it using the EM algorithm.</p><h2 id="Load-Packages"><a class="docs-heading-anchor" href="#Load-Packages">Load Packages</a><a id="Load-Packages-1"></a><a class="docs-heading-anchor-permalink" href="#Load-Packages" title="Permalink"></a></h2><pre><code class="language- hljs">using StateSpaceDynamics
+using LinearAlgebra
+using Random
+using Plots
+using StableRNGs
+using Distributions
+
+rng = StableRNG(1234);
+gr()</code></pre><p>Create a State-Space Model</p><pre><code class="language-julia hljs">k = 3
+data_dim = 2
+
+true_μs = [
+    -1.0  -1.0;
+     1.0  -1.5;
+     0.0   2.0
+]
+true_Σs = [0.3 * Matrix{Float64}(I, data_dim, data_dim) for _ in 1:k]
+true_πs = [0.5, 0.2, 0.3]
+
+true_gmm = GaussianMixtureModel(k, true_μs, true_Σs, true_πs)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">GaussianMixtureModel{Float64, Matrix{Float64}, Vector{Float64}}(3, [-1.0 -1.0; 1.0 -1.5; 0.0 2.0], [[0.3 0.0; 0.0 0.3], [0.3 0.0; 0.0 0.3], [0.3 0.0; 0.0 0.3]], [0.5, 0.2, 0.3])</code></pre><p>Generate sample data</p><pre><code class="language-julia hljs">n = 500
+X = rand(true_gmm, n)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">500×2 Matrix{Float64}:
+ -1.61737    -1.10491
+ -1.25778    -1.11242
+ -1.70629    -0.0281968
+ -0.721781   -0.695784
+ -0.576664   -0.424739
+ -0.714873    0.00904594
+ -0.506633   -0.355792
+ -1.43765    -0.72335
+ -1.08415    -1.18781
+ -1.36864    -1.3733
+  ⋮          
+ -1.19604     2.91021
+ -1.43017     1.88166
+  0.552225    2.63972
+  1.407       2.14294
+ -0.901363    1.9903
+ -0.564936    2.89538
+ -0.569391    2.54048
+ -0.207737    1.8582
+ -0.0425396   3.02227</code></pre><p>Plot sampled data from the model</p><pre><code class="language- hljs">labels = rand(rng, Distributions.Categorical(true_πs), n)
+X2 = Array{Float64,2}(undef, n, data_dim)
+for i in 1:n
+    comp = labels[i]
+    X2[i, :] = rand(rng, MvNormal(true_μs[comp, :], true_Σs[comp]))&#39;
+end
+
+mixture_samples = scatter(
+  X2[:,1], X2[:,2];
+  group=labels,
+  title=&quot;GMM Samples Coloured by Component&quot;,
+  xlabel=&quot;x₁&quot;, ylabel=&quot;x₂&quot;,
+  markersize=4,
+  alpha=0.8,
+)
+
+display(mixture_samples)</code></pre><p>Paramter recovery: Initialize a new model and Perform EM on the data.</p><pre><code class="language-julia hljs">k = 3
+data_dim = 2
+
+μs = zeros(Float64, k, data_dim)
+Σs = [Matrix{Float64}(I, data_dim, data_dim) for _ in 1:k]
+πs = ones(k) ./ k
+
+fit_gmm = GaussianMixtureModel(k, μs, Σs, πs)
+
+class_probabilities, lls = fit!(fit_gmm, X; maxiter=100, tol=1e-6, initialize_kmeans=true)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">([1.304122432977003e-9 8.66653431287412e-8 0.9999999120305344; 5.143801243341669e-9 2.466407460987816e-6 0.9999975284487378; … ; 0.9999976932204749 1.957828303209399e-10 2.306583742290665e-6; 0.9999999999725397 5.67850195724137e-16 2.7459834041865852e-11], [-1507.487475541058, -1481.4657705939453, -1445.2374460129176, -1405.9958949343802, -1384.8411466136156, -1362.7866325070677, -1346.6886789634225, -1339.0236464225854, -1329.5210169207023, -1317.165352043241  …  -1288.9406828590484, -1288.9406047287298, -1288.9405715944556, -1288.9405531921825, -1288.940542620873, -1288.9405365231792, -1288.9405330037393, -1288.9405309720205, -1288.940529798973, -1288.940529121591])</code></pre><p>confirm convergence</p><pre><code class="language-julia hljs">lls_convergence = plot(
+  lls;
+  xlabel=&quot;Iteration&quot;,
+  ylabel=&quot;Log-Likelihood&quot;,
+  title=&quot;EM Convergence&quot;,
+  marker=:circle,
+  reuse=false,
+)
+
+display(lls_convergence)</code></pre><p>add a contour plot of the model pmf with the generated data</p><pre><code class="language- hljs">xs = range(minimum(X[:,1]) - 1, stop=maximum(X[:,1]) + 1, length=150)
+ys = range(minimum(X[:,2]) - 1, stop=maximum(X[:,2]) + 1, length=150)
+
+contour_plot = scatter(
+  X[:,1], X[:,2];
+  markersize=3, alpha=0.5,
+  xlabel=&quot;x₁&quot;, ylabel=&quot;x₂&quot;,
+  title=&quot;Data &amp; Fitted GMM Contours by Component&quot;,
+  legend=:topright,
+)
+
+colors = [:red, :green, :blue]
+
+for i in 1:fit_gmm.k
+    comp_dist = MvNormal(fit_gmm.μₖ[i, :], fit_gmm.Σₖ[i])
+
+    Z_i = [fit_gmm.πₖ[i] * pdf(comp_dist, [x,y]) for y in ys, x in xs]
+
+    contour!(
+      contour_plot, xs, ys, Z_i;
+      levels    = 10,
+      linewidth = 2,
+      c         = colors[i],
+      label     = &quot;Comp $i&quot;,
+    )
+end
+
+display(contour_plot)</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../gaussian_glm_hmm_example/">« Gaussian GLM-GMM Example</a><a class="docs-footer-nextpage" href="../poisson_mixture_model_example/">Poisson Mixture Model Example »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.12.0 on <span class="colophon-date" title="Thursday 12 June 2025 21:06">Thursday 12 June 2025</span>. Using Julia version 1.11.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
