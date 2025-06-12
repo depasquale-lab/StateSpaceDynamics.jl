@@ -38,6 +38,20 @@ Literate.markdown(
     documenter = true
 )
 
+Literate.markdown(
+    joinpath(@__DIR__, "examples", "GaussianMixtureModel.jl"),
+    joinpath(@__DIR__, "src", "tutorials");
+    name = "gaussian_mixture_model_example",
+    documenter = true
+)
+
+Literate.markdown(
+    joinpath(@__DIR__, "examples", "PoissonMixtureModel.jl"),
+    joinpath(@__DIR__, "src", "tutorials");
+    name = "poisson_mixture_model_example",
+    documenter = true
+)
+
 # Generate the documentation site
 makedocs(;
     modules=[StateSpaceDynamics],
@@ -60,8 +74,9 @@ makedocs(;
             "Gaussian LDS Example" => "tutorials/gaussian_latent_dynamics_example.md",
             "Poisson LDS Example" => "tutorials/poisson_latent_dynamics_example.md",
             "Hidden Markov Model Example" => "tutorials/hidden_markov_model_example.md",
-            "Gaussian GLM-GMM Example" => "tutorials/gaussian_glm_hmm_example.md"
-
+            "Gaussian GLM-GMM Example" => "tutorials/gaussian_glm_hmm_example.md",
+            "Gaussian Mixture Model Example" => "tutorials/gaussian_mixture_model_example.md",
+            "Poisson Mixture Model Example" => "tutorials/poisson_mixture_model_example.md",
         ],
         "Miscellaneous" => "Misc.md",
     ],
