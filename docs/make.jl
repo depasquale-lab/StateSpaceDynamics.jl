@@ -22,6 +22,22 @@ Literate.markdown(
     documenter = true
 )
 
+# Convert Poisson LDS example
+Literate.markdown(
+    joinpath(@__DIR__, "examples", "HMM.jl"),
+    joinpath(@__DIR__, "src", "tutorials");
+    name = "hidden_markov_model_example",
+    documenter = true
+)
+
+# Convert Poisson LDS example
+Literate.markdown(
+    joinpath(@__DIR__, "examples", "Gaussian_GLM_HMM.jl"),
+    joinpath(@__DIR__, "src", "tutorials");
+    name = "gaussian_glm_hmm_example",
+    documenter = true
+)
+
 # Generate the documentation site
 makedocs(;
     modules=[StateSpaceDynamics],
@@ -42,7 +58,10 @@ makedocs(;
         ],
         "Tutorials" => [
             "Gaussian LDS Example" => "tutorials/gaussian_latent_dynamics_example.md",
-            "Poisson LDS Example" => "tutorials/poisson_latent_dynamics_example.md"
+            "Poisson LDS Example" => "tutorials/poisson_latent_dynamics_example.md",
+            "Hidden Markov Model Example" => "tutorials/hidden_markov_model_example.md",
+            "Gaussian GLM-GMM Example" => "tutorials/gaussian_glm_hmm_example.md"
+
         ],
         "Miscellaneous" => "Misc.md",
     ],

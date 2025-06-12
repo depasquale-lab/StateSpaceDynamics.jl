@@ -1,5 +1,9 @@
 # What is a Hidden Markov Model?
 
+```@meta
+CollapsedDocStrings = true
+```
+
 A **Hidden Markov Model (HMM)** is a graphical model that describes how systems change over time. When modeling a time series with $T$ observations using an HMM, we assume that the observed data $y_{1:T}$ depends on hidden states $x_{1:T}$ that are not observed. Specifically, an HMM is a type of **state-space model** in which the hidden states are discrete.
 
 The three components of an HMM are as follows:
