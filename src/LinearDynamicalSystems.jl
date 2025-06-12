@@ -1,4 +1,8 @@
-export LinearDynamicalSystem, GaussianStateModel, GaussianObservationModel, PoissonObservationModel, rand, smooth, fit!
+# Public API
+export LinearDynamicalSystem
+export GaussianStateModel, GaussianObservationModel, PoissonObservationModel
+export rand, smooth, fit!
+
 
 """
     GaussianStateModel{T<:Real. M<:AbstractMatrix{T}, V<:AbstractVector{T}}}
@@ -58,6 +62,7 @@ Represents a unified Linear Dynamical System with customizable state and observa
 - `obs_dim::Int`: Dimension of the observations
 - `fit_bool::Vector{Bool}`: Vector indicating which parameters to fit during optimization
 """
+
 Base.@kwdef struct LinearDynamicalSystem{T<:Real, S<:AbstractStateModel{T}, O<:AbstractObservationModel{T}}
     state_model::S
     obs_model::O
@@ -115,21 +120,9 @@ function initialize_FilterSmooth(
     )
 end
 
-"""
-    Random.rand(rng, lds; tsteps, ntrials)
 
-Sample directly from a Linear Dynamical System.
-
-# Arguments
-- `rng::AbstractRNG`: Random number generator
-- `lds::LinearDynamicalSystem`: The LDS model
-- `tsteps::Int`: Number of time steps to sample
-- `ntrials::Int`: Number of trials to sample
-
-# Returns
-- `Tuple{Array,Array}`: Latent states and observations
-"""
-function Random.rand(rng::AbstractRNG, lds::LinearDynamicalSystem{T,S,O}; tsteps::Int, ntrials::Int) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+# For Gaussian LDS
+function Random.rand(rng::AbstractRNG, lds::LinearDynamicalSystem{S,O}; tsteps::Int, ntrials::Int) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     A, Q, x0, P0 = lds.state_model.A, lds.state_model.Q, lds.state_model.x0, lds.state_model.P0
     C, R = lds.obs_model.C, lds.obs_model.R
 
@@ -178,7 +171,28 @@ function Random.rand(rng::AbstractRNG, lds::LinearDynamicalSystem{T,S,O}; tsteps
     return x, y
 end
 
-# Backward compatibility for LDS
+"""
+    Random.rand(lds::LinearDynamicalSystem; tsteps::Int, ntrials::Int)
+
+Sample latent states and observations from a linear dynamical system using the default random number generator.
+
+This is a convenience wrapper around `Random.rand(rng, lds; tsteps, ntrials)`.
+
+# Arguments
+- `lds::LinearDynamicalSystem`: The system to simulate.
+- `tsteps::Int`: Number of time steps to simulate.
+- `ntrials::Int`: Number of independent trials.
+
+# Returns
+- `(x, y)`: A tuple containing:
+  - `x::Array{T,3}`: Simulated latent states, of shape `(latent_dim, tsteps, ntrials)`
+  - `y::Array{T,3}`: Simulated observations, of shape `(obs_dim, tsteps, ntrials)`
+
+# Examples
+```julia
+lds = GaussianLDS(obs_dim=3, latent_dim=2)
+x, y = rand(lds; tsteps=100, ntrials=10)
+"""
 function Random.rand(lds::LinearDynamicalSystem; kwargs...)
     return rand(Random.default_rng(), lds; kwargs...)
 end
