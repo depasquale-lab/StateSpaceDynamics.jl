@@ -82,25 +82,30 @@ StateSpaceDynamics.jl implements several types of state space models:
 
 ## Quick Start
 
-Here's a simple example using a Linear Dynamical System:
+Here's a simple example on how to create a Gaussian SSM.
 
 ```julia
 using StateSpaceDynamics
+using LinearAlgebra
 
-# Create a Gaussian LDS
-lds = GaussianLDS(
-    latent_dim=3,    # 3D latent state
-    obs_dim=10       # 10D observations
-)
+# Define model dimensions
+latent_dim = 3
+obs_dim = 10
 
-# Generate synthetic data
-x, y = sample(lds, 1000)  # 1000 timepoints
+# Define state model parameters
+A = 0.95 * I(latent_dim)
+Q = 0.01 * I(latent_dim)
+x0 = zeros(latent_dim)
+P0 = I(latent_dim)
+state_model = GaussianStateModel(A, Q, x0, P0)
 
-# Fit the model
-fit!(lds, y)
+# Define observation model parameters
+C = randn(obs_dim, latent_dim)
+R = 0.1 * I(obs_dim)
+obs_model = GaussianObservationModel(C, R)
 
-# Get smoothed state estimates
-x_smoothed = smooth(lds, y)
+# Construct the LDS
+lds = LinearDynamicalSystem(state_model, obs_model, latent_dim, obs_dim, fill(true, 6))
 ```
 
 ## Contributing

@@ -54,7 +54,6 @@ Where:
 ```@docs
 GaussianStateModel
 GaussianObservationModel
-GaussianLDS
 ```
 
 ## The Poisson Linear Dynamical System
@@ -74,7 +73,6 @@ Where `b` is a bias term.
 
 ```@docs
 PoissonObservationModel
-PoissonLDS
 ```
 
 ## Sampling from Linear Dynamical Systems
@@ -142,5 +140,4 @@ Despite the requirement of inverting a Hessian of dimension ``(d \times T) \time
 Given the latent structure of state-space models, we must rely on either the Expectation-Maximization (EM) or Variational Inference (VI) approaches to learn the parameters of the model. StateSpaceDynamics.jl supports both EM and VI. For LDS models, we can use Laplace EM, where we approximate the posterior of the latent state path using the Laplace approximation as outlined above. Using these approximate posteriors (or exact ones in the Gaussian case), we can apply closed-form updates for the model parameters.
 
 ```@docs
-fit!(lds::LinearDynamicalSystem{S,O}, y::Array{T,3}; max_iter::Int=1000, tol::Real=1e-12) where {T<:Real, S<:GaussianStateModel{T}, O<:AbstractObservationModel{T}}
-```
+fit!(lds, y; max_iter::Int=1000, tol::Real=1e-12) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}

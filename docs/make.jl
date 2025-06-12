@@ -1,5 +1,6 @@
 using Documenter
 using StateSpaceDynamics
+using Literate
 using Random
 
 # Set up the documentation environment
