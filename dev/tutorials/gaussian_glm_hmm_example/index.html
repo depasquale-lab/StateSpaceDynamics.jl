@@ -11,9 +11,7 @@ A = [0.99 0.01; 0.05 0.95]
 
 true_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2])</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">HiddenMarkovModel{Float64, Vector{Float64}, Matrix{Float64}, Vector{GaussianRegressionEmission{Float64, Matrix{Float64}}}}([0.99 0.01; 0.05 0.95], GaussianRegressionEmission{Float64, Matrix{Float64}}[GaussianRegressionEmission{Float64, Matrix{Float64}}(3, 1, [3.0; 2.0; 2.0; 3.0;;], [1.0;;], true, 0.0), GaussianRegressionEmission{Float64, Matrix{Float64}}(3, 1, [-4.0; -2.0; 3.0; 2.0;;], [1.0;;], true, 0.0)], [0.8, 0.2], 2)</code></pre><h2 id="Sample-from-the-GLM-HMM"><a class="docs-heading-anchor" href="#Sample-from-the-GLM-HMM">Sample from the GLM-HMM</a><a id="Sample-from-the-GLM-HMM-1"></a><a class="docs-heading-anchor-permalink" href="#Sample-from-the-GLM-HMM" title="Permalink"></a></h2><pre><code class="language-julia hljs">n = 20000
 Φ = randn(3, n)
-true_labels, data = rand(true_model, Φ, n=n)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">([1, 1, 1, 1, 1, 1, 1, 1, 1, 1  …  2, 2, 1, 1, 1, 1, 1, 1, 1, 1], [4.01397867706227 1.5655511284656116 … -3.3678023852055725 2.3230835069919555])</code></pre><h2 id="Visualize-the-sampled-dataset"><a class="docs-heading-anchor" href="#Visualize-the-sampled-dataset">Visualize the sampled dataset</a><a id="Visualize-the-sampled-dataset-1"></a><a class="docs-heading-anchor-permalink" href="#Visualize-the-sampled-dataset" title="Permalink"></a></h2><pre><code class="language-julia hljs">gr()
-
-colors = [:dodgerblue, :crimson]
+true_labels, data = rand(true_model, Φ, n=n)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">([1, 1, 1, 1, 1, 1, 1, 1, 1, 1  …  1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [-0.6264835400738533 5.8285420935439785 … 0.4143064611168539 6.0293408286390875])</code></pre><h2 id="Visualize-the-sampled-dataset"><a class="docs-heading-anchor" href="#Visualize-the-sampled-dataset">Visualize the sampled dataset</a><a id="Visualize-the-sampled-dataset-1"></a><a class="docs-heading-anchor-permalink" href="#Visualize-the-sampled-dataset" title="Permalink"></a></h2><pre><code class="language-julia hljs">colors = [:dodgerblue, :crimson]
 
 scatter(Φ[1, :], vec(data);
     color = colors[true_labels],
@@ -42,7 +40,7 @@ plot!(xvals, y_pred_2;
     lw = 3,
     label = &quot;State 2 regression&quot;,
     legend = :topright,
-)</code></pre><img src="685af06d.svg" alt="Example block output"/><h2 id="Initialize-and-fit-a-new-HMM-to-the-sampled-data"><a class="docs-heading-anchor" href="#Initialize-and-fit-a-new-HMM-to-the-sampled-data">Initialize and fit a new HMM to the sampled data</a><a id="Initialize-and-fit-a-new-HMM-to-the-sampled-data-1"></a><a class="docs-heading-anchor-permalink" href="#Initialize-and-fit-a-new-HMM-to-the-sampled-data" title="Permalink"></a></h2><pre><code class="language- hljs">A = [0.8 0.2; 0.1 0.9]
+)</code></pre><img src="6c30435d.svg" alt="Example block output"/><h2 id="Initialize-and-fit-a-new-HMM-to-the-sampled-data"><a class="docs-heading-anchor" href="#Initialize-and-fit-a-new-HMM-to-the-sampled-data">Initialize and fit a new HMM to the sampled data</a><a id="Initialize-and-fit-a-new-HMM-to-the-sampled-data-1"></a><a class="docs-heading-anchor-permalink" href="#Initialize-and-fit-a-new-HMM-to-the-sampled-data" title="Permalink"></a></h2><pre><code class="language- hljs">A = [0.8 0.2; 0.1 0.9]
 πₖ = [0.6; 0.4]
 emission_1 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([2.0, -1.0, 1.0, 2.0], :, 1), Σ=[2.0;;], λ=0.0)
 emission_2 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([-2.5, -1.0, 3.5, 3.0], :, 1), Σ=[0.5;;], λ=0.0)
@@ -53,9 +51,7 @@ lls = SSD.fit!(test_model, data, Φ)
 plot(lls)
 title!(&quot;Log-likelihood over EM Iterations&quot;)
 xlabel!(&quot;EM Iteration&quot;)
-ylabel!(&quot;Log-Likelihood&quot;)</code></pre><h2 id="Visualize-the-emission-model-predictions"><a class="docs-heading-anchor" href="#Visualize-the-emission-model-predictions">Visualize the emission model predictions</a><a id="Visualize-the-emission-model-predictions-1"></a><a class="docs-heading-anchor-permalink" href="#Visualize-the-emission-model-predictions" title="Permalink"></a></h2><pre><code class="language-julia hljs">gr()
-
-state_colors = [:dodgerblue, :crimson]
+ylabel!(&quot;Log-Likelihood&quot;)</code></pre><h2 id="Visualize-the-emission-model-predictions"><a class="docs-heading-anchor" href="#Visualize-the-emission-model-predictions">Visualize the emission model predictions</a><a id="Visualize-the-emission-model-predictions-1"></a><a class="docs-heading-anchor-permalink" href="#Visualize-the-emission-model-predictions" title="Permalink"></a></h2><pre><code class="language-julia hljs">state_colors = [:dodgerblue, :crimson]
 true_colors = [:green, :orange]
 pred_colors = [:teal, :yellow]
 
@@ -105,9 +101,7 @@ plot!(xvals, y_pred_2;
     lw = 3,
     linestyle = :dash,
     label = &quot;State 2 (pred)&quot;
-)</code></pre><img src="8142ee00.svg" alt="Example block output"/><h2 id="Visualize-the-latent-state-predictions-using-Viterbi"><a class="docs-heading-anchor" href="#Visualize-the-latent-state-predictions-using-Viterbi">Visualize the latent state predictions using Viterbi</a><a id="Visualize-the-latent-state-predictions-using-Viterbi-1"></a><a class="docs-heading-anchor-permalink" href="#Visualize-the-latent-state-predictions-using-Viterbi" title="Permalink"></a></h2><pre><code class="language-julia hljs">pred_labels= viterbi(test_model, data, Φ);
-
-gr()
+)</code></pre><img src="f0c9b256.svg" alt="Example block output"/><h2 id="Visualize-the-latent-state-predictions-using-Viterbi"><a class="docs-heading-anchor" href="#Visualize-the-latent-state-predictions-using-Viterbi">Visualize the latent state predictions using Viterbi</a><a id="Visualize-the-latent-state-predictions-using-Viterbi-1"></a><a class="docs-heading-anchor-permalink" href="#Visualize-the-latent-state-predictions-using-Viterbi" title="Permalink"></a></h2><pre><code class="language-julia hljs">pred_labels= viterbi(test_model, data, Φ);
 
 true_mat = reshape(true_labels[1:1000], 1, :)
 pred_mat = reshape(pred_labels[1:1000], 1, :)
@@ -135,7 +129,7 @@ p2 = heatmap(pred_mat;
 plot(p1, p2;
     layout = (2, 1),
     size = (700, 500),
-    margin = 5Plots.mm)</code></pre><img src="f04b78e2.svg" alt="Example block output"/><h2 id="Sampling-multiple,-independent-trials-of-data-from-an-HMM"><a class="docs-heading-anchor" href="#Sampling-multiple,-independent-trials-of-data-from-an-HMM">Sampling multiple, independent trials of data from an HMM</a><a id="Sampling-multiple,-independent-trials-of-data-from-an-HMM-1"></a><a class="docs-heading-anchor-permalink" href="#Sampling-multiple,-independent-trials-of-data-from-an-HMM" title="Permalink"></a></h2><pre><code class="language-julia hljs">all_data = Vector{Matrix{Float64}}()
+    margin = 5Plots.mm)</code></pre><img src="d4f3b0e8.svg" alt="Example block output"/><h2 id="Sampling-multiple,-independent-trials-of-data-from-an-HMM"><a class="docs-heading-anchor" href="#Sampling-multiple,-independent-trials-of-data-from-an-HMM">Sampling multiple, independent trials of data from an HMM</a><a id="Sampling-multiple,-independent-trials-of-data-from-an-HMM-1"></a><a class="docs-heading-anchor-permalink" href="#Sampling-multiple,-independent-trials-of-data-from-an-HMM" title="Permalink"></a></h2><pre><code class="language-julia hljs">all_data = Vector{Matrix{Float64}}()
 Φ_total = Vector{Matrix{Float64}}()
 
 num_trials = 100
@@ -149,11 +143,11 @@ for i in 1:num_trials
     push!(all_data, data)
     push!(Φ_total, Φ)
 end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">┌ Warning: Assignment to `Φ` in soft scope is ambiguous because a global variable by the same name exists: `Φ` will be treated as a new local. Disambiguate by using `local Φ` to suppress this warning or `global Φ` to assign to the existing global variable.
-└ @ gaussian_glm_hmm_example.md:203
+└ @ gaussian_glm_hmm_example.md:197
 ┌ Warning: Assignment to `true_labels` in soft scope is ambiguous because a global variable by the same name exists: `true_labels` will be treated as a new local. Disambiguate by using `local true_labels` to suppress this warning or `global true_labels` to assign to the existing global variable.
-└ @ gaussian_glm_hmm_example.md:204
+└ @ gaussian_glm_hmm_example.md:198
 ┌ Warning: Assignment to `data` in soft scope is ambiguous because a global variable by the same name exists: `data` will be treated as a new local. Disambiguate by using `local data` to suppress this warning or `global data` to assign to the existing global variable.
-└ @ gaussian_glm_hmm_example.md:204</code></pre><h2 id="Fitting-an-HMM-to-multiple,-independent-trials-of-data"><a class="docs-heading-anchor" href="#Fitting-an-HMM-to-multiple,-independent-trials-of-data">Fitting an HMM to multiple, independent trials of data</a><a id="Fitting-an-HMM-to-multiple,-independent-trials-of-data-1"></a><a class="docs-heading-anchor-permalink" href="#Fitting-an-HMM-to-multiple,-independent-trials-of-data" title="Permalink"></a></h2><pre><code class="language- hljs">A = [0.8 0.2; 0.1 0.9]
+└ @ gaussian_glm_hmm_example.md:198</code></pre><h2 id="Fitting-an-HMM-to-multiple,-independent-trials-of-data"><a class="docs-heading-anchor" href="#Fitting-an-HMM-to-multiple,-independent-trials-of-data">Fitting an HMM to multiple, independent trials of data</a><a id="Fitting-an-HMM-to-multiple,-independent-trials-of-data-1"></a><a class="docs-heading-anchor-permalink" href="#Fitting-an-HMM-to-multiple,-independent-trials-of-data" title="Permalink"></a></h2><pre><code class="language- hljs">A = [0.8 0.2; 0.1 0.9]
 πₖ = [0.6; 0.4]
 emission_1 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([2.0, -1.0, 1.0, 2.0], :, 1), Σ=[2.0;;], λ=0.0)
 emission_2 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([-2.5, -1.0, 3.5, 3.0], :, 1), Σ=[0.5;;], λ=0.0)
@@ -169,7 +163,6 @@ ylabel!(&quot;Log-Likelihood&quot;)</code></pre><h2 id="Visualize-latent-state-p
 all_pred_labels = hcat(all_pred_labels_vec...)&#39;
 all_true_labels_matrix = hcat(all_true_labels...)&#39;
 
-gr()
 state_colors = [:dodgerblue, :crimson]
 true_subset = all_true_labels_matrix[1:10, 1:500]
 pred_subset = all_pred_labels[1:10, 1:500]
@@ -208,4 +201,4 @@ final_plot = plot(
     legend = false,
 )
 
-display(final_plot)</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../hidden_markov_model_example/">« Hidden Markov Model Example</a><a class="docs-footer-nextpage" href="../../Misc/">Miscellaneous »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.12.0 on <span class="colophon-date" title="Thursday 12 June 2025 20:53">Thursday 12 June 2025</span>. Using Julia version 1.11.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+display(final_plot)</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../hidden_markov_model_example/">« Hidden Markov Model Example</a><a class="docs-footer-nextpage" href="../../Misc/">Miscellaneous »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.12.0 on <span class="colophon-date" title="Thursday 12 June 2025 20:54">Thursday 12 June 2025</span>. Using Julia version 1.11.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
