@@ -27,10 +27,10 @@ makedocs(;
     modules=[StateSpaceDynamics],
     authors="Ryan Senne",
     sitename="StateSpaceDynamics.jl",
-    format=Documenter.HTML(;
-        prettyurls=get(ENV, "CI", "false") == "true",
+    format = Documenter.HTML(
+    prettyurls = get(ENV, "CI", "false") == "true",
+    repolink = "https://github.com/depasquale-lab/StateSpaceDynamics.jl",
     ),
-    remotes=nothing,
     pages=[
         "Home" => "index.md",
         "Models" => [

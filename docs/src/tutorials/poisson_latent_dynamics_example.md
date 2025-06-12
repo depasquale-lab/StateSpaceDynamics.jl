@@ -15,6 +15,12 @@ using LinearAlgebra
 using Random
 using Plots
 using LaTeXStrings
+using StableRNGs
+````
+
+````@example poisson_latent_dynamics_example
+rng = StableRNG(1234);
+nothing #hide
 ````
 
 ## Create a Poisson Linear Dynamical System
@@ -22,20 +28,12 @@ using LaTeXStrings
 ````@example poisson_latent_dynamics_example
 obs_dim = 10
 latent_dim = 2
-````
 
-State model parameters
-
-````@example poisson_latent_dynamics_example
 A = 0.95 * [cos(0.25) -sin(0.25); sin(0.25) cos(0.25)]
 Q = Matrix(0.1 * I(latent_dim))
 x0 = zeros(latent_dim)
 P0 = Matrix(0.1 * I(latent_dim))
-````
 
-Observation model parameters
-
-````@example poisson_latent_dynamics_example
 log_d = log.(fill(0.1, obs_dim))
 C = permutedims([abs.(randn(obs_dim))'; abs.(randn(obs_dim))'])
 
@@ -55,7 +53,7 @@ true_plds = LinearDynamicalSystem(;
 
 ````@example poisson_latent_dynamics_example
 tSteps = 500
-latents, observations = rand(true_plds; tsteps=tSteps, ntrials=1)
+latents, observations = rand(rng, true_plds; tsteps=tSteps, ntrials=1)
 ````
 
 ## Plot Vector Field of Latent Dynamics
@@ -91,11 +89,7 @@ emissions = observations[:, :, 1]
 time_bins = size(states, 2)
 
 plot(size=(800, 600), layout=@layout[a{0.3h}; b])
-````
 
-Latent states
-
-````@example poisson_latent_dynamics_example
 lim_states = maximum(abs.(states))
 for d in 1:latent_dim
     plot!(1:time_bins, states[d, :] .+ lim_states * (d-1), color=:black,
@@ -105,11 +99,7 @@ end
 plot!(subplot=1, yticks=(lim_states .* (0:latent_dim-1), [L"x_%$d" for d in 1:latent_dim]),
       xticks=[], xlims=(0, time_bins), title="Simulated Latent States",
       yformatter=y->"", tickfontsize=12)
-````
 
-Spiking observations
-
-````@example poisson_latent_dynamics_example
 colors = palette(:default, obs_dim)
 for f in 1:obs_dim
     spike_times = findall(x -> x > 0, emissions[f, :])
@@ -128,7 +118,7 @@ plot!(subplot=2, yticks=(1:obs_dim, [L"y_{%$d}" for d in 1:obs_dim]),
 Initialize with random parameters
 
 ````@example poisson_latent_dynamics_example
-A_init = random_rotation_matrix(latent_dim)
+A_init = random_rotation_matrix(latent_dim, rng)
 Q_init = Matrix(0.1 * I(latent_dim))
 C_init = randn(obs_dim, latent_dim)
 log_d_init = log.(fill(0.1, obs_dim))

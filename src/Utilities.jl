@@ -487,9 +487,9 @@ end
 
 Generate a random rotation matrix of size `n x n`.
 """
-function random_rotation_matrix(n::Int)
+function random_rotation_matrix(n::Int, rng::AbstractRNG=Random.default_rng())
     # Generate a random orthogonal matrix using QR decomposition
-    Q, _ = qr(randn(n, n))
+    Q, _ = qr(randn(rng, n, n))
     return Matrix(Q)
 end
 

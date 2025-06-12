@@ -15,6 +15,12 @@ using LinearAlgebra
 using Random
 using Plots
 using LaTeXStrings
+using StableRNGs
+````
+
+````@example gaussian_latent_dynamics_example
+rng = StableRNG(1234);
+nothing #hide
 ````
 
 ## Create a State-Space Model
@@ -47,7 +53,7 @@ true_lds = LinearDynamicalSystem(;
 
 ````@example gaussian_latent_dynamics_example
 tSteps = 500
-latents, observations = rand(true_lds; tsteps=tSteps, ntrials=1)
+latents, observations = rand(rng, true_lds; tsteps=tSteps, ntrials=1)
 ````
 
 ## Plot Vector Field of Latent Dynamics
@@ -112,7 +118,7 @@ plot!(link=:x, size=(800, 600), left_margin=10Plots.mm)
 ## Initialize a Model and Perform Smoothing
 
 ````@example gaussian_latent_dynamics_example
-A_init = random_rotation_matrix(2)
+A_init = random_rotation_matrix(2, rng)
 Q_init = Matrix(0.1 * I(2))
 C_init = randn(obs_dim, latent_dim)
 R_init = Matrix(0.5 * I(obs_dim))

@@ -10,6 +10,10 @@ using LinearAlgebra
 using Random
 using Plots
 using LaTeXStrings
+using StableRNGs
+
+#
+rng = StableRNG(1234);
 
 # ## Create a Poisson Linear Dynamical System
 
@@ -38,7 +42,7 @@ true_plds = LinearDynamicalSystem(;
 # ## Simulate Latent States and Observations
 
 tSteps = 500
-latents, observations = rand(true_plds; tsteps=tSteps, ntrials=1)
+latents, observations = rand(rng, true_plds; tsteps=tSteps, ntrials=1)
 
 # ## Plot Vector Field of Latent Dynamics
 
@@ -96,7 +100,7 @@ plot!(subplot=2, yticks=(1:obs_dim, [L"y_{%$d}" for d in 1:obs_dim]),
 # ## Initialize Model and Smooth
 
 # Initialize with random parameters
-A_init = random_rotation_matrix(latent_dim)
+A_init = random_rotation_matrix(latent_dim, rng)
 Q_init = Matrix(0.1 * I(latent_dim))
 C_init = randn(obs_dim, latent_dim)
 log_d_init = log.(fill(0.1, obs_dim))
