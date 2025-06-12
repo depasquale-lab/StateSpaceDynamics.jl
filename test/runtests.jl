@@ -8,6 +8,7 @@ using StatsFuns
 using SpecialFunctions
 using Test
 using Aqua
+using JET 
 using CSV
 using DataFrames
 using MAT
@@ -20,6 +21,12 @@ Package Wide Tests
     Aqua.test_all(StateSpaceDynamics; ambiguities=false)
     @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
 end
+
+@testset "Code linting using JET " begin
+    if VERSION >= v"1.11"
+        JET.test_package(StateSpaceDynamics; target_defined_modules=true)
+    end 
+end 
 
 include("helper_functions.jl")
 """

@@ -175,7 +175,7 @@ function fit!(
     T_step = size(y, 2)
     
     # INIT THE FILTER SMOOTH AND FB STRUCTS
-    FB = initialize_forward_backward(slds, T_step)
+    FB = initialize_forward_backward(slds, T_step, T)
     FS = [initialize_FilterSmooth(slds.B[k], T_step) for k in 1:K]
 
     # From the paper, we initialize the parameters by running the Kalman Smoother for each model. I would assume we need to set the initial hₜ as well.

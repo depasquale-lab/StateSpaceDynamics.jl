@@ -8,8 +8,8 @@ A Gaussian Mixture Model for clustering and density estimation.
 
 # Fields
 - `k::Int`: Number of clusters.
-- `μₖ::Matrix{<:Real}`: Means of each cluster (dimensions: data_dim x k).
-- `Σₖ::Array{Matrix{<:Real}, 1}`: Covariance matrices of each cluster.
+- `μₖ::AbstractMatrix{T}`: Means of each cluster (dimensions: data_dim x k).
+- `Σₖ::Array{AbstractMatrix{T, 1}`: Covariance matrices of each cluster.
 - `πₖ::Vector{Float64}`: Mixing coefficients for each cluster.
 
 
@@ -65,7 +65,7 @@ function Random.rand(gmm::GaussianMixtureModel, n::Int)
     return rand(Random.default_rng(), gmm, n)
 end
 
-function E_Step(gmm::GaussianMixtureModel, data::Matrix{<:Real})
+function E_Step(gmm::GaussianMixtureModel, data::AbstractMatrix{T}) where {T<:Real}
     N, _ = size(data)
     K = gmm.k
     γ = zeros(N, K)
@@ -85,8 +85,10 @@ function E_Step(gmm::GaussianMixtureModel, data::Matrix{<:Real})
 end
 
 function M_Step!(
-    gmm::GaussianMixtureModel, data::Matrix{<:Real}, class_probabilities::Matrix{<:Real}
-)
+    gmm::GaussianMixtureModel, 
+    data::AbstractMatrix{T}, 
+    class_probabilities::AbstractMatrix{T},
+) where {T<:Real}
     N, D = size(data)
     K = gmm.k
     γ = class_probabilities
@@ -97,7 +99,7 @@ function M_Step!(
 
     @views for k in 1:K
         N_k[k] = sum(γ[:, k])
-        μₖ[k, :] = (γ[:, k]' * data) ./ N_k[k]
+        μₖ[k, :] = (γ[:, k]' * data) / N_k[k]
     end
 
     @views for k in 1:K
@@ -121,7 +123,7 @@ Compute the log-likelihood of the data given the Gaussian Mixture Model (GMM). T
 # Returns
 - `Float64`: The log-likelihood of the data given the model.
 """
-function log_likelihood(gmm::GaussianMixtureModel, data::Matrix{<:Real})
+function log_likelihood(gmm::GaussianMixtureModel, data::AbstractMatrix{T}) where {T<:Real}
     N, K = size(data, 1), gmm.k
     ll = 0.0
     @views for n in 1:N
@@ -161,7 +163,7 @@ class_probabilities = fit!(gmm, data, maxiter=100, tol=1e-4, initialize_kmeans=t
 """
 function fit!(
     gmm::GaussianMixtureModel,
-    data::Matrix{T};
+    data::AbstractMatrix{T};
     maxiter::Int=50,
     tol::Float64=1e-3,
     initialize_kmeans::Bool=false,
@@ -194,23 +196,40 @@ function fit!(
 end
 
 # Handle vector data by reshaping it into a 2D matrix with a single column
-function E_Step(gmm::GaussianMixtureModel, data::Vector{Float64})
+function E_Step(gmm::GaussianMixtureModel, data::AbstractVector{Float64})
     return E_Step(gmm, reshape(data, :, 1))
 end
 
+# function M_Step!(
+#     gmm::GaussianMixtureModel, data::AbstractVector{T}, class_probabilities::AbstractMatrix{T} 
+# ) where {T<:Real}
+#     return M_Step!(gmm, reshape(data, :, 1), class_probabilities)
+# end
+
+# function M_Step!(
+#     gmm::GaussianMixtureModel,data::AbstractMatrix{T}, class_probabilities::AbstractVector{T},
+# ) where {T<:Real}
+#   return M_Step!(gmm, data, reshape(class_probabilities, :, 1))
+# end
+
 function M_Step!(
-    gmm::GaussianMixtureModel, data::Vector{Float64}, class_probabilities::Matrix{<:Real}
-)
-    return M_Step!(gmm, reshape(data, :, 1), class_probabilities::Matrix{<:Real})
+    gmm::GaussianMixtureModel,
+    data_raw::AbstractArray{T,ND1},
+    γ_raw   ::AbstractArray{T,ND2},
+) where {T<:Real, ND1, ND2}
+    data = ND1 == 1 ? reshape(data_raw,:,1) : data_raw
+    γ = ND2 == 1 ? reshape(γ_raw,:,1) : γ_raw
+
+    return M_Step!(gmm, data, γ)
 end
 
-function log_likelihood(gmm::GaussianMixtureModel, data::Vector{Float64})
+function log_likelihood(gmm::GaussianMixtureModel, data::AbstractVector{Float64})
     return log_likelihood(gmm, reshape(data, :, 1))
 end
 
 function fit!(
     gmm::GaussianMixtureModel,
-    data::Vector{T};
+    data::AbstractVector{T};
     maxiter::Int=50,
     tol::Float64=1e-3,
     initialize_kmeans::Bool=true,
@@ -259,7 +278,7 @@ function PoissonMixtureModel(k::Int)
     return PoissonMixtureModel(k, λs, πs)
 end
 
-function E_Step(pmm::PoissonMixtureModel, data::Matrix{Int})
+function E_Step(pmm::PoissonMixtureModel, data::AbstractMatrix{Int})
     N, _ = size(data)
     γ = zeros(N, pmm.k)
 
@@ -275,7 +294,7 @@ function E_Step(pmm::PoissonMixtureModel, data::Matrix{Int})
     return γ  # Return the responsibility matrix
 end
 
-function M_Step!(pmm::PoissonMixtureModel, data::Matrix{Int}, γ::Matrix{<:Real})
+function M_Step!(pmm::PoissonMixtureModel, data::AbstractMatrix{Int}, γ::AbstractMatrix{<:Real})
     N, _ = size(data)
 
     @views for k in 1:(pmm.k)
@@ -309,7 +328,7 @@ class_probabilities = fit!(pmm, data, maxiter=100, tol=1e-4, initialize_kmeans=t
 """
 function fit!(
     pmm::PoissonMixtureModel,
-    data::Matrix{T};
+    data::AbstractMatrix{T};
     maxiter::Int=50,
     tol::Float64=1e-3,
     initialize_kmeans::Bool=false,
@@ -344,7 +363,7 @@ Compute the log-likelihood of the data given the Poisson Mixture Model (PMM). Th
 # Returns
 - `Float64`: The log-likelihood of the data given the model.
 """
-function log_likelihood(pmm::PoissonMixtureModel, data::Matrix{Int})
+function log_likelihood(pmm::PoissonMixtureModel, data::AbstractMatrix{Int})
     ll = 0.0
     for n in 1:size(data, 1)
         ll_n = log(
@@ -382,23 +401,40 @@ function Random.rand(pmm::PoissonMixtureModel, n::Int)
 end
 
 # Handle vector data by reshaping it into a 2D matrix with a single column
-function E_Step(pmm::PoissonMixtureModel, data::Vector{Int})
+function E_Step(pmm::PoissonMixtureModel, data::AbstractVector{Int})
     return E_Step(pmm, reshape(data, :, 1))
 end
 
+# function M_Step!(
+#     pmm::PoissonMixtureModel, data::AbstractVector{Int}, class_probabilities::AbstractMatrix{<:Real}
+# )
+#     return M_Step!(pmm, reshape(data, :, 1), class_probabilities)
+# end
+
+# function M_Step!(
+#     pmm::PoissonMixtureModel, data::AbstractVector{Int}, class_probabilities::AbstractMatrix{T}
+# ) where {T<:Real}
+#   return M_Step!(pmm, data, reshape(class_probabilities, :, 1))
+# end
+
 function M_Step!(
-    pmm::PoissonMixtureModel, data::Vector{Int}, class_probabilities::Matrix{<:Real}
-)
-    return M_Step!(pmm, reshape(data, :, 1), class_probabilities)
+    pmm::PoissonMixtureModel,
+    data_raw::AbstractArray{Int,ND1},
+    γ_raw   ::AbstractArray{T,ND2},
+) where {T<:Real, ND1, ND2}
+    data = ND1 == 1 ? reshape(data_raw,:,1) : data_raw
+    γ = ND2 == 1 ? reshape(γ_raw,:,1) : γ_raw
+
+    return M_Step!(pmm, data, γ)
 end
 
-function log_likelihood(pmm::PoissonMixtureModel, data::Vector{Int})
+function log_likelihood(pmm::PoissonMixtureModel, data::AbstractVector{Int})
     return log_likelihood(pmm, reshape(data, :, 1))
 end
 
 function fit!(
     pmm::PoissonMixtureModel,
-    data::Vector{T};
+    data::AbstractVector{T};
     maxiter::Int=50,
     tol::Float64=1e-3,
     initialize_kmeans::Bool=true,
