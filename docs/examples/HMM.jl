@@ -37,8 +37,6 @@ true_labels, data = rand(model, n=num_samples)
 
 # ## Visualize the sampled dataset
 
-gr()
-
 x_vals = data[1, 1:num_points]
 y_vals = data[2, 1:num_points]
 labels_slice = true_labels[1:num_points]
@@ -100,8 +98,6 @@ ylabel!("Log-Likelihood")
 # ## Visualize the latent state predictions using Viterbi
 
 pred_labels= viterbi(test_model, data);
-
-gr()
 
 true_mat = reshape(true_labels[1:1000], 1, :)
 pred_mat = reshape(pred_labels[1:1000], 1, :)
@@ -173,7 +169,6 @@ all_pred_labels_vec = viterbi(test_model, all_data)
 all_pred_labels = hcat(all_pred_labels_vec...)'
 all_true_labels_matrix = hcat(all_true_labels...)'
 
-gr()
 state_colors = [:dodgerblue, :crimson]
 true_subset = all_true_labels_matrix[1:10, 1:500]
 pred_subset = all_pred_labels[1:10, 1:500]

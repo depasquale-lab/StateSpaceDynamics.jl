@@ -12,6 +12,10 @@ The three components of an HMM are as follows:
 - **A transition matrix ($A$):** how the hidden states evolve over time.
 - **An emission model:** how the hidden states generate the observed data.
 
+```@docs
+HiddenMarkovModel
+```
+
 The generative model is given by:
 
 ```math
@@ -40,6 +44,10 @@ Where:
 
 - ``\mu_k`` is the mean of the emission distribution for state $k$
 - ``\Sigma_k`` is the covariance of the emission distribution for state $k$
+
+```@docs
+GaussianEmission
+```
 
 # What is a Generalized Linear Model - Hidden Markov Model
 
@@ -88,9 +96,39 @@ Where:
 - ``\sigma(\cdot)`` is the logistic sigmoid function for binary outputs
 - ``\mu_k`` is the state-dependent bias
 
+```@docs
+GaussianRegressionEmission
+BernoulliRegressionEmission
+PoissonRegressionEmission
+AutoRegressionEmission
+```
+
+# Sampling from an HMM
+You can generate synthetic data from an HMM or GLM-HMM:
+
+```@docs
+function Random.rand(
+    rng::AbstractRNG,
+    model::HiddenMarkovModel,
+    X::Union{Matrix{<:Real}, Nothing}=nothing;
+    n::Int,
+    autoregressive::Bool=false,
+)
+```
+
 # Learning in an HMM
 
 `StateSpaceDynamics.jl` implements Expectation-Maximization (EM) for parameter learning in both HMMs and GLM-HMMs. EM is an iterative method for finding maximum likelihood estimates of the parameters in graphical models with hidden variables. 
+
+```@docs
+fit!(
+    model::HiddenMarkovModel,
+    Y::AbstractMatrix{T},
+    X::Union{AbstractMatrix{<:Real},Nothing}=nothing;
+    max_iters::Int=100,
+    tol::Float64=1e-6,
+) where {T<:Real}
+```
 
 ### Expectation Step (E-step)
 In the **expectation step (E-step)**, we calculate the posterior distribution of the latent states given the current parameters of the model:
@@ -113,20 +151,24 @@ In the **maximization step (M-step)**, we maximize this expectation with respect
 - If the emission model is a GLM, we use `Optim.jl` to **numerically optimize** the objective function.
 
 # Inference in an HMM
-
 For state inference in Hidden Markov Models (HMMs), we implement two common algorithms:
 
 ### Forward-Backward Algorithm
 The **Forward-Backward** algorithm is used to compute the **posterior state probabilities** at each time step. Given the observed data, it calculates the probability of being in each possible hidden state at each time step, marginalizing over all possible state sequences.
 
+```@docs
+class_probabilities(model::HiddenMarkovModel, Y::AbstractMatrix{T}, 
+    X::Union{AbstractMatrix{<:Real},Nothing}=nothing;) where {T<:Real}
+```
+
 ### Viterbi Algorithm
 The **Viterbi** algorithm is used for **best state sequence labeling**. It finds the most likely sequence of hidden states given the observed data. This is done by dynamically computing the highest probability path through the state space, which maximizes the likelihood of the observed sequence.
+
+```@docs
+viterbi(model::HiddenMarkovModel, Y::AbstractMatrix{T}, 
+    X::Union{AbstractMatrix{<:Real},Nothing}=nothing;) where {T<:Real}
+```
 
 # Reference
 
 For a complete mathematical formulation of the relevant HMM and HMM-GLM learning and inference algorithms, we recommend **Pattern Recognition and Machine Learning, Chapter 13** by **Christopher Bishop**.
-
-```@autodocs
-Modules = [StateSpaceDynamics]
-Pages   = ["HiddenMarkovModels.jl"]
-```

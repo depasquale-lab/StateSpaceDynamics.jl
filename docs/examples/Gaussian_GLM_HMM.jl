@@ -31,8 +31,6 @@ true_labels, data = rand(true_model, Φ, n=n)
 
 # ## Visualize the sampled dataset
 
-gr()
-
 colors = [:dodgerblue, :crimson]
 
 scatter(Φ[1, :], vec(data);
@@ -80,7 +78,6 @@ xlabel!("EM Iteration")
 ylabel!("Log-Likelihood")
 
 # ## Visualize the emission model predictions
-gr()
 
 state_colors = [:dodgerblue, :crimson]
 true_colors = [:green, :orange]
@@ -138,8 +135,6 @@ plot!(xvals, y_pred_2;
 # ## Visualize the latent state predictions using Viterbi
 
 pred_labels= viterbi(test_model, data, Φ);
-
-gr()
 
 true_mat = reshape(true_labels[1:1000], 1, :)
 pred_mat = reshape(pred_labels[1:1000], 1, :)
@@ -208,7 +203,6 @@ all_pred_labels_vec = viterbi(test_model, all_data, Φ_total)
 all_pred_labels = hcat(all_pred_labels_vec...)'
 all_true_labels_matrix = hcat(all_true_labels...)'
 
-gr()
 state_colors = [:dodgerblue, :crimson]
 true_subset = all_true_labels_matrix[1:10, 1:500]
 pred_subset = all_pred_labels[1:10, 1:500]
