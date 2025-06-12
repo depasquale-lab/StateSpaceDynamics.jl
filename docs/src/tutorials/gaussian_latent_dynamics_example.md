@@ -2,14 +2,14 @@
 EditURL = "../../examples/GaussianLDS.jl"
 ```
 
-Simulating and Fitting a Linear Dynamical System
+## Simulating and Fitting a Linear Dynamical System
 
 This tutorial demonstrates how to use `StateSpaceDynamics.jl` to simulate a latent
 linear dynamical system and fit it using the EM algorithm.
 
 ## Load Packages
 
-````@example latent_dynamics_example
+````@example gaussian_latent_dynamics_example
 using StateSpaceDynamics
 using LinearAlgebra
 using Random
@@ -19,7 +19,7 @@ using LaTeXStrings
 
 ## Create a State-Space Model
 
-````@example latent_dynamics_example
+````@example gaussian_latent_dynamics_example
 obs_dim = 10
 latent_dim = 2
 
@@ -45,14 +45,14 @@ true_lds = LinearDynamicalSystem(;
 
 ## Simulate Latent and Observed Data
 
-````@example latent_dynamics_example
+````@example gaussian_latent_dynamics_example
 tSteps = 500
 latents, observations = rand(true_lds; tsteps=tSteps, ntrials=1)
 ````
 
 ## Plot Vector Field of Latent Dynamics
 
-````@example latent_dynamics_example
+````@example gaussian_latent_dynamics_example
 x = y = -3:0.5:3
 X = repeat(x', length(y), 1)
 Y = repeat(y, 1, length(x))
@@ -80,7 +80,7 @@ plot!(latents[1, :, 1], latents[2, :, 1], xlabel="x₁", ylabel="x₂",
 
 ## Plot Latent States and Observations
 
-````@example latent_dynamics_example
+````@example gaussian_latent_dynamics_example
 states = latents[:, :, 1]
 emissions = observations[:, :, 1]
 
@@ -111,7 +111,7 @@ plot!(link=:x, size=(800, 600), left_margin=10Plots.mm)
 
 ## Initialize a Model and Perform Smoothing
 
-````@example latent_dynamics_example
+````@example gaussian_latent_dynamics_example
 A_init = random_rotation_matrix(2)
 Q_init = Matrix(0.1 * I(2))
 C_init = randn(obs_dim, latent_dim)
@@ -144,7 +144,7 @@ plot!(subplot=1, yticks=(lim_states .* (0:latent_dim-1), [L"x_%$d" for d in 1:la
 
 ## Fit Model Using EM Algorithm
 
-````@example latent_dynamics_example
+````@example gaussian_latent_dynamics_example
 elbo, _ = fit!(naive_ssm, observations; max_iter=100, tol=1e-6)
 
 x_smooth, _, _ = StateSpaceDynamics.smooth(naive_ssm, observations)
@@ -157,7 +157,11 @@ end
 plot!(subplot=1, yticks=(lim_states .* (0:latent_dim-1), [L"x_%$d" for d in 1:latent_dim]),
       xticks=[], xlims=(0, tSteps), yformatter=y->"", tickfontsize=12,
       title="True vs. Predicted Latent States (Post-EM)")
+````
 
+## Confirm the model converges
+
+````@example gaussian_latent_dynamics_example
 plot(elbo, xlabel="iteration", ylabel="ELBO", title="ELBO (Marginal Loglikelihood)", legend=false)
 ````
 

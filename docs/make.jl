@@ -6,12 +6,20 @@ using Random
 # Set up the documentation environment
 DocMeta.setdocmeta!(StateSpaceDynamics, :DocTestSetup, :(using StateSpaceDynamics, Random); recursive=true)
 
-# Run Literate.jl to convert tutorial scripts to markdown in docs/src/tutorials/
+# Convert Gaussian LDS example
 Literate.markdown(
-    joinpath(@__DIR__, "examples", "GaussianLDS.jl"), # input path
-    joinpath(@__DIR__, "src", "tutorials");                        # output directory
-    name = "latent_dynamics_example",                              # output .md filename
-    documenter = true                                              # format for Documenter
+    joinpath(@__DIR__, "examples", "GaussianLDS.jl"),
+    joinpath(@__DIR__, "src", "tutorials");
+    name = "gaussian_latent_dynamics_example",
+    documenter = true
+)
+
+# Convert Poisson LDS example
+Literate.markdown(
+    joinpath(@__DIR__, "examples", "PoissonLDS.jl"),
+    joinpath(@__DIR__, "src", "tutorials");
+    name = "poisson_latent_dynamics_example",
+    documenter = true
 )
 
 # Generate the documentation site
@@ -33,7 +41,8 @@ makedocs(;
             "Mixture Models" => "MixtureModels.md",
         ],
         "Tutorials" => [
-            "Gaussian LDS Example" => "tutorials/latent_dynamics_example.md"
+            "Gaussian LDS Example" => "tutorials/gaussian_latent_dynamics_example.md",
+            "Poisson LDS Example" => "tutorials/poisson_latent_dynamics_example.md"
         ],
         "Miscellaneous" => "Misc.md",
     ],
