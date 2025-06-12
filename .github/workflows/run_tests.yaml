@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        julia-version: ['1.10', '1']  # '1' always points to the latest stable release
+        julia-version: ['1']  # '1' always points to the latest stable release
     steps:
     - name: Check out code
       uses: actions/checkout@v2
@@ -26,11 +26,11 @@ jobs:
         julia --project="$GITHUB_WORKSPACE" -e 'using Pkg; Pkg.test("StateSpaceDynamics", coverage=true)'
 
     - name: Process coverage
-      if: matrix.julia-version == '1.10'
+      if: matrix.julia-version == '1'
       uses: julia-actions/julia-processcoverage@v1
 
     - name: Upload coverage reports to Codecov
-      if: matrix.julia-version == '1.10'
+      if: matrix.julia-version == '1'
       uses: codecov/codecov-action@v3
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

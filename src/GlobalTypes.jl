@@ -58,12 +58,12 @@ A mutable struct that encapsulates the forward–backward algorithm outputs for 
 
 Typically, `α` and `β` are computed by the forward–backward algorithm to find the likelihood of an observation sequence. `γ` and `ξ` are derived from these calculations to estimate how states transition over time.
 """
-mutable struct ForwardBackward{T<:Real}
-    loglikelihoods::Matrix{T}
-    α::Matrix{T}
-    β::Matrix{T}
-    γ::Matrix{T}
-    ξ::Array{T, 3}
+mutable struct ForwardBackward{T<:Real, V<:AbstractVector{T}, M<:AbstractMatrix{T}, A<:Array{T,3}}
+    loglikelihoods::M
+    α::M
+    β::M
+    γ::M
+    ξ::A
 end
 
 

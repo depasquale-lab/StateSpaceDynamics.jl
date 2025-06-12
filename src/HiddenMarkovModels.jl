@@ -1,41 +1,71 @@
 # Public API
-export HiddenMarkovModel, fit!, rand, loglikelihood, viterbi
+export HiddenMarkovModel, fit!, rand, loglikelihood, viterbi, class_probabilities
 export kmeans_init!
 
 """
     HiddenMarkovModel
 
-A Hidden Markov Model (HMM) with custom emissions.
+Store a Hidden Markov Model (HMM) with custom emissions.
 
 # Fields
+- `A::AbstractMatrix{<:Real}`: Transition matrix.
+- `B::AbstractVector{<:EmissionModel}`: State-dependent emission models.
+- `πₖ::AbstractVector{<:Real}`: Initial state distribution.
 - `K::Int`: Number of states.
-- `B::Vector=Vector()`: Vector of emission models.
-- `emission=nothing`: If B is missing emissions, clones of this model will be used to fill in the rest.
-- `A::Matrix{<:Real}`: Transition matrix.
-- `πₖ::Vector{Float64}`: Initial state distribution.
 """
-mutable struct HiddenMarkovModel <: AbstractHMM
-    A::Matrix{<:Real} # transition matrix
-    B::Vector{EmissionModel} # Vector of emission Models
-    πₖ::Vector{Float64} # initial state distribution
+mutable struct HiddenMarkovModel{T<:Real, V<:AbstractVector{T}, M<:AbstractMatrix{T}, VE<:AbstractVector{<:EmissionModel}} <: AbstractHMM
+    A::M # transition matrix
+    B::VE # Vector of emission Models
+    πₖ::V # initial state distribution
     K::Int # number of states
 end
 
-function initialize_forward_backward(model::AbstractHMM, num_obs::Int)
+"""
+    initialize_forward_backward(model::AbstractHMM, num_obs::Int)
+
+Initialize the forward backward storage struct.
+"""
+function initialize_forward_backward(model::AbstractHMM, num_obs::Int, ::Type{T}) where {T<:Real}
     num_states = model.K
     ForwardBackward(
-        zeros(num_states, num_obs),
-        zeros(num_states, num_obs),
-        zeros(num_states, num_obs),
-        zeros(num_states, num_obs),
-        zeros(Float64, num_states, num_states, num_obs - 1)
+        zeros(T, num_states, num_obs),
+        zeros(T, num_states, num_obs),
+        zeros(T, num_states, num_obs),
+        zeros(T, num_states, num_obs),
+        zeros(T, num_states, num_states, num_obs - 1)
     )
 end
 
-function aggregate_forward_backward!(
-    aggregated_FB::ForwardBackward{T}, 
-    FB_storages::Vector{ForwardBackward{T}}
+
+"""
+    ForwardBackward(
+        loglikelihoods::Matrix{T},
+        α::Matrix{T},
+        β::Matrix{T},
+        γ::Matrix{T},
+        ξ::Array{T,3}) where {T<:Real}
+
+Initialize the forward backward storage struct.
+"""
+function ForwardBackward(
+    loglikelihoods::Matrix{T},
+    α::Matrix{T},
+    β::Matrix{T},
+    γ::Matrix{T},
+    ξ::Array{T,3}
 ) where {T<:Real}
+    ForwardBackward{T, Vector{T}, Matrix{T}, Array{T,3}}(loglikelihoods, α, β, γ, ξ)
+end
+
+"""
+    aggregate_forward_backward!(aggregated_FB::ForwardBackward, FB_storages::Vector{<:ForwardBackward})
+
+Aggregate single trial ForwardBackward structs to one session-wide struct.
+"""
+function aggregate_forward_backward!(
+    aggregated_FB::ForwardBackward, 
+    FB_storages::Vector{<:ForwardBackward}
+)
     # Concatenate each field into the respective field in the aggregated struct
     aggregated_FB.loglikelihoods .= hcat([fb.loglikelihoods for fb in FB_storages]...)
     aggregated_FB.α .= hcat([fb.α for fb in FB_storages]...)
@@ -45,6 +75,11 @@ function aggregate_forward_backward!(
     
 end
 
+"""
+    initialize_transition_matrix(K::Int)
+
+Initialize the HMM transition matrix.
+"""
 function initialize_transition_matrix(K::Int)
     # initialize a transition matrix
     A = zeros(Float64, K, K)
@@ -54,38 +89,42 @@ function initialize_transition_matrix(K::Int)
     return A
 end
 
+"""
+    initialize_state_distribution(K::Int)
+
+Initialize the HMM initial state distribution
+"""
 function initialize_state_distribution(K::Int)
     # initialize a state distribution
     return rand(Dirichlet(ones(K)))
 end
 
+"""
+    HiddenMarkovModel(;
+        K::Int,
+        B::AbstractVector{<:EmissionModel},
+        emission=nothing,
+        A::AbstractMatrix{T},
+        πₖ::AbstractVector{T}) where {T<:Real}
+
+Create a hidden Markov model.
+
+# Arguments
+    - `K::Int`: Number of latent states.
+    - `B::AbstractVector{<:EmissionModel}`: State-dependent emission models.
+    - ``
+"""
 function HiddenMarkovModel(;
     K::Int,
-    B::Vector=Vector(),
-    emission=nothing,
-    A::Matrix{<:Real}=initialize_transition_matrix(K),
-    πₖ::Vector{Float64}=initialize_state_distribution(K),
-)
+    B::AbstractVector{<:EmissionModel},
+    A::AbstractMatrix{T},
+    πₖ::AbstractVector{T},
+) where {T<:Real}
 
-    # if B does not have all K emission models, then fill in the rest with deep copies of "emission"
-    if !isnothing(emission) && length(B) < K
-        @warn """
-        User did not provide as many emmission models as the function expects (K=$K).
-        Filling in the rest with deep copies of the provided emission model.
-        If this is not the desired behavior, specify all the emission models in the 'B=Vector{EmissionModel}' argument 
-        rather than 'emission'
-        """
-        for i in (length(B) + 1):K
-            push!(B, deepcopy(emission))
-        end
-        
-    end
+    model = HiddenMarkovModel(A, B, πₖ, K)
 
-    emission_models = B
-    #emission_models = Emission.(B)
-
-    model = HiddenMarkovModel(A, emission_models, πₖ, K)
-
+    # check that each state has an emission model
+    @assert length(B) == model.K
     # check that the transition matrix is the proper shape
     @assert size(model.A) == (model.K, model.K)
     @assert isapprox(sum(model.A; dims=2), ones(model.K))
@@ -100,6 +139,15 @@ function HiddenMarkovModel(;
     return model
 end
 
+"""
+    kmeans_init!(model::HiddenMarkovModel, data::Matrix{T}) where {T<:Real}
+
+Initialize HMM emission models using K-means clustering.
+
+# Arguments
+    - `model::HiddenMarkovModel`: The HMM
+    - `data::Matrix{T}`: The data
+"""
 function kmeans_init!(model::HiddenMarkovModel, data::Matrix{T}) where {T<:Real}
     num_states = model.K
     # run k-means 
@@ -113,13 +161,19 @@ function kmeans_init!(model::HiddenMarkovModel, data::Matrix{T}) where {T<:Real}
 end
 
 """
-    sample(model::HiddenMarkovModel, data...; n::Int)
+    Random.rand(
+        rng::AbstractRNG,
+        model::HiddenMarkovModel,
+        X::Union{Matrix{<:Real}, Nothing}=nothing;
+        n::Int,
+        autoregressive::Bool=false)
 
 Generate `n` samples from a Hidden Markov Model. Returns a tuple of the state sequence and the observation sequence.
 
 # Arguments
+- `rng::AbstractRNG`: The seed.
 - `model::HiddenMarkovModel`: The Hidden Markov Model to sample from.
-- `data...`: The data to fit the Hidden Markov Model. Requires the same format as the emission model.
+- `X`: The input data for switching regression models.
 - `n::Int`: The number of samples to generate.
 
 # Returns
@@ -133,9 +187,9 @@ function Random.rand(
     n::Int,
     autoregressive::Bool=false,
 )
-
+    T = typeof(model.A[1])
     state_sequence = Vector{Int}(undef, n)
-    observation_sequence = Matrix{Float64}(undef, model.B[1].output_dim, n)
+    observation_sequence = Matrix{T}(undef, model.B[1].output_dim, n)
 
     if !autoregressive
         # Sample initial state
@@ -165,6 +219,15 @@ function Random.rand(
     return state_sequence, observation_sequence
 end
 
+"""
+    Random.rand(
+        model::HiddenMarkovModel,
+        X::Union{Matrix{<:Real}, Nothing}=nothing;
+        n::Int,
+        autoregressive::Bool=false)
+
+Generate `n` sammples from an HMM.
+"""
 function Random.rand(
     model::HiddenMarkovModel,
     X::Union{Matrix{<:Real}, Nothing}=nothing;
@@ -174,16 +237,25 @@ function Random.rand(
     return rand(Random.default_rng(), model, X; n=n, autoregressive=autoregressive)
 end
 
-# New function for FB storage
+
+"""
+    emission_loglikelihoods!(model::HiddenMarkovModel, FB_storage::ForwardBackward, data...)
+
+Calculate observation likelihoods for each state.
+"""
 function emission_loglikelihoods!(model::HiddenMarkovModel, FB_storage::ForwardBackward, data...)
     log_likelihoods = FB_storage.loglikelihoods
 
-    # Calculate observation wise likelihoods for all states
     @threads for k in 1:model.K
         log_likelihoods[k, :] .= loglikelihood(model.B[k], data...)
     end
 end
 
+"""
+    forward!(model::AbstractHMM, FB_storage::ForwardBackward)
+
+Run the forward algorithm given an `AbstractHMM` and `ForwardBackd` storage struct.
+"""
 function forward!(model::AbstractHMM, FB_storage::ForwardBackward)
     # Reference storage
     α = FB_storage.α
@@ -214,6 +286,11 @@ function forward!(model::AbstractHMM, FB_storage::ForwardBackward)
     end
 end
 
+"""
+    backward!(model::AbstractHMM, FB_storage::ForwardBackward)
+
+Run the backward algorithm given an `AbstractHMM` and `ForwardBackd` storage struct.
+"""
 function backward!(model::AbstractHMM, FB_storage::ForwardBackward)
     # Reference storage
     β = FB_storage.β
@@ -240,6 +317,11 @@ function backward!(model::AbstractHMM, FB_storage::ForwardBackward)
     end
 end
 
+"""
+    calculate_γ!(model::AbstractHMM, FB_storage::ForwardBackward)
+
+Calculate the marginal posterior distribution for each state.
+"""
 function calculate_γ!(model::AbstractHMM, FB_storage::ForwardBackward)
     α = FB_storage.α
     β = FB_storage.β
@@ -253,6 +335,11 @@ function calculate_γ!(model::AbstractHMM, FB_storage::ForwardBackward)
     end
 end
 
+"""
+    calculate_ξ!(model::AbstractHMM, FB_storage::ForwardBackward)
+
+Calculate the joint posterior distribution for state transitions.
+"""
 function calculate_ξ!(
     model::AbstractHMM,
     FB_storage::ForwardBackward
@@ -286,6 +373,11 @@ function calculate_ξ!(
     end
 end
 
+"""
+    estep!(model::HiddenMarkovModel, data, FB_storage)
+
+Run the E-step of the Expecation-Maximiation algorithm for HMMs.
+"""
 function estep!(model::HiddenMarkovModel, data, FB_storage)
     # compute lls of the observations
     emission_loglikelihoods!(model, FB_storage, data...)
@@ -297,12 +389,27 @@ function estep!(model::HiddenMarkovModel, data, FB_storage)
     calculate_ξ!(model, FB_storage)
 end
 
+"""
+    update_initial_state_distribution!(model::AbstractHMM, FB_storage::ForwardBackward)
+
+Update the initial state distribution of an HMM.
+"""
 function update_initial_state_distribution!(model::AbstractHMM, FB_storage::ForwardBackward)
     # Update initial state probabilities
     γ = FB_storage.γ
     return model.πₖ .= exp.(γ[:, 1])
 end
 
+function update_initial_state_distribution!(model::AbstractHMM, FB_storage_vec::Vector{<:ForwardBackward})
+    num_trials = length(FB_storage_vec)
+    return model.πₖ = mean([exp.(FB_storage_vec[i].γ[:, 1]) for i in 1:num_trials])
+end
+
+"""
+    update_transition_matrix!(model::AbstractHMM, FB_storage::ForwardBackward)
+
+Update the transition matrix of an HMM.
+"""
 function update_transition_matrix!(
     model::AbstractHMM, FB_storage::ForwardBackward
 )
@@ -318,7 +425,7 @@ function update_transition_matrix!(
 end
 
 function update_transition_matrix!(
-    model::AbstractHMM, FB_storage_vec::Vector{ForwardBackward{Float64}}
+    model::AbstractHMM, FB_storage_vec::Vector{<:ForwardBackward}
 )
     for j in 1:model.K
         for k in 1:model.K
@@ -335,6 +442,11 @@ function update_transition_matrix!(
     end
 end
 
+"""
+    update_emissions!(model::AbstractHMM, FB_storage::ForwardBackward, data)
+
+Update the emission models of an HMM.
+"""
 function update_emissions!(model::AbstractHMM, FB_storage::ForwardBackward, data)
     w = exp.(permutedims(FB_storage.γ))  # size (T, K)
     @threads for k in 1:model.K
@@ -342,6 +454,11 @@ function update_emissions!(model::AbstractHMM, FB_storage::ForwardBackward, data
     end
 end
 
+"""
+    mstep!(model::AbstractHMM, FB_storage::ForwardBackward, data)
+
+Carry out the M-step of Expectation-Maximization.
+"""
 function mstep!(model::AbstractHMM, FB_storage::ForwardBackward, data)
     # update initial state distribution
     update_initial_state_distribution!(model, FB_storage)
@@ -351,18 +468,13 @@ function mstep!(model::AbstractHMM, FB_storage::ForwardBackward, data)
     update_emissions!(model, FB_storage, data)
 end
 
-function mstep!(model::AbstractHMM, FB_storage_vec::Vector{ForwardBackward{Float64}}, Aggregate_FB_storage::ForwardBackward, data)
+function mstep!(model::AbstractHMM, FB_storage_vec::Vector{<:ForwardBackward}, Aggregate_FB_storage::ForwardBackward, data)
     # update initial state distribution
     update_initial_state_distribution!(model, FB_storage_vec)
     # update transition matrix
     update_transition_matrix!(model, FB_storage_vec)
     # update regression models
     update_emissions!(model, Aggregate_FB_storage, data)
-end
-
-function update_initial_state_distribution!(model::AbstractHMM, FB_storage_vec::Vector{ForwardBackward{Float64}})
-    num_trials = length(FB_storage_vec)
-    return model.πₖ = mean([exp.(FB_storage_vec[i].γ[:, 1]) for i in 1:num_trials])
 end
 
 """
@@ -379,12 +491,12 @@ Fit the Hidden Markov Model using the EM algorithm.
 """
 function fit!(
     model::HiddenMarkovModel,
-    Y::AbstractMatrix{<:Real},
+    Y::AbstractMatrix{T},
     X::Union{AbstractMatrix{<:Real},Nothing}=nothing;
     max_iters::Int=100,
     tol::Float64=1e-6,
-)
-    lls = [-Inf]
+) where {T<:Real}
+    lls = Vector{T}()
 
     data = X === nothing ? (Y,) : (X, Y)
 
@@ -393,7 +505,7 @@ function fit!(
 
     num_obs = size(transpose_data[1], 1)
     # initialize forward backward storage
-    FB_storage = initialize_forward_backward(model, num_obs)
+    FB_storage = initialize_forward_backward(model, num_obs, T)
 
     log_likelihood = -Inf
     # Initialize progress bar
@@ -434,12 +546,12 @@ Fit the Hidden Markov Model to multiple trials of data using the EM algorithm.
 """
 function fit!(
     model::HiddenMarkovModel,
-    Y::Vector{<:AbstractMatrix{<:Real}},
+    Y::Vector{<:AbstractMatrix{T}},
     X::Union{Vector{<:AbstractMatrix{<:Real}},Nothing}=nothing;
     max_iters::Int=100,
     tol::Float64=1e-6,
-)
-    lls = [-Inf]
+) where {T<:Real}
+    lls = Vector{T}()
     data = X === nothing ? (Y,) : (X, Y)
 
     # Initialize log_likelihood
@@ -451,8 +563,8 @@ function fit!(
     total_obs = sum(size(trial_mat[1], 1) for trial_mat in zipped_matrices)
 
     # initialize a vector of ForwardBackward storage and an aggregate storage
-    FB_storage_vec = [initialize_forward_backward(model, size(trial_tuple[1],1)) for trial_tuple in zipped_matrices]
-    Aggregate_FB_storage = initialize_forward_backward(model, total_obs)
+    FB_storage_vec = [initialize_forward_backward(model, size(trial_tuple[1],1), T) for trial_tuple in zipped_matrices]
+    Aggregate_FB_storage = initialize_forward_backward(model, total_obs, T)
     
     p = Progress(max_iters; desc="Running EM algorithm...", barlen=50, showspeed=true)
     for iter in 1:max_iters
@@ -499,14 +611,14 @@ Calculate the class probabilities at each time point using forward backward algo
 # Returns
 - `class_probabilities::Matrix{Float64}`: The class probabilities at each timepoint
 """
-function class_probabilities(model::HiddenMarkovModel, Y::Matrix{<:Real}, 
-    X::Union{Matrix{<:Real},Nothing}=nothing;)
+function class_probabilities(model::HiddenMarkovModel, Y::AbstractMatrix{T}, 
+    X::Union{AbstractMatrix{<:Real},Nothing}=nothing;) where {T<:Real}
     data = X === nothing ? (Y,) : (X, Y)
     # transpose data so that correct dimensions are passed to EmissionModels.jl, a bit hacky but works for now.
     transpose_data = Matrix.(transpose.(data))
     num_obs = size(transpose_data[1], 1)
     # initialize forward backward storage
-    FB_storage = initialize_forward_backward(model, num_obs)
+    FB_storage = initialize_forward_backward(model, num_obs, T)
 
     # Get class probabilities using Estep
     estep!(model, transpose_data, FB_storage)
@@ -559,15 +671,15 @@ Get most likely class labels using the Viterbi algorithm
 # Returns
 - `best_path::Vector{Float64}`: The most likely state label at each timepoint
 """
-function viterbi(model::HiddenMarkovModel, Y::Matrix{<:Real}, 
-    X::Union{Matrix{<:Real},Nothing}=nothing;)
+function viterbi(model::HiddenMarkovModel, Y::AbstractMatrix{T}, 
+    X::Union{AbstractMatrix{<:Real},Nothing}=nothing;) where {T<:Real}
     data = X === nothing ? (Y,) : (X, Y)
 
     # transpose data so that correct dimensions are passed to EmissionModels.jl
     transpose_data = Matrix.(transpose.(data))  # You could consider a view here too if you're memory-sensitive
 
     num_obs = size(transpose_data[1], 1)
-    FB_storage = initialize_forward_backward(model, num_obs)
+    FB_storage = initialize_forward_backward(model, num_obs, T)
 
     estep!(model, transpose_data, FB_storage)
 

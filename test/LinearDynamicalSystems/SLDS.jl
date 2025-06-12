@@ -61,12 +61,15 @@ function test_vEstep()
     model = StateSpaceDynamics.initialize_slds()
     # sample from the model
     x, y, z = rand(model, 1000)  # 1000 time steps
+
+    ty = typeof(y[1])
+
     # just a few vars
     K = model.K
     T_step = 1000
     # initialize the FS and FB structs
     FS = [StateSpaceDynamics.initialize_FilterSmooth(model.B[k], T_step) for k in 1:K]
-    FB = StateSpaceDynamics.initialize_forward_backward(model, T_step)
+    FB = StateSpaceDynamics.initialize_forward_backward(model, T_step, ty)
     
     # run the vEstep
     ml_total, mls = variational_expectation!(model, y, FB, FS)

@@ -19,11 +19,11 @@ gmm = GaussianMixtureModel(3, 2) # Create a Gaussian Mixture Model with 3 cluste
 fit!(gmm, data)
 ```
 """
-mutable struct GaussianMixtureModel <: MixtureModel
+mutable struct GaussianMixtureModel{T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}} <: MixtureModel
     k::Int # Number of clusters
-    μₖ::Matrix{<:Real} # Means of each cluster
-    Σₖ::Array{Matrix{<:Real},1} # Covariance matrices of each cluster
-    πₖ::Vector{Float64} # Mixing coefficients
+    μₖ::M # Means of each cluster
+    Σₖ::AbstractArray{M,1} # Covariance matrices of each cluster
+    πₖ::V # Mixing coefficients
 end
 
 """
@@ -161,11 +161,11 @@ class_probabilities = fit!(gmm, data, maxiter=100, tol=1e-4, initialize_kmeans=t
 """
 function fit!(
     gmm::GaussianMixtureModel,
-    data::Matrix{<:Real};
+    data::Matrix{T};
     maxiter::Int=50,
     tol::Float64=1e-3,
     initialize_kmeans::Bool=false,
-)
+) where {T<:Real}
     prev_ll = -Inf  # Initialize to negative infinity
 
     if initialize_kmeans
@@ -210,11 +210,11 @@ end
 
 function fit!(
     gmm::GaussianMixtureModel,
-    data::Vector{Float64};
+    data::Vector{T};
     maxiter::Int=50,
     tol::Float64=1e-3,
     initialize_kmeans::Bool=true,
-)
+) where {T<:Real}
     return fit!(
         gmm,
         reshape(data, :, 1);
@@ -240,10 +240,10 @@ A Poisson Mixture Model for clustering and density estimation.
 pmm = PoissonMixtureModel(3) # 3 clusters, 2-dimensional data
 fit!(pmm, data)```
 """
-mutable struct PoissonMixtureModel <: MixtureModel
+mutable struct PoissonMixtureModel{T<:Real, V<:AbstractVector{T}} <: MixtureModel
     k::Int # Number of clusters
-    λₖ::Vector{Float64} # Means of each cluster
-    πₖ::Vector{Float64} # Mixing coefficients
+    λₖ::V # Means of each cluster
+    πₖ::V # Mixing coefficients
 end
 
 """
@@ -309,11 +309,11 @@ class_probabilities = fit!(pmm, data, maxiter=100, tol=1e-4, initialize_kmeans=t
 """
 function fit!(
     pmm::PoissonMixtureModel,
-    data::Matrix{Int};
+    data::Matrix{T};
     maxiter::Int=50,
     tol::Float64=1e-3,
     initialize_kmeans::Bool=false,
-)
+) where {T<:Int}
     prev_ll = -Inf  # Initialize previous log likelihood to negative infinity
 
     if initialize_kmeans
@@ -398,11 +398,11 @@ end
 
 function fit!(
     pmm::PoissonMixtureModel,
-    data::Vector{Int};
+    data::Vector{T};
     maxiter::Int=50,
     tol::Float64=1e-3,
     initialize_kmeans::Bool=true,
-)
+) where {T<:Int}
     return fit!(
         pmm,
         reshape(data, :, 1);
