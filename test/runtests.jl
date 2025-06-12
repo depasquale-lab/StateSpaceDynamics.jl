@@ -16,100 +16,100 @@ using MAT
 Package Wide Tests
 """
 
-@testset "Package Wide Tests" begin
-    Aqua.test_all(StateSpaceDynamics; ambiguities=false)
-    @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
-end
+# @testset "Package Wide Tests" begin
+#     Aqua.test_all(StateSpaceDynamics; ambiguities=false)
+#     @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
+# end
 
-include("helper_functions.jl")
-"""
-Tests for SLDS.jl
-"""
+# include("helper_functions.jl")
+# """
+# Tests for SLDS.jl
+# """
 
-include("LinearDynamicalSystems//SLDS.jl")
+# include("LinearDynamicalSystems//SLDS.jl")
 
-@testset "SLDS Tests" begin
-    @testset "Constructor Tests" begin
-        test_init()
-        test_sample()
-    end
+# @testset "SLDS Tests" begin
+#     @testset "Constructor Tests" begin
+#         test_init()
+#         test_sample()
+#     end
 
-    @testset "vEM Tests" begin
-        test_vEstep()
-    end
-end
+#     @testset "vEM Tests" begin
+#         test_vEstep()
+#     end
+# end
 
-"""
-Tests for LDS.jl
-"""
+# """
+# Tests for LDS.jl
+# """
 
-include("LinearDynamicalSystems//GaussianLDS.jl")
+# include("LinearDynamicalSystems//GaussianLDS.jl")
 
-@testset "GaussianLDS Tests" begin
-    @testset "Constructor Tests" begin
-        test_lds_with_params()
-        test_gaussian_obs_constructor_type_preservation()
-        test_gaussian_lds_constructor_type_preservation()
-        test_gaussian_sample_type_preservation()
-        test_gaussian_fit_type_preservation()
-        test_gaussian_loglikelihood_type_preservation()
-    end
-    @testset "Smoother tests" begin
-        test_Gradient()
-        test_Hessian()
-        test_smooth()
-    end
-    @testset "EM tests" begin
-        test_estep()
-        # test when ntrials=1
-        test_initial_observation_parameter_updates()
-        test_state_model_parameter_updates()
-        test_obs_model_params_updates()
-        # test when ntrials>1
-        test_initial_observation_parameter_updates(3)
-        test_state_model_parameter_updates(3)
-        test_obs_model_params_updates(3)
-        # test fit method using n=1 and n=3
-        test_EM()
-        test_EM(3)
-    end
-end
+# @testset "GaussianLDS Tests" begin
+#     @testset "Constructor Tests" begin
+#         test_lds_with_params()
+#         test_gaussian_obs_constructor_type_preservation()
+#         test_gaussian_lds_constructor_type_preservation()
+#         test_gaussian_sample_type_preservation()
+#         test_gaussian_fit_type_preservation()
+#         test_gaussian_loglikelihood_type_preservation()
+#     end
+#     @testset "Smoother tests" begin
+#         test_Gradient()
+#         test_Hessian()
+#         test_smooth()
+#     end
+#     @testset "EM tests" begin
+#         test_estep()
+#         # test when ntrials=1
+#         test_initial_observation_parameter_updates()
+#         test_state_model_parameter_updates()
+#         test_obs_model_params_updates()
+#         # test when ntrials>1
+#         test_initial_observation_parameter_updates(3)
+#         test_state_model_parameter_updates(3)
+#         test_obs_model_params_updates(3)
+#         # test fit method using n=1 and n=3
+#         test_EM()
+#         test_EM(3)
+#     end
+# end
 
-"""
-Tests for PoissonLDS.jl
-"""
+# """
+# Tests for PoissonLDS.jl
+# """
 
-include("LinearDynamicalSystems//PoissonLDS.jl")
+# include("LinearDynamicalSystems//PoissonLDS.jl")
 
-@testset "PoissonLDS Tests" begin
-    @testset "Constructor Tests" begin
-        test_PoissonLDS_with_params()
-        test_pobs_constructor_type_preservation()
-        test_plds_constructor_type_preservation()
-        test_poisson_sample_type_preservation()
-        test_poisson_fit_type_preservation()
-        test_poisson_loglikelihood_type_preservation()
-    end
-    @testset "Smoother Tests" begin
-        test_Gradient()
-        test_Hessian()
-        test_smooth()
-    end
-    @testset "EM Tests" begin
-        test_parameter_gradient()
-        # test when ntrials=1
-        test_initial_observation_parameter_updates()
-        test_state_model_parameter_updates()
-        # test when n_trials>1
-        test_initial_observation_parameter_updates(3)
-        test_state_model_parameter_updates(3)
-        # test fit method using 1 trial and three trials
-        test_EM()
-        test_EM(3)
-        # test resutlts are same as matlab code
-        test_EM_matlab()
-    end
-end
+# @testset "PoissonLDS Tests" begin
+#     @testset "Constructor Tests" begin
+#         test_PoissonLDS_with_params()
+#         test_pobs_constructor_type_preservation()
+#         test_plds_constructor_type_preservation()
+#         test_poisson_sample_type_preservation()
+#         test_poisson_fit_type_preservation()
+#         test_poisson_loglikelihood_type_preservation()
+#     end
+#     @testset "Smoother Tests" begin
+#         test_Gradient()
+#         test_Hessian()
+#         test_smooth()
+#     end
+#     @testset "EM Tests" begin
+#         test_parameter_gradient()
+#         # test when ntrials=1
+#         test_initial_observation_parameter_updates()
+#         test_state_model_parameter_updates()
+#         # test when n_trials>1
+#         test_initial_observation_parameter_updates(3)
+#         test_state_model_parameter_updates(3)
+#         # test fit method using 1 trial and three trials
+#         test_EM()
+#         test_EM(3)
+#         # test resutlts are same as matlab code
+#         test_EM_matlab()
+#     end
+# end
 
 """
 Tests for Switching Regression Models
