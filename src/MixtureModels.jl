@@ -11,13 +11,6 @@ A Gaussian Mixture Model for clustering and density estimation.
 - `μₖ::Matrix{<:Real}`: Means of each cluster (dimensions: data_dim x k).
 - `Σₖ::Array{Matrix{<:Real}, 1}`: Covariance matrices of each cluster.
 - `πₖ::Vector{Float64}`: Mixing coefficients for each cluster.
-
-
-# Examples
-```julia
-gmm = GaussianMixtureModel(3, 2) # Create a Gaussian Mixture Model with 3 clusters and 2-dimensional data
-fit!(gmm, data)
-```
 """
 mutable struct GaussianMixtureModel{T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}} <: MixtureModel
     k::Int # Number of clusters
@@ -31,7 +24,6 @@ end
     
 Constructor for GaussianMixtureModel. Initializes Σₖ's covariance matrices to the 
 identity, πₖ to a uniform distribution, and μₖ's means to zeros.
-
 """
 function GaussianMixtureModel(k::Int, data_dim::Int)
     Σ = [Matrix{Float64}(I, data_dim, data_dim) for _ in 1:k]
@@ -41,7 +33,9 @@ function GaussianMixtureModel(k::Int, data_dim::Int)
 end
 
 """
-Draw 'n' samples from gmm. Returns a Matrix{<:Real}, where each row is a data point.
+    Random.rand(rng::AbstractRNG, gmm::GaussianMixtureModel, n::Int)
+
+Draw 'n' samples from gmm. Returns a Matrix{Float64}, where each row is a data point.
 """
 function Random.rand(rng::AbstractRNG, gmm::GaussianMixtureModel, n::Int)
     component_samples = rand(rng, Multinomial(n, gmm.πₖ), 1)
@@ -65,6 +59,11 @@ function Random.rand(gmm::GaussianMixtureModel, n::Int)
     return rand(Random.default_rng(), gmm, n)
 end
 
+"""
+    E_Step(gmm::GaussianMixtureModel, data::Matrix{<:Real})
+
+Performs the E-step of the Expectation-Maximization Algorithm for a Gaussian Mixture Model. 
+"""
 function E_Step(gmm::GaussianMixtureModel, data::Matrix{<:Real})
     N, _ = size(data)
     K = gmm.k
@@ -84,9 +83,19 @@ function E_Step(gmm::GaussianMixtureModel, data::Matrix{<:Real})
     return γ
 end
 
+# Handle vector data by reshaping it into a 2D matrix with a single column
+function E_Step(gmm::GaussianMixtureModel, data::Vector{Float64})
+    return E_Step(gmm, reshape(data, :, 1))
+end
+
+"""
+    M_Step!(gmm::GaussianMixtureModel, data::Matrix{T}, class_probabilities::Matrix{T})
+
+Performs the M-step of the Expectation-Maximization Algorithm 
+"""
 function M_Step!(
-    gmm::GaussianMixtureModel, data::Matrix{<:Real}, class_probabilities::Matrix{<:Real}
-)
+    gmm::GaussianMixtureModel, data::Matrix{T}, class_probabilities::Matrix{T}
+) where {T<:Real}
     N, D = size(data)
     K = gmm.k
     γ = class_probabilities
@@ -113,10 +122,21 @@ function M_Step!(
     return gmm.Σₖ = [Σₖ[:, :, k] for k in 1:K]
 end
 
+# Handle vector data by reshaping into matrix 
+function M_Step!(
+    gmm::GaussianMixtureModel, data::AbstractVector{Float64}, class_probabilities::Matrix{<:Real}
+)
+    return M_Step!(gmm, reshape(data, :, 1), class_probabilities::Matrix{<:Real})
+end
+
 """
     log_likelihood(gmm::GaussianMixtureModel, data::Matrix{<:Real})
 
 Compute the log-likelihood of the data given the Gaussian Mixture Model (GMM). The data matrix should be of shape (# observations, # features).
+
+# Arguments 
+- `gmm::GaussianMixtureModel`: The Gaussian Mixture Model instance 
+- `data::Matrix{<:Real}`: data matrix to calculate the Log-Likelihood 
 
 # Returns
 - `Float64`: The log-likelihood of the data given the model.
@@ -138,6 +158,11 @@ function log_likelihood(gmm::GaussianMixtureModel, data::Matrix{<:Real})
     return ll
 end
 
+# Log likelihood of data vector
+function log_likelihood(gmm::GaussianMixtureModel, data::Vector{Float64})
+    return log_likelihood(gmm, reshape(data, :, 1))
+end
+
 """
     fit!(gmm::GaussianMixtureModel, data::Matrix{<:Real}; <keyword arguments>)
 Fits a Gaussian Mixture Model (GMM) to the given data using the Expectation-Maximization (EM) algorithm.
@@ -151,13 +176,6 @@ Fits a Gaussian Mixture Model (GMM) to the given data using the Expectation-Maxi
 
 # Returns
 - `class_probabilities`: A matrix where each entry (i, k) represents the probability of the i-th data point belonging to the k-th component of the mixture model.
-
-# Example
-```julia
-data = rand(2, 100)  # Generate some random data
-gmm = GaussianMixtureModel(k=3, d=2)  # Initialize a GMM with 3 components and 2-dimensional data
-class_probabilities = fit!(gmm, data, maxiter=100, tol=1e-4, initialize_kmeans=true)
-```
 """
 function fit!(
     gmm::GaussianMixtureModel,
@@ -167,7 +185,8 @@ function fit!(
     initialize_kmeans::Bool=false,
 ) where {T<:Real}
     prev_ll = -Inf  # Initialize to negative infinity
-
+    lls = Float64[] # store lls for plotting 
+    
     if initialize_kmeans
         gmm.μₖ = permutedims(kmeanspp_initialization(data, gmm.k))
     end
@@ -179,6 +198,7 @@ function fit!(
         M_Step!(gmm, data, class_probabilities)
         # Calculate current log-likelihood
         curr_ll = log_likelihood(gmm, data)
+        push!(lls, curr_ll)
         # Debug: Output log-likelihood
         println("Iteration: $i, Log-likelihood: $curr_ll")
         # Check for convergence
@@ -190,22 +210,7 @@ function fit!(
     end
 
     class_probabilities = E_Step(gmm, data)
-    return class_probabilities
-end
-
-# Handle vector data by reshaping it into a 2D matrix with a single column
-function E_Step(gmm::GaussianMixtureModel, data::Vector{Float64})
-    return E_Step(gmm, reshape(data, :, 1))
-end
-
-function M_Step!(
-    gmm::GaussianMixtureModel, data::Vector{Float64}, class_probabilities::Matrix{<:Real}
-)
-    return M_Step!(gmm, reshape(data, :, 1), class_probabilities::Matrix{<:Real})
-end
-
-function log_likelihood(gmm::GaussianMixtureModel, data::Vector{Float64})
-    return log_likelihood(gmm, reshape(data, :, 1))
+    return class_probabilities, lls
 end
 
 function fit!(
@@ -233,17 +238,11 @@ A Poisson Mixture Model for clustering and density estimation.
 - `k::Int`: Number of poisson-distributed clusters.
 - `λₖ::Vector{Float64}`: Means of each cluster.
 - `πₖ::Vector{Float64}`: Mixing coefficients for each cluster.
-
-
-## Examples
-```julia
-pmm = PoissonMixtureModel(3) # 3 clusters, 2-dimensional data
-fit!(pmm, data)```
 """
 mutable struct PoissonMixtureModel{T<:Real, V<:AbstractVector{T}} <: MixtureModel
-    k::Int # Number of clusters
-    λₖ::V # Means of each cluster
-    πₖ::V # Mixing coefficients
+    k::Int 
+    λₖ::V 
+    πₖ::V 
 end
 
 """
@@ -251,7 +250,6 @@ end
     
 Constructor for PoissonMixtureModel. Initializes λₖ's means to 
 ones and πₖ to a uniform distribution.
-
 """
 function PoissonMixtureModel(k::Int)
     λs = ones(k)
@@ -259,6 +257,11 @@ function PoissonMixtureModel(k::Int)
     return PoissonMixtureModel(k, λs, πs)
 end
 
+"""
+    E_Step(pmm::PoissonMixtureModel, data::Matrix{Int})
+
+Performs the E-step of the Expectation-Maximization Algorithm for Poisson Mixture Model. 
+"""
 function E_Step(pmm::PoissonMixtureModel, data::Matrix{Int})
     N, _ = size(data)
     γ = zeros(N, pmm.k)
@@ -275,6 +278,16 @@ function E_Step(pmm::PoissonMixtureModel, data::Matrix{Int})
     return γ  # Return the responsibility matrix
 end
 
+# Handle vector data by reshaping it into a 2D matrix with a single column
+function E_Step(pmm::PoissonMixtureModel, data::Vector{Int})
+    return E_Step(pmm, reshape(data, :, 1))
+end
+
+"""
+    M_Step(pmm::PoissonMixtureModel, data::Matrix{Int}, γ::Matrix{<:Real)
+
+Performs the M-step of the Expectation-Maximization Algorithm for Poisson Mixture Model. 
+"""
 function M_Step!(pmm::PoissonMixtureModel, data::Matrix{Int}, γ::Matrix{<:Real})
     N, _ = size(data)
 
@@ -285,55 +298,10 @@ function M_Step!(pmm::PoissonMixtureModel, data::Matrix{Int}, γ::Matrix{<:Real}
     end
 end
 
-"""
-    fit!(pmm::PoissonMixtureModel, data::Matrix{Int}; <keyword arguments>)
-
-Fits a Poisson Mixture Model (PMM) to the given data using the Expectation-Maximization (EM) algorithm.
-
-# Arguments
-- `pmm::PoissonMixtureModel`: The Poisson Mixture Model to be fitted.
-- `data::Matrix{Int}`: The dataset on which the model will be fitted, where each row represents a data point.
-- `maxiter::Int=50`: The maximum number of iterations for the EM algorithm (default: 50).
-- `tol::Float64=1e-3`: The tolerance for convergence. The algorithm stops if the change in log-likelihood between iterations is less than this value (default: 1e-3).
-- `initialize_kmeans::Bool=false`: If true, initializes the means of the PMM using K-means++ initialization (default: false).
-
-# Returns
-- `class_probabilities`: A matrix where each entry (i, k) represents the probability of the i-th data point belonging to the k-th component of the mixture model.
-
-# Example
-```julia
-data = rand(1:10, 100, 1)  # Generate some random integer data
-pmm = PoissonMixtureModel(k=3)  # Initialize a PMM with 3 components
-class_probabilities = fit!(pmm, data, maxiter=100, tol=1e-4, initialize_kmeans=true)
-```
-"""
-function fit!(
-    pmm::PoissonMixtureModel,
-    data::Matrix{T};
-    maxiter::Int=50,
-    tol::Float64=1e-3,
-    initialize_kmeans::Bool=false,
-) where {T<:Int}
-    prev_ll = -Inf  # Initialize previous log likelihood to negative infinity
-
-    if initialize_kmeans
-        λₖ_matrix = permutedims(kmeanspp_initialization(Float64.(data), pmm.k))
-        pmm.λₖ = vec(λₖ_matrix)
-    end
-
-    for iter in 1:maxiter
-        γ = E_Step(pmm, data)  # E-Step
-        M_Step!(pmm, data, γ)  # M-Step
-        curr_ll = log_likelihood(pmm, data)  # Current log likelihood
-
-        println("Iteration: $iter, Log-likelihood: $curr_ll")
-
-        if abs(curr_ll - prev_ll) < tol  # Check for convergence
-            println("Convergence reached at iteration $iter")
-            break
-        end
-        prev_ll = curr_ll  # Update previous log likelihood
-    end
+function M_Step!(
+    pmm::PoissonMixtureModel, data::Vector{Int}, class_probabilities::Matrix{<:Real}
+)
+    return M_Step!(pmm, reshape(data, :, 1), class_probabilities)
 end
 
 """
@@ -355,11 +323,19 @@ function log_likelihood(pmm::PoissonMixtureModel, data::Matrix{Int})
     return ll
 end
 
+function log_likelihood(pmm::PoissonMixtureModel, data::Vector{Int})
+    return log_likelihood(pmm, reshape(data, :, 1))
+end
+
 """
-    sample(pmm::PoissonMixtureModel, n)
+    Random.rand(rng::AbstractRNG, gmm::GaussianMixtureModel, n::Int)
 
 Draw 'n' samples from pmm. Returns a Vector{Int} of length n.
 
+# Arguments 
+-`rng::AbstractRNG`: Abstract Random number generator 
+-`pmm::PoissonMixtureModel`: The poisson Mixture model to sample from 
+-`n::Int`: The number of data points to samples from the model. 
 """
 function Random.rand(rng::AbstractRNG, pmm::PoissonMixtureModel, n::Int)
     component_samples = rand(rng, Multinomial(n, pmm.πₖ), 1)
@@ -381,19 +357,53 @@ function Random.rand(pmm::PoissonMixtureModel, n::Int)
     return rand(Random.default_rng(), pmm, n)
 end
 
-# Handle vector data by reshaping it into a 2D matrix with a single column
-function E_Step(pmm::PoissonMixtureModel, data::Vector{Int})
-    return E_Step(pmm, reshape(data, :, 1))
-end
 
-function M_Step!(
-    pmm::PoissonMixtureModel, data::Vector{Int}, class_probabilities::Matrix{<:Real}
-)
-    return M_Step!(pmm, reshape(data, :, 1), class_probabilities)
-end
+"""
+    fit!(pmm::PoissonMixtureModel, data::Matrix{Int}; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=false)
 
-function log_likelihood(pmm::PoissonMixtureModel, data::Vector{Int})
-    return log_likelihood(pmm, reshape(data, :, 1))
+Fits a Poisson Mixture Model (PMM) to the given data using the Expectation-Maximization (EM) algorithm.
+
+# Arguments
+- `pmm::PoissonMixtureModel`: The Poisson Mixture Model to be fitted.
+- `data::Matrix{Int}`: The dataset on which the model will be fitted, where each row represents a data point.
+
+# Keyword Arguments
+- `maxiter::Int=50`: The maximum number of iterations for the EM algorithm (default: 50).
+- `tol::Float64=1e-3`: The tolerance for convergence. The algorithm stops if the change in log-likelihood between iterations is less than this value (default: 1e-3).
+- `initialize_kmeans::Bool=false`: If true, initializes the means of the PMM using K-means++ initialization (default: false).
+
+# Returns
+- `class_probabilities`: A matrix where each entry (i, k) represents the probability of the i-th data point belonging to the k-th component of the mixture model.
+"""
+function fit!(
+    pmm::PoissonMixtureModel,
+    data::AbstractMatrix{T};
+    maxiter::Int=50,
+    tol::Float64=1e-3,
+    initialize_kmeans::Bool=false,
+) where {T<:Int}
+    prev_ll = -Inf  # Initialize previous log likelihood to negative infinity
+    lls = Float64[]
+
+    if initialize_kmeans
+        λₖ_matrix = permutedims(kmeanspp_initialization(Float64.(data), pmm.k))
+        pmm.λₖ = vec(λₖ_matrix)
+    end
+
+    for iter in 1:maxiter
+        γ = E_Step(pmm, data)  # E-Step
+        M_Step!(pmm, data, γ)  # M-Step
+        curr_ll = log_likelihood(pmm, data)  # Current log likelihood
+        push!(lls, curr_ll)
+        println("Iteration: $iter, Log-likelihood: $curr_ll")
+
+        if abs(curr_ll - prev_ll) < tol  # Check for convergence
+            println("Convergence reached at iteration $iter")
+            break
+        end
+        prev_ll = curr_ll  # Update previous log likelihood
+    end
+    return lls 
 end
 
 function fit!(
