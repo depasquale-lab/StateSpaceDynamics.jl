@@ -32,7 +32,7 @@ labels = rand(rng, Categorical(true_πs), n)
 data   = [rand(rng, Poisson(true_λs[labels[i]])) for i in 1:n]
 
 # ## Plot the sample data with distinct mixtures.  
-histogram!(
+histogram(
   data;
   group     = labels,                      
   bins      = 0:1:maximum(data),          
@@ -58,7 +58,7 @@ lls = fit!(fit_pmm, data; maxiter=100, tol=1e-6, initialize_kmeans=true)
 
 # ## Confirm model convergence using log likelihoods 
 
-plot!(
+plot(
   lls;
   xlabel="Iteration",
   ylabel="Log-Likelihood",

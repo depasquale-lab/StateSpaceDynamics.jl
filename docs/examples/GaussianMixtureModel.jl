@@ -43,7 +43,7 @@ for i in 1:n
     X2[i, :] = rand(rng, MvNormal(true_μs[comp, :], true_Σs[comp]))'
 end
 
-scatter!(
+scatter(
   X2[:,1], X2[:,2];
   group=labels,
   title="GMM Samples Coloured by Component",
@@ -69,7 +69,7 @@ class_probabilities, lls = fit!(fit_gmm, X; maxiter=100, tol=1e-6, initialize_km
 
 # ## Confirm model convergence using log likelihoods 
 
-plot!(
+plot(
   lls;
   xlabel="Iteration",
   ylabel="Log-Likelihood",
@@ -83,7 +83,7 @@ plot!(
 xs = range(minimum(X[:,1]) - 1, stop=maximum(X[:,1]) + 1, length=150)
 ys = range(minimum(X[:,2]) - 1, stop=maximum(X[:,2]) + 1, length=150)
 
-scatter!(
+scatter(
   X[:,1], X[:,2];
   markersize=3, alpha=0.5,
   xlabel="x₁", ylabel="x₂",
