@@ -8,19 +8,16 @@ export MixtureModel, EmissionModel, AbstractHMM, DynamicalSystem, AbstractStateM
 """
 Abstract type for Mixture Models. I.e. GMM's, etc.
 """
-
 abstract type MixtureModel end
 
 """
 Abstract type for Regression Models. I.e. GaussianRegression, BernoulliRegression, etc.
 """
-
 abstract type RegressionModel end
 
 """
 Abstract type for HMMs 
 """
-
 abstract type AbstractHMM end
 
 """
@@ -38,9 +35,16 @@ Each emission model must implement:
 - loglikelihood()
 - fit!()
 """
-
 abstract type EmissionModel end
+
+"""
+Base type hierarchy for regression emission models.
+"""
 abstract type RegressionEmission <: EmissionModel end
+
+"""
+Special case of regression emission models that are autoregressive.
+"""
 abstract type AutoRegressiveEmission <: RegressionEmission end
 
 

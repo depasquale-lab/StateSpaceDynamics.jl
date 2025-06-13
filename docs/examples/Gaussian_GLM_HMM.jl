@@ -9,6 +9,7 @@ using LinearAlgebra
 using Plots
 using Random
 using StateSpaceDynamics
+using StableRNGs
 
 #
 rng = StableRNG(1234);
@@ -70,7 +71,7 @@ emission_1 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_inter
 emission_2 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([-2.5, -1.0, 3.5, 3.0], :, 1), Σ=[0.5;;], λ=0.0)
 
 test_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2])
-lls = SSD.fit!(test_model, data, Φ)
+lls = fit!(test_model, data, Φ)
 
 plot(lls)
 title!("Log-likelihood over EM Iterations")
@@ -190,7 +191,7 @@ emission_2 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_inter
 
 test_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2])
 
-lls = SSD.fit!(test_model, all_data, Φ_total)
+lls = fit!(test_model, all_data, Φ_total)
 
 plot(lls)
 title!("Log-likelihood over EM Iterations")

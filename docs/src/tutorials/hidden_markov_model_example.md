@@ -1,3 +1,7 @@
+```@meta
+EditURL = "../../examples/HMM.jl"
+```
+
 ## Simulating and Fitting a Hidden Markov Model
 
 This tutorial demonstrates how to use `StateSpaceDynamics.jl` to create, sample from, and fit Hidden
@@ -5,20 +9,22 @@ Markov Models (HMMs).
 
 ## Load Packages
 
-````julia
+````@example hidden_markov_model_example
 using LinearAlgebra
 using Plots
 using Random
 using StateSpaceDynamics
+using StableRNGs
 ````
 
-````julia
+````@example hidden_markov_model_example
 rng = StableRNG(1234);
+nothing #hide
 ````
 
 ## Create an HMM
 
-````julia
+````@example hidden_markov_model_example
 output_dim = 2
 
 A = [0.99 0.01; 0.05 0.95];
@@ -37,16 +43,14 @@ model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
 
 ## Sample from the HMM
 
-````julia
+````@example hidden_markov_model_example
 num_samples = 10000
 true_labels, data = rand(model, n=num_samples)
 ````
 
 ## Visualize the sampled dataset
 
-````julia
-gr()
-
+````@example hidden_markov_model_example
 x_vals = data[1, 1:num_points]
 y_vals = data[2, 1:num_points]
 labels_slice = true_labels[1:num_points]
@@ -87,7 +91,7 @@ title!("Emissions from HMM (First 100 Points)")
 
 ## Initialize and fit a new HMM to the sampled data
 
-````julia
+````@example hidden_markov_model_example
 μ_1 = [-0.25, -0.25]
 Σ_1 = 0.3 * Matrix{Float64}(I, output_dim, output_dim)
 emission_1 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)
@@ -110,10 +114,8 @@ ylabel!("Log-Likelihood")
 
 ## Visualize the latent state predictions using Viterbi
 
-````julia
+````@example hidden_markov_model_example
 pred_labels= viterbi(test_model, data);
-
-gr()
 
 true_mat = reshape(true_labels[1:1000], 1, :)
 pred_mat = reshape(pred_labels[1:1000], 1, :)
@@ -146,7 +148,7 @@ plot(p1, p2;
 
 ## Sampling multiple, independent trials of data from an HMM
 
-````julia
+````@example hidden_markov_model_example
 n_trials = 100
 n_samples = 1000
 
@@ -154,7 +156,7 @@ all_true_labels = Vector{Vector{Int}}(undef, n_trials)
 all_data = Vector{Matrix{Float64}}(undef, n_trials)
 
 for i in 1:n_trials
-    true_labels, data = rand(true_model, n=n_samples)
+    true_labels, data = rand(model, n=n_samples)
     all_true_labels[i] = true_labels
     all_data[i] = data
 end
@@ -162,7 +164,7 @@ end
 
 ## Fitting an HMM to multiple, independent trials of data
 
-````julia
+````@example hidden_markov_model_example
 μ_1 = [-0.25, -0.25]
 Σ_1 = 0.3 * Matrix{Float64}(I, output_dim, output_dim)
 emission_1 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)
@@ -175,7 +177,7 @@ A = [0.8 0.2; 0.05 0.95]
 πₖ = [0.6,0.4]
 test_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
 
-lls = SSD.fit!(test_model, all_data)
+lls = fit!(test_model, all_data)
 
 plot(lls)
 title!("Log-likelihood over EM Iterations")
@@ -185,12 +187,11 @@ ylabel!("Log-Likelihood")
 
 ## Visualize latent state predictions for multiple trials of data using Viterbi
 
-````julia
+````@example hidden_markov_model_example
 all_pred_labels_vec = viterbi(test_model, all_data)
 all_pred_labels = hcat(all_pred_labels_vec...)'
 all_true_labels_matrix = hcat(all_true_labels...)'
 
-gr()
 state_colors = [:dodgerblue, :crimson]
 true_subset = all_true_labels_matrix[1:10, 1:500]
 pred_subset = all_pred_labels[1:10, 1:500]
