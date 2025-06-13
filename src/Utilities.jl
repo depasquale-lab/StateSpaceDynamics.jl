@@ -174,41 +174,21 @@ function block_tridgm(
     upper_diag::Vector{<:AbstractMatrix{T}},
     lower_diag::Vector{<:AbstractMatrix{T}},
 ) where {T<:Real}
-    # Input validation
-    if length(upper_diag) != length(main_diag) - 1 ||
-        length(lower_diag) != length(main_diag) - 1
-        throw(
-            DimensionMismatch(
-                "The length of upper_diag and lower_diag must be one less than the length of main_diag",
-            ),
-        )
-    end
+    n = length(main_diag)
+    m = size(main_diag[1], 1)
+    N = n * m
+    total_nnz = n * m * m + 2 * (n - 1) * m * m
 
-    # Determine dimensions
-    m = size(main_diag[1], 1)  # block size
-    n = length(main_diag)      # number of blocks
-    N = m * n                  # total matrix size
-
-    # Pre-calculate number of non-zero elements for each section
-    nnz_main = n * m * m           # main diagonal blocks
-    nnz_off = 2 * (n - 1) * m * m   # upper and lower diagonal blocks
-    total_nnz = nnz_main + nnz_off
-
-    # Pre-allocate arrays with exact sizes
     I = Vector{Int}(undef, total_nnz)
     J = Vector{Int}(undef, total_nnz)
     V = Vector{T}(undef, total_nnz)
 
-    # Use linear indexing for better performance
     idx = 1
 
-    # Fill main diagonal blocks
-    for block_idx in 1:n
-        block = main_diag[block_idx]
-        base = (block_idx - 1) * m
-
-        # Use linear indexing for the block
-        for j in 1:m, i in 1:m
+    for k in 1:n
+        base = (k - 1) * m
+        block = main_diag[k]
+        for i in 1:m, j in 1:m
             I[idx] = base + i
             J[idx] = base + j
             V[idx] = block[i, j]
@@ -216,34 +196,28 @@ function block_tridgm(
         end
     end
 
-    # Fill upper and lower diagonal blocks simultaneously
-    for block_idx in 1:(n - 1)
-        upper_block = upper_diag[block_idx]
-        lower_block = lower_diag[block_idx]
-
-        base_current = (block_idx - 1) * m
-        base_next = block_idx * m
-
-        # Upper diagonal block
-        for j in 1:m, i in 1:m
-            I[idx] = base_current + i
-            J[idx] = base_next + j
-            V[idx] = upper_block[i, j]
+    for k in 1:(n - 1)
+        base_k = (k - 1) * m
+        base_kp1 = k * m
+        block_up = upper_diag[k]
+        block_low = lower_diag[k]
+        for i in 1:m, j in 1:m
+            I[idx] = base_k + i
+            J[idx] = base_kp1 + j
+            V[idx] = block_up[i, j]
             idx += 1
         end
-
-        # Lower diagonal block
-        for j in 1:m, i in 1:m
-            I[idx] = base_next + i
-            J[idx] = base_current + j
-            V[idx] = lower_block[i, j]
+        for i in 1:m, j in 1:m
+            I[idx] = base_kp1 + i
+            J[idx] = base_k + j
+            V[idx] = block_low[i, j]
             idx += 1
         end
     end
 
-    # Create sparse matrix optimized for subsequent operations
-    return sparse(I, J, V, N, N, +)
+    return sparse(I, J, V, N, N)
 end
+
 
 
 # Initialization utilities

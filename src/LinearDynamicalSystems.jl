@@ -1260,39 +1260,52 @@ function Hessian(
     H_sub_entry = inv_Q * A
     H_super_entry = permutedims(H_sub_entry)
 
-    H_sub = Vector{typeof(H_sub_entry)}(undef, tsteps - 1)
-    H_super = Vector{typeof(H_super_entry)}(undef, tsteps - 1)
+    # Fill the super and sub diagonals
+    H_sub = [H_sub_entry for _ in 1:(tsteps - 1)]
+    H_super = [H_super_entry for _ in 1:(tsteps - 1)]   
 
-    for i in 1:(tsteps - 1)
-        H_sub[i] = H_sub_entry
-        H_super[i] = H_super_entry
+    λ = zeros(T, size(C, 1))
+    z = similar(λ)
+    poisson_tmp = Matrix{T}(undef, size(C, 2), size(C, 2))
+    H_diag = [Matrix{T}(undef, size(x, 1), size(x, 1)) for _ in 1:tsteps]
+
+    # minnimal allocation Hessian helper function
+    function calculate_poisson_hess!(out::Matrix{T}, C::Matrix{T}, λ::Vector{T}) where T
+        n, p = size(C)
+        @inbounds for j in 1:p, i in 1:p
+            acc = zero(T)
+            for k in 1:n
+                acc += C[k, i] * λ[k] * C[k, j]
+            end
+            out[i, j] = -acc
+        end
     end
 
-    # Pre-compute common terms
+    # Pre-computed values for the Hessian
     xt_given_xt_1 = -inv_Q
     xt1_given_xt = -A' * inv_Q * A
     x_t = -inv_P0
 
-    # Helper function to calculate the Poisson Hessian term
-    function calculate_poisson_hess(C::Matrix{T}, λ::Vector{T}) where {T<:Real}
-        return -C' * Diagonal(λ) * C
-    end
-
-    # Calculate the main diagonal
-    H_diag = Vector{Matrix{T}}(undef, tsteps)
+    Q_middle = xt1_given_xt + xt_given_xt_1
+    Q_first = x_t + xt1_given_xt
+    Q_last = xt_given_xt_1
 
     @views for t in 1:tsteps
-        λ = exp.(C * x[:, t] .+ d)
+        mul!(z, C, x[:, t])  # z = C * x[:, t]
+        @. λ = exp(z + d)
+
         if t == 1
-            H_diag[t] = x_t + xt1_given_xt + calculate_poisson_hess(C, λ)
+            H_diag[t] .= Q_first
         elseif t == tsteps
-            H_diag[t] = xt_given_xt_1 + calculate_poisson_hess(C, λ)
+            H_diag[t] .= Q_last
         else
-            H_diag[t] = xt_given_xt_1 + xt1_given_xt + calculate_poisson_hess(C, λ)
+            H_diag[t] .= Q_middle
         end
+
+        calculate_poisson_hess!(poisson_tmp, C, λ)
+        H_diag[t] .+= poisson_tmp
     end
 
-    # Construct full Hessian
     H = block_tridgm(H_diag, H_super, H_sub)
 
     return H, H_diag, H_super, H_sub
