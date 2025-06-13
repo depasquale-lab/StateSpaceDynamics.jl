@@ -1,3 +1,7 @@
+```@meta
+EditURL = "../../examples/Gaussian_GLM_HMM.jl"
+```
+
 ## Simulating and Fitting a Hidden Markov Model
 
 This tutorial demonstrates how to use `StateSpaceDynamics.jl` to create, sample from, and fit Hidden
@@ -5,20 +9,22 @@ Markov Models (HMMs).
 
 ## Load Packages
 
-````julia
+````@example gaussian_glm_hmm_example
 using LinearAlgebra
 using Plots
 using Random
 using StateSpaceDynamics
+using StableRNGs
 ````
 
-````julia
+````@example gaussian_glm_hmm_example
 rng = StableRNG(1234);
+nothing #hide
 ````
 
 ## Create a Gaussian generalized linear model-hidden Markov model (GLM-HMM)
 
-````julia
+````@example gaussian_glm_hmm_example
 emission_1 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([3.0, 2.0, 2.0, 3.0], :, 1), Σ=[1.0;;], λ=0.0)
 emission_2 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([-4.0, -2.0, 3.0, 2.0], :, 1), Σ=[1.0;;], λ=0.0)
 
@@ -30,7 +36,7 @@ true_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2]
 
 ## Sample from the GLM-HMM
 
-````julia
+````@example gaussian_glm_hmm_example
 n = 20000
 Φ = randn(3, n)
 true_labels, data = rand(true_model, Φ, n=n)
@@ -38,9 +44,7 @@ true_labels, data = rand(true_model, Φ, n=n)
 
 ## Visualize the sampled dataset
 
-````julia
-gr()
-
+````@example gaussian_glm_hmm_example
 colors = [:dodgerblue, :crimson]
 
 scatter(Φ[1, :], vec(data);
@@ -75,14 +79,14 @@ plot!(xvals, y_pred_2;
 
 ## Initialize and fit a new HMM to the sampled data
 
-````julia
+````@example gaussian_glm_hmm_example
 A = [0.8 0.2; 0.1 0.9]
 πₖ = [0.6; 0.4]
 emission_1 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([2.0, -1.0, 1.0, 2.0], :, 1), Σ=[2.0;;], λ=0.0)
 emission_2 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([-2.5, -1.0, 3.5, 3.0], :, 1), Σ=[0.5;;], λ=0.0)
 
 test_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2])
-lls = SSD.fit!(test_model, data, Φ)
+lls = fit!(test_model, data, Φ)
 
 plot(lls)
 title!("Log-likelihood over EM Iterations")
@@ -92,9 +96,7 @@ ylabel!("Log-Likelihood")
 
 ## Visualize the emission model predictions
 
-````julia
-gr()
-
+````@example gaussian_glm_hmm_example
 state_colors = [:dodgerblue, :crimson]
 true_colors = [:green, :orange]
 pred_colors = [:teal, :yellow]
@@ -150,10 +152,8 @@ plot!(xvals, y_pred_2;
 
 ## Visualize the latent state predictions using Viterbi
 
-````julia
+````@example gaussian_glm_hmm_example
 pred_labels= viterbi(test_model, data, Φ);
-
-gr()
 
 true_mat = reshape(true_labels[1:1000], 1, :)
 pred_mat = reshape(pred_labels[1:1000], 1, :)
@@ -186,7 +186,7 @@ plot(p1, p2;
 
 ## Sampling multiple, independent trials of data from an HMM
 
-````julia
+````@example gaussian_glm_hmm_example
 all_data = Vector{Matrix{Float64}}()
 Φ_total = Vector{Matrix{Float64}}()
 
@@ -205,7 +205,7 @@ end
 
 ## Fitting an HMM to multiple, independent trials of data
 
-````julia
+````@example gaussian_glm_hmm_example
 A = [0.8 0.2; 0.1 0.9]
 πₖ = [0.6; 0.4]
 emission_1 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([2.0, -1.0, 1.0, 2.0], :, 1), Σ=[2.0;;], λ=0.0)
@@ -213,7 +213,7 @@ emission_2 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_inter
 
 test_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2])
 
-lls = SSD.fit!(test_model, all_data, Φ_total)
+lls = fit!(test_model, all_data, Φ_total)
 
 plot(lls)
 title!("Log-likelihood over EM Iterations")
@@ -223,12 +223,11 @@ ylabel!("Log-Likelihood")
 
 ## Visualize latent state predictions for multiple trials of data using Viterbi
 
-````julia
+````@example gaussian_glm_hmm_example
 all_pred_labels_vec = viterbi(test_model, all_data, Φ_total)
 all_pred_labels = hcat(all_pred_labels_vec...)'
 all_true_labels_matrix = hcat(all_true_labels...)'
 
-gr()
 state_colors = [:dodgerblue, :crimson]
 true_subset = all_true_labels_matrix[1:10, 1:500]
 pred_subset = all_pred_labels[1:10, 1:500]

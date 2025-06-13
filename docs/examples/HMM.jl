@@ -9,6 +9,8 @@ using LinearAlgebra
 using Plots
 using Random
 using StateSpaceDynamics
+using StableRNGs
+
 
 #
 rng = StableRNG(1234);
@@ -37,9 +39,9 @@ true_labels, data = rand(model, n=num_samples)
 
 # ## Visualize the sampled dataset
 
-x_vals = data[1, 1:num_points]
-y_vals = data[2, 1:num_points]
-labels_slice = true_labels[1:num_points]
+x_vals = data[1, 1:num_samples]
+y_vals = data[2, 1:num_samples]
+labels_slice = true_labels[1:num_samples]
 
 state_colors = [:dodgerblue, :crimson]
 
@@ -137,7 +139,7 @@ all_true_labels = Vector{Vector{Int}}(undef, n_trials)
 all_data = Vector{Matrix{Float64}}(undef, n_trials)
 
 for i in 1:n_trials
-    true_labels, data = rand(true_model, n=n_samples)
+    true_labels, data = rand(model, n=n_samples)
     all_true_labels[i] = true_labels
     all_data[i] = data
 end
@@ -156,7 +158,7 @@ A = [0.8 0.2; 0.05 0.95]
 πₖ = [0.6,0.4]
 test_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
 
-lls = SSD.fit!(test_model, all_data)
+lls = fit!(test_model, all_data)
 
 plot(lls)
 title!("Log-likelihood over EM Iterations")
