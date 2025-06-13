@@ -1,7 +1,7 @@
 # ## Simulating and Fitting a Gaussian Mixture Model 
 
-# This tutorial demonstrates how to use `StateSpaceDynamics.jl` to simulate a latent
-# linear dynamical system and fit it using the EM algorithm.
+# This tutorial demonstrates how to use `StateSpaceDynamics.jl` to 
+# create a Gaussian Mixture Model and fit it using the EM algorithm.
 
 # ## Load Packages
 
@@ -12,14 +12,15 @@ using Plots
 using StableRNGs
 using Distributions
 
+#
 rng = StableRNG(1234);
-gr()
 
-# Create a State-Space Model
+# ## Create a State-Space Model
 
 k = 3
 data_dim = 2
 
+# define true parameters for the model to sample from 
 true_μs = [
     -1.0  -1.0;
      1.0  -1.5;
@@ -34,7 +35,7 @@ true_gmm = GaussianMixtureModel(k, true_μs, true_Σs, true_πs)
 n = 500
 X = rand(true_gmm, n)
 
-# Plot sampled data from the model 
+# ## Plot sampled data from the model 
 labels = rand(rng, Distributions.Categorical(true_πs), n)
 X2 = Array{Float64,2}(undef, n, data_dim)
 for i in 1:n
@@ -42,7 +43,7 @@ for i in 1:n
     X2[i, :] = rand(rng, MvNormal(true_μs[comp, :], true_Σs[comp]))'
 end
 
-mixture_samples = scatter(
+scatter!(
   X2[:,1], X2[:,2];
   group=labels,
   title="GMM Samples Coloured by Component",
@@ -51,24 +52,24 @@ mixture_samples = scatter(
   alpha=0.8,
 )
 
-display(mixture_samples) 
-
-# Paramter recovery: Initialize a new model and Perform EM on the data. 
+# ## Paramter recovery: Initialize a new model with default parameters and fit to the data 
 
 k = 3
 data_dim = 2
 
+# define default parameters 
 μs = zeros(Float64, k, data_dim)
 Σs = [Matrix{Float64}(I, data_dim, data_dim) for _ in 1:k]
 πs = ones(k) ./ k
 
 fit_gmm = GaussianMixtureModel(k, μs, Σs, πs)
 
+# ## Fit model using EM Algorithm 
 class_probabilities, lls = fit!(fit_gmm, X; maxiter=100, tol=1e-6, initialize_kmeans=true)
 
-# confirm convergence 
+# ## Confirm model convergence using log likelihoods 
 
-lls_convergence = plot(
+plot!(
   lls;
   xlabel="Iteration",
   ylabel="Log-Likelihood",
@@ -77,14 +78,12 @@ lls_convergence = plot(
   reuse=false,
 )
 
-display(lls_convergence) 
 
-# add a contour plot of the model pmf with the generated data 
-
+# ## Build a contour plot of the model imposed over the generated data 
 xs = range(minimum(X[:,1]) - 1, stop=maximum(X[:,1]) + 1, length=150)
 ys = range(minimum(X[:,2]) - 1, stop=maximum(X[:,2]) + 1, length=150)
 
-contour_plot = scatter(
+scatter!(
   X[:,1], X[:,2];
   markersize=3, alpha=0.5,
   xlabel="x₁", ylabel="x₂",
@@ -107,5 +106,3 @@ for i in 1:fit_gmm.k
       label     = "Comp $i",
     )
 end
-
-display(contour_plot)

@@ -1,7 +1,7 @@
 # ## Simulating and Fitting a Poisson Mixture Model 
 
-# This tutorial demonstrates how to use `StateSpaceDynamics.jl` to simulate a latent
-# linear dynamical system and fit it using the EM algorithm.
+# This tutorial demonstrates how to use `StateSpaceDynamics.jl` to 
+# create a Gaussian Mixture Model and fit it using the EM algorithm.
 
 # ## Load Packages
 
@@ -12,25 +12,27 @@ using Plots
 using StableRNGs
 using Distributions
 
+# 
 rng = StableRNG(1234);
-gr()
 
-# Create a State-Space Model
+# ## Create a State-Space Model
 
 k = 3
 data_dim = 2
 
+# define true parameters for the model to sample from 
 true_λs = [5.0, 10.0, 25.0]  
 true_πs = [0.25, 0.45, 0.3]
 
 true_pmm = PoissonMixtureModel(k, true_λs, true_πs)
 
-# Generate and Plot sampled data from the model. 
+# Generate sample data from the model 
 n = 500
 labels = rand(rng, Categorical(true_πs), n)
 data   = [rand(rng, Poisson(true_λs[labels[i]])) for i in 1:n]
 
-poisson_mixtures = histogram(
+# ## Plot the sample data with distinct mixtures.  
+histogram!(
   data;
   group     = labels,                      
   bins      = 0:1:maximum(data),          
@@ -41,21 +43,22 @@ poisson_mixtures = histogram(
   legend    = :topright,
   reuse     = false,
 )
-display(poisson_mixtures)
 
-# Paramter recovery: Initialize a new model and fit the model to the data using EM.  
+# ## Paramter recovery: Initialize a new model with default parameters and fit to the data using EM.  
 k = 3
 
+# define default parameters 
 λs = ones(k)
 πs = ones(k) ./ k
 
 fit_pmm = PoissonMixtureModel(k, λs, πs)
 
+# ## Fit model using EM Algorithm 
 lls = fit!(fit_pmm, data; maxiter=100, tol=1e-6, initialize_kmeans=true)
 
-# confirm model convergence
+# ## Confirm model convergence using log likelihoods 
 
-lls_convergence = plot(
+plot!(
   lls;
   xlabel="Iteration",
   ylabel="Log-Likelihood",
@@ -65,9 +68,8 @@ lls_convergence = plot(
   reuse=false,
 )
 
-display(lls_convergence) 
 
-# # Contour plot of the fitted model density with the generated data
+# ## Plot the model pmf imposed over the generated data with distinct Mixtures
 
 colors = [:red, :green, :blue]
 
@@ -102,5 +104,3 @@ plot!(
   lw    = 3, ls=:dash, c=:black,
   label = "Mixture",
 )
-
-display(current())
