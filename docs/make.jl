@@ -38,6 +38,7 @@ Literate.markdown(
     documenter = true
 )
 
+# Convert Gaussian Mixture model example
 Literate.markdown(
     joinpath(@__DIR__, "examples", "GaussianMixtureModel.jl"),
     joinpath(@__DIR__, "src", "tutorials");
@@ -45,6 +46,7 @@ Literate.markdown(
     documenter = true
 )
 
+# Convert Poisson Mixture model example
 Literate.markdown(
     joinpath(@__DIR__, "examples", "PoissonMixtureModel.jl"),
     joinpath(@__DIR__, "src", "tutorials");
