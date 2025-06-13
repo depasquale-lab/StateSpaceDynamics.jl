@@ -22,7 +22,7 @@ Literate.markdown(
     documenter = true
 )
 
-# Convert Poisson LDS example
+# Convert Hidden Markov Model example
 Literate.markdown(
     joinpath(@__DIR__, "examples", "HMM.jl"),
     joinpath(@__DIR__, "src", "tutorials");
@@ -30,7 +30,7 @@ Literate.markdown(
     documenter = true
 )
 
-# Convert Poisson LDS example
+# Convert Gaussian GLM-HMM example
 Literate.markdown(
     joinpath(@__DIR__, "examples", "Gaussian_GLM_HMM.jl"),
     joinpath(@__DIR__, "src", "tutorials");
@@ -54,6 +54,14 @@ Literate.markdown(
     documenter = true
 )
 
+# Convert Poisson Mixture model example
+Literate.markdown(
+    joinpath(@__DIR__, "examples", "ProbabilisticPCA.jl"),
+    joinpath(@__DIR__, "src", "tutorials");
+    name = "Probabilistic_PCA_example",
+    documenter = true
+)
+
 # Generate the documentation site
 makedocs(;
     modules=[StateSpaceDynamics],
@@ -71,6 +79,7 @@ makedocs(;
             "Switching Linear Dynamical Systems" => "SLDS.md",
             "EmissionModels" => "EmissionModels.md",
             "Mixture Models" => "MixtureModels.md",
+            "Probabilistic PCA" => "Preprocessing.md"
         ],
         "Tutorials" => [
             "Gaussian LDS Example" => "tutorials/gaussian_latent_dynamics_example.md",
@@ -79,6 +88,7 @@ makedocs(;
             "Gaussian GLM-GMM Example" => "tutorials/gaussian_glm_hmm_example.md",
             "Gaussian Mixture Model Example" => "tutorials/gaussian_mixture_model_example.md",
             "Poisson Mixture Model Example" => "tutorials/poisson_mixture_model_example.md",
+            "Probabilistic PCA Example" => "tutorials/ProbabilisticPCA.md",
         ],
         "Miscellaneous" => "Misc.md",
     ],
