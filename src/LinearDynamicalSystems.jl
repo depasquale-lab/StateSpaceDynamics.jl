@@ -331,14 +331,12 @@ function Hessian(
     inv_Q = Symmetric(inv(Q))
     inv_P0 = Symmetric(inv(P0))
 
-    # Pre-allocate all blocks
-    H_sub = Vector{Matrix{T}}(undef, tsteps - 1)
-    H_super = Vector{Matrix{T}}(undef, tsteps - 1)
-    H_diag = Vector{Matrix{T}}(undef, tsteps)
-
     # Off-diagonal terms
     H_sub_entry = inv_Q * A
     H_super_entry = Matrix(H_sub_entry')
+
+    H_sub = [H_sub_entry for _ in 1:(tsteps - 1)]
+    H_super = [H_super_entry for _ in 1:(tsteps - 1)]
 
     # Calculate main diagonal terms
     yt_given_xt = -C' * inv_R * C
@@ -346,18 +344,14 @@ function Hessian(
     xt1_given_xt = -A' * inv_Q * A
     x_t = -inv_P0
 
-    # Build off-diagonals
-    for i in 1:(tsteps - 1)
-        H_sub[i] = H_sub_entry
-        H_super[i] = H_super_entry
-    end
+    H_diag = [Matrix{T}(undef, size(A, 1), size(A, 1)) for _ in 1:tsteps]
 
     # Build main diagonal
-    H_diag[1] = w[1] * yt_given_xt + xt1_given_xt + x_t
+    H_diag[1] .= w[1] * yt_given_xt + xt1_given_xt + x_t
     for i in 2:(tsteps - 1)
-        H_diag[i] = w[i] * yt_given_xt + xt_given_xt_1 + xt1_given_xt
+        H_diag[i] .= w[i] * yt_given_xt + xt_given_xt_1 + xt1_given_xt
     end
-    H_diag[tsteps] = w[tsteps] * (yt_given_xt) + xt_given_xt_1
+    H_diag[tsteps] .= w[tsteps] * (yt_given_xt) + xt_given_xt_1
 
     H = StateSpaceDynamics.block_tridgm(H_diag, H_super, H_sub)
 
@@ -410,9 +404,9 @@ function smooth(
     function h!(h::AbstractMatrix{T}, vec_x::Vector{T}) where T
         x = reshape(vec_x, D, tsteps)
         H, _, _, _ = Hessian(lds, y, x, w)
-
+        H .*= -1.0  
         # Use Symmetric to avoid Julia’s fallback to Hermitian
-        copyto!(h, -Symmetric(H))
+        copyto!(h, Symmetric(H))
         return nothing
     end
 
