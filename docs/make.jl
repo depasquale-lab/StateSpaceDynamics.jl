@@ -54,7 +54,7 @@ Literate.markdown(
     documenter = true
 )
 
-# Convert Poisson Mixture model example
+# Convert PPCA  example
 Literate.markdown(
     joinpath(@__DIR__, "examples", "ProbabilisticPCA.jl"),
     joinpath(@__DIR__, "src", "tutorials");
@@ -79,7 +79,7 @@ makedocs(;
             "Switching Linear Dynamical Systems" => "SLDS.md",
             "EmissionModels" => "EmissionModels.md",
             "Mixture Models" => "MixtureModels.md",
-            "Probabilistic PCA" => "Preprocessing.md"
+            "Probabilistic PCA" => "ProbabilisticPCA.md"
         ],
         "Tutorials" => [
             "Gaussian LDS Example" => "tutorials/gaussian_latent_dynamics_example.md",
