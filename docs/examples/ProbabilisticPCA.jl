@@ -88,6 +88,7 @@ display(ll_plot)
 
 x1, x2 = X[1, :], X[2, :]
 μ1, μ2  = fit_ppca.μ
+w_fit = fit_ppca.W
 w1      = W_fit[:, 1]  
 w2      = W_fit[:, 2] 
 
