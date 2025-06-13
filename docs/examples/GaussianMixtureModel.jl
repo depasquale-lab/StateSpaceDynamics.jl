@@ -43,7 +43,7 @@ for i in 1:n
     X2[i, :] = rand(rng, MvNormal(true_μs[comp, :], true_Σs[comp]))'
 end
 
-scatter(
+data_plot = scatter(
   X2[:,1], X2[:,2];
   group=labels,
   title="GMM Samples Coloured by Component",
@@ -51,6 +51,8 @@ scatter(
   markersize=4,
   alpha=0.8,
 )
+
+display(data_plot)
 
 # ## Paramter recovery: Initialize a new model with default parameters and fit to the data 
 
@@ -83,7 +85,7 @@ plot(
 xs = range(minimum(X[:,1]) - 1, stop=maximum(X[:,1]) + 1, length=150)
 ys = range(minimum(X[:,2]) - 1, stop=maximum(X[:,2]) + 1, length=150)
 
-scatter(
+contour_plot = scatter(
   X[:,1], X[:,2];
   markersize=3, alpha=0.5,
   xlabel="x₁", ylabel="x₂",
@@ -106,3 +108,5 @@ for i in 1:fit_gmm.k
       label     = "Comp $i",
     )
 end
+
+display(contour_plot)

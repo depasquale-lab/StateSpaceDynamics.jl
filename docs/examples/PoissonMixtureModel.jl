@@ -32,7 +32,7 @@ labels = rand(rng, Categorical(true_πs), n)
 data   = [rand(rng, Poisson(true_λs[labels[i]])) for i in 1:n]
 
 # ## Plot the sample data with distinct mixtures.  
-histogram(
+sample_data = histogram(
   data;
   group     = labels,                      
   bins      = 0:1:maximum(data),          
@@ -43,6 +43,8 @@ histogram(
   legend    = :topright,
   reuse     = false,
 )
+
+display(sample_data)
 
 # ## Paramter recovery: Initialize a new model with default parameters and fit to the data using EM.  
 k = 3
@@ -58,7 +60,7 @@ lls = fit!(fit_pmm, data; maxiter=100, tol=1e-6, initialize_kmeans=true)
 
 # ## Confirm model convergence using log likelihoods 
 
-plot(
+lls = plot(
   lls;
   xlabel="Iteration",
   ylabel="Log-Likelihood",
@@ -68,12 +70,13 @@ plot(
   reuse=false,
 )
 
+display(lls)
 
 # ## Plot the model pmf imposed over the generated data with distinct Mixtures
 
 colors = [:red, :green, :blue]
 
-histogram(
+contour_plot = histogram(
   data;
   bins      = 0:1:maximum(data),
   normalize = true,
@@ -104,3 +107,5 @@ plot!(
   lw    = 3, ls=:dash, c=:black,
   label = "Mixture",
 )
+
+display(contour_plot)
