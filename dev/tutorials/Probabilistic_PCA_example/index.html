@@ -39,27 +39,27 @@ W = randn(D, k)
 σ² = 0.5
 μ_vector = randn(2)
 
-fit_ppca = ProbabilisticPCA(W, σ², μ_vector)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">ProbabilisticPCA{Float64, Matrix{Float64}, Vector{Float64}}([0.6844642010578417 1.2743805570431477; -1.2594708541284227 -0.8355810832148556], 0.5, [-0.4725042406763876, 0.4981719720343164], 2, 2, Matrix{Float64}(undef, 2, 0))</code></pre><h2 id="Fit-model-using-EM-Algorithm"><a class="docs-heading-anchor" href="#Fit-model-using-EM-Algorithm">Fit model using EM Algorithm</a><a id="Fit-model-using-EM-Algorithm-1"></a><a class="docs-heading-anchor-permalink" href="#Fit-model-using-EM-Algorithm" title="Permalink"></a></h2><pre><code class="language-julia hljs">lls = fit!(fit_ppca, X)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">35-element Vector{Float64}:
- -2703.8655339431657
- -2561.6787073423347
- -2510.790624699205
- -2488.8285148522896
- -2478.365799076753
- -2473.0848225935747
- -2470.312951514905
- -2468.8153149903087
- -2467.9884366030933
- -2467.5245209952886
+fit_ppca = ProbabilisticPCA(W, σ², μ_vector)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">ProbabilisticPCA{Float64, Matrix{Float64}, Vector{Float64}}([0.8526202817747118 0.6500168086368808; -1.2034527553934546 0.7359930183936996], 0.5, [1.564665716610969, 0.03151554250734579], 2, 2, Matrix{Float64}(undef, 2, 0))</code></pre><h2 id="Fit-model-using-EM-Algorithm"><a class="docs-heading-anchor" href="#Fit-model-using-EM-Algorithm">Fit model using EM Algorithm</a><a id="Fit-model-using-EM-Algorithm-1"></a><a class="docs-heading-anchor-permalink" href="#Fit-model-using-EM-Algorithm" title="Permalink"></a></h2><pre><code class="language-julia hljs">lls = fit!(fit_ppca, X)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">39-element Vector{Float64}:
+ -2579.4409296830895
+ -2435.4941740800723
+ -2369.996430652814
+ -2338.5846774249053
+ -2322.574575773803
+ -2314.0141664471753
+ -2309.2700609984663
+ -2306.5674009291674
+ -2304.994339206652
+ -2304.0634436566806
      ⋮
- -2466.9026370374577
- -2466.9026085603155
- -2466.9025918146936
- -2466.902581967007
- -2466.902576175538
- -2466.9025727694207
- -2466.902570766132
- -2466.9025695878845
- -2466.902568894878</code></pre><h2 id="Confirm-model-convergence-using-log-likelihoods"><a class="docs-heading-anchor" href="#Confirm-model-convergence-using-log-likelihoods">Confirm model convergence using log likelihoods</a><a id="Confirm-model-convergence-using-log-likelihoods-1"></a><a class="docs-heading-anchor-permalink" href="#Confirm-model-convergence-using-log-likelihoods" title="Permalink"></a></h2><pre><code class="language-julia hljs">ll_plot = plot(
+ -2302.6308552744226
+ -2302.630829650918
+ -2302.6308136107136
+ -2302.6308035691272
+ -2302.6307972825907
+ -2302.6307933467842
+ -2302.6307908826384
+ -2302.630789339846
+ -2302.6307883738955</code></pre><h2 id="Confirm-model-convergence-using-log-likelihoods"><a class="docs-heading-anchor" href="#Confirm-model-convergence-using-log-likelihoods">Confirm model convergence using log likelihoods</a><a id="Confirm-model-convergence-using-log-likelihoods-1"></a><a class="docs-heading-anchor-permalink" href="#Confirm-model-convergence-using-log-likelihoods" title="Permalink"></a></h2><pre><code class="language-julia hljs">ll_plot = plot(
     lls;
     xlabel=&quot;Iteration&quot;,
     ylabel=&quot;Log-Likelihood&quot;,
@@ -71,7 +71,7 @@ fit_ppca = ProbabilisticPCA(W, σ², μ_vector)</code></pre><pre class="document
 
 display(ll_plot)</code></pre><h2 id="Plot-the-learned-lower-dimension-latent-space-over-the-Data"><a class="docs-heading-anchor" href="#Plot-the-learned-lower-dimension-latent-space-over-the-Data">Plot the learned lower dimension latent space over the Data</a><a id="Plot-the-learned-lower-dimension-latent-space-over-the-Data-1"></a><a class="docs-heading-anchor-permalink" href="#Plot-the-learned-lower-dimension-latent-space-over-the-Data" title="Permalink"></a></h2><pre><code class="language- hljs">x1, x2 = X[1, :], X[2, :]
 μ1, μ2  = fit_ppca.μ
-w_fit = fit_ppca.W
+W_fit = fit_ppca.W
 w1      = W_fit[:, 1]
 w2      = W_fit[:, 2]
 
@@ -89,7 +89,7 @@ scatter!(
 
 k = size(W_fit, 2)
 bases_x = repeat([μ_fit[1]], k)
-bases_y = repeat([μ_fit[2]], k)</code></pre><p>Add the component arrows in both directions</p><pre><code class="language- hljs">quiver!(
+bases_y = repeat([μ_fit[2]], k)</code></pre><p>Add the component arrows in both directions</p><pre><code class="language-julia hljs">quiver!(
   P, [μ1], [μ2];
   quiver      = ([ w1[1]], [ w1[2]]),
   arrow       = :arrow, lw=3,
@@ -119,4 +119,4 @@ quiver!(
   label       = &quot;&quot;
 )
 
-display(P)</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../poisson_mixture_model_example/">« Poisson Mixture Model Example</a><a class="docs-footer-nextpage" href="../../Misc/">Miscellaneous »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.12.0 on <span class="colophon-date" title="Friday 13 June 2025 21:04">Friday 13 June 2025</span>. Using Julia version 1.11.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+display(P)</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../poisson_mixture_model_example/">« Poisson Mixture Model Example</a><a class="docs-footer-nextpage" href="../../Misc/">Miscellaneous »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.12.0 on <span class="colophon-date" title="Saturday 14 June 2025 00:36">Saturday 14 June 2025</span>. Using Julia version 1.11.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

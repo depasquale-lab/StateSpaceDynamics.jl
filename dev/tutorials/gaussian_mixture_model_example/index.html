@@ -16,26 +16,26 @@ true_πs = [0.5, 0.2, 0.3]
 
 true_gmm = GaussianMixtureModel(k, true_μs, true_Σs, true_πs)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">GaussianMixtureModel{Float64, Matrix{Float64}, Vector{Float64}}(3, [-1.0 -1.0; 1.0 -1.5; 0.0 2.0], [[0.3 0.0; 0.0 0.3], [0.3 0.0; 0.0 0.3], [0.3 0.0; 0.0 0.3]], [0.5, 0.2, 0.3])</code></pre><p>Generate sample data</p><pre><code class="language-julia hljs">n = 500
 X = rand(true_gmm, n)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">500×2 Matrix{Float64}:
- -0.679403   -1.21616
- -0.400117   -1.30236
- -0.936798   -1.16981
- -0.988694   -1.35773
- -1.67495    -0.834992
- -0.979857   -1.45496
- -1.40606    -0.914261
- -1.56129    -0.70564
- -1.07324    -0.99393
- -1.51026    -1.37747
+ -1.194      -1.45887
+ -0.562023   -1.57428
+ -0.658472   -0.982165
+ -1.87422    -0.574231
+ -0.654758   -1.15358
+ -0.354056   -1.81886
+ -1.06443    -1.39195
+ -1.24868    -2.17049
+ -1.45227    -0.533154
+ -0.240211   -2.25968
   ⋮          
-  0.668695    1.87006
- -0.0852317   2.10505
-  0.318593    2.19888
-  0.839087    2.71212
-  0.298074    2.01076
-  0.7071      2.60175
- -0.845519    1.79289
-  0.255265    1.17222
- -0.212064    1.96405</code></pre><h2 id="Plot-sampled-data-from-the-model"><a class="docs-heading-anchor" href="#Plot-sampled-data-from-the-model">Plot sampled data from the model</a><a id="Plot-sampled-data-from-the-model-1"></a><a class="docs-heading-anchor-permalink" href="#Plot-sampled-data-from-the-model" title="Permalink"></a></h2><pre><code class="language- hljs">labels = rand(rng, Distributions.Categorical(true_πs), n)
+ -0.372296    1.70814
+ -0.0583933   2.80617
+  0.769052    2.12049
+  0.334022    0.77183
+  0.0583647   2.11083
+  0.153944    2.32857
+ -0.428723    1.78459
+  1.21615     2.1501
+ -1.18611     1.80299</code></pre><h2 id="Plot-sampled-data-from-the-model"><a class="docs-heading-anchor" href="#Plot-sampled-data-from-the-model">Plot sampled data from the model</a><a id="Plot-sampled-data-from-the-model-1"></a><a class="docs-heading-anchor-permalink" href="#Plot-sampled-data-from-the-model" title="Permalink"></a></h2><pre><code class="language- hljs">labels = rand(rng, Distributions.Categorical(true_πs), n)
 X2 = Array{Float64,2}(undef, n, data_dim)
 for i in 1:n
     comp = labels[i]
@@ -57,7 +57,7 @@ data_dim = 2</code></pre><pre class="documenter-example-output"><code class="noh
 Σs = [Matrix{Float64}(I, data_dim, data_dim) for _ in 1:k]
 πs = ones(k) ./ k
 
-fit_gmm = GaussianMixtureModel(k, μs, Σs, πs)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">GaussianMixtureModel{Float64, Matrix{Float64}, Vector{Float64}}(3, [0.0 0.0; 0.0 0.0; 0.0 0.0], [[1.0 0.0; 0.0 1.0], [1.0 0.0; 0.0 1.0], [1.0 0.0; 0.0 1.0]], [0.3333333333333333, 0.3333333333333333, 0.3333333333333333])</code></pre><h2 id="Fit-model-using-EM-Algorithm"><a class="docs-heading-anchor" href="#Fit-model-using-EM-Algorithm">Fit model using EM Algorithm</a><a id="Fit-model-using-EM-Algorithm-1"></a><a class="docs-heading-anchor-permalink" href="#Fit-model-using-EM-Algorithm" title="Permalink"></a></h2><pre><code class="language-julia hljs">class_probabilities, lls = fit!(fit_gmm, X; maxiter=100, tol=1e-6, initialize_kmeans=true)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">([0.9827918265666034 1.4523744189740799e-7 0.017208028195954655; 0.9216167702667867 1.451296320006114e-7 0.07838308460358127; … ; 0.0002722346049369789 0.9997248701651948 2.895229868156105e-6; 4.1608455930485983e-7 0.9999995838235387 9.190209463241506e-11], [-1404.495698113327, -1381.2340329156275, -1373.992996460137, -1367.600725547294, -1358.5952659026425, -1346.550411594099, -1334.7932178048065, -1327.5672309941453, -1324.452636674075, -1323.1285198546923  …  -1316.942486629976, -1316.9424718530272, -1316.9424615864384, -1316.9424544554024, -1316.9424495034978, -1316.9424460656228, -1316.9424436794227, -1316.9424420235694, -1316.9424408748139, -1316.942440078074])</code></pre><h2 id="Confirm-model-convergence-using-log-likelihoods"><a class="docs-heading-anchor" href="#Confirm-model-convergence-using-log-likelihoods">Confirm model convergence using log likelihoods</a><a id="Confirm-model-convergence-using-log-likelihoods-1"></a><a class="docs-heading-anchor-permalink" href="#Confirm-model-convergence-using-log-likelihoods" title="Permalink"></a></h2><pre><code class="language-julia hljs">plot(
+fit_gmm = GaussianMixtureModel(k, μs, Σs, πs)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">GaussianMixtureModel{Float64, Matrix{Float64}, Vector{Float64}}(3, [0.0 0.0; 0.0 0.0; 0.0 0.0], [[1.0 0.0; 0.0 1.0], [1.0 0.0; 0.0 1.0], [1.0 0.0; 0.0 1.0]], [0.3333333333333333, 0.3333333333333333, 0.3333333333333333])</code></pre><h2 id="Fit-model-using-EM-Algorithm"><a class="docs-heading-anchor" href="#Fit-model-using-EM-Algorithm">Fit model using EM Algorithm</a><a id="Fit-model-using-EM-Algorithm-1"></a><a class="docs-heading-anchor-permalink" href="#Fit-model-using-EM-Algorithm" title="Permalink"></a></h2><pre><code class="language-julia hljs">class_probabilities, lls = fit!(fit_gmm, X; maxiter=100, tol=1e-6, initialize_kmeans=true)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">([3.5909549684592776e-9 0.00010536327088148291 0.9998946331381635; 1.1371738867271997e-8 0.013278598713242794 0.9867213899150185; … ; 0.9999999988384642 5.305208289336691e-11 1.1084834975628405e-9; 0.9998311289680791 1.595080199555715e-14 0.00016887103190472687], [-1318.4403664360898, -1313.7850002156722, -1311.817796885823, -1310.2415407513458, -1308.794270888711, -1307.4636446985864, -1306.290766801517, -1305.3268228687516, -1304.60479671295, -1304.1175692235804  …  -1303.4743107773081, -1303.4740257613535, -1303.473889800492, -1303.4738250043647, -1303.4737941446833, -1303.4737794549142, -1303.47377246516, -1303.4737691404798, -1303.473767559692, -1303.4737668084074])</code></pre><h2 id="Confirm-model-convergence-using-log-likelihoods"><a class="docs-heading-anchor" href="#Confirm-model-convergence-using-log-likelihoods">Confirm model convergence using log likelihoods</a><a id="Confirm-model-convergence-using-log-likelihoods-1"></a><a class="docs-heading-anchor-permalink" href="#Confirm-model-convergence-using-log-likelihoods" title="Permalink"></a></h2><pre><code class="language-julia hljs">plot(
   lls;
   xlabel=&quot;Iteration&quot;,
   ylabel=&quot;Log-Likelihood&quot;,
@@ -65,7 +65,7 @@ fit_gmm = GaussianMixtureModel(k, μs, Σs, πs)</code></pre><pre class="documen
   label=&quot;log_likelihood&quot;,
   marker=:circle,
   reuse=false,
-)</code></pre><img src="e8c82dd2.svg" alt="Example block output"/><h2 id="Build-a-contour-plot-of-the-model-imposed-over-the-generated-data"><a class="docs-heading-anchor" href="#Build-a-contour-plot-of-the-model-imposed-over-the-generated-data">Build a contour plot of the model imposed over the generated data</a><a id="Build-a-contour-plot-of-the-model-imposed-over-the-generated-data-1"></a><a class="docs-heading-anchor-permalink" href="#Build-a-contour-plot-of-the-model-imposed-over-the-generated-data" title="Permalink"></a></h2><pre><code class="language- hljs">xs = range(minimum(X[:,1]) - 1, stop=maximum(X[:,1]) + 1, length=150)
+)</code></pre><img src="6da5da40.svg" alt="Example block output"/><h2 id="Build-a-contour-plot-of-the-model-imposed-over-the-generated-data"><a class="docs-heading-anchor" href="#Build-a-contour-plot-of-the-model-imposed-over-the-generated-data">Build a contour plot of the model imposed over the generated data</a><a id="Build-a-contour-plot-of-the-model-imposed-over-the-generated-data-1"></a><a class="docs-heading-anchor-permalink" href="#Build-a-contour-plot-of-the-model-imposed-over-the-generated-data" title="Permalink"></a></h2><pre><code class="language- hljs">xs = range(minimum(X[:,1]) - 1, stop=maximum(X[:,1]) + 1, length=150)
 ys = range(minimum(X[:,2]) - 1, stop=maximum(X[:,2]) + 1, length=150)
 
 p = plot()
@@ -92,4 +92,4 @@ for i in 1:fit_gmm.k
       c         = colors[i],
       label     = &quot;Comp $i&quot;,
     )
-end</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../gaussian_glm_hmm_example/">« Gaussian GLM-GMM Example</a><a class="docs-footer-nextpage" href="../poisson_mixture_model_example/">Poisson Mixture Model Example »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.12.0 on <span class="colophon-date" title="Friday 13 June 2025 21:04">Friday 13 June 2025</span>. Using Julia version 1.11.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+end</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../gaussian_glm_hmm_example/">« Gaussian GLM-GMM Example</a><a class="docs-footer-nextpage" href="../poisson_mixture_model_example/">Poisson Mixture Model Example »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.12.0 on <span class="colophon-date" title="Saturday 14 June 2025 00:36">Saturday 14 June 2025</span>. Using Julia version 1.11.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
