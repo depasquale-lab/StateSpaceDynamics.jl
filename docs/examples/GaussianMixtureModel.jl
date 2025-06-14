@@ -34,7 +34,10 @@ n = 500
 # generate component labels (for plotting)
 labels = rand(rng, Categorical(true_πs), n)
 # generate samples from the GMM
-X = [rand(rng, MvNormal(true_μs[:, labels[i]], true_Σs[labels[i]])) for i in 1:n]
+X = Matrix{Float64}(undef, D, n)
+for i in 1:n
+    X[:, i] = rand(rng, MvNormal(true_μs[:, labels[i]], true_Σs[labels[i]]))
+end
 
 p1 = scatter(
     X[1, :], X[2, :];

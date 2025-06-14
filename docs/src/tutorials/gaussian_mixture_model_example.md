@@ -41,18 +41,25 @@ true_gmm = GaussianMixtureModel(k, true_μs, true_Σs, true_πs)
 
 ````@example gaussian_mixture_model_example
 n = 500
-X = rand(rng, true_gmm, n)  # shape (D, N)
 ````
 
-Also generate component labels (for plotting)
+generate component labels (for plotting)
 
 ````@example gaussian_mixture_model_example
 labels = rand(rng, Categorical(true_πs), n)
+````
+
+generate samples from the GMM
+
+````@example gaussian_mixture_model_example
+X = Matrix{Float64}(undef, D, n)
+for i in 1:n
+    X[:, i] = rand(rng, MvNormal(true_μs[:, labels[i]], true_Σs[labels[i]]))
+end
 
 p1 = scatter(
     X[1, :], X[2, :];
-    group=labels,
-    title="GMM Samples Colored by Component",
+    title="GMM Samples",
     xlabel="x₁", ylabel="x₂",
     markersize=4,
     alpha=0.8,
