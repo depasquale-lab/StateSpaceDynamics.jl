@@ -29,17 +29,16 @@ true_πs = [0.5, 0.2, 0.3]
 true_gmm = GaussianMixtureModel(k, true_μs, true_Σs, true_πs)
 
 # ## Sample data from the true GMM
-
 n = 500
-X = rand(rng, true_gmm, n)  # shape (D, N)
 
-# Also generate component labels (for plotting)
+# generate component labels (for plotting)
 labels = rand(rng, Categorical(true_πs), n)
+# generate samples from the GMM
+X = [rand(rng, MvNormal(true_μs[:, labels[i]], true_Σs[labels[i]])) for i in 1:n]
 
 p1 = scatter(
     X[1, :], X[2, :];
-    group=labels,
-    title="GMM Samples Colored by Component",
+    title="GMM Samples",
     xlabel="x₁", ylabel="x₂",
     markersize=4,
     alpha=0.8,
