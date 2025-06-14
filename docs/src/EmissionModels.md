@@ -28,9 +28,9 @@ This emission model is often used when the observed data is real-valued and homo
 
 ```@docs
 GaussianEmission
-loglikelihood(::GaussianEmission, ::AbstractMatrix)
-Random.rand(::GaussianEmission)
-fit!(::GaussianEmission, ::AbstractMatrix)
+loglikelihood(model::GaussianEmission, Y::AbstractMatrix{T}) where {T<:Real}
+Random.rand(model::GaussianEmission; kwargs...)
+fit!(model::GaussianEmission, Y::AbstractMatrix{T}, w::AbstractVector{T}=ones(size(Y, 1))) where {T<:Real}
 ```
 
 ## Regression-Based Emission Models
@@ -46,10 +46,9 @@ y_t \sim \mathcal{N}(\Phi_t \beta, \Sigma)
 ```
 
 ```@docs
-GaussianRegressionEmission
-Random.rand(::GaussianRegressionEmission, ::Union{Matrix, Vector})
-loglikelihood(::GaussianRegressionEmission, ::AbstractMatrix, ::AbstractMatrix)
-fit!(::GaussianRegressionEmission, ::AbstractMatrix, ::AbstractMatrix)
+GaussianRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: RegressionEmission
+Random.rand(model::GaussianRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
+loglikelihood(model::GaussianRegressionEmission,Φ::AbstractMatrix{T},Y::AbstractMatrix{T},w::Union{Nothing,AbstractVector{T}} = nothing,) where {T<:Real}
 ```
 
 ### Bernoulli Regression Emission
@@ -63,9 +62,10 @@ p(y_t = 1 \mid \Phi_t) = \sigma(\Phi_t \beta)
 Where ``\sigma(z) = 1 / (1 + e^{-z})`` is the logistic function.
 
 ```@docs
-BernoulliRegressionEmission
-Random.rand(::BernoulliRegressionEmission, ::Union{Matrix, Vector})
-loglikelihood(::BernoulliRegressionEmission, ::AbstractMatrix, ::AbstractMatrix)
+BernoulliRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: RegressionEmission
+Random.rand(model::BernoulliRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
+loglikelihood(model::BernoulliRegressionEmission,Φ::AbstractMatrix,Y::AbstractMatrix,w::Union{Nothing,AbstractVector} = nothing,
+)
 ```
 
 ### Poisson Regression Emission
@@ -77,9 +77,9 @@ y_t \sim \text{Poisson}(\lambda_t), \quad \lambda_t = \exp(\Phi_t \beta)
 ```
 
 ```@docs
-PoissonRegressionEmission
-Random.rand(::PoissonRegressionEmission, ::Union{Matrix, Vector})
-loglikelihood(::PoissonRegressionEmission, ::AbstractMatrix, ::AbstractMatrix)
+PoissonRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: RegressionEmission
+Random.rand(model::PoissonRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
+loglikelihood(model::PoissonRegressionEmission,Φ::AbstractMatrix,Y::AbstractMatrix,w::Union{Nothing,AbstractVector{}} = nothing)
 ```
 
 ## Autoregressive Emission Models
@@ -95,10 +95,9 @@ Where `p` is the autoregressive order and `A_i` are regression weights.
 This model is useful when modeling temporal dependencies in the emission process, independent of latent dynamics.
 
 ```@docs
-AutoRegressionEmission
-construct_AR_feature_matrix
-Random.rand(::AutoRegressionEmission, ::AbstractMatrix)
-loglikelihood(::AutoRegressionEmission, ::AbstractMatrix, ::AbstractMatrix)
+AutoRegressionEmission <: AutoRegressiveEmission
+Random.rand(model::AutoRegressionEmission, X::Matrix{<:Real})
+loglikelihood(model::AutoRegressionEmission,X::AbstractMatrix{T},Y::AbstractMatrix{T},w::Union{Nothing,AbstractVector{T}} = nothing,) where {T<:Real}
 ```
 
 ## Fitting Regression Emission Models
@@ -106,7 +105,5 @@ loglikelihood(::AutoRegressionEmission, ::AbstractMatrix, ::AbstractMatrix)
 All regression-based emissions can be fitted using maximum likelihood with optional weights and L2 regularization. Internally, `StateSpaceDynamics.jl` formulates this as an optimization problem, solved using gradient-based methods (e.g., LBFGS).
 
 ```@docs
-fit!(::RegressionEmission, ::AbstractMatrix, ::AbstractMatrix)
-create_optimization
-RegressionOptimization
+fit!(model::RegressionEmission,X::AbstractMatrix{T1},y::AbstractMatrix{T2},w::AbstractVector{T3}=ones(size(y, 1)),) where {T1<:Real, T2<:Real, T3<:Real}
 ```

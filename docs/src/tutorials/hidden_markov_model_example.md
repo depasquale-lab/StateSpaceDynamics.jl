@@ -51,9 +51,9 @@ true_labels, data = rand(model, n=num_samples)
 ## Visualize the sampled dataset
 
 ````@example hidden_markov_model_example
-x_vals = data[1, 1:num_points]
-y_vals = data[2, 1:num_points]
-labels_slice = true_labels[1:num_points]
+x_vals = data[1, 1:num_samples]
+y_vals = data[2, 1:num_samples]
+labels_slice = true_labels[1:num_samples]
 
 state_colors = [:dodgerblue, :crimson]
 

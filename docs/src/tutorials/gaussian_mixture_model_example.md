@@ -16,6 +16,7 @@ using Random
 using Plots
 using StableRNGs
 using Distributions
+using StatsPlots
 ````
 
 ````@example gaussian_mixture_model_example
@@ -61,7 +62,10 @@ for i in 1:n
     X2[i, :] = rand(rng, MvNormal(true_μs[comp, :], true_Σs[comp]))'
 end
 
-data_plot = scatter(
+p = plot()
+
+scatter!(
+  p,
   X2[:,1], X2[:,2];
   group=labels,
   title="GMM Samples Coloured by Component",
@@ -69,8 +73,6 @@ data_plot = scatter(
   markersize=4,
   alpha=0.8,
 )
-
-display(data_plot)
 ````
 
 ## Paramter recovery: Initialize a new model with default parameters and fit to the data
@@ -104,6 +106,7 @@ plot(
   xlabel="Iteration",
   ylabel="Log-Likelihood",
   title="EM Convergence",
+  label="log_likelihood",
   marker=:circle,
   reuse=false,
 )
@@ -115,8 +118,10 @@ plot(
 xs = range(minimum(X[:,1]) - 1, stop=maximum(X[:,1]) + 1, length=150)
 ys = range(minimum(X[:,2]) - 1, stop=maximum(X[:,2]) + 1, length=150)
 
-contour_plot = scatter(
-  X[:,1], X[:,2];
+p = plot()
+
+scatter!(
+  p, X[:,1], X[:,2];
   markersize=3, alpha=0.5,
   xlabel="x₁", ylabel="x₂",
   title="Data & Fitted GMM Contours by Component",
@@ -131,15 +136,13 @@ for i in 1:fit_gmm.k
     Z_i = [fit_gmm.πₖ[i] * pdf(comp_dist, [x,y]) for y in ys, x in xs]
 
     contour!(
-      contour_plot, xs, ys, Z_i;
+      p, xs, ys, Z_i;
       levels    = 10,
       linewidth = 2,
       c         = colors[i],
       label     = "Comp $i",
     )
 end
-
-display(contour_plot)
 ````
 
 ---

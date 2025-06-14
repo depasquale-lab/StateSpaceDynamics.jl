@@ -15,6 +15,7 @@ using LinearAlgebra
 using Random
 using Plots
 using StableRNGs
+using StatsPlots
 using Distributions
 ````
 
@@ -50,19 +51,19 @@ data   = [rand(rng, Poisson(true_λs[labels[i]])) for i in 1:n]
 ## Plot the sample data with distinct mixtures.
 
 ````@example poisson_mixture_model_example
-sample_data = histogram(
-  data;
+p = plot()
+
+histogram!(
+  p, data;
   group     = labels,
   bins      = 0:1:maximum(data),
+  bar_position = :dodge,
   xlabel    = "Count",
   ylabel    = "Frequency",
   title     = "Poisson‐Mixture Samples by Component",
   alpha     = 0.7,
   legend    = :topright,
-  reuse     = false,
 )
-
-display(sample_data)
 ````
 
 ## Paramter recovery: Initialize a new model with default parameters and fit to the data using EM.
@@ -89,7 +90,7 @@ lls = fit!(fit_pmm, data; maxiter=100, tol=1e-6, initialize_kmeans=true)
 ## Confirm model convergence using log likelihoods
 
 ````@example poisson_mixture_model_example
-lls = plot(
+plot(
   lls;
   xlabel="Iteration",
   ylabel="Log-Likelihood",
@@ -98,17 +99,15 @@ lls = plot(
   label="log_likelihood",
   reuse=false,
 )
-
-display(lls)
 ````
 
 ## Plot the model pmf imposed over the generated data with distinct Mixtures
 
 ````@example poisson_mixture_model_example
-colors = [:red, :green, :blue]
+p = plot()
 
-contour_plot = histogram(
-  data;
+histogram!(
+  p, data;
   bins      = 0:1:maximum(data),
   normalize = true,
   alpha     = 0.3,
@@ -119,13 +118,13 @@ contour_plot = histogram(
 )
 
 x      = 0:maximum(data)
-colors = [:blue, :red, :green]
+colors = [:red, :green, :blue]
 for i in 1:k
     λi    = fit_pmm.λₖ[i]
     πi    = fit_pmm.πₖ[i]
     pmf_i = πi .* pdf.(Poisson(λi), x)
     plot!(
-      x, pmf_i;
+      p, x, pmf_i;
       lw    = 2,
       c     = colors[i],
       label = "Comp $i (λ=$(round(λi, sigdigits=3)))",
@@ -134,12 +133,10 @@ end
 
 mix_pmf = sum(πi .* pdf.(Poisson(λi), x) for (λi,πi) in zip(fit_pmm.λₖ, fit_pmm.πₖ))
 plot!(
-  x, mix_pmf;
+  p, x, mix_pmf;
   lw    = 3, ls=:dash, c=:black,
   label = "Mixture",
 )
-
-display(contour_plot)
 ````
 
 ---
