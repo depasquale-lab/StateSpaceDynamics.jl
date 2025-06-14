@@ -73,6 +73,8 @@ scatter!(
   markersize=4,
   alpha=0.8,
 )
+
+p
 ````
 
 ## Paramter recovery: Initialize a new model with default parameters and fit to the data
@@ -143,6 +145,8 @@ for i in 1:fit_gmm.k
       label     = "Comp $i",
     )
 end
+
+p
 ````
 
 ---

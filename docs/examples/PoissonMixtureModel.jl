@@ -47,6 +47,8 @@ histogram!(
   legend    = :topright,
 )
 
+p
+
 # ## Paramter recovery: Initialize a new model with default parameters and fit to the data using EM.  
 k = 3
 
@@ -105,3 +107,5 @@ plot!(
   lw    = 3, ls=:dash, c=:black,
   label = "Mixture",
 )
+
+p

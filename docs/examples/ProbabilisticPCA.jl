@@ -55,7 +55,7 @@ scatter!(
     markersize = 5,
 )
 
-display(p)
+p
 
 # ## Paramter recovery: Initialize a new model with default parameters and fit to the data using EM.  
 
@@ -82,8 +82,7 @@ ll_plot = plot(
     reuse=false,
 )
 
-display(ll_plot)
-
+ll_plot
 # ## Plot the learned lower dimension latent space over the Data 
 
 x1, x2 = X[1, :], X[2, :]
@@ -105,8 +104,8 @@ scatter!(
 )
 
 k = size(W_fit, 2)
-bases_x = repeat([μ_fit[1]], k)
-bases_y = repeat([μ_fit[2]], k)
+bases_x = repeat([μ1], k)
+bases_y = repeat([μ2], k)
 
 # Add the component arrows in both directions 
 quiver!(
@@ -139,4 +138,4 @@ quiver!(
   label       = ""
 )
 
-display(P)
+P

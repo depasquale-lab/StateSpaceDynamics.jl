@@ -46,7 +46,7 @@ y_t \sim \mathcal{N}(\Phi_t \beta, \Sigma)
 ```
 
 ```@docs
-GaussianRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: RegressionEmission
+GaussianRegressionEmission
 Random.rand(model::GaussianRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
 loglikelihood(model::GaussianRegressionEmission,Φ::AbstractMatrix{T},Y::AbstractMatrix{T},w::Union{Nothing,AbstractVector{T}} = nothing,) where {T<:Real}
 ```
@@ -62,7 +62,7 @@ p(y_t = 1 \mid \Phi_t) = \sigma(\Phi_t \beta)
 Where ``\sigma(z) = 1 / (1 + e^{-z})`` is the logistic function.
 
 ```@docs
-BernoulliRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: RegressionEmission
+BernoulliRegressionEmission
 Random.rand(model::BernoulliRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
 loglikelihood(model::BernoulliRegressionEmission,Φ::AbstractMatrix,Y::AbstractMatrix,w::Union{Nothing,AbstractVector} = nothing,
 )
@@ -77,7 +77,7 @@ y_t \sim \text{Poisson}(\lambda_t), \quad \lambda_t = \exp(\Phi_t \beta)
 ```
 
 ```@docs
-PoissonRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: RegressionEmission
+PoissonRegressionEmission
 Random.rand(model::PoissonRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
 loglikelihood(model::PoissonRegressionEmission,Φ::AbstractMatrix,Y::AbstractMatrix,w::Union{Nothing,AbstractVector{}} = nothing)
 ```
@@ -95,7 +95,7 @@ Where `p` is the autoregressive order and `A_i` are regression weights.
 This model is useful when modeling temporal dependencies in the emission process, independent of latent dynamics.
 
 ```@docs
-AutoRegressionEmission <: AutoRegressiveEmission
+AutoRegressionEmission
 Random.rand(model::AutoRegressionEmission, X::Matrix{<:Real})
 loglikelihood(model::AutoRegressionEmission,X::AbstractMatrix{T},Y::AbstractMatrix{T},w::Union{Nothing,AbstractVector{T}} = nothing,) where {T<:Real}
 ```
