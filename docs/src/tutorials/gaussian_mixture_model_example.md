@@ -87,8 +87,8 @@ p2
 ## Visualize model contours over the data
 
 ````@example gaussian_mixture_model_example
-xs = range(minimum(X[1, :]) - 1, stop=maximum(X[1, :]) + 1, length=150)
-ys = range(minimum(X[2, :]) - 1, stop=maximum(X[2, :]) + 1, length=150)
+xs = collect(range(minimum(X[1, :]) - 1, stop=maximum(X[1, :]) + 1, length=150))
+ys = collect(range(minimum(X[2, :]) - 1, stop=maximum(X[2, :]) + 1, length=150))
 
 p3 = scatter(
     X[1, :], X[2, :];

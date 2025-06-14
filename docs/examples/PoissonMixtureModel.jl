@@ -45,7 +45,7 @@ p1
 # ## Fit a new PoissonMixtureModel to the data
 
 fit_pmm = PoissonMixtureModel(k)
-lls = fit!(fit_pmm, data; maxiter=100, tol=1e-6, initialize_kmeans=true)
+_, lls = fit!(fit_pmm, data; maxiter=100, tol=1e-6, initialize_kmeans=true)
 
 # ## Plot log-likelihoods to visualize EM convergence
 
@@ -72,7 +72,7 @@ p3 = histogram(
     title="Poisson Mixtures: Data and PMFs",
 )
 
-x = 0:maximum(data)
+x = collect(0:maximum(data))
 colors = [:red, :green, :blue]
 
 for i in 1:k
@@ -87,7 +87,7 @@ for i in 1:k
     )
 end
 
-mix_pmf = sum(πi .* pdf.(Poisson(λi), x) for (λi, πi) in zip(fit_pmm.λₖ, fit_pmm.πₖ))
+mix_pmf = reduce(+, (πi .* pdf.(Poisson(λi), x) for (λi, πi) in zip(fit_pmm.λₖ, fit_pmm.πₖ)))
 plot!(
     p3, x, mix_pmf;
     lw=3, ls=:dash, c=:black,
