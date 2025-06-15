@@ -19,7 +19,7 @@ using StableRNGs
 ````
 
 ````@example poisson_latent_dynamics_example
-rng = StableRNG(1234);
+rng = StableRNG(123);
 nothing #hide
 ````
 
@@ -35,7 +35,7 @@ x0 = zeros(latent_dim)
 P0 = Matrix(0.1 * I(latent_dim))
 
 log_d = log.(fill(0.1, obs_dim))
-C = permutedims([abs.(randn(obs_dim))'; abs.(randn(obs_dim))'])
+C = permutedims([abs.(randn(rng, obs_dim))'; abs.(randn(rng, obs_dim))'])
 
 state_model = GaussianStateModel(; A, Q, x0, P0)
 obs_model = PoissonObservationModel(; C, log_d)
@@ -120,7 +120,7 @@ Initialize with random parameters
 ````@example poisson_latent_dynamics_example
 A_init = random_rotation_matrix(latent_dim, rng)
 Q_init = Matrix(0.1 * I(latent_dim))
-C_init = randn(obs_dim, latent_dim)
+C_init = randn(rng, obs_dim, latent_dim)
 log_d_init = log.(fill(0.1, obs_dim))
 x0_init = zeros(latent_dim)
 P0_init = Matrix(0.1 * I(latent_dim))

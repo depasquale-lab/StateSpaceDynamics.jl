@@ -59,6 +59,7 @@ end
 
 p1 = scatter(
     X[1, :], X[2, :];
+    group=labels,
     title="GMM Samples",
     xlabel="x₁", ylabel="x₂",
     markersize=4,

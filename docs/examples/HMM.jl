@@ -35,7 +35,7 @@ model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
 # ## Sample from the HMM
 
 num_samples = 10000
-true_labels, data = rand(model, n=num_samples)
+true_labels, data = rand(rng, model, n=num_samples)
 
 # ## Visualize the sampled dataset
 
@@ -139,7 +139,7 @@ all_true_labels = Vector{Vector{Int}}(undef, n_trials)
 all_data = Vector{Matrix{Float64}}(undef, n_trials)
 
 for i in 1:n_trials
-    true_labels, data = rand(model, n=n_samples)
+    true_labels, data = rand(rng, model, n=n_samples)
     all_true_labels[i] = true_labels
     all_data[i] = data
 end

@@ -114,6 +114,17 @@ If you encounter a bug or would like to contribute to the package, please [open 
 
 ## Citing StateSpaceDynamics.jl
 
-If you use StateSpaceDynamics.jl in your research, please cite the following:
+Our work is currently under review in the Journal of Open Source Software. For now, if you use StateSpaceDynamics.jl in your research, please use the following bibtex citation:
 
-[Citation information to be added upon publication]
+```bibtex
+@software{Senne_Zenodo_SSD,
+  author       = {Ryan Senne and Zachary Loschinskey and James Fourie and Carson Loughridge and Brian DePasquale},
+  title        = {StateSpaceDynamics.jl},
+  month        = jun,
+  year         = 2025,
+  publisher    = {Zenodo},
+  version      = {v1.0.0},
+  doi          = {10.5281/zenodo.15668420},
+  url          = {https://doi.org/10.5281/zenodo.15668420}
+}
+```

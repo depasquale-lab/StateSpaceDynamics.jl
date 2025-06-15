@@ -7,6 +7,7 @@
 [![](https://img.shields.io/badge/docs-dev-blue.svg)](https://depasquale-lab.github.io/StateSpaceDynamics.jl/dev/)
 [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://depasquale-lab.github.io/StateSpaceDynamics.jl/stable)
 [![status](https://joss.theoj.org/papers/0bcb7b5a500055bb4f9fc5aec65c177b/status.svg)](https://joss.theoj.org/papers/0bcb7b5a500055bb4f9fc5aec65c177b)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15668421.svg)](https://doi.org/10.5281/zenodo.15668421)
 
 ## Description
 

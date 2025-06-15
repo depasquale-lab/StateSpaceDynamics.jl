@@ -62,9 +62,9 @@ p
 #define default parameters 
 D = 2
 k = 2 
-W = randn(D, k)
+W = randn(rng, D, k)
 σ² = 0.5
-μ_vector = randn(2)
+μ_vector = randn(rng, 2)
 
 fit_ppca = ProbabilisticPCA(W, σ², μ_vector)
 

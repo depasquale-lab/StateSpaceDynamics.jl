@@ -27,8 +27,8 @@ true_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2]
 # ## Sample from the GLM-HMM
 
 n = 20000
-Φ = randn(3, n)
-true_labels, data = rand(true_model, Φ, n=n)
+Φ = randn(rng, 3, n)
+true_labels, data = rand(rng, true_model, Φ, n=n)
 
 # ## Visualize the sampled dataset
 
@@ -176,8 +176,8 @@ n=1000
 all_true_labels = []
 
 for i in 1:num_trials
-    Φ = randn(3, n)
-    true_labels, data = rand(true_model, Φ, n=n)
+    Φ = randn(rng, 3, n)
+    true_labels, data = rand(rng, true_model, Φ, n=n)
     push!(all_true_labels, true_labels)
     push!(all_data, data)
     push!(Φ_total, Φ)
