@@ -85,6 +85,7 @@ end
 
 """
     Random.rand(model::GaussianEmission; kwargs...)
+    Random.rand(rng::AbstractRNG, model::GaussianEmission; n::Int=1)
 
 Generate random samples from  a Gaussian emission model.
 """
@@ -276,6 +277,7 @@ end
 
 """
     Random.rand(model::GaussianRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
+    Random.rand(rng::AbstractRNG, model::GaussianRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
 
 Generate samples from a Gaussian regression model.
 """
@@ -456,6 +458,7 @@ end
 
 """
     Random.rand(model::AutoRegressionEmission, X::Matrix{<:Real})
+    Random.rand(rng::AbstractRNG, model::AutoRegressionEmission, X::Matrix{<:Real})
 
 Generate samples from an autoregressive emission model.
 """
@@ -634,6 +637,7 @@ end
 
 """
     Random.rand(model::BernoulliRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
+    Random.rand(rng::AbstractRNG, model::BernoulliRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
 
 Generate samples from a Bernoulli regression emission.
 """
@@ -801,6 +805,7 @@ end
 
 """
     Random.rand(model::PoissonRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
+    Random.rand(rng::AbstractRNG, model::PoissonRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
 
 Generate samples from a Poisson regression emission model.
 """

@@ -6,7 +6,7 @@ end
 
 function test_kmeanspp_initialization()
     # Generate random data
-    data = randn(100, 2)
+    data = randn(2, 100)
     # Initialize centroids
     k_means = 3
     centroids = kmeanspp_initialization(data, k_means)
@@ -16,7 +16,7 @@ end
 
 function test_kmeans_clustering()
     # Generate random data
-    data = randn(100, 2)
+    data = randn(2, 100)
     # Initialize centroids
     k_means = 3
     centroids, labels = kmeans_clustering(data, k_means)

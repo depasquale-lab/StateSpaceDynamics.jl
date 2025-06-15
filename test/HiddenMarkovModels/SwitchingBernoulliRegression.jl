@@ -59,8 +59,8 @@ function test_trialized_SwitchingBernoulliRegression()
     end
 
     # Initialize the test model
-    emission_1 = BernoulliRegressionEmission(; input_dim=2, output_dim=1, include_intercept=true, β=reshape([2.0, 0.5, 1.0], :, 1), λ=0.0)
-    emission_2 = BernoulliRegressionEmission(; input_dim=2, output_dim=1, include_intercept=true, β=reshape([-2.0, -0.5, 2.0], :, 1), λ=0.0)
+    emission_1 = BernoulliRegressionEmission(; input_dim=2, output_dim=1, include_intercept=true, β=reshape([2.5, 0.75, 1.5], :, 1), λ=0.0)
+    emission_2 = BernoulliRegressionEmission(; input_dim=2, output_dim=1, include_intercept=true, β=reshape([-2.5, -0.75, 1.5], :, 1), λ=0.0)
     
     A = [0.7 0.3; 0.1 0.9]
     πₖ = [0.5; 0.5]
