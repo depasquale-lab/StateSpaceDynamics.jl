@@ -252,7 +252,7 @@ end
 
 Calculate the Euclidean distance between two points.
 """
-function euclidean_distance(a::AbstractVector{T}, b::AbstractVector{T}) where {T<:Real}
+function euclidean_distance(a::AbstractVector{T1}, b::AbstractVector{T2}) where {T1<:Real, T2<:Real}
     return sqrt(sum((a .- b) .^ 2))
 end
 

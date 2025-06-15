@@ -160,7 +160,6 @@ end
 
 fit!(gmm::GaussianMixtureModel, data::Vector{<:Real}; kwargs...) = fit!(gmm, reshape(data, :, 1); kwargs...)
 
-
 """
     PoissonMixtureModel
 
