@@ -8,6 +8,7 @@
 [![](https://img.shields.io/badge/docs-dev-blue.svg)](https://depasquale-lab.github.io/StateSpaceDynamics.jl/dev/)
 [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://depasquale-lab.github.io/StateSpaceDynamics.jl/stable)
 [![status](https://joss.theoj.org/papers/0bcb7b5a500055bb4f9fc5aec65c177b/status.svg)](https://joss.theoj.org/papers/0bcb7b5a500055bb4f9fc5aec65c177b)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15668421.svg)](https://doi.org/10.5281/zenodo.15668421)
 
 ## Description
 
@@ -32,10 +33,10 @@ StateSpaceDynamics.jl is designed to be user friendly with intuitive syntax. Bel
 ```julia
 using StateSpaceDynamics
 using LinearAlgebra
-using Random
+using StableRNGs
 
 # Set seed for reproducibility
-rng = MersenneTwister(42)
+rng = StableRNG(1234);
 
 # create a toy system
 # initial conditions
@@ -51,15 +52,26 @@ C = [1.2 1.2; 1.2 1.2; 1.2 1.2] # observation matrix
 log_d = log.([0.1, 0.1, 0.1]) # log of the natural parameters of the Poisson distribution
 
 # generate data
-tSteps = 100
+tsteps = 100
 trials = 10
 
-true_plds = PoissonLDS(;A=A, Q=Q, C=C, log_d=log_d, x0=x0, P0=P0, obs_dim=3, latent_dim=2)
-latents, observations = rand(rng, true_plds; tsteps=tSteps, ntrials=trials)
+gaussian_state_model = GaussianStateModel(;A=A, Q=Q, P0=P0, x0=x0)
+poisson_obs_model = PoissonObservationModel(;C=C, log_d=log_d)
 
-# fit the model 
-plds = PoissonLDS(;obs_dim=3, latent_dim=2)
-fit!(plds, observations)
+plds_true = LinearDynamicalSystem(;state_model=gaussian_state_model, obs_model=poisson_obs_model, latent_dim=2, obs_dim=3, fit_bool=fill(true, 6))
+latents, observations = rand(rng, plds_true; tsteps=tsteps, ntrials=trials)
+
+# fit the data to a new naive model
+A_init = random_rotation_matrix(2, rng)
+Q_init = Matrix(0.1 * I(2))
+P0_init = Matrix(0.1 * I(2))
+x0_init = zeros(2)
+
+C_init = rand(3, 2)
+log_d_init = zeros(3)
+
+plds_true = LinearDynamicalSystem(;state_model=GaussianStateModel(;A=A_init, Q=Q_init, P0=P0_init, x0=x0_init), obs_model=PoissonObservationModel(;C=C_init, log_d=log_d_init), latent_dim=2, obs_dim=3, fit_bool=fill(true, 6))
+fit!(plds_true, observations; max_iter=15, tol=1e-3)
 ```
 
 ## Available Models

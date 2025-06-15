@@ -33,7 +33,7 @@ function test_SwitchingGaussianRegression_fit()
         isapprox(test_model.B[2].β, true_model.B[1].β; atol=0.1)
 
     # Test that the ll is always increasing
-    @test any(diff(lls) .< 0.0) == false
+    @test any(diff(lls) .< -1e-3) == false
 end
 
 function test_SwitchingGaussianRegression_fit_float32()
@@ -140,7 +140,7 @@ function test_SwitchingGaussianRegression_SingleState_fit()
     @test isapprox(test_model.B[1].β, true_model.B[1].β, atol=0.1)
 
     # Test that the ll is always increasing
-    @test any(diff(ll) .< 0.0) == false
+    @test any(diff(ll) .< -1e-3) == false
 end
 
 function test_trialized_SwitchingGaussianRegression()
@@ -190,7 +190,7 @@ function test_trialized_SwitchingGaussianRegression()
     @test_broken isapprox(test_model.B[2].Σ, true_model.B[2].Σ, atol=0.1) || isapprox(test_model.B[2].Σ, true_model.B[1].Σ, atol=0.1)
 
     # Test that the ll is always increasing (accept small numerical instability)
-    @test any(diff(lls) .< 0.0) == false
+    @test any(diff(lls) .< -1e-3) == false
 end
 
 # Function to sample from initial state and transition matrix

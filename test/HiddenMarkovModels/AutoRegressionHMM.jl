@@ -101,7 +101,7 @@ function test_ARHMM_fit()
     ll = StateSpaceDynamics.fit!(test_model, Y, Φ, max_iters=200)
 
     # Test transition matrix
-    @test isapprox(true_model.A, test_model.A, atol=0.1)
+    @test all(isapprox.(true_model.A, test_model.A, atol=0.1))
 
     # Test regression fit
     @test isapprox(test_model.B[1].β, true_model.B[1].β; atol=0.1) ||

@@ -19,7 +19,7 @@ Where ``f_i(x)`` is called the ith *component* and ``\pi_i`` is called the ith *
 GaussianMixtureModel
 GaussianMixtureModel(k::Int, data_dim::Int)
 fit!(gmm::GaussianMixtureModel, data::Matrix{<:Real}; maxiter::Int=50, tol::Float64=1e-3, initialize_kmeans::Bool=false)
-log_likelihood(gmm::GaussianMixtureModel, data::Matrix{<:Real})
+loglikelihood(gmm::GaussianMixtureModel, data::Matrix{<:Real})
 ```
 
 ## Poisson Mixture Model
@@ -27,5 +27,5 @@ log_likelihood(gmm::GaussianMixtureModel, data::Matrix{<:Real})
 PoissonMixtureModel
 PoissonMixtureModel(k::Int)
 fit!(pmm::PoissonMixtureModel, data::Matrix{Int64}; maxiter::Int=50, tol::Float64=1e-3,initialize_kmeans::Bool=false)
-log_likelihood(pmm::PoissonMixtureModel, data::Matrix{Int64})
+loglikelihood(pmm::PoissonMixtureModel, data::Matrix{Int64})
 ```
