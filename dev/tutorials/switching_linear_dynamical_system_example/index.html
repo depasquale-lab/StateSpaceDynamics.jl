@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Switching Linear Dynamical System Example · StateSpaceDynamics.jl</title><meta name="title" content="Switching Linear Dynamical System Example · StateSpaceDynamics.jl"/><meta property="og:title" content="Switching Linear Dynamical System Example · StateSpaceDynamics.jl"/><meta property="twitter:title" content="Switching Linear Dynamical System Example · StateSpaceDynamics.jl"/><meta name="description" content="Documentation for StateSpaceDynamics.jl."/><meta property="og:description" content="Documentation for StateSpaceDynamics.jl."/><meta property="twitter:description" content="Documentation for StateSpaceDynamics.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="StateSpaceDynamics.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">StateSpaceDynamics.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Models</span><ul><li><a class="tocitem" href="../../LinearDynamicalSystems/">Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../HiddenMarkovModels/">Hidden Markov Models</a></li><li><a class="tocitem" href="../../SLDS/">Switching Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../EmissionModels/">EmissionModels</a></li><li><a class="tocitem" href="../../MixtureModels/">Mixture Models</a></li></ul></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../gaussian_latent_dynamics_example/">Gaussian LDS Example</a></li><li><a class="tocitem" href="../poisson_latent_dynamics_example/">Poisson LDS Example</a></li><li><a class="tocitem" href="../hidden_markov_model_example/">Hidden Markov Model Example</a></li><li><a class="tocitem" href="../gaussian_glm_hmm_example/">Gaussian GLM-GMM Example</a></li><li><a class="tocitem" href="../gaussian_mixture_model_example/">Gaussian Mixture Model Example</a></li><li><a class="tocitem" href="../poisson_mixture_model_example/">Poisson Mixture Model Example</a></li><li><a class="tocitem" href="../Probabilistic_PCA_example/">Probabilistic PCA Example</a></li><li class="is-active"><a class="tocitem" href>Switching Linear Dynamical System Example</a><ul class="internal"><li><a class="tocitem" href="#Simulating-and-Fitting-a-Switching-Linear-Dynamical-System"><span>Simulating and Fitting a Switching Linear Dynamical System</span></a></li><li><a class="tocitem" href="#Load-Packages"><span>Load Packages</span></a></li><li><a class="tocitem" href="#Simulate-Data-from-an-SLDS-model"><span>Simulate Data from an SLDS model</span></a></li><li><a class="tocitem" href="#Plot-the-true-dynamics"><span>Plot the true dynamics</span></a></li><li><a class="tocitem" href="#Create-a-new-SLDS-model-with-different-parameters-and-fit-to-the-data"><span>Create a new SLDS model with different parameters and fit to the data</span></a></li><li><a class="tocitem" href="#Fit-the-model-to-the-data"><span>Fit the model to the data</span></a></li><li><a class="tocitem" href="#Plot-the-ELBO-over-iterations"><span>Plot the ELBO over iterations</span></a></li><li><a class="tocitem" href="#Compare-the-true-and-learned-model"><span>Compare the true and learned model</span></a></li></ul></li></ul></li><li><a class="tocitem" href="../../Misc/">Miscellaneous</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Switching Linear Dynamical System Example</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Switching Linear Dynamical System Example</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/blob/main/docs/examples/SLDS.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h2 id="Simulating-and-Fitting-a-Switching-Linear-Dynamical-System"><a class="docs-heading-anchor" href="#Simulating-and-Fitting-a-Switching-Linear-Dynamical-System">Simulating and Fitting a Switching Linear Dynamical System</a><a id="Simulating-and-Fitting-a-Switching-Linear-Dynamical-System-1"></a><a class="docs-heading-anchor-permalink" href="#Simulating-and-Fitting-a-Switching-Linear-Dynamical-System" title="Permalink"></a></h2><h2 id="Load-Packages"><a class="docs-heading-anchor" href="#Load-Packages">Load Packages</a><a id="Load-Packages-1"></a><a class="docs-heading-anchor-permalink" href="#Load-Packages" title="Permalink"></a></h2><pre><code class="language-julia hljs">using StateSpaceDynamics
+using LinearAlgebra
+using Random
+using Plots
+using LaTeXStrings
+using Statistics
+using StableRNGs
+
+rng = StableRNG(123);</code></pre><h2 id="Simulate-Data-from-an-SLDS-model"><a class="docs-heading-anchor" href="#Simulate-Data-from-an-SLDS-model">Simulate Data from an SLDS model</a><a id="Simulate-Data-from-an-SLDS-model-1"></a><a class="docs-heading-anchor-permalink" href="#Simulate-Data-from-an-SLDS-model" title="Permalink"></a></h2><pre><code class="language-julia hljs">state_dim = 2
+obs_dim = 10
+K = 2 ## two states
+
+# Create the HMM parameters
+A_hmm = [0.92 0.08; 0.06 0.94]
+π₀ = [1.0, 0.0]
+
+# Create the state models
+A₁ = 0.95 * [cos(0.05) -sin(0.05); sin(0.05) cos(0.05)] ## slower oscillator
+A₂ = 0.95 * [cos(0.55) -sin(0.55); sin(0.55) cos(0.55)] ## faster oscillator
+
+Q₁ = [0.001 0.0; 0.0 0.001]
+Q₂ = [0.1 0.0; 0.0 0.1]
+
+# Assume same initial distribution for ease
+x0 = [0.0, 0.0]
+P0 = [0.1 0.0; 0.0 0.1]
+
+# create the observation models
+C₁ = randn(rng, obs_dim, state_dim)
+C₂ = randn(rng, obs_dim, state_dim)
+
+R = Matrix(0.1 * I(obs_dim)) ## Assume same noise covariance for both states
+
+# Put it all together for an SLDS model
+model = SwitchingLinearDynamicalSystem(
+    A_hmm,
+    [LinearDynamicalSystem(GaussianStateModel(A₁, Q₁, x0, P0), GaussianObservationModel(C₁, R), state_dim, obs_dim, fill(true, 6)),
+     LinearDynamicalSystem(GaussianStateModel(A₂, Q₂, x0, P0), GaussianObservationModel(C₂, R), state_dim, obs_dim, fill(true, 6))],
+     π₀,
+    K)
+
+# Simulate data
+T = 1000
+x, y, z = rand(rng, model, 1000)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">([-0.0076254535387565315 0.010510918137784979 … -0.5769153384209105 -0.4035847520353174; -0.04123506436656016 -0.00592997734867972 … 0.18695190515682356 -0.2744066547051277], [-0.18526210459309506 0.17629694246392696 … -0.8298321765549141 -0.5031756498922173; 0.3217524900300324 0.15289332524072613 … -0.09968498741275378 0.5598163328818822; … ; -0.07844180835082344 0.18028470563455726 … -0.2879217977397569 -0.5647291240409786; 0.49270132361714775 -0.46454050111148787 … 0.9714382494619553 0.35449359320633034], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1  …  2, 2, 2, 2, 2, 2, 2, 2, 2, 2])</code></pre><h2 id="Plot-the-true-dynamics"><a class="docs-heading-anchor" href="#Plot-the-true-dynamics">Plot the true dynamics</a><a id="Plot-the-true-dynamics-1"></a><a class="docs-heading-anchor-permalink" href="#Plot-the-true-dynamics" title="Permalink"></a></h2><pre><code class="language-julia hljs">p1 = plot(1:T, x[1, :], label=&quot;x₁&quot;,  linewidth=1.5)
+plot!(1:T, x[2, :], label=&quot;x₂&quot;, linewidth=1.5)
+
+# Create a background shading based on the state (z)
+# Find state transition points
+transition_points = [1; findall(diff(z) .!= 0) .+ 1; T + 1]
+
+for i in 1:(length(transition_points) - 1)
+    start_idx = transition_points[i]
+    end_idx = transition_points[i + 1] - 1
+    state_value = z[start_idx]
+
+    # Choose color based on state value
+    bg_color = state_value == 1 ? :lightblue : :lightyellow
+
+    # Add a background shading for this state region
+    vspan!([start_idx, end_idx], fillalpha=0.5, color=bg_color,
+           label=(i == 1 ? &quot;State $state_value&quot; : &quot;&quot;))
+end
+
+# Adjust the plot appearance
+title!(&quot;Latent Dynamics with State&quot;)
+xlabel!(&quot;Time&quot;)
+ylabel!(&quot;State Value&quot;)
+ylims!(-3, 3)
+
+# Adjust the plot appearance
+title!(&quot;Latent Dynamics with State&quot;)
+xlabel!(&quot;Time&quot;)
+ylabel!(&quot;State Value&quot;)
+ylims!(-3, 3)
+
+p1</code></pre><img src="38da1c3f.svg" alt="Example block output"/><h2 id="Create-a-new-SLDS-model-with-different-parameters-and-fit-to-the-data"><a class="docs-heading-anchor" href="#Create-a-new-SLDS-model-with-different-parameters-and-fit-to-the-data">Create a new SLDS model with different parameters and fit to the data</a><a id="Create-a-new-SLDS-model-with-different-parameters-and-fit-to-the-data-1"></a><a class="docs-heading-anchor-permalink" href="#Create-a-new-SLDS-model-with-different-parameters-and-fit-to-the-data" title="Permalink"></a></h2><pre><code class="language-julia hljs"># Create a model to start with for EM, using reasonable guesses
+A = [0.9 0.1; 0.1 0.9]
+A ./= sum(A, dims=2) ## Normalize rows to sum to 1
+
+πₖ = rand(K)
+πₖ ./= sum(πₖ) ## Normalize to sum to 1
+
+Q = Matrix(0.001 * I(state_dim))
+
+x0 = [0.0; 0.0]
+P0 = Matrix(0.001 * I(state_dim))
+
+# set up the observation parameters
+C = randn(obs_dim, state_dim)
+R = Matrix(0.1 * I(obs_dim))
+
+B = [StateSpaceDynamics.LinearDynamicalSystem(
+    StateSpaceDynamics.GaussianStateModel(0.95 * [cos(f) -sin(f); sin(f) cos(f)], Q, x0, P0),
+    StateSpaceDynamics.GaussianObservationModel(C, R),
+    state_dim, obs_dim, fill(true, 6)) for (i,f) in zip(1:K, [0.7, 0.1])]
+
+learned_model = SwitchingLinearDynamicalSystem(A, B, πₖ, model.K)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">SwitchingLinearDynamicalSystem{Float64, Matrix{Float64}, Vector{Float64}, Vector{LinearDynamicalSystem{Float64, GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}, GaussianObservationModel{Float64, Matrix{Float64}}}}}([0.9 0.1; 0.1 0.9], LinearDynamicalSystem{Float64, GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}, GaussianObservationModel{Float64, Matrix{Float64}}}[LinearDynamicalSystem{Float64, GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}, GaussianObservationModel{Float64, Matrix{Float64}}}(GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}([0.726600077920264 -0.6120068028758064; 0.6120068028758064 0.726600077920264], [0.001 0.0; 0.0 0.001], [0.0, 0.0], [0.001 0.0; 0.0 0.001]), GaussianObservationModel{Float64, Matrix{Float64}}([-1.1054729015845108 -0.7427391160240311; 1.1656243969416984 0.654070761535907; … ; 0.10802786381298672 1.4991937460415403; 0.5529022701365474 -0.16403022340587964], [0.1 0.0 … 0.0 0.0; 0.0 0.1 … 0.0 0.0; … ; 0.0 0.0 … 0.1 0.0; 0.0 0.0 … 0.0 0.1]), 2, 10, Bool[1, 1, 1, 1, 1, 1]), LinearDynamicalSystem{Float64, GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}, GaussianObservationModel{Float64, Matrix{Float64}}}(GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}([0.9452539570141245 -0.09484174581448675; 0.09484174581448675 0.9452539570141245], [0.001 0.0; 0.0 0.001], [0.0, 0.0], [0.001 0.0; 0.0 0.001]), GaussianObservationModel{Float64, Matrix{Float64}}([-1.1054729015845108 -0.7427391160240311; 1.1656243969416984 0.654070761535907; … ; 0.10802786381298672 1.4991937460415403; 0.5529022701365474 -0.16403022340587964], [0.1 0.0 … 0.0 0.0; 0.0 0.1 … 0.0 0.0; … ; 0.0 0.0 … 0.1 0.0; 0.0 0.0 … 0.0 0.1]), 2, 10, Bool[1, 1, 1, 1, 1, 1])], [0.4046502146773587, 0.5953497853226414], 2)</code></pre><h2 id="Fit-the-model-to-the-data"><a class="docs-heading-anchor" href="#Fit-the-model-to-the-data">Fit the model to the data</a><a id="Fit-the-model-to-the-data-1"></a><a class="docs-heading-anchor-permalink" href="#Fit-the-model-to-the-data" title="Permalink"></a></h2><pre><code class="language-julia hljs">mls, param_diff, FB, FS = fit!(learned_model, y; max_iter=25) # use 25 iterations of EM</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">([-130381.38395045814, -27260.040546695338, -17868.020784974426, -17123.447076723554, -16942.0035979684, -16866.869077113683, -16830.089460706462, -16809.915594635935, -16797.940359508684, -16790.423290447492  …  -16776.277170947884, -16775.657181993807, -16775.196789487218, -16774.85201993646, -16774.59192544455, -16774.394408362652, -16774.24349422931, -16774.127512760486, -16774.037863277747, -16773.968159687338], [14.016029560460336, 8.195690330093429, 1.5082775143836356, 0.23466001589025515, 0.13759057790449797, 0.1004327327066851, 0.07413999247159984, 0.05508042070494787, 0.041130505582174466, 0.03084721449793942  …  0.005946487778335343, 0.004588450027454087, 0.0035610426900402684, 0.0027822018279955313, 0.0021906169242236874, 0.0017403675022007981, 0.001396979060358515, 0.0011345108803789106, 0.0009333978120599974, 0.0007788502712134059], StateSpaceDynamics.ForwardBackward{Float64, Vector{Float64}, Matrix{Float64}, Array{Float64, 3}}([-11.392927290149197 -18.828234638684986 … -38.58112153252738 -40.618040235672375; -5.957648193926738 -7.820203367773784 … -16.803617761836104 -9.340196434101049], [-169.01348541776457 -27.095143949396352 … -5856.438402262545 -5875.383561440749; -5.957648193926738 -13.882473040663026 … -5832.456260088647 -5841.901078001706], [-5838.3346860736265 -5830.409878105844 … -11.836090890794596 0.0; -5835.943429807735 -5828.01860512822 … -9.44481791306355 0.0], [-165.44709348972992 -15.603944053578743 … -26.373415151633708 -33.48248343904288; 0.0 -1.6722151485737413e-7 … -3.637978807091713e-12 0.0], [-176.43653860697214 -165.44711036879016; -15.603944053578743 -1.6722151485737413e-7;;; -38.55444275191985 -15.603944053687883; -27.565014513630558 -1.6722333384677768e-7;;; -55.70710189966121 -27.564997634570318; -32.75661991326797 -9.094947017729282e-13;;; … ;;; -36.45454954395427 -22.85975564688215; -18.20930955772019 -1.2471900845412165e-8;;; -39.9682102842271 -18.209309546157783; -26.373416398602785 -1.2357304512988776e-8;;; -55.2413829428524 -26.373415151634617; -33.48248343939758 -3.637978807091713e-12]), StateSpaceDynamics.FilterSmooth{Float64}[StateSpaceDynamics.FilterSmooth{Float64}([-0.009113326754139457 0.020532829773602247 … 0.24818647222462253 0.1656142326805294; -0.06568355185995982 -0.05859965878010609 … 0.048552420253830005 0.167508894193522], [0.000816388311789149 8.874525753372475e-6; 8.874525753372475e-6 0.0008007367346303984;;; 0.011627883361996551 -0.0009742689810875202; -0.0009742689810875202 0.011363822400590156;;; 0.02069077048010096 -0.0011728803240187036; -0.0011728803240187036 0.02052084891194227;;; … ;;; 0.020791404388739033 -0.0012649025875159097; -0.0012649025875159097 0.022155221047493394;;; 0.028555644521926094 -0.001835610716844887; -0.001835610716844887 0.03014650858234107;;; 0.0351072631103264 -0.0020808693688037765; -0.0020808693688037765 0.03715976847709393], [-0.009113326754139457 0.020532829773602247 … 0.24818647222462253 0.1656142326805294; -0.06568355185995982 -0.05859965878010609 … 0.048552420253830005 0.167508894193522;;;], [0.000899441036316863 0.0006074701962256508; 0.0006074701962256508 0.0051150657195704295;;; 0.012049480460508279 -0.0021774857996106145; -0.0021774857996106145 0.01479774240973502;;; 0.022285669153123848 -0.0027306139265750942; -0.0027306139265750942 0.022042283481784997;;; … ;;; 0.09031938011820878 -0.028980570256023023; -0.028980570256023023 0.033203410301557115;;; 0.09015216951722943 0.010214443183920494; 0.010214443183920494 0.03250384609484559;;; 0.06253533717668694 0.025660987610220357; 0.025660987610220357 0.06521899811103048;;;;], [0.0 0.0; 0.0 0.0;;; 0.00042522564433635206 -0.0017099063190431393; 0.000959373959929364 0.004513138424036554;;; 0.010043191800776268 -0.0082952155486856; 0.004347679738140959 0.011142980057061724;;; … ;;; 0.060980081268527456 -0.07179001089108375; -0.014737628132664483 0.036495556737056664;;; 0.0817743235675045 -0.03725815808092002; 0.022431175157293426 0.0125454209829954;;; 0.06357965896661542 -0.007246315006112496; 0.054716741114670286 0.03208882093262132;;;;]), StateSpaceDynamics.FilterSmooth{Float64}([-0.008992148680655556 -0.01278463076208015 … -0.12050259327028331 -0.002353707387058278; -0.0660012821444976 -0.011082279896495278 … -0.0072866280979539295 -0.006963894698212336], [3.678187282411488e-5 -5.415909040626149e-6; -5.415909040626149e-6 3.762676269744991e-5;;; 0.0007229820841913706 -0.0001326170954590452; -0.0001326170954590452 0.0007412400204001082;;; 0.0007503588873215564 -0.00013895835183532244; -0.00013895835183532244 0.0007752044869863197;;; … ;;; 0.0007541903145438096 -0.00014002349559335322; -0.00014002349559335322 0.0007806563312753414;;; 0.000756822677002546 -0.0001407875768044755; -0.0001407875768044755 0.0007853104725249194;;; 0.0008835702627367652 -0.0001721802960193843; -0.0001721802960193843 0.0009470585144244604], [-0.008992148680655556 -0.01278463076208015 … -0.12050259327028331 -0.002353707387058278; -0.0660012821444976 -0.011082279896495278 … -0.0072866280979539295 -0.006963894698212336;;;], [0.00011764061071913034 0.0005880774331165932; 0.0005880774331165932 0.004393796007415028;;; 0.0008864288679140967 9.065761019670752e-6; 9.065761019670752e-6 0.0008640569481043717;;; 0.0019552783084136956 -0.00046005673711985005; -0.00046005673711985005 0.0008607738381209186;;; … ;;; 0.025437053916185146 0.00016854726056060327; 0.00016854726056060327 0.0007845139027909532;;; 0.015277697661865876 0.000737270005195085; 0.000737270005195085 0.0008384054215628111;;; 0.0008891102012006578 -0.00015578932562550595; -0.00015578932562550595 0.0009955543437922502;;;;], [0.0 0.0; 0.0 0.0;;; 0.0001222567736406309 0.0008420927283216748; 9.895699437411978e-5 0.0007397153978744432;;; -0.0002999289902474808 -0.00042343648810720365; 9.87695394304822e-5 0.0002650910022104299;;; … ;;; 0.02389253926279211 0.0007323111633201044; 0.0002740586455684083 0.0001953523993550347;;; 0.019082982131244076 0.00019542769541314753; 0.0011238761243601784 0.00018725078711606154;;; 0.00045940291741014696 -3.2502068411258546e-5; 0.0008135915513839975 0.0002585297800550003;;;;])])</code></pre><h2 id="Plot-the-ELBO-over-iterations"><a class="docs-heading-anchor" href="#Plot-the-ELBO-over-iterations">Plot the ELBO over iterations</a><a id="Plot-the-ELBO-over-iterations-1"></a><a class="docs-heading-anchor-permalink" href="#Plot-the-ELBO-over-iterations" title="Permalink"></a></h2><pre><code class="language-julia hljs">plot(mls, label=&quot;ELBO&quot;, linewidth=1.5)
+xlabel!(&quot;Iteration&quot;)
+ylabel!(&quot;ELBO&quot;)</code></pre><img src="5df0b7e7.svg" alt="Example block output"/><h2 id="Compare-the-true-and-learned-model"><a class="docs-heading-anchor" href="#Compare-the-true-and-learned-model">Compare the true and learned model</a><a id="Compare-the-true-and-learned-model-1"></a><a class="docs-heading-anchor-permalink" href="#Compare-the-true-and-learned-model" title="Permalink"></a></h2><pre><code class="language-julia hljs"># Plot the latent states as a weighted function of the responsibilities for each state
+
+latents = zeros(state_dim, T)  # Initialize with state dimension, not K
+resp = exp.(FB.γ)  # Responsibilities (probabilities) for each state at each time
+
+# For each time point, compute the weighted average of the smoothed states
+for t in 1:T
+    for k in 1:K
+        latents[:, t] += FS[k].x_smooth[:, t] .* resp[k, t]
+    end
+end
+
+
+# Plot the learned latent states on top of the original with improved styling
+plt = plot(size=(800, 500), background_color=:white, margin=5Plots.mm)
+
+# Plot true values
+plot!(x[1, :] .+ 2, label=&quot;x₁ (True)&quot;, linewidth=2, color=:black, alpha=0.8)
+plot!(x[2, :] .- 2, label=&quot;x₂ (True)&quot;, linewidth=2, color=:black, alpha=0.8)
+
+# Plot learned values
+plot!(latents[1, :] .+ 2, label=&quot;x₁ (Learned)&quot;, linewidth=1.5, color=:firebrick)
+plot!(latents[2, :] .- 2, label=&quot;x₂ (Learned)&quot;, linewidth=1.5, color=:royalblue)
+
+# Improve styling
+title!(&quot;SLDS: True vs Learned Latent States&quot;)
+xlabel!(&quot;Time&quot;)
+ylabel!(&quot;&quot;)  # Remove the default y label
+
+# Custom y-ticks with state labels at the correct positions
+yticks!([-2, 2], [&quot;x₂&quot;, &quot;x₁&quot;])  # Set custom tick positions and labels
+
+# Add horizontal lines to emphasize the state positions
+hline!([2], color=:gray, alpha=0.3, linestyle=:dash, label=&quot;&quot;)
+hline!([-2], color=:gray, alpha=0.3, linestyle=:dash, label=&quot;&quot;)
+
+xlims!(0, T)</code></pre><img src="d07208ee.svg" alt="Example block output"/><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../Probabilistic_PCA_example/">« Probabilistic PCA Example</a><a class="docs-footer-nextpage" href="../../Misc/">Miscellaneous »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.12.0 on <span class="colophon-date" title="Sunday 15 June 2025 16:31">Sunday 15 June 2025</span>. Using Julia version 1.11.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
