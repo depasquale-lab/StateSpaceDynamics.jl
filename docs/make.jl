@@ -6,6 +6,14 @@ using Random
 # Set up the documentation environment
 DocMeta.setdocmeta!(StateSpaceDynamics, :DocTestSetup, :(using StateSpaceDynamics, Random); recursive=true)
 
+# SLDS example
+Literate.markdown(
+    joinpath(@__DIR__, "examples", "SLDS.jl"),
+    joinpath(@__DIR__, "src", "tutorials");
+    name = "switching_linear_dynamical_system_example",
+    documenter = true
+)
+
 # Convert Gaussian LDS example
 Literate.markdown(
     joinpath(@__DIR__, "examples", "GaussianLDS.jl"),
@@ -88,6 +96,7 @@ makedocs(;
             "Gaussian Mixture Model Example" => "tutorials/gaussian_mixture_model_example.md",
             "Poisson Mixture Model Example" => "tutorials/poisson_mixture_model_example.md",
             "Probabilistic PCA Example" => "tutorials/Probabilistic_PCA_example.md",
+            "Switching Linear Dynamical System Example" => "tutorials/switching_linear_dynamical_system_example.md",
         ],
         "Miscellaneous" => "Misc.md",
     ],
