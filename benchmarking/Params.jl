@@ -7,7 +7,16 @@ export HMMParams, init_glmhmm_params, build_glmhmm_data
     β::V
 end
 
-function init_glmhmm_params(rng::AbstractRNG, instance::HMMInstance)
+@kwdef struct LDSParams{T<:Real, V<:AbstractVector{<:AbstractMatrix{T}}, M<:AbstractMatrix{T}} <: Params{T, V, M}
+    A::M
+    Q::M
+    x0::V
+    P0::M
+    C::M
+    R::M
+end
+
+function init_params(rng::AbstractRNG, instance::HMMInstance)
     (; num_states, input_dim, output_dim) = instance
 
     # Initialize state distribution and transition matrix
@@ -20,7 +29,7 @@ function init_glmhmm_params(rng::AbstractRNG, instance::HMMInstance)
     return HMMParams(πₖ=πₖ, A=A, β=β)
 end
 
-function build_glmhmm_data(rng::AbstractRNG, model::HiddenMarkovModel, instance::HMMInstance)
+function build_data(rng::AbstractRNG, model::HiddenMarkovModel, instance::HMMInstance)
     (; num_states, num_trials, seq_length, input_dim, output_dim) = instance
 
     # Sample from the model
@@ -37,4 +46,30 @@ function build_glmhmm_data(rng::AbstractRNG, model::HiddenMarkovModel, instance:
     end
 
     return all_true_labels, Φ_total, all_data
+end
+
+function init_params(rng::ABstractRNG, instance::LDSInstance)
+    (; latent_dim, obs_dim, num_trials, seq_length) = instance
+    
+    # Initialize state transition matrix (A), process noise covariance (Q)
+    A = random_rotation_matrix(latent_dim, rng)
+
+    Q = randn(rng, latent_dim, latent_dim)
+    Q = Q * Q'  # Ensure positive semi-definite
+
+    x0 = randn(rng, latent_dim)
+    P0 = randn(rng, latent_dim, latent_dim)
+    P0 = P0 * P0'  # Ensure positive semi-definite
+
+    C = randn(rng, obs_dim, latent_dim)
+    R = randn(rng, obs_dim, obs_dim)
+
+    return LDSParams(;A=A, Q=Q, x0=x0, P0=P0, C=C, R=R)
+end
+
+function build_data(rng::AbstractRNG, model::LinearDynamicalSystem, instance::LDSInstance)
+    (; latent_dim, obs_dim, num_trials, seq_length) = instance
+
+    latents, observations = rand(rng, model; num_trials=num_trials, tsteps=seq_length)
+    return latents, observations
 end

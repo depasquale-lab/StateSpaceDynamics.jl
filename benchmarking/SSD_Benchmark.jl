@@ -24,5 +24,6 @@ include("Instances.jl")
 include("Params.jl")
 include("Controlled_BernoulliHMM.jl")
 include("glmhmm_benchmarking_tools.jl")
+include("lds_benchmark_tools.jl")
 
 end
