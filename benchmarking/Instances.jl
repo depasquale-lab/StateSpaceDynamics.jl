@@ -1,7 +1,7 @@
-export Instance
+export HMMInstance
 
 # Define struct for storing glmhmm benchmarking params
-@kwdef struct Instance
+@kwdef struct HMMInstance
     num_states::Int
     num_trials::Int
     seq_length::Int

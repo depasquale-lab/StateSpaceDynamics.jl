@@ -1,13 +1,13 @@
 using StateSpaceDynamics
-export Params, init_params, build_data
+export HMMParams, init_glmhmm_params, build_glmhmm_data
 
-@kwdef struct Params{T<:Real, V<:AbstractVector{<:AbstractMatrix{T}}, M<:AbstractMatrix{T}}
+@kwdef struct HMMParams{T<:Real, V<:AbstractVector{<:AbstractMatrix{T}}, M<:AbstractMatrix{T}}
     πₖ::Vector{T}
     A::M
     β::V
 end
 
-function init_params(rng::AbstractRNG, instance::Instance)
+function init_glmhmm_params(rng::AbstractRNG, instance::HMMInstance)
     (; num_states, input_dim, output_dim) = instance
 
     # Initialize state distribution and transition matrix
@@ -17,21 +17,24 @@ function init_params(rng::AbstractRNG, instance::Instance)
     # Initialize regression weights (β) and covariances (Σ)
     β = [randn(rng, input_dim, output_dim) for _ in 1:num_states]
 
-    return Params(πₖ=πₖ, A=A, β=β)
+    return HMMParams(πₖ=πₖ, A=A, β=β)
 end
 
-function build_data(rng::AbstractRNG, model::HiddenMarkovModel, instance::Instance)
+function build_glmhmm_data(rng::AbstractRNG, model::HiddenMarkovModel, instance::HMMInstance)
     (; num_states, num_trials, seq_length, input_dim, output_dim) = instance
 
-    # Create lists to hold data and labels for each trial
-    Φ_trials = [randn(input_dim, seq_length) for _ in 1:num_trials]
-    true_labels_trials = Vector{Vector{Int}}(undef, num_trials)
-    data_trials = Vector{Matrix{Float64}}(undef, num_trials)
+    # Sample from the model
+    all_data = Vector{Matrix{Float64}}()  # Store each data matrix
+    Φ_total = Vector{Matrix{Float64}}()
+    all_true_labels = []
 
-    # Sample data for each trial
     for i in 1:num_trials
-        true_labels_trials[i], data_trials[i] = rand(rng, model, Φ_trials[i]; n=seq_length)
+        Φ = randn(input_dim, seq_length)
+        true_labels, data = rand(rng, model, Φ, n=seq_length)
+        push!(all_true_labels, true_labels)
+        push!(all_data, data)
+        push!(Φ_total, Φ)
     end
 
-    return true_labels_trials, data_trials
+    return all_true_labels, Φ_total, all_data
 end
