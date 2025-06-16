@@ -15,7 +15,7 @@ function init_params(rng::AbstractRNG, instance::Instance)
     A = StateSpaceDynamics.initialize_transition_matrix(num_states)
 
     # Initialize regression weights (β) and covariances (Σ)
-    β = [randn(rng, output_dim, input_dim) for _ in 1:num_states]
+    β = [randn(rng, input_dim, output_dim) for _ in 1:num_states]
 
     return Params(πₖ=πₖ, A=A, β=β)
 end
