@@ -34,7 +34,7 @@ function run_benchmark(::SSD_GLMHMM_Implem, model::StateSpaceDynamics.HiddenMark
     bench = @benchmark begin
         model_bench = deepcopy($model)
         StateSpaceDynamics.fit!(model_bench, $Y, $X; max_iters=100, tol=1e-100)
-    end samples=20
+    end samples=10
         
     return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
 end
@@ -66,7 +66,7 @@ function run_benchmark(::HMM_GLMHMM_Implem, model::ControlledBernoulliHMM, X::Ab
     bench = @benchmark begin
         model_bench = deepcopy($model)
         HMMs.baum_welch($model, $obs_seq, $control_seq;seq_ends=$seq_ends, max_iterations=100, atol=1e-100)
-    end samples=20
+    end samples=10
         
     return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
 
@@ -125,7 +125,7 @@ function run_benchmark(::DYNAMAX_GLMHMM_Implem, model::PythonCall.Core.Py, dpara
     bench = @benchmark begin
         model_bench = deepcopy($model)
         model_bench.fit_em($dparams, $dprops, $Y_jax, inputs=$X_jax, num_iters=100, verbose=false)
-    end samples=20
+    end samples=10
 
     return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
 end
