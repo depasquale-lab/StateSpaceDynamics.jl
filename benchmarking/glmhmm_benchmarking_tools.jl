@@ -1,4 +1,5 @@
 import HiddenMarkovModels as HMMs
+using PythonCall
 
 export SSD_GLMHMM_Implem, HMM_GLMHMM_Implem, DYNAMAX_GLMHMM_Implem, build_model, run_benchmark
 
@@ -38,7 +39,6 @@ function run_benchmark(::SSD_GLMHMM_Implem, model::StateSpaceDynamics.HiddenMark
     return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
 end
 
-
 """
 HiddenMarkovModels.jl implementation functions
 """
@@ -55,9 +55,11 @@ end
 
 function run_benchmark(::HMM_GLMHMM_Implem, model::ControlledBernoulliHMM, X::AbstractVector, Y::AbstractVector)
 
+    # Convert data format from SSD.jl compatible to HMM.jl compatible.
+    # Synthetic data is generated from SSD.jl
     obs_seq, control_seq, seq_ends = format_glmhmm_data(X, Y)
 
-    # Compile step - run Baum-Welch on the reformatted data
+    # Compile step
     _, _ = HMMs.baum_welch(model, obs_seq, control_seq;seq_ends=seq_ends, max_iterations=1)
 
     # Run the benchmarking
@@ -74,4 +76,56 @@ end
 Dynamax implementation functions
 """
 
+const np = pyimport("numpy")
+const dynamax = pyimport("dynamax.hidden_markov_model")
+const jr = pyimport("jax.random")
+const jnp = pyimport("jax.numpy")
+
 struct DYNAMAX_GLMHMM_Implem <: Implementation end
+
+function build_model(::DYNAMAX_GLMHMM_Implem, instance::HMMInstance, params::HMMParams)
+    (; num_states, input_dim) = instance
+    (; πₖ, A, β) = params
+
+    # Convert Julia parameters to NumPy arrays
+    pi_jax = jnp.array(πₖ)
+    A_jax = jnp.array(A)
+
+    # Single output dimension models only
+    β_mat = hcat(β...)'
+    B_jax = jnp.array(β_mat)
+
+    # Create the Dynamax model
+    dynamax_model = dynamax.LogisticRegressionHMM(
+    num_states=num_states,
+    input_dim=input_dim
+    )
+
+    # Initialize the Dynamax model
+    dparams, dprops = dynamax_model.initialize(
+        method="prior",
+        initial_probs=pi_jax,
+        transition_matrix=A_jax,
+        emission_weights=B_jax)
+
+
+    return dynamax_model, dparams, dprops
+end
+
+
+function run_benchmark(::DYNAMAX_GLMHMM_Implem, model::PythonCall.Core.Py, dparams::PythonCall.Core.Py, dprops::PythonCall.Core.Py, X::AbstractVector, Y::AbstractVector)
+    
+    X_jax = jnp.stack([jnp.array(permutedims(x, (2,1))) for x in X])
+    Y_jax = jnp.squeeze(jnp.stack([jnp.array(permutedims(y, (2,1))) for y in Y]))
+
+    # Compile evrything
+    model.fit_em(dparams, dprops, Y_jax, inputs=X_jax, num_iters=1, verbose=false)
+
+    # Run the benchmarking
+    bench = @benchmark begin
+        model_bench = deepcopy($model)
+        model_bench.fit_em($dparams, $dprops, $Y_jax, inputs=$X_jax, num_iters=100, verbose=false)
+    end samples=20
+
+    return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
+end
