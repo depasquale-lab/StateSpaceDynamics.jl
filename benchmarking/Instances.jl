@@ -1,4 +1,4 @@
-export HMMInstance
+export HMMInstance, LDSInstance
 
 # Define struct for storing glmhmm benchmarking params
 @kwdef struct HMMInstance

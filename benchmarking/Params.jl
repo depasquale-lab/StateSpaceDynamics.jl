@@ -1,5 +1,5 @@
 using StateSpaceDynamics
-export HMMParams, init_params, build_data
+export HMMParams, init_params, build_data, LDSParams
 
 @kwdef struct HMMParams{T<:Real, V<:AbstractVector{<:AbstractMatrix{T}}, M<:AbstractMatrix{T}}
     πₖ::Vector{T}
@@ -7,7 +7,7 @@ export HMMParams, init_params, build_data
     β::V
 end
 
-@kwdef struct LDSParams{T<:Real, V<:AbstractVector{<:AbstractMatrix{T}}, M<:AbstractMatrix{T}}
+@kwdef struct LDSParams{T<:Real, V<:AbstractVector{T}, M<:AbstractMatrix{T}}
     A::M
     Q::M
     x0::V
@@ -57,14 +57,15 @@ function init_params(rng::AbstractRNG, instance::LDSInstance)
     A = random_rotation_matrix(latent_dim, rng)
 
     Q = randn(rng, latent_dim, latent_dim)
-    Q = Q * Q'  # Ensure positive semi-definite
+    Q = Q * Q' .+ 1e-3
 
     x0 = randn(rng, latent_dim)
     P0 = randn(rng, latent_dim, latent_dim)
-    P0 = P0 * P0'  # Ensure positive semi-definite
+    P0 = P0 * P0'  .+ 1e-3
 
     C = randn(rng, obs_dim, latent_dim)
     R = randn(rng, obs_dim, obs_dim)
+    R = R * R'  .+ 1e-3
 
     return LDSParams(;A=A, Q=Q, x0=x0, P0=P0, C=C, R=R)
 end
@@ -72,6 +73,6 @@ end
 function build_data(rng::AbstractRNG, model::LinearDynamicalSystem, instance::LDSInstance)
     (; latent_dim, obs_dim, num_trials, seq_length) = instance
 
-    latents, observations = rand(rng, model; num_trials=num_trials, tsteps=seq_length)
+    latents, observations = rand(rng, model; ntrials=num_trials, tsteps=seq_length)
     return latents, observations
 end

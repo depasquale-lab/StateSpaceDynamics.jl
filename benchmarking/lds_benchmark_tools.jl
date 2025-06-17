@@ -52,7 +52,8 @@ function build_model(::pykalman_LDSImplem, instance::LDSInstance, params::LDSPar
         initial_state_mean=numpy.array(x0),
         initial_state_covariance=numpy.array(P0),
         observation_matrices=numpy.array(C),
-        observation_covariance=numpy.array(R)
+        observation_covariance=numpy.array(R),
+        em_vars=["transition_matrices", "transition_covariance", "initial_state_mean", "initial_state_covariance", "observation_matrices", "observation_covariance"],
     )
 
     return kf
@@ -68,58 +69,75 @@ Base.string(::Dynamax_LDSImplem) = "Dynamax"
 function build_model(::Dynamax_LDSImplem, instance::LDSInstance, params::LDSParams)
     dynamax = pyimport("dynamax")
     jr = pyimport("jax.random")
+    dlds = pyimport("dynamax.linear_gaussian_ssm")
+    np = pyimport("numpy")
 
     (; latent_dim, obs_dim) = instance
     (; A, Q, x0, P0, C, R) = params
 
+    # Convert everything to NumPy arrays
+    A_np = np.array(A)
+    Q_np = np.array(Q)
+    x0_np = np.array(x0)
+    P0_np = np.array(P0)
+    C_np = np.array(C)
+    R_np = np.array(R)
+
     # Create the Dynamax model
-    lds = dynamax.LinearGaussianSSM(latent_dim, obs_dim)
+    lds = dlds.LinearGaussianSSM(latent_dim, obs_dim)
     key = jr.PRNGKey(0)
-    params, props = lds.initialize(
+    dyn_params, props = lds.initialize(
         key=key,
-        dynamics_weights=A,
-        dynamics_covariance=Q,
-        initial_mean=x0,
-        initial_covariance=P0,
-        emission_weights=C,
-        emission_covariance=R
+        dynamics_weights=A_np,
+        dynamics_covariance=Q_np,
+        initial_mean=x0_np,
+        initial_covariance=P0_np,
+        emission_weights=C_np,
+        emission_covariance=R_np,
     )
 
-    return (params, props, lds)
+    return (dyn_params, props, lds)
 end
 
-function run_benchmark(::SSD_LDSImplem, model::LinearDynamicalSystem, Y::AbstractArray) where T
+function run_benchmark(::SSD_LDSImplem, model::LinearDynamicalSystem, Y::AbstractArray)
     # Run 1 EM iteration to compile
-    fit!(deepcopy(model), Y; max_iters=1)
+    StateSpaceDynamics.fit!(deepcopy(model), Y, max_iter=1, tol=1e-50)
 
     # run Benchmark
     bench = @benchmark begin
-        fit!(model, Y; max_iters=100, tol=1e-50)
+        StateSpaceDynamics.fit!($model, $Y; max_iter=100, tol=1e-50)
     end samples=5
-    return bench
+    return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
 end
 
-function run_benchmark(::pykalman_LDSImplem, model::Any, Y::AbstractArray) where T
+function run_benchmark(::pykalman_LDSImplem, model::Any, Y::AbstractArray)
     # No need to run an initial iteration, no JIT
+    Y = Y[:, :, 1]
 
     # run benchmark
     np = pyimport("numpy")
-    Y_np = np.array(Y)
+    Y_np = np.array(Y).transpose()
     bench = @benchmark begin
-        model.em(Y_np, n_iter=100, tol=1e-50)
+        $model.em($Y_np, n_iter=100)
     end samples=5
-    return bench
+    return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
 end
 
-function run_benchmark(::Dynamax_LDSImplem, model::Tuple, Y::AbstractArray) where T
+function run_benchmark(::Dynamax_LDSImplem, model::Tuple, Y::AbstractArray)
     # Run an initial iteration to compile
     dynamax = pyimport("dynamax")
+    np = pyimport("numpy")
+
+    Y = Y[:, :, 1]
+    Y_np = np.array(Y).transpose()
 
     (params, props, lds) = model
 
-    model.fit_em(params,
-        props,
-        Y,
-        n_iter=1,
-        tol=1e-50,)
+    bench = @benchmark begin
+    $lds.fit_em($params,
+        $props,
+        $Y_np,
+        num_iters=100)
+    end samples=5
+    return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
 end
