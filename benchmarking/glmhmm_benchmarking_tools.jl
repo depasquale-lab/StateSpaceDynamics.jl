@@ -44,8 +44,6 @@ HiddenMarkovModels.jl implementation functions
 """
 struct HMM_GLMHMM_Implem <: Implementation end
 
-logistic(x) = 1 / (1 + exp(-x))
-
 function build_model(::HMM_GLMHMM_Implem, instance::HMMInstance, params::HMMParams)
     (; num_states, input_dim) = instance
     (; πₖ, A, β) = params
@@ -55,7 +53,7 @@ function build_model(::HMM_GLMHMM_Implem, instance::HMMInstance, params::HMMPara
     return ControlledBernoulliHMM(πₖ, A, dist_coeffs)
 end
 
-function run_benchmark(::HMM_GLMHMM_Implem, model::ControlledBernoulliHMM, X::Vector{Matrix{Float64}}, Y::Vector{Matrix{Float64}})
+function run_benchmark(::HMM_GLMHMM_Implem, model::ControlledBernoulliHMM, X::AbstractVector, Y::AbstractVector)
 
     obs_seq, control_seq, seq_ends = format_glmhmm_data(X, Y)
 
@@ -71,33 +69,6 @@ function run_benchmark(::HMM_GLMHMM_Implem, model::ControlledBernoulliHMM, X::Ve
     return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
 
 end
-
-
-# function run_benchmark(::HMM_GLMHMM_Implem, model::ControlledBernoulliHMM, X::Vector{Matrix{Float64}}, Y::Vector{Matrix{Float64}})
-
-#     X_new = [vec(mat) for mat in X]
-#     Y_new = [vec(mat) for mat in Y]
-
-#     seq_lengths = [length(v) for v in X_new]
-#     seq_ends = cumsum(seq_lengths)
-
-
-
-#     # Compile step
-#     _, _ = HMMs.baum_welch(model, Y_new, X_new;seq_ends=seq_ends, max_iterations=1)
-
-#     # # Benchmark
-#     # bench = @benchmark begin
-#     #     model_bench = deepcopy($model)
-#     #     _, _ = HMMs.baum_welch(model_bench, $Y_vecvec, $X_vecvec; max_iterations=100, atol=1e-100)
-#     # end samples=20
-
-#     # return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
-# end
-
-
-
-
 
 """
 Dynamax implementation functions
