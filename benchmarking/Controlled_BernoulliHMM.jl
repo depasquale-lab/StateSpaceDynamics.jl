@@ -2,19 +2,24 @@ using Distributions
 
 import HiddenMarkovModels as HMMs
 
+export format_glmhmm_data
+
+using Distributions
+import HiddenMarkovModels as HMMs
+
+logistic(x::Real) = 1 / (1 + exp(-x))
+logistic(x::AbstractArray) = 1 ./ (1 .+ exp.(-x))
+
 export ControlledBernoulliHMM, format_glmhmm_data
 
-# Helper function: Converts a vector to a matrix with a given shape
-function vec_to_matrix(vec::Vector, shape::Tuple{Int, Int})
-    reshape(vec, shape)
-end
-
+# Define the model struct
 mutable struct ControlledBernoulliHMM{T} <: HMMs.AbstractHMM
     init::Vector{T}
     trans::Matrix{T}
     dist_coeffs::Vector{Vector{T}}  # One vector for each state
 end
 
+# HMM function definitions
 function HMMs.initialization(hmm::ControlledBernoulliHMM)
     return hmm.init
 end
@@ -30,63 +35,29 @@ function HMMs.obs_distributions(hmm::ControlledBernoulliHMM, control::AbstractVe
     ]
 end
 
-# Regression opt storage for HMM.jl benchmark
-struct RegressionOptimizationTest{}
-    X::Matrix{}
-    y::Matrix{}
-    w::Vector{}
-    β_shape::Tuple{Int, Int}
-end
-
-# Bernoulli Regression Objective Function
-function objective(opt::RegressionOptimizationTest, β_vec)
-    β_mat = vec_to_matrix(β_vec, opt.β_shape) # Reshape vector to matrix
-    p = logistic.(opt.X * β_mat)             # Predicted probabilities
-    # Calculate negative log-likelihood
-    val = -sum(opt.w .* (opt.y .* log.(p) .+ (1 .- opt.y) .* log.(1 .- p)))
+function objective(dist_coeffs::AbstractVector, obs_seq::AbstractVector, control::AbstractVector, weights::AbstractVector)
+    X = hcat(control...)'  # T × D matrix
+    logits = X * dist_coeffs
+    p = logistic.(logits)
+    val = -sum(weights .* (obs_seq .* log.(p) .+ (1 .- obs_seq) .* log.(1 .- p)))
     return val
 end
 
 function objective_gradient!(
-    G::Vector{Float64},
-    opt::RegressionOptimizationTest,
-    β_vec::Vector{Float64})
-    β_mat = vec_to_matrix(β_vec, opt.β_shape)
-
-
-    p = logistic.(opt.X * β_mat)
-
-    grad_mat = -(opt.X' * (opt.w .* (opt.y .- p)))
-    return G .= vec(grad_mat)
-end
-
-
-function fit_bern(X::Matrix{<:Real}, y::Matrix{<:Real}, β_shape::Tuple{Int, Int}, β_init::Vector{<:Real}, w::Vector{Float64}=ones(size(y,1)))
-    # Create the RegressionOptimization struct
-    opt_problem = RegressionOptimizationTest(X, y, w, β_shape)
-    f(β) = objective(opt_problem, β)
-    g!(G, β) = objective_gradient!(G, opt_problem, β)
-
-    # Set optimization options
-    opts = Optim.Options(;
-        x_abstol=1e-8,
-        x_reltol=1e-8,
-        f_abstol=1e-8,
-        f_reltol=1e-8,
-        g_abstol=1e-8,
-    )
-
-
-    # Run optimization
-    result = optimize(f, g!, β_init, LBFGS(), opts)
-    # Retrieve the optimized parameters
-    β_opt_vec = result.minimizer
-    β_opt_mat = vec_to_matrix(β_opt_vec, β_shape)
-
-    return β_opt_mat
+    G::AbstractVector,
+    dist_coeffs::AbstractVector,
+    obs_seq::AbstractVector,
+    control::AbstractVector,
+    weights::AbstractVector,
+)
+    X = hcat(control...)'  # T × D
+    logits = X * dist_coeffs
+    p = logistic.(logits)
+    residuals = weights .* (p .- obs_seq)  # shape (T,)
+    grad = X' * residuals  # shape (D,)
+    return G .= grad
 
 end
-
 
 function StatsAPI.fit!(
     hmm::ControlledBernoulliHMM{T},
@@ -114,27 +85,35 @@ function StatsAPI.fit!(
     """
     Update Bernoulli Regression Coefficients for Each State
     """
-    updated_betas = Vector{Vector{Float64}}(undef, N)  # To store new coefficients for each state
-    @threads for i in 1:N
-        # Weight observations by state responsibility (γ)
-        state_weights = γ[i, :]
 
-        # Get right shapes for fit_bern
-        β_shape = size(hmm.dist_coeffs[i])[1]
-        β_init = vec(hmm.dist_coeffs[i])
-        control_matrix = hcat(control_seq...)
-        obs_matrix = reshape(obs_seq, :, 1)
-        control_matrix = permutedims(control_matrix)
-        result = fit_bern(control_matrix, obs_matrix,(β_shape, 1), β_init, state_weights)
+    for k = 1:length(hmm)
+        # val = objective(hmm.dist_coeffs[k], obs_seq, control_seq, γ[k, :])
+        # println(val)
+        result = optimize(
+        β -> objective(β, obs_seq, control_seq, γ[k, :]),
+        (G, β) -> objective_gradient!(G, β, obs_seq, control_seq, γ[k, :]),
+        hmm.dist_coeffs[k],
+        BFGS(); inplace = true
+        )
 
-        # Store updated coefficients
-        updated_betas[i] = vec(result)  # Store the updated coefficients as a vector
+        hmm.dist_coeffs[k] .= Optim.minimizer(result)
     end
-
-    # Update the HMM's coefficients with the newly fitted values
-    hmm.dist_coeffs = updated_betas
-
 end
+
+function HMMs.baum_welch_has_converged(
+    logL_evolution::Vector; atol::Real, loglikelihood_increasing::Bool
+)
+    if length(logL_evolution) >= 2
+        logL, logL_prev = logL_evolution[end], logL_evolution[end - 1]
+        progress = logL - logL_prev
+
+        if progress < atol
+            return true
+        end
+    end
+    return false
+end
+
 
 function format_glmhmm_data(X::Vector{Matrix{Float64}}, Y::Vector{Matrix{Float64}})
     obs_seq = Vector{Float64}()
@@ -149,18 +128,4 @@ function format_glmhmm_data(X::Vector{Matrix{Float64}}, Y::Vector{Matrix{Float64
     end
 
     return obs_seq, control_seq, seq_ends
-end
-
-function HiddenMarkovModels.baum_welch_has_converged(
-    logL_evolution::Vector; atol::Real, loglikelihood_increasing::Bool
-)
-    if length(logL_evolution) >= 2
-        logL, logL_prev = logL_evolution[end], logL_evolution[end - 1]
-        progress = logL - logL_prev
-
-        if progress < atol
-            return true
-        end
-    end
-    return false
 end

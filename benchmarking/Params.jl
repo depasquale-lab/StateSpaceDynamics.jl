@@ -1,5 +1,5 @@
 using StateSpaceDynamics
-export HMMParams, init_glmhmm_params, build_glmhmm_data
+export HMMParams, init_params, build_data
 
 @kwdef struct HMMParams{T<:Real, V<:AbstractVector{<:AbstractMatrix{T}}, M<:AbstractMatrix{T}}
     πₖ::Vector{T}
@@ -7,7 +7,7 @@ export HMMParams, init_glmhmm_params, build_glmhmm_data
     β::V
 end
 
-@kwdef struct LDSParams{T<:Real, V<:AbstractVector{<:AbstractMatrix{T}}, M<:AbstractMatrix{T}} <: Params{T, V, M}
+@kwdef struct LDSParams{T<:Real, V<:AbstractVector{<:AbstractMatrix{T}}, M<:AbstractMatrix{T}}
     A::M
     Q::M
     x0::V
@@ -45,10 +45,12 @@ function build_data(rng::AbstractRNG, model::HiddenMarkovModel, instance::HMMIns
         push!(Φ_total, Φ)
     end
 
-    return all_true_labels, Φ_total, all_data
+    obs_seq, control_seq, seq_ends = format_glmhmm_data(Φ_total, all_data)
+
+    return all_true_labels, Φ_total, all_data, obs_seq, control_seq, seq_ends
 end
 
-function init_params(rng::ABstractRNG, instance::LDSInstance)
+function init_params(rng::AbstractRNG, instance::LDSInstance)
     (; latent_dim, obs_dim, num_trials, seq_length) = instance
     
     # Initialize state transition matrix (A), process noise covariance (Q)
