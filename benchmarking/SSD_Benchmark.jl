@@ -19,6 +19,8 @@ using Base.Threads: @threads
 # Define type for organizing our implementations
 abstract type Implementation end
 
+export Implementation
+
 # Include files
 include("Instances.jl")
 include("Params.jl")
