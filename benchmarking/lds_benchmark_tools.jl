@@ -1,4 +1,4 @@
-export SSDLDSImplem, build_model
+export SSD_LDSImplem, pykalman_LDSImplem, Dynamax_LDSImplem, build_model
 
 struct SSD_LDSImplem <: Implementation end
 Base.string(::SSD_LDSImplem) = "StateSpaceDynamics.jl"
@@ -85,5 +85,41 @@ function build_model(::Dynamax_LDSImplem, instance::LDSInstance, params::LDSPara
         emission_covariance=R
     )
 
-    return (params, props)
+    return (params, props, lds)
+end
+
+function run_benchmark(::SSD_LDSImplem, model::LinearDynamicalSystem, Y::AbstractArray) where T
+    # Run 1 EM iteration to compile
+    fit!(deepcopy(model), Y; max_iters=1)
+
+    # run Benchmark
+    bench = @benchmark begin
+        fit!(model, Y; max_iters=100, tol=1e-50)
+    end samples=5
+    return bench
+end
+
+function run_benchmark(::pykalman_LDSImplem, model::Any, Y::AbstractArray) where T
+    # No need to run an initial iteration, no JIT
+
+    # run benchmark
+    np = pyimport("numpy")
+    Y_np = np.array(Y)
+    bench = @benchmark begin
+        model.em(Y_np, n_iter=100, tol=1e-50)
+    end samples=5
+    return bench
+end
+
+function run_benchmark(::Dynamax_LDSImplem, model::Tuple, Y::AbstractArray) where T
+    # Run an initial iteration to compile
+    dynamax = pyimport("dynamax")
+
+    (params, props, lds) = model
+
+    model.fit_em(params,
+        props,
+        Y,
+        n_iter=1,
+        tol=1e-50,)
 end
