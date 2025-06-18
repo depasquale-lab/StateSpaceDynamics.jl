@@ -19,7 +19,26 @@ dot_df = combine(groupby(df, [:seq_len, :implementation, :config]),
     :time_sec => mean => :mean_time)
 
 # Marker and color mappings
-marker_types = [:circle, :rect, :diamond, :star5, :cross, :utriangle, :hexagon, :xcross, :pentagon, :dtriangle]
+# marker_types = [:circle, :rect, :diamond, :star5, :cross, :utriangle, :hexagon, :xcross, :pentagon, :dtriangle]
+marker_types = [
+    :circle,
+    :rect,
+    :diamond,
+    :star5,
+    :cross,
+    :utriangle,    # Up triangle
+    :dtriangle,    # Down triangle
+    :rtriangle,    # Right triangle
+    :ltriangle,    # Left triangle
+    :hexagon,
+    :pentagon,
+    :xcross,       # X-shaped cross
+    :star6,
+    :vline,        # Vertical line marker
+    :hline,        # Horizontal line marker
+    :plus          # Plus sign (different from cross or xcross)
+]
+
 unique_configs = unique(dot_df.config)
 config_marker = Dict(cfg => marker_types[mod1(i, length(marker_types))] for (i, cfg) in enumerate(unique_configs))
 
