@@ -1,4 +1,4 @@
-const CHECKED_TYPES = [Float32, Float64, BigFloat]
+const CHECKED_TYPES = [Float32, Float64] #, BigFloat] UMFPACK does not support BigFloat for Sparse Arrays see: https://github.com/JuliaSparse/SparseArrays.jl/blob/main/src/solvers/umfpack.jl
 
 # Define the parameters of a pendulum
 g = 9.81 # gravity
