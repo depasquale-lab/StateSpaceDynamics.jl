@@ -43,6 +43,7 @@ for (i, sl) in enumerate(levels(df.seq_len))
         sub_bar.mean_time,
         yticks = :auto,
         xticks = false,
+        xguide = false,  # removes x-axis label
         xlabel = "",
         ylabel = "Mean Time (s)",
         title = "n = $(sl)",
@@ -62,6 +63,8 @@ for (i, sl) in enumerate(levels(df.seq_len))
             color = impl_colors[String(row.implementation)],
             alpha = 1.0,
             label = false,
+            yticks = :auto,
+            xticks = false,
         )
     end
 
