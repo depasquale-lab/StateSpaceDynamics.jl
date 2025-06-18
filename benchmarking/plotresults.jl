@@ -84,4 +84,5 @@ for (i, sl) in enumerate(levels(df.seq_len))
 end
 
 # Final layout: tight
-plot(plots..., layout = (1, length(plots)), legend = :outerleft, size=(length(plots)*400, 350))
+p1 = plot(plots..., layout = (1, length(plots)), legend = :outerleft, size=(length(plots)*400, 350))
+savefig(p1, "results/lds_bench.svg")

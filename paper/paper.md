@@ -56,9 +56,9 @@ To evaluate the performance of `StateSpaceDynamics.jl`, we conducted two benchma
 
 For our Gaussian LDS experiments, we constructed a synthetic dataset as follows. The state transition matrix $A$ was generated as a random $n$-dimensional rotation matrix, while the observation matrix $C$ was created as a random $m \times n$ matrix. Both the state noise covariance $Q$ and observation noise covariance $R$ were set to identity matrices. To ensure a fair comparison, all packages were initialized using identical random parameters, after which we executed the EM algorithm for 100 iterations. We conducted these benchmarks using `PythonCall.jl` [@pythoncall] and `BenchmarkTools.jl` [@bench], with the assumption that Julia-to-Python overhead is negligible for these computationally intensive operations.
 
-To thoroughly assess performance across different scales, we tested three sequence lengths ($T = 100, 500, 1000$) and explored various dimensionality combinations, with state dimensions $n = 2, 4, 8$ and observation dimensions $m = 2, 4, 8$.
+To thoroughly assess performance across different scales, we tested three sequence lengths ($T = 100, 500, 1000$) and explored various dimensionality combinations, with state dimensions $n = 2, 4, 6, 8$ and observation dimensions $m = 2, 4, 6, 8$. Notably, we always tested where the latent dimension was less than or equal to the observation dimension.
 \begin{figure}
-\includegraphics[width=\textwidth]{benchmark_plot.pdf}
+\includegraphics[width=\textwidth]{lds_bench.png}
 \end{figure}
 
 For the subsequent benchmarking experiments, we compared `StateSpaceDynamics.jl`, `HiddenMarkovModels.jl`, and `Dynamax` in their abilities to fit a Bernoulli GLM-HMM. We completed the benchmarking on the same combinations of sequence lengths, state dimensions, and observation dimensions as in the Gaussian LDS benchmarking. Synthetic datasets were generated for each of these combinations by sampling from a randomly generated Bernoulli GLM-HMM using `StateSpaceDynamics.jl`. All packages were initialized to the same random parameters and the EM algorithm was run for 200 iterations. We disabled the convergence criteria to ensure each package completed all 200 iterations of EM. These benchmarks were conducted using `PythonCall.jl` and `BenchmarkTools.jl` to ensure timing accuracy.
