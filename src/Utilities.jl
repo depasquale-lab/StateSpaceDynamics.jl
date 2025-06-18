@@ -447,7 +447,7 @@ end
 
 Calculate the entropy of a Gaussian distribution with Hessian (i.e. negative precision) matrix `H`.
 """
-function gaussian_entropy(H::Symmetric{T, <:AbstractSparseMatrix}) where {T<:Real}
+function gaussian_entropy(H::Symmetric{T}) where {T<:Real}
     n = size(H, 1)
     F = cholesky(-H)
     logdet_H = 2 * sum(log.(diag(F)))
