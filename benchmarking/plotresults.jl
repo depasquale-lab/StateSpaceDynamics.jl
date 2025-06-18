@@ -1,64 +1,84 @@
-using CategoricalArrays
+using CSV, DataFrames, CategoricalArrays
 using StatsPlots
-using DataFrames
-using CSV
 using Statistics
 
 # Load data
-dir = "results/"
-filepath = joinpath(dir, "lds_benchmark_results.csv")
-df = CSV.read(filepath, DataFrame)
+df = CSV.read("results/lds_benchmark_results.csv", DataFrame)
 
-# Ensure consistent ordering for sequence length (x-axis)
-seq_order = sort(unique(df.seq_len))
-df.seq_len_cat = categorical(string.(df.seq_len), ordered=true, levels=string.(seq_order))
-
-# Ensure consistent ordering for implementation (bar group order)
+# Prepare columns
+df.seq_len = categorical(df.seq_len, ordered=true)
 df.implementation = categorical(df.implementation)
-implementations = levels(df.implementation)
+df.config = string.(df.latent_dim) .* "x" .* string.(df.obs_dim)
 
-# Compute mean execution time per (sequence length, implementation) group
-agg_df = combine(groupby(df, [:seq_len_cat, :implementation]),
+# Compute bar means
+bar_df = combine(groupby(df, [:seq_len, :implementation]),
     :time_sec => mean => :mean_time)
 
-# Plot bar chart
-@df agg_df groupedbar(
-    :seq_len_cat,
-    :mean_time,
-    group = :implementation,
-    bar_position = :dodge,
-    legend = :top,
-    xlabel = "Sequence Length",
-    ylabel = "Execution Time (s)",
-    title = "Execution Time by Sequence Length and Implementation",
-    alpha = 0.7,
-    lw = 0.5,
+# Compute per-config means (for dots)
+dot_df = combine(groupby(df, [:seq_len, :implementation, :config]),
+    :time_sec => mean => :mean_time)
+
+# Marker and color mappings
+marker_types = [:circle, :rect, :diamond, :star5, :cross, :utriangle, :hexagon, :xcross, :pentagon, :dtriangle]
+unique_configs = unique(dot_df.config)
+config_marker = Dict(cfg => marker_types[mod1(i, length(marker_types))] for (i, cfg) in enumerate(unique_configs))
+
+impl_colors = Dict(
+    "pykalman" => :blue,
+    "Dynamax" => :green,
+    "StateSpaceDynamics.jl" => :orange,
 )
 
-# Prepare for dot overlay
-seq_lens = levels(df.seq_len_cat)
-n_groups = length(implementations)
-width = 0.8  # Total width of grouped bars
-bar_width = width / n_groups
+implementations = levels(df.implementation)
 
-# Map seq_len_cat to integer positions
-xvals = Dict(seq => i for (i, seq) in enumerate(seq_lens))
+# Plot loop
+plots = []
+for (i, sl) in enumerate(levels(df.seq_len))
+    sub_bar = bar_df[bar_df.seq_len .== sl, :]
+    sub_dot = dot_df[dot_df.seq_len .== sl, :]
 
-# Compute aligned x coordinates for dots
-x_points = Float64[]
-for row in eachrow(df)
-    base_x = xvals[string(row.seq_len)]
-    group_idx = findfirst(==(row.implementation), implementations)
-    x_pos = base_x - width / 2 + (group_idx - 0.5) * bar_width
-    jitter = (rand() - 0.5) * bar_width * 0.6  # Controlled jitter
-    push!(x_points, x_pos + jitter)
+    # Base bar plot (no xticks/labels)
+    p = bar(
+        sub_bar.implementation,
+        sub_bar.mean_time,
+        yticks = :auto,
+        xticks = false,
+        xlabel = "",
+        ylabel = "Mean Time (s)",
+        title = "n = $(sl)",
+        color = [impl_colors[String(impl)] for impl in sub_bar.implementation],
+        alpha = 0.6,
+        lw = 0.5,
+        legend = false,
+        size = (400, 350),
+    )
+
+    # Overlay dots with same color as bars
+    for row in eachrow(sub_dot)
+        scatter!(
+            [row.implementation],
+            [row.mean_time],
+            marker = (config_marker[row.config], 6),
+            color = impl_colors[String(row.implementation)],
+            alpha = 1.0,
+            label = false,
+        )
+    end
+
+    # Legend only once
+    if i == 1
+        # Impl (bar) legend
+        for (name, col) in impl_colors
+            bar!([NaN], [NaN], color=col, label=name)
+        end
+        # Config (marker) legend
+        for (cfg, mkr) in config_marker
+            scatter!([NaN], [NaN], marker=(mkr, 6), color=:gray, label=cfg)
+        end
+    end
+
+    push!(plots, p)
 end
 
-# Overlay scatter plot of individual runs
-scatter!(x_points .- 0.5, df.time_sec,
-    group = df.implementation,
-    ms = 3,
-    alpha = 0.8,
-    markerstrokewidth = 0.1,
-    label = "",
-)
+# Final layout: tight
+plot(plots..., layout = (1, length(plots)), legend = :outerleft, size=(length(plots)*400, 350))
