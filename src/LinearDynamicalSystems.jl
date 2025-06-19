@@ -401,12 +401,10 @@ function smooth(
         return g .= vec(-grad)
     end
 
-    function h!(h::AbstractMatrix{T}, vec_x::Vector{T}) where T
+    function h!(h::SparseMatrixCSC{T}, vec_x::Vector{T}) where {T<:Real}
         x = reshape(vec_x, D, tsteps)
         H, _, _, _ = Hessian(lds, y, x, w)
-        H .*= -1.0  
-        # Use Symmetric to avoid Julia’s fallback to Hermitian
-        copyto!(h, Symmetric(H))
+        mul!(h, -1.0, H)  # h .= -H, in-place 
         return nothing
     end
 

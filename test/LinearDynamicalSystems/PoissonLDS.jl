@@ -1,5 +1,3 @@
-const CHECKED_TYPES = [Float32, Float64, BigFloat]
-
 # define parameters for a PoissonLDS
 x0 = [1.0, -1.0]
 P0 = Matrix(Diagonal([0.1, 0.1]))  # Fixed: was p0, now P0

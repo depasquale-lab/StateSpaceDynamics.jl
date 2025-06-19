@@ -13,7 +13,7 @@ using LaTeXStrings
 using StableRNGs
 
 #
-rng = StableRNG(1234);
+rng = StableRNG(123);
 
 # ## Create a State-Space Model
 
@@ -26,7 +26,7 @@ Q = Matrix(0.1 * I(2))
 x0 = [0.0; 0.0]
 P0 = Matrix(0.1 * I(2))
 
-C = randn(obs_dim, latent_dim)
+C = randn(rng, obs_dim, latent_dim)
 R = Matrix(0.5 * I(obs_dim))
 
 true_gaussian_sm = GaussianStateModel(;A=A, Q=Q, x0=x0, P0=P0)
@@ -103,7 +103,7 @@ plot!(link=:x, size=(800, 600), left_margin=10Plots.mm)
 
 A_init = random_rotation_matrix(2, rng)
 Q_init = Matrix(0.1 * I(2))
-C_init = randn(obs_dim, latent_dim)
+C_init = randn(rng, obs_dim, latent_dim)
 R_init = Matrix(0.5 * I(obs_dim))
 x0_init = zeros(latent_dim)
 P0_init = Matrix(0.1 * I(latent_dim))

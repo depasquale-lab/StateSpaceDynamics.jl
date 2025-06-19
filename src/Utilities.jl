@@ -226,73 +226,63 @@ end
 
 Calculate the Euclidean distance between two points.
 """
-function euclidean_distance(a::AbstractVector{T}, b::AbstractVector{T}) where {T<:Real}
+function euclidean_distance(a::AbstractVector{T1}, b::AbstractVector{T2}) where {T1<:Real, T2<:Real}
     return sqrt(sum((a .- b) .^ 2))
 end
 
 """
     kmeanspp_initialization(data::AbstractMatrix{T}, k_means::Int) where {T<:Real}
 
-Perform K-means++ initialization for cluster centroids.
+Perform K-means++ initialization for cluster centroids (column-major input).
 """
 function kmeanspp_initialization(data::AbstractMatrix{T}, k_means::Int) where {T<:Real}
-    N, D = size(data)
-    centroids = zeros(D, k_means)
+    D, N = size(data)  # (D, N) data layout
+    centroids = zeros(T, D, k_means)
     rand_idx = rand(1:N)
-    centroids[:, 1] = data[rand_idx, :]
+    centroids[:, 1] = data[:, rand_idx]
     for k in 2:k_means
         dists = zeros(N)
         for i in 1:N
             dists[i] = minimum([
-                euclidean_distance(@view(data[i, :]), @view(centroids[:, j])) for j in 1:(k - 1)
+                euclidean_distance(@view(data[:, i]), @view(centroids[:, j])) for j in 1:(k - 1)
             ])
         end
         probs = dists .^ 2
         probs ./= sum(probs)
         next_idx = StatsBase.sample(1:N, Weights(probs))
-        centroids[:, k] = data[next_idx, :]
+        centroids[:, k] = data[:, next_idx]
     end
     return centroids
 end
 
 """
-Perform K-means++ initialization for cluster centroids on vector data.
+    kmeanspp_initialization(data::AbstractVector{T}, k_means::Int)
+
+K-means++ initialization for vector data.
 """
 function kmeanspp_initialization(data::AbstractVector{T}, k_means::Int) where {T<:Real}
-    # reshape data
-    data = reshape(data, length(data), 1)
+    data = reshape(data, 1, :)  # shape (1, N)
     return kmeanspp_initialization(data, k_means)
 end
 
 """
-    kmeans_clustering(data::Matrix{T}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6) where {T<:Real}
+    kmeans_clustering(data::AbstractMatrix{T}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6) where {T<:Real}
 
-Perform K-means clustering on the input data.
-
-# Arguments
-- `data::Matrix{T}`: The input data matrix where each row is a data point.
-- `k_means::Int`: The number of clusters.
-- `max_iters::Int=100`: Maximum number of iterations.
-- `tol::Float64=1e-6`: Convergence tolerance.
-
-# Returns
-- A tuple containing the final centroids and cluster labels for each data point.
+Perform K-means clustering on column-major data.
 """
 function kmeans_clustering(
     data::AbstractMatrix{T}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6
 ) where {T<:Real}
-    N, D = size(data)
+    D, N = size(data)
     centroids = kmeanspp_initialization(data, k_means)
     labels = zeros(Int, N)
 
     for iter in 1:max_iters
-        # Assign each data point to the nearest cluster
-        @inbounds for i in 1:N
-            x_i = @view data[i, :]
+        for i in 1:N
+            x_i = @view data[:, i]
             min_k, min_dist = 1, euclidean_distance(x_i, @view centroids[:, 1])
             for k in 2:k_means
-                c_k = @view centroids[:, k]
-                dist = euclidean_distance(x_i, c_k)
+                dist = euclidean_distance(x_i, @view centroids[:, k])
                 if dist < min_dist
                     min_dist = dist
                     min_k = k
@@ -301,32 +291,24 @@ function kmeans_clustering(
             labels[i] = min_k
         end
 
-        # Cache old centroids and initialize new ones
         old_centroids = copy(centroids)
-        new_centroids = zeros(Float64, D, k_means)
+        new_centroids = zeros(T, D, k_means)
 
-        # Update each centroid
         for k in 1:k_means
             inds = findall(labels .== k)
             if isempty(inds)
-                new_centroids[:, k] .= @view data[rand(1:N), :]
+                new_centroids[:, k] .= data[:, rand(1:N)]
             else
-                cluster_data = @view data[inds, :]
-                new_centroids[:, k] .= vec(mean(cluster_data; dims=1))
+                cluster_points = data[:, inds]
+                new_centroids[:, k] .= mean(cluster_points; dims=2)
             end
         end
 
         centroids .= new_centroids
 
-        # Check convergence
-        converged = true
-        for k in 1:k_means
-            if euclidean_distance(@view(centroids[:, k]), @view(old_centroids[:, k])) > tol
-                converged = false
-                break
-            end
-        end
-        if converged
+        if all(
+            euclidean_distance(centroids[:, k], old_centroids[:, k]) <= tol for k in 1:k_means
+        )
             break
         end
     end
@@ -335,13 +317,14 @@ function kmeans_clustering(
 end
 
 """
+    kmeans_clustering(data::AbstractVector{T}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6)
+
 Perform K-means clustering on vector data.
 """
 function kmeans_clustering(
     data::AbstractVector{T}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6
 ) where {T<:Real}
-    # reshape data
-    data = reshape(data, length(data), 1)
+    data = reshape(data, 1, :)  # shape (1, N)
     return kmeans_clustering(data, k_means, max_iters, tol)
 end
 
