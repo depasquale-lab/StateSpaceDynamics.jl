@@ -19,7 +19,7 @@ end
 
 function test_BernoulliRegression_initialization()
     # Test with default parameters
-    model = BernoulliRegressionEmission(; input_dim=2, output_dim=1)
+    model = BernoulliRegressionEmission(; input_dim=2, output_dim=1, include_intercept=true, β=reshape([0.5, 0.0, 0.8],:,1), λ=0.0)
 
     @test model.input_dim == 2
     @test model.output_dim == 1
@@ -28,16 +28,14 @@ function test_BernoulliRegression_initialization()
     @test model.λ == 0.0
 
     # Test without intercept
-    model_no_intercept = BernoulliRegressionEmission(;
-        input_dim=2, output_dim=1, include_intercept=false
-    )
+    model_no_intercept = BernoulliRegressionEmission(; input_dim=2, output_dim=1, include_intercept=false, β=reshape([0.5, 0.8],:,1), λ=0.0)
     @test size(model_no_intercept.β) == (2, 1)
 end
 
 function test_BernoulliRegression_fit()
     X, y, true_β, n = BernoulliRegression_simulation()
 
-    model = BernoulliRegressionEmission(; input_dim=2, output_dim=1)
+    model = BernoulliRegressionEmission(; input_dim=2, output_dim=1, include_intercept=true, β=reshape([0.5, 0.0, 0.8],:,1), λ=0.0)
     fit!(model, X, y)
 
     # Check if the fitted coefficients are close to the true coefficients
@@ -52,7 +50,7 @@ end
 function test_BernoulliRegression_loglikelihood()
     X, y, true_β, n = BernoulliRegression_simulation()
 
-    model = BernoulliRegressionEmission(; input_dim=2, output_dim=1)
+    model = BernoulliRegressionEmission(; input_dim=2, output_dim=1, include_intercept=true, β=reshape([0.5, 0.0, 0.8],:,1), λ=0.0)
     fit!(model, X, y)
 
     # Test full dataset loglikelihood
@@ -73,27 +71,23 @@ function test_BernoulliRegression_loglikelihood()
 end
 
 function test_BernoulliRegression_sample()
-    model = BernoulliRegressionEmission(; input_dim=2, output_dim=1)
+    model = BernoulliRegressionEmission(; input_dim=2, output_dim=1, include_intercept=true, β=reshape([0.5, 0.0, 0.8],:,1), λ=0.0)
 
     # Test single sample
     X_test = randn(1, 2)
-    sample_single = StateSpaceDynamics.sample(model, X_test)
+    sample_single = rand(model, X_test)
     @test size(sample_single) == (1, 1)
 
     # Test multiple samples
     X_test = randn(10, 2)
-    samples = StateSpaceDynamics.sample(model, X_test)
+    samples = rand(model, X_test)
     @test size(samples) == (10, 1)
 end
 
 function test_BernoulliRegression_optimization()
     X, y, true_β, n = BernoulliRegression_simulation()
 
-    model = BernoulliRegressionEmission(;
-        input_dim=2,
-        output_dim=1,
-        λ=0.1,  # Add regularization for testing
-    )
+    model = BernoulliRegressionEmission(; input_dim=2, output_dim=1, include_intercept=true, β=reshape([0.5, 0.0, 0.8],:,1), λ=0.0)
 
     # Test objective function
     β_vec = vec(model.β)
@@ -119,25 +113,25 @@ function test_BernoulliRegression_sklearn()
     w = [1.0, 1.0, 1.0, 0.1]
 
     # first check that the regualr model is 
-    base_model = BernoulliRegressionEmission(; input_dim=1, output_dim=1, λ=0.0)
+    base_model = BernoulliRegressionEmission(; input_dim=1, output_dim=1, include_intercept=true, β=reshape([0.5, 0.8],:,1), λ=0.0)
     fit!(base_model, X, y)
 
     @test isapprox(base_model.β, [-2.522, 0.9965], atol=1e-3)
 
     # now check with regularization
-    regularized_model = BernoulliRegressionEmission(; input_dim=1, output_dim=1, λ=1.0)
+    regularized_model = BernoulliRegressionEmission(; input_dim=1, output_dim=1, include_intercept=true, β=reshape([0.5, 0.8],:,1), λ=1.0)
     fit!(regularized_model, X, y)
 
     @test isapprox(regularized_model.β, [-1.2169, 0.4816], atol=1e-3)
 
     # check weighted model
-    weighted_model = BernoulliRegressionEmission(; input_dim=1, output_dim=1, λ=0.0)
+    weighted_model = BernoulliRegressionEmission(; input_dim=1, output_dim=1, include_intercept=true, β=reshape([0.5, 0.8],:,1), λ=0.0)
     fit!(weighted_model, X, y, w)
 
     @test isapprox(weighted_model.β, [-1.366, 0.3599], atol=1e-3)
 
     # test weighted and regularized model
-    rw_model = BernoulliRegressionEmission(; input_dim=1, output_dim=1, λ=1.0)
+    rw_model = BernoulliRegressionEmission(; input_dim=1, output_dim=1, include_intercept=true, β=reshape([0.5, 0.8],:,1), λ=1.0)
     fit!(rw_model, X, y, w)
 
     @test isapprox(rw_model.β, [-0.8623, 0.1253], atol=1e-3)

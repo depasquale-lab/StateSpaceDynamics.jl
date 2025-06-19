@@ -1,10 +1,13 @@
 name: SSM-CI
 
-on: [push]
+on: [push, pull_request]
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        julia-version: ['1']  # '1' always points to the latest stable release
     steps:
     - name: Check out code
       uses: actions/checkout@v2
@@ -12,7 +15,7 @@ jobs:
     - name: Setup Julia
       uses: julia-actions/setup-julia@v1
       with:
-        version: '1.10'
+        version: ${{ matrix.julia-version }}
         
     - name: Install dependencies
       run: |
@@ -23,9 +26,12 @@ jobs:
         julia --project="$GITHUB_WORKSPACE" -e 'using Pkg; Pkg.test("StateSpaceDynamics", coverage=true)'
 
     - name: Process coverage
+      if: matrix.julia-version == '1'
       uses: julia-actions/julia-processcoverage@v1
 
     - name: Upload coverage reports to Codecov
+      if: matrix.julia-version == '1'
       uses: codecov/codecov-action@v3
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+

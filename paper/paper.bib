@@ -88,6 +88,7 @@
   author       = {Paninski, Liam and Ahmadian, Yashar and Ferreira, Daniel Gil
                   and Koyama, Shinsuke and Rahnama Rad, Kamiar and Vidne,
                   Michael and Vogelstein, Joshua and Wu, Wei},
+  doi          = {10.1007/s10827-009-0179-x},
   journaltitle = {J. Comput. Neurosci.},
   publisher    = {Springer Science and Business Media LLC},
   volume       = {29},
@@ -121,8 +122,8 @@
 @software{SSDjl2024,
   title = {StateSpaceDynamics.jl: A Julia package for probabilistic
 state space models},
-  author = {Senne, Ryan and Loughridge, Carson and Loschinsky, Zach and DePasquale, Brian},
-  date = {2024},
+  author = {Senne, Ryan and Loschinskey, Zachary and Loughridge, Carson  and DePasquale, Brian},
+  date = {2025},
   howpublished = {\url{https://github.com/depasquale-lab/StateSpaceDynamics.jl}},
   url = {https://github.com/depasquale-lab/StateSpaceDynamics.jl},
   abstract = {A Julia package for probabilistic state space models},
@@ -137,6 +138,7 @@ state space models},
   number={1},
   pages={65--98},
   year={2017},
+  doi={10.48550/arXiv.1411.1607},
   publisher={SIAM}
 }
 
@@ -147,6 +149,7 @@ state space models},
   journaltitle = {arXiv [stat.ML]},
   date         = {2016-10-26},
   eprintclass  = {stat.ML},
+  doi          = {10.48550/arXiv.1610.08466},
   abstract     = {Many natural systems, such as neurons firing in the brain or
                   basketball teams traversing a court, give rise to time series
                   data with complex, nonlinear dynamics. We can gain insight
@@ -186,4 +189,58 @@ state space models},
   pagetotal = {738},
   series    = {Information Science and Statistics},
   language  = {en}
+}
+
+@article{slds,
+    author = {Ghahramani, Zoubin and Hinton, Geoffrey E.},
+    title = {Variational Learning for Switching State-Space Models},
+    journal = {Neural Computation},
+    volume = {12},
+    number = {4},
+    pages = {831-864},
+    year = {2000},
+    month = {04},
+    abstract = {We introduce a new statistical model for time series that iteratively segments data into regimes with approximately linear dynamics and learns the parameters of each of these linear regimes. This model combines and generalizes two of the most widely used stochastic time-series models—hidden Markov models and linear dynamical systems—and is closely related to models that are widely used in the control and econometrics literatures. It can also be derived by extending the mixture of experts neural network (Jacobs, Jordan, Nowlan, \&amp; Hinton, 1991) to its fully dynamical version, in which both expert and gating networks are recurrent. Inferring the posterior probabilities of the hidden states of this model is computationally intractable, and therefore the exact expectation maximization (EM) algorithm cannot be applied. However, we present a variational approximation that maximizes a lower bound on the log-likelihood and makes use of both the forward and backward recursions for hidden Markov models and the Kalman filter recursions for linear dynamical systems. We tested the algorithm on artificial data sets and a natural data set of respiration force from a patient with sleep apnea. The results suggest that variational approximations are a viable method for inference and learning in switching state-space models.},
+    issn = {0899-7667},
+    doi = {10.1162/089976600300015619},
+    url = {https://doi.org/10.1162/089976600300015619},
+    eprint = {https://direct.mit.edu/neco/article-pdf/12/4/831/814443/089976600300015619.pdf},
+}
+
+@inproceedings{NIPS1994_8065d07d,
+ author = {Bengio, Yoshua and Frasconi, Paolo},
+ booktitle = {Advances in Neural Information Processing Systems},
+ editor = {G. Tesauro and D. Touretzky and T. Leen},
+ pages = {},
+ publisher = {MIT Press},
+ title = {An Input Output HMM Architecture},
+ url = {https://proceedings.neurips.cc/paper_files/paper/1994/file/8065d07da4a77621450aa84fee5656d9-Paper.pdf},
+ volume = {7},
+ year = {1994}
+}
+
+@article{Ashwood2022,
+  title     = {Mice alternate between discrete strategies during perceptual decision-making},
+  author    = {Ashwood, Zoe C. and Roy, Nicholas A. and Stone, Iris R. and Urai, Anne E. and Churchland, Anne K. and Pouget, Alexandre and Pillow, Jonathan W.},
+  journal   = {Nature Neuroscience},
+  volume    = {25},
+  number    = {2},
+  pages     = {201--212},
+  year      = {2022},
+  doi       = {10.1038/s41593-021-01007-z},
+  url       = {https://www.nature.com/articles/s41593-021-01007-z}
+}
+
+@software{pythoncall,
+  title    = {PythonCall.jl},
+  author   = {Christopher Doris},
+  date     = {2021},
+  howpublished = {\url{https://github.com/JuliaPy/PythonCall.jl}}
+}
+
+@software{bench,
+  title    = {BenchmarkTools.jl},
+  author   = {Jarrett Revels},
+  date     = {2017},
+  howpublished = {\url{https://github.com/JuliaCI/BenchmarkTools.jl}}
 }
