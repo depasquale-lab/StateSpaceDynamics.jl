@@ -404,6 +404,7 @@ end
 
 function smooth!(
     lds::LinearDynamicalSystem{T,S,O},
+    fs::FilterSmooth{T},
     y::AbstractMatrix{T}, 
     w::Union{Nothing,AbstractVector{T}} = nothing
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
@@ -500,8 +501,9 @@ This function performs direct smoothing for a linear dynamical system (LDS) give
 - `p_smooth::AbstractArray{T,4}`: The posterior covariance matrices with dimensions (latent_dim, latent_dim, tsteps, ntrials).
 - `inverse_offdiag::AbstractArray{T,4}`: The inverse off-diagonal matrices with dimensions (latent_dim, latent_dim, tsteps, ntrials).
 """
-function smooth(
-    lds::LinearDynamicalSystem{T,S,O}, 
+function smooth!(
+    lds::LinearDynamicalSystem{T,S,O},
+    tfs::TrialFilterSmooth{T},
     y::AbstractArray{T,3}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     obs_dim, tsteps, ntrials = size(y)
@@ -509,7 +511,7 @@ function smooth(
 
     # Fast path for single trial case
     if ntrials == 1
-        x_sm, p_sm, p_prev, ent = smooth(lds, y[:, :, 1])
+        x_sm, p_sm, p_prev, ent = smooth(lds, tfs[1], y[:, :, 1])
         # Return directly in the required shape without additional copying
         return reshape(x_sm, latent_dim, tsteps, 1),
                reshape(p_sm, latent_dim, latent_dim, tsteps, 1),
@@ -524,7 +526,7 @@ function smooth(
     total_entropy = 0.0
 
     @views @threads for trial in 1:ntrials
-        x_sm, p_sm, p_prev, ent = smooth(lds, y[:, :, trial])
+        x_sm, p_sm, p_prev, ent = smooth(lds, tfs[i], y[:, :, trial])
         total_entropy += ent
         x_smooth[:, :, trial] .= x_sm
         p_smooth[:, :, :, trial] .= p_sm
@@ -743,11 +745,11 @@ Perform the E-step of the EM algorithm for a Linear Dynamical System, treating a
 """
 function estep!(
     lds::LinearDynamicalSystem{T,S,O},
-    fs::FilterSmooth,
+    tfs::TrialFilterSmooth,
     y::AbstractArray{T,3}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     # smooth
-    x_smooth, p_smooth, inverse_offdiag, total_entropy = smooth(lds, y, fs)
+    x_smooth, p_smooth, inverse_offdiag, total_entropy = smooth(lds, y, tfs)
 
     # calculate sufficient statistics
     E_z, E_zz, E_zz_prev = sufficient_statistics(x_smooth, p_smooth, inverse_offdiag)
