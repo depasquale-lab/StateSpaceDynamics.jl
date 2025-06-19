@@ -266,28 +266,50 @@ function Gradient(
 
     grad = zeros(T, latent_dim, tsteps)
 
+    # Pre-allocate dxt, dxt_next, dyt, and two temps for efficiency
+    dxt       = zeros(T, latent_dim)
+    dxt_next  = zeros(T, latent_dim)
+    dyt       = zeros(T, obs_dim)
+    tmp1      = zeros(T, latent_dim)  # for w[t] * C_inv_R * dyt
+    tmp2      = zeros(T, latent_dim)  # for A_inv_Q * dxt_next
+
+
     # First time step
-    dx1 = x[:, 1] - x0
-    dx2 = x[:, 2] - A * x[:, 1]
-    dy1 = y[:, 1] - C * x[:, 1]
+    dxt .= x[:, 1] - x0
+    dxt_next .= x[:, 2] - A * x[:, 1]
+    dyt .= y[:, 1] - C * x[:, 1]
 
-    grad[:, 1] .= A_inv_Q * dx2 + w[1] * C_inv_R * dy1 - (P0_chol \ dx1)
+    grad[:, 1] .= A_inv_Q * dxt_next + w[1] * C_inv_R * dyt - (P0_chol \ dxt)
 
-    # Pre-allocate dxt, dxt_next, and dyt for efficiency
-    dxt = zeros(T, latent_dim)
-    dxt_next = zeros(T, latent_dim)
-    dyt = zeros(T, obs_dim)
-
-    # Middle time steps
     @views for t in 2:(tsteps - 1)
-        grad[:, t] .= w[t] * C_inv_R * (y[:, t] .- C * x[:, t]) - (Q_chol \ (x[:, t] .- A * x[:, t - 1])) + (A_inv_Q * (x[:, t + 1] .- A * x[:, t]))
+        # dxt = x[:, t] - A * x[:, t-1]
+        mul!(dxt, A, x[:, t - 1])
+        dxt .= x[:, t] .- dxt
+
+        # dxt_next = x[:, t+1] - A * x[:, t]
+        mul!(dxt_next, A, x[:, t])
+        dxt_next .= x[:, t + 1] .- dxt_next
+
+        # dyt = y[:, t] - C * x[:, t]
+        mul!(dyt, C, x[:, t])
+        dyt .= y[:, t] .- dyt
+
+        # tmp1 = w[t] * C_inv_R * dyt
+        mul!(tmp1, C_inv_R, dyt)
+        tmp1 .*= w[t]
+
+        # tmp2 = A_inv_Q * dxt_next
+        mul!(tmp2, A_inv_Q, dxt_next)
+
+        # grad[:, t] = tmp1 - (Q_chol \ dxt) + tmp2
+        grad[:, t] .= tmp1 .- (Q_chol \ dxt) .+ tmp2
     end
 
     # Last time step
-    dxT = x[:, tsteps] - A * x[:, tsteps - 1]
-    dyT = y[:, tsteps] - C * x[:, tsteps]
+    dxt .= x[:, tsteps] - A * x[:, tsteps - 1]
+    dyt .= y[:, tsteps] - C * x[:, tsteps]
 
-    grad[:, tsteps] .= w[tsteps] * (C_inv_R * dyT) - (Q_chol \ dxT)
+    grad[:, tsteps] .= w[tsteps] * (C_inv_R * dyt) - (Q_chol \ dxt)
 
     return grad
 end
@@ -374,8 +396,14 @@ This function performs direct smoothing for a linear dynamical system (LDS) give
 - `inverse_offdiag::Array{T, 3}`: The inverse off-diagonal matrix.
 - `Q_val::T`: The Q-function value.
 """
-function smooth(
-    lds::LinearDynamicalSystem{T,S,O}, 
+function smooth(lds::LinearDynamicalSystem, y::AbstractMatrix{T}, w::Union{Nothing, AbstractVector{T}}=nothing) where {T}
+    fs = initialize_FilterSmooth(lds, size(y, 2))
+    return smooth!(lds, fs, y, w)
+end
+
+
+function smooth!(
+    lds::LinearDynamicalSystem{T,S,O},
     y::AbstractMatrix{T}, 
     w::Union{Nothing,AbstractVector{T}} = nothing
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
@@ -449,7 +477,13 @@ function smooth(
     # Add a zero matrix for later compatibility
     inverse_offdiag = cat(zeros(T, D, D), inverse_offdiag; dims=3)
 
-    return x, p_smooth, inverse_offdiag, gauss_entropy
+    # write results into fs
+    fs.x_smooth .= x
+    fs.p_smooth .= p_smooth
+    fs.p_smooth_tt1 .= inverse_offdiag
+    fs.entropy .= gauss_entropy
+
+    return fs
 end
 
 """
@@ -707,12 +741,13 @@ Perform the E-step of the EM algorithm for a Linear Dynamical System, treating a
 - This function first smooths the data using the `smooth` function, then computes sufficient statistics.
 - It treats all input as multi-trial, with single-trial being a special case where ntrials = 1.
 """
-function estep(
-    lds::LinearDynamicalSystem{T,S,O}, 
+function estep!(
+    lds::LinearDynamicalSystem{T,S,O},
+    fs::FilterSmooth,
     y::AbstractArray{T,3}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     # smooth
-    x_smooth, p_smooth, inverse_offdiag, total_entropy = smooth(lds, y)
+    x_smooth, p_smooth, inverse_offdiag, total_entropy = smooth(lds, y, fs)
 
     # calculate sufficient statistics
     E_z, E_zz, E_zz_prev = sufficient_statistics(x_smooth, p_smooth, inverse_offdiag)
@@ -851,8 +886,11 @@ function update_Q!(lds::LinearDynamicalSystem{T,S,O}, E_zz::AbstractArray{T,4}, 
     if lds.fit_bool[4]
         ntrials, tsteps = size(E_zz, 4), size(E_zz, 3)
         state_dim = size(E_zz, 1)
-        Q_new = zeros(T, state_dim, state_dim)
         A = lds.state_model.A
+        
+        Q_new = zeros(T, state_dim, state_dim)
+        innovation_cov = zeros(T, state_dim, state_dim)
+        
 
          @views for trial in 1:ntrials
             for t in 2:tsteps
@@ -860,7 +898,7 @@ function update_Q!(lds::LinearDynamicalSystem{T,S,O}, E_zz::AbstractArray{T,4}, 
                 Σt_prev  = view(E_zz, :, :, t - 1, trial)
                 Σt_cross = view(E_zz_prev, :, :, t, trial)
 
-                innovation_cov = Σt - Σt_cross * A' - A * Σt_cross' + A * Σt_prev * A'
+                innovation_cov .= Σt - Σt_cross * A' - A * Σt_cross' + A * Σt_prev * A'
                 Q_new .+= innovation_cov
             end
         end
@@ -1039,6 +1077,9 @@ function fit!(
 
     sizehint!(mls, max_iter)  # Pre-allocate for efficiency
 
+    # Create a FilterSmooth object
+    fs = initialize_FilterSmooth(lds, size(y, 2))
+
     # Initialize progress bar
     if O <: GaussianObservationModel
         prog = Progress(max_iter; desc="Fitting LDS via EM...", barlen=50, showspeed=true)
@@ -1053,7 +1094,7 @@ function fit!(
     # Run EM
     for i in 1:max_iter
         # E-step
-        E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml = estep(lds, y)
+        estep!(lds, y)
 
         # M-step
         Δparams = mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
