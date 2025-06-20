@@ -1450,57 +1450,73 @@ function gradient_observation_model!(
     d = exp.(log_d)
     obs_dim, latent_dim = size(C)
     latent_dim, tsteps, trials = size(E_z)
-    
-    # Pre-allocate shared temporary arrays
-    h = zeros(T, obs_dim)
-    ρ = zeros(T, obs_dim)
-    λ = zeros(T, obs_dim)
-    CP_row = zeros(T, latent_dim)  # Single row buffer for CP computations
-    
+
     fill!(grad, zero(T))
+
+    nthreads = Threads.nthreads()
+    grad_buffers = [zeros(T, length(grad)) for _ in 1:nthreads]
     
-    @threads for k in 1:trials
-        # Local temporary arrays for each thread
-        local_grad = zeros(T, length(grad))
-        
-        @views for t in 1:tsteps
+    # Thread-local buffers to avoid race conditions
+    thread_buffers = [
+        (
+            h = zeros(T, obs_dim),
+            ρ = zeros(T, obs_dim),
+            λ = zeros(T, obs_dim),
+            CP_row = zeros(T, latent_dim)
+        ) for _ in 1:nthreads
+    ]
+
+    Threads.@threads for k in 1:trials
+        tid = Threads.threadid()
+        local_grad = grad_buffers[tid]
+        buffers = thread_buffers[tid]
+
+        for t in 1:tsteps
+            # Use views for all array slices
+            z_t = view(E_z, :, t, k)
+            y_t = view(y, :, t, k)
+            P_t = view(P_smooth, :, :, t, k)
             
             # Compute h = C * z_t + d in-place
-            mul!(h, C, E_z[:, t, k])
-            @. h .+= d
-            
-            P_t = P_smooth[:, :, t, k] 
-            # Compute ρ more efficiently using local storage
+            mul!(buffers.h, C, z_t)
+            @. buffers.h += d
+
+            # Compute ρ using local buffer
             for i in 1:obs_dim
-                # Compute one row of CP at a time
-                mul!(CP_row, P_t', C[i, :])
-                ρ[i] = T(0.5) * dot(C[i, :], CP_row)
+                C_i = view(C, i, :)
+                mul!(buffers.CP_row, transpose(P_t), C_i)
+                buffers.ρ[i] = T(0.5) * dot(C_i, buffers.CP_row)
             end
-            
+
             # Compute λ in-place
-            @. λ = exp(h + ρ)
-            
-            # Gradient computation with fewer allocations
-            @views for j in 1:latent_dim 
+            @. buffers.λ = exp(buffers.h + buffers.ρ)
+
+            # Gradient update for C
+            for j in 1:latent_dim
+                P_t_j = view(P_t, :, j)  # View of column j of P_t
                 for i in 1:obs_dim
                     idx = (j - 1) * obs_dim + i
-                    CP_term = dot(C[i, :], P_t[:, j])
-                    y_t = y[:, t, k] 
-                    z_t = E_z[:, t, k]    
-                    local_grad[idx] += y_t[i]*z_t[j] - λ[i]*(z_t[j] + CP_term)
+                    C_i = view(C, i, :)
+                    CP_term = dot(C_i, P_t_j)
+                    local_grad[idx] += y_t[i] * z_t[j] - buffers.λ[i] * (z_t[j] + CP_term)
                 end
             end
-            
-            # Update log_d gradient
-            @views local_grad[(end - obs_dim + 1):end] .+= (y[:, t, k] .- λ) .* d
+
+            # Gradient update for log_d (using views)
+            grad_d = view(local_grad, (length(local_grad) - obs_dim + 1):length(local_grad))
+            @. grad_d += (y_t - buffers.λ) * d
         end
-        
-        # Thread-safe update of global gradient
+    end
+
+    # Final reduction: sum all local grads into shared grad
+    for local_grad in grad_buffers
         grad .+= local_grad
     end
-    
-    return grad .*= -1
+
+    grad .*= -1
+    return grad
 end
+
 
 """
     update_observation_model!(plds::LinearDynamicalSystem{T,S,O}, E_z::Array{T, 3}, P_smooth::Array{T, 4},
@@ -1533,7 +1549,7 @@ function update_observation_model!(
             C_size = plds.obs_dim * plds.latent_dim
             log_d = params[(end - plds.obs_dim + 1):end]
             C = reshape(params[1:C_size], plds.obs_dim, plds.latent_dim)
-            return gradient_observation_model!(grad, C, log_d, E_z, P_smooth, y)
+            gradient_observation_model!(grad, C, log_d, E_z, P_smooth, y)
         end
 
         opts = Optim.Options(
@@ -1545,7 +1561,7 @@ function update_observation_model!(
         )
 
         # use CG result as inital guess for LBFGS
-        result = optimize(f, g!, params, LBFGS(;linesearch=LineSearches.HagerZhang()), opts)
+        result = optimize(f, g!, params, LBFGS(;linesearch=LineSearches.MoreThuente()), opts)
 
         # Update the parameters
         C_size = plds.obs_dim * plds.latent_dim
