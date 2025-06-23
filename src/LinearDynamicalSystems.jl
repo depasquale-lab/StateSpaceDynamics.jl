@@ -1182,6 +1182,7 @@ function Gradient(
     A, Q = lds.state_model.A, lds.state_model.Q
     C, log_d = lds.obs_model.C, lds.obs_model.log_d
     x0, P0 = lds.state_model.x0, lds.state_model.P0
+    obs_dim, latent_dim = size(C)
 
     # Convert log_d to d (non-log space)
     d = exp.(log_d)
@@ -1194,27 +1195,36 @@ function Gradient(
     inv_Q = inv(Q)
 
     # Pre-allocate gradient
-    grad = zeros(T, lds.latent_dim, tsteps)
+    grad = zeros(T, latent_dim, tsteps)
 
+    temp = zeros(T, obs_dim)
+    common_term = zeros(T, latent_dim)
+    dxt = zeros(T, latent_dim)
+    dxt_next = zeros(T, latent_dim)
     # Calculate gradient for each time step
     @views for t in 1:tsteps
 
         # Common term for all time steps
-        temp = exp.(C * x[:, t] .+ d)
-        common_term = C' * (y[:, t] - temp)
+        temp .= exp.(C * x[:, t] .+ d)
+        common_term .= C' * (y[:, t] - temp)
 
         if t == 1
-            # First time step                      
+            # First time step
+            dxt .= x[:, 1] .- x0
+            dxt_next .= x[:, 2] .- A * x[:, 1]                      
             grad[:, t] .=
                 common_term + A' * inv_Q * (x[:, 2] .- A * x[:, t]) - inv_P0 * (x[:, t] .- x0)
         elseif t == tsteps
+            dxt .= x[:, t] .- A * x[:, tsteps - 1]
             # Last time step                    
-            grad[:, t] .= common_term - inv_Q * (x[:, t] .- A * x[:, tsteps - 1])
+            grad[:, t] .= common_term - inv_Q * dxt
         else
+            dxt .= x[:, t] .- A * x[:, t - 1]
+            dxt_next .= x[:, t + 1] .- A * x[:, t]
             # Intermediate time steps
             grad[:, t] .=
-                common_term + A' * inv_Q * (x[:, t + 1] .- A * x[:, t]) -
-            inv_Q * (x[:, t] .- A * x[:, t - 1])
+                common_term + A' * inv_Q * dxt_next -
+            inv_Q * dxt
         end
     end
 
@@ -1348,6 +1358,7 @@ function Q_observation_model(
     Q_val = zero(T)
     trials = size(E_z, 3)
     tsteps = size(E_z, 2)
+    
 
     h = Vector{T}(undef, obs_dim)
     ρ = Vector{T}(undef, obs_dim)
@@ -1476,6 +1487,7 @@ function gradient_observation_model!(
             z_t = view(E_z, :, t, k)
             y_t = view(y, :, t, k)
             P_t = view(P_smooth, :, :, t, k)
+            P_t_transpose = transpose(P_t)
             
             # Compute h = C * z_t + d in-place
             mul!(buffers.h, C, z_t)
@@ -1484,7 +1496,7 @@ function gradient_observation_model!(
             # Compute ρ using local buffer
             for i in 1:obs_dim
                 C_i = view(C, i, :)
-                mul!(buffers.CP_row, transpose(P_t), C_i)
+                mul!(buffers.CP_row, P_t_transpose, C_i)
                 buffers.ρ[i] = T(0.5) * dot(C_i, buffers.CP_row)
             end
 
