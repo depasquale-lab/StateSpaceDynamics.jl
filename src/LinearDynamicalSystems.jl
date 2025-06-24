@@ -101,18 +101,34 @@ end
    
 Initialize a `FilterSmooth` object for a given linear dynamical system model and number of observations.
 """
+"""
+    initialize_FilterSmooth(model, num_obs) 
+   
+Initialize a `FilterSmooth` object for a given linear dynamical system model and number of observations.
+"""
 function initialize_FilterSmooth(
     model::LinearDynamicalSystem{T,S,O}, 
     num_obs::Int
 ) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
     num_states = model.latent_dim
-    FilterSmooth(
-        zeros(T, num_states, num_obs),
-        zeros(T, num_states, num_states, num_obs),
-        zeros(T, num_states, num_obs, 1),
-        zeros(T, num_states, num_states, num_obs, 1),
-    zeros(T, num_states, num_states, num_obs, 1)
+    FilterSmooth{T}(
+        zeros(T, num_states, num_obs),                    # x_smooth
+        zeros(T, num_states, num_states, num_obs),        # p_smooth  
+        zeros(T, num_states, num_states, num_obs),        # p_smooth_tt1
+        zeros(T, num_states, num_obs),                    # E_z
+        zeros(T, num_states, num_states, num_obs),        # E_zz
+        zeros(T, num_states, num_states, num_obs),        # E_zz_prev
+        zero(T)                                           # entropy
     )
+end
+
+function initialize_FilterSmooth(
+    model::LinearDynamicalSystem{T,S,O},
+    tsteps::Int,
+    ntrials::Int
+) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+    filter_smooths = [initialize_FilterSmooth(model, tsteps) for _ in 1:ntrials]
+    return TrialFilterSmooth(filter_smooths)
 end
 
 function Random.rand(rng::AbstractRNG, lds::LinearDynamicalSystem{T,S,O}; tsteps::Int, ntrials::Int) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
@@ -416,8 +432,8 @@ function smooth!(
 
     tsteps, D = size(y, 2), lds.latent_dim
 
-    # set initial "solution" and preallocate x_reshape
-    X₀ = zeros(T, D * tsteps)
+    # use old fs if it exists, by default is zeros if no iteration of EM has occurred
+    X₀ = fs.E_z 
 
     function nll(vec_x::Vector{T})
         x = reshape(vec_x, D, tsteps)
@@ -456,33 +472,34 @@ function smooth!(
     res = optimize(td, X₀, Newton(;linesearch=LineSearches.BackTracking()), opts)
 
     # Profit
-    x = reshape(res.minimizer, D, tsteps)
+    fs.x_smooth .= reshape(res.minimizer, D, tsteps)
 
-    H, main, super, sub = Hessian(lds, y, x, w)
+    H, main, super, sub = Hessian(lds, y, fs.x_smooth, w)
 
     # Get the second moments of the latent state path, use static matrices if the latent dimension is small
     if lds.latent_dim > 10
-        p_smooth, inverse_offdiag = block_tridiagonal_inverse(-sub, -main, -super)
+        fs.p_smooth, fs.p_smooth_tt1[:, :, 2:end] .= block_tridiagonal_inverse(-sub, -main, -super)
     else
-        p_smooth, inverse_offdiag = block_tridiagonal_inverse_static(-sub, -main, -super)
+        fs.p_smooth, fs.p_smooth_tt1[:, :, 2:end] .= block_tridiagonal_inverse_static(-sub, -main, -super)
     end
 
     # Calculate the entropy, see Utilities.jl for the function
-    gauss_entropy = gaussian_entropy(Symmetric(H))
+    fs.gauss_entropy .= gaussian_entropy(Symmetric(H))
 
     # Symmetrize the covariance matrices
     @views for i in 1:tsteps
-        p_smooth[:, :, i] .= 0.5 .* (p_smooth[:, :, i] .+ p_smooth[:, :, i]')
+        fs.p_smooth[:, :, i] .= 0.5 .* (fs.p_smooth[:, :, i] .+ fs.p_smooth[:, :, i]')
     end
 
-    # Add a zero matrix for later compatibility
-    inverse_offdiag = cat(zeros(T, D, D), inverse_offdiag; dims=3)
+    # uneeded?
+    # # Add a zero matrix for later compatibility
+    # inverse_offdiag = cat(zeros(T, D, D), inverse_offdiag; dims=3)
 
-    # write results into fs
-    fs.x_smooth .= x
-    fs.p_smooth .= p_smooth
-    fs.p_smooth_tt1 .= inverse_offdiag
-    fs.entropy .= gauss_entropy
+    # # write results into fs
+    # fs.x_smooth .= x
+    # fs.p_smooth .= p_smooth
+    # fs.p_smooth_tt1 .= inverse_offdiag
+    # fs.entropy .= gauss_entropy
 
     return fs
 end
@@ -511,7 +528,7 @@ function smooth!(
 
     # Fast path for single trial case
     if ntrials == 1
-        x_sm, p_sm, p_prev, ent = smooth(lds, tfs[1], y[:, :, 1])
+        x_sm, p_sm, p_prev, ent = smooth!(lds, tfs[1], y[:, :, 1])
         # Return directly in the required shape without additional copying
         return reshape(x_sm, latent_dim, tsteps, 1),
                reshape(p_sm, latent_dim, latent_dim, tsteps, 1),
@@ -526,7 +543,7 @@ function smooth!(
     total_entropy = 0.0
 
     @views @threads for trial in 1:ntrials
-        x_sm, p_sm, p_prev, ent = smooth(lds, tfs[i], y[:, :, trial])
+        x_sm, p_sm, p_prev, ent = smooth!(lds, tfs[i], y[:, :, trial])
         total_entropy += ent
         x_smooth[:, :, trial] .= x_sm
         p_smooth[:, :, :, trial] .= p_sm
@@ -706,33 +723,28 @@ Compute sufficient statistics for the EM algorithm in a Linear Dynamical System.
 - The function computes the expected values for all trials.
 - For single-trial data, use inputs with ntrials = 1.
 """
-function sufficient_statistics(
-    x_smooth::AbstractArray{T,3}, 
-    p_smooth::AbstractArray{T,4}, 
-    p_smooth_t1::AbstractArray{T,4}
-) where {T<:Real}
-    latent_dim, tsteps, ntrials = size(x_smooth)
-
-    E_z = copy(x_smooth)
-    E_zz = similar(p_smooth)
-    E_zz_prev = similar(p_smooth)
-
-    for trial in 1:ntrials
-        @views for t in 1:tsteps
-            xt = view(x_smooth, :, t, trial)
-            pt = view(p_smooth, :, :, t, trial)
-            E_zz[:, :, t, trial] .= pt .+ xt * xt'
-            if t > 1
-                xtm1 = view(x_smooth, :, t - 1, trial)
-                pt1 = view(p_smooth_t1, :, :, t, trial)
-                E_zz_prev[:, :, t, trial] .= pt1 .+ xt * xtm1'
-            end
+function sufficient_statistics!(fs::FilterSmooth{T}) where {T<:Real}
+    latent_dim, tsteps = size(fs.x_smooth)
+    
+    # E_z is just a copy of x_smooth
+    fs.E_z .= fs.x_smooth
+    
+    # Compute E_zz and E_zz_prev in-place
+    @views for t in 1:tsteps
+        # E_zz[:,:,t] = p_smooth[:,:,t] + x_smooth[:,t] * x_smooth[:,t]'
+        mul!(fs.E_zz[:, :, t], fs.x_smooth[:, t:t], fs.x_smooth[:, t:t]')
+        fs.E_zz[:, :, t] .+= fs.p_smooth[:, :, t]
+        
+        if t > 1
+            # E_zz_prev[:,:,t] = p_smooth_tt1[:,:,t] + x_smooth[:,t] * x_smooth[:,t-1]'
+            mul!(fs.E_zz_prev[:, :, t], fs.x_smooth[:, t:t], fs.x_smooth[:, t-1:t-1]')
+            fs.E_zz_prev[:, :, t] .+= fs.p_smooth_tt1[:, :, t]
+        else
+            fs.E_zz_prev[:, :, 1] .= 0
         end
-        @views E_zz_prev[:, :, 1, trial] .= 0
     end
-
-    return E_z, E_zz, E_zz_prev
 end
+
 
 """
     estep(lds::LinearDynamicalSystem{T,S,O}, y::AbstractArray{T,3}) 
@@ -749,15 +761,15 @@ function estep!(
     y::AbstractArray{T,3}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     # smooth
-    x_smooth, p_smooth, inverse_offdiag, total_entropy = smooth(lds, y, tfs)
+    smooth!(lds, y, tfs)
 
     # calculate sufficient statistics
-    E_z, E_zz, E_zz_prev = sufficient_statistics(x_smooth, p_smooth, inverse_offdiag)
+    sufficient_statistics!(tfs)
 
     # calculate elbo
-    ml_total = calculate_elbo(lds, E_z, E_zz, E_zz_prev, p_smooth, y, total_entropy)
+    ml_total = calculate_elbo(lds, tfs.E_z, tfs.E_zz, tfs.E_zz_prev, tfs.p_smooth, y, tfs.total_entropy)
 
-    return E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total
+    return tfs.E_z, tfs.E_zz, tfs.E_zz_prev, tfs.x_smooth, tfs.p_smooth, ml_total
 end
 
 
@@ -1080,7 +1092,7 @@ function fit!(
     sizehint!(mls, max_iter)  # Pre-allocate for efficiency
 
     # Create a FilterSmooth object
-    fs = initialize_FilterSmooth(lds, size(y, 2))
+    tfs = initialize_FilterSmooth(lds, size(y, 2), size(y,3))
 
     # Initialize progress bar
     if O <: GaussianObservationModel
@@ -1096,7 +1108,7 @@ function fit!(
     # Run EM
     for i in 1:max_iter
         # E-step
-        estep!(lds, y)
+        estep!(lds, tfs, y)
 
         # M-step
         Δparams = mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
