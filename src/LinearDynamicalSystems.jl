@@ -226,16 +226,27 @@ function loglikelihood(
     # Allocate temporary arrays with correct type
     temp_dx = zeros(eltype(x), size(x, 1))
     temp_dy = zeros(eltype(x), size(y, 1))
+    
+    # Pre-allocate solve result vectors (reuse these!)
+    temp_solve_Q = zeros(eltype(x), size(x, 1))
+    temp_solve_R = zeros(eltype(x), size(y, 1))
 
     for t in 1:tsteps
         if t > 1
             mul!(temp_dx, A, view(x, :, t-1), -one(eltype(x)), false)
             temp_dx .+= view(x, :, t)
-            ll += sum(abs2, Q_chol \ temp_dx)
+            
+            # In-place solve: temp_solve_Q = Q_chol \ temp_dx
+            ldiv!(temp_solve_Q, Q_chol, temp_dx)
+            ll += sum(abs2, temp_solve_Q)
         end
+        
         mul!(temp_dy, C, view(x, :, t), -one(eltype(x)), false)
         temp_dy .+= view(y, :, t)
-        ll += w[t] * sum(abs2, R_chol \ temp_dy)
+        
+        # In-place solve: temp_solve_R = R_chol \ temp_dy  
+        ldiv!(temp_solve_R, R_chol, temp_dy)
+        ll += w[t] * sum(abs2, temp_solve_R)
     end
 
     return -eltype(x)(0.5) * ll
@@ -378,14 +389,21 @@ function Hessian(
     xt1_given_xt = -A' * inv_Q * A
     x_t = -inv_P0
 
+    # Pre-compute constant terms to avoid repeated allocation
+    middle_base = xt_given_xt_1 + xt1_given_xt  # This is constant for middle entries
+    last_base = xt_given_xt_1                   # This is the term for the last entry
+
     H_diag = [Matrix{T}(undef, size(A, 1), size(A, 1)) for _ in 1:tsteps]
 
-    # Build main diagonal
-    H_diag[1] .= w[1] * yt_given_xt + xt1_given_xt + x_t
+    # Build main diagonal efficiently
+    @. H_diag[1] = w[1] * yt_given_xt + xt1_given_xt + x_t
+
+    # avoid temporaries in the loop
     for i in 2:(tsteps - 1)
-        H_diag[i] .= w[i] * yt_given_xt + xt_given_xt_1 + xt1_given_xt
+        @. H_diag[i] = w[i] * yt_given_xt + middle_base
     end
-    H_diag[tsteps] .= w[tsteps] * (yt_given_xt) + xt_given_xt_1
+
+    @. H_diag[tsteps] = w[tsteps] * yt_given_xt + last_base
 
     H = StateSpaceDynamics.block_tridgm(H_diag, H_super, H_sub)
 
@@ -601,31 +619,34 @@ end
 
 Calculate the a single time step observation component of the Q-function for the EM algorithm in a Linear Dynamical System before the R^-1 is accounted for.
 """
-function Q_obs(
+function Q_obs!(
+    result::AbstractMatrix{T},
     H::AbstractMatrix{T},
     E_z::AbstractVector{T},
     E_zz::AbstractMatrix{T},
     y::AbstractVector{T},
+    buffers
 ) where {T<:Real}
-
-    obs_dim = size(H, 1)
-
-    # Pre-allocate statistics
-    sum_yy = zeros(T, obs_dim, obs_dim)
-    sum_yz = zeros(T, obs_dim, size(E_z, 1))
     
-    mul!(sum_yy, y, y', 1.0, 1.0)
-    mul!(sum_yz, y, E_z', 1.0, 1.0)
-
-    # Pre-allocate and compute final expression
-    temp = similar(sum_yy)
-    copyto!(temp, sum_yy)
-    mul!(temp, H, sum_yz', -1.0, 1.0)
-    temp .-= sum_yz * H'
-    mul!(temp, H * E_zz, H', 1.0, 1.0)
-        
-    return temp
-
+    # Unpack buffers (no allocation!)
+    sum_yy, sum_yz, temp_result, work1, work2 = buffers
+    
+    # All operations use pre-allocated buffers
+    mul!(sum_yy, y, y')
+    
+    # Efficient outer product: sum_yz = y * E_z'
+    fill!(sum_yz, zero(T))
+    BLAS.ger!(one(T), y, E_z, sum_yz)  # sum_yz += y * E_z'
+    
+    # Build result using buffers
+    copyto!(result, sum_yy)
+    mul!(result, H, sum_yz', -one(T), one(T))   # result -= H * sum_yz'
+    mul!(work1, sum_yz, H')                     # work1 = sum_yz * H'  
+    result .-= work1                            # result -= work1
+    mul!(work2, E_zz, H')                       # work2 = E_zz * H'
+    mul!(result, H, work2, one(T), one(T))      # result += H * work2
+    
+    return result
 end
 
 
@@ -647,6 +668,7 @@ function Q_obs(
     end 
 
     obs_dim = size(H, 1)
+    latent_dim = size(E_z, 1)
     tstep = size(E_z, 2)
     
     # Pre-compute constants
@@ -654,12 +676,27 @@ function Q_obs(
     log_det_R = logdet(R_chol)
     const_term = obs_dim * log(2π)
     
-    #Pre-allocate statistics
+    # Pre-allocate ALL buffers once (reuse across all timesteps!)
     temp = zeros(T, obs_dim, obs_dim)
+    work_matrix = zeros(T, obs_dim, obs_dim)
     
-    # Use views in the loop
+    # Buffers for the lower-level Q_obs
+    buffers = (
+        sum_yy = zeros(T, obs_dim, obs_dim),
+        sum_yz = zeros(T, obs_dim, latent_dim),
+        temp_result = zeros(T, obs_dim, obs_dim),
+        work1 = zeros(T, obs_dim, obs_dim),
+        work2 = zeros(T, latent_dim, obs_dim)
+    )
+    
+    # Use views in the loop - now with buffer passing
     @views for t in axes(y, 2)
-        temp += w[t] * Q_obs(H, E_z[:,t], E_zz[:,:,t], y[:,t])
+        # Pass buffers to lower-level function
+        Q_obs!(work_matrix, H, E_z[:,t], E_zz[:,:,t], y[:,t], buffers)
+        
+        # Scale in-place and accumulate in-place
+        work_matrix .*= w[t]
+        temp .+= work_matrix
     end
 
     # Weight the constant terms by the sum of weights
@@ -893,7 +930,14 @@ function update_Q!(
         A = lds.state_model.A
         
         Q_new = zeros(T, state_dim, state_dim)
-        innovation_cov = zeros(T, state_dim, state_dim)
+        
+        # Pre-allocate working matrices (reuse these!)
+        temp1 = Matrix{T}(undef, state_dim, state_dim)  # For Σt_cross * A'
+        temp2 = Matrix{T}(undef, state_dim, state_dim)  # For A * Σt_cross'
+        temp3 = Matrix{T}(undef, state_dim, state_dim)  # For A * Σt_prev
+        temp4 = Matrix{T}(undef, state_dim, state_dim)  # For (A * Σt_prev) * A'
+        innovation_cov = Matrix{T}(undef, state_dim, state_dim)
+        
         total_time_steps = 0
 
         for trial in 1:ntrials
@@ -905,7 +949,15 @@ function update_Q!(
                 Σt_prev  = fs.E_zz[:, :, t-1]
                 Σt_cross = fs.E_zz_prev[:, :, t]
 
-                innovation_cov .= Σt - Σt_cross * A' - A * Σt_cross' + A * Σt_prev * A'
+                # Break down the complex expression using pre-allocated temps
+                mul!(temp1, Σt_cross, A')      # temp1 = Σt_cross * A'
+                mul!(temp2, A, Σt_cross')      # temp2 = A * Σt_cross'
+                mul!(temp3, A, Σt_prev)        # temp3 = A * Σt_prev
+                mul!(temp4, temp3, A')         # temp4 = (A * Σt_prev) * A'
+                
+                # innovation_cov = Σt - temp1 - temp2 + temp4
+                @. innovation_cov = Σt - temp1 - temp2 + temp4
+                
                 Q_new .+= innovation_cov
             end
             total_time_steps += (tsteps - 1)
@@ -940,11 +992,24 @@ function update_C!(
         sum_yz = zeros(T, size(lds.obs_model.C))
         sum_zz = zeros(T, lds.latent_dim, lds.latent_dim)
 
+        # Pre-allocate working matrices (reuse these!)
+        work_yz = zeros(T, size(lds.obs_model.C))
+        work_zz = zeros(T, lds.latent_dim, lds.latent_dim)
+
         for trial in 1:ntrials
             fs = tfs[trial]
             @views for t in 1:tsteps
-                sum_yz .+= w[t] * (y[:, t, trial] * fs.E_z[:, t]')
-                sum_zz .+= w[t] * fs.E_zz[:, :, t]
+                # Efficient outer product: work_yz = y[:, t, trial] * fs.E_z[:, t]'
+                mul!(work_yz, y[:, t, trial], fs.E_z[:, t]')
+                
+                # Scale in-place and accumulate
+                work_yz .*= w[t]
+                sum_yz .+= work_yz
+                
+                # Copy and scale the covariance matrix
+                work_zz .= fs.E_zz[:, :, t]
+                work_zz .*= w[t]
+                sum_zz .+= work_zz
             end
         end
 
@@ -976,6 +1041,10 @@ function update_R!(
         Czt = zeros(T, obs_dim)
         temp_matrix = zeros(T, obs_dim, size(C, 2))  # For storing C * state_uncertainty
         
+        # Pre-allocate matrices for state_uncertainty calculation
+        outer_product = zeros(T, lds.latent_dim, lds.latent_dim)  # For z_t * z_t'
+        state_uncertainty = zeros(T, lds.latent_dim, lds.latent_dim)  # For Σ_t - z_t*z_t'
+        
         # Reorganize as sum of outer products
         for trial in 1:ntrials
             fs = tfs[trial]
@@ -987,9 +1056,14 @@ function update_R!(
                 # Add innovation outer product
                 mul!(R_new, innovation, innovation', w[t], one(T))  # R_new += w[t] * innovation * innovation'
                 
-                # Add correction term efficiently:
-                # First compute state_uncertainty = Σ_t - z_t*z_t'
-                state_uncertainty = fs.E_zz[:, :, t] - (fs.E_z[:, t] * fs.E_z[:, t]')
+                # Compute state_uncertainty efficiently:
+                # First: outer_product = z_t * z_t'
+                mul!(outer_product, fs.E_z[:, t], fs.E_z[:, t]')
+                
+                # Second: state_uncertainty = Σ_t - z_t*z_t'
+                state_uncertainty .= fs.E_zz[:, :, t]
+                state_uncertainty .-= outer_product
+                
                 # Then compute C * state_uncertainty * C' in steps:
                 mul!(temp_matrix, C, state_uncertainty)  # temp = C * state_uncertainty
                 mul!(R_new, temp_matrix, C', w[t], one(T))  # R_new += w[t] * C * state_uncertainty * C'
