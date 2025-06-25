@@ -484,7 +484,7 @@ function smooth!(
     end
 
     # Calculate the entropy, see Utilities.jl for the function
-    fs.gauss_entropy .= gaussian_entropy(Symmetric(H))
+    fs.entropy .= gaussian_entropy(Symmetric(H))
 
     # Symmetrize the covariance matrices
     @views for i in 1:tsteps
@@ -523,35 +523,13 @@ function smooth!(
     tfs::TrialFilterSmooth{T},
     y::AbstractArray{T,3}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
-    obs_dim, tsteps, ntrials = size(y)
-    latent_dim = lds.latent_dim
-
-    # Fast path for single trial case
-    if ntrials == 1
-        x_sm, p_sm, p_prev, ent = smooth!(lds, tfs[1], y[:, :, 1])
-        # Return directly in the required shape without additional copying
-        return reshape(x_sm, latent_dim, tsteps, 1),
-               reshape(p_sm, latent_dim, latent_dim, tsteps, 1),
-               reshape(p_prev, latent_dim, latent_dim, tsteps, 1),
-               ent
-    end
-
-    # Pre-allocate output arrays
-    x_smooth = Array{T,3}(undef, latent_dim, tsteps, ntrials)
-    p_smooth = Array{T,4}(undef, latent_dim, latent_dim, tsteps, ntrials)
-    inverse_offdiag = Array{T,4}(undef, latent_dim, latent_dim, tsteps, ntrials)
-    total_entropy = 0.0
-
+    ntrials = size(y, 3)
+    
     @views @threads for trial in 1:ntrials
-        x_sm, p_sm, p_prev, ent = smooth!(lds, tfs[i], y[:, :, trial])
-        total_entropy += ent
-        x_smooth[:, :, trial] .= x_sm
-        p_smooth[:, :, :, trial] .= p_sm
-        inverse_offdiag[:, :, :, trial] .= p_prev
+        smooth!(lds, tfs[trial], y[:, :, trial])
     end
     
-
-    return x_smooth, p_smooth, inverse_offdiag, total_entropy
+    return tfs
 end
 
 """
@@ -745,6 +723,12 @@ function sufficient_statistics!(fs::FilterSmooth{T}) where {T<:Real}
     end
 end
 
+function sufficient_statistics!(tfs::TrialFilterSmooth{T}) where {T<:Real}
+    @threads for i in 1:length(tfs.FilterSmooths)
+        sufficient_statistics!(tfs[i])
+    end
+end
+
 
 """
     estep(lds::LinearDynamicalSystem{T,S,O}, y::AbstractArray{T,3}) 
@@ -755,21 +739,11 @@ Perform the E-step of the EM algorithm for a Linear Dynamical System, treating a
 - This function first smooths the data using the `smooth` function, then computes sufficient statistics.
 - It treats all input as multi-trial, with single-trial being a special case where ntrials = 1.
 """
-function estep!(
-    lds::LinearDynamicalSystem{T,S,O},
-    tfs::TrialFilterSmooth,
-    y::AbstractArray{T,3}
-) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
-    # smooth
-    smooth!(lds, y, tfs)
-
-    # calculate sufficient statistics
+function estep!(lds, tfs, y)
+    smooth!(lds, tfs, y)  
     sufficient_statistics!(tfs)
-
-    # calculate elbo
-    ml_total = calculate_elbo(lds, tfs.E_z, tfs.E_zz, tfs.E_zz_prev, tfs.p_smooth, y, tfs.total_entropy)
-
-    return tfs.E_z, tfs.E_zz, tfs.E_zz_prev, tfs.x_smooth, tfs.p_smooth, ml_total
+    elbo = calculate_elbo(lds, tfs, y) 
+    return elbo 
 end
 
 
@@ -780,12 +754,8 @@ Calculate the Evidence Lower Bound (ELBO) for a Linear Dynamical System.
 """
 function calculate_elbo(
     lds::LinearDynamicalSystem{T,S,O},
-    E_z::AbstractArray{T,3},
-    E_zz::AbstractArray{T,4},
-    E_zz_prev::AbstractArray{T,4},
-    p_smooth::AbstractArray{T,4},
+    tfs::TrialFilterSmooth{T},
     y::AbstractArray{T,3},
-    total_entropy::AbstractFloat,
     w::Union{Nothing, AbstractVector{T}} = nothing, 
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     if w === nothing
@@ -795,18 +765,22 @@ function calculate_elbo(
     ntrials = size(y, 3)
     Q_vals = zeros(T, ntrials)
 
+    # Calculate total entropy from individual FilterSmooth objects
+    total_entropy = sum(fs.entropy for fs in tfs.FilterSmooths)
+
     # Thread over trials
     @threads for trial in 1:ntrials
-        Q_vals[trial] = StateSpaceDynamics.Q_function(
+        fs = tfs[trial]  # Get the FilterSmooth for this trial
+        Q_vals[trial] = Q_function(
             lds.state_model.A,
             lds.state_model.Q,
             lds.obs_model.C,
             lds.obs_model.R,
             lds.state_model.P0,
             lds.state_model.x0,
-            view(E_z, :, :, trial),
-            view(E_zz, :, :, :, trial),
-            view(E_zz_prev, :, :, :, trial),
+            fs.E_z,                    
+            fs.E_zz,                   
+            fs.E_zz_prev,
             view(y, :, :, trial),
             w
         )
@@ -822,14 +796,18 @@ end
 Update the initial state mean of the Linear Dynamical System using the average across all trials.
 """
 function update_initial_state_mean!(
-    lds::LinearDynamicalSystem{T,S,O}, E_z::AbstractArray{T,3}, 
+    lds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}, 
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     if lds.fit_bool[1]
-        x0_new = zeros(lds.latent_dim)
-        @views for i in axes(E_z, 3)
-            x0_new .+= E_z[:, 1, i]
+        ntrials = length(tfs.FilterSmooths)
+        x0_new = zeros(T, lds.latent_dim)
+        
+        for trial in 1:ntrials
+            fs = tfs[trial]
+            x0_new .+= fs.E_z[:, 1]
         end
-        lds.state_model.x0 .= x0_new ./ size(E_z, 3)
+        
+        lds.state_model.x0 .= x0_new ./ ntrials
     end
 end
 
@@ -839,15 +817,16 @@ end
 Update the initial state covariance of the Linear Dynamical System using the average across all trials.
 """
 function update_initial_state_covariance!(
-    lds::LinearDynamicalSystem{T,S,O}, E_z::AbstractArray{T,3}, E_zz::AbstractArray{T,4}, 
+    lds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}, 
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     if lds.fit_bool[2]
-        ntrials = size(E_z, 3)
-        state_dim = size(E_z, 1)
+        ntrials = length(tfs.FilterSmooths)
+        state_dim = lds.latent_dim
         p0_new = zeros(T, state_dim, state_dim)
 
         for trial in 1:ntrials
-            p0_new .+= @view(E_zz[:, :, 1, trial]) - (lds.state_model.x0 * lds.state_model.x0')
+            fs = tfs[trial]
+            p0_new .+= fs.E_zz[:, :, 1] - (lds.state_model.x0 * lds.state_model.x0')
         end
 
         p0_new ./= ntrials
@@ -863,22 +842,24 @@ end
 
 Update the transition matrix A of the Linear Dynamical System.
 
-# Note
-- This function modifies `lds` in-place.
-- The update is only performed if `lds.fit_bool[3]` is true.
 """
 function update_A!(
-    lds::LinearDynamicalSystem{T,S,O}, E_zz::AbstractArray{T,4}, E_zz_prev::AbstractArray{T,4}
+    lds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     if lds.fit_bool[3]
-        state_dim = size(E_zz, 1)
+        state_dim = lds.latent_dim
+        ntrials = length(tfs.FilterSmooths)
 
         E_zz_sum = zeros(T, state_dim, state_dim)
         E_zz_prev_sum = zeros(T, state_dim, state_dim)
 
-        for trial in axes(E_zz, 4)
-            E_zz_sum .+= sum(@view(E_zz[:, :, 1:(end - 1), trial]); dims=3)
-            E_zz_prev_sum .+= sum(@view(E_zz_prev[:, :, :, trial]); dims=3)
+        for trial in 1:ntrials
+            fs = tfs[trial]
+            tsteps = size(fs.E_zz, 3)
+            
+            # Sum over time steps (excluding last for E_zz)
+            E_zz_sum .+= sum(@view(fs.E_zz[:, :, 1:(end-1)]); dims=3)
+            E_zz_prev_sum .+= sum(fs.E_zz_prev; dims=3)
         end
 
         lds.state_model.A = E_zz_prev_sum / E_zz_sum
@@ -890,34 +871,35 @@ end
 
 Update the process noise covariance matrix Q of the Linear Dynamical System.
 
-# Note
-- This function modifies `lds` in-place.
-- The update is only performed if `lds.fit_bool[4]` is true.
-- The result is averaged across all trials.
 """
-function update_Q!(lds::LinearDynamicalSystem{T,S,O}, E_zz::AbstractArray{T,4}, E_zz_prev::AbstractArray{T,4}
+function update_Q!(
+    lds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     if lds.fit_bool[4]
-        ntrials, tsteps = size(E_zz, 4), size(E_zz, 3)
-        state_dim = size(E_zz, 1)
+        ntrials = length(tfs.FilterSmooths)
+        state_dim = lds.latent_dim
         A = lds.state_model.A
         
         Q_new = zeros(T, state_dim, state_dim)
         innovation_cov = zeros(T, state_dim, state_dim)
-        
+        total_time_steps = 0
 
-         @views for trial in 1:ntrials
-            for t in 2:tsteps
-                Σt       = view(E_zz, :, :, t, trial)
-                Σt_prev  = view(E_zz, :, :, t - 1, trial)
-                Σt_cross = view(E_zz_prev, :, :, t, trial)
+        for trial in 1:ntrials
+            fs = tfs[trial]
+            tsteps = size(fs.E_zz, 3)
+            
+            @views for t in 2:tsteps
+                Σt       = fs.E_zz[:, :, t]
+                Σt_prev  = fs.E_zz[:, :, t-1]
+                Σt_cross = fs.E_zz_prev[:, :, t]
 
                 innovation_cov .= Σt - Σt_cross * A' - A * Σt_cross' + A * Σt_prev * A'
                 Q_new .+= innovation_cov
             end
+            total_time_steps += (tsteps - 1)
         end
 
-        Q_new ./= (ntrials * (tsteps - 1))
+        Q_new ./= total_time_steps
         Q_new .= 0.5 * (Q_new + Q_new')  # Symmetrize in-place
 
         lds.state_model.Q = Q_new
@@ -929,15 +911,10 @@ end
 
 Update the observation matrix C of the Linear Dynamical System.
 
-# Note
-- This function modifies `lds` in-place.
-- The update is only performed if `lds.fit_bool[5]` is true.
-- The result is averaged across all trials.
 """
 function update_C!(
     lds::LinearDynamicalSystem{T,S,O}, 
-    E_z::AbstractArray{T,3}, 
-    E_zz::AbstractArray{T,4}, 
+    tfs::TrialFilterSmooth{T}, 
     y::AbstractArray{T,3},
     w::Union{Nothing, AbstractVector{T}} = nothing
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
@@ -949,12 +926,13 @@ function update_C!(
         ntrials, tsteps = size(y, 3), size(y, 2)
 
         sum_yz = zeros(T, size(lds.obs_model.C))
-        sum_zz = zeros(T, size(E_zz)[1:2])
+        sum_zz = zeros(T, lds.latent_dim, lds.latent_dim)
 
         for trial in 1:ntrials
+            fs = tfs[trial]
             @views for t in 1:tsteps
-                sum_yz .+= w[t] * (y[:, t, trial]* E_z[:, t, trial]')
-                sum_zz .+= w[t] * E_zz[:, :, t, trial]
+                sum_yz .+= w[t] * (y[:, t, trial] * fs.E_z[:, t]')
+                sum_zz .+= w[t] * fs.E_zz[:, :, t]
             end
         end
 
@@ -967,18 +945,15 @@ end
 
 Update the observation noise covariance matrix R of the Linear Dynamical System.
 
-# Note
-- This function modifies `lds` in-place.
-- The update is only performed if `lds.fit_bool[6]` is true.
-- The result is averaged across all trials.
 """
 function update_R!(
-    lds::LinearDynamicalSystem{T,S,O}, E_z::AbstractArray{T,3}, E_zz::AbstractArray{T,4}, y::AbstractArray{T,3},
+    lds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}, y::AbstractArray{T,3},
     w::Union{Nothing, AbstractVector{T}} = nothing
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     if w === nothing
         w = ones(T, size(y,2)) 
     end
+    
     if lds.fit_bool[6]
         obs_dim, tsteps, ntrials = size(y)
         R_new = zeros(T, obs_dim, obs_dim)
@@ -991,18 +966,18 @@ function update_R!(
         
         # Reorganize as sum of outer products
         for trial in 1:ntrials
+            fs = tfs[trial]
             @views for t in 1:tsteps
                 # Compute innovation using pre-allocated arrays
-                mul!(Czt, C, E_z[:, t, trial])
+                mul!(Czt, C, fs.E_z[:, t])
                 @. innovation = (y[:, t, trial] - Czt)
                 
                 # Add innovation outer product
-                #BLAS.ger!(one(T), innovation, innovation, R_new)
                 mul!(R_new, innovation, innovation', w[t], one(T))  # R_new += w[t] * innovation * innovation'
                 
                 # Add correction term efficiently:
                 # First compute state_uncertainty = Σ_t - z_t*z_t'
-                state_uncertainty = view(E_zz, :, :, t, trial) - (E_z[:, t, trial]) * ( E_z[:, t, trial])'
+                state_uncertainty = fs.E_zz[:, :, t] - (fs.E_z[:, t] * fs.E_z[:, t]')
                 # Then compute C * state_uncertainty * C' in steps:
                 mul!(temp_matrix, C, state_uncertainty)  # temp = C * state_uncertainty
                 mul!(R_new, temp_matrix, C', w[t], one(T))  # R_new += w[t] * C * state_uncertainty * C'
@@ -1024,10 +999,7 @@ Perform the M-step of the EM algorithm for a Linear Dynamical System with multi-
 """
 function mstep!(
     lds::LinearDynamicalSystem{T,S,O},
-    E_z::AbstractArray{T,3},
-    E_zz::AbstractArray{T,4},
-    E_zz_prev::AbstractArray{T,4},
-    p_smooth::AbstractArray{T,4},
+    tfs::TrialFilterSmooth{T},
     y::AbstractArray{T,3},
     w::Union{Nothing, AbstractVector{T}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
@@ -1040,12 +1012,12 @@ function mstep!(
     old_params = [old_params; vec(obsparams(lds))]
 
     # Update parameters
-    update_initial_state_mean!(lds, E_z)
-    update_initial_state_covariance!(lds, E_z, E_zz)
-    update_A!(lds, E_zz, E_zz_prev)
-    update_Q!(lds, E_zz, E_zz_prev)
-    update_C!(lds, E_z, E_zz, y)
-    update_R!(lds, E_z, E_zz, y)
+    update_initial_state_mean!(lds, tfs)
+    update_initial_state_covariance!(lds, tfs)
+    update_A!(lds, tfs)
+    update_Q!(lds, tfs)
+    update_C!(lds, tfs, y)
+    update_R!(lds, tfs, y)
 
     # get new params
     new_params = vec(stateparams(lds))
@@ -1108,11 +1080,12 @@ function fit!(
     # Run EM
     for i in 1:max_iter
         # E-step
-        estep!(lds, tfs, y)
+        ml = estep!(lds, tfs, y)
 
         # M-step
-        Δparams = mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
+        Δparams = mstep!(lds, tfs, y)
         # Update the log-likelihood vector and parameter difference
+
         push!(mls, ml)
         push!(param_diff, Δparams)
 
