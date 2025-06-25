@@ -96,11 +96,7 @@ function obsparams(
     end
 end
 
-"""
-    initialize_FilterSmooth(model, num_obs) 
-   
-Initialize a `FilterSmooth` object for a given linear dynamical system model and number of observations.
-"""
+
 """
     initialize_FilterSmooth(model, num_obs) 
    
@@ -433,9 +429,9 @@ function smooth!(
     tsteps, D = size(y, 2), lds.latent_dim
 
     # use old fs if it exists, by default is zeros if no iteration of EM has occurred
-    X₀ = fs.E_z 
+    X₀ = vec(fs.E_z) 
 
-    function nll(vec_x::Vector{T})
+    function nll(vec_x::AbstractVector{T})
         x = reshape(vec_x, D, tsteps)
         return -loglikelihood(x, lds, y, w)
     end
@@ -478,13 +474,17 @@ function smooth!(
 
     # Get the second moments of the latent state path, use static matrices if the latent dimension is small
     if lds.latent_dim > 10
-        fs.p_smooth, fs.p_smooth_tt1[:, :, 2:end] .= block_tridiagonal_inverse(-sub, -main, -super)
+        p_smooth_result, p_smooth_tt1_result = block_tridiagonal_inverse(-sub, -main, -super)
+        fs.p_smooth .= p_smooth_result
+        fs.p_smooth_tt1[:, :, 2:end] .= p_smooth_tt1_result
     else
-        fs.p_smooth, fs.p_smooth_tt1[:, :, 2:end] .= block_tridiagonal_inverse_static(-sub, -main, -super)
+        p_smooth_result, p_smooth_tt1_result = block_tridiagonal_inverse_static(-sub, -main, -super)
+        fs.p_smooth .= p_smooth_result
+        fs.p_smooth_tt1[:, :, 2:end] .= p_smooth_tt1_result
     end
 
     # Calculate the entropy, see Utilities.jl for the function
-    fs.entropy .= gaussian_entropy(Symmetric(H))
+    fs.entropy = gaussian_entropy(Symmetric(H))
 
     # Symmetrize the covariance matrices
     @views for i in 1:tsteps
@@ -525,8 +525,14 @@ function smooth!(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     ntrials = size(y, 3)
     
-    @views @threads for trial in 1:ntrials
-        smooth!(lds, tfs[trial], y[:, :, trial])
+    if ntrials == 1
+        # Single trial - no threading overhead
+        smooth!(lds, tfs[1], y[:, :, 1])
+    else
+        # Multiple trials - use threading
+        @views @threads for trial in 1:ntrials
+            smooth!(lds, tfs[trial], y[:, :, trial])
+        end
     end
     
     return tfs
@@ -724,8 +730,14 @@ function sufficient_statistics!(fs::FilterSmooth{T}) where {T<:Real}
 end
 
 function sufficient_statistics!(tfs::TrialFilterSmooth{T}) where {T<:Real}
-    @threads for i in 1:length(tfs.FilterSmooths)
-        sufficient_statistics!(tfs[i])
+    ntrials = length(tfs.FilterSmooths)
+
+    if ntrials == 1
+        sufficient_statistics!(tfs[1])
+    else 
+        @threads for i in ntrials
+            sufficient_statistics!(tfs[i])
+        end
     end
 end
 
