@@ -509,16 +509,6 @@ function smooth!(
         fs.p_smooth[:, :, i] .= 0.5 .* (fs.p_smooth[:, :, i] .+ fs.p_smooth[:, :, i]')
     end
 
-    # uneeded?
-    # # Add a zero matrix for later compatibility
-    # inverse_offdiag = cat(zeros(T, D, D), inverse_offdiag; dims=3)
-
-    # # write results into fs
-    # fs.x_smooth .= x
-    # fs.p_smooth .= p_smooth
-    # fs.p_smooth_tt1 .= inverse_offdiag
-    # fs.entropy .= gauss_entropy
-
     return fs
 end
 
