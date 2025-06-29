@@ -2,25 +2,22 @@
 The purpose of this file is to provide a common place for all global types to be defined. This is to avoid circular dependencies between files.
 """
 
-export MixtureModel, EmissionModel, AbstractHMM, DynamicalSystem
+export MixtureModel, EmissionModel, AbstractHMM, DynamicalSystem, AbstractStateModel, AbstractObservationModel
 
 # Create abstract types here 
 """
 Abstract type for Mixture Models. I.e. GMM's, etc.
 """
-
 abstract type MixtureModel end
 
 """
 Abstract type for Regression Models. I.e. GaussianRegression, BernoulliRegression, etc.
 """
-
 abstract type RegressionModel end
 
 """
 Abstract type for HMMs 
 """
-
 abstract type AbstractHMM end
 
 """
@@ -38,11 +35,17 @@ Each emission model must implement:
 - loglikelihood()
 - fit!()
 """
-
 abstract type EmissionModel end
+
+"""
+Base type hierarchy for regression emission models.
+"""
 abstract type RegressionEmission <: EmissionModel end
+
+"""
+Special case of regression emission models that are autoregressive.
+"""
 abstract type AutoRegressiveEmission <: RegressionEmission end
-# abstract type AutoRegressiveEmission <: EmissionModel end
 
 
 """
@@ -59,12 +62,12 @@ A mutable struct that encapsulates the forward–backward algorithm outputs for 
 
 Typically, `α` and `β` are computed by the forward–backward algorithm to find the likelihood of an observation sequence. `γ` and `ξ` are derived from these calculations to estimate how states transition over time.
 """
-mutable struct ForwardBackward{T<:Real}
-    loglikelihoods::Matrix{T}
-    α::Matrix{T}
-    β::Matrix{T}
-    γ::Matrix{T}
-    ξ::Array{T, 3}
+mutable struct ForwardBackward{T<:Real, V<:AbstractVector{T}, M<:AbstractMatrix{T}, A<:Array{T,3}}
+    loglikelihoods::M
+    α::M
+    β::M
+    γ::M
+    ξ::A
 end
 
 

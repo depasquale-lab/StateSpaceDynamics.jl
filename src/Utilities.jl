@@ -1,6 +1,22 @@
 export kmeanspp_initialization,
     kmeans_clustering, fit!, block_tridgm, block_tridiagonal_inverse, block_tridiagonal_inverse_static
 export row_matrix, stabilize_covariance_matrix, valid_Σ, make_posdef!, gaussian_entropy
+export random_rotation_matrix
+
+# Type checking utilities
+"""
+    check_same_type(args...)
+
+Utility function to check if n arguments share the same types. 
+"""
+function check_same_type(args...)
+    if length(args) ≤ 1
+        return true  # trivial case
+    end
+    first_type = typeof(args[1])
+    all(x -> typeof(x) == first_type, args)
+end
+
 
 # Matrix utilities
 
@@ -8,12 +24,6 @@ export row_matrix, stabilize_covariance_matrix, valid_Σ, make_posdef!, gaussian
     row_matrix(x::AbstractVector)
 
 Convert a vector to a row matrix.
-
-# Arguments
-- `x::AbstractVector`: The input vector.
-
-# Returns
-- A row matrix (1 × n) containing the elements of `x`.
 """
 function row_matrix(x::AbstractVector)
     return reshape(x, 1, length(x))
@@ -24,22 +34,12 @@ end
 
 Compute the inverse of a block tridiagonal matrix.
 
-# Arguments
-- `A`: Lower diagonal blocks.
-- `B`: Main diagonal blocks.
-- `C`: Upper diagonal blocks.
-
-# Returns
-- `λii`: Diagonal blocks of the inverse.
-- `λij`: Off-diagonal blocks of the inverse.
-
 # Notes: This implementation is from the paper:
-
 "An Accelerated Lambda Iteration Method for Multilevel Radiative Transfer” Rybicki, G.B., and Hummer, D.G., Astronomy and Astrophysics, 245, 171–181 (1991), Appendix B.
 """
-function block_tridiagonal_inverse(A::Vector{Matrix{T}},
-                                   B::Vector{Matrix{T}},
-                                   C::Vector{Matrix{T}}) where {T<:Real}
+function block_tridiagonal_inverse(A::Vector{<:AbstractMatrix{T}},
+                                   B::Vector{<:AbstractMatrix{T}},
+                                   C::Vector{<:AbstractMatrix{T}}) where {T<:Real}
     n = length(B)
     block_size = size(B[1], 1)
 
@@ -64,21 +64,21 @@ function block_tridiagonal_inverse(A::Vector{Matrix{T}},
     lu_S = Vector{LU{T, Matrix{T}}}(undef, n)
 
     # Forward sweep for D
-    @inbounds for i in 1:n
+    for i in 1:n
         M = B[i] - A[i] * D[i]
         lu_D[i] = lu(M)
         D[i + 1] = lu_D[i] \ C[i]
     end
 
     # Backward sweep for E
-    @inbounds for i in n:-1:1
+    for i in n:-1:1
         M = B[i] - C[i] * E[i + 1]
         lu_E[i] = lu(M)
         E[i] = lu_E[i] \ A[i]
     end
 
     # Compute λii
-    @inbounds for i in 1:n
+    for i in 1:n
         term1 = identity - D[i + 1] * E[i + 1]
         term2 = B[i] - A[i] * D[i]
         S = term2 * term1
@@ -87,7 +87,7 @@ function block_tridiagonal_inverse(A::Vector{Matrix{T}},
     end
 
     # Compute λij
-    @inbounds for i in 2:n
+    for i in 2:n
         λij[:, :, i - 1] = E[i] * λii[:, :, i - 1]
     end
 
@@ -100,7 +100,9 @@ end
 Compute the inverse of a block tridiagonal matrix using static matrices. See `block_tridiagonal_inverse` for details.
 """
 function block_tridiagonal_inverse_static(
-    A::Vector{Matrix{T}}, B::Vector{Matrix{T}}, C::Vector{Matrix{T}}
+    A::Vector{<:AbstractMatrix{T}}, 
+    B::Vector{<:AbstractMatrix{T}},
+    C::Vector{<:AbstractMatrix{T}}
 ) where {T<:Real}
     n = length(B)
     N = size(B[1], 1)
@@ -129,21 +131,21 @@ function block_tridiagonal_inverse_static(
     C_extended = vcat(C_static, [(@SMatrix zeros(T, N, N))])
 
     # Forward sweep for D
-    @inbounds for i in 1:n
+    for i in 1:n
         M = B_static[i] - A_extended[i] * D[i]
         lu_M = lu(M)  # LU factorization directly on static matrix
         D[i + 1] = lu_M \ C_extended[i]
     end
 
     # Backward sweep for E
-    @inbounds for i in n:-1:1
+    for i in n:-1:1
         M = B_static[i] - C_extended[i] * E[i + 1]
         lu_M = lu(M)  # LU factorization directly on static matrix
         E[i] = lu_M \ A_extended[i]
     end
 
     # Compute λii
-    @inbounds for i in 1:n
+    for i in 1:n
         term1 = identity_static - D[i + 1] * E[i + 1]
         term2 = B_static[i] - A_extended[i] * D[i]
         S = term2 * term1
@@ -152,7 +154,7 @@ function block_tridiagonal_inverse_static(
     end
 
     # Compute λij
-    @inbounds for i in 2:n
+    for i in 2:n
         λij[:, :, i - 1] = Matrix(E[i] * SMatrix{N,N,T,N2}(λii[:, :, i - 1]))
     end
 
@@ -164,21 +166,13 @@ end
 
 Construct a block tridiagonal matrix from three vectors of matrices.
 
-# Arguments
-- `main_diag::Vector{Matrix{T}}`: Vector of matrices for the main diagonal.
-- `upper_diag::Vector{Matrix{T}}`: Vector of matrices for the upper diagonal.
-- `lower_diag::Vector{Matrix{T}}`: Vector of matrices for the lower diagonal.
-
-# Returns
-- A sparse matrix representing the block tridiagonal matrix.
-
 # Throws
 - `ErrorException` if the lengths of `upper_diag` and `lower_diag` are not one less than the length of `main_diag`.
 """
 function block_tridgm(
-    main_diag::Vector{Matrix{T}},
-    upper_diag::Vector{Matrix{T}},
-    lower_diag::Vector{Matrix{T}},
+    main_diag::Vector{<:AbstractMatrix{T}},
+    upper_diag::Vector{<:AbstractMatrix{T}},
+    lower_diag::Vector{<:AbstractMatrix{T}},
 ) where {T<:Real}
     # Input validation
     if length(upper_diag) != length(main_diag) - 1 ||
@@ -209,7 +203,7 @@ function block_tridgm(
     idx = 1
 
     # Fill main diagonal blocks
-    @inbounds for block_idx in 1:n
+    for block_idx in 1:n
         block = main_diag[block_idx]
         base = (block_idx - 1) * m
 
@@ -223,7 +217,7 @@ function block_tridgm(
     end
 
     # Fill upper and lower diagonal blocks simultaneously
-    @inbounds for block_idx in 1:(n - 1)
+    for block_idx in 1:(n - 1)
         upper_block = upper_diag[block_idx]
         lower_block = lower_diag[block_idx]
 
@@ -251,143 +245,112 @@ function block_tridgm(
     return sparse(I, J, V, N, N, +)
 end
 
+
 # Initialization utilities
 """
     euclidean_distance(a::AbstractVector{Float64}, b::AbstractVector{Float64})
 
 Calculate the Euclidean distance between two points.
-
-# Arguments
-- `a::AbstractVector{Float64}`: The first point.
-- `b::AbstractVector{Float64}`: The second point.
-
-# Returns
-- The Euclidean distance between `a` and `b`.
 """
-function euclidean_distance(a::AbstractVector{Float64}, b::AbstractVector{Float64})
+function euclidean_distance(a::AbstractVector{T1}, b::AbstractVector{T2}) where {T1<:Real, T2<:Real}
     return sqrt(sum((a .- b) .^ 2))
 end
 
 """
-    kmeanspp_initialization(data::Matrix{<:Real}, k_means::Int)
+    kmeanspp_initialization(data::AbstractMatrix{T}, k_means::Int) where {T<:Real}
 
-Perform K-means++ initialization for cluster centroids.
-
-# Arguments
-- `data::Matrix{<:Real}`: The input data matrix where each row is a data point.
-- `k_means::Int`: The number of clusters.
-
-# Returns
-- A matrix of initial centroids for K-means clustering.
+Perform K-means++ initialization for cluster centroids (column-major input).
 """
-function kmeanspp_initialization(data::Matrix{<:Real}, k_means::Int)
-    N, D = size(data)
-    centroids = zeros(D, k_means)
+function kmeanspp_initialization(data::AbstractMatrix{T}, k_means::Int) where {T<:Real}
+    D, N = size(data)  # (D, N) data layout
+    centroids = zeros(T, D, k_means)
     rand_idx = rand(1:N)
-    centroids[:, 1] = data[rand_idx, :]
+    centroids[:, 1] = data[:, rand_idx]
     for k in 2:k_means
         dists = zeros(N)
         for i in 1:N
             dists[i] = minimum([
-                euclidean_distance(data[i, :], centroids[:, j]) for j in 1:(k - 1)
+                euclidean_distance(@view(data[:, i]), @view(centroids[:, j])) for j in 1:(k - 1)
             ])
         end
         probs = dists .^ 2
         probs ./= sum(probs)
         next_idx = StatsBase.sample(1:N, Weights(probs))
-        centroids[:, k] = data[next_idx, :]
+        centroids[:, k] = data[:, next_idx]
     end
     return centroids
 end
 
 """
-    kmeanspp_initialization(data::Vector{Float64}, k_means::Int)
+    kmeanspp_initialization(data::AbstractVector{T}, k_means::Int)
 
-Perform K-means++ initialization for cluster centroids on vector data.
-
-# Arguments
-- `data::Vector{Float64}`: The input data vector.
-- `k_means::Int`: The number of clusters.
-
-# Returns
-- A matrix of initial centroids for K-means clustering.
+K-means++ initialization for vector data.
 """
-function kmeanspp_initialization(data::Vector{Float64}, k_means::Int)
-    # reshape data
-    data = reshape(data, length(data), 1)
+function kmeanspp_initialization(data::AbstractVector{T}, k_means::Int) where {T<:Real}
+    data = reshape(data, 1, :)  # shape (1, N)
     return kmeanspp_initialization(data, k_means)
 end
 
 """
-    kmeans_clustering(data::Matrix{<:Real}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6)
+    kmeans_clustering(data::AbstractMatrix{T}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6) where {T<:Real}
 
-Perform K-means clustering on the input data.
-
-# Arguments
-- `data::Matrix{<:Real}`: The input data matrix where each row is a data point.
-- `k_means::Int`: The number of clusters.
-- `max_iters::Int=100`: Maximum number of iterations.
-- `tol::Float64=1e-6`: Convergence tolerance.
-
-# Returns
-- A tuple containing the final centroids and cluster labels for each data point.
+Perform K-means clustering on column-major data.
 """
 function kmeans_clustering(
-    data::Matrix{<:Real}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6
-)
-    N, _ = size(data)
-    centroids = kmeanspp_initialization(data, k_means)  # Assuming you have this function defined
+    data::AbstractMatrix{T}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6
+) where {T<:Real}
+    D, N = size(data)
+    centroids = kmeanspp_initialization(data, k_means)
     labels = zeros(Int, N)
+
     for iter in 1:max_iters
-        # Assign each data point to the nearest cluster
-        labels .= [
-            argmin([euclidean_distance(x, c) for c in eachcol(centroids)]) for
-            x in eachrow(data)
-        ]
-        # Cache old centroids for convergence check
-        old_centroids = centroids
-        # Update the centroids
-        new_centroids = zeros(size(centroids))
+        for i in 1:N
+            x_i = @view data[:, i]
+            min_k, min_dist = 1, euclidean_distance(x_i, @view centroids[:, 1])
+            for k in 2:k_means
+                dist = euclidean_distance(x_i, @view centroids[:, k])
+                if dist < min_dist
+                    min_dist = dist
+                    min_k = k
+                end
+            end
+            labels[i] = min_k
+        end
+
+        old_centroids = copy(centroids)
+        new_centroids = zeros(T, D, k_means)
+
         for k in 1:k_means
-            points_in_cluster = data[labels .== k, :]
-            if isempty(points_in_cluster)
-                # If a cluster has no points, reinitialize its centroid
-                new_centroids[:, k] = data[rand(1:N), :]
+            inds = findall(labels .== k)
+            if isempty(inds)
+                new_centroids[:, k] .= data[:, rand(1:N)]
             else
-                new_centroids[:, k] = mean(points_in_cluster; dims=1)
+                cluster_points = data[:, inds]
+                new_centroids[:, k] .= mean(cluster_points; dims=2)
             end
         end
+
         centroids .= new_centroids
-        # Check for convergence
-        if maximum([
-            euclidean_distance(centroids[:, i], old_centroids[:, i]) for i in 1:k_means
-        ]) < tol
-            # println("Converged after $iter iterations")
+
+        if all(
+            euclidean_distance(centroids[:, k], old_centroids[:, k]) <= tol for k in 1:k_means
+        )
             break
         end
     end
+
     return centroids, labels
 end
 
 """
-    kmeans_clustering(data::Vector{Float64}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6)
+    kmeans_clustering(data::AbstractVector{T}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6)
 
 Perform K-means clustering on vector data.
-
-# Arguments
-- `data::Vector{Float64}`: The input data vector.
-- `k_means::Int`: The number of clusters.
-- `max_iters::Int=100`: Maximum number of iterations.
-- `tol::Float64=1e-6`: Convergence tolerance.
-
-# Returns
-- A tuple containing the final centroids and cluster labels for each data point.
 """
 function kmeans_clustering(
-    data::Vector{Float64}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6
-)
-    # reshape data
-    data = reshape(data, length(data), 1)
+    data::AbstractVector{T}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6
+) where {T<:Real}
+    data = reshape(data, 1, :)  # shape (1, N)
     return kmeans_clustering(data, k_means, max_iters, tol)
 end
 
@@ -395,12 +358,6 @@ end
     logistic(x::Real)
 
 Calculate the logistic function in a numerically stable way.
-
-# Arguments
-- `x::Real`: The input value.
-
-# Returns
-- The result of the logistic function applied to `x`.
 """
 function logistic(x::Real)
     if x > 0
@@ -412,17 +369,11 @@ function logistic(x::Real)
 end
 
 """
-    make_posdef!(A::Matrix{T}) where {T}
+    make_posdef!(A::AbstractMatrix{T}) where {T<:Real}
 
 Ensure that a matrix is positive definite by adjusting its eigenvalues.
-
-# Arguments
-- `A::Matrix{T}`: The input matrix.
-
-# Returns
-- A positive definite matrix derived from `A`.
 """
-function make_posdef!(A::AbstractMatrix{T}; min_eigval::T=1e-6) where {T<:Real}
+function make_posdef!(A::AbstractMatrix{T}; min_eigval::T=convert(T, 1e-6)) where {T<:Real}
     # Work with the symmetric part
     B = Symmetric((A + A') / 2)
 
@@ -453,14 +404,8 @@ end
     stabilize_covariance_matrix(Σ::Matrix{<:Real})
 
 Stabilize a covariance matrix by ensuring it is symmetric and positive definite.
-
-# Arguments
-- `Σ::Matrix{<:Real}`: The input covariance matrix.
-
-# Returns
-- A stabilized version of the input covariance matrix.
 """
-function stabilize_covariance_matrix(Σ::Matrix{<:Real})
+function stabilize_covariance_matrix(Σ::AbstractMatrix{T}) where {T<:Real}
     # check if the covariance is symmetric. If not, make it symmetric
     if !ishermitian(Σ)
         Σ = (Σ + Σ') * 0.5
@@ -472,7 +417,7 @@ function stabilize_covariance_matrix(Σ::Matrix{<:Real})
     return Σ
 end
 
-function valid_Σ(Σ::Matrix{<:Real})
+function valid_Σ(Σ::AbstractMatrix{T}) where {T<:Real}
     return ishermitian(Σ) && isposdef(Σ)
 end
 
@@ -498,23 +443,44 @@ function stack_tuples(d)
 end
 
 """
-    gaussian_entropy(H::Symmetric{T}) where T <: Real
+    gaussian_entropy(H::Symmetric{T}) where {T<:Real}
 
 Calculate the entropy of a Gaussian distribution with Hessian (i.e. negative precision) matrix `H`.
-
-# Arguments
-- `H::Symmetric{T}`: The Hessian matrix.
-
-# Returns
-- The entropy of the Gaussian distribution.
 """
-function gaussian_entropy(H::Symmetric{T}) where T <: Real
+function gaussian_entropy(H::Symmetric{T}) where {T<:Real}
     n = size(H, 1)
     F = cholesky(-H)
     logdet_H = 2 * sum(log.(diag(F)))
     return 0.5 * (n * log(2π) + logdet_H)
 end
 
+"""
+    gaussian_entropy(H::Symmetric{BigFloat, <:SparseMatrix})
+
+Specialized method for BigFloat sparse matrices using logdet.
+"""
+function gaussian_entropy(H::Symmetric{BigFloat, <:AbstractSparseMatrix})
+    n = size(H, 1)
+    logdet_H = logdet(-H)
+    return 0.5 * (n * log(BigFloat(2π)) + logdet_H)
+end
+
+"""
+    random_rotation_matrix(n)
+
+Generate a random rotation matrix of size `n x n`.
+"""
+function random_rotation_matrix(n::Int, rng::AbstractRNG=Random.default_rng())
+    # Generate a random orthogonal matrix using QR decomposition
+    Q, _ = qr(randn(rng, n, n))
+    return Matrix(Q)
+end
+
+"""
+    getproperty(model::AutoRegressiveEmission, sym::Symbol)
+
+Get various properties of 'innerGaussianRegression`. 
+"""
 function Base.getproperty(model::AutoRegressiveEmission, sym::Symbol)
     if sym === :β
         return model.innerGaussianRegression.β
@@ -529,6 +495,12 @@ function Base.getproperty(model::AutoRegressiveEmission, sym::Symbol)
     end
 end
 
+"""
+    setproperty!(model::AutoRegressiveEmission, sym::Symbol, value)
+
+Assign to properties of an `AutoRegressiveEmission` by forwarding certain symbols
+to its `innerGaussianRegression` field:
+"""
 # define setters for innerGaussianRegression fields
 function Base.setproperty!(model::AutoRegressiveEmission, sym::Symbol, value)
     if sym === :β

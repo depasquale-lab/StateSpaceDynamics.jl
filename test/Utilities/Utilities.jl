@@ -6,7 +6,7 @@ end
 
 function test_kmeanspp_initialization()
     # Generate random data
-    data = randn(100, 2)
+    data = randn(2, 100)
     # Initialize centroids
     k_means = 3
     centroids = kmeanspp_initialization(data, k_means)
@@ -16,7 +16,7 @@ end
 
 function test_kmeans_clustering()
     # Generate random data
-    data = randn(100, 2)
+    data = randn(2, 100)
     # Initialize centroids
     k_means = 3
     centroids, labels = kmeans_clustering(data, k_means)
@@ -77,7 +77,7 @@ end
 function test_autoregressive_setters_and_getters()
 
     # Define AR emission
-    AR = AutoRegressionEmission(output_dim=2, order=1, include_intercept=false, β=rand(4,4))
+    AR = AutoRegressionEmission(output_dim=2, order=1, include_intercept=false, β=rand(4,4), Σ=rand(2,2), λ=0.0)
 
     # Define parameters
     β = rand(4,4)
@@ -98,7 +98,7 @@ function test_autoregressive_setters_and_getters()
     @test AR.innerGaussianRegression.λ == AR.λ
 
     # Test setting innerGaussianRegression directly
-    GR = GaussianRegressionEmission(input_dim=1, output_dim=2, include_intercept=false, β=2*rand(1, 2))
+    GR = GaussianRegressionEmission(input_dim=1, output_dim=2, include_intercept=false, β=2*rand(1, 2), Σ=rand(2,2), λ=0.0)
     AR.innerGaussianRegression = GR
     @test AR.innerGaussianRegression == GR
 

@@ -10,15 +10,18 @@ function test_viterbi_GaussianHMM()
     Σ = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
     emission_3 = GaussianEmission(output_dim, μ, Σ)
 
+    output_dim = 2
+    μ = [3.0, 1.2]
+    Σ = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
+    emission_4 = GaussianEmission(output_dim, μ, Σ)
+
     μ = [2.0, 1.0]
     Σ = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
     emission_2 = GaussianEmission(output_dim, μ, Σ)
-    #
-    # Create GaussianHMM
-    true_model = StateSpaceDynamics.GaussianHMM(K=2, output_dim=2)
-    true_model.B[1] = emission_1
-    true_model.B[2] = emission_2
-    true_model.A = [0.9 0.1; 0.8 0.2]
+
+    A = [0.9 0.1; 0.2 0.8]
+    πₖ = [0.7; 0.3]
+    true_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
 
     # Number of trials and samples per trial
     n_trials = 100
@@ -30,15 +33,15 @@ function test_viterbi_GaussianHMM()
 
     # Run 100 sampling trials
     for i in 1:n_trials
-        true_labels, data = StateSpaceDynamics.sample(true_model, n=n_samples)
+        true_labels, data = rand(true_model, n=n_samples)
         all_true_labels[i] = true_labels
         all_data[i] = data
     end
 
     # Fit a gaussian hmm to the data
-    test_model = StateSpaceDynamics.GaussianHMM(K=2, output_dim=2)
-    test_model.B[1] = emission_1
-    test_model.A = [0.8 0.2; 0.05 0.95]
+    A = [0.9 0.1; 0.2 0.8]
+    πₖ = [0.7; 0.3]
+    test_model = HiddenMarkovModel(K=2, B=[emission_3, emission_4], A=A, πₖ=πₖ)
     lls = StateSpaceDynamics.fit!(test_model, all_data)
 
     @test isapprox(test_model.B[1].μ, true_model.B[1].μ, atol=0.1) || isapprox(test_model.B[1].μ, true_model.B[2].μ, atol=0.1)
@@ -53,41 +56,49 @@ end
 
 
 function test_class_probabilities()
-    # Create Gaussian Emission Models
+    # Create Guassian Emission Models
     output_dim = 2
     μ = [0.0, 0.0]
     Σ = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
     emission_1 = GaussianEmission(output_dim, μ, Σ)
 
+    output_dim = 2
+    μ = [0.0, 1.0]
+    Σ = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
+    emission_3 = GaussianEmission(output_dim, μ, Σ)
+
+    output_dim = 2
+    μ = [3.0, 1.2]
+    Σ = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
+    emission_4 = GaussianEmission(output_dim, μ, Σ)
+
     μ = [2.0, 1.0]
     Σ = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
     emission_2 = GaussianEmission(output_dim, μ, Σ)
 
-    # Create GaussianHMM
-    true_model = StateSpaceDynamics.GaussianHMM(K=2, output_dim=2)
-    true_model.B[1] = emission_1
-    true_model.B[2] = emission_2
-    true_model.A = [0.9 0.1; 0.8 0.2]
+    A = [0.9 0.1; 0.2 0.8]
+    πₖ = [0.7; 0.3]
+    true_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
 
     # Number of trials and samples per trial
-    n_trials = 10
+    n_trials = 100
     n_samples = 1000
 
     # Preallocate storage for true_labels and data from each trial
     all_true_labels = Vector{Vector{Int}}(undef, n_trials)
     all_data = Vector{Matrix{Float64}}(undef, n_trials)
 
-    # Run sampling trials
+    # Run 100 sampling trials
     for i in 1:n_trials
-        true_labels, data = StateSpaceDynamics.sample(true_model, n=n_samples)
+        true_labels, data = rand(true_model, n=n_samples)
         all_true_labels[i] = true_labels
         all_data[i] = data
     end
 
-    # Fit a Gaussian HMM to the data
-    test_model = StateSpaceDynamics.GaussianHMM(K=2, output_dim=2)
-    test_model.B[1] = emission_1
-    test_model.A = [0.8 0.2; 0.05 0.95]
+    # Fit a gaussian hmm to the data
+    A = [0.9 0.1; 0.2 0.8]
+    πₖ = [0.7; 0.3]
+    test_model = HiddenMarkovModel(K=2, B=[emission_3, emission_4], A=A, πₖ=πₖ)
     lls = StateSpaceDynamics.fit!(test_model, all_data)
 
     @test isapprox(test_model.B[1].μ, true_model.B[1].μ, atol=0.1) || isapprox(test_model.B[1].μ, true_model.B[2].μ, atol=0.1)

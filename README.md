@@ -3,16 +3,18 @@
 [![StateSpaceDynamics-CI](https://github.com/rsenne/ssm_julia/actions/workflows/run_tests.yaml/badge.svg)](https://github.com/rsenne/ssm_julia/actions/workflows/run_tests.yaml)
 [![codecov](https://codecov.io/github/depasquale-lab/StateSpaceDynamics.jl/graph/badge.svg?token=EQ6B9RJBQ8)](https://codecov.io/github/depasquale-lab/StateSpaceDynamics.jl)
 [![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
+[![JET](https://img.shields.io/badge/%F0%9F%9B%A9%EF%B8%8F_tested_with-JET.jl-233f9a)](https://github.com/aviatesk/JET.jl)
 [![Code Style: Blue](https://img.shields.io/badge/code%20style-blue-4495d1.svg)](https://github.com/JuliaDiff/BlueStyle)
 [![](https://img.shields.io/badge/docs-dev-blue.svg)](https://depasquale-lab.github.io/StateSpaceDynamics.jl/dev/)
 [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://depasquale-lab.github.io/StateSpaceDynamics.jl/stable)
 [![status](https://joss.theoj.org/papers/0bcb7b5a500055bb4f9fc5aec65c177b/status.svg)](https://joss.theoj.org/papers/0bcb7b5a500055bb4f9fc5aec65c177b)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15668421.svg)](https://doi.org/10.5281/zenodo.15668421)
 
 ## Description
 
 StateSpaceDynamics.jl is a comprehensive and self-contained Julia package for working with probabilistic state space models (SSMs). It implements a wide range of state-space models, taking inspiration from the [SSM](https://github.com/lindermanlab/ssm) package written in Python by the Linderman Lab. This package is designed to be fast, flexible, and all-encompassing, leveraging Julia's speed and expressiveness to provide researchers and data scientists with a powerful toolkit for state-space modeling.
 
-This package is geared towards applications in neuroscience, so the models incorparate a certain neuroscience flavor (e.g., many of our models are trialized as common in experimental paradigms). However, the models are general enough to be used in other fields such as finance, robotics, and many other domains involving sequential data analysis.
+This package is geared towards applications in neuroscience, so the models incorporate a certain neuroscience flavor (e.g., many of our models are trialized as common in experimental paradigms). However, the models are general enough to be used in other fields such as finance, robotics, and many other domains involving sequential data analysis.
 
 We are continuously working to expand our model offerings. If you have suggestions for additional models or features, please open an issue on our GitHub repository.
 
@@ -31,9 +33,12 @@ StateSpaceDynamics.jl is designed to be user friendly with intuitive syntax. Bel
 ```julia
 using StateSpaceDynamics
 using LinearAlgebra
+using StableRNGs
+
+# Set seed for reproducibility
+rng = StableRNG(1234);
 
 # create a toy system
-
 # initial conditions
 x0 = [1.0, -1.0] # initial state
 P0 = Matrix(Diagonal([0.1, 0.1])) # initial state covariance
@@ -47,15 +52,26 @@ C = [1.2 1.2; 1.2 1.2; 1.2 1.2] # observation matrix
 log_d = log.([0.1, 0.1, 0.1]) # log of the natural parameters of the Poisson distribution
 
 # generate data
-tSteps = 100
+tsteps = 100
 trials = 10
 
-true_plds = PoissonLDS(;A=A, Q=Q, C=C, log_d=log_d, x0=x0, P0=P0, obs_dim=3, latent_dim=2)
-latents, observations = sample(true_plds, tSteps, trials)
+gaussian_state_model = GaussianStateModel(;A=A, Q=Q, P0=P0, x0=x0)
+poisson_obs_model = PoissonObservationModel(;C=C, log_d=log_d)
 
-# fit the model 
-plds = PoissonLDS(;obs_dim=3, latent_dim=2)
-fit!(plds, observations)
+plds_true = LinearDynamicalSystem(;state_model=gaussian_state_model, obs_model=poisson_obs_model, latent_dim=2, obs_dim=3, fit_bool=fill(true, 6))
+latents, observations = rand(rng, plds_true; tsteps=tsteps, ntrials=trials)
+
+# fit the data to a new naive model
+A_init = random_rotation_matrix(2, rng)
+Q_init = Matrix(0.1 * I(2))
+P0_init = Matrix(0.1 * I(2))
+x0_init = zeros(2)
+
+C_init = rand(3, 2)
+log_d_init = zeros(3)
+
+plds_true = LinearDynamicalSystem(;state_model=GaussianStateModel(;A=A_init, Q=Q_init, P0=P0_init, x0=x0_init), obs_model=PoissonObservationModel(;C=C_init, log_d=log_d_init), latent_dim=2, obs_dim=3, fit_bool=fill(true, 6))
+fit!(plds_true, observations; max_iter=15, tol=1e-3)
 ```
 
 ## Available Models

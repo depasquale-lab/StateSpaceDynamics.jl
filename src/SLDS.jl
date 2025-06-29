@@ -1,108 +1,135 @@
-export SwitchingLinearDynamicalSystem, fit!, sample, initialize_slds, variational_expectation!
+export SwitchingLinearDynamicalSystem, fit!, initialize_slds, variational_expectation!
 """
 Switching Linear Dynamical System
+
+Struct to Encode a Hidden Markov model that switches among K distinct LinearDyanmicalSystems
+
+# Fields 
+- `A::V`: Transition matrix for mode switching. 
+- `B::VL`: Vector of Linear Dynamical System models. 
+- `πₖ::V`: Initial state distribution.
+- `K::Int`: Number of modes. 
 """
-mutable struct SwitchingLinearDynamicalSystem <: AbstractHMM
-    A::Matrix{<:Real}                 # Transition matrix for mode switching
-    B::Vector{LinearDynamicalSystem}  # Vector of Linear Dynamical System models
-    πₖ::Vector{Float64}               # Initial state distribution
-    K::Int                            # Number of modes
+mutable struct SwitchingLinearDynamicalSystem{T<:Real,M<:AbstractMatrix{T}, V<:AbstractVector{T}, VL<:AbstractVector{<:LinearDynamicalSystem}} <: AbstractHMM
+    A::M 
+    B::VL 
+    πₖ::V  
+    K::Int 
 end
 
 
 """
+    Random.rand(rng, slds, T)
+
 Generate synthetic data with switching LDS models
+
+#Arguments 
+- `rng:AbstractRNG`: Random number generator
+- `slds::SwitchingLinearDynamicalSystem`: The switching LDS model 
+- `T::Int`: Number of time steps to sample
+
+# Returns
+- `Tuple{Array,Array, Array}`: Latent states (x), observations (y), and mode sequences (z). 
 """
-function sample(slds::SwitchingLinearDynamicalSystem, T::Int)
+function Random.rand(rng::AbstractRNG, slds::SwitchingLinearDynamicalSystem, T::Int)
     state_dim = slds.B[1].latent_dim
     obs_dim = slds.B[1].obs_dim
     K = slds.K
 
     x = zeros(state_dim, T)  # Latent states
-    y = zeros(obs_dim, T)   # Observations
-    z = zeros(Int, T)       # Mode sequence
+    y = zeros(obs_dim, T)    # Observations
+    z = zeros(Int, T)        # Mode sequence
 
     # Sample initial mode
-    z[1] = rand(Categorical(slds.πₖ / sum(slds.πₖ)))
-    x[:, 1] = rand(MvNormal(zeros(state_dim), slds.B[z[1]].state_model.Q))
-    y[:, 1] = rand(MvNormal(slds.B[z[1]].obs_model.C * x[:, 1], slds.B[z[1]].obs_model.R))
+    z[1] = rand(rng, Categorical(slds.πₖ / sum(slds.πₖ)))
+    x[:, 1] = rand(rng, MvNormal(zeros(state_dim), slds.B[z[1]].state_model.Q))
+    y[:, 1] = rand(rng, MvNormal(slds.B[z[1]].obs_model.C * x[:, 1], slds.B[z[1]].obs_model.R))
 
-    for t in 2:T
+    @views for t in 2:T
         # Sample mode based on transition probabilities
         z[t] = rand(Categorical(slds.A[z[t-1], :] ./ sum(slds.A[z[t-1], :])))
         # Update latent state and observation
-        x[:, t] = rand(MvNormal(slds.B[z[t]].state_model.A * x[:, t-1], slds.B[z[t]].state_model.Q))
-        y[:, t] = rand(MvNormal(slds.B[z[t]].obs_model.C * x[:, t], slds.B[z[t]].obs_model.R))
+        x[:, t] = rand(
+          MvNormal(slds.B[z[t]].state_model.A * x[:, t-1], slds.B[z[t]].state_model.Q)
+        )
+        y[:, t] = rand(
+          MvNormal(slds.B[z[t]].obs_model.C * x[:, t], slds.B[z[t]].obs_model.R)
+        )
     end
 
     return x, y, z
-    
+end
+
+function Random.rand(slds::SwitchingLinearDynamicalSystem, T::Int)
+    return rand(Random.default_rng(), slds, T)
 end
 
 """
+    initialize_slds(;K::Int=2, d::Int=2, p::Int=10, self_bias::Float64=5.0, seed::Int=42)
+
 Initialize a Switching Linear Dynamical System with random parameters.
 """
 function initialize_slds(;K::Int=2, d::Int=2, p::Int=10, self_bias::Float64=5.0, seed::Int=42)
-  Random.seed!(seed)
-  
-  # Transition matrix using Dirichlet with self-bias
-  A = zeros(K, K)
-  for i in 1:K
-      # Create concentration parameters with higher value for self-transition
-      alpha = ones(K)
-      alpha[i] = self_bias  # Bias toward self-transition
-      
-      # Sample from Dirichlet distribution
-      A[i, :] = rand(Dirichlet(alpha))
-  end
-  
-  # Initial state probabilities
-  πₖ = rand(Dirichlet(ones(K)))
-  
-  # State parameters
-  Q = Matrix(0.001 * I(d))
-  x0 = zeros(d)
-  P0 = Matrix(0.001 * I(d))
-  
-  # Define observation parameters separately for each state
-  B = Vector{LinearDynamicalSystem}(undef, K)
-  
-  # Generate state matrices with different dynamics for each state
-  for k in 1:K
-      # Create rotation angles for each 2D subspace in the state space
-      F = Matrix{Float64}(I, d, d)
-      
-      # Parameter to make each state model unique
-      angle_factor = 2π * (k-1) / K
-      
-      # Add rotation components in 2D subspaces
-      for i in 1:2:d-1
-          if i+1 <= d  # Ensure we have a pair
-              # Create a 2D rotation with different angles for each state
-              theta = 0.1 + angle_factor + (i-1)*0.2
-              rotation = 0.95 * [cos(theta) -sin(theta); sin(theta) cos(theta)]
-              F[i:i+1, i:i+1] = rotation
-          end
-      end
-      
-      # If d is odd, add a scaling factor to the last dimension
-      if d % 2 == 1
-          F[d, d] = 0.95
-      end
-      
-      # Create state model with the designed dynamics
-      state_model = GaussianStateModel(F, Q, x0, P0)
-      
-      # Observation matrix - random for each state
-      C = randn(p, d)
-      R = Matrix(0.001 * I(p))
-      obs_model = GaussianObservationModel(C, R)
-      
-      # Create linear dynamical system for this state
-      B[k] = LinearDynamicalSystem(state_model, obs_model, d, p, fill(true, 6))
-  end
-  
-  return SwitchingLinearDynamicalSystem(A, B, πₖ, K)
+    Random.seed!(seed)
+    
+    # Transition matrix using Dirichlet with self-bias
+    A = zeros(K, K)
+    for i in 1:K
+        # Create concentration parameters with higher value for self-transition
+        alpha = ones(K)
+        alpha[i] = self_bias  # Bias toward self-transition
+        
+        # Sample from Dirichlet distribution
+        A[i, :] = rand(Dirichlet(alpha))
+    end
+    
+    # Initial state probabilities
+    πₖ = rand(Dirichlet(ones(K)))
+    
+    # State parameters
+    Q = Matrix(0.001 * I(d))
+    x0 = zeros(d)
+    P0 = Matrix(0.001 * I(d))
+    
+    # Define observation parameters separately for each state
+    B = Vector{LinearDynamicalSystem}(undef, K)
+    
+    # Generate state matrices with different dynamics for each state
+    for k in 1:K
+        # Create rotation angles for each 2D subspace in the state space
+        F = Matrix{Float64}(I, d, d)
+        
+        # Parameter to make each state model unique
+        angle_factor = 2π * (k-1) / K
+        
+        # Add rotation components in 2D subspaces
+        for i in 1:2:d-1
+            if i+1 <= d  # Ensure we have a pair
+                # Create a 2D rotation with different angles for each state
+                theta = 0.1 + angle_factor + (i-1)*0.2
+                rotation = 0.95 * [cos(theta) -sin(theta); sin(theta) cos(theta)]
+                F[i:i+1, i:i+1] = rotation
+            end
+        end
+        
+        # If d is odd, add a scaling factor to the last dimension
+        if d % 2 == 1
+            F[d, d] = 0.95
+        end
+        
+        # Create state model with the designed dynamics
+        state_model = GaussianStateModel(F, Q, x0, P0)
+        
+        # Observation matrix - random for each state
+        C = randn(p, d)
+        R = Matrix(0.001 * I(p))
+        obs_model = GaussianObservationModel(C, R)
+        
+        # Create linear dynamical system for this state
+        B[k] = LinearDynamicalSystem(state_model, obs_model, d, p, fill(true, 6))
+    end
+    
+    return SwitchingLinearDynamicalSystem(A, B, πₖ, K)
 end
 
 """
@@ -123,10 +150,13 @@ Fit a Switching Linear Dynamical System using the variational Expectation-Maximi
 
 # Returns
 - `mls::Vector{T}`: Vector of log-likelihood values for each iteration.
+- `param_diff::Vector{T}`: Vector of parameter differences over each iteration. 
+- `FB::ForwardBackward`: ForwardBackward struct 
+- `FS::FilterSmooth`: FilterSmooth struct 
 """
 function fit!(
-    slds::SwitchingLinearDynamicalSystem, y::Matrix{T}; 
-    max_iter::Int=1000, tol::Real=1e-3) where {T<:Real}
+    slds::AbstractHMM, y::AbstractMatrix{T}; max_iter::Int=1000, tol::Real=1e-3
+)where {T<:Real}
 
     # Initialize log-likelihood
     prev_ml = -T(Inf)
@@ -145,7 +175,7 @@ function fit!(
     T_step = size(y, 2)
     
     # INIT THE FILTER SMOOTH AND FB STRUCTS
-    FB = initialize_forward_backward(slds, T_step)
+    FB = initialize_forward_backward(slds, T_step, T)
     FS = [initialize_FilterSmooth(slds.B[k], T_step) for k in 1:K]
 
     # From the paper, we initialize the parameters by running the Kalman Smoother for each model. I would assume we need to set the initial hₜ as well.
@@ -191,31 +221,10 @@ function fit!(
     return mls, param_diff, FB, FS
 end
 
-
 """
     variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB, FS) -> Float64
 
-Compute the variational expectation (Evidence Lower Bound, ELBO) for a Switching Linear Dynamical System.
-
-# Arguments
-- `model::SwitchingLinearDynamicalSystem`:  
-  The switching linear dynamical system model containing parameters such as the number of regimes (`K`), system matrices (`B`), and observation models.
-
-- `y`:  
-  The observation data, typically a matrix where each column represents an observation at a specific time step.
-
-- `FB`:  
-  The forward-backward object that holds variables related to the forward and backward passes, including responsibilities (`γ`).
-
-- `FS`:  
-  An array of `FilterSmooth` objects, one for each regime, storing smoothed state estimates and covariances.
-
-# Returns
-- `Float64`:  
-  The total Evidence Lower Bound (ELBO) computed over all regimes and observations.
-
-# Description
-This function performs the variational expectation step for a Switching Linear Dynamical System by executing the following operations:
+Compute the variational expectation (Evidence Lower Bound, ELBO) for a Switching Linear Dynamical System by executing the following operations: 
 
 1. **Extract Responsibilities**:  
    Retrieves the responsibilities (`γ`) from the forward-backward object and computes their exponentials (`hs`).
@@ -233,18 +242,12 @@ This function performs the variational expectation step for a Switching Linear D
 
 4. **Return ELBO**:  
    Returns the accumulated ELBO (`ml_total`), which quantifies the quality of the variational approximation.
-
-# Example
-```julia
-# Assume `model` is an instance of SwitchingLinearDynamicalSystem with K regimes
-# `y` is the observation matrix of size (num_features, num_time_steps)
-# `FB` is a pre-initialized ForwardBackward object
-# `FS` is an array of FilterSmooth objects, one for each regime
-
-elbo = variational_expectation!(model, y, FB, FS)
-println("Computed ELBO: ", elbo)
 """
-function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::ForwardBackward, FS::Vector{FilterSmooth{T}}) where {T<:Real}
+function variational_expectation!(
+  model::SwitchingLinearDynamicalSystem, 
+  y::AbstractMatrix{T}, 
+  FB::ForwardBackward, 
+  FS::Vector{FilterSmooth{T}}) where {T<:Real}
   # For now a hardcoded tolerance
   tol = 1e-6
   # Get starting point for iterative E-step
@@ -297,8 +300,11 @@ function variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB::
 end
 
 """
+    hmm_elbo(model::AbstractHMM, FB::ForwardBackward; ϵ::Float64=1e-10)
+
+Compute the evidence based lower bound (ELBO) from the discrete state model. 
 """
-function hmm_elbo(model::SwitchingLinearDynamicalSystem, FB::ForwardBackward; ϵ::Float64=1e-10)
+function hmm_elbo(model::AbstractHMM, FB::ForwardBackward; ϵ::Float64=1e-10)
   # Extract necessary data
   γ = FB.γ
   ξ = FB.ξ
@@ -330,59 +336,17 @@ function hmm_elbo(model::SwitchingLinearDynamicalSystem, FB::ForwardBackward; ϵ
   log_p_x_z - log_q_z
 end
 
-
 """
-    variational_qs!(model::Vector{GaussianObservationModel{T}}, FB, y, FS) where {T<:Real}
+  variational_qs!(model::AbstractVector{<:GaussianObservationModel{T, <:AbstractMatrix{T}}}, 
+  FB::ForwardBackward, y::AbstractMatrix{T}, FS::Vector{FilterSmooth{T}}) where {T<:Real}
 
 Compute the variational distributions (`qs`) and update the log-likelihoods for a set of Gaussian observation models within a Forward-Backward framework.
-
-# Arguments
-- `model::Vector{GaussianObservationModel{T}}`  
-  A vector of Gaussian observation models, where each model defines the parameters for a specific regime or state in a Switching Linear Dynamical System. Each `GaussianObservationModel` should contain fields such as the observation matrix `C` and the observation noise covariance `R`.
-
-- `FB`  
-  The Forward-Backward object that holds variables related to the forward and backward passes of the algorithm. It must contain a mutable field `loglikelihoods`, which is a matrix where each entry `loglikelihoods[k, t]` corresponds to the log-likelihood of the observation at time `t` under regime `k`.
-
-- `y`  
-  The observation data matrix, where each column represents an observation vector at a specific time step. The dimensions are typically `(num_features, num_time_steps)`.
-
-- `FS`  
-  An array of `FilterSmooth` objects, one for each regime, that store smoothed state estimates (`x_smooth`) and their covariances (`p_smooth`). These are used to compute the expected sufficient statistics needed for updating the variational distributions.
-
-# Returns
-- `Nothing`  
-  The function performs in-place updates on the `FB.loglikelihoods` matrix. It does not return any value.
-
-# Description
-`variational_qs!` updates the log-likelihoods for each Gaussian observation model across all time steps based on the current smoothed state estimates. This is a critical step in variational inference algorithms for Switching Linear Dynamical Systems, where the goal is to approximate the posterior distributions over latent variables.
-
-# Example
-```julia
-# Define Gaussian observation models for each regime
-model = [
-    GaussianObservationModel(C = randn(5, 10), R = Matrix{Float64}(I, 5, 5)),
-    GaussianObservationModel(C = randn(5, 10), R = Matrix{Float64}(I, 5, 5))
-]
-
-# Initialize ForwardBackward object with a preallocated loglikelihoods matrix
-FB = ForwardBackward(loglikelihoods = zeros(Float64, length(model), 100))
-
-# Generate synthetic observation data (5 features, 100 time steps)
-y = randn(5, 100)
-
-# Initialize FilterSmooth objects for each regime
-FS = [
-    initialize_FilterSmooth(model[k], size(y, 2)) for k in 1:length(model)
-]
-
-# Compute variational distributions and update log-likelihoods
-variational_qs!(model, FB, y, FS)
-
-# Access the updated log-likelihoods
-println(FB.loglikelihoods)
 """
-function variational_qs!(model::Vector{GaussianObservationModel{T}}, FB::ForwardBackward, 
-  y, FS::Vector{FilterSmooth{T}}) where {T<:Real}
+function variational_qs!(
+  model::AbstractVector{<:GaussianObservationModel{T, <:AbstractMatrix{T}}}, 
+  FB::ForwardBackward, 
+  y::AbstractMatrix{T}, 
+  FS::Vector{FilterSmooth{T}}) where {T<:Real}
 
   T_steps = size(y, 2)
   K = length(model)
@@ -392,18 +356,22 @@ function variational_qs!(model::Vector{GaussianObservationModel{T}}, FB::Forward
         R_chol = cholesky(Symmetric(model[k].R))
         C = model[k].C
 
-        @inbounds for t in 1:T_steps
-          FB.loglikelihoods[k, t] = -0.5 * tr(R_chol \ Q_obs(C, FS[k].E_z[:,t,1], FS[k].E_zz[:,:,t,1], y[:,t]))
+        @views @inbounds for t in 1:T_steps
+          FB.loglikelihoods[k, t] = -0.5 * tr(R_chol \ Q_obs(C, FS[k].E_z[:, t, 1], FS[k].E_zz[:, :, t, 1], y[:, t]))
         end
-
     end 
 end
 
 
 """
+    mstep!(slds::AbstractHMM, FS::Vector{FilterSmooth{T}}, y::AbstractMatrix{T}, FB::ForwardBackward) where {T<:Real}
+
+Function to carry out the M-step in Expectation-Maximization algorithm for SLDS 
 """
-function mstep!(slds::SwitchingLinearDynamicalSystem,
-    FS::Vector{FilterSmooth{T}}, y::Matrix{T}, FB::ForwardBackward) where {T<:Real}
+function mstep!(slds::AbstractHMM,
+    FS::Vector{FilterSmooth{T}}, 
+    y::AbstractMatrix{T}, 
+    FB::ForwardBackward) where {T<:Real}
 
     K = slds.K
 

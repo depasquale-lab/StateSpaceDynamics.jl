@@ -8,6 +8,7 @@ using StatsFuns
 using SpecialFunctions
 using Test
 using Aqua
+using JET 
 using CSV
 using DataFrames
 using MAT
@@ -20,6 +21,12 @@ Package Wide Tests
     Aqua.test_all(StateSpaceDynamics; ambiguities=false)
     @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
 end
+
+@testset "Code linting using JET " begin
+    if VERSION >= v"1.11"
+        JET.test_package(StateSpaceDynamics; target_defined_modules=true)
+    end 
+end 
 
 include("helper_functions.jl")
 """
@@ -48,7 +55,11 @@ include("LinearDynamicalSystems//GaussianLDS.jl")
 @testset "GaussianLDS Tests" begin
     @testset "Constructor Tests" begin
         test_lds_with_params()
-        test_lds_without_params()
+        test_gaussian_obs_constructor_type_preservation()
+        test_gaussian_lds_constructor_type_preservation()
+        test_gaussian_sample_type_preservation()
+        test_gaussian_fit_type_preservation()
+        test_gaussian_loglikelihood_type_preservation()
     end
     @testset "Smoother tests" begin
         test_Gradient()
@@ -80,7 +91,11 @@ include("LinearDynamicalSystems//PoissonLDS.jl")
 @testset "PoissonLDS Tests" begin
     @testset "Constructor Tests" begin
         test_PoissonLDS_with_params()
-        test_poisson_lds_without_params()
+        test_pobs_constructor_type_preservation()
+        test_plds_constructor_type_preservation()
+        test_poisson_sample_type_preservation()
+        test_poisson_fit_type_preservation()
+        test_poisson_loglikelihood_type_preservation()
     end
     @testset "Smoother Tests" begin
         test_Gradient()
@@ -114,7 +129,7 @@ include("HiddenMarkovModels/GaussianHMM.jl")
     test_SwitchingGaussian_SingleState_fit()
     test_kmeans_init()
     test_trialized_GaussianHMM()
-    test_incomplete_initialization()
+    test_SwitchingGaussian_fit_float32()
 end
 
 include("HiddenMarkovModels/SwitchingGaussianRegression.jl")
@@ -123,6 +138,7 @@ include("HiddenMarkovModels/SwitchingGaussianRegression.jl")
     test_SwitchingGaussianRegression_fit()
     test_SwitchingGaussianRegression_SingleState_fit()
     test_trialized_SwitchingGaussianRegression()
+    # test_SwitchingGaussianRegression_fit_float32()
 end
 
 include("HiddenMarkovModels/SwitchingPoissonRegression.jl")
@@ -130,6 +146,7 @@ include("HiddenMarkovModels/SwitchingPoissonRegression.jl")
 @testset "Switching Poisson Regression Tests" begin
     test_SwitchingPoissonRegression_fit()
     test_trialized_SwitchingPoissonRegression()
+    # test_SwitchingPoissonRegression_fit_float32()
 end
 
 include("HiddenMarkovModels/SwitchingBernoulliRegression.jl")
@@ -147,79 +164,61 @@ include("MixtureModels/GaussianMixtureModel.jl")
 include("MixtureModels/PoissonMixtureModel.jl")
 
 @testset "MixtureModels.jl Tests" begin
-    # Test GaussianMixtureModel
-    # Initialize test models
-    # Standard GaussianMixtureModel model
-    # Number of clusters
+    # GaussianMixtureModel Tests
     k = 3
-    # Dimension of data points
-    data_dim = 2
-    # Construct gmm
-    standard_gmm = GaussianMixtureModel(k, data_dim)
-    # Generate sample data
-    standard_data = randn(10, data_dim)
-    # Test constructor method of GaussianMixtureModel
-    test_GaussianMixtureModel_properties(standard_gmm, k, data_dim)
-    # Vector-data GaussianMixtureModel model
-    # Number of clusters
+    D = 2  # feature dimension
+    standard_gmm = GaussianMixtureModel(k, D)
+    standard_data = rand(standard_gmm, 100)  # 100 samples, 2D each
+    test_GaussianMixtureModel_properties(standard_gmm, k, D)
+
     k = 2
-    # Dimension of data points
-    data_dim = 1
-    # Construct gmm
-    vector_gmm = GaussianMixtureModel(k, data_dim)
-    # Generate sample data
-    vector_data = randn(1000)
-    # Test constructor method of GaussianMixtureModel
-    test_GaussianMixtureModel_properties(vector_gmm, k, data_dim)
+    D = 1
+    vector_gmm = GaussianMixtureModel(k, D)
+    vector_data = rand(vector_gmm, 1000)  # scalar data
+    test_GaussianMixtureModel_properties(vector_gmm, k, D)
 
-    # Test EM methods of the GaussianMixtureModels
-
-    # Paired data and GaussianMixtureModels to test
     tester_set = [(standard_gmm, standard_data), (vector_gmm, vector_data)]
 
     for (gmm, data) in tester_set
+        data_matrix = isa(data, Vector) ? reshape(data, :, 1) : data
+        D = size(data_matrix, 1)
         k = gmm.k
-        data_dim = size(data, 2)
 
-        gmm = GaussianMixtureModel(k, data_dim)
+        gmm = GaussianMixtureModel(k, D)
         testGaussianMixtureModel_EStep(gmm, data)
 
-        gmm = GaussianMixtureModel(k, data_dim)
+        gmm = GaussianMixtureModel(k, D)
         testGaussianMixtureModel_MStep(gmm, data)
 
-        gmm = GaussianMixtureModel(k, data_dim)
+        gmm = GaussianMixtureModel(k, D)
         testGaussianMixtureModel_fit(gmm, data)
 
-        gmm = GaussianMixtureModel(k, data_dim)
-        test_log_likelihood(gmm, data)
+        gmm = GaussianMixtureModel(k, D)
+        test_loglikelihood(gmm, data)
     end
 
-    # Test PoissonMixtureModel
-    k = 3  # Number of clusters
-
-    # Simulate some Poisson-distributed data using the sample function
-    # First, define a temporary PMM for sampling purposes
+    # PoissonMixtureModel Tests
+    k = 3
     temp_pmm = PoissonMixtureModel(k)
-    temp_pmm.λₖ = [5.0, 10.0, 15.0]  # Assign some λ values for generating data
-    temp_pmm.πₖ = [1 / 3, 1 / 3, 1 / 3]  # Equal mixing coefficients for simplicity
-    data = StateSpaceDynamics.sample(temp_pmm, 300)  # Generate sample data
+    temp_pmm.λₖ = [5.0, 10.0, 15.0]
+    temp_pmm.πₖ = [1/3, 1/3, 1/3]
+    data = rand(temp_pmm, 300)  # returns Vector{Int}
 
     standard_pmm = PoissonMixtureModel(k)
-
-    # Conduct tests
     test_PoissonMixtureModel_properties(standard_pmm, k)
 
-    tester_set = [(standard_pmm, data)]
+    for (pmm, d) in [(standard_pmm, data)]
+        pmm = PoissonMixtureModel(k)
+        testPoissonMixtureModel_EStep(pmm, d)
 
-    for (pmm, data) in tester_set
         pmm = PoissonMixtureModel(k)
-        testPoissonMixtureModel_EStep(pmm, data)
+        testPoissonMixtureModel_MStep(pmm, d)
+
         pmm = PoissonMixtureModel(k)
-        testPoissonMixtureModel_MStep(pmm, data)
+        testPoissonMixtureModel_fit(pmm, d)
+
         pmm = PoissonMixtureModel(k)
-        testPoissonMixtureModel_fit(pmm, data)
-        pmm = PoissonMixtureModel(k)
-        test_log_likelihood(pmm, data)
+        test_loglikelihood_pmm(pmm, d)
     end
 end
 
@@ -298,9 +297,9 @@ include("Preprocessing/Preprocessing.jl")
 
 @testset "PPCA Tests" begin
     test_PPCA_with_params()
-    test_PPCA_without_params()
     test_PPCA_E_and_M_Step()
     test_PPCA_fit()
+    test_PPCA_samples()
 end
 
 include("HiddenMarkovModels/State_Labellers.jl")
