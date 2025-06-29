@@ -447,7 +447,7 @@ function smooth!(
     tsteps, D = size(y, 2), lds.latent_dim
 
     # use old fs if it exists, by default is zeros if no iteration of EM has occurred
-    X₀ = vec(fs.E_z) 
+    X₀ = Vector{T}(vec(fs.E_z))
 
     function nll(vec_x::AbstractVector{T})
         x = reshape(vec_x, D, tsteps)
