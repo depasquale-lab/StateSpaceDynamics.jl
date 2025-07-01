@@ -133,29 +133,6 @@ function initialize_slds(;K::Int=2, d::Int=2, p::Int=10, self_bias::Float64=5.0,
 end
 
 """
-    initialize_FilterSmooth_slds(slds::SwitchingLinearDynamicalSystem{T}, T_step::Int) where {T<:Real}
-
-Initialize FilterSmooth objects for each regime in the SLDS.
-"""
-function initialize_FilterSmooth_slds(slds::SwitchingLinearDynamicalSystem{T}, T_step::Int) where {T<:Real}
-    K = slds.K
-    FS = Vector{FilterSmooth{T}}(undef, K)
-    
-    for k in 1:K
-        num_states = slds.B[k].latent_dim
-        FS[k] = FilterSmooth(
-            zeros(T, num_states, T_step),           # x_smooth
-            zeros(T, num_states, num_states, T_step), # p_smooth
-            zeros(T, num_states, T_step, 1),         # E_z
-            zeros(T, num_states, num_states, T_step, 1), # E_zz
-            zeros(T, num_states, num_states, T_step, 1)  # E_zz_prev
-        )
-    end
-    
-    return FS
-end
-
-"""
     smooth_with_weights!(fs::FilterSmooth{T}, lds::LinearDynamicalSystem{T,S,O}, 
                         y::AbstractMatrix{T}, weights::AbstractVector{T}) where {T<:Real,S,O}
 
@@ -167,31 +144,13 @@ function smooth_with_weights!(
     y::AbstractMatrix{T}, 
     weights::AbstractVector{T}
 ) where {T<:Real,S,O}
-    # Perform smoothing with weights
-    x_smooth, p_smooth, inverse_offdiag, total_entropy = smooth(lds, y, weights)
+    # Use the smooth! function from LinearDynamicalSystems.jl
+    smooth!(lds, fs, y, weights)
     
-    # Update the FilterSmooth object
-    fs.x_smooth .= x_smooth
-    fs.p_smooth .= p_smooth
+    # Compute sufficient statistics using the new interface
+    sufficient_statistics!(fs)
     
-    # Compute sufficient statistics and store them in FilterSmooth
-    fs.E_z[:, :, 1] .= x_smooth
-    
-    # Compute E_zz and E_zz_prev
-    tsteps = size(x_smooth, 2)
-    @views for t in 1:tsteps
-        xt = x_smooth[:, t]
-        pt = p_smooth[:, :, t]
-        fs.E_zz[:, :, t, 1] .= pt .+ xt * xt'
-        if t > 1
-            xtm1 = x_smooth[:, t-1]
-            pt1 = inverse_offdiag[:, :, t]
-            fs.E_zz_prev[:, :, t, 1] .= pt1 .+ xt * xtm1'
-        end
-    end
-    fs.E_zz_prev[:, :, 1, 1] .= 0
-    
-    return total_entropy
+    return fs.entropy
 end
 
 """
@@ -238,7 +197,7 @@ function fit!(
     
     # Initialize the FilterSmooth and ForwardBackward structs
     FB = initialize_forward_backward(slds, T_step, T)
-    FS = initialize_FilterSmooth_slds(slds, T_step)
+    FS = [initialize_FilterSmooth(slds.B[k], T_step) for k in 1:K]
 
     # Initialize the parameters by running the Kalman Smoother for each model
     FB.γ = log.(ones(size(y)) * 0.5)
@@ -323,16 +282,11 @@ function variational_expectation!(
             total_entropy = smooth_with_weights!(FS[k], model.B[k], y, weights)
 
             # Calculate the ELBO contribution for the current SSM
-            # Convert single-trial format to multi-trial format for compatibility
-            y_3d = reshape(y, (size(y)..., 1))
-            elbo = calculate_elbo(
+            # Use the single-trial ELBO calculation
+            elbo = calculate_elbo_single_trial(
                 model.B[k], 
-                FS[k].E_z, 
-                FS[k].E_zz, 
-                FS[k].E_zz_prev, 
-                reshape(FS[k].p_smooth, (size(FS[k].p_smooth)..., 1)), 
-                y_3d, 
-                total_entropy, 
+                FS[k], 
+                y, 
                 weights
             )
             ml_total += elbo
@@ -346,6 +300,36 @@ function variational_expectation!(
     end
     
     return ml_total, ml_storage
+end
+
+"""
+    calculate_elbo_single_trial(lds, fs, y, w)
+
+Calculate ELBO for a single trial using FilterSmooth.
+"""
+function calculate_elbo_single_trial(
+    lds::LinearDynamicalSystem{T,S,O},
+    fs::FilterSmooth{T},
+    y::AbstractMatrix{T},
+    w::AbstractVector{T}
+) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+    
+    # Calculate Q-function using the single-trial data from FilterSmooth
+    Q_val = Q_function(
+        lds.state_model.A,
+        lds.state_model.Q,
+        lds.obs_model.C,
+        lds.obs_model.R,
+        lds.state_model.P0,
+        lds.state_model.x0,
+        fs.E_z,          # Matrix{T} (latent_dim, tsteps)
+        fs.E_zz,         # Array{T,3} (latent_dim, latent_dim, tsteps)
+        fs.E_zz_prev,    # Array{T,3} (latent_dim, latent_dim, tsteps)
+        y,
+        w
+    )
+    
+    return Q_val - fs.entropy
 end
 
 """
@@ -404,8 +388,28 @@ function variational_qs!(
         R_chol = cholesky(Symmetric(obs_models[k].R))
         C = obs_models[k].C
 
+        # Pre-allocate buffers for Q_obs! 
+        obs_dim, latent_dim = size(C)
+        buffers = (
+            sum_yy = zeros(T, obs_dim, obs_dim),
+            sum_yz = zeros(T, obs_dim, latent_dim),
+            temp_result = zeros(T, obs_dim, obs_dim),
+            work1 = zeros(T, obs_dim, obs_dim),
+            work2 = zeros(T, latent_dim, obs_dim)
+        )
+        temp_matrix = zeros(T, obs_dim, obs_dim)
+
         @views @inbounds for t in 1:T_steps
-            FB.loglikelihoods[k, t] = -0.5 * tr(R_chol \ Q_obs(C, FS[k].E_z[:, t, 1], FS[k].E_zz[:, :, t, 1], y[:, t]))
+            # Use the single time step version of Q_obs!
+            Q_obs!(
+                temp_matrix,
+                C, 
+                FS[k].E_z[:, t],         # E_z at time t (vector)
+                FS[k].E_zz[:, :, t],     # E_zz at time t (matrix)
+                y[:, t],                 # y at time t (vector)
+                buffers
+            )
+            FB.loglikelihoods[k, t] = -0.5 * tr(R_chol \ temp_matrix)
         end
     end 
 end
@@ -440,17 +444,18 @@ function mstep!(
         # Update LDS parameters using the sufficient statistics stored in FilterSmooth
         weights = vec(hs[k,:])
         
-        update_initial_state_mean!(slds.B[k], FS[k].E_z)
-        update_initial_state_covariance!(slds.B[k], FS[k].E_z, FS[k].E_zz)
-        update_A!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
-        update_Q!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
-        
-        # Convert to multi-trial format for compatibility with existing functions
+        # Create a TrialFilterSmooth with single trial for compatibility
+        tfs_single = TrialFilterSmooth([FS[k]])
         y_3d = reshape(y, size(y)..., 1)
-        update_C!(slds.B[k], FS[k].E_z, FS[k].E_zz, y_3d, weights)
+        
+        update_initial_state_mean!(slds.B[k], tfs_single)
+        update_initial_state_covariance!(slds.B[k], tfs_single)
+        update_A!(slds.B[k], tfs_single)
+        update_Q!(slds.B[k], tfs_single)
+        update_C!(slds.B[k], tfs_single, y_3d, weights)
 
         # Note: Not updating R as mentioned in original comment
-        # update_R!(slds.B[k], FS[k].E_z, FS[k].E_zz, y_3d, weights)
+        # update_R!(slds.B[k], tfs_single, y_3d, weights)
     end
 
     new_params = vec([stateparams(slds.B[k]) for k in 1:K])
