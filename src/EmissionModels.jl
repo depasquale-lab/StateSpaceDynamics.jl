@@ -301,25 +301,27 @@ function loglikelihood(
 ) where {T<:Real}
 
     if w === nothing
-        w = ones(eltype(Y), size(Y, 1))
+        w = ones(T, size(Y, 1))
     elseif eltype(w) !== eltype(Y)
         error("weights must be Vector{$(eltype(Y))}; Got Vector{$(eltype(w))}")
     end
 
-    # Add intercept if specified
-    Φ = model.include_intercept ? [ones(size(Φ, 1)) Φ] : Φ
-    
-    # residuals
-    residuals = Y - Φ * model.β
+    Φ = model.include_intercept ? hcat(ones(T, size(Φ, 1), 1), Φ) : Φ
+    n, _  = size(Φ)
+    _, d = size(Y)
+    β = model.β
+    lls = Vector{T}(undef, n)
 
-    # Calculate weighted least squares
-    weighted_residuals = residuals .^ 2 .* w
-
-    if size(weighted_residuals,2) > 1
-        weighted_residuals = vec(sum(weighted_residuals, dims=2))
+     @inbounds for i in 1:n
+        acc = zero(T)
+        for j in 1:d
+            residual = Y[i, j] - dot(Φ[i, :], β[:, j])
+            acc += residual^2
+        end
+        lls[i] = -0.5 * acc * w[i]
     end
 
-    return -0.5 .* weighted_residuals
+    return lls   
 end
 
 """
@@ -500,18 +502,25 @@ end
 Define the objective function for Gaussian/AR regression emission models.
 """
 function objective(
-    opt::Union{RegressionOptimization{<:GaussianRegressionEmission}, RegressionOptimization{<:AutoRegressionEmission}}, β_vec::AbstractVector{T}
+    opt::Union{RegressionOptimization{<:GaussianRegressionEmission}, RegressionOptimization{<:AutoRegressionEmission}}, 
+    β_vec::AbstractVector{T}
 ) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
-    residuals = opt.y - opt.X * β_mat
-    w_reshaped = reshape(opt.w, :, 1)
+    n, _ = size(opt.X)
+    total = zero(T)
+
+    # calculate residuals and w inside loop to avoid allocs 
+    @inbounds for i in 1:n
+        prediction = dot(opt.X[i, :], β_mat[:, 1])
+        residual = opt.y[i, 1] - prediction
+        total += opt.w[i] * residual^2
+    end
 
     # calculate regularization
     regularization = calc_regularization(β_mat, opt.model.λ, opt.model.include_intercept)
 
     # calculate pseudo log-likelihood
-    pseudo_ll = 0.5 * sum(w_reshaped .* residuals .^ 2) + regularization
-    return pseudo_ll
+    return 0.5 * total + regularization
 end
 
 """
@@ -528,16 +537,23 @@ function objective_gradient!(
     β_vec::AbstractVector{T},
 ) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
-    residuals = opt.y - opt.X * β_mat
+    n, p = size(opt.X)
+    _, d = size(opt.y)
+    weighted_residuals = similar(opt.y)
+
+    @inbounds for i in 1:n, j in 1:d
+        prediction = dot(opt.X[i, :], β_mat[:, j])
+        weighted_residuals[i, j] = (opt.y[i, j] - prediction) * opt.w[i]
+    end 
+
+    gradient = -(opt.X' * weighted_residuals) 
 
     # calc gradient of penalty
-    regularization = calc_regularization_gradient(
+    gradient .+= calc_regularization_gradient(
         β_mat, opt.model.λ, opt.model.include_intercept
     )
 
-    # calculate the gradient
-    grad_mat = -(opt.X' * (Diagonal(opt.w) * residuals)) + regularization  # Fixed: Added negative sign
-    return G .= vec(grad_mat)
+    return G .= vec(gradient)
 end
 
 # # Special handling for Gaussian regression to update variance
@@ -553,8 +569,23 @@ end
 Stabilize the covariance matrix for GaussianRegressionEmissions.
 """
 function post_optimization!(model::GaussianRegressionEmission, opt::RegressionOptimization)
-    residuals = opt.y - opt.X * model.β
-    Σ = (residuals' * Diagonal(opt.w) * residuals) / size(opt.X, 1)
+    n, _ = size(opt.X)
+    residuals = zeros(eltype(opt.X), n, 1)
+    Σ = zeros(eltype(opt.X), size(opt.y, 2), size(opt.y, 2))
+
+    # residuals 
+    @inbounds for i in 1:n
+        prediction = dot(opt.X[i, :], model.β[:, 1])
+        residuals[i, 1] = opt.y[i, 1] - prediction
+    end
+
+    # weighted outer product of residuals 
+    @inbounds for i in 1:n
+        r = residuals[i, 1]
+        Σ[1, 1] += opt.w[i] * r * r 
+    end
+    Σ ./= n
+
     model.Σ = 0.5 * (Σ + Σ')  # Ensure symmetry
     model.Σ = make_posdef!(model.Σ)
     return model.Σ
@@ -660,6 +691,10 @@ function loglikelihood(
     Y::AbstractMatrix,
     w::Union{Nothing,AbstractVector} = nothing,
 )
+    T = eltype(Φ)
+    n, _ = size(Φ)
+    β = model.β
+    ll = Vector{T}(undef, n)
 
     if w === nothing
         w = ones(eltype(Φ), size(Y, 1))
@@ -667,22 +702,17 @@ function loglikelihood(
         error("weights must be Vector{$(eltype(Φ))}; Got Vector{$(eltype(w))}")
     end
 
-    # add intercept if specified and not already included
-    if model.include_intercept && size(Φ, 2) == size(model.β,1) - 1
-        Φ = hcat(ones(size(Φ, 1)), Φ)
+    if model.include_intercept && size(Φ, 2) == size(model.β, 1) - 1
+        Φ = hcat(ones(T, size(Φ, 1)), Φ)
     end
+    
+    @inbounds for i in 1:n
+        z = dot(Φ[i, :], β)
+        p = 1 / (1 + exp(-z))
+        ll[i] = w[i] * (Y[i, 1] * log(p) + (1 - Y[i, 1]) * log(1 - p))
+    end 
 
-    # calculate log likelihood
-    p = logistic.(Φ * model.β)
-
-    obs_wise_loglikelihood = w .* (Y .* log.(p) .+ (1 .- Y) .* log.(1 .- p))
-
-    # sum across independent feature log likelihoods if mulitple features
-    if size(obs_wise_loglikelihood, 2) > 1
-        obs_wise_loglikelihood = sum(obs_wise_loglikelihood, dims=2)
-    end
-
-    return obs_wise_loglikelihood
+    return ll
 end
 
 """
@@ -696,14 +726,16 @@ function objective(
     opt::RegressionOptimization{<:BernoulliRegressionEmission}, β_vec::Vector{T}
 ) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
-    p = logistic.(opt.X * β_mat)
+    total = zero(T)
 
-    # calculate regularization
-    regularization = calc_regularization(β_mat, opt.model.λ, opt.model.include_intercept)
-
-    val = -sum(opt.w .* (opt.y .* log.(p) .+ (1 .- opt.y) .* log.(1 .- p))) + regularization
-
-    return val
+    @inbounds for i in 1:size(opt.X, 1)
+        z = dot(opt.X[i, :], β_mat[:, 1])
+        p = 1 / (1+exp(-z))
+        y = opt.y[i, 1]
+        total -= opt.w[i] * (y * log(p) + (1 - y) * log(1 - p))
+    end 
+    
+    return total + calc_regularization(β_mat, opt.model.λ, opt.model.include_intercept)
 end
 
 """
@@ -720,15 +752,24 @@ function objective_gradient!(
     β_vec::AbstractVector{T},
 ) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
-    p = logistic.(opt.X * β_mat)
+    gradient = zeros(T, size(opt.X, 2), 1)
+    n, d = size(opt.X)
+
+    @inbounds for i in 1:n
+        z = dot(opt.X[i, :], β_mat[:, 1])
+        p = 1 / (1 + exp(-z))  #logistic 
+        delta = opt.y[i, 1] - p
+        for j in 1:d
+            gradient[j, 1] -= opt.w[i] * opt.X[i, j] * delta
+        end
+    end
 
     # calc gradient of penalty
-    regularization = calc_regularization_gradient(
+    gradient .+= calc_regularization_gradient(
         β_mat, opt.model.λ, opt.model.include_intercept
     )
 
-    grad_mat = -(opt.X' * (opt.w .* (opt.y .- p))) + regularization
-    return G .= vec(grad_mat)
+    return G .= vec(gradient)
 end
 
 """
@@ -828,31 +869,29 @@ function loglikelihood(
     Y::AbstractMatrix,
     w::Union{Nothing,AbstractVector{}} = nothing
 )
+    T = eltype(Φ)
+    n, _ = size(Φ)
+    β = model.β
+    ll = Vector{T}(undef, n)
 
-    
     if w === nothing
         w = ones(eltype(Φ), size(Y, 1))
     elseif eltype(w) !== eltype(Φ)
         error("weights must be Vector{$(eltype(Φ))}; Got Vector{$(eltype(w))}")
     end
 
-    # add intercept if specified
-    if model.include_intercept && size(Φ, 2) == size(model.β,1) - 1
-        Φ = hcat(ones(size(Φ, 1)), Φ)
+    if model.include_intercept && size(Φ, 2) == size(model.β, 1) - 1
+        Φ = hcat(ones(T, size(Φ, 1)), Φ)
     end
 
-    # calculate log likelihood
-    η = clamp.(Φ * model.β, -30, 30)
-    rate = exp.(η)
-
-    obs_wise_loglikelihood = w .* (Y .* log.(rate) .- rate .- loggamma.(Int.(Y) .+ 1))
-
-    # sum across independent feature log likelihoods if mulitple features
-    if size(obs_wise_loglikelihood, 2) > 1
-        obs_wise_loglikelihood = sum(obs_wise_loglikelihood, dims=2)
+    @inbounds for i in 1:n
+        z = clamp(dot(Φ[i, :], β), -20, 20)
+        λ = exp(z)
+        yi = Y[i, 1]
+        ll[i] = w[i] * (yi * log(λ) - λ - loggamma(yi + one(Int)))
     end
 
-    return obs_wise_loglikelihood
+    return ll
 end
 
 """
@@ -863,20 +902,22 @@ end
 Define the objective function for a Poisson regression emission.
 """
 function objective(
-    opt::RegressionOptimization{<:PoissonRegressionEmission}, β_vec::AbstractVector{T}
+    opt::RegressionOptimization{<:PoissonRegressionEmission}, 
+    β_vec::AbstractVector{T}
 ) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
+    total = zero(T)
+    n, _ = size(opt.X)
 
-    η = clamp.(opt.X * β_mat, -30, 30)
-    rate = exp.(η)
+    @inbounds for i in 1:n
+        η = clamp(dot(opt.X[i, :], β_mat[:, 1]), -30, 30)
+        rate = exp(η)
+        yi = opt.y[i, 1]
+        total -= opt.w[i] * (yi * log(rate) - rate - loggamma(yi + one(Int)))
+    end 
 
-    # calculate regularization
-    regularization = calc_regularization(β_mat, opt.model.λ, opt.model.include_intercept)
-
-    val =
-        -sum(opt.w .* (opt.y .* log.(rate) .- rate .- loggamma.(Int.(opt.y) .+ 1))) +
-        regularization
-    return val
+    reg = calc_regularization(β_mat, opt.model.λ, opt.model.include_intercept)
+    return total + reg
 end
 
 """
@@ -893,16 +934,24 @@ function objective_gradient!(
     β_vec::AbstractVector{T},
 ) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
-    η = clamp.(opt.X * β_mat, -30, 30)
-    rate = exp.(η)
+    n, d = size(opt.X)
+    gradient = zeros(T, d, 1)
+
+    @inbounds for i in 1:n
+        η = clamp(dot(opt.X[i, :], β_mat[:, 1]), -30, 30)
+        rate = exp(η)
+        delta = opt.y[i, 1] - rate
+        for j in 1:d
+            gradient[j, 1] -= opt.w[i] * opt.X[i, j] * delta
+        end
+    end
 
     # calc gradient of penalty
-    regularization = calc_regularization_gradient(
+    gradient .+= calc_regularization_gradient(
         β_mat, opt.model.λ, opt.model.include_intercept
     )
 
-    grad_mat = (-opt.X' * (Diagonal(opt.w) * (opt.y .- rate))) + regularization
-    return G .= vec(grad_mat)
+    return G .= vec(gradient)
 end
 
 # Unified fit! function for all regression emissions
