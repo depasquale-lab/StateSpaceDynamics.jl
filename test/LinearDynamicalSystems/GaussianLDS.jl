@@ -382,8 +382,11 @@ end
 function test_estep()
     lds, x, y = toy_lds()
 
+    # init a filter smooth object
+    tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, size(y, 2), size(y,3))
+
     # run the E_Step
-    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(lds, y)
+    ml_total = StateSpaceDynamics.estep!(lds, tfs, y)
 
     n_trials = size(y, 3)
     n_tsteps = size(y, 2)
@@ -399,8 +402,11 @@ end
 function test_initial_observation_parameter_updates(ntrials::Int=1)
     lds, x, y = toy_lds(ntrials, [true, true, false, false, false, false])
 
+    # tfs
+    tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, size(y, 2), size(y, 3))
+
     # run the E_Step
-    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(lds, y)
+    ml_total = StateSpaceDynamics.estep!(lds, tfs, y)
 
     # optimize the x0 and p0 entries using autograd
     function obj(x0::AbstractVector, P0_sqrt::AbstractMatrix, lds)
@@ -436,8 +442,11 @@ end
 function test_state_model_parameter_updates(ntrials::Int=1)
     lds, x, y = toy_lds(ntrials, [false, false, true, true, false, false])
 
+    # tfs
+    tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, size(y, 2), size(y, 3))
+
     # run the E_Step
-    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(lds, y)
+    ml_total = StateSpaceDynamics.estep!(lds, tfs, y)
 
     # optimize the A and Q entries using autograd
     function obj(A::AbstractMatrix, Q_sqrt::AbstractMatrix, lds)
@@ -484,8 +493,11 @@ end
 function test_obs_model_params_updates(ntrials::Int=1)
     lds, x, y = toy_lds(ntrials, [false, false, false, false, true, true])
 
+    # tfs
+    tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, size(y, 2), size(y, 3))
+
     # run the E_Step
-    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(lds, y)
+    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep!(lds, tfs, y)
 
     # optimize the C and R entries using autograd
     function obj(C::AbstractMatrix, R_sqrt::AbstractMatrix, lds)
