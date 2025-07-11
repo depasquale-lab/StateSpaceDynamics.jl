@@ -357,14 +357,22 @@ end
 
 function test_smooth()
     lds, x, y = toy_lds()
-    x_smooth, p_smooth, inverseoffdiag = smooth(lds, y)
+
+    # create tfs
+    tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, size(y, 2), size(y, 3))
+
+    StateSpaceDynamics.smooth!(lds, tfs, y)
 
     n_trials = size(y, 3)
     n_tsteps = size(y, 2)
 
-    @test size(x_smooth) == size(x)
-    @test size(p_smooth) == (lds.latent_dim, lds.latent_dim, n_tsteps, n_trials)
-    @test size(inverseoffdiag) == (lds.latent_dim, lds.latent_dim, n_tsteps, n_trials)
+    x_smooth = tfs[1].x_smooth
+    p_smooth = tfs[1].p_smooth
+    p_smooth_tt1 = tfs[1].p_smooth_tt1
+
+    @test size(x_smooth) == (lds.latent_dim, n_tsteps)
+    @test size(p_smooth) == (lds.latent_dim, lds.latent_dim, n_tsteps)
+    @test size(p_smooth_tt1) == (lds.latent_dim, lds.latent_dim, n_tsteps)
 
     # test gradient is zero
     for i in axes(y, 3)
@@ -391,11 +399,13 @@ function test_estep()
     n_trials = size(y, 3)
     n_tsteps = size(y, 2)
 
-    @test size(E_z) == (lds.latent_dim, n_tsteps, n_trials)
-    @test size(E_zz) == (lds.latent_dim, lds.latent_dim, n_tsteps, n_trials)
-    @test size(E_zz_prev) == (lds.latent_dim, lds.latent_dim, n_tsteps, n_trials)
-    @test size(x_smooth) == size(x)
-    @test size(p_smooth) == (lds.latent_dim, lds.latent_dim, n_tsteps, n_trials)
+    E_z, E_zz, E_zz_prev, x_smooth, p_smooth = tfs[1].E_z, tfs[1].E_zz, tfs[1].E_zz_prev, tfs[1].x_smooth, tfs[1].p_smooth
+
+    @test size(E_z) == (lds.latent_dim, n_tsteps)
+    @test size(E_zz) == (lds.latent_dim, lds.latent_dim, n_tsteps)
+    @test size(E_zz_prev) == (lds.latent_dim, lds.latent_dim, n_tsteps)
+    @test size(x_smooth) == (lds.latent_dim, n_tsteps)
+    @test size(p_smooth) == (lds.latent_dim, lds.latent_dim, n_tsteps)
     @test isa(ml_total, Float64)
 end
 
@@ -413,9 +423,10 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
         A, Q = lds.state_model.A, lds.state_model.Q
         P0 = P0_sqrt * P0_sqrt'
         Q_val = 0.0
-        for i in axes(E_z, 3)
+        for i in 1:ntrials
+            E_z, E_zz, E_zz_prev = tfs[i].E_z, tfs[i].E_zz, tfs[i].E_zz_prev
             Q_val += StateSpaceDynamics.Q_state(
-                A, Q, P0, x0, E_z[:, :, i], E_zz[:, :, :, i], E_zz_prev[:, :, :, i]
+                A, Q, P0, x0, E_z, E_zz, E_zz_prev
             )
         end
         return -Q_val
@@ -433,7 +444,7 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
     P0_opt = optimize(P0_ -> obj(x0_opt, P0_, lds), P0_sqrt, LBFGS()).minimizer
 
     # update the initial state and covariance
-    StateSpaceDynamics.mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
+    StateSpaceDynamics.mstep!(lds, tfs, y)
 
     @test isapprox(lds.state_model.x0, x0_opt, atol=1e-6)
     @test isapprox(lds.state_model.P0, P0_opt * P0_opt', atol=1e-6)
@@ -452,15 +463,16 @@ function test_state_model_parameter_updates(ntrials::Int=1)
     function obj(A::AbstractMatrix, Q_sqrt::AbstractMatrix, lds)
         Q = Q_sqrt * Q_sqrt'
         Q_val = 0.0
-        for i in axes(E_z, 3)
+        for i in 1:ntrials
+            E_z, E_zz, E_zz_prev = tfs[i].E_z, tfs[i].E_zz, tfs[i].E_zz_prev
             Q_val += StateSpaceDynamics.Q_state(
                 A,
                 Q,
                 lds.state_model.P0,
                 lds.state_model.x0,
-                E_z[:, :, i],
-                E_zz[:, :, :, i],
-                E_zz_prev[:, :, :, i],
+                E_z,
+                E_zz,
+                E_zz_prev,
             )
         end
         return -Q_val
@@ -484,7 +496,7 @@ function test_state_model_parameter_updates(ntrials::Int=1)
         ).minimizer
 
     # update the state model
-    StateSpaceDynamics.mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
+    StateSpaceDynamics.mstep!(lds, tfs, y)
 
     @test isapprox(lds.state_model.A, A_opt, atol=1e-6)
     @test isapprox(lds.state_model.Q, Q_opt * Q_opt', atol=1e-6)
@@ -497,15 +509,15 @@ function test_obs_model_params_updates(ntrials::Int=1)
     tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, size(y, 2), size(y, 3))
 
     # run the E_Step
-    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep!(lds, tfs, y)
+    ml_total = StateSpaceDynamics.estep!(lds, tfs, y)
 
     # optimize the C and R entries using autograd
     function obj(C::AbstractMatrix, R_sqrt::AbstractMatrix, lds)
         R = R_sqrt * R_sqrt'
         Q_val = 0.0
-        for i in axes(E_z, 3)
+        for i in 1:ntrials
             Q_val += StateSpaceDynamics.Q_obs(
-                C, R, E_z[:, :, i], E_zz[:, :, :, i], y[:, :, i]
+                C, R, tfs[i].E_z, tfs[i].E_zz, y[:, :, i]
             )
         end
         return -Q_val
@@ -529,7 +541,7 @@ function test_obs_model_params_updates(ntrials::Int=1)
         ).minimizer
 
     # update the observation model
-    StateSpaceDynamics.mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
+    StateSpaceDynamics.mstep!(lds, tfs, y)
 
     @test isapprox(lds.obs_model.C, C_opt, atol=1e-6)
     @test isapprox(lds.obs_model.R, R_opt * R_opt', atol=1e-6)

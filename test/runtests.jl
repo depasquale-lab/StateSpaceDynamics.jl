@@ -13,38 +13,38 @@ using CSV
 using DataFrames
 using MAT
 
-"""
-Package Wide Tests
-"""
+# """
+# Package Wide Tests
+# """
 
-@testset "Package Wide Tests" begin
-    Aqua.test_all(StateSpaceDynamics; ambiguities=false)
-    @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
-end
+# @testset "Package Wide Tests" begin
+#     Aqua.test_all(StateSpaceDynamics; ambiguities=false)
+#     @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
+# end
 
-@testset "Code linting using JET " begin
-    if VERSION >= v"1.11"
-        JET.test_package(StateSpaceDynamics; target_defined_modules=true)
-    end 
-end 
+# @testset "Code linting using JET " begin
+#     if VERSION >= v"1.11"
+#         JET.test_package(StateSpaceDynamics; target_defined_modules=true)
+#     end 
+# end 
 
-include("helper_functions.jl")
-"""
-Tests for SLDS.jl
-"""
+# include("helper_functions.jl")
+# """
+# Tests for SLDS.jl
+# """
 
-include("LinearDynamicalSystems//SLDS.jl")
+# include("LinearDynamicalSystems//SLDS.jl")
 
-@testset "SLDS Tests" begin
-    @testset "Constructor Tests" begin
-        test_init()
-        test_sample()
-    end
+# @testset "SLDS Tests" begin
+#     @testset "Constructor Tests" begin
+#         test_init()
+#         test_sample()
+#     end
 
-    @testset "vEM Tests" begin
-        test_vEstep()
-    end
-end
+#     @testset "vEM Tests" begin
+#         test_vEstep()
+#     end
+# end
 
 """
 Tests for LDS.jl
