@@ -331,18 +331,24 @@ end
 function test_smooth()
     plds, x, y = toy_PoissonLDS()
 
+    tfs = StateSpaceDynamics.initialize_FilterSmooth(plds, size(y, 2), size(y, 3))
+
     # smooth data
-    x_smooth, p_smooth, inverseoffdiag = StateSpaceDynamics.smooth(plds, y)
+    ml_total = StateSpaceDynamics.smooth!(plds, tfs, y)
 
     nTrials = size(y, 3)
     nTsteps = size(y, 2)
 
-    @test size(x_smooth) == size(x)
-    @test size(p_smooth) == (plds.latent_dim, plds.latent_dim, nTsteps, nTrials)
-    @test size(inverseoffdiag) == (plds.latent_dim, plds.latent_dim, nTsteps, nTrials)
+    x_smooth = tfs[1].x_smooth
+    p_smooth = tfs[1].p_smooth
+    p_smooth_tt1 = tfs[1].p_smooth_tt1
+
+    @test size(x_smooth) == (plds.latent_dim, nTsteps)
+    @test size(p_smooth) == (plds.latent_dim, plds.latent_dim, nTsteps)
+    @test size(p_smooth_tt1) == (plds.latent_dim, plds.latent_dim, nTsteps)
 
     # test gradient is zero
-    for i in axes(y, 3)
+    for i in 1:nTrials
         # may as well test the gradient here too 
         f = latents -> StateSpaceDynamics.loglikelihood(latents, plds, y[:, :, i])
         grad_numerical = ForwardDiff.gradient(f, x_smooth[:, :, i])
@@ -355,24 +361,28 @@ end
 function test_parameter_gradient()
     plds, x, y = toy_PoissonLDS()
 
+    tfs = StateSpaceDynamics.initialize_FilterSmooth(plds, size(y, 2), size(y, 3))
+
     # run estep
-    E_z, E_zz, E_zz_prev, x_smooth, P_smooth, elbo = StateSpaceDynamics.estep(plds, y)
+    ml_total = StateSpaceDynamics.estep!(plds, tfs, y)
 
     # params
     C, log_d = plds.obs_model.C, plds.obs_model.log_d
     params = vcat(vec(C), log_d)
-
+    
     # get analytical gradient
     grad_analytical = StateSpaceDynamics.gradient_observation_model!(
-        zeros(length(params)), C, log_d, E_z, P_smooth, y
+        zeros(length(params)), C, log_d, tfs, y
     )
 
     # get numerical gradient
+    E_z = tfs[1].E_z
+    P_smooth = tfs[1].p_smooth
     function f(params::AbstractVector{<:Real})
         C_size = plds.obs_dim * plds.latent_dim
         log_d = params[(end - plds.obs_dim + 1):end]
         C = reshape(params[1:C_size], plds.obs_dim, plds.latent_dim)
-        return -StateSpaceDynamics.Q_observation_model(C, log_d, E_z, P_smooth, y)
+        return -StateSpaceDynamics.Q_observation_model(C, log_d, reshape(E_z, size(E_z)..., 1), reshape(P_smooth, size(P_smooth)..., 1), y)
     end
 
     grad = ForwardDiff.gradient(f, params)
@@ -383,17 +393,20 @@ end
 function test_initial_observation_parameter_updates(ntrials::Int=1)
     plds, x, y = toy_PoissonLDS(ntrials, [true, true, false, false, false, false])
 
-    # run the E_Step
-    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(plds, y)
+    tfs = StateSpaceDynamics.initialize_FilterSmooth(plds, size(y, 2), size(y, 3))
+
+    # run estep
+    ml_total = StateSpaceDynamics.estep!(plds, tfs, y)
 
     # optimize the x0 and p0 entries using autograd
     function obj(x0::AbstractVector, P0_sqrt::AbstractMatrix, plds)
         A, Q = plds.state_model.A, plds.state_model.Q
         P0 = P0_sqrt * P0_sqrt'
         Q_val = 0.0
-        for i in axes(E_z, 3)
+        for i in 1:ntrials
+            trial = tfs[i]
             Q_val += StateSpaceDynamics.Q_state(
-                A, Q, P0, x0, E_z[:, :, i], E_zz[:, :, :, i], E_zz_prev[:, :, :, i]
+                A, Q, P0, x0, trial.E_z, trial.E_zz, trial.E_zz_prev
             )
         end
         return -Q_val
@@ -411,7 +424,7 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
     P0_opt = optimize(P0_ -> obj(x0_opt, P0_, plds), P0_sqrt, LBFGS()).minimizer
 
     # update the initial state and covariance
-    StateSpaceDynamics.mstep!(plds, E_z, E_zz, E_zz_prev, p_smooth, y)
+    StateSpaceDynamics.mstep!(plds, tfs, y)
 
     @test isapprox(plds.state_model.x0, x0_opt, atol=1e-6)
     @test isapprox(plds.state_model.P0, P0_opt * P0_opt', atol=1e-6)
@@ -420,15 +433,23 @@ end
 function test_state_model_parameter_updates(ntrials::Int=1)
     plds, x, y = toy_PoissonLDS(ntrials, [false, false, true, true, false, false])
 
-    # run the E_Step
-    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(plds, y)
+    tfs = StateSpaceDynamics.initialize_FilterSmooth(plds, size(y, 2), size(y, 3))
+
+    # run estep
+    ml_total = StateSpaceDynamics.estep!(plds, tfs, y)
 
     # optimize the A and Q entries using autograd
     function obj(A::AbstractMatrix, Q_sqrt::AbstractMatrix, plds)
         Q = Q_sqrt * Q_sqrt'
-        Q_val = StateSpaceDynamics.Q_state(
-            A, Q, plds.state_model.P0, plds.state_model.x0, E_z, E_zz, E_zz_prev
-        )
+        Q_val = 0.0
+        for i in 1:ntrials
+            trial = tfs[i]
+            # calculate the Q value for this trial
+            Q_val += StateSpaceDynamics.Q_state(
+                A, Q, plds.state_model.P0, plds.state_model.x0,
+                trial.E_z, trial.E_zz, trial.E_zz_prev
+            )
+        end
         return -Q_val
     end
 
@@ -450,7 +471,7 @@ function test_state_model_parameter_updates(ntrials::Int=1)
         ).minimizer
 
     # update the state model
-    StateSpaceDynamics.mstep!(plds, E_z, E_zz, E_zz_prev, p_smooth, y)
+    StateSpaceDynamics.mstep!(plds, tfs, y)
 
     @test isapprox(plds.state_model.A, A_opt, atol=1e-6)
     @test isapprox(plds.state_model.Q, Q_opt * Q_opt', atol=1e-6)
@@ -515,16 +536,20 @@ function test_EM_matlab()
         obs_dim=3,
         fit_bool=fill(true, 6)
     )
-    
+
+    tfs = StateSpaceDynamics.initialize_FilterSmooth(plds, size(y, 2), size(y, 3))
+
+
     # first smooth results
-    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(plds, y)
+    ml_total = StateSpaceDynamics.estep!(plds, tfs, y)
+
     # check each E_z, E_zz, E_zz_prev are the sample
     for i in 1:3
         posterior_x = seq["seq"]["posterior"][i]["xsm"]
         posterior_cov = seq["seq"]["posterior"][i]["Vsm"]
         posterior_lagged_cov = seq["seq"]["posterior"][i]["VVsm"]
 
-        @test isapprox(E_z[:, :, i], posterior_x, atol=1e-6)
+        @test isapprox(tfs[i].E_z, posterior_x, atol=1e-6)
 
         # TODO: Restructure matlab objects s.t. we can compare as below
         # @test isapprox(E_zz[:, :, :, i], posterior_cov, atol=1e-6)
