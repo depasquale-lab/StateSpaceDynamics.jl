@@ -1577,7 +1577,7 @@ function Q_observation_model(
     C::AbstractMatrix{T},
     log_d::AbstractVector{T},
     E_z::AbstractMatrix{T},
-    E_zz::AbstractArray{T,3},
+    p_smooth::AbstractArray{T,3},
     y::AbstractMatrix{T},
 ) where {T<:Real}
     obs_dim, state_dim = size(C)
@@ -1591,7 +1591,7 @@ function Q_observation_model(
 
     @views for t in 1:tsteps
         Ez_t = E_z[:, t]
-        P_t = E_zz[:, :, t]
+        P_t = p_smooth[:, :, t]
         y_t = y[:, t]
 
         # h = C * Ez_t + d
@@ -1639,7 +1639,7 @@ function Q_observation_model(
     @threads for k in 1:trials
         fs = tfs[k]  # Get FilterSmooth for this trial
         Q_vals[k] = Q_observation_model(
-            C, log_d, fs.E_z, fs.E_zz, view(y, :, :, k)
+            C, log_d, fs.E_z, fs.p_smooth, view(y, :, :, k)
         )
     end
     
