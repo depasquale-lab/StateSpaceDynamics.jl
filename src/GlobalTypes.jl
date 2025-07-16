@@ -2,7 +2,7 @@
 The purpose of this file is to provide a common place for all global types to be defined. This is to avoid circular dependencies between files.
 """
 
-export MixtureModel, EmissionModel, AbstractHMM, DynamicalSystem, AbstractStateModel, AbstractObservationModel
+export MixtureModel, EmissionModel, AbstractStateModel, AbstractObservationModel
 
 # Create abstract types here 
 """
@@ -16,15 +16,9 @@ Abstract type for Regression Models. I.e. GaussianRegression, BernoulliRegressio
 abstract type RegressionModel end
 
 """
-Abstract type for HMMs 
-"""
-abstract type AbstractHMM end
-
-"""
 Abstract type for Dynamical Systems. I.e. LDS, etc.
 """
 
-abstract type DynamicalSystem end
 abstract type AbstractStateModel{T<:Real} end
 abstract type AbstractObservationModel{T<:Real} end
 
@@ -46,30 +40,6 @@ abstract type RegressionEmission <: EmissionModel end
 Special case of regression emission models that are autoregressive.
 """
 abstract type AutoRegressiveEmission <: RegressionEmission end
-
-
-"""
-    ForwardBackward{T<:Real}
-
-A mutable struct that encapsulates the forward–backward algorithm outputs for a hidden Markov model (HMM).
-
-# Fields
-- `loglikelihoods::Matrix{T}`: Matrix of log-likelihoods for each observation and state.
-- `α::Matrix{T}`: The forward probabilities (α) for each time step and state.
-- `β::Matrix{T}`: The backward probabilities (β) for each time step and state.
-- `γ::Matrix{T}`: The state occupancy probabilities (γ) for each time step and state.
-- `ξ::Array{T,3}`: The pairwise state occupancy probabilities (ξ) for consecutive time steps and state pairs.
-
-Typically, `α` and `β` are computed by the forward–backward algorithm to find the likelihood of an observation sequence. `γ` and `ξ` are derived from these calculations to estimate how states transition over time.
-"""
-mutable struct ForwardBackward{T<:Real, V<:AbstractVector{T}, M<:AbstractMatrix{T}, A<:Array{T,3}}
-    loglikelihoods::M
-    α::M
-    β::M
-    γ::M
-    ξ::A
-end
-
 
 """"
     FilterSmooth{T<:Real}

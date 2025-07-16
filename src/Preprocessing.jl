@@ -64,7 +64,8 @@ end
 
 function Random.rand(rng::AbstractRNG, ppca::ProbabilisticPCA, n::Int)
     z = rand(rng, MvNormal(zeros(ppca.k), I), n)  # k × n
-    ε = rand(rng, MvNormal(zeros(ppca.D), ppca.σ² * I), n)  # D × n
+    ε_cov = ppca.σ² * Matrix{Float64}(I, ppca.D, ppca.D) 
+    ε = rand(rng, MvNormal(zeros(ppca.D), ε_cov), n)  # D × n
     μ = reshape(ppca.μ, ppca.D, 1)
     return ppca.W * z .+ μ .+ ε, z
 end
