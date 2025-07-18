@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Poisson Mixture Model Example · StateSpaceDynamics.jl</title><meta name="title" content="Poisson Mixture Model Example · StateSpaceDynamics.jl"/><meta property="og:title" content="Poisson Mixture Model Example · StateSpaceDynamics.jl"/><meta property="twitter:title" content="Poisson Mixture Model Example · StateSpaceDynamics.jl"/><meta name="description" content="Documentation for StateSpaceDynamics.jl."/><meta property="og:description" content="Documentation for StateSpaceDynamics.jl."/><meta property="twitter:description" content="Documentation for StateSpaceDynamics.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="StateSpaceDynamics.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">StateSpaceDynamics.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Models</span><ul><li><a class="tocitem" href="../../LinearDynamicalSystems/">Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../HiddenMarkovModels/">Hidden Markov Models</a></li><li><a class="tocitem" href="../../SLDS/">Switching Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../EmissionModels/">EmissionModels</a></li><li><a class="tocitem" href="../../MixtureModels/">Mixture Models</a></li></ul></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../gaussian_latent_dynamics_example/">Gaussian LDS Example</a></li><li><a class="tocitem" href="../poisson_latent_dynamics_example/">Poisson LDS Example</a></li><li><a class="tocitem" href="../hidden_markov_model_example/">Hidden Markov Model Example</a></li><li><a class="tocitem" href="../gaussian_glm_hmm_example/">Gaussian GLM-GMM Example</a></li><li><a class="tocitem" href="../gaussian_mixture_model_example/">Gaussian Mixture Model Example</a></li><li class="is-active"><a class="tocitem" href>Poisson Mixture Model Example</a><ul class="internal"><li><a class="tocitem" href="#Simulating-and-Fitting-a-Poisson-Mixture-Model"><span>Simulating and Fitting a Poisson Mixture Model</span></a></li><li><a class="tocitem" href="#Create-a-true-PoissonMixtureModel-to-simulate-from"><span>Create a true PoissonMixtureModel to simulate from</span></a></li><li><a class="tocitem" href="#Generate-data-from-the-true-model"><span>Generate data from the true model</span></a></li><li><a class="tocitem" href="#Plot-histogram-of-Poisson-samples-by-component"><span>Plot histogram of Poisson samples by component</span></a></li><li><a class="tocitem" href="#Fit-a-new-PoissonMixtureModel-to-the-data"><span>Fit a new PoissonMixtureModel to the data</span></a></li><li><a class="tocitem" href="#Plot-log-likelihoods-to-visualize-EM-convergence"><span>Plot log-likelihoods to visualize EM convergence</span></a></li><li><a class="tocitem" href="#Plot-model-PMFs-over-the-data-histogram"><span>Plot model PMFs over the data histogram</span></a></li></ul></li><li><a class="tocitem" href="../Probabilistic_PCA_example/">Probabilistic PCA Example</a></li><li><a class="tocitem" href="../switching_linear_dynamical_system_example/">Switching Linear Dynamical System Example</a></li></ul></li><li><a class="tocitem" href="../../Misc/">Miscellaneous</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Poisson Mixture Model Example</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Poisson Mixture Model Example</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/blob/main/docs/examples/PoissonMixtureModel.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h2 id="Simulating-and-Fitting-a-Poisson-Mixture-Model"><a class="docs-heading-anchor" href="#Simulating-and-Fitting-a-Poisson-Mixture-Model">Simulating and Fitting a Poisson Mixture Model</a><a id="Simulating-and-Fitting-a-Poisson-Mixture-Model-1"></a><a class="docs-heading-anchor-permalink" href="#Simulating-and-Fitting-a-Poisson-Mixture-Model" title="Permalink"></a></h2><p>This tutorial demonstrates how to use <code>StateSpaceDynamics.jl</code> to create a Poisson Mixture Model and fit it using the EM algorithm.</p><pre><code class="language-julia hljs">using StateSpaceDynamics
+using LinearAlgebra
+using Random
+using Plots
+using StableRNGs
+using StatsPlots
+using Distributions
+
+rng = StableRNG(1234);</code></pre><h2 id="Create-a-true-PoissonMixtureModel-to-simulate-from"><a class="docs-heading-anchor" href="#Create-a-true-PoissonMixtureModel-to-simulate-from">Create a true PoissonMixtureModel to simulate from</a><a id="Create-a-true-PoissonMixtureModel-to-simulate-from-1"></a><a class="docs-heading-anchor-permalink" href="#Create-a-true-PoissonMixtureModel-to-simulate-from" title="Permalink"></a></h2><pre><code class="language-julia hljs">k = 3
+true_λs = [5.0, 10.0, 25.0]  # Poisson means
+true_πs = [0.25, 0.45, 0.3]   # Mixing weights
+
+true_pmm = PoissonMixtureModel(k, true_λs, true_πs)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">PoissonMixtureModel{Float64, Vector{Float64}}(3, [5.0, 10.0, 25.0], [0.25, 0.45, 0.3])</code></pre><h2 id="Generate-data-from-the-true-model"><a class="docs-heading-anchor" href="#Generate-data-from-the-true-model">Generate data from the true model</a><a id="Generate-data-from-the-true-model-1"></a><a class="docs-heading-anchor-permalink" href="#Generate-data-from-the-true-model" title="Permalink"></a></h2><pre><code class="language-julia hljs">n = 500
+labels = rand(rng, Categorical(true_πs), n)
+data = [rand(rng, Poisson(true_λs[labels[i]])) for i in 1:n]  # Vector{Int}</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">500-element Vector{Int64}:
+ 33
+  9
+  9
+  8
+ 25
+ 10
+  5
+ 15
+  5
+ 30
+  ⋮
+  1
+ 10
+ 21
+  7
+ 24
+ 25
+  5
+  7
+  9</code></pre><h2 id="Plot-histogram-of-Poisson-samples-by-component"><a class="docs-heading-anchor" href="#Plot-histogram-of-Poisson-samples-by-component">Plot histogram of Poisson samples by component</a><a id="Plot-histogram-of-Poisson-samples-by-component-1"></a><a class="docs-heading-anchor-permalink" href="#Plot-histogram-of-Poisson-samples-by-component" title="Permalink"></a></h2><pre><code class="language-julia hljs">p1 = histogram(
+    data;
+    group=labels,
+    bins=0:1:maximum(data),
+    bar_position=:dodge,
+    xlabel=&quot;Count&quot;,
+    ylabel=&quot;Frequency&quot;,
+    title=&quot;Poisson Mixture Samples by Component&quot;,
+    alpha=0.7,
+    legend=:topright,
+)
+p1</code></pre><img src="e8013122.svg" alt="Example block output"/><h2 id="Fit-a-new-PoissonMixtureModel-to-the-data"><a class="docs-heading-anchor" href="#Fit-a-new-PoissonMixtureModel-to-the-data">Fit a new PoissonMixtureModel to the data</a><a id="Fit-a-new-PoissonMixtureModel-to-the-data-1"></a><a class="docs-heading-anchor-permalink" href="#Fit-a-new-PoissonMixtureModel-to-the-data" title="Permalink"></a></h2><pre><code class="language-julia hljs">fit_pmm = PoissonMixtureModel(k)
+_, lls = fit!(fit_pmm, data; maxiter=100, tol=1e-6, initialize_kmeans=true)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">([1.167299485809293e-6 0.7670285733361216 … 0.4456154946697474 0.7670285733361216; 0.9999988327004986 0.0007940905571800423 … 8.334359187998249e-5 0.0007940905571800423; 1.5235751770191232e-14 0.23217733610669858 … 0.5543011617383728 0.23217733610669858], [-1677.6322074652844, -1674.3624894485276, -1673.5404197496819, -1673.2181725367448, -1673.0264176702262, -1672.882289515502, -1672.764176466248, -1672.6648070344565, -1672.5805981923975, -1672.5091100384484  …  -1672.1069591732414, -1672.1069557303338, -1672.1069528037415, -1672.1069503160506, -1672.1069482014225, -1672.10694640391, -1672.1069448759567, -1672.1069435771435, -1672.106942473089, -1672.1069415346014])</code></pre><h2 id="Plot-log-likelihoods-to-visualize-EM-convergence"><a class="docs-heading-anchor" href="#Plot-log-likelihoods-to-visualize-EM-convergence">Plot log-likelihoods to visualize EM convergence</a><a id="Plot-log-likelihoods-to-visualize-EM-convergence-1"></a><a class="docs-heading-anchor-permalink" href="#Plot-log-likelihoods-to-visualize-EM-convergence" title="Permalink"></a></h2><pre><code class="language-julia hljs">p2 = plot(
+    lls;
+    xlabel=&quot;Iteration&quot;,
+    ylabel=&quot;Log-Likelihood&quot;,
+    title=&quot;EM Convergence (Poisson Mixture)&quot;,
+    marker=:circle,
+    label=&quot;log_likelihood&quot;,
+)
+p2</code></pre><img src="cfe5dd5e.svg" alt="Example block output"/><h2 id="Plot-model-PMFs-over-the-data-histogram"><a class="docs-heading-anchor" href="#Plot-model-PMFs-over-the-data-histogram">Plot model PMFs over the data histogram</a><a id="Plot-model-PMFs-over-the-data-histogram-1"></a><a class="docs-heading-anchor-permalink" href="#Plot-model-PMFs-over-the-data-histogram" title="Permalink"></a></h2><pre><code class="language-julia hljs">p3 = histogram(
+    data;
+    bins=0:1:maximum(data),
+    normalize=true,
+    alpha=0.3,
+    label=&quot;Data&quot;,
+    xlabel=&quot;Count&quot;,
+    ylabel=&quot;Density&quot;,
+    title=&quot;Poisson Mixtures: Data and PMFs&quot;,
+)
+
+x = collect(0:maximum(data))
+colors = [:red, :green, :blue]
+
+for i in 1:k
+    λi = fit_pmm.λₖ[i]
+    πi = fit_pmm.πₖ[i]
+    pmf_i = πi .* pdf.(Poisson(λi), x)
+    plot!(
+        p3, x, pmf_i;
+        lw=2,
+        c=colors[i],
+        label=&quot;Comp $i (λ=$(round(λi, sigdigits=3)))&quot;,
+    )
+end
+
+mix_pmf = reduce(+, (πi .* pdf.(Poisson(λi), x) for (λi, πi) in zip(fit_pmm.λₖ, fit_pmm.πₖ)))
+plot!(
+    p3, x, mix_pmf;
+    lw=3, ls=:dash, c=:black,
+    label=&quot;Mixture&quot;,
+)
+
+p3</code></pre><img src="8349aee3.svg" alt="Example block output"/><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../gaussian_mixture_model_example/">« Gaussian Mixture Model Example</a><a class="docs-footer-nextpage" href="../Probabilistic_PCA_example/">Probabilistic PCA Example »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Friday 18 July 2025 23:55">Friday 18 July 2025</span>. Using Julia version 1.11.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
