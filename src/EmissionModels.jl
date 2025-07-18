@@ -9,7 +9,7 @@ This module implements various emission models for state space modeling, includi
 # Exports
 export EmissionModel, RegressionEmission
 export GaussianEmission, GaussianRegressionEmission, BernoulliRegressionEmission, PoissonRegressionEmission, AutoRegressionEmission
-export loglikelihood, fit!
+export loglikelihood, fit!, create_optimization
 
 #=
 Gaussian Emission Models
@@ -144,10 +144,10 @@ function create_optimization(
     model::RegressionEmission,
     X::AbstractMatrix{<:Real},
     y::AbstractMatrix{<:Real},
-    w::AbstractVector{<:Real}=ones(size(y, 1)),
+    w::AbstractVector{<:Real}=ones(size(y, 2)),
 )
     if model.include_intercept
-        X = hcat(ones(size(X, 1)), X)
+        X = vcat(ones(eltype(X), 1, size(X, 2)), X)
     end
 
     β_shape = size(model.β)
@@ -267,12 +267,15 @@ Generate samples from a Gaussian regression emission model.
     -`samples::Matrix{<:Real}`: Matrix of samples (n, output_dim)
 """
 function Random.rand(rng::AbstractRNG, model::GaussianRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
-    Φ = size(Φ, 2) == 1 ? reshape(Φ, 1, :) : Φ
-    if model.include_intercept
-        Φ = hcat(ones(size(Φ, 1)), Φ)
+    Φ = Φ isa Vector ? reshape(Φ, :, 1) : Φ 
+    n = size(Φ, 2)
+
+    if model.include_intercept 
+        Φ = vcat(ones(eltype(Φ), 1, n), Φ)
     end
-    noise = rand(rng, MvNormal(zeros(model.output_dim), model.Σ), size(Φ, 1))'
-    return Φ * model.β + noise
+   
+    noise = rand(rng, MvNormal(zeros(model.output_dim), model.Σ), n)
+    return model.β' * Φ + noise 
 end
 
 """
@@ -295,33 +298,39 @@ Calculate the log likelihood of the data `Y` given the Gaussian regression emiss
 """
 function loglikelihood(
     model::GaussianRegressionEmission,
-    Φ::AbstractMatrix{T},
-    Y::AbstractMatrix{T},
+    Φ::AbstractMatrix{T}, # f x n 
+    Y::AbstractMatrix{T}, # d x n
     w::Union{Nothing,AbstractVector{T}} = nothing,
 ) where {T<:Real}
 
+    n = size(Φ, 2)
+    d = size(Y, 1)
+    β = model.β
+
     if w === nothing
-        w = ones(T, size(Y, 1))
+        w = ones(T, size(Y, 2))
     elseif eltype(w) !== eltype(Y)
         error("weights must be Vector{$(eltype(Y))}; Got Vector{$(eltype(w))}")
     end
 
-    Φ = model.include_intercept ? hcat(ones(T, size(Φ, 1), 1), Φ) : Φ
-    n, _  = size(Φ)
-    _, d = size(Y)
-    β = model.β
-    lls = Vector{T}(undef, n)
-
-     @inbounds for i in 1:n
-        acc = zero(T)
-        for j in 1:d
-            residual = Y[i, j] - dot(Φ[i, :], β[:, j])
-            acc += residual^2
+    if model.include_intercept
+        if size(Φ, 1) == size(β, 1) - 1
+            Φ = vcat(ones(T, 1, n), Φ)
+        elseif size(Φ, 1) != size(β, 1)
+            error("Φ has incompatible size with model.β: got $(size(Φ)), expected $(size(β,1)) rows.")
         end
-        lls[i] = -0.5 * acc * w[i]
     end
 
-    return lls   
+    ll = Vector{T}(undef, n)
+    for i in 1:n
+        acc = zero(T)
+        for j in 1:d
+            acc += (Y[j, i] - dot(β[:, j], Φ[:, i]))^2 
+        end
+        ll[i] = -0.5 * w[i] * acc
+    end
+
+    return ll
 end
 
 """
@@ -505,22 +514,23 @@ function objective(
     opt::Union{RegressionOptimization{<:GaussianRegressionEmission}, RegressionOptimization{<:AutoRegressionEmission}}, 
     β_vec::AbstractVector{T}
 ) where {T<:Real}
-    β_mat = vec_to_matrix(β_vec, opt.β_shape)
-    n, _ = size(opt.X)
-    total = zero(T)
+    β = reshape(β_vec, opt.β_shape)
+    f, n = size(opt.X)
+    d, _ = size(opt.y)
+    total_ll = zero(T)
 
     # calculate residuals and w inside loop to avoid allocs 
-    @inbounds for i in 1:n
-        prediction = dot(opt.X[i, :], β_mat[:, 1])
-        residual = opt.y[i, 1] - prediction
-        total += opt.w[i] * residual^2
+    for i in 1:n
+        for j in 1:d
+            total_ll += opt.w[i] * (opt.y[j, i] - dot(β[:, j], opt.X[:, i]))^2
+        end
     end
 
     # calculate regularization
-    regularization = calc_regularization(β_mat, opt.model.λ, opt.model.include_intercept)
+    regularization = calc_regularization(β, opt.model.λ, opt.model.include_intercept)
 
     # calculate pseudo log-likelihood
-    return 0.5 * total + regularization
+    return 0.5 * total_ll + regularization
 end
 
 """
@@ -537,23 +547,36 @@ function objective_gradient!(
     β_vec::AbstractVector{T},
 ) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
-    n, p = size(opt.X)
-    _, d = size(opt.y)
-    weighted_residuals = similar(opt.y)
+    f, n = size(opt.X)
+    d, _ = size(opt.y)
 
-    @inbounds for i in 1:n, j in 1:d
-        prediction = dot(opt.X[i, :], β_mat[:, j])
-        weighted_residuals[i, j] = (opt.y[i, j] - prediction) * opt.w[i]
-    end 
+    grad_matrix = zeros(T, size(β_mat))
 
-    gradient = -(opt.X' * weighted_residuals) 
+    for t in 1:n
+        w_t = opt.w[t]
+        for o in 1:d
+
+            pred = zero(T)
+            for j in 1:f
+                pred += opt.X[j, t] * β_mat[j, o]
+            end
+            r = opt.y[o, t] - pred
+
+            for j in 1:f
+                grad_matrix[j, o] -= opt.X[j, t] * w_t * r
+            end
+        end
+    end
 
     # calc gradient of penalty
-    gradient .+= calc_regularization_gradient(
-        β_mat, opt.model.λ, opt.model.include_intercept
-    )
+    reg_grad = calc_regularization_gradient(β_mat, opt.model.λ, opt.model.include_intercept)
+    for j in 1:f
+        for o in 1:d
+            grad_matrix[j, o] += reg_grad[j, o]
+        end
+    end
 
-    return G .= vec(gradient)
+    return G .= vec(grad_matrix)
 end
 
 # # Special handling for Gaussian regression to update variance
@@ -569,21 +592,20 @@ end
 Stabilize the covariance matrix for GaussianRegressionEmissions.
 """
 function post_optimization!(model::GaussianRegressionEmission, opt::RegressionOptimization)
-    n, _ = size(opt.X)
-    residuals = zeros(eltype(opt.X), n, 1)
-    Σ = zeros(eltype(opt.X), size(opt.y, 2), size(opt.y, 2))
+    f, n = size(opt.X)
+    d, _ = size(opt.y)
+
+    residuals = zeros(eltype(opt.y), d, n)
+    Σ = zeros(eltype(opt.X), d, d)
 
     # residuals 
-    @inbounds for i in 1:n
-        prediction = dot(opt.X[i, :], model.β[:, 1])
-        residuals[i, 1] = opt.y[i, 1] - prediction
+    for i in 1:n
+        for j in 1:d
+            residuals[j, i] = opt.y[j, i] - dot(model.β[:, j], opt.X[:, i])
+            Σ[j, j] += opt.w[i] * residuals[j, i]^2
+        end 
     end
 
-    # weighted outer product of residuals 
-    @inbounds for i in 1:n
-        r = residuals[i, 1]
-        Σ[1, 1] += opt.w[i] * r * r 
-    end
     Σ ./= n
 
     model.Σ = 0.5 * (Σ + Σ')  # Ensure symmetry
@@ -687,29 +709,36 @@ Calculate the log likelihood of the data `Y` given the Bernoulli regression emis
 """
 function loglikelihood(
     model::BernoulliRegressionEmission,
-    Φ::AbstractMatrix,
-    Y::AbstractMatrix,
-    w::Union{Nothing,AbstractVector} = nothing,
-)
-    T = eltype(Φ)
-    n, _ = size(Φ)
+    Φ::AbstractMatrix{T}, 
+    Y::AbstractMatrix{T},
+    w::Union{Nothing,AbstractVector{T}} = nothing,
+) where {T<:Real}
+    f, n = size(Φ)
+    d, _ = size(Y)
     β = model.β
-    ll = Vector{T}(undef, n)
 
     if w === nothing
-        w = ones(eltype(Φ), size(Y, 1))
-    elseif eltype(w) !== eltype(Φ)
+        w = ones(T, n)
+    elseif eltype(w) !== T
         error("weights must be Vector{$(eltype(Φ))}; Got Vector{$(eltype(w))}")
     end
 
-    if model.include_intercept && size(Φ, 2) == size(model.β, 1) - 1
-        Φ = hcat(ones(T, size(Φ, 1)), Φ)
+    if model.include_intercept
+        if size(Φ, 1) == size(β, 1) - 1
+            Φ = vcat(ones(T, 1, n), Φ)
+        elseif size(Φ, 1) != size(β, 1)
+            error("Φ has incompatible size with model.β: got $(size(Φ)), expected $(size(β,1)) rows.")
+        end
     end
-    
-    @inbounds for i in 1:n
-        z = dot(Φ[i, :], β)
-        p = 1 / (1 + exp(-z))
-        ll[i] = w[i] * (Y[i, 1] * log(p) + (1 - Y[i, 1]) * log(1 - p))
+
+    ll = Vector{T}(undef, n)
+    for i in 1:n
+        acc = zero(T)
+        for j in 1:d
+            p = inv(1 + exp(-dot(β[:, j], Φ[:, i])))
+            acc += Y[j, i] * log(p + eps(T)) + (1 - Y[j, i]) * log(1 - p + eps(T))
+        end 
+        ll[i] = w[i] * acc
     end 
 
     return ll
@@ -725,17 +754,23 @@ Define the objective function for a Bernoulli regression emission model.
 function objective(
     opt::RegressionOptimization{<:BernoulliRegressionEmission}, β_vec::Vector{T}
 ) where {T<:Real}
-    β_mat = vec_to_matrix(β_vec, opt.β_shape)
+    β = reshape(β_vec, opt.β_shape)  
+    f, n = size(opt.X)
+    d, _ = size(opt.y)
     total = zero(T)
 
-    @inbounds for i in 1:size(opt.X, 1)
-        z = dot(opt.X[i, :], β_mat[:, 1])
-        p = 1 / (1+exp(-z))
-        y = opt.y[i, 1]
-        total -= opt.w[i] * (y * log(p) + (1 - y) * log(1 - p))
+    for t in 1:n
+        acc = zero(T)
+        for o in 1:d
+            p = inv(1 + exp(-dot(β[:, o], opt.X[:, t])))
+            acc += opt.y[o, t] * log(p + eps()) + (1 - opt.y[o, t]) * log(1 - p + eps())
+        end 
+        
+        total -= opt.w[t] * acc
     end 
     
-    return total + calc_regularization(β_mat, opt.model.λ, opt.model.include_intercept)
+    total += calc_regularization(β, opt.model.λ, opt.model.include_intercept)
+    return total
 end
 
 """
@@ -752,24 +787,27 @@ function objective_gradient!(
     β_vec::AbstractVector{T},
 ) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
-    gradient = zeros(T, size(opt.X, 2), 1)
-    n, d = size(opt.X)
+    f, n = size(opt.X)
+    d, _ = size(opt.y)
+    grad_matrix = zeros(T, f, d)
 
-    @inbounds for i in 1:n
-        z = dot(opt.X[i, :], β_mat[:, 1])
-        p = 1 / (1 + exp(-z))  #logistic 
-        delta = opt.y[i, 1] - p
-        for j in 1:d
-            gradient[j, 1] -= opt.w[i] * opt.X[i, j] * delta
-        end
+    for t in 1:n
+        w_t = opt.w[t]
+        for o in 1:d
+            diff = opt.y[o, t] - inv(1 + exp(-dot(β_mat[:, o], opt.X[:, t])))        
+            for j in 1:f
+                grad_matrix[j, o] -= w_t * opt.X[j, t] * diff
+            end
+        end 
     end
 
     # calc gradient of penalty
-    gradient .+= calc_regularization_gradient(
-        β_mat, opt.model.λ, opt.model.include_intercept
-    )
+    reg_gradient = calc_regularization_gradient(β_mat, opt.model.λ, opt.model.include_intercept)
+    for j in 1:f, o in 1:d
+        grad_matrix[j, o] += reg_gradient[j, o]
+    end
 
-    return G .= vec(gradient)
+    return G .= vec(grad_matrix)
 end
 
 """
@@ -865,32 +903,39 @@ Calculate the log-likelihood of a Poisson regression model.
 """
 function loglikelihood(
     model::PoissonRegressionEmission,
-    Φ::AbstractMatrix,
-    Y::AbstractMatrix,
-    w::Union{Nothing,AbstractVector{}} = nothing
-)
-    T = eltype(Φ)
-    n, _ = size(Φ)
+    Φ::AbstractMatrix{T1},
+    Y::AbstractMatrix{T2},
+    w::Union{Nothing,AbstractVector{<:Real}} = nothing
+) where {T1<:Real, T2<:Real}
+    f, n = size(Φ)
+    d, _ = size(Y)
     β = model.β
-    ll = Vector{T}(undef, n)
+    T = promote_type(T1, T2)
 
     if w === nothing
-        w = ones(eltype(Φ), size(Y, 1))
-    elseif eltype(w) !== eltype(Φ)
-        error("weights must be Vector{$(eltype(Φ))}; Got Vector{$(eltype(w))}")
+        w = ones(T, n)
+    elseif eltype(w) !== T
+        error("weights must be Vector{$T}; Got Vector{$(eltype(w))}")
     end
 
-    if model.include_intercept && size(Φ, 2) == size(model.β, 1) - 1
-        Φ = hcat(ones(T, size(Φ, 1)), Φ)
-    end
+     if model.include_intercept
+        if size(Φ, 1) == size(β, 1) - 1
+            Φ = vcat(ones(T, 1, n), Φ)
+        elseif size(Φ, 1) != size(β, 1)
+            error("Φ has incompatible size with model.β: got $(size(Φ)), expected $(size(β, 1)) rows.")
+        end
+    end 
 
-    @inbounds for i in 1:n
-        z = clamp(dot(Φ[i, :], β), -20, 20)
-        λ = exp(z)
-        yi = Y[i, 1]
-        ll[i] = w[i] * (yi * log(λ) - λ - loggamma(yi + one(Int)))
-    end
-
+    ll = Vector{T}(undef, n)
+    for t in 1:n
+        acc = zero(T)
+        for o in 1:d   
+            z = clamp(dot(β[:, o], Φ[:, t]), -20, 20)
+            acc += Y[o, t] * z - exp(z) - loggamma(Y[o, t] + one(Int))
+        end 
+        ll[t] = w[t] * acc
+    end 
+    
     return ll
 end
 
@@ -905,19 +950,20 @@ function objective(
     opt::RegressionOptimization{<:PoissonRegressionEmission}, 
     β_vec::AbstractVector{T}
 ) where {T<:Real}
-    β_mat = vec_to_matrix(β_vec, opt.β_shape)
+    β = reshape(β_vec, opt.β_shape) 
+    f, n = size(opt.X)
+    d, _ = size(opt.y)
     total = zero(T)
-    n, _ = size(opt.X)
 
-    @inbounds for i in 1:n
-        η = clamp(dot(opt.X[i, :], β_mat[:, 1]), -30, 30)
-        rate = exp(η)
-        yi = opt.y[i, 1]
-        total -= opt.w[i] * (yi * log(rate) - rate - loggamma(yi + one(Int)))
+    for t in 1:n
+        for o in 1:d
+            z = clamp(dot(β[:, o], opt.X[:, t]), -30, 30)
+            total -= opt.w[t] * (opt.y[o, t] * z - exp(z) - loggamma(opt.y[o, t] + one(Int)))
+        end 
     end 
 
-    reg = calc_regularization(β_mat, opt.model.λ, opt.model.include_intercept)
-    return total + reg
+    total += calc_regularization(β, opt.model.λ, opt.model.include_intercept)
+    return total
 end
 
 """
@@ -933,25 +979,28 @@ function objective_gradient!(
     opt::RegressionOptimization{<:PoissonRegressionEmission},
     β_vec::AbstractVector{T},
 ) where {T<:Real}
-    β_mat = vec_to_matrix(β_vec, opt.β_shape)
-    n, d = size(opt.X)
-    gradient = zeros(T, d, 1)
+    β_mat = vec_to_matrix(β_vec, opt.β_shape)  # shape: f × d
+    f, n = size(opt.X)
+    d, _ = size(opt.y)
+    gradient_matrix = zeros(T, f, d)
 
-    @inbounds for i in 1:n
-        η = clamp(dot(opt.X[i, :], β_mat[:, 1]), -30, 30)
-        rate = exp(η)
-        delta = opt.y[i, 1] - rate
-        for j in 1:d
-            gradient[j, 1] -= opt.w[i] * opt.X[i, j] * delta
+    for t in 1:n
+        w_t = opt.w[t]
+        for o in 1:d
+            diff = opt.y[o, t] - exp(clamp(dot(β_mat[:, o], opt.X[:, t]), -30, 30))
+            for j in 1:f
+                gradient_matrix[j, o] -= w_t * opt.X[j, t] * diff
+            end
         end
     end
 
     # calc gradient of penalty
-    gradient .+= calc_regularization_gradient(
-        β_mat, opt.model.λ, opt.model.include_intercept
-    )
+    reg_gradient = calc_regularization_gradient(β_mat, opt.model.λ, opt.model.include_intercept)
+    for j in 1:f, o in 1:d
+        gradient_matrix[j, o] += reg_gradient[j, o]
+    end
 
-    return G .= vec(gradient)
+    return G .= vec(gradient_matrix)
 end
 
 # Unified fit! function for all regression emissions
@@ -980,8 +1029,10 @@ function fit!(
     model::RegressionEmission,
     X::AbstractMatrix{T1},
     y::AbstractMatrix{T2},
-    w::AbstractVector{T3}=ones(size(y, 1)),
+    w::AbstractVector{T3}=ones(size(y, 2)),
 ) where {T1<:Real, T2<:Real, T3<:Real}
+
+    # must transpose x and y to go with column wise iteration instead of row 
     opt_problem = create_optimization(model, X, y, w)
 
     # Create closure functions for Optim.jl

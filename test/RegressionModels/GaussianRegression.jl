@@ -1,18 +1,26 @@
 function GaussianRegression_simulation(; include_intercept::Bool=true)
     # Generate synthetic data
     n = 1000
-    X = randn(n, 2)  # Remove intercept from data generation
+    d = 1
+    f = 2 
+    X = randn(f, n) # Remove intercept from data generation 
+    X_with_intercept = include_intercept ? vcat(ones(1, n), X) : X
+
     true_β = [-1.2, 2.3]
     if include_intercept
         true_β = vcat(0.5, true_β)
     end
-    true_β = reshape(true_β, :, 1)
-    true_covariance = reshape([0.25], 1, 1)
+    true_β = reshape(true_β, :, d)
+    true_covariance = reshape([0.25], d, d)
 
     # Generate y with or without intercept
-    X_with_intercept = include_intercept ? hcat(ones(n), X) : X
-    y = X_with_intercept * true_β + rand(MvNormal(zeros(1), true_covariance), n)'
+    noise = rand(Normal(0.0, sqrt(true_covariance[1,1])), n)
+    y = true_β' * X_with_intercept + reshape(noise, d, n)
 
+    @assert size(X_with_intercept) == (include_intercept ? 3 : 2, n)
+    @assert size(y) == (d, n)
+    @assert size(true_β, 1) == size(X_with_intercept, 1)
+    
     return X, y, true_β, true_covariance, n
 end
 
@@ -61,8 +69,10 @@ function test_GaussianRegression_loglikelihood()
     @test all(isfinite.(ll))
 
     # Test single observation
-    single_ll = StateSpaceDynamics.loglikelihood(model, X[1:1, :], y[1:1, :])
-    @test length(single_ll) == 1
+    Φ_single = X[:, :] 
+    Y_single = y[1:1, :] 
+    single_ll = StateSpaceDynamics.loglikelihood(model, Φ_single, Y_single)
+    @test length(single_ll) == size(X, 2)
     @test isfinite(single_ll[1])
 
     # Test with weights
@@ -76,14 +86,14 @@ function test_GaussianRegression_sample()
     model = GaussianRegressionEmission(input_dim=2, output_dim=1, include_intercept=true, β=reshape([3.0, 2.0, 2.0], :, 1), Σ=[1.0;;], λ=0.0)
 
     # Test single sample
-    X_test = randn(1, 2)
+    X_test = randn(2, 1)
     sample_single = rand(model, X_test)
     @test size(sample_single) == (1, 1)
 
     # Test multiple samples
-    X_test = randn(10, 2)
+    X_test = randn(2, 10)
     samples = rand(model, X_test)
-    @test size(samples) == (10, 1)
+    @test size(samples) == (1, 10)
 end
 
 function test_GaussianRegression_optimization()
@@ -112,8 +122,8 @@ end
 
 function test_GaussianRegression_sklearn()
     # create fake data that we fit in sklearn as well
-    X = reshape([1.0, 2.0, 3.0, 4.1], 4, 1)
-    y = reshape([0.5, 0.9, 0.99, 1.4], 4, 1)
+    X = reshape([1.0, 2.0, 3.0, 4.1], 1, :)
+    y = reshape([0.5, 0.9, 0.99, 1.4], 1, :)
     w = [1.0, 1.0, 1.0, 0.1]
 
     # plain model i.e., no weights, no regularization

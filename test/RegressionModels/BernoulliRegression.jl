@@ -2,7 +2,7 @@
 function BernoulliRegression_simulation(; include_intercept::Bool=true)
     # Generate synthetic data
     n = 1000
-    X = randn(n, 2)  # Remove intercept from data generation
+    X = randn(2, n)  # Remove intercept from data generation
     true_β = [-1.2, 2.3]
     if include_intercept
         true_β = vcat(0.5, true_β)
@@ -10,9 +10,9 @@ function BernoulliRegression_simulation(; include_intercept::Bool=true)
     true_β = reshape(true_β, :, 1)
 
     # Generate y with or without intercept
-    X_with_intercept = include_intercept ? hcat(ones(n), X) : X
-    p = 1 ./ (1 .+ exp.(-X_with_intercept * true_β))
-    y = reshape(Float64.(rand.(Bernoulli.(p))), :, 1)
+    X_with_intercept = include_intercept ? vcat(ones(1, n), X) : X
+    p = 1 ./ (1 .+ exp.(-true_β' * X_with_intercept))
+    y = reshape(Float64.(rand.(Bernoulli.(vec(p)))), 1, :)
 
     return X, y, true_β, n
 end
@@ -59,7 +59,9 @@ function test_BernoulliRegression_loglikelihood()
     @test all(isfinite.(ll))
 
     # Test single observation
-    single_ll = StateSpaceDynamics.loglikelihood(model, X[1:1, :], y[1:1, :])
+    Φ_single = X[:, 1:1]
+    Y_single = y[:, 1:1]
+    single_ll = StateSpaceDynamics.loglikelihood(model, Φ_single, Y_single)
     @test length(single_ll) == 1
     @test isfinite(single_ll[1])
 
@@ -108,8 +110,8 @@ end
 
 function test_BernoulliRegression_sklearn()
     # create a set of dummy data to pass to sklearn to assess consistency
-    X = reshape([1.0, 2.1, 3.0, 4.0], 4, 1)
-    y = reshape([0.0, 1.0, 0.0, 1.0], 4, 1)
+    X = reshape([1.0, 2.1, 3.0, 4.0], 1, :) 
+    y = reshape([0.0, 1.0, 0.0, 1.0], 1, :)
     w = [1.0, 1.0, 1.0, 0.1]
 
     # first check that the regualr model is 
