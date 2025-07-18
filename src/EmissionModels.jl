@@ -736,7 +736,8 @@ function loglikelihood(
         acc = zero(T)
         for j in 1:d
             p = inv(1 + exp(-dot(β[:, j], Φ[:, i])))
-            acc += Y[j, i] * log(p + eps(T)) + (1 - Y[j, i]) * log(1 - p + eps(T))
+            y_ji = Y[j, i]
+            acc += y_ji * log(p + eps(T)) + (1 - y_ji) * log(1 - p + eps(T))
         end 
         ll[i] = w[i] * acc
     end 
@@ -763,7 +764,8 @@ function objective(
         acc = zero(T)
         for o in 1:d
             p = inv(1 + exp(-dot(β[:, o], opt.X[:, t])))
-            acc += opt.y[o, t] * log(p + eps()) + (1 - opt.y[o, t]) * log(1 - p + eps())
+            y_ot = opt.y[o, t]
+            acc += y_ot * log(p + eps(T)) + (1 - y_ot) * log(1 - p + eps(T))
         end 
         
         total -= opt.w[t] * acc
@@ -931,7 +933,8 @@ function loglikelihood(
         acc = zero(T)
         for o in 1:d   
             z = clamp(dot(β[:, o], Φ[:, t]), -20, 20)
-            acc += Y[o, t] * z - exp(z) - loggamma(Y[o, t] + one(Int))
+            y_ot = Y[o, t]
+            acc += y_ot * z - exp(z) - loggamma(y_ot + one(Int))
         end 
         ll[t] = w[t] * acc
     end 
@@ -958,7 +961,8 @@ function objective(
     for t in 1:n
         for o in 1:d
             z = clamp(dot(β[:, o], opt.X[:, t]), -30, 30)
-            total -= opt.w[t] * (opt.y[o, t] * z - exp(z) - loggamma(opt.y[o, t] + one(Int)))
+            y_ot = opt.y[o, t]
+            total -= opt.w[t] * (y_ot * z - exp(z) - loggamma(y_ot + one(Int)))
         end 
     end 
 
