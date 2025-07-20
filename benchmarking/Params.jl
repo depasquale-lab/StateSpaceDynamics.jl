@@ -4,7 +4,8 @@ export HMMParams, init_params, build_data, LDSParams
 @kwdef struct HMMParams{T<:Real, V<:AbstractVector{<:AbstractMatrix{T}}, M<:AbstractMatrix{T}}
     πₖ::Vector{T}
     A::M
-    β::V
+    μ::V
+    Σ::M
 end
 
 @kwdef struct LDSParams{T<:Real, V<:AbstractVector{T}, M<:AbstractMatrix{T}}
@@ -17,37 +18,21 @@ end
 end
 
 function init_params(rng::AbstractRNG, instance::HMMInstance)
-    (; num_states, input_dim, output_dim) = instance
+    (; num_states, emission_dim) = instance
 
     # Initialize state distribution and transition matrix
     πₖ = StateSpaceDynamics.initialize_state_distribution(num_states)
     A = StateSpaceDynamics.initialize_transition_matrix(num_states)
 
-    # Initialize regression weights (β) and covariances (Σ)
-    β = [randn(rng, input_dim, output_dim) for _ in 1:num_states]
+    # Initialize Gaussian params (μ) and covariances (Σ)
+    μ = [randn(rng, emission_dim) for _ in 1:num_states]
+    Σ = [randn(rng, emission_dim, emission_dim) for _ in 1:num_states]
 
-    return HMMParams(πₖ=πₖ, A=A, β=β)
+    return HMMParams(πₖ=πₖ, A=A, μ=μ, Σ=Σ)
 end
 
 function build_data(rng::AbstractRNG, model::HiddenMarkovModel, instance::HMMInstance)
-    (; num_states, num_trials, seq_length, input_dim, output_dim) = instance
-
-    # Sample from the model
-    all_data = Vector{Matrix{Float64}}()  # Store each data matrix
-    Φ_total = Vector{Matrix{Float64}}()
-    all_true_labels = []
-
-    for i in 1:num_trials
-        Φ = randn(input_dim, seq_length)
-        true_labels, data = rand(rng, model, Φ, n=seq_length)
-        push!(all_true_labels, true_labels)
-        push!(all_data, data)
-        push!(Φ_total, Φ)
-    end
-
-    obs_seq, control_seq, seq_ends = format_glmhmm_data(Φ_total, all_data)
-
-    return all_true_labels, Φ_total, all_data, obs_seq, control_seq, seq_ends
+    return [rand(rng, model; n=instance.seq_length)[2] for _ in 1:instance.num_trials]
 end
 
 function init_params(rng::AbstractRNG, instance::LDSInstance)

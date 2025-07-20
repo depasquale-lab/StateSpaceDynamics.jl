@@ -14,7 +14,6 @@ struct BenchConfig
     n_repeats::Int
 end
 
-# Optional: reduce GC effects in timing
 BenchmarkTools.DEFAULT_PARAMETERS.seconds = 1.0
 
 # Define benchmarking configurations
