@@ -9,7 +9,7 @@ This module implements various emission models for state space modeling, includi
 # Exports
 export EmissionModel, RegressionEmission
 export GaussianEmission, GaussianRegressionEmission, BernoulliRegressionEmission, PoissonRegressionEmission, AutoRegressionEmission
-export loglikelihood, fit!, create_optimization
+export loglikelihood, fit!, create_optimization, objective, objective_gradient!
 
 #=
 Gaussian Emission Models
@@ -303,7 +303,7 @@ function loglikelihood(
     w::Union{Nothing,AbstractVector{T}} = nothing,
 ) where {T<:Real}
 
-    n = size(Φ, 2)
+    f, n = size(Φ)
     d = size(Y, 1)
     β = model.β
 
@@ -325,7 +325,12 @@ function loglikelihood(
     for i in 1:n
         acc = zero(T)
         for j in 1:d
-            acc += (Y[j, i] - dot(β[:, j], Φ[:, i]))^2 
+            pred = zero(T)
+            for k in 1:f
+                pred += β[k, j] * Φ[k, i]
+            end
+            err = Y[j, i] - pred
+            acc += err * err 
         end
         ll[i] = -0.5 * w[i] * acc
     end
@@ -522,7 +527,12 @@ function objective(
     # calculate residuals and w inside loop to avoid allocs 
     for i in 1:n
         for j in 1:d
-            total_ll += opt.w[i] * (opt.y[j, i] - dot(β[:, j], opt.X[:, i]))^2
+            pred = zero(T)
+            for k in 1:f
+                pred += β[k, j] * opt.X[k, i] 
+            end 
+            err = opt.y[j, i] - pred
+            total_ll += opt.w[i] * err^2
         end
     end
 
@@ -601,7 +611,11 @@ function post_optimization!(model::GaussianRegressionEmission, opt::RegressionOp
     # residuals 
     for i in 1:n
         for j in 1:d
-            residuals[j, i] = opt.y[j, i] - dot(model.β[:, j], opt.X[:, i])
+            pred = zero(T)
+            for k in 1:f
+                pred += model.β[k, j] * opt.X[k, i]
+            end 
+            residuals[j, i] = opt.y[j, i] - pred
             Σ[j, j] += opt.w[i] * residuals[j, i]^2
         end 
     end
@@ -735,7 +749,11 @@ function loglikelihood(
     for i in 1:n
         acc = zero(T)
         for j in 1:d
-            p = inv(1 + exp(-dot(β[:, j], Φ[:, i])))
+            z = zero(T)
+            for k in 1:f
+                z += β[k, j] * Φ[k, i]
+            end
+            p = inv(1 + exp(-z))
             y_ji = Y[j, i]
             acc += y_ji * log(p + eps(T)) + (1 - y_ji) * log(1 - p + eps(T))
         end 
@@ -763,7 +781,11 @@ function objective(
     for t in 1:n
         acc = zero(T)
         for o in 1:d
-            p = inv(1 + exp(-dot(β[:, o], opt.X[:, t])))
+            z = zero(T)
+            for j in 1:f
+                z += β[j, o] * opt.X[j, t]
+            end
+            p = inv(1 + exp(-z))
             y_ot = opt.y[o, t]
             acc += y_ot * log(p + eps(T)) + (1 - y_ot) * log(1 - p + eps(T))
         end 
@@ -796,7 +818,11 @@ function objective_gradient!(
     for t in 1:n
         w_t = opt.w[t]
         for o in 1:d
-            diff = opt.y[o, t] - inv(1 + exp(-dot(β_mat[:, o], opt.X[:, t])))        
+            z = zero(T)
+            for j in 1:f
+                z += β_mat[j, o] * opt.X[j, t]
+            end
+            diff = opt.y[o, t] - inv(1 + exp(-z))
             for j in 1:f
                 grad_matrix[j, o] -= w_t * opt.X[j, t] * diff
             end
@@ -932,7 +958,11 @@ function loglikelihood(
     for t in 1:n
         acc = zero(T)
         for o in 1:d   
-            z = clamp(dot(β[:, o], Φ[:, t]), -20, 20)
+            z = zero(T)
+            @inbounds for k in 1:f
+                z += β[k, o] * Φ[k, t]
+            end
+            z = clamp(z, -20, 20)
             y_ot = Y[o, t]
             acc += y_ot * z - exp(z) - loggamma(y_ot + one(Int))
         end 
@@ -960,7 +990,11 @@ function objective(
 
     for t in 1:n
         for o in 1:d
-            z = clamp(dot(β[:, o], opt.X[:, t]), -30, 30)
+            z = zero(T)
+            for j in 1:f
+                z += β[j, o] * opt.X[j, t]
+            end
+            z = clamp(z, -30, 30)
             y_ot = opt.y[o, t]
             total -= opt.w[t] * (y_ot * z - exp(z) - loggamma(y_ot + one(Int)))
         end 
@@ -991,7 +1025,12 @@ function objective_gradient!(
     for t in 1:n
         w_t = opt.w[t]
         for o in 1:d
-            diff = opt.y[o, t] - exp(clamp(dot(β_mat[:, o], opt.X[:, t]), -30, 30))
+            z = zero(T)
+            for j in 1:f
+                z += β_mat[j, o] * opt.X[j, t]
+            end
+            z = clamp(z, -30, 30)
+            diff = opt.y[o, t] - exp(z)
             for j in 1:f
                 gradient_matrix[j, o] -= w_t * opt.X[j, t] * diff
             end
@@ -1000,8 +1039,10 @@ function objective_gradient!(
 
     # calc gradient of penalty
     reg_gradient = calc_regularization_gradient(β_mat, opt.model.λ, opt.model.include_intercept)
-    for j in 1:f, o in 1:d
-        gradient_matrix[j, o] += reg_gradient[j, o]
+    for j in 1:f 
+        for o in 1:d
+            gradient_matrix[j, o] += reg_gradient[j, o]
+        end 
     end
 
     return G .= vec(gradient_matrix)
