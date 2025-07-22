@@ -1,11 +1,11 @@
 using StateSpaceDynamics
 export HMMParams, init_params, build_data, LDSParams
 
-@kwdef struct HMMParams{T<:Real, V<:AbstractVector{<:AbstractMatrix{T}}, M<:AbstractMatrix{T}}
+@kwdef struct HMMParams{T<:Real, M<:AbstractMatrix{T}}
     πₖ::Vector{T}
     A::M
-    μ::V
-    Σ::M
+    μ::Vector{Vector{T}}
+    Σ::Vector{Matrix{T}}
 end
 
 @kwdef struct LDSParams{T<:Real, V<:AbstractVector{T}, M<:AbstractMatrix{T}}
@@ -26,13 +26,17 @@ function init_params(rng::AbstractRNG, instance::HMMInstance)
 
     # Initialize Gaussian params (μ) and covariances (Σ)
     μ = [randn(rng, emission_dim) for _ in 1:num_states]
-    Σ = [randn(rng, emission_dim, emission_dim) for _ in 1:num_states]
+    Σ = Vector{Matrix{Float64}}(undef, num_states)
+    for i in 1:num_states
+        Σ[i] = randn(rng, emission_dim, emission_dim)
+        Σ[i] = Σ[i] * Σ[i]' .+ 1e-3  # Ensure positive definiteness
+    end
 
     return HMMParams(πₖ=πₖ, A=A, μ=μ, Σ=Σ)
 end
 
 function build_data(rng::AbstractRNG, model::HiddenMarkovModel, instance::HMMInstance)
-    return [rand(rng, model; n=instance.seq_length)[2] for _ in 1:instance.num_trials]
+    return [vec(rand(rng, model; n=instance.seq_length)[2]) for _ in 1:instance.num_trials]
 end
 
 function init_params(rng::AbstractRNG, instance::LDSInstance)

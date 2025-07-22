@@ -7,6 +7,7 @@ using BenchmarkTools
 using CSV
 using CondaPkg
 using DataFrames
+using Distributions
 using LinearAlgebra
 using Optim
 using Plots
