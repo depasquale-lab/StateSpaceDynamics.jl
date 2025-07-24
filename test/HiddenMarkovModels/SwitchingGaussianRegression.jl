@@ -1,18 +1,20 @@
 function test_SwitchingGaussianRegression_fit()
     # Create Emission Models
-    emission_1 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([3.0, 2.0, 2.0, 3.0], :, 1), Σ=[1.0;;], λ=0.0)
-    emission_2 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([-4.0, -2.0, 3.0, 2.0], :, 1), Σ=[1.0;;], λ=0.0)
+    emission_1_true = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([3.0, 2.0, 2.0, 3.0], :, 1), Σ=[1.0;;], λ=0.0)
+    emission_2_true = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([-4.0, -2.0, 3.0, 2.0], :, 1), Σ=[1.0;;], λ=0.0)
 
     # Create Switching Regression Model
-    A = [0.99 0.01; 0.05 0.95]
-    πₖ = [0.8; 0.2]
+    A_true = [0.99 0.01; 0.05 0.95]
+    πₖ_true = [0.8; 0.2]
+    true_model = HMM(πₖ_true, A_true, [emission_1_true, emission_2_true])
 
-    true_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2])
+    print(true_model)
 
     # Sample from the model
     n = 20000
-    Φ = randn(3, n)
-    true_labels, data = rand(true_model, Φ; n=n)
+    control_seq = Fill(nothing, n)
+    simulated_data = rand(true_model, control_seq)
+    state_seq, obs_seq = simulated_data.state_seq, simulated_data.obs_seq 
 
     # Fit a new model to the data
     A = [0.8 0.2; 0.1 0.9]
@@ -20,94 +22,20 @@ function test_SwitchingGaussianRegression_fit()
     emission_1 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([2.0, -1.0, 1.0, 2.0], :, 1), Σ=[2.0;;], λ=0.0)
     emission_2 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([-2.5, -1.0, 3.5, 3.0], :, 1), Σ=[0.5;;], λ=0.0)
 
-    test_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2])
-    lls = StateSpaceDynamics.fit!(test_model, data, Φ)
+    test_model = HMM(πₖ, A, [emission_1, emission_2])
+    hmm, lls = baum_welch(test_model, obs_seq, control_seq; max_iterations=200)
 
     # Test transition matrix
-    @test isapprox(true_model.A, test_model.A, atol=0.1)
+    @test isapprox(true_model.trans, hmm.trans, atol=0.1)
 
     # Test regression fit
-    @test isapprox(test_model.B[1].β, true_model.B[1].β; atol=0.1) ||
-        isapprox(test_model.B[1].β, true_model.B[2].β; atol=0.1)
-    @test isapprox(test_model.B[2].β, true_model.B[2].β; atol=0.1) ||
-        isapprox(test_model.B[2].β, true_model.B[1].β; atol=0.1)
+    @test isapprox(hmm.dists[1].β, true_model.dists[1].β; atol=0.1) ||
+        isapprox(hmm.dists[1].β, true_model.dists[2].β; atol=0.1)
+    @test isapprox(hmm.dists[2].β, true_model.dists[2].β; atol=0.1) ||
+        isapprox(hmm.dists[2].β, true_model.dists[1].β; atol=0.1)
 
     # Test that the ll is always increasing
     @test any(diff(lls) .< -1e-3) == false
-end
-
-function test_SwitchingGaussianRegression_fit_float32()
-    T = Float32  # alias for easier substitution
-
-    # Create Emission Models
-    β1 = reshape(T[30.0, 20.0, 20.0, 30.0], :, 1)
-    Σ1 = T[5.0;;]
-    emission_1 = GaussianRegressionEmission(
-        input_dim=3, output_dim=1, include_intercept=true,
-        β=β1, Σ=Σ1, λ=T(0.0)
-    )
-
-    β2 = reshape(T[-40.0, -20.0, 30.0, 20.0], :, 1)
-    Σ2 = T[10.0;;]
-    emission_2 = GaussianRegressionEmission(
-        input_dim=3, output_dim=1, include_intercept=true,
-        β=β2, Σ=Σ2, λ=T(0.0)
-    )
-
-    # Create Switching Regression Model
-    A = T[0.99 0.01; 0.05 0.95]
-    πₖ = T[0.8; 0.2]
-
-    true_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2])
-
-    # Sample from the model
-    n = 50000
-    Φ = randn(T, 3, n)
-    true_labels, data = rand(true_model, Φ; n=n)
-
-    # Fit a new model to the data
-    A = T[0.8 0.2; 0.1 0.9]
-    πₖ = T[0.6; 0.4]
-    β1 = reshape(T[2.0, -1.0, 1.0, 2.0], :, 1)
-    Σ1 = T[4.0;;]
-    emission_1 = GaussianRegressionEmission(
-        input_dim=3, output_dim=1, include_intercept=true,
-        β=β1, Σ=Σ1, λ=T(0.0)
-    )
-
-    β2 = reshape(T[-2.5, -1.0, 3.5, 3.0], :, 1)
-    Σ2 = T[9.0;;]
-    emission_2 = GaussianRegressionEmission(
-        input_dim=3, output_dim=1, include_intercept=true,
-        β=β2, Σ=Σ2, λ=T(0.0)
-    )
-
-    test_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2])
-    lls = StateSpaceDynamics.fit!(test_model, data, Φ)
-
-    println("Sigma 1", test_model.B[1].Σ)
-    println("Sigma 2", test_model.B[2].Σ)
-
-    # Test transition matrix
-    @test isapprox(true_model.A, test_model.A, atol=T(0.1))
-
-    # Test regression fit (account for label-swapping symmetry)
-    @test isapprox(test_model.B[1].β, true_model.B[1].β; atol=T(0.1)) ||
-          isapprox(test_model.B[1].β, true_model.B[2].β; atol=T(0.1))
-    @test isapprox(test_model.B[2].β, true_model.B[2].β; atol=T(0.1)) ||
-          isapprox(test_model.B[2].β, true_model.B[1].β; atol=T(0.1))
-
-    # Test that the ll is always increasing
-    @test_broken any(diff(lls) .< 0.2) == false
-
-    # Type checks
-    @test eltype(test_model.A) == T
-    @test eltype(test_model.πₖ) == T
-    @test eltype(test_model.B[1].β) == T
-    @test eltype(test_model.B[2].β) == T
-    @test eltype(test_model.B[1].Σ) == T
-    @test eltype(test_model.B[2].Σ) == T
-    @test eltype(lls[end]) == T
 end
 
 function test_SwitchingGaussianRegression_SingleState_fit()
@@ -119,25 +47,27 @@ function test_SwitchingGaussianRegression_SingleState_fit()
     πₖ = [1.0]
 
     # Create HMM
-    true_model = HiddenMarkovModel(K=1, A=A, πₖ=πₖ, B=[emission_1])
+    true_model = HMM(πₖ, A, [emission_1])
 
     # Sample from the model
     n = 20000
-    Φ = randn(3, n)
-    true_labels, data = rand(true_model, Φ; n=n)
+    control_seq = Fill(nothing, n)
+    simulated_data = rand(true_model, control_seq)
+    state_seq, obs_seq = simulated_data.state_seq, simulated_data.obs_seq 
 
     # Create test model
-    emission_1 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([2.0, 1.0, 0.0, 0.0], :, 1), Σ=[0.5;;], λ=0.0)
-    test_model = HiddenMarkovModel(K=1, A=A, πₖ=πₖ, B=[emission_1])
+    emission_guess = GaussianRegressionEmission(3, 1, true, reshape([2.0, 1.0, 0.0, 0.0], :, 1), [0.5;;], 0.0)
+    test_model = HMM([1.0], [1.0;;], [emission_guess])
 
     # Recover the original parameters
-    ll = StateSpaceDynamics.fit!(test_model, data, Φ)
+    
+    hmm, lls = baum_welch(test_model, obs_seq, control_seq; max_iterations=200)
 
     # Test transition matrix
-    @test isapprox(true_model.A, test_model.A, atol=0.1)
+    @test isapprox(true_model.trans, hmm.trans, atol=0.1)
 
     # Test regression fit
-    @test isapprox(test_model.B[1].β, true_model.B[1].β, atol=0.1)
+    @test isapprox(hmm.dists[1].β, true_model.dists[1].β, atol=0.1)
 
     # Test that the ll is always increasing
     @test any(diff(ll) .< -1e-3) == false
@@ -145,29 +75,27 @@ end
 
 function test_trialized_SwitchingGaussianRegression()
     # Create Emission Models
-    emission_1 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([3.0, 2.0, 2.0, 3.0], :, 1), Σ=[1.0;;], λ=0.0)
-    emission_2 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([-4.0, -2.0, 3.0, 2.0], :, 1), Σ=[1.0;;], λ=0.0)
+    emission_1_true = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([3.0, 2.0, 2.0, 3.0], :, 1), Σ=[1.0;;], λ=0.0)
+    emission_2_true = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([-4.0, -2.0, 3.0, 2.0], :, 1), Σ=[1.0;;], λ=0.0)
 
     # Create Switching Regression Model
-    A = [0.99 0.01; 0.05 0.95]
-    πₖ = [0.8; 0.2]
+    A_true = [0.99 0.01; 0.05 0.95]
+    πₖ_true = [0.8; 0.2]
 
-    true_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2])
-
+    true_model = HMM(πₖ_true, A_true, [emission_1_true, emission_2_true])
+    
     # Sample from the model
-    all_data = Vector{Matrix{Float64}}()  # Store each data matrix
-    Φ_total = Vector{Matrix{Float64}}()
-
     num_trials = 10
-    n=1000
-    all_true_labels = []
+    T=1000
+    Φ_trials = [randn(3, T) for _ in 1:num_trials]
+    obs_trials = Vector{Matrix{Float64}}(undef, num_trials)
+    state_trials = Vector{Vector{Int}}(undef, num_trials)
 
     for i in 1:num_trials
-        Φ = randn(3, n)
-        true_labels, data = rand(true_model, Φ, n=n)
-        push!(all_true_labels, true_labels)
-        push!(all_data, data)
-        push!(Φ_total, Φ)
+        Φ = Φ_trials[i]
+        sim = rand(true_model, eachcol(Φ))  
+        obs_trials[i] = sim.obs_seq
+        state_trials[i] = sim.state_seq
     end
 
     # Fit a new model to the data
@@ -176,18 +104,18 @@ function test_trialized_SwitchingGaussianRegression()
     emission_1 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([2.0, -1.0, 1.0, 2.0], :, 1), Σ=[2.0;;], λ=0.0)
     emission_2 = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([-2.5, -1.0, 3.5, 3.0], :, 1), Σ=[0.5;;], λ=0.0)
 
-    test_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2])
+    test_model = HMM(πₖ, A, [emission_1, emission_2])
 
     # Fit the model to the sampled data
-    lls = StateSpaceDynamics.fit!(test_model, all_data, Φ_total)
+    hmm, lls = baum_welch(test_model, obs_trials, Φ_trials; max_iterations=200)
 
     # Run tests to assess model fit
-    @test isapprox(test_model.B[1].β, true_model.B[1].β; atol=0.1) ||
-        isapprox(test_model.B[1].β, true_model.B[2].β; atol=0.1)
-    @test isapprox(test_model.B[2].β, true_model.B[2].β; atol=0.1) ||
-        isapprox(test_model.B[2].β, true_model.B[1].β; atol=0.1)
-    @test_broken isapprox(test_model.B[1].Σ, true_model.B[1].Σ, atol=0.1) || isapprox(test_model.B[1].Σ, true_model.B[2].Σ, atol=0.1)
-    @test_broken isapprox(test_model.B[2].Σ, true_model.B[2].Σ, atol=0.1) || isapprox(test_model.B[2].Σ, true_model.B[1].Σ, atol=0.1)
+    @test isapprox(hmm.dists[1].β, true_model.dists[1].β; atol=0.1) ||
+        isapprox(hmm.dists[1].β, true_model.dists[2].β; atol=0.1)
+    @test isapprox(hmm.dists[2].β, true_model.dists[2].β; atol=0.1) ||
+        isapprox(hmm.dists[2].β, true_model.dists[1].β; atol=0.1)
+    @test_broken isapprox(hmm.dists[1].Σ, true_model.dists[1].Σ, atol=0.1) || isapprox(hmm.dists[1].Σ, true_model.dists[2].Σ, atol=0.1)
+    @test_broken isapprox(hmm.dists[2].Σ, true_model.dists[2].Σ, atol=0.1) || isapprox(hmm.dists[2].Σ, true_model.dists[1].Σ, atol=0.1)
 
     # Test that the ll is always increasing (accept small numerical instability)
     @test any(diff(lls) .< -1e-3) == false

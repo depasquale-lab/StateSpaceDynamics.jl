@@ -17,14 +17,12 @@ Create a Hidden Markov Model with Gaussian Emissions
 ```
 """
 function GaussianHMM(;
-    K::Int,
-    output_dim::Int,
     A::AbstractMatrix{T},
     πₖ::AbstractVector{T},
     emissions::AbstractVector
 ) where {T<:Real}
     # Return constructed GaussianHMM
-    return HiddenMarkovModel(; K=K, B=emissions, A=A, πₖ=πₖ)
+    return HMM(πₖ, A, emissions)
 end
 
 """
@@ -61,13 +59,12 @@ Create a Switching Gaussian Regression Model
 - `::HiddenMarkovModel`: A Switching Gaussian Regression Model
 """
 function SwitchingGaussianRegression(;
-    K::Int,
     emissions::AbstractVector,
     A::AbstractMatrix,
     πₖ::AbstractVector,
 )
     # Return the HiddenMarkovModel
-    return HiddenMarkovModel(; K=K, B=emissions, A=A, πₖ=πₖ)
+    return HMM(πₖ, A, emissions)
 end
 
 """
@@ -90,12 +87,11 @@ Create a Switching AutoRegression Model
 - `::HiddenMarkovModel`: A Switching AutoRegression Model
 """
 function SwitchingAutoRegression(;
-    K::Int,
     A::AbstractMatrix,
     πₖ::AbstractVector,
     emissions::AbstractVector
 )
-    return HiddenMarkovModel(; K=K, B=emissions, A=A, πₖ=πₖ)
+    return HMM(πₖ, A, emissions)
 end
 
 """
@@ -116,20 +112,18 @@ Create a Switching Bernoulli Regression Model
 - `::HiddenMarkovModel`: A Switching Bernoulli Regression Model
 """
 function SwitchingBernoulliRegression(;
-    K::Int,
     A::AbstractMatrix,
     πₖ::AbstractVector,
     emissions::AbstractVector,
 )
-    return HiddenMarkovModel(; K=K, B=emissions, A=A, πₖ=πₖ)
+    return HMM(πₖ, A, emissions)
 end
 
 
 function SwitchingPoissonRegression(;
-    K::Int,
     A::AbstractMatrix,
     πₖ::AbstractVector,
     emissions::AbstractVector,
 )
-    return HiddenMarkovModel(; K=K, B=emissions, A=A, πₖ=πₖ)
+    return HMM(πₖ, A, emissions)
 end

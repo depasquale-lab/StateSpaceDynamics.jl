@@ -220,6 +220,55 @@ mutable struct GaussianRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: Regr
     λ::T # regularization parameter
 end
 
+# abstract type AbstractResult end 
+
+# struct GaussianRegressionObservation{T} <: AbstractResult
+#     Φ::Vector{T}
+#     y::Vector{T}
+# end
+
+"""
+    rand interface for HMM rand function
+"""
+struct RegressionSampler{E}
+    emission::E
+    x::Union{Nothing, AbstractVector}
+    xdist::Union{Nothing, Distribution}
+end
+
+RegressionSampler(emission::E, x::AbstractVector) where {E} =
+    RegressionSampler{E}(emission, x, nothing)
+
+RegressionSampler(emission::E, xdist::Distribution) where {E} =
+    RegressionSampler{E}(emission, nothing, xdist)
+
+Random.Sampler(::Type{<:Random.SamplerTrivial}, sampler::RegressionSampler) =
+    Random.SamplerTrivial(sampler)
+
+function Random.rand(rng::AbstractRNG, sampler::Random.SamplerTrivial{<:RegressionSampler})
+    emission = sampler[].emissionk
+    x = sampler[].x
+    xdist = sampler[].xdist
+
+    if x === nothing
+        @assert xdist !== nothing "Either x or xdist must be provided"
+        x = rand(rng, xdist)
+    end
+
+    Φ = x isa Vector ? reshape(x, :, 1) : x
+    if emission.include_intercept
+        Φ = vcat(ones(eltype(Φ), 1, size(Φ, 2)), Φ)
+    end
+    μ = emission.β' * Φ
+    return vec(rand(rng, MvNormal(vec(μ), emission.Σ)))
+end
+
+function obs_distributions(hmm::AbstractHMM)
+    input_dim = hmm.emissions[1].input_dim
+    xdist = MvNormal(zeros(input_dim), I)
+    return RegressionSampler.(hmm.emissions, Ref(xdist))
+end
+
 """
     GaussianRegressionEmission(input_dim, output_dim, include_intercept, β, Σ, λ)
 
@@ -252,6 +301,8 @@ function GaussianRegressionEmission(;
 
     return GaussianRegressionEmission(input_dim, output_dim, β, Σ, include_intercept, λ)
 end
+
+DensityInterface.DensityKind(::GaussianRegressionEmission) = HasDensity()
 
 """
      Random.rand(rng::AbstractRNG, model::GaussianRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
@@ -337,6 +388,50 @@ function loglikelihood(
 
     return ll
 end
+
+# function DensityInterface.logdensityof(model::GaussianRegressionEmission, x::GaussianRegressionObservation)
+#     Φ = x.Φ
+#     y = x.y
+
+#     f = length(Φ)
+#     d = length(y)
+#     β = model.β
+#     Σ = model.Σ
+
+#     # Intercept handling
+#     if model.include_intercept
+#         Φ_aug = Vector{eltype(Φ)}(undef, f + 1)
+#         Φ_aug[1] = 1.0
+#         for i in 1:f
+#             Φ_aug[i + 1] = Φ[i]
+#         end
+#     else
+#         Φ_aug = Φ
+#     end
+
+#     # Predicted mean μ = β' * Φ_aug
+#     μ = Vector{eltype(Φ)}(undef, d)
+#     for j in 1:d
+#         μ[j] = 0.0
+#         for k in eachindex(Φ_aug)
+#             μ[j] += β[k, j] * Φ_aug[k]
+#         end
+#     end
+
+#     # Compute Mahalanobis term: (y - μ)' * inv(Σ) * (y - μ)
+#     acc = 0.0
+#     for i in 1:d
+#         err_i = y[i] - μ[i]
+#         inner = 0.0
+#         for j in 1:d
+#             err_j = y[j] - μ[j]
+#             inner += Σ[i, j] \ err_j  # efficient if Σ is diagonal or small
+#         end
+#         acc += err_i * inner
+#     end
+
+#     return -0.5 * acc
+# end
 
 """
     AutoRegressionEmission <: EmissionModel
@@ -611,7 +706,7 @@ function post_optimization!(model::GaussianRegressionEmission, opt::RegressionOp
     # residuals 
     for i in 1:n
         for j in 1:d
-            pred = zero(T)
+            pred = zero(eltype(opt.y))
             for k in 1:f
                 pred += model.β[k, j] * opt.X[k, i]
             end 
@@ -647,6 +742,8 @@ mutable struct BernoulliRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: Reg
     include_intercept::Bool # whether to include an intercept term; if true, the first column of β is assumed to be the intercept/bias
     λ::T # regularization parameter
 end
+
+DensityInterface.DensityKind(::BernoulliRegressionEmission) = HasDensity()
 
 """
     BernoulliRegressionEmission(Args)
@@ -857,6 +954,9 @@ mutable struct PoissonRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: Regre
     include_intercept::Bool
     λ::T
 end
+
+DensityInterface.DensityKind(::PoissonRegressionEmission) = HasDensity()
+
 
 """
     PoissonRegressionEmission(Args)
@@ -1101,5 +1201,16 @@ function fit!(
     # Update additional parameters if needed (e.g., variance for Gaussian)
     post_optimization!(model, opt_problem)
 
+    return model
+end
+
+function StatsAPI.fit!(
+    model::RegressionEmission,
+    x::AbstractVector{<:NamedTuple{(:y, :Φ)}},
+    w::AbstractVector{<:Real} = ones(length(x))
+)
+    Φ = cat(getfield.(x, :Φ)...; dims=2)
+    Y = hcat(getfield.(x, :y)...)
+    fit!(model, Φ, Y, w)
     return model
 end
