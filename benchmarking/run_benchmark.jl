@@ -1,3 +1,6 @@
+using Pkg
+Pkg.activate("benchmarking")
+
 include("SSD_Benchmark.jl")
 using .SSD_Benchmark
 using BenchmarkTools

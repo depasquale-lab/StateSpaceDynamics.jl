@@ -102,8 +102,8 @@ function run_benchmark(::Dynamax_HMMImplem, model::Tuple{Any, Any, Any}, data::V
     np = pyimport("numpy")
     jax = pyimport("jax")
 
-    data = np.array(data)
-    
+    data = np.reshape(np.array(data), (-1, 1))
+
     hmm = model[1]
     params = model[2]
     props = model[3]
