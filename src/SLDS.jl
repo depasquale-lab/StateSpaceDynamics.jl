@@ -17,22 +17,36 @@ mutable struct SwitchingLinearDynamicalSystem{T<:Real,M<:AbstractMatrix{T}, V<:A
     K::Int 
 end
 
-
-
-
-# ! finish
-
 function Base.show(io::IO, slds::SwitchingLinearDynamicalSystem; gap = "")
+    println(io, gap, "Switching Linear Dynamical System:")
+    println(io, gap, "----------------------------------")
+    
+    if slds.K > 3
+        println(io, gap, " size(A)  = ($(size(slds.A,1)), $(size(slds.A,2)))")
+        println(io, gap, " size(πₖ) = ($(size(slds.πₖ,1)),)")
+    else
+        println(io, gap, " A  = $(round.(slds.A, digits=4))")
+        println(io, gap, " πₖ = $(round.(slds.πₖ, digits=4))")
+    end
 
+    println(io, gap, " Switching Models:")
+    println(io, gap, " -----------------")
 
-
-
-
+    if slds.K > 3
+        for lds in slds.B[1:3]
+            Base.show(io, lds, gap = gap * "  ")
+            println(io, gap, "  --------------")
+        end
+        println(io, gap, "  ... $(slds.K-3) more")
+    else
+        for (i, lds) in enumerate(slds.B)
+            Base.show(io, lds; gap = gap * "  ")
+            if i < slds.K
+                println(io, gap, "  --------------")
+            end
+        end
+    end
 end
-
-
-
-
 
 """
     Random.rand(rng, slds, T)

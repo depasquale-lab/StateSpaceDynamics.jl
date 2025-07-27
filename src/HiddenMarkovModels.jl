@@ -20,46 +20,37 @@ mutable struct HiddenMarkovModel{T<:Real, V<:AbstractVector{T}, M<:AbstractMatri
     K::Int # number of states
 end
 
-
-# ! finish
-
 function Base.show(io::IO, hmm::HiddenMarkovModel; gap = "")
     println(io, gap, "Hidden Markov Model:")
     println(io, gap, "--------------------")
 
-
-
-    if size(A, 1) > 3
-        println(io, gap, " size(A) = ($(size(hmm.A,1)), $(size(hmm.A,2)))")
+    if hmm.K > 3
+        println(io, gap, " size(A)  = ($(size(hmm.A,1)), $(size(hmm.A,2)))")
+        println(io, gap, " size(πₖ) = ($(size(hmm.πₖ,1)),)")
     else
-        println(io, gap, " A = $(hmm.A)")
-        println(io, gap, " πₖ = ")
+        println(io, gap, " A  = $(round.(hmm.A, digits=4))")
+        println(io, gap, " πₖ = $(round.(hmm.πₖ, digits=4))")
     end
-
-    println(io, gap, " πₖ = ")
 
     println(io, gap, " Emission Models:")
     println(io, gap, " ----------------")
-    if K > 4
+
+    if hmm.K > 4
         # only show 3
-        for b in B[1:3]
+        for b in hmm.B[1:3]
             Base.show(io, b, gap = gap * "  ")
+            println(io, gap, "  ----------------")
         end
-        println(io, gap * "  ", "$(K-3) more ...")
+        println(io, gap * "  $(K-3) more ...")
     else
-        for b in B
+        for (i,b) in enumerate(hmm.B)
             Base.show(io, b, gap = gap * "  ")
+            if i < hmm.K
+                println(io, gap, "  ----------------")
+            end
         end
     end
-
-
 end
-
-
-
-
-
-
 
 """
     initialize_forward_backward(model::AbstractHMM, num_obs::Int)
