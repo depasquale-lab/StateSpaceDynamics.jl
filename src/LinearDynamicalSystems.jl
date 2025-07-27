@@ -18,6 +18,28 @@ Base.@kwdef mutable struct GaussianStateModel{T<:Real, M<:AbstractMatrix{T}, V<:
     P0::M 
 end
 
+function Base.show(io::IO, gsm::GaussianStateModel; gap = "")
+    nstate = size(gsm.A, 1)
+
+    println(io, gap, "Gaussian State Model:")
+    println(io, gap, "---------------------")
+    if nstate > 4
+        println(io, gap, " State Parameters:")
+        println(io, gap, "  size(A)  = ($nstate, $nstate)")
+        println(io, gap, "  size(Q)  = ($nstate, $nstate)")
+        println(io, gap, " Initial State:")
+        println(io, gap, "  size(x0) = ($nstate, )")
+        println(io, gap, "  size(P0) = ($nstate, $nstate)")
+    else
+        println(io, gap, " State Parameters:")
+        println(io, gap, "  A  = $(round.(gsm.A, digits=3))")
+        println(io, gap, "  Q  = $(round.(gsm.Q, digits=2))")
+        println(io, gap, " Initial State:")
+        println(io, gap, "  x0 = $(round.(gsm.x0, digits=2))")
+        println(io, gap, "  P0 = $(round.(gsm.P0, digits=2))")
+    end
+end
+
 """
     GaussianObservationModel{T<:Real, M<:AbstractMatrix{T}} 
 
