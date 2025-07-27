@@ -26,6 +26,18 @@ mutable struct GaussianEmission{T<:Real, V<:AbstractVector{T}, M<:AbstractMatrix
     Σ::M  # covariance matrix
 end
 
+function Base.show(io::IO, ge::GaussianEmission; gap = "")
+    println(io, gap, "Gaussian Emission model:")
+    println(io, gap, "------------------------")
+    if ge.output_dim > 4
+        println(io, gap, " size(μ) = ($(length(ge.μ)),)")
+        println(io, gap, " size(Σ) = ($(size(ge.Σ,1)), $(size(ge.Σ,2)))")
+    else
+        println(io, gap, " μ = $(ge.μ)")
+        println(io, gap, " Σ = $(ge.Σ)")
+    end
+end
+
 """
     function GaussianEmission(; output_dim::Int, μ::AbstractVector, Σ::AbstractMatrix)
 
@@ -220,6 +232,15 @@ mutable struct GaussianRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: Regr
     λ::T # regularization parameter
 end
 
+function Base.show(io::IO, gre::GaussianRegressionEmission; gap = "")
+    println(io, gap, "Gaussian Regression Emission model:")
+    println(io, gap, "-----------------------------------")
+    println(io, gap, " size(β) = ($(size(gre.β,1)), $(size(gre.β,2)))")
+    println(io, gap, " size(Σ) = ($(size(gre.Σ,1)), $(size(gre.Σ,2)))")
+    println(io, gap, " intrcpt = $(gre.include_intercept)")
+    println(io, gap, "      λ  = $(round(gre.λ, digits=3))")
+end
+
 """
     GaussianRegressionEmission(input_dim, output_dim, include_intercept, β, Σ, λ)
 
@@ -336,6 +357,15 @@ mutable struct AutoRegressionEmission <: AutoRegressiveEmission
     output_dim::Int
     order::Int
     innerGaussianRegression::GaussianRegressionEmission
+end
+
+function Base.show(io::IO, are::AutoRegressionEmission; gap = "")
+    println(io, gap, "AutoRegression Emission model:")
+    println(io, gap, "------------------------------")
+    println(io, gap, " output_dim = $(are.output_dim)")
+    println(io, gap, " (AR) order = $(are.order)")
+    Base.show(io, are.innerGaussianRegression, gap = " " * gap)
+
 end
 
 """
@@ -581,6 +611,20 @@ mutable struct BernoulliRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: Reg
     λ::T # regularization parameter
 end
 
+
+
+
+# ! finish
+
+function Base.show(io::IO, bre::BernoulliRegressionEmission; gap = "")
+    println(io, gap, "Bernoulli Regression model:")
+    println(io, gap, "---------------------------")
+    println(io, gap, bre.β, bre.λ)
+end
+
+
+
+
 """
     BernoulliRegressionEmission(Args)
 
@@ -750,6 +794,23 @@ mutable struct PoissonRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: Regre
     include_intercept::Bool
     λ::T
 end
+
+
+
+
+
+
+# ! finish
+
+function Base.show(io::IO, pre::PoissonRegressionEmission; gap = "")
+
+
+end
+
+
+
+
+
 
 """
     PoissonRegressionEmission(Args)

@@ -15,6 +15,19 @@ mutable struct ProbabilisticPCA{T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector
     end
 end
 
+
+
+# ! figure out what this is, then pretty print
+
+function Base.show(io::IO, ppca::ProbabilisticPCA; gap = "")
+
+
+
+end
+
+
+
+
 function estep(ppca::ProbabilisticPCA, X::Matrix{T}) where {T<:Real}
     D, N = size(X)
     E_z = zeros(T, ppca.k, N)

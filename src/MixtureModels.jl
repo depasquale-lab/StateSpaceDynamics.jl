@@ -13,6 +13,23 @@ mutable struct GaussianMixtureModel{T<:Real,M<:AbstractMatrix{T},V<:AbstractVect
     πₖ::V             # Mixing coefficients (K)
 end
 
+
+
+
+
+
+# ! finish
+
+function Base.show(io::IO, gmm::GaussianMixtureModel; gap = "")
+
+
+
+end
+
+
+
+
+
 """
     GaussianMixtureModel(k::Int, data_dim::Int)
     
@@ -175,6 +192,17 @@ mutable struct PoissonMixtureModel{T<:Real,V<:AbstractVector{T}} <: MixtureModel
     λₖ::V
     πₖ::V
 end
+
+
+# ! finish
+
+
+function Base.show(io::IO, pmm::PoissonMixtureModel; gap = "")
+
+end
+
+
+
 
 
 """

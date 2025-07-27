@@ -18,6 +18,22 @@ mutable struct SwitchingLinearDynamicalSystem{T<:Real,M<:AbstractMatrix{T}, V<:A
 end
 
 
+
+
+# ! finish
+
+function Base.show(io::IO, slds::SwitchingLinearDynamicalSystem; gap = "")
+
+
+
+
+
+end
+
+
+
+
+
 """
     Random.rand(rng, slds, T)
 
