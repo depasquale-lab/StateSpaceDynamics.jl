@@ -16,6 +16,8 @@ using StatsFuns
 using SpecialFunctions
 using Base.Threads: @threads
 
+import Base: show
+
 include("GlobalTypes.jl")
 include("Utilities.jl")
 include("LinearDynamicalSystems.jl")

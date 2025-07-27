@@ -118,6 +118,22 @@ Base.@kwdef struct LinearDynamicalSystem{T<:Real, S<:AbstractStateModel{T}, O<:A
     fit_bool::Vector{Bool}
 end
 
+function Base.show(io::IO, lds::LinearDynamicalSystem)
+    println(io, "Linear Dynamical System:")
+    Base.show(io, lds.state_model, gap = " ")
+    Base.show(io, lds.obs_model, gap = " ")
+    println(io, " Parameters to update:")
+    println(io, " ---------------------")
+
+    if lds.obs_model isa PoissonObservationModel
+        prms = ["x0", "P0", "A", "Q", "C, log_d"][lds.fit_bool[1:5]] # C and log_d are either both updated or neither 
+    else
+        prms = ["x0", "P0", "A", "Q", "C", "R"][lds.fit_bool[1:6]]
+    end
+
+    println(io, "  $(join(prms, ", "))")
+end
+
 """
     stateparams(lds::LinearDynamicalSystem{T,S,O}) 
 
