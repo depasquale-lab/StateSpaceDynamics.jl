@@ -222,10 +222,6 @@ mutable struct PoissonMixtureModel{T<:Real,V<:AbstractVector{T}} <: MixtureModel
     πₖ::V
 end
 
-
-# ! finish
-
-
 function Base.show(io::IO, pmm::PoissonMixtureModel; gap = "")
     println(io, gap, "Poisson Mixture Model:")
     println(io, gap, "----------------------")
