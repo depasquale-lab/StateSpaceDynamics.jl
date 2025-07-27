@@ -54,6 +54,21 @@ Base.@kwdef mutable struct GaussianObservationModel{T<:Real, M<:AbstractMatrix{T
     R::M
 end
 
+function Base.show(io::IO, gom::GaussianObservationModel; gap = "")
+    nobs, nstate = size(gom.C)
+
+    println(io, gap, "Gaussian Observation Model:")
+    println(io, gap, "---------------------------")
+
+    if nobs * nstate > 12
+        println(io, gap, " size(C) = ($nobs, $nstate)")
+        println(io, gap, " size(R) = ($nobs, $nobs)")
+    else
+        println(io, gap, " C = $(round.(gom.C, digits=2))")
+        println(io, gap, " R = $(round.(gom.R, digits=2))")
+    end
+end
+
 """
     PoissonObservationModel{T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector{T}} <: AbstractObservationModel{T}
 
@@ -66,6 +81,21 @@ Represents the observation model of a Linear Dynamical System with Poisson obser
 Base.@kwdef mutable struct PoissonObservationModel{T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector{T}} <: AbstractObservationModel{T}
     C::M
     log_d::V
+end
+
+function Base.show(io::IO, pom::PoissonObservationModel, gap = "")
+    nobs, nstate = size(gom.C)
+
+    println(io, gap, "Poisson Observation Model:")
+    println(io, gap, "--------------------------")
+
+    if nobs > 4 || nstate > 4
+        println(io, gap, " size(C) = ($nobs, $nstate)")
+    else
+        println(io, gap, " C = $(round.(pom.C, digits=2))")
+    end
+    println(io, gap, " log_d   = $(round(pom.log_d, digits = 3))")
+    println(io, gap, " d       = $(round(exp(pom.log_d), digits = 2))")
 end
 
 """
