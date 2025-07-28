@@ -1,5 +1,6 @@
 function test_pretty_printing()
     # Set up IO buffer for printing
+    
     io = IOBuffer()
 
     # Gaussian Emission
@@ -13,6 +14,7 @@ function test_pretty_printing()
     # Gaussian Regression Emission
 
     gre = GaussianRegressionEmission(3, 3, rand(3,3), rand(3,3), true, 0.5)
+
     @test println(io, gre) === nothing
 
     # AutoRegression Emission 
