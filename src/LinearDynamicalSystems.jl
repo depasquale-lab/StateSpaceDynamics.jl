@@ -76,7 +76,7 @@ Represents the observation model of a Linear Dynamical System with Poisson obser
 
 # Fields
 - `C::AbstractMatrix{T}`: Observation matrix of size `(obs_dim × latent_dim)`. Maps latent states into observation space.
-- `log_d::AbstractVector{T}`: Mean firing rate vector (log space) of size `(obs_dim × obs_dim)`. 
+- `log_d::AbstractVector{T}`: Mean firing rate vector (log space) of length `(obs_dim)`. 
 """
 Base.@kwdef mutable struct PoissonObservationModel{T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector{T}} <: AbstractObservationModel{T}
     C::M
@@ -84,7 +84,7 @@ Base.@kwdef mutable struct PoissonObservationModel{T<:Real, M<:AbstractMatrix{T}
 end
 
 function Base.show(io::IO, pom::PoissonObservationModel, gap = "")
-    nobs, nstate = size(gom.C)
+    nobs, nstate = size(pom.C)
 
     println(io, gap, "Poisson Observation Model:")
     println(io, gap, "--------------------------")

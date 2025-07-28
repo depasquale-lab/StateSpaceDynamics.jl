@@ -783,8 +783,8 @@ A Poisson regression model.
 # Fields
 - `input_dim::Int`: Dimensionality of the input data.
 - `output_dim::Int`: Dimensionality of the output data.
-- `include_intercept::Bool`: Whether to include a regression intercept.
 - `β::AbstractMatrix{<:Real}`: The regression coefficients matrix.
+- `include_intercept::Bool`: Whether to include a regression intercept.
 - `λ::Real;`: L2 Regularization parameter.
 """
 mutable struct PoissonRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: RegressionEmission
@@ -804,7 +804,7 @@ end
 
 function Base.show(io::IO, pre::PoissonRegressionEmission; gap = "")
 
-
+    println(io, gap)
 end
 
 
