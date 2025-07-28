@@ -21,8 +21,13 @@ function Base.show(io::IO, ppca::ProbabilisticPCA; gap = "")
     println(io, gap, "------------------------")
     println(io, gap, " size(W) = ($(size(ppca.W,1)), $(size(ppca.W,2)))")
     println(io, gap, " size(z) = ($(size(ppca.z,1)), $(size(ppca.z,2)))")
-    println(io, gap, "      σ² = $(round(ppca.σ², digits=3))")
-    println(io, gap, "      μ  = $(round.(ppca.μ, digits=2))")
+    println(io, gap, "      σ² = $(round(ppca.σ², digits=2))")
+    
+    if length(ppca.μ) > 6
+        println(io, gap, " size(μ) = ($(length(ppca.μ)),)")
+    else
+        println(io, gap, "      μ  = $(round.(ppca.μ, digits=2))")
+    end
 end
 
 function estep(ppca::ProbabilisticPCA, X::Matrix{T}) where {T<:Real}

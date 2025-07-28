@@ -1,10 +1,12 @@
 function test_pretty_printing()
+    # Set up IO buffer for printing
     io = IOBuffer()
 
     # Gaussian Emission
 
     ge1 = GaussianEmission(5, rand(5), rand(5,5))
     ge2 = GaussianEmission(2, rand(2), rand(2,2))
+
     @test println(io, ge1) === nothing
     @test println(io, ge2) === nothing
 
@@ -16,6 +18,7 @@ function test_pretty_printing()
     # AutoRegression Emission 
 
     are = AutoRegressionEmission(3, 3, gre)
+
     @test println(io, are) === nothing
 
     # Bernoulli Regression Emission
@@ -91,7 +94,6 @@ function test_pretty_printing()
     ppca = ProbabilisticPCA(rand(5,5), 0.5, rand(5))
 
     @test println(io, ppca) === nothing
-
 
     # Switching Linear Dynamical System 
 

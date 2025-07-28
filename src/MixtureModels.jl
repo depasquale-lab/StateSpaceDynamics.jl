@@ -18,10 +18,12 @@ function Base.show(io::IO, gmm::GaussianMixtureModel; gap = "")
 
     println(io, gap, "Gaussian Mixture Model:")
     println(io, gap, " dimension D = $D")
+
     if D > 4
         println(io, gap, " size(μₖ) = ($(size(gmm.μₖ,1)),)")
         println(io, gap, " size(Σₖ) = ($(size(gmm.Σₖ[1],1)), $(size(gmm.Σₖ[1],2)))")
     end
+
     println(io, gap, "-----------------------")
 
     if gmm.k > 4
@@ -30,11 +32,11 @@ function Base.show(io::IO, gmm::GaussianMixtureModel; gap = "")
             println(io, gap, " -----------")
 
             if D > 4
-                println(io, gap, "  πₖ = $(round(gmm.πₖ[k], digits=3))")
+                println(io, gap, "  πₖ = $(round(gmm.πₖ[k], sigdigits=3))")
             else
                 println(io, gap, "  μₖ = $(round.(gmm.μₖ[:, k], digits=3))")
                 println(io, gap, "  Σₖ = $(round.(gmm.Σₖ[k], digits=3))")
-                println(io, gap, "  πₖ = $(round(gmm.πₖ[k], digits=3))")
+                println(io, gap, "  πₖ = $(round(gmm.πₖ[k], sigdigits=3))")
             end
             println(io, gap, " -----------")
         end
@@ -45,11 +47,11 @@ function Base.show(io::IO, gmm::GaussianMixtureModel; gap = "")
             println(io, gap, " -----------")
 
             if D > 4
-                println(io, gap, "  πₖ = $(round(gmm.πₖ[k], digits=3))")
+                println(io, gap, "  πₖ = $(round(gmm.πₖ[k], sigdigits=3))")
             else
                 println(io, gap, "  μₖ = $(round.(gmm.μₖ[:, k], digits=3))")
                 println(io, gap, "  Σₖ = $(round.(gmm.Σₖ[k], digits=3))")
-                println(io, gap, "  πₖ = $(round(gmm.πₖ[k], digits=3))")
+                println(io, gap, "  πₖ = $(round(gmm.πₖ[k], sigdigits=3))")
             end
 
             if k < gmm.k
@@ -230,8 +232,8 @@ function Base.show(io::IO, pmm::PoissonMixtureModel; gap = "")
         for k in 1:3
             println(io, gap, " Poisson $k:")
             println(io, gap, " ----------")
-            println(io, gap, "  λₖ = $(round(pmm.λₖ[k], digits=2))")
-            println(io, gap, "  πₖ = $(round(pmm.πₖ[k], digits=3))")
+            println(io, gap, "  λₖ = $(round(pmm.λₖ[k], sigdigits=3))")
+            println(io, gap, "  πₖ = $(round(pmm.πₖ[k], sigdigits=3))")
             println(io, gap, " ----------")
         end
         println(io, gap, "  $(pmm.k - 3) more ...")
@@ -239,8 +241,8 @@ function Base.show(io::IO, pmm::PoissonMixtureModel; gap = "")
         for k in 1:pmm.k
             println(io, gap, " Poisson $k:")
             println(io, gap, " ----------")
-            println(io, gap, "  λₖ = $(round(pmm.λₖ[k], digits=2))")
-            println(io, gap, "  πₖ = $(round(pmm.πₖ[k], digits=3))")
+            println(io, gap, "  λₖ = $(round(pmm.λₖ[k], sigdigits=3))")
+            println(io, gap, "  πₖ = $(round(pmm.πₖ[k], sigdigits=3))")
 
             if k < pmm.k
                 println(io, gap, " ----------")

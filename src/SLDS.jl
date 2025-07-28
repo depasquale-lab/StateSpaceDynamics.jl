@@ -25,8 +25,8 @@ function Base.show(io::IO, slds::SwitchingLinearDynamicalSystem; gap = "")
         println(io, gap, " size(A)  = ($(size(slds.A,1)), $(size(slds.A,2)))")
         println(io, gap, " size(πₖ) = ($(size(slds.πₖ,1)),)")
     else
-        println(io, gap, " A  = $(round.(slds.A, digits=4))")
-        println(io, gap, " πₖ = $(round.(slds.πₖ, digits=4))")
+        println(io, gap, " A  = $(round.(slds.A, sigdigits=3))")
+        println(io, gap, " πₖ = $(round.(slds.πₖ, sigdigits=3))")
     end
 
     println(io, gap, " Switching Models:")

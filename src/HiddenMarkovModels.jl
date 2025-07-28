@@ -28,8 +28,8 @@ function Base.show(io::IO, hmm::HiddenMarkovModel; gap = "")
         println(io, gap, " size(A)  = ($(size(hmm.A,1)), $(size(hmm.A,2)))")
         println(io, gap, " size(πₖ) = ($(size(hmm.πₖ,1)),)")
     else
-        println(io, gap, " A  = $(round.(hmm.A, digits=4))")
-        println(io, gap, " πₖ = $(round.(hmm.πₖ, digits=4))")
+        println(io, gap, " A  = $(round.(hmm.A, sigdigits=3))")
+        println(io, gap, " πₖ = $(round.(hmm.πₖ, sigdigits=3))")
     end
 
     println(io, gap, " Emission Models:")

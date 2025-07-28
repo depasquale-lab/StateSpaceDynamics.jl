@@ -34,8 +34,8 @@ function Base.show(io::IO, ge::GaussianEmission; gap = "")
         println(io, gap, " size(μ) = ($(length(ge.μ)),)")
         println(io, gap, " size(Σ) = ($(size(ge.Σ,1)), $(size(ge.Σ,2)))")
     else
-        println(io, gap, " μ = $(ge.μ)")
-        println(io, gap, " Σ = $(ge.Σ)")
+        println(io, gap, " μ = $(round.(ge.μ, digits=2))")
+        println(io, gap, " Σ = $(round.(ge.Σ, digits=2))")
     end
 end
 

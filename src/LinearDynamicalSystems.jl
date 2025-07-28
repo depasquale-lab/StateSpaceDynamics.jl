@@ -31,11 +31,11 @@ function Base.show(io::IO, gsm::GaussianStateModel; gap = "")
         println(io, gap, "  size(P0) = ($(size(gsm.P0,1)), $(size(gsm.P0,2)))")
     else
         println(io, gap, " State Parameters:")
-        println(io, gap, "  A  = $(round.(gsm.A, digits=3))")
-        println(io, gap, "  Q  = $(round.(gsm.Q, digits=2))")
+        println(io, gap, "  A  = $(round.(gsm.A, sigdigits=3))")
+        println(io, gap, "  Q  = $(round.(gsm.Q, sigdigits=3))")
         println(io, gap, " Initial State:")
         println(io, gap, "  x0 = $(round.(gsm.x0, digits=2))")
-        println(io, gap, "  P0 = $(round.(gsm.P0, digits=2))")
+        println(io, gap, "  P0 = $(round.(gsm.P0, sigdigits=3))")
     end
 end
 
@@ -93,9 +93,9 @@ function Base.show(io::IO, pom::PoissonObservationModel; gap = "")
     end
 
     if length(pom.log_d) > 4
-        println(io, gap, " size(log_d) = $(length(pom.log_d))")     
+        println(io, gap, " size(log_d) = ($(length(pom.log_d)),)")     
     else
-        println(io, gap, " log_d   = $(round.(pom.log_d, digits = 3))")
+        println(io, gap, " log_d   = $(round.(pom.log_d, sigdigits = 3))")
         println(io, gap, " d       = $(round.(exp.(pom.log_d), digits = 2))")
     end
 end
@@ -122,6 +122,7 @@ end
 
 function Base.show(io::IO, lds::LinearDynamicalSystem; gap = "")
     println(io, gap, "Linear Dynamical System:")
+    println(io, gap, "------------------------")
     Base.show(io, lds.state_model, gap = gap * " ")
     Base.show(io, lds.obs_model, gap = gap * " ")
     println(io, gap, " Parameters to update:")
