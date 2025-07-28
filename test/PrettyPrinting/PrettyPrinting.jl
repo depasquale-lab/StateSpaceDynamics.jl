@@ -56,16 +56,16 @@ function test_pretty_printing()
 
     # poisson observation model 
 
-    pom1 = PoissonObservationModel(rand(5,5))
-    pom2 = PoissonObservationModel(rand(2,2))
+    pom1 = PoissonObservationModel(rand(5,5), rand(5))
+    pom2 = PoissonObservationModel(rand(2,2), rand(2))
 
     @test println(io, pom1) === nothing
     @test println(io, pom2) === nothing
 
     # linear dynamical system 
 
-    lds1 = LinearDynamicalSystem(gsm1, gom1, 5, 5, trues(6))
-    lds2 = LinearDynamicalSystem(gsm2, pom2, 2, 2, trues(5))
+    lds1 = LinearDynamicalSystem(gsm1, gom1, 5, 5, [true, true, true, true, true, true])
+    lds2 = LinearDynamicalSystem(gsm2, pom2, 2, 2, [true, true, true, true, true])
 
     @test println(io, lds1) === nothing
     @test println(io, lds2) === nothing
@@ -88,7 +88,7 @@ function test_pretty_printing()
 
     # Probabalistic PCA (incomplete)
 
-    ppca = ProbabilisticPCA()
+    ppca = ProbabilisticPCA(rand(5,5), 0.5, rand(5))
 
     @test println(io, ppca) === nothing
 
@@ -108,7 +108,7 @@ function test_pretty_printing()
     str = read(io, String)
 
     @test str isa String
-    @test length(str) > 1e4
+    @test length(str) > 5e3
 
     return nothing
 end

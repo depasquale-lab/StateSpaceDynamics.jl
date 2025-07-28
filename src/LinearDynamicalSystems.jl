@@ -83,7 +83,7 @@ Base.@kwdef mutable struct PoissonObservationModel{T<:Real, M<:AbstractMatrix{T}
     log_d::V
 end
 
-function Base.show(io::IO, pom::PoissonObservationModel, gap = "")
+function Base.show(io::IO, pom::PoissonObservationModel; gap = "")
     nobs, nstate = size(pom.C)
 
     println(io, gap, "Poisson Observation Model:")
@@ -94,8 +94,8 @@ function Base.show(io::IO, pom::PoissonObservationModel, gap = "")
     else
         println(io, gap, " C = $(round.(pom.C, digits=2))")
     end
-    println(io, gap, " log_d   = $(round(pom.log_d, digits = 3))")
-    println(io, gap, " d       = $(round(exp(pom.log_d), digits = 2))")
+    println(io, gap, " log_d   = $(round.(pom.log_d, digits = 3))")
+    println(io, gap, " d       = $(round.(exp.(pom.log_d), digits = 2))")
 end
 
 """
@@ -118,12 +118,12 @@ Base.@kwdef struct LinearDynamicalSystem{T<:Real, S<:AbstractStateModel{T}, O<:A
     fit_bool::Vector{Bool}
 end
 
-function Base.show(io::IO, lds::LinearDynamicalSystem)
-    println(io, "Linear Dynamical System:")
-    Base.show(io, lds.state_model, gap = " ")
-    Base.show(io, lds.obs_model, gap = " ")
-    println(io, " Parameters to update:")
-    println(io, " ---------------------")
+function Base.show(io::IO, lds::LinearDynamicalSystem; gap = "")
+    println(io, gap, "Linear Dynamical System:")
+    Base.show(io, lds.state_model, gap = gap * " ")
+    Base.show(io, lds.obs_model, gap = gap * " ")
+    println(io, gap, " Parameters to update:")
+    println(io, gap, " ---------------------")
 
     if lds.obs_model isa PoissonObservationModel
         prms = ["x0", "P0", "A", "Q", "C, log_d"][lds.fit_bool[1:5]] # C and log_d are either both updated or neither 
@@ -131,7 +131,7 @@ function Base.show(io::IO, lds::LinearDynamicalSystem)
         prms = ["x0", "P0", "A", "Q", "C", "R"][lds.fit_bool[1:6]]
     end
 
-    println(io, "  $(join(prms, ", "))")
+    println(io, gap, "  $(join(prms, ", "))")
 end
 
 """
