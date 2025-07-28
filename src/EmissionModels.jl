@@ -29,6 +29,7 @@ end
 function Base.show(io::IO, ge::GaussianEmission; gap = "")
     println(io, gap, "Gaussian Emission model:")
     println(io, gap, "------------------------")
+    
     if ge.output_dim > 4
         println(io, gap, " size(μ) = ($(length(ge.μ)),)")
         println(io, gap, " size(Σ) = ($(size(ge.Σ,1)), $(size(ge.Σ,2)))")
@@ -597,9 +598,9 @@ Store a Bernoulli regression model.
 
 # Fields
 - `input_dim::Int`: Dimensionality of the input data.
-- `output_dim::Int`: Dimensionality of the outputd data.
-- `include_intercept::Bool`: Whether to include an intercept term.
+- `output_dim::Int`: Dimensionality of the output data.
 - `β::AbstractMatrix{<:Real}`: Bernoulli regression coefficients.
+- `include_intercept::Bool`: Whether to include an intercept term.
 - `λ<:Real`: L2 Regularization parameter.
 ```
 """
@@ -611,19 +612,14 @@ mutable struct BernoulliRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: Reg
     λ::T # regularization parameter
 end
 
-
-
-
-# ! finish
-
 function Base.show(io::IO, bre::BernoulliRegressionEmission; gap = "")
-    println(io, gap, "Bernoulli Regression model:")
-    println(io, gap, "---------------------------")
-    println(io, gap, bre.β, bre.λ)
+    println(io, gap, "Bernoulli Regression Emission model:")
+    println(io, gap, "------------------------------------")
+    println(io, gap, " in, out = ($(bre.input_dim), $(bre.output_dim))")
+    println(io, gap, " size(β) = ($(size(bre.β,1)), $(size(bre.β,2)))")
+    println(io, gap, " intrcpt = $(bre.include_intercept)")
+    println(io, gap, "      λ  = $(round(bre.λ, digits=3))")
 end
-
-
-
 
 """
     BernoulliRegressionEmission(Args)
@@ -795,22 +791,14 @@ mutable struct PoissonRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: Regre
     λ::T
 end
 
-
-
-
-
-
-# ! finish
-
 function Base.show(io::IO, pre::PoissonRegressionEmission; gap = "")
-
-    println(io, gap)
+    println(io, gap, "Poisson Regression Emission model:")
+    println(io, gap, "----------------------------------")
+    println(io, gap, " in, out = ($(pre.input_dim), $(pre.output_dim))")
+    println(io, gap, " size(β) = ($(size(pre.β,1)), $(size(pre.β,2)))")
+    println(io, gap, " intrcpt = $(pre.include_intercept)")
+    println(io, gap, "      λ  = $(round(pre.λ, digits=3))")
 end
-
-
-
-
-
 
 """
     PoissonRegressionEmission(Args)

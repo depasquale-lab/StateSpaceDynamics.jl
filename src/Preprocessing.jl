@@ -16,18 +16,14 @@ mutable struct ProbabilisticPCA{T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector
     end
 end
 
-
-
-# ! figure out what this is, then pretty print
-
 function Base.show(io::IO, ppca::ProbabilisticPCA; gap = "")
-
-
-
+    println(io, gap, "Probabilistic PCA Model:")
+    println(io, gap, "------------------------")
+    println(io, gap, " size(W) = ($(size(ppca.W,1)), $(size(ppca.W,2)))")
+    println(io, gap, " size(z) = ($(size(ppca.z,1)), $(size(ppca.z,2)))")
+    println(io, gap, "      σ² = $(round(ppca.σ², digits=3))")
+    println(io, gap, "      μ  = $(round.(ppca.μ, digits=2))")
 end
-
-
-
 
 function estep(ppca::ProbabilisticPCA, X::Matrix{T}) where {T<:Real}
     D, N = size(X)

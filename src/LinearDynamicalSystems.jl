@@ -19,17 +19,16 @@ Base.@kwdef mutable struct GaussianStateModel{T<:Real, M<:AbstractMatrix{T}, V<:
 end
 
 function Base.show(io::IO, gsm::GaussianStateModel; gap = "")
-    nstate = size(gsm.A, 1)
-
     println(io, gap, "Gaussian State Model:")
     println(io, gap, "---------------------")
-    if nstate > 4
+    
+    if size(gsm.A, 1) > 4
         println(io, gap, " State Parameters:")
-        println(io, gap, "  size(A)  = ($nstate, $nstate)")
-        println(io, gap, "  size(Q)  = ($nstate, $nstate)")
+        println(io, gap, "  size(A)  = ($(size(gsm.A,1)), $(size(gsm.A,2)))")
+        println(io, gap, "  size(Q)  = ($(size(gsm.Q,1)), $(size(gsm.Q,2)))")
         println(io, gap, " Initial State:")
-        println(io, gap, "  size(x0) = ($nstate, )")
-        println(io, gap, "  size(P0) = ($nstate, $nstate)")
+        println(io, gap, "  size(x0) = ($(length(gsm.x0)), )")
+        println(io, gap, "  size(P0) = ($(size(gsm.P0,1)), $(size(gsm.P0,2)))")
     else
         println(io, gap, " State Parameters:")
         println(io, gap, "  A  = $(round.(gsm.A, digits=3))")
@@ -55,14 +54,12 @@ Base.@kwdef mutable struct GaussianObservationModel{T<:Real, M<:AbstractMatrix{T
 end
 
 function Base.show(io::IO, gom::GaussianObservationModel; gap = "")
-    nobs, nstate = size(gom.C)
-
     println(io, gap, "Gaussian Observation Model:")
     println(io, gap, "---------------------------")
 
-    if nobs * nstate > 12
-        println(io, gap, " size(C) = ($nobs, $nstate)")
-        println(io, gap, " size(R) = ($nobs, $nobs)")
+    if size(C,1) > 3 || size(C,2) > 3
+        println(io, gap, " size(C) = ($(size(gom.C,1)), $(size(gom.C,2)))")
+        println(io, gap, " size(R) = ($(size(gom.R,1)), $(size(gom.R,2)))")
     else
         println(io, gap, " C = $(round.(gom.C, digits=2))")
         println(io, gap, " R = $(round.(gom.R, digits=2))")
@@ -94,8 +91,13 @@ function Base.show(io::IO, pom::PoissonObservationModel; gap = "")
     else
         println(io, gap, " C = $(round.(pom.C, digits=2))")
     end
-    println(io, gap, " log_d   = $(round.(pom.log_d, digits = 3))")
-    println(io, gap, " d       = $(round.(exp.(pom.log_d), digits = 2))")
+
+    if length(pom.log_d) > 4
+        println(io, gap, " size(log_d) = $(length(pom.log_d))")     
+    else
+        println(io, gap, " log_d   = $(round.(pom.log_d, digits = 3))")
+        println(io, gap, " d       = $(round.(exp.(pom.log_d), digits = 2))")
+    end
 end
 
 """
