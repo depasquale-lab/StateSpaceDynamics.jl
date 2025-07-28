@@ -57,7 +57,7 @@ function Base.show(io::IO, gom::GaussianObservationModel; gap = "")
     println(io, gap, "Gaussian Observation Model:")
     println(io, gap, "---------------------------")
 
-    if size(C,1) > 3 || size(C,2) > 3
+    if size(gom.C,1) > 3 || size(gom.C,2) > 3
         println(io, gap, " size(C) = ($(size(gom.C,1)), $(size(gom.C,2)))")
         println(io, gap, " size(R) = ($(size(gom.R,1)), $(size(gom.R,2)))")
     else
