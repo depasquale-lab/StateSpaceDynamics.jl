@@ -42,7 +42,7 @@ function Base.show(io::IO, gmm::GaussianMixtureModel; gap = "")
             end
             println(io, gap, " -----------")
         end
-        println(io, gap, "  $(gmm.k - 3) more ...")
+        println(io, gap, "  $(gmm.k - 3) more ..., see `print_full()`")
     else
         for k in 1:gmm.k
             println(io, gap, " Gaussian $k:")
@@ -240,7 +240,7 @@ function Base.show(io::IO, pmm::PoissonMixtureModel; gap = "")
             println(io, gap, "  πₖ = $(round(pmm.πₖ[k], sigdigits=3))")
             println(io, gap, " ----------")
         end
-        println(io, gap, "  $(pmm.k - 3) more ...")
+        println(io, gap, "  $(pmm.k - 3) more ..., see `print_full()`")
     else
         for k in 1:pmm.k
             println(io, gap, " Poisson $k:")

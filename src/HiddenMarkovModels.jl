@@ -43,7 +43,7 @@ function Base.show(io::IO, hmm::HiddenMarkovModel; gap = "")
             Base.show(io, b, gap = gap * "  ")
             println(io, gap, "  ----------------")
         end
-        println(io, gap * "  $(hmm.K-3) more ...")
+        println(io, gap * "  $(hmm.K-3) more ..., see `print_full()`")
     else
         for (i,b) in enumerate(hmm.B)
             Base.show(io, b, gap = gap * "  ")

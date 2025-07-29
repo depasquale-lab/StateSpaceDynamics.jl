@@ -39,7 +39,7 @@ function Base.show(io::IO, slds::SwitchingLinearDynamicalSystem; gap = "")
             Base.show(io, lds, gap = gap * "  ")
             println(io, gap, "  --------------")
         end
-        println(io, gap, "  ... $(slds.K-3) more")
+        println(io, gap, "  $(slds.K-3) more ..., see `print_full()`")
     else
         for (i, lds) in enumerate(slds.B)
             Base.show(io, lds; gap = gap * "  ")
