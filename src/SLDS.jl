@@ -32,7 +32,9 @@ function Base.show(io::IO, slds::SwitchingLinearDynamicalSystem; gap = "")
     println(io, gap, " Switching Models:")
     println(io, gap, " -----------------")
 
-    if slds.K > 3
+    show_all = get(io, :limit, true) == false
+
+    if slds.K > 4 && !show_all
         for lds in slds.B[1:3]
             Base.show(io, lds, gap = gap * "  ")
             println(io, gap, "  --------------")

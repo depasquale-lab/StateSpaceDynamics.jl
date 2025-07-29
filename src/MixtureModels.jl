@@ -26,7 +26,9 @@ function Base.show(io::IO, gmm::GaussianMixtureModel; gap = "")
 
     println(io, gap, "-----------------------")
 
-    if gmm.k > 4
+    show_all = get(io, :limit, true) == false
+
+    if gmm.k > 4 && !show_all
         for k in 1:3
             println(io, gap, " Gaussian $k:")
             println(io, gap, " -----------")
@@ -228,7 +230,9 @@ function Base.show(io::IO, pmm::PoissonMixtureModel; gap = "")
     println(io, gap, "Poisson Mixture Model:")
     println(io, gap, "----------------------")
 
-    if pmm.k > 4
+    show_all = get(io, :limit, true) == false
+    
+    if pmm.k > 4 && !show_all
         for k in 1:3
             println(io, gap, " Poisson $k:")
             println(io, gap, " ----------")

@@ -35,7 +35,9 @@ function Base.show(io::IO, hmm::HiddenMarkovModel; gap = "")
     println(io, gap, " Emission Models:")
     println(io, gap, " ----------------")
 
-    if hmm.K > 4
+    show_all = get(io, :limit, true) == false
+
+    if hmm.K > 4 && !show_all
         # only show 3
         for b in hmm.B[1:3]
             Base.show(io, b, gap = gap * "  ")

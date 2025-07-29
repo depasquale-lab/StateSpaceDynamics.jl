@@ -513,3 +513,11 @@ function Base.setproperty!(model::AutoRegressiveEmission, sym::Symbol, value)
         setfield!(model, sym, value)
     end
 end
+
+# Pretty print function that doesn't truncate arrays of model objects
+
+function print_full(io::Union{IOStream, Base.TTY}, obj)
+    println(IOContext(io, :limit => false), obj)
+end
+
+print_full(obj) = print_full(stdout, obj)
