@@ -41,35 +41,38 @@ struct Dynamax_HMMImplem <: Implementation end
 Base.string(::Dynamax_HMMImplem) = "Dynamax.jl"
 
 function build_model(::Dynamax_HMMImplem, instance::HMMInstance, params::HMMParams)
-    (; num_states, num_trials, seq_length, emission_dim) = instance
+    (; num_states, emission_dim) = instance
     (; πₖ, A, μ, Σ) = params
 
     dynamax_hmm = pyimport("dynamax.hidden_markov_model")
     jnp = pyimport("jax.numpy")
-    np = pyimport("numpy")
 
-    # convert to Dynamax arrays
+    # Convert to jax arrays
     π_jax = jnp.array(πₖ)
     A_jax = jnp.array(A)
+    μ_jax = jnp.stack([jnp.array(μi) for μi in μ])
+    Σ_jax = jnp.stack([jnp.array(Σi) for Σi in Σ])
 
-    μ_jax = jnp.stack([np.array(μi) for μi in μ])
-    Σ_jax = jnp.stack([np.array(Σi) for Σi in Σ])
+    @show μ_jax.shape
+    @show Σ_jax.shape
 
-    # Create the model
-    hmm = dynamax_hmm.GaussianHMM(
-        num_states,
-        emission_dim
-    )
+    # Create and initialize the model
+    hmm = dynamax_hmm.GaussianHMM(num_states, emission_dim)
 
-    params, props = hmm.initialize(
+    init_result = hmm.initialize(
         initial_probs=π_jax,
         transition_matrix=A_jax,
         emission_means=μ_jax,
         emission_covariances=Σ_jax
     )
 
+    params = init_result[0]
+    props = init_result[1]
+    
+
     return (hmm, params, props)
 end
+
 
 function run_benchmark(::SSD_HMMImplem, model::HiddenMarkovModel, data::Vector{Float64})
     data_mat = reshape(data, 1, :)
@@ -104,19 +107,17 @@ function run_benchmark(::Dynamax_HMMImplem, model::Tuple{Any, Any, Any}, data::V
 
     data = np.reshape(np.array(data), (-1, 1))
 
-    hmm = model[1]
-    params = model[2]
-    props = model[3]
+    (hmm, params, props) = model 
 
-    # JIT compile the function call
-    fit_fn = jax.jit(hmm.fit_em)
+    # Mark num_iters as static
+    fit_fn = jax.jit(hmm.fit_em, static_argnums=3)
 
     bench = @benchmark begin
-        _, _ = $fit_fn(
+        params, lps = $fit_fn(
             $params,
             $props,
             $data,
-            num_iters=100
+            100
         )
     end samples=5
     return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
