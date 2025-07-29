@@ -91,7 +91,7 @@ function test_pretty_printing()
     @test println(io, pmm1) === nothing
     @test println(io, pmm2) === nothing
 
-    # Probabalistic PCA
+    # Probabilistic PCA
 
     ppca = ProbabilisticPCA(rand(5,5), 0.5, rand(5))
 
