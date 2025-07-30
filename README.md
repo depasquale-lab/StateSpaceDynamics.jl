@@ -125,7 +125,7 @@ This approximation allows us to perform tractable, efficient inference in otherw
 
 - [ssm](https://github.com/lindermanlab/ssm) : A python package for state space models.
 
-- [dynamax](https://github.com/probml/dynamax): A python package built on JAX for state space modelling.
+- [dynamax](https://github.com/probml/dynamax): A python package built on JAX for state space modelling (supercedes ssm).
 
 ## References
 
