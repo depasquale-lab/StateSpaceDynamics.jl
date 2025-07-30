@@ -142,6 +142,15 @@ struct RegressionOptimization{R<:RegressionEmission, V<:AbstractVector{<:Real}, 
     β_shape::Tuple{Int, Int}  # Added to track original shape
 end
 
+function Base.show(io::IO, ro::RegressionOptimization; gap = "")
+    println(io, gap, "Regression Optimization:")
+    println(io, gap, "------------------------")
+    Base.show(io, ro.model; gap = gap * " ")
+    println(io, gap, " size(X) = ($(size(ro.X,1)), $(size(ro.X,2)))")
+    println(io, gap, " size(y) = ($(size(ro.y,1)), $(size(ro.y,2)))")
+    println(io, gap, " size(w) = ($(size(ro.w, 1)), )")
+    println(io, gap, " β_shape = $(ro.β_shape)")
+end
 
 # Unified interface for creating optimization problems
 """

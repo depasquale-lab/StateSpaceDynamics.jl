@@ -41,6 +41,13 @@ function test_pretty_printing()
     
     @test println(io1, pre) === nothing
 
+    # Regression Optimization
+
+    ro = StateSpaceDynamics.RegressionOptimization(pre, rand(2,2), rand(2,2), rand(2), (2,2))
+    push!(objs, ro)
+
+    @test println(io1, ro) === nothing
+
     # Hidden Markov Model 
 
     hmm1 = HiddenMarkovModel(rand(5,5), [gre, are, bre, pre, gre], rand(5), 5)
