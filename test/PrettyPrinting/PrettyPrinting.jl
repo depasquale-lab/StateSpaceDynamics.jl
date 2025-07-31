@@ -48,6 +48,20 @@ function test_pretty_printing()
 
     @test println(io1, ro) === nothing
 
+    # Forward Backward object
+
+    fb = StateSpaceDynamics.ForwardBackward(rand(2,2), rand(2,2), rand(2,2), rand(2,2), rand(2,2,2))
+    push!(objs, fb)
+
+    @test println(io1, fb) === nothing
+
+    # Filter Smooth object
+
+    fs = StateSpaceDynamics.FilterSmooth(rand(2,2), rand(2,2,2), rand(2,2,2), rand(2,2,2,2) ,rand(2,2,2,2))
+    push!(objs, fs)
+
+    @test println(io1, fs) === nothing
+
     # Hidden Markov Model 
 
     hmm1 = HiddenMarkovModel(rand(5,5), [gre, are, bre, pre, gre], rand(5), 5)
