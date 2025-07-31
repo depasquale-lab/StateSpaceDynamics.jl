@@ -289,6 +289,17 @@ include("Utilities/Utilities.jl")
     test_autoregressive_setters_and_getters()
 end
 
+
+"""
+Tests for PrettyPrinting.jl 
+"""
+
+include("PrettyPrinting/PrettyPrinting.jl")
+
+@testset "PrettyPrinting.jl Tests" begin
+    test_pretty_printing()
+end
+
 """
 Tests for Preprocessing.jl
 """

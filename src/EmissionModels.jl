@@ -26,6 +26,19 @@ mutable struct GaussianEmission{T<:Real, V<:AbstractVector{T}, M<:AbstractMatrix
     Σ::M  # covariance matrix
 end
 
+function Base.show(io::IO, ge::GaussianEmission; gap = "")
+    println(io, gap, "Gaussian Emission model:")
+    println(io, gap, "------------------------")
+    
+    if ge.output_dim > 4
+        println(io, gap, " size(μ) = ($(length(ge.μ)),)")
+        println(io, gap, " size(Σ) = ($(size(ge.Σ,1)), $(size(ge.Σ,2)))")
+    else
+        println(io, gap, " μ = $(round.(ge.μ, digits=2))")
+        println(io, gap, " Σ = $(round.(ge.Σ, digits=2))")
+    end
+end
+
 """
     function GaussianEmission(; output_dim::Int, μ::AbstractVector, Σ::AbstractMatrix)
 
@@ -129,6 +142,15 @@ struct RegressionOptimization{R<:RegressionEmission, V<:AbstractVector{<:Real}, 
     β_shape::Tuple{Int, Int}  # Added to track original shape
 end
 
+function Base.show(io::IO, ro::RegressionOptimization; gap = "")
+    println(io, gap, "Regression Optimization:")
+    println(io, gap, "------------------------")
+    Base.show(io, ro.model; gap = gap * " ")
+    println(io, gap, " size(X) = ($(size(ro.X,1)), $(size(ro.X,2)))")
+    println(io, gap, " size(y) = ($(size(ro.y,1)), $(size(ro.y,2)))")
+    println(io, gap, " size(w) = ($(size(ro.w, 1)), )")
+    println(io, gap, " β_shape = $(ro.β_shape)")
+end
 
 # Unified interface for creating optimization problems
 """
@@ -218,6 +240,15 @@ mutable struct GaussianRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: Regr
     Σ::M # covariance matrix of the model 
     include_intercept::Bool # whether to include an intercept term; if true, the first column of β is assumed to be the intercept/bias
     λ::T # regularization parameter
+end
+
+function Base.show(io::IO, gre::GaussianRegressionEmission; gap = "")
+    println(io, gap, "Gaussian Regression Emission model:")
+    println(io, gap, "-----------------------------------")
+    println(io, gap, " size(β) = ($(size(gre.β,1)), $(size(gre.β,2)))")
+    println(io, gap, " size(Σ) = ($(size(gre.Σ,1)), $(size(gre.Σ,2)))")
+    println(io, gap, " intrcpt = $(gre.include_intercept)")
+    println(io, gap, "      λ  = $(round(gre.λ, digits=3))")
 end
 
 """
@@ -336,6 +367,15 @@ mutable struct AutoRegressionEmission <: AutoRegressiveEmission
     output_dim::Int
     order::Int
     innerGaussianRegression::GaussianRegressionEmission
+end
+
+function Base.show(io::IO, are::AutoRegressionEmission; gap = "")
+    println(io, gap, "AutoRegression Emission model:")
+    println(io, gap, "------------------------------")
+    println(io, gap, " output_dim = $(are.output_dim)")
+    println(io, gap, " (AR) order = $(are.order)")
+    Base.show(io, are.innerGaussianRegression, gap = " " * gap)
+
 end
 
 """
@@ -567,9 +607,9 @@ Store a Bernoulli regression model.
 
 # Fields
 - `input_dim::Int`: Dimensionality of the input data.
-- `output_dim::Int`: Dimensionality of the outputd data.
-- `include_intercept::Bool`: Whether to include an intercept term.
+- `output_dim::Int`: Dimensionality of the output data.
 - `β::AbstractMatrix{<:Real}`: Bernoulli regression coefficients.
+- `include_intercept::Bool`: Whether to include an intercept term.
 - `λ<:Real`: L2 Regularization parameter.
 ```
 """
@@ -579,6 +619,15 @@ mutable struct BernoulliRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: Reg
     β::M
     include_intercept::Bool # whether to include an intercept term; if true, the first column of β is assumed to be the intercept/bias
     λ::T # regularization parameter
+end
+
+function Base.show(io::IO, bre::BernoulliRegressionEmission; gap = "")
+    println(io, gap, "Bernoulli Regression Emission model:")
+    println(io, gap, "------------------------------------")
+    println(io, gap, " in, out = ($(bre.input_dim), $(bre.output_dim))")
+    println(io, gap, " size(β) = ($(size(bre.β,1)), $(size(bre.β,2)))")
+    println(io, gap, " intrcpt = $(bre.include_intercept)")
+    println(io, gap, "      λ  = $(round(bre.λ, digits=3))")
 end
 
 """
@@ -739,8 +788,8 @@ A Poisson regression model.
 # Fields
 - `input_dim::Int`: Dimensionality of the input data.
 - `output_dim::Int`: Dimensionality of the output data.
-- `include_intercept::Bool`: Whether to include a regression intercept.
 - `β::AbstractMatrix{<:Real}`: The regression coefficients matrix.
+- `include_intercept::Bool`: Whether to include a regression intercept.
 - `λ::Real;`: L2 Regularization parameter.
 """
 mutable struct PoissonRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: RegressionEmission
@@ -749,6 +798,15 @@ mutable struct PoissonRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: Regre
     β::M
     include_intercept::Bool
     λ::T
+end
+
+function Base.show(io::IO, pre::PoissonRegressionEmission; gap = "")
+    println(io, gap, "Poisson Regression Emission model:")
+    println(io, gap, "----------------------------------")
+    println(io, gap, " in, out = ($(pre.input_dim), $(pre.output_dim))")
+    println(io, gap, " size(β) = ($(size(pre.β,1)), $(size(pre.β,2)))")
+    println(io, gap, " intrcpt = $(pre.include_intercept)")
+    println(io, gap, "      λ  = $(round(pre.λ, digits=3))")
 end
 
 """

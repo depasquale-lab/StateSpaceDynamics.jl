@@ -70,6 +70,17 @@ mutable struct ForwardBackward{T<:Real, V<:AbstractVector{T}, M<:AbstractMatrix{
     ξ::A
 end
 
+function Base.show(io::IO, fb::ForwardBackward; gap = "")
+    println(io, gap, "Forward Backward Object:")
+    println(io, gap, "------------------------")
+    println(io, gap, " size(logL) = ($(size(fb.loglikelihoods,1)), $(size(fb.loglikelihoods,2)))")
+    println(io, gap, " size(α)    = ($(size(fb.α,1)), $(size(fb.α,2)))")
+    println(io, gap, " size(β)    = ($(size(fb.β,1)), $(size(fb.β,2)))")
+    println(io, gap, " size(γ)    = ($(size(fb.γ,1)), $(size(fb.γ,2)))")
+    println(io, gap, " size(ξ)    = ($(size(fb.ξ,1)), $(size(fb.ξ,2)), $(size(fb.ξ,3)))")
+
+    return nothing
+end
 
 """"
     FilterSmooth{T<:Real}
@@ -101,9 +112,9 @@ A mutable structure for storing smoothed estimates and associated covariance mat
 filter = FilterSmooth{Float64}(
     x_smooth = zeros(10, 100),
     p_smooth = zeros(10, 10, 100),
-    E_z = zeros(10, 5, 100),
-    E_zz = zeros(10, 10, 5, 100),
-    E_zz_prev = zeros(10, 10, 5, 100)
+    E_z = zeros(10, 100, 5),
+    E_zz = zeros(10, 10, 100, 5),
+    E_zz_prev = zeros(10, 10, 100, 5)
 )
 """
 mutable struct FilterSmooth{T<:Real}
@@ -112,4 +123,14 @@ mutable struct FilterSmooth{T<:Real}
     E_z::Array{T, 3}
     E_zz::Array{T, 4}
     E_zz_prev::Array{T, 4}
+end
+
+function Base.show(io::IO, fs::FilterSmooth; gap = "")
+    println(io, gap, "Filter Smooth Object:")
+    println(io, gap, "---------------------")
+    println(io, gap, " size(x_smooth)  = ($(size(fs.x_smooth,1)), $(size(fs.x_smooth,2)))")
+    println(io, gap, " size(p_smooth)  = ($(size(fs.p_smooth,1)), $(size(fs.p_smooth,2)), $(size(fs.p_smooth,3)))")
+    println(io, gap, " size(E_z)       = ($(size(fs.E_z,1)), $(size(fs.E_z,2)), $(size(fs.E_z,3)))")
+    println(io, gap, " size(E_zz)      = ($(size(fs.E_zz,1)), $(size(fs.E_zz,2)), $(size(fs.E_zz,3)), $(size(fs.E_zz,4)))")
+    println(io, gap, " size(E_zz_prev) = ($(size(fs.E_zz_prev,1)), $(size(fs.E_zz_prev,2)), $(size(fs.E_zz_prev,3)), $(size(fs.E_zz_prev,4)))")
 end
