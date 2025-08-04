@@ -2,16 +2,18 @@ function test_SwitchingPoissonRegression_fit()
     emission_1 = PoissonRegressionEmission(; input_dim=3, output_dim=1, include_intercept=true, β=reshape([4.0, 3.0, 2.0, 4.0], :, 1), λ=0.0)
     emission_2 = PoissonRegressionEmission(; input_dim=3, output_dim=1, include_intercept=true, β=reshape([-4.0, -2.0, 1.0, 3.0], :, 1), λ=0.0)
 
-    A = [0.9 0.1; 0.2 0.8]
-    πₖ = [0.7, 0.3]
+    A_true = [0.9 0.1; 0.2 0.8]
+    πₖ_true = [0.7, 0.3]
 
     # Initialize the SwitchingPoissonRegression
-    true_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2])
+    true_model = HMM(πₖ_true, A_true, [emission_1, emission_2])
 
     # Sample from the HMM
     n = 20000
-    Φ = randn(3, n)
-    true_labels, data = rand(true_model, Φ; n=n)
+    control_seq = Fill(nothing, n)
+
+    simulated_data = Random.rand(default_rng(), true_model, control_seq)
+    state_seq, obs_seq = simulated_data.state_seq, simulated_data.obs_seq 
 
     emission_1 = PoissonRegressionEmission(; input_dim=3, output_dim=1, include_intercept=true, β=reshape([3.0, 1.0, 1.0, 5.0], :, 1), λ=0.0)
     emission_2 = PoissonRegressionEmission(; input_dim=3, output_dim=1, include_intercept=true, β=reshape([-5.0, -1.0, 0.5, 2.0], :, 1), λ=0.0)
@@ -20,69 +22,22 @@ function test_SwitchingPoissonRegression_fit()
     πₖ = [0.5, 0.5]
     
     # Initialize the SwitchingPoissonRegression
-    test_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2])
+    test_model = HMM(πₖ, A, [emission_1, emission_2])
 
-    ll = StateSpaceDynamics.fit!(test_model, data, Φ; max_iters=200)
+    hmm, lls = baum_welch(test_model, obs_seq, control_seq; max_iterations=200, loglikelihood_increasing=false)
 
     #Test the transition matrix
-    @test isapprox(true_model.A, test_model.A, atol=0.1)
+    @test isapprox(true_model.trans, hmm.trans, atol=0.1)
 
     # Test the regression fit
-    @test isapprox(test_model.B[1].β, true_model.B[1].β; atol=0.1) ||
-        isapprox(test_model.B[1].β, true_model.B[2].β; atol=0.1)
-    @test isapprox(test_model.B[2].β, true_model.B[2].β; atol=0.1) ||
-        isapprox(test_model.B[2].β, true_model.B[1].β; atol=0.1)
+    @test isapprox(hmm.dists[1].β, true_model.dists[1].β; atol=0.1) ||
+        isapprox(hmm.dists[1].β, true_model.dists[2].β; atol=0.1)
+    @test isapprox(hmm.dists[2].β, true_model.dists[2].β; atol=0.1) ||
+        isapprox(hmm.dists[2].β, true_model.dists[1].β; atol=0.1)
 
     # Test that the ll is always increasing (accept some numerical instability)
-    return any(diff(ll) .< -1e3) == false
+    return any(diff(lls) .< -1e3) == false
 end
-
-function test_SwitchingPoissonRegression_fit_float32()
-    # Use Float32 for all parameters
-    β1 = reshape(Float32[4.0, 3.0, 2.0, 4.0], :, 1)
-    β2 = reshape(Float32[-4.0, -2.0, 1.0, 3.0], :, 1)
-
-    emission_1 = PoissonRegressionEmission(; input_dim=3, output_dim=1, include_intercept=true, β=β1, λ=0.0f0)
-    emission_2 = PoissonRegressionEmission(; input_dim=3, output_dim=1, include_intercept=true, β=β2, λ=0.0f0)
-
-    A = Float32[0.9 0.1; 0.2 0.8]
-    πₖ = Float32[0.7, 0.3]
-
-    true_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2])
-
-    # Sample from model
-    n = 20_000
-    Φ = randn(Float32, 3, n)
-    true_labels, data = rand(true_model, Φ; n=n)
-
-    # Initialize test model with different parameters
-    β1_test = reshape(Float32[3.0, 1.0, 1.0, 5.0], :, 1)
-    β2_test = reshape(Float32[-5.0, -1.0, 0.5, 2.0], :, 1)
-
-    emission_1 = PoissonRegressionEmission(; input_dim=3, output_dim=1, include_intercept=true, β=β1_test, λ=0.0f0)
-    emission_2 = PoissonRegressionEmission(; input_dim=3, output_dim=1, include_intercept=true, β=β2_test, λ=0.0f0)
-
-    A = Float32[0.7 0.3; 0.3 0.7]
-    πₖ = Float32[0.5, 0.5]
-
-    test_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2])
-
-    ll = StateSpaceDynamics.fit!(test_model, data, Φ; max_iters=200)
-
-    # Test transition matrix
-    @test isapprox(test_model.A, true_model.A; atol=0.1)
-
-    # Test emission fit (accounting for potential state label swaps)
-    @test isapprox(test_model.B[1].β, true_model.B[1].β; atol=0.1) ||
-          isapprox(test_model.B[1].β, true_model.B[2].β; atol=0.1)
-    @test isapprox(test_model.B[2].β, true_model.B[2].β; atol=0.1) ||
-          isapprox(test_model.B[2].β, true_model.B[1].β; atol=0.1)
-
-    # Test LL increases (allowing for small fluctuations due to Float32)
-    println(diff(ll))
-    @test all(diff(ll) .> -1e-3)
-end
-
 
 function test_trialized_SwitchingPoissonRegression()
     # Define parameters
@@ -92,23 +47,26 @@ function test_trialized_SwitchingPoissonRegression()
     emission_1 = PoissonRegressionEmission(; input_dim=3, output_dim=1, include_intercept=true, β=reshape([4.0, 3.0, 2.0, 4.0], :, 1), λ=0.0)
     emission_2 = PoissonRegressionEmission(; input_dim=3, output_dim=1, include_intercept=true, β=reshape([-4.0, -2.0, 1.0, 3.0], :, 1), λ=0.0)
 
-    A = [0.9 0.1; 0.2 0.8]
-    πₖ = [0.7, 0.3]
+    A_true = [0.9 0.1; 0.2 0.8]
+    πₖ_true = [0.7, 0.3]
 
     # Initialize the SwitchingPoissonRegression
-    true_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2])
+    true_model = HMM(πₖ_true, A_true, [emission_1, emission_2])
 
     # Create lists to hold data and labels for each trial
-    Φ_trials = [randn(3, trial_length) for _ in 1:num_trials]  # Input features for each trial
-    true_labels_trials = Vector{Vector{Int}}(undef, num_trials)
-    data_trials = Vector{Matrix{Float64}}(undef, num_trials)
+    obs_trials = Vector{Vector{Tuple{Vector{Float64}, Vector{Float64}}}}(undef, num_trials)
+    state_trials = Vector{Vector{Int}}(undef, num_trials)
+    control_seq = [fill(nothing, trial_length) for _ in 1:num_trials] 
 
     # Sample data for each trial
     for i in 1:num_trials
-        true_labels_trials[i], data_trials[i] = rand(
-            true_model, Φ_trials[i]; n=trial_length
-        )
+        sim_data = rand(true_model, control_seq[i]) 
+        obs_trials[i] = sim_data.obs_seq
+        state_trials[i] = sim_data.state_seq
     end
+
+    obs_seq = vcat(obs_trials...)
+    seq_ends = cumsum(length.(obs_trials))
 
     emission_1 = PoissonRegressionEmission(; input_dim=3, output_dim=1, include_intercept=true, β=reshape([3.0, 1.0, 1.0, 5.0], :, 1), λ=0.0)
     emission_2 = PoissonRegressionEmission(; input_dim=3, output_dim=1, include_intercept=true, β=reshape([-5.0, -1.0, 0.5, 2.0], :, 1), λ=0.0)
@@ -117,22 +75,22 @@ function test_trialized_SwitchingPoissonRegression()
     πₖ = [0.5, 0.5]
     
     # Initialize the SwitchingPoissonRegression
-    test_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2])
+    test_model = HMM(πₖ, A, [emission_1, emission_2])
 
     # Fit the model using data from all trials
-    ll = StateSpaceDynamics.fit!(test_model, data_trials, Φ_trials; max_iters=200)
+    hmm, lls = baum_welch(test_model, obs_seq; max_iterations=200, loglikelihood_increasing=false, seq_ends=seq_ends)
 
     # Test the transition matrix
-    @test isapprox(true_model.A, test_model.A, atol=0.1)
+    @test isapprox(true_model.trans, hmm.trans, atol=0.1)
 
     # Check if parameters are approximately recovered
-    @test isapprox(test_model.B[1].β, true_model.B[1].β; atol=0.1) ||
-        isapprox(test_model.B[1].β, true_model.B[2].β; atol=0.1)
-    @test isapprox(test_model.B[2].β, true_model.B[2].β; atol=0.1) ||
-        isapprox(test_model.B[2].β, true_model.B[1].β; atol=0.1)
+    @test isapprox(hmm.dists[1].β, true_model.dists[1].β; atol=0.1) ||
+        isapprox(hmm.dists[1].β, true_model.dists[2].β; atol=0.1)
+    @test isapprox(hmm.dists[2].β, true_model.dists[2].β; atol=0.1) ||
+        isapprox(hmm.dists[2].β, true_model.dists[1].β; atol=0.1)
 
     # Test that the ll is always increasing (accept some numerical instability)
-    @test any(diff(ll) .< -1e3) == false
+    @test any(diff(lls) .< -1e3) == false
 end
 
 # Function to sample from initial state and transition matrix

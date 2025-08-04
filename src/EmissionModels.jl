@@ -7,10 +7,12 @@ This module implements various emission models for state space modeling, includi
 """
 
 # Exports
-export EmissionModel, RegressionEmission
+export EmissionModel
 export GaussianEmission, GaussianRegressionEmission, BernoulliRegressionEmission, PoissonRegressionEmission, AutoRegressionEmission
 export loglikelihood, fit!, create_optimization, objective, objective_gradient!
 
+import Random: rand, Sampler 
+import StatsAPI: fit!
 #=
 Gaussian Emission Models
 =#
@@ -150,6 +152,9 @@ function create_optimization(
         X = vcat(ones(eltype(X), 1, size(X, 2)), X)
     end
 
+    @assert size(X, 1) == size(model.β, 1) "X rows $(size(X,1)) must match β rows $(size(model.β,1))"
+    @assert size(y, 2) == length(w) "Weights length $(length(w)) must match sample count $(size(y,2))"
+
     β_shape = size(model.β)
     return RegressionOptimization(model, X, y, w, β_shape)
 end
@@ -220,55 +225,6 @@ mutable struct GaussianRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: Regr
     λ::T # regularization parameter
 end
 
-# abstract type AbstractResult end 
-
-# struct GaussianRegressionObservation{T} <: AbstractResult
-#     Φ::Vector{T}
-#     y::Vector{T}
-# end
-
-"""
-    rand interface for HMM rand function
-"""
-struct RegressionSampler{E}
-    emission::E
-    x::Union{Nothing, AbstractVector}
-    xdist::Union{Nothing, Distribution}
-end
-
-RegressionSampler(emission::E, x::AbstractVector) where {E} =
-    RegressionSampler{E}(emission, x, nothing)
-
-RegressionSampler(emission::E, xdist::Distribution) where {E} =
-    RegressionSampler{E}(emission, nothing, xdist)
-
-Random.Sampler(::Type{<:Random.SamplerTrivial}, sampler::RegressionSampler) =
-    Random.SamplerTrivial(sampler)
-
-function Random.rand(rng::AbstractRNG, sampler::Random.SamplerTrivial{<:RegressionSampler})
-    emission = sampler[].emissionk
-    x = sampler[].x
-    xdist = sampler[].xdist
-
-    if x === nothing
-        @assert xdist !== nothing "Either x or xdist must be provided"
-        x = rand(rng, xdist)
-    end
-
-    Φ = x isa Vector ? reshape(x, :, 1) : x
-    if emission.include_intercept
-        Φ = vcat(ones(eltype(Φ), 1, size(Φ, 2)), Φ)
-    end
-    μ = emission.β' * Φ
-    return vec(rand(rng, MvNormal(vec(μ), emission.Σ)))
-end
-
-function obs_distributions(hmm::AbstractHMM)
-    input_dim = hmm.emissions[1].input_dim
-    xdist = MvNormal(zeros(input_dim), I)
-    return RegressionSampler.(hmm.emissions, Ref(xdist))
-end
-
 """
     GaussianRegressionEmission(input_dim, output_dim, include_intercept, β, Σ, λ)
 
@@ -301,8 +257,6 @@ function GaussianRegressionEmission(;
 
     return GaussianRegressionEmission(input_dim, output_dim, β, Σ, include_intercept, λ)
 end
-
-DensityInterface.DensityKind(::GaussianRegressionEmission) = HasDensity()
 
 """
      Random.rand(rng::AbstractRNG, model::GaussianRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
@@ -337,6 +291,43 @@ Generate samples from a Gaussian regression model.
 """
 function Random.rand(model::GaussianRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}})
     return rand(Random.default_rng(), model, Φ)
+end
+
+"""
+    rand interface for HMM rand function
+"""
+struct RegressionSampler{E<:GaussianRegressionEmission,D<:Union{Nothing,Distribution}}
+    emission::E
+    xdist::D
+end
+
+RegressionSampler(emission::GaussianRegressionEmission, xdist::Distribution) =
+    RegressionSampler{typeof(emission), typeof(xdist)}(emission, xdist)
+
+function Random.Sampler(
+    ::Type{<:AbstractRNG},
+    model::GaussianRegressionEmission{<:Any,<:AbstractMatrix},
+    ::Val{1}
+)
+    d = model.input_dim
+    dist = MvNormal(zeros(d), I(d))
+    return Random.SamplerTrivial(RegressionSampler(model, dist))
+end
+
+function Random.rand(rng::AbstractRNG, s::Random.SamplerTrivial{<:RegressionSampler,<:Any})
+    sampler = s[]
+    model = sampler.emission
+
+    x = rand(rng, sampler.xdist)
+    Φ = reshape(x, :, 1)
+    if model.include_intercept
+        Φ = vcat(ones(eltype(Φ), 1, size(Φ, 2)), Φ)
+    end
+
+    μ = model.β' * Φ
+    y = vec(rand(rng, MvNormal(vec(μ), model.Σ)))
+
+    return (x, y)
 end
 
 """
@@ -389,49 +380,21 @@ function loglikelihood(
     return ll
 end
 
-# function DensityInterface.logdensityof(model::GaussianRegressionEmission, x::GaussianRegressionObservation)
-#     Φ = x.Φ
-#     y = x.y
 
-#     f = length(Φ)
-#     d = length(y)
-#     β = model.β
-#     Σ = model.Σ
+DensityInterface.DensityKind(::GaussianRegressionEmission) = HasDensity()
 
-#     # Intercept handling
-#     if model.include_intercept
-#         Φ_aug = Vector{eltype(Φ)}(undef, f + 1)
-#         Φ_aug[1] = 1.0
-#         for i in 1:f
-#             Φ_aug[i + 1] = Φ[i]
-#         end
-#     else
-#         Φ_aug = Φ
-#     end
+function logdensityof(model::GaussianRegressionEmission, obs::Tuple{<:AbstractVector,<:AbstractVector})
+    x, y = obs
 
-#     # Predicted mean μ = β' * Φ_aug
-#     μ = Vector{eltype(Φ)}(undef, d)
-#     for j in 1:d
-#         μ[j] = 0.0
-#         for k in eachindex(Φ_aug)
-#             μ[j] += β[k, j] * Φ_aug[k]
-#         end
-#     end
+    # Build design matrix with intercept if needed
+    Φ = reshape(x, :, 1)
+    if model.include_intercept
+        Φ = vcat(ones(eltype(Φ), 1, size(Φ, 2)), Φ)
+    end
 
-#     # Compute Mahalanobis term: (y - μ)' * inv(Σ) * (y - μ)
-#     acc = 0.0
-#     for i in 1:d
-#         err_i = y[i] - μ[i]
-#         inner = 0.0
-#         for j in 1:d
-#             err_j = y[j] - μ[j]
-#             inner += Σ[i, j] \ err_j  # efficient if Σ is diagonal or small
-#         end
-#         acc += err_i * inner
-#     end
-
-#     return -0.5 * acc
-# end
+    μ = vec(model.β' * Φ)
+    return logpdf(MvNormal(μ, model.Σ), y)
+end
 
 """
     AutoRegressionEmission <: EmissionModel
@@ -578,6 +541,40 @@ function Random.rand(model::AutoRegressionEmission, X::Matrix{<:Real})
 end
 
 """
+   Rand interface for HMM package 
+"""
+
+struct AutoRegressionSampler{E<:AutoRegressionEmission,D<:Union{Nothing,Distribution}}
+    emission::E
+    xdist::D
+end
+
+AutoRegressionSampler(emission::AutoRegressionEmission, xdist::Distribution) =
+    AutoRegressionSampler{typeof(emission), typeof(xdist)}(emission, xdist)
+
+function Random.Sampler(
+    ::Type{<:AbstractRNG},
+    model::AutoRegressionEmission,
+    ::Val{1}
+)
+    d = model.innerGaussianRegression.input_dim
+    dist = MvNormal(zeros(d), I(d))  # prior over AR input
+    return Random.SamplerTrivial(AutoRegressionSampler(model, dist))
+end
+
+function Random.rand(rng::AbstractRNG, s::Random.SamplerTrivial{<:AutoRegressionSampler,<:Any})
+    sampler = s[]
+    model = sampler.emission
+
+    # Use the inner GaussianRegressionEmission's sampler to generate (x, y)
+    inner_model = model.innerGaussianRegression
+    inner_sampler = RegressionSampler(inner_model, sampler.xdist)
+    inner_trivial = Random.SamplerTrivial(inner_sampler)
+
+    return rand(rng, inner_trivial)  # Returns (x, y) tuple from GaussianRegressionEmission
+end
+
+"""
     loglikelihood(
         model::AutoRegressionEmission,
         X::AbstractMatrix{T},
@@ -600,6 +597,11 @@ function loglikelihood(
     end
 
     return loglikelihood(model.innerGaussianRegression, X, Y, w)
+end
+
+function logdensityof(model::AutoRegressionEmission, obs::Tuple{<:AbstractVector,<:AbstractVector})
+    x, y = obs
+    return logdensityof(model.innerGaussianRegression, (x, y))
 end
 
 """
@@ -654,6 +656,9 @@ function objective_gradient!(
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
     f, n = size(opt.X)
     d, _ = size(opt.y)
+
+    @assert size(β_mat, 1) == f "β rows $(size(β_mat,1)) != X rows $(f)"
+    @assert size(opt.y, 2) == n "y columns $(size(opt.y,2)) != X columns $(n)"
 
     grad_matrix = zeros(T, size(β_mat))
 
@@ -743,8 +748,6 @@ mutable struct BernoulliRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: Reg
     λ::T # regularization parameter
 end
 
-DensityInterface.DensityKind(::BernoulliRegressionEmission) = HasDensity()
-
 """
     BernoulliRegressionEmission(Args)
 
@@ -810,6 +813,46 @@ function Random.rand(model::BernoulliRegressionEmission, Φ::Union{Matrix{<:Real
 end
 
 """
+   rand interface for HMM 
+"""
+struct BernoulliRegressionSampler{E<:BernoulliRegressionEmission,D<:Union{Nothing,Distribution}}
+    emission::E
+    xdist::D
+end
+
+BernoulliRegressionSampler(emission::BernoulliRegressionEmission, xdist::Distribution) =
+    BernoulliRegressionSampler{typeof(emission), typeof(xdist)}(emission, xdist)
+
+function Random.Sampler(
+    ::Type{<:AbstractRNG},
+    model::BernoulliRegressionEmission{<:Any,<:AbstractMatrix},
+    ::Val{1}
+)
+    d = model.input_dim
+    dist = MvNormal(zeros(d), I(d))
+    return Random.SamplerTrivial(BernoulliRegressionSampler(model, dist))
+end
+
+function Random.rand(rng::AbstractRNG, s::Random.SamplerTrivial{<:BernoulliRegressionSampler,<:Any})
+    sampler = s[]
+    model = sampler.emission
+
+    # Sample x covariates
+    x = rand(rng, sampler.xdist)
+    Φ = reshape(x, :, 1)
+
+    if model.include_intercept
+        Φ = vcat(ones(eltype(Φ), 1, size(Φ, 2)), Φ)
+    end
+
+    η = vec(model.β' * Φ)
+    p = logistic.(η)
+    y = Float64[rand(rng, Bernoulli(p_i)) for p_i in p]
+
+    return (x, y)
+end
+
+"""
     function loglikelihood(
         model::BernoulliRegressionEmission,
         Φ::AbstractMatrix{T1},
@@ -858,6 +901,30 @@ function loglikelihood(
     end 
 
     return ll
+end
+
+DensityInterface.DensityKind(::BernoulliRegressionEmission) = HasDensity()
+
+function logdensityof(model::BernoulliRegressionEmission,
+                      obs::Tuple{<:AbstractVector,<:AbstractVector})
+    x, y = obs
+
+    Φ = reshape(x, :, 1)
+    if model.include_intercept
+        Φ = vcat(ones(eltype(Φ), 1, size(Φ, 2)), Φ)
+    end
+
+    η = vec(model.β' * Φ)
+    p = logistic.(η)
+
+    acc = zero(eltype(p))
+    for j in eachindex(y)
+        y_j = y[j]
+        p_j = clamp(p[j], eps(eltype(p)), 1 - eps(eltype(p))) # numerical stability
+        acc += y_j * log(p_j) + (1 - y_j) * log(1 - p_j)
+    end
+
+    return acc
 end
 
 """
@@ -955,9 +1022,6 @@ mutable struct PoissonRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: Regre
     λ::T
 end
 
-DensityInterface.DensityKind(::PoissonRegressionEmission) = HasDensity()
-
-
 """
     PoissonRegressionEmission(Args)
 
@@ -1021,6 +1085,47 @@ function Random.rand(model::PoissonRegressionEmission, Φ::Union{Matrix{<:Real},
 end
 
 """
+    rand interface for HMMs 
+"""
+struct PoissonRegressionSampler{E<:PoissonRegressionEmission,D<:Union{Nothing,Distribution}}
+    emission::E
+    xdist::D
+end
+
+PoissonRegressionSampler(emission::PoissonRegressionEmission, xdist::Distribution) =
+    PoissonRegressionSampler{typeof(emission), typeof(xdist)}(emission, xdist)
+
+function Random.Sampler(
+    ::Type{<:AbstractRNG},
+    model::PoissonRegressionEmission{<:Any,<:AbstractMatrix},
+    ::Val{1}
+)
+    d = model.input_dim
+    dist = MvNormal(zeros(d), I(d))  # random covariates like GaussianRegressionEmission
+    return Random.SamplerTrivial(PoissonRegressionSampler(model, dist))
+end
+
+function Random.rand(rng::AbstractRNG, s::Random.SamplerTrivial{<:PoissonRegressionSampler,<:Any})
+    sampler = s[]
+    model = sampler.emission
+
+    # Sample covariates x
+    x = rand(rng, sampler.xdist)
+    Φ = reshape(x, :, 1)
+    if model.include_intercept
+        Φ = vcat(ones(eltype(Φ), 1, size(Φ, 2)), Φ)
+    end
+
+    # Compute λ = exp(β' * Φ)
+    λ = exp.(vec(model.β' * Φ))
+
+    # Sample y ~ Poisson(λ)
+    y = Float64.(rand.(rng, Poisson.(λ)))
+
+    return (x, y)
+end
+
+"""
     loglikelihood(
         model::PoissonRegressionEmission,
         Φ::AbstractMatrix{T1},
@@ -1070,6 +1175,31 @@ function loglikelihood(
     end 
     
     return ll
+end
+
+DensityInterface.DensityKind(::PoissonRegressionEmission) = HasDensity()
+
+function logdensityof(model::PoissonRegressionEmission,
+                      obs::Tuple{<:AbstractVector,<:AbstractVector})
+    x, y = obs
+
+    Φ = reshape(x, :, 1)
+    if model.include_intercept
+        Φ = vcat(ones(eltype(Φ), 1, size(Φ, 2)), Φ)
+    end
+
+    μ = vec(model.β' * Φ) 
+
+    acc = 0.0
+    for i in eachindex(y)
+        y_i = y[i]
+        z = clamp(μ[i], -20, 20)
+        λ = exp(z)
+        acc += y_i * z - λ - loggamma(y_i + 1)
+
+    end
+
+    return acc
 end
 
 """
@@ -1204,13 +1334,30 @@ function fit!(
     return model
 end
 
+"""
+    Gaussian Regression Emission fit! functions 
+"""
 function StatsAPI.fit!(
     model::RegressionEmission,
-    x::AbstractVector{<:NamedTuple{(:y, :Φ)}},
-    w::AbstractVector{<:Real} = ones(length(x))
+    obs_seq::Vector{<:Tuple}, 
+    w::AbstractVector{<:Real}
 )
-    Φ = cat(getfield.(x, :Φ)...; dims=2)
-    Y = hcat(getfield.(x, :y)...)
-    fit!(model, Φ, Y, w)
-    return model
+    Xs = [obs[1] for obs in obs_seq]
+    Ys = [obs[2] for obs in obs_seq]
+
+    # Stack into f×n and d×n matrices
+    Xmat = hcat(Xs...)       
+    Ymat = hcat(Ys...)          
+
+    return fit!(model, Xmat, Ymat, w)
 end
+
+function StatsAPI.fit!(
+    model::RegressionEmission,
+    obs_seq::Vector{<:Tuple},
+)
+    return fit!(model, obs_seq, ones(length(obs_seq)))
+end
+
+
+

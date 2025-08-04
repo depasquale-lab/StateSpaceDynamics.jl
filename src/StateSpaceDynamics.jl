@@ -7,6 +7,9 @@ using LinearAlgebra
 using LineSearches
 using Optim
 using ProgressMeter
+import Random: rand, Sampler 
+import DensityInterface: logdensityof
+using StatsAPI: StatsAPI, fit, fit!
 using Random
 using SparseArrays
 using StaticArrays
@@ -15,7 +18,7 @@ using StatsBase
 using StatsFuns
 using StatsAPI
 using HiddenMarkovModels
-import HiddenMarkovModels: obs_distributions
+# import HiddenMarkovModels: obs_distributions
 using DensityInterface
 using SpecialFunctions
 using Base.Threads: @threads
