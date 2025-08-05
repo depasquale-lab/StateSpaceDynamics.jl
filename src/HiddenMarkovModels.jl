@@ -558,7 +558,7 @@ end
 
 function mstep!(
     model::AbstractHMM,
-    B_storage_vec::Vector{<:ForwardBackward},
+    FB_storage_vec::Vector{<:ForwardBackward},
     Aggregate_FB_storage::ForwardBackward,
     data,
 )
