@@ -1,9 +1,10 @@
 """
-The purpose of this file is to provide a common place for all global types to be defined. This is to avoid circular dependencies between files.
+The purpose of this file is to provide a common place for all global types to be defined.
+This is to avoid circular dependencies between files.
 """
 
-export MixtureModel, EmissionModel, AbstractHMM, DynamicalSystem, AbstractStateModel,
-    AbstractObservationModel
+export MixtureModel, EmissionModel, DynamicalSystem
+export AbstractHMM, AbstractStateModel, AbstractObservationModel
 
 # Create abstract types here
 """
@@ -48,12 +49,11 @@ Special case of regression emission models that are autoregressive.
 """
 abstract type AutoRegressiveEmission <: RegressionEmission end
 
-
 """
     ForwardBackward{T<:Real}
 
-A mutable struct that encapsulates the forward–backward algorithm outputs for a hidden Markov
-model (HMM).
+A mutable struct that encapsulates the forward–backward algorithm outputs for a hidden
+Markov model (HMM).
 
 # Fields
 - `loglikelihoods::Matrix{T}`: Matrix of log-likelihoods for each observation and state.
@@ -68,10 +68,7 @@ of an observation sequence. `γ` and `ξ` are derived from these calculations to
 states transition over time.
 """
 mutable struct ForwardBackward{
-    T<:Real,
-    V<:AbstractVector{T},
-    M<:AbstractMatrix{T},
-    A<:Array{T,3}
+    T<:Real,V<:AbstractVector{T},M<:AbstractMatrix{T},A<:Array{T,3}
 }
     loglikelihoods::M
     α::M
@@ -80,10 +77,14 @@ mutable struct ForwardBackward{
     ξ::A
 end
 
-function Base.show(io::IO, fb::ForwardBackward; gap = "")
+function Base.show(io::IO, fb::ForwardBackward; gap="")
     println(io, gap, "Forward Backward Object:")
     println(io, gap, "------------------------")
-    println(io, gap, " size(logL) = ($(size(fb.loglikelihoods,1)), $(size(fb.loglikelihoods,2)))")
+    println(
+        io,
+        gap,
+        " size(logL) = ($(size(fb.loglikelihoods,1)), $(size(fb.loglikelihoods,2)))",
+    )
     println(io, gap, " size(α)    = ($(size(fb.α,1)), $(size(fb.α,2)))")
     println(io, gap, " size(β)    = ($(size(fb.β,1)), $(size(fb.β,2)))")
     println(io, gap, " size(γ)    = ($(size(fb.γ,1)), $(size(fb.γ,2)))")
@@ -129,20 +130,36 @@ filter = FilterSmooth{Float64}(
 """
 mutable struct FilterSmooth{T<:Real}
     x_smooth::Matrix{T}
-    p_smooth::Array{T, 3}
-    E_z::Array{T, 3}
-    E_zz::Array{T, 4}
-    E_zz_prev::Array{T, 4}
+    p_smooth::Array{T,3}
+    E_z::Array{T,3}
+    E_zz::Array{T,4}
+    E_zz_prev::Array{T,4}
 end
 
-function Base.show(io::IO, fs::FilterSmooth; gap = "")
+function Base.show(io::IO, fs::FilterSmooth; gap="")
     println(io, gap, "Filter Smooth Object:")
     println(io, gap, "---------------------")
     println(io, gap, " size(x_smooth)  = ($(size(fs.x_smooth,1)), $(size(fs.x_smooth,2)))")
-    println(io, gap, " size(p_smooth)  = ($(size(fs.p_smooth,1)), $(size(fs.p_smooth,2)), $(size(fs.p_smooth,3)))")
-    println(io, gap, " size(E_z)       = ($(size(fs.E_z,1)), $(size(fs.E_z,2)), $(size(fs.E_z,3)))")
-    println(io, gap, " size(E_zz)      = ($(size(fs.E_zz,1)), $(size(fs.E_zz,2)), $(size(fs.E_zz,3)), $(size(fs.E_zz,4)))")
-    println(io, gap, " size(E_zz_prev) = ($(size(fs.E_zz_prev,1)), $(size(fs.E_zz_prev,2)), $(size(fs.E_zz_prev,3)), $(size(fs.E_zz_prev,4)))")
+    println(
+        io,
+        gap,
+        " size(p_smooth)  = ($(size(fs.p_smooth,1)), $(size(fs.p_smooth,2)), $(size(fs.p_smooth,3)))",
+    )
+    println(
+        io,
+        gap,
+        " size(E_z)       = ($(size(fs.E_z,1)), $(size(fs.E_z,2)), $(size(fs.E_z,3)))",
+    )
+    println(
+        io,
+        gap,
+        " size(E_zz)      = ($(size(fs.E_zz,1)), $(size(fs.E_zz,2)), $(size(fs.E_zz,3)), $(size(fs.E_zz,4)))",
+    )
+    println(
+        io,
+        gap,
+        " size(E_zz_prev) = ($(size(fs.E_zz_prev,1)), $(size(fs.E_zz_prev,2)), $(size(fs.E_zz_prev,3)), $(size(fs.E_zz_prev,4)))",
+    )
 
     return nothing
 end

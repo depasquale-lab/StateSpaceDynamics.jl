@@ -8,7 +8,7 @@ using StatsFuns
 using SpecialFunctions
 using Test
 using Aqua
-using JET 
+using JET
 using CSV
 using DataFrames
 using MAT
@@ -25,8 +25,8 @@ end
 @testset "Code linting using JET " begin
     if VERSION >= v"1.11"
         JET.test_package(StateSpaceDynamics; target_defined_modules=true)
-    end 
-end 
+    end
+end
 
 include("helper_functions.jl")
 """
@@ -274,7 +274,6 @@ include("HiddenMarkovModels/AutoRegressionHMM.jl")
     test_trialized_timeseries_to_AR_feature_matrix()
 end
 
-
 """
 Tests for Utilities.jl
 """
@@ -288,7 +287,6 @@ include("Utilities/Utilities.jl")
     test_block_tridgm()
     test_autoregressive_setters_and_getters()
 end
-
 
 """
 Tests for PrettyPrinting.jl 

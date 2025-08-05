@@ -19,7 +19,6 @@ function check_same_type(args...)
     return all(x -> typeof(x) == first_type, args)
 end
 
-
 # Matrix utilities
 
 """
@@ -64,9 +63,9 @@ function block_tridiagonal_inverse(
     push!(C, zeros(T, block_size, block_size))
 
     # Preallocate LU factorization arrays
-    lu_D = Vector{LU{T, Matrix{T}}}(undef, n)
-    lu_E = Vector{LU{T, Matrix{T}}}(undef, n)
-    lu_S = Vector{LU{T, Matrix{T}}}(undef, n)
+    lu_D = Vector{LU{T,Matrix{T}}}(undef, n)
+    lu_E = Vector{LU{T,Matrix{T}}}(undef, n)
+    lu_S = Vector{LU{T,Matrix{T}}}(undef, n)
 
     # Forward sweep for D
     for i in 1:n
@@ -254,7 +253,6 @@ function block_tridgm(
     return sparse(I, J, V, N, N, +)
 end
 
-
 # Initialization utilities
 """
     euclidean_distance(a::AbstractVector{Float64}, b::AbstractVector{Float64})
@@ -263,7 +261,7 @@ Calculate the Euclidean distance between two points.
 """
 function euclidean_distance(
     a::AbstractVector{T1}, b::AbstractVector{T2}
-) where {T1<:Real, T2<:Real}
+) where {T1<:Real,T2<:Real}
     return sqrt(sum((a .- b) .^ 2))
 end
 
@@ -282,7 +280,8 @@ function kmeanspp_initialization(data::AbstractMatrix{T}, k_means::Int) where {T
         dists = zeros(N)
         for i in 1:N
             dists[i] = minimum([
-                euclidean_distance(@view(data[:, i]), @view(centroids[:, j])) for j in 1:(k - 1)
+                euclidean_distance(@view(data[:, i]), @view(centroids[:, j])) for
+                j in 1:(k - 1)
             ])
         end
 
@@ -352,7 +351,8 @@ function kmeans_clustering(
         centroids .= new_centroids
 
         if all(
-            euclidean_distance(centroids[:, k], old_centroids[:, k]) <= tol for k in 1:k_means
+            euclidean_distance(centroids[:, k], old_centroids[:, k]) <= tol for
+            k in 1:k_means
         )
             break
         end
@@ -486,7 +486,7 @@ end
 
 Specialized method for BigFloat sparse matrices using logdet.
 """
-function gaussian_entropy(H::Symmetric{BigFloat, <:AbstractSparseMatrix})
+function gaussian_entropy(H::Symmetric{BigFloat,<:AbstractSparseMatrix})
     n = size(H, 1)
     logdet_H = logdet(-H)
 
@@ -552,7 +552,7 @@ Prints full description of object `obj`, overriding both `io`-based limits as
 well as the limits set in the default pretty printing of `StateSpaceDynamics`
 objects.
 """
-function print_full(io::Union{IO, Base.TTY}, obj)
+function print_full(io::Union{IO,Base.TTY}, obj)
     println(IOContext(io, :limit => false), obj)
 
     return nothing

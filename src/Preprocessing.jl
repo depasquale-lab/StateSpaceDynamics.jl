@@ -1,7 +1,7 @@
 # Public API
 export ProbabilisticPCA, loglikelihood, fit!
 
-mutable struct ProbabilisticPCA{T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector{T}}
+mutable struct ProbabilisticPCA{T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}}
     W::M
     σ²::T
     μ::V
@@ -9,15 +9,17 @@ mutable struct ProbabilisticPCA{T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector
     D::Int
     z::M
 
-    function ProbabilisticPCA(W::AbstractMatrix{T}, σ²::T, μ::AbstractVector{T}) where {T<:Real}
+    function ProbabilisticPCA(
+        W::AbstractMatrix{T}, σ²::T, μ::AbstractVector{T}
+    ) where {T<:Real}
         D, k = size(W)
         z = Matrix{T}(undef, k, 0)  # placeholder, filled after E-step
 
-        return new{T, typeof(W), typeof(μ)}(W, σ², μ, k, D, z)
+        return new{T,typeof(W),typeof(μ)}(W, σ², μ, k, D, z)
     end
 end
 
-function Base.show(io::IO, ppca::ProbabilisticPCA; gap = "")
+function Base.show(io::IO, ppca::ProbabilisticPCA; gap="")
     println(io, gap, "Probabilistic PCA Model:")
     println(io, gap, "------------------------")
     println(io, gap, " size(W) = ($(size(ppca.W,1)), $(size(ppca.W,2)))")
@@ -49,10 +51,7 @@ function estep(ppca::ProbabilisticPCA, X::Matrix{T}) where {T<:Real}
 end
 
 function mstep!(
-    ppca::ProbabilisticPCA,
-    X::Matrix{T},
-    E_z::Matrix{T},
-    E_zz::Array{T, 3}
+    ppca::ProbabilisticPCA, X::Matrix{T}, E_z::Matrix{T}, E_zz::Array{T,3}
 ) where {T<:Real}
     D, N = size(X)
     W_new = zeros(T, D, ppca.k)
@@ -68,7 +67,7 @@ function mstep!(
     end
 
     ppca.z = E_z
-    ppca.W = W_new * inv(sum(E_zz, dims=3)[:, :, 1])
+    ppca.W = W_new * inv(sum(E_zz; dims=3)[:, :, 1])
     ppca.σ² = σ²_sum / (N * D)
 
     return nothing
@@ -102,7 +101,7 @@ function Random.rand(rng::AbstractRNG, ppca::ProbabilisticPCA, n::Int)
 end
 
 function Random.rand(ppca::ProbabilisticPCA, n::Int)
-    rand(Random.default_rng(), ppca, n)
+    return rand(Random.default_rng(), ppca, n)
 end
 
 function fit!(

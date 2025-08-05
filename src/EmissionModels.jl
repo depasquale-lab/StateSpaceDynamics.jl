@@ -7,9 +7,9 @@ This module implements various emission models for state space modeling, includi
 """
 
 # Exports
-export EmissionModel, RegressionEmission
-export GaussianEmission, GaussianRegressionEmission, BernoulliRegressionEmission,
-    PoissonRegressionEmission, AutoRegressionEmission
+export EmissionModel, GaussianEmission
+export RegressionEmission, GaussianRegressionEmission, BernoulliRegressionEmission
+export PoissonRegressionEmission, AutoRegressionEmission
 export loglikelihood, fit!
 
 #=
@@ -22,14 +22,14 @@ Gaussian Emission Models
 GaussianEmission model with mean and covariance.
 """
 mutable struct GaussianEmission{
-    T<:Real, V<:AbstractVector{T}, M<:AbstractMatrix{T}
+    T<:Real,V<:AbstractVector{T},M<:AbstractMatrix{T}
 } <: EmissionModel
     output_dim::Int # dimension of the data
     μ::V  # mean
     Σ::M  # covariance matrix
 end
 
-function Base.show(io::IO, ge::GaussianEmission; gap = "")
+function Base.show(io::IO, ge::GaussianEmission; gap="")
     println(io, gap, "Gaussian Emission model:")
     println(io, gap, "------------------------")
 
@@ -65,7 +65,6 @@ function GaussianEmission(; output_dim::Int, μ::AbstractVector, Σ::AbstractMat
 
     return GaussianEmission(output_dim, μ, Σ)
 end
-
 
 """
     loglikelihood(model::GaussianEmission, Y::AbstractMatrix{T}) where {T<:Real}
@@ -148,13 +147,13 @@ struct RegressionOptimization{
     X::MX
     y::MY
     w::V
-    β_shape::Tuple{Int, Int}  # Added to track original shape
+    β_shape::Tuple{Int,Int}  # Added to track original shape
 end
 
-function Base.show(io::IO, ro::RegressionOptimization; gap = "")
+function Base.show(io::IO, ro::RegressionOptimization; gap="")
     println(io, gap, "Regression Optimization:")
     println(io, gap, "------------------------")
-    Base.show(io, ro.model; gap = gap * " ")
+    Base.show(io, ro.model; gap=gap * " ")
     println(io, gap, " size(X) = ($(size(ro.X,1)), $(size(ro.X,2)))")
     println(io, gap, " size(y) = ($(size(ro.y,1)), $(size(ro.y,2)))")
     println(io, gap, " size(w) = ($(size(ro.w, 1)), )")
@@ -203,10 +202,8 @@ post_optimization!(model::RegressionEmission, opt::RegressionOptimization) = not
 Calculate L2 regularization term for regression coefficients.
 """
 function calc_regularization(
-    β::AbstractMatrix{T1},
-    λ::T2,
-    include_intercept::Bool=true,
-) where {T1<:Real, T2<:Real}
+    β::AbstractMatrix{T1}, λ::T2, include_intercept::Bool=true
+) where {T1<:Real,T2<:Real}
     # Includes  T1 and T2 since autodiff passes in DualNumber which is not subtype float for β
     # calculate L2 penalty
     if include_intercept
@@ -229,7 +226,7 @@ Calculate gradient of L2 regularization term for regression coefficients.
 """
 function calc_regularization_gradient(
     β::AbstractMatrix{T1}, λ::T2, include_intercept::Bool=true
-) where {T1<:Real, T2<:Real}
+) where {T1<:Real,T2<:Real}
     # calculate the gradient of the regularization component
     regularization = zeros(size(β))
 
@@ -258,18 +255,18 @@ Store a Gaussian regression Emission model.
 - `Σ::AbstractMatrix{<:Real}`: Covariance matrix of the model.
 - `λ:<Real`: Regularization parameter.
 """
-mutable struct GaussianRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: RegressionEmission
+mutable struct GaussianRegressionEmission{T<:Real,M<:AbstractMatrix{T}}<:RegressionEmission
     input_dim::Int
     output_dim::Int
     β::M # coefficient matrix of the model. Shape input_dim by output_dim. Column one is
-         # coefficients for target one, etc. The first row are the intercept terms, if included.
+    # coefficients for target one, etc. The first row are the intercept terms, if included.
     Σ::M # covariance matrix of the model
     include_intercept::Bool # whether to include an intercept term; if true, the first
-                            # column of β is assumed to be the intercept/bias
+    # column of β is assumed to be the intercept/bias
     λ::T # regularization parameter
 end
 
-function Base.show(io::IO, gre::GaussianRegressionEmission; gap = "")
+function Base.show(io::IO, gre::GaussianRegressionEmission; gap="")
     println(io, gap, "Gaussian Regression Emission model:")
     println(io, gap, "-----------------------------------")
     println(io, gap, " size(β) = ($(size(gre.β,1)), $(size(gre.β,2)))")
@@ -305,9 +302,10 @@ function GaussianRegressionEmission(;
     Σ::AbstractMatrix,
     λ::Real,
 )
-
     if !check_same_type(β[1], Σ[1], λ)
-        error("β, Σ, and λ must be of the same element type. Got $(eltype(β)), $(eltype(Σ)), and $(eltype(λ))")
+        error(
+            "β, Σ, and λ must be of the same element type. Got $(eltype(β)), $(eltype(Σ)), and $(eltype(λ))",
+        )
     end
 
     return GaussianRegressionEmission(input_dim, output_dim, β, Σ, include_intercept, λ)
@@ -357,8 +355,7 @@ end
 Generate samples from a Gaussian regression model.
 """
 function Random.rand(
-    model::GaussianRegressionEmission,
-    Φ::Union{Matrix{<:Real},Vector{<:Real}},
+    model::GaussianRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}}
 )
     return rand(Random.default_rng(), model, Φ)
 end
@@ -376,9 +373,8 @@ function loglikelihood(
     model::GaussianRegressionEmission,
     Φ::AbstractMatrix{T},
     Y::AbstractMatrix{T},
-    w::Union{Nothing,AbstractVector{T}} = nothing,
+    w::Union{Nothing,AbstractVector{T}}=nothing,
 ) where {T<:Real}
-
     if w === nothing
         w = ones(eltype(Y), size(Y, 1))
     elseif eltype(w) !== eltype(Y)
@@ -394,8 +390,8 @@ function loglikelihood(
     # Calculate weighted least squares
     weighted_residuals = residuals .^ 2 .* w
 
-    if size(weighted_residuals,2) > 1
-        weighted_residuals = vec(sum(weighted_residuals, dims=2))
+    if size(weighted_residuals, 2) > 1
+        weighted_residuals = vec(sum(weighted_residuals; dims=2))
     end
 
     return -0.5 .* weighted_residuals
@@ -418,12 +414,12 @@ mutable struct AutoRegressionEmission <: AutoRegressiveEmission
     innerGaussianRegression::GaussianRegressionEmission
 end
 
-function Base.show(io::IO, are::AutoRegressionEmission; gap = "")
+function Base.show(io::IO, are::AutoRegressionEmission; gap="")
     println(io, gap, "AutoRegression Emission model:")
     println(io, gap, "------------------------------")
     println(io, gap, " output_dim = $(are.output_dim)")
     println(io, gap, " (AR) order = $(are.order)")
-    Base.show(io, are.innerGaussianRegression, gap = " " * gap)
+    Base.show(io, are.innerGaussianRegression; gap=" " * gap)
 
     return nothing
 end
@@ -452,23 +448,23 @@ function AutoRegressionEmission(;
     Σ::AbstractMatrix,
     λ::Real,
 )
-
     if !check_same_type(β[1], Σ[1], λ)
-        error("β, Σ, and λ must be of the same element type. Got $(eltype(β)), $(eltype(Σ)), and $(eltype(λ))")
+        error(
+            "β, Σ, and λ must be of the same element type. Got $(eltype(β)), $(eltype(Σ)), and $(eltype(λ))",
+        )
     end
 
-    innerGaussianRegression = GaussianRegressionEmission(
+    innerGaussianRegression = GaussianRegressionEmission(;
         input_dim=output_dim,
         output_dim=output_dim,
         β=β,
         Σ=Σ,
         include_intercept=include_intercept,
-        λ=λ
+        λ=λ,
     )
 
     return AutoRegressionEmission(output_dim, order, innerGaussianRegression)
 end
-
 
 """
     construct_AR_feature_matrix(
@@ -492,9 +488,7 @@ Construct an autoregressive (AR) feature matrix from input time series data.
     timepoints.
 """
 function construct_AR_feature_matrix(
-    data::AbstractMatrix{T},
-    order::Int,
-    include_intercept=false,
+    data::AbstractMatrix{T}, order::Int, include_intercept=false
 ) where {T<:Real}
     # If intercept is needed, prepend a row of ones
     if include_intercept
@@ -510,17 +504,15 @@ function construct_AR_feature_matrix(
     AR_feats_matrix = zeros(num_feats_AR, T_AR)
 
     # Fill in the AR_feats_matrix
-    @views for iter = order+1:t
-        AR_feats_matrix[:, iter - order] = reshape(data[:, iter - order:iter], :, 1)
+    @views for iter in (order + 1):t
+        AR_feats_matrix[:, iter - order] = reshape(data[:, (iter - order):iter], :, 1)
     end
 
     return AR_feats_matrix
 end
 
 function construct_AR_feature_matrix(
-    data::Vector{<:Matrix{<:Real}},
-    order::Int,
-    include_intercept=false,
+    data::Vector{<:Matrix{<:Real}}, order::Int, include_intercept=false
 )
     # Initialize feature vector
     AR_feats_matrices = Vector{Matrix{Float64}}(undef, length(data))
@@ -535,7 +527,6 @@ function construct_AR_feature_matrix(
 
     return AR_feats_matrices
 end
-
 
 """
     Random.rand(rng::AbstractRNG, model::AutoRegressionEmission, X::Matrix{<:Real})
@@ -589,9 +580,8 @@ function loglikelihood(
     model::AutoRegressionEmission,
     X::AbstractMatrix{T},
     Y::AbstractMatrix{T},
-    w::Union{Nothing,AbstractVector{T}} = nothing,
+    w::Union{Nothing,AbstractVector{T}}=nothing,
 ) where {T<:Real}
-
     if w === nothing
         w = ones(eltype(Y), size(Y, 1))
     elseif eltype(w) !== eltype(Y)
@@ -613,8 +603,10 @@ end
 Define the objective function for Gaussian/AR regression emission models.
 """
 function objective(
-    opt::Union{RegressionOptimization{<:GaussianRegressionEmission},
-    RegressionOptimization{<:AutoRegressionEmission}},
+    opt::Union{
+        RegressionOptimization{<:GaussianRegressionEmission},
+        RegressionOptimization{<:AutoRegressionEmission},
+    },
     β_vec::AbstractVector{T},
 ) where {T<:Real}
     β_mat = vec_to_matrix(β_vec, opt.β_shape)
@@ -645,7 +637,7 @@ function objective_gradient!(
     G::AbstractVector{T},
     opt::Union{
         RegressionOptimization{<:GaussianRegressionEmission},
-        RegressionOptimization{<:AutoRegressionEmission}
+        RegressionOptimization{<:AutoRegressionEmission},
     },
     β_vec::AbstractVector{T},
 ) where {T<:Real}
@@ -697,7 +689,8 @@ Store a Bernoulli regression model.
 - `λ<:Real`: L2 Regularization parameter.
 ```
 """
-mutable struct BernoulliRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: RegressionEmission
+mutable struct BernoulliRegressionEmission{T<:Real,M<:AbstractMatrix{T}} <:
+               RegressionEmission
     input_dim::Int
     output_dim::Int
     β::M
@@ -705,7 +698,7 @@ mutable struct BernoulliRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: Reg
     λ::T # regularization parameter
 end
 
-function Base.show(io::IO, bre::BernoulliRegressionEmission; gap = "")
+function Base.show(io::IO, bre::BernoulliRegressionEmission; gap="")
     println(io, gap, "Bernoulli Regression Emission model:")
     println(io, gap, "------------------------------------")
     println(io, gap, " in, out = ($(bre.input_dim), $(bre.output_dim))")
@@ -733,20 +726,14 @@ Create a Bernoulli regression emission model.
     - `model::BernoulliRegressionEmission`: The Bernoulli regression emission model.
 """
 function BernoulliRegressionEmission(;
-    input_dim::Int,
-    output_dim::Int,
-    include_intercept::Bool,
-    β::AbstractMatrix,
-    λ::Real,
+    input_dim::Int, output_dim::Int, include_intercept::Bool, β::AbstractMatrix, λ::Real
 )
-
     if !check_same_type(β[1], λ)
         error("β and λ must be of the same element type. Got $(eltype(β)) and $(eltype(λ))")
     end
 
     return BernoulliRegressionEmission(input_dim, output_dim, β, include_intercept, λ)
 end
-
 
 """
     Random.rand(
@@ -795,8 +782,7 @@ end
 Generate samples from a Bernoulli regression emission.
 """
 function Random.rand(
-    model::BernoulliRegressionEmission,
-    Φ::Union{Matrix{<:Real},Vector{<:Real}}
+    model::BernoulliRegressionEmission, Φ::Union{Matrix{<:Real},Vector{<:Real}}
 )
     return rand(Random.default_rng(), model, Φ)
 end
@@ -816,9 +802,8 @@ function loglikelihood(
     model::BernoulliRegressionEmission,
     Φ::AbstractMatrix,
     Y::AbstractMatrix,
-    w::Union{Nothing,AbstractVector} = nothing,
+    w::Union{Nothing,AbstractVector}=nothing,
 )
-
     if w === nothing
         w = ones(eltype(Φ), size(Y, 1))
     elseif eltype(w) !== eltype(Φ)
@@ -826,7 +811,7 @@ function loglikelihood(
     end
 
     # add intercept if specified and not already included
-    if model.include_intercept && size(Φ, 2) == size(model.β,1) - 1
+    if model.include_intercept && size(Φ, 2) == size(model.β, 1) - 1
         Φ = hcat(ones(size(Φ, 1)), Φ)
     end
 
@@ -837,7 +822,7 @@ function loglikelihood(
 
     # sum across independent feature log likelihoods if mulitple features
     if size(obs_wise_loglikelihood, 2) > 1
-        obs_wise_loglikelihood = sum(obs_wise_loglikelihood, dims=2)
+        obs_wise_loglikelihood = sum(obs_wise_loglikelihood; dims=2)
     end
 
     return obs_wise_loglikelihood
@@ -903,7 +888,7 @@ A Poisson regression model.
 - `include_intercept::Bool`: Whether to include a regression intercept.
 - `λ::Real;`: L2 Regularization parameter.
 """
-mutable struct PoissonRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: RegressionEmission
+mutable struct PoissonRegressionEmission{T<:Real,M<:AbstractMatrix{T}} <: RegressionEmission
     input_dim::Int
     output_dim::Int
     β::M
@@ -911,7 +896,7 @@ mutable struct PoissonRegressionEmission{T<:Real, M<:AbstractMatrix{T}} <: Regre
     λ::T
 end
 
-function Base.show(io::IO, pre::PoissonRegressionEmission; gap = "")
+function Base.show(io::IO, pre::PoissonRegressionEmission; gap="")
     println(io, gap, "Poisson Regression Emission model:")
     println(io, gap, "----------------------------------")
     println(io, gap, " in, out = ($(pre.input_dim), $(pre.output_dim))")
@@ -938,15 +923,12 @@ Create a Poisson regression emission model.
     - `model::PoissonRegressionEmission`: The Poisson regression emission model.
 """
 function PoissonRegressionEmission(;
-    input_dim::Int,
-    output_dim::Int,
-    include_intercept::Bool,
-    β::AbstractMatrix,
-    λ::Real,
+    input_dim::Int, output_dim::Int, include_intercept::Bool, β::AbstractMatrix, λ::Real
 )
-
     if !check_same_type(β[1], λ)
-        error("β and λ must be of the same element type. Got $(eltype(β[1])) and $(eltype(λ))")
+        error(
+            "β and λ must be of the same element type. Got $(eltype(β[1])) and $(eltype(λ))"
+        )
     end
 
     return PoissonRegressionEmission(input_dim, output_dim, β, include_intercept, λ)
@@ -1018,9 +1000,8 @@ function loglikelihood(
     model::PoissonRegressionEmission,
     Φ::AbstractMatrix,
     Y::AbstractMatrix,
-    w::Union{Nothing,AbstractVector{}} = nothing,
+    w::Union{Nothing,AbstractVector{}}=nothing,
 )
-
     if w === nothing
         w = ones(eltype(Φ), size(Y, 1))
     elseif eltype(w) !== eltype(Φ)
@@ -1028,7 +1009,7 @@ function loglikelihood(
     end
 
     # add intercept if specified
-    if model.include_intercept && size(Φ, 2) == size(model.β,1) - 1
+    if model.include_intercept && size(Φ, 2) == size(model.β, 1) - 1
         Φ = hcat(ones(size(Φ, 1)), Φ)
     end
 
@@ -1040,7 +1021,7 @@ function loglikelihood(
 
     # sum across independent feature log likelihoods if mulitple features
     if size(obs_wise_loglikelihood, 2) > 1
-        obs_wise_loglikelihood = sum(obs_wise_loglikelihood, dims=2)
+        obs_wise_loglikelihood = sum(obs_wise_loglikelihood; dims=2)
     end
 
     return obs_wise_loglikelihood
@@ -1127,7 +1108,7 @@ function fit!(
     X::AbstractMatrix{T1},
     y::AbstractMatrix{T2},
     w::AbstractVector{T3}=ones(size(y, 1)),
-) where {T1<:Real, T2<:Real, T3<:Real}
+) where {T1<:Real,T2<:Real,T3<:Real}
     opt_problem = create_optimization(model, X, y, w)
 
     # Create closure functions for Optim.jl
@@ -1135,11 +1116,7 @@ function fit!(
     g!(G, β) = objective_gradient!(G, opt_problem, β)
 
     opts = Optim.Options(;
-        x_abstol=1e-8,
-        x_reltol=1e-8,
-        f_abstol=1e-8,
-        f_reltol=1e-8,
-        g_abstol=1e-8,
+        x_abstol=1e-8, x_reltol=1e-8, f_abstol=1e-8, f_reltol=1e-8, g_abstol=1e-8
     )
 
     # Run optimization

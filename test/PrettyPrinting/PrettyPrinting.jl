@@ -1,13 +1,13 @@
 function test_pretty_printing()
     # Set up IO buffer for printing
-    
+
     io1 = IOBuffer()
     objs = []
 
     # Gaussian Emission
 
-    ge1 = GaussianEmission(5, rand(5), rand(5,5))
-    ge2 = GaussianEmission(2, rand(2), rand(2,2))
+    ge1 = GaussianEmission(5, rand(5), rand(5, 5))
+    ge2 = GaussianEmission(2, rand(2), rand(2, 2))
     push!(objs, ge1, ge2)
 
     @test println(io1, ge1) === nothing
@@ -15,7 +15,7 @@ function test_pretty_printing()
 
     # Gaussian Regression Emission
 
-    gre = GaussianRegressionEmission(3, 3, rand(3,3), rand(3,3), true, 0.5)
+    gre = GaussianRegressionEmission(3, 3, rand(3, 3), rand(3, 3), true, 0.5)
     push!(objs, gre)
 
     @test println(io1, gre) === nothing
@@ -29,43 +29,49 @@ function test_pretty_printing()
 
     # Bernoulli Regression Emission
 
-    bre = BernoulliRegressionEmission(5, 5, rand(5,5), false, 0.5)
+    bre = BernoulliRegressionEmission(5, 5, rand(5, 5), false, 0.5)
     push!(objs, bre)
 
     @test println(io1, bre) === nothing
 
     # Poisson Regression Emission
 
-    pre = PoissonRegressionEmission(5, 5, rand(5,5), false, 0.5)
+    pre = PoissonRegressionEmission(5, 5, rand(5, 5), false, 0.5)
     push!(objs, pre)
-    
+
     @test println(io1, pre) === nothing
 
     # Regression Optimization
 
-    ro = StateSpaceDynamics.RegressionOptimization(pre, rand(2,2), rand(2,2), rand(2), (2,2))
+    ro = StateSpaceDynamics.RegressionOptimization(
+        pre, rand(2, 2), rand(2, 2), rand(2), (2, 2)
+    )
     push!(objs, ro)
 
     @test println(io1, ro) === nothing
 
     # Forward Backward object
 
-    fb = StateSpaceDynamics.ForwardBackward(rand(2,2), rand(2,2), rand(2,2), rand(2,2), rand(2,2,2))
+    fb = StateSpaceDynamics.ForwardBackward(
+        rand(2, 2), rand(2, 2), rand(2, 2), rand(2, 2), rand(2, 2, 2)
+    )
     push!(objs, fb)
 
     @test println(io1, fb) === nothing
 
     # Filter Smooth object
 
-    fs = StateSpaceDynamics.FilterSmooth(rand(2,2), rand(2,2,2), rand(2,2,2), rand(2,2,2,2) ,rand(2,2,2,2))
+    fs = StateSpaceDynamics.FilterSmooth(
+        rand(2, 2), rand(2, 2, 2), rand(2, 2, 2), rand(2, 2, 2, 2), rand(2, 2, 2, 2)
+    )
     push!(objs, fs)
 
     @test println(io1, fs) === nothing
 
     # Hidden Markov Model 
 
-    hmm1 = HiddenMarkovModel(rand(5,5), [gre, are, bre, pre, gre], rand(5), 5)
-    hmm2 = HiddenMarkovModel(rand(2,2), [gre, are], rand(2), 2)
+    hmm1 = HiddenMarkovModel(rand(5, 5), [gre, are, bre, pre, gre], rand(5), 5)
+    hmm2 = HiddenMarkovModel(rand(2, 2), [gre, are], rand(2), 2)
     push!(objs, hmm1, hmm2)
 
     @test println(io1, hmm1) === nothing
@@ -73,8 +79,8 @@ function test_pretty_printing()
 
     # Gaussian State Model 
 
-    gsm1 = GaussianStateModel(rand(5,5), rand(5,5), rand(5), rand(5,5))
-    gsm2 = GaussianStateModel(rand(2,2), rand(2,2), rand(2), rand(2,2))
+    gsm1 = GaussianStateModel(rand(5, 5), rand(5, 5), rand(5), rand(5, 5))
+    gsm2 = GaussianStateModel(rand(2, 2), rand(2, 2), rand(2), rand(2, 2))
     push!(objs, gsm1, gsm2)
 
     @test println(io1, gsm1) === nothing
@@ -82,8 +88,8 @@ function test_pretty_printing()
 
     # Gaussian Observation Model 
 
-    gom1 = GaussianObservationModel(rand(5,5), rand(5,5))
-    gom2 = GaussianObservationModel(rand(3,3), rand(3,3))
+    gom1 = GaussianObservationModel(rand(5, 5), rand(5, 5))
+    gom2 = GaussianObservationModel(rand(3, 3), rand(3, 3))
     push!(objs, gom1, gom2)
 
     @test println(io1, gom1) === nothing
@@ -91,8 +97,8 @@ function test_pretty_printing()
 
     # Poisson Observation Model 
 
-    pom1 = PoissonObservationModel(rand(5,5), rand(5))
-    pom2 = PoissonObservationModel(rand(2,2), rand(2))
+    pom1 = PoissonObservationModel(rand(5, 5), rand(5))
+    pom2 = PoissonObservationModel(rand(2, 2), rand(2))
     push!(objs, pom1, pom2)
 
     @test println(io1, pom1) === nothing
@@ -109,8 +115,8 @@ function test_pretty_printing()
 
     # Gaussian Mixture Model 
 
-    gmm1 = GaussianMixtureModel(5, rand(5,5), [rand(5,5) for _ in 1:5], rand(5))
-    gmm2 = GaussianMixtureModel(2, rand(2,2), [rand(2,2) for _ in 1:2], rand(2))
+    gmm1 = GaussianMixtureModel(5, rand(5, 5), [rand(5, 5) for _ in 1:5], rand(5))
+    gmm2 = GaussianMixtureModel(2, rand(2, 2), [rand(2, 2) for _ in 1:2], rand(2))
     push!(objs, gmm1, gmm2)
 
     @test println(io1, gmm1) === nothing
@@ -127,15 +133,17 @@ function test_pretty_printing()
 
     # Probabilistic PCA
 
-    ppca = ProbabilisticPCA(rand(5,5), 0.5, rand(5))
+    ppca = ProbabilisticPCA(rand(5, 5), 0.5, rand(5))
     push!(objs, ppca)
 
     @test println(io1, ppca) === nothing
 
     # Switching Linear Dynamical System 
 
-    slds1 = SwitchingLinearDynamicalSystem(rand(5,5), [lds1, lds2, lds1, lds2, lds1], rand(5), 5)
-    slds2 = SwitchingLinearDynamicalSystem(rand(2,2), [lds1, lds2], rand(2), 2)
+    slds1 = SwitchingLinearDynamicalSystem(
+        rand(5, 5), [lds1, lds2, lds1, lds2, lds1], rand(5), 5
+    )
+    slds2 = SwitchingLinearDynamicalSystem(rand(2, 2), [lds1, lds2], rand(2), 2)
     push!(objs, slds1, slds2)
 
     @test println(io1, slds1) === nothing
@@ -144,7 +152,7 @@ function test_pretty_printing()
     # testing `print_full`
 
     io2 = IOBuffer()
-    
+
     for obj in objs
         @test print_full(io2, obj) === nothing
     end
@@ -153,7 +161,7 @@ function test_pretty_printing()
 
     seekstart(io1)
     seekstart(io2)
-    
+
     str1 = read(io1, String)
     str2 = read(io2, String)
 

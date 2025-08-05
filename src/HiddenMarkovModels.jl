@@ -1,6 +1,6 @@
 # Public API
-export HiddenMarkovModel, fit!, rand, loglikelihood, viterbi, class_probabilities
-export kmeans_init!
+export HiddenMarkovModel
+export kmeans_init!, fit!, rand, loglikelihood, viterbi, class_probabilities
 
 """
     HiddenMarkovModel
@@ -14,10 +14,7 @@ Store a Hidden Markov Model (HMM) with custom emissions.
 - `K::Int`: Number of states.
 """
 mutable struct HiddenMarkovModel{
-    T<:Real,
-    V<:AbstractVector{T},
-    M<:AbstractMatrix{T},
-    VE<:AbstractVector{<:EmissionModel},
+    T<:Real,V<:AbstractVector{T},M<:AbstractMatrix{T},VE<:AbstractVector{<:EmissionModel}
 } <: AbstractHMM
     A::M # transition matrix
     B::VE # Vector of emission Models
@@ -25,7 +22,7 @@ mutable struct HiddenMarkovModel{
     K::Int # number of states
 end
 
-function Base.show(io::IO, hmm::HiddenMarkovModel; gap = "")
+function Base.show(io::IO, hmm::HiddenMarkovModel; gap="")
     println(io, gap, "Hidden Markov Model:")
     println(io, gap, "--------------------")
 
@@ -45,13 +42,13 @@ function Base.show(io::IO, hmm::HiddenMarkovModel; gap = "")
     if hmm.K > 4 && !show_all
         # only show 3
         for b in hmm.B[1:3]
-            Base.show(io, b, gap = gap * "  ")
+            Base.show(io, b; gap=gap * "  ")
             println(io, gap, "  ----------------")
         end
         println(io, gap * "  $(hmm.K-3) more ..., see `print_full()`")
     else
-        for (i,b) in enumerate(hmm.B)
-            Base.show(io, b, gap = gap * "  ")
+        for (i, b) in enumerate(hmm.B)
+            Base.show(io, b; gap=gap * "  ")
             if i < hmm.K
                 println(io, gap, "  ----------------")
             end
@@ -76,10 +73,9 @@ function initialize_forward_backward(
         zeros(T, num_states, num_obs),
         zeros(T, num_states, num_obs),
         zeros(T, num_states, num_obs),
-        zeros(T, num_states, num_states, num_obs - 1)
+        zeros(T, num_states, num_states, num_obs - 1),
     )
 end
-
 
 """
     ForwardBackward(
@@ -93,30 +89,28 @@ end
 Initialize the forward backward storage struct.
 """
 function ForwardBackward(
-    loglikelihoods::Matrix{T},
-    α::Matrix{T},
-    β::Matrix{T},
-    γ::Matrix{T},
-    ξ::Array{T,3},
+    loglikelihoods::Matrix{T}, α::Matrix{T}, β::Matrix{T}, γ::Matrix{T}, ξ::Array{T,3}
 ) where {T<:Real}
-    return ForwardBackward{T, Vector{T}, Matrix{T}, Array{T,3}}(loglikelihoods, α, β, γ, ξ)
+    return ForwardBackward{T,Vector{T},Matrix{T},Array{T,3}}(loglikelihoods, α, β, γ, ξ)
 end
 
 """
-    aggregate_forward_backward!(aggregated_FB::ForwardBackward, FB_storages::Vector{<:ForwardBackward})
+    aggregate_forward_backward!(
+        aggregated_FB::ForwardBackward,
+        FB_storages::Vector{<:ForwardBackward}
+    )
 
 Aggregate single trial ForwardBackward structs to one session-wide struct.
 """
 function aggregate_forward_backward!(
-    aggregated_FB::ForwardBackward,
-    FB_storages::Vector{<:ForwardBackward},
+    aggregated_FB::ForwardBackward, FB_storages::Vector{<:ForwardBackward}
 )
     # Concatenate each field into the respective field in the aggregated struct
     aggregated_FB.loglikelihoods .= hcat([fb.loglikelihoods for fb in FB_storages]...)
     aggregated_FB.α .= hcat([fb.α for fb in FB_storages]...)
     aggregated_FB.β .= hcat([fb.β for fb in FB_storages]...)
     aggregated_FB.γ .= hcat([fb.γ for fb in FB_storages]...)
-    aggregated_FB.ξ = cat([fb.ξ for fb in FB_storages]..., dims=3)
+    aggregated_FB.ξ = cat([fb.ξ for fb in FB_storages]...; dims=3)
 
     return nothing
 end
@@ -164,12 +158,8 @@ Create a hidden Markov model.
     - ``
 """
 function HiddenMarkovModel(;
-    K::Int,
-    B::AbstractVector{<:EmissionModel},
-    A::AbstractMatrix{T},
-    πₖ::AbstractVector{T},
+    K::Int, B::AbstractVector{<:EmissionModel}, A::AbstractMatrix{T}, πₖ::AbstractVector{T}
 ) where {T<:Real}
-
     model = HiddenMarkovModel(A, B, πₖ, K)
 
     # check that each state has an emission model
@@ -239,7 +229,7 @@ the observation sequence.
 function Random.rand(
     rng::AbstractRNG,
     model::HiddenMarkovModel,
-    X::Union{Matrix{<:Real}, Nothing}=nothing;
+    X::Union{Matrix{<:Real},Nothing}=nothing;
     n::Int,
     autoregressive::Bool=false,
 )
@@ -250,10 +240,11 @@ function Random.rand(
     if !autoregressive
         # Sample initial state
         state_sequence[1] = rand(rng, Categorical(model.πₖ))
-        observation_sequence[:, 1] = isnothing(X) ?
-            rand(rng, model.B[state_sequence[1]]) :
-            rand(rng, model.B[state_sequence[1]], X[:, 1]
-        )
+        observation_sequence[:, 1] = if isnothing(X)
+            rand(rng, model.B[state_sequence[1]])
+        else
+            rand(rng, model.B[state_sequence[1]], X[:, 1])
+        end
 
         # Sample remaining steps
         for t in 2:n
@@ -291,13 +282,12 @@ Generate `n` sammples from an HMM.
 """
 function Random.rand(
     model::HiddenMarkovModel,
-    X::Union{Matrix{<:Real}, Nothing}=nothing;
+    X::Union{Matrix{<:Real},Nothing}=nothing;
     n::Int,
     autoregressive::Bool=false,
 )
     return rand(Random.default_rng(), model, X; n=n, autoregressive=autoregressive)
 end
-
 
 """
     emission_loglikelihoods!(model::HiddenMarkovModel, FB_storage::ForwardBackward, data...)
@@ -305,9 +295,7 @@ end
 Calculate observation likelihoods for each state.
 """
 function emission_loglikelihoods!(
-    model::HiddenMarkovModel,
-    FB_storage::ForwardBackward,
-    data...
+    model::HiddenMarkovModel, FB_storage::ForwardBackward, data...
 )
     log_likelihoods = FB_storage.loglikelihoods
 
@@ -402,7 +390,7 @@ function calculate_γ!(model::AbstractHMM, FB_storage::ForwardBackward)
     γ = FB_storage.γ
 
     for t in 1:time_steps
-        γ[:, t] .-= logsumexp(view(γ,:,t))
+        γ[:, t] .-= logsumexp(view(γ, :, t))
     end
 
     return nothing
@@ -413,7 +401,7 @@ end
 
 Calculate the joint posterior distribution for state transitions.
 """
-function calculate_ξ!(model::AbstractHMM,FB_storage::ForwardBackward)
+function calculate_ξ!(model::AbstractHMM, FB_storage::ForwardBackward)
     α = FB_storage.α
     β = FB_storage.β
     loglikelihoods = FB_storage.loglikelihoods
@@ -432,7 +420,8 @@ function calculate_ξ!(model::AbstractHMM,FB_storage::ForwardBackward)
                 α_t = α[i, t]  # scalar, reuse as-is
 
                 for j in 1:K
-                    log_ξ_unnormalized[i, j] = α_t + log_A[i, j] + loglikelihoods[j, t + 1] + β[j, t + 1]
+                    log_ξ_unnormalized[i, j] =
+                        α_t + log_A[i, j] + loglikelihoods[j, t + 1] + β[j, t + 1]
                 end
             end
 
@@ -489,16 +478,14 @@ end
 
 Update the transition matrix of an HMM.
 """
-function update_transition_matrix!(
-    model::AbstractHMM, FB_storage::ForwardBackward
-)
+function update_transition_matrix!(model::AbstractHMM, FB_storage::ForwardBackward)
     γ = FB_storage.γ
     ξ = FB_storage.ξ
 
     for i in 1:model.K
         for j in 1:model.K
             model.A[i, j] = exp(
-                logsumexp(@view ξ[i, j, :]) - logsumexp(@view γ[i, 1:end-1])
+                logsumexp(@view ξ[i, j, :]) - logsumexp(@view γ[i, 1:(end - 1)])
             )
         end
     end
@@ -512,12 +499,23 @@ function update_transition_matrix!(
     for j in 1:model.K
         for k in 1:model.K
             # Numerator: aggregated ξ[j, k, :]
-            num = exp(logsumexp(vcat([@view FB_trial.ξ[j, k, :] for FB_trial in FB_storage_vec]...)))
+            num = exp(
+                logsumexp(
+                    vcat([@view FB_trial.ξ[j, k, :] for FB_trial in FB_storage_vec]...)
+                ),
+            )
 
             # Denominator: aggregated ξ[j, :, :] over all t
-            denom = exp(logsumexp(vcat([
-                vec(@view FB_trial.γ[j, 1:end-1]) for FB_trial in FB_storage_vec
-            ]...)))
+            denom = exp(
+                logsumexp(
+                    vcat(
+                        [
+                            vec(@view FB_trial.γ[j, 1:(end - 1)]) for
+                            FB_trial in FB_storage_vec
+                        ]...,
+                    ),
+                ),
+            )
 
             model.A[j, k] = num / denom
         end
@@ -587,13 +585,18 @@ Fit the Hidden Markov Model using the EM algorithm.
 # Arguments
 - `model::HiddenMarkovModel`: The Hidden Markov Model to fit.
 - `Y::Matrix{<:Real}`: The emission data.
-- `X::Union{Matrix{<:Real}, Nothing}=nothing`: Optional input data for fitting Switching Regression Models
+- `X::Union{Matrix{<:Real}, Nothing}=nothing`: Optional input data for fitting Switching
+    Regression Models
 - `max_iters::Int=100`: The maximum number of iterations to run the EM algorithm.
-- `tol::Float64=1e-6`: When the log likelihood is improving by less than this value, the algorithm will stop.
+- `tol::Float64=1e-6`: When the log likelihood is improving by less than this value, the
+    algorithm will stop.
 """
 function fit!(
-    model::HiddenMarkovModel, Y::AbstractMatrix{T}, X::Union{AbstractMatrix{<:Real},Nothing}=nothing;
-    max_iters::Int=100, tol::Float64=1e-6,
+    model::HiddenMarkovModel,
+    Y::AbstractMatrix{T},
+    X::Union{AbstractMatrix{<:Real},Nothing}=nothing;
+    max_iters::Int=100,
+    tol::Float64=1e-6,
 ) where {T<:Real}
     lls = Vector{T}()
 
@@ -625,12 +628,10 @@ function fit!(
         end
         # M-Step
         mstep!(model, FB_storage, transpose_data)
-
     end
 
     return lls
 end
-
 
 """
     fit!(
@@ -646,9 +647,11 @@ Fit the Hidden Markov Model to multiple trials of data using the EM algorithm.
 # Arguments
 - `model::HiddenMarkovModel`: The Hidden Markov Model to fit.
 - `Y::Vector{<:Matrix{<:Real}}`: The trialized emission data.
-- `X::Union{Vector{<:Matrix{<:Real}}, Nothing}=nothing`: Optional input data for fitting Switching Regression Models
+- `X::Union{Vector{<:Matrix{<:Real}}, Nothing}=nothing`: Optional input data for fitting
+    Switching Regression Models
 - `max_iters::Int=100`: The maximum number of iterations to run the EM algorithm.
-- `tol::Float64=1e-6`: When the log likelihood is improving by less than this value, the algorithm will stop.
+- `tol::Float64=1e-6`: When the log likelihood is improving by less than this value, the
+    algorithm will stop.
 """
 function fit!(
     model::HiddenMarkovModel,
@@ -669,7 +672,10 @@ function fit!(
     total_obs = sum(size(trial_mat[1], 1) for trial_mat in zipped_matrices)
 
     # initialize a vector of ForwardBackward storage and an aggregate storage
-    FB_storage_vec = [initialize_forward_backward(model, size(trial_tuple[1],1), T) for trial_tuple in zipped_matrices]
+    FB_storage_vec = [
+        initialize_forward_backward(model, size(trial_tuple[1], 1), T) for
+        trial_tuple in zipped_matrices
+    ]
     Aggregate_FB_storage = initialize_forward_backward(model, total_obs, T)
 
     p = Progress(max_iters; desc="Running EM algorithm...", barlen=50, showspeed=true)
@@ -682,7 +688,9 @@ function fit!(
         aggregate_forward_backward!(Aggregate_FB_storage, FB_storage_vec)
 
         # Calculate log_likelihood
-        log_likelihood_current = sum([logsumexp(FB_vec.α[:, end]) for FB_vec in FB_storage_vec])
+        log_likelihood_current = sum([
+            logsumexp(FB_vec.α[:, end]) for FB_vec in FB_storage_vec
+        ])
         push!(lls, log_likelihood_current)
         next!(p)
 
@@ -704,7 +712,6 @@ function fit!(
     return lls
 end
 
-
 """
     class_probabilities(
         model::HiddenMarkovModel,
@@ -723,8 +730,11 @@ Calculate the class probabilities at each time point using forward backward algo
 # Returns
 - `class_probabilities::Matrix{Float64}`: The class probabilities at each timepoint
 """
-function class_probabilities(model::HiddenMarkovModel, Y::AbstractMatrix{T},
-    X::Union{AbstractMatrix{<:Real},Nothing}=nothing;) where {T<:Real}
+function class_probabilities(
+    model::HiddenMarkovModel,
+    Y::AbstractMatrix{T},
+    X::Union{AbstractMatrix{<:Real},Nothing}=nothing;
+) where {T<:Real}
     data = X === nothing ? (Y,) : (X, Y)
 
     # transpose data so that correct dimensions are passed to EmissionModels.jl, a bit hacky but works for now.
@@ -747,7 +757,8 @@ end
         X::Union{Vector{<:Matrix{<:Real}},Nothing}=nothing;
     )
 
-Calculate the class probabilities at each time point using forward backward algorithm on multiple trials of data
+Calculate the class probabilities at each time point using forward backward algorithm on
+multiple trials of data
 
 # Arguments
 - `model::HiddenMarkovModel`: The Hidden Markov Model to fit.
@@ -762,7 +773,7 @@ Calculate the class probabilities at each time point using forward backward algo
 function class_probabilities(
     model::HiddenMarkovModel,
     Y_trials::Vector{<:Matrix{<:Real}},
-    X_trials::Union{Vector{<:Matrix{<:Real}}, Nothing} = nothing,
+    X_trials::Union{Vector{<:Matrix{<:Real}},Nothing}=nothing,
 )
     n_trials = length(Y_trials)
     # Preallocate storage for class probabilities
@@ -776,7 +787,6 @@ function class_probabilities(
 
     return all_class_probs
 end
-
 
 """
     viterbi(
@@ -841,8 +851,8 @@ function viterbi(
     _, best_last_state = findmax(@view viterbi_storage[:, end])
     best_path[end] = best_last_state
 
-    for t in num_timepoints-1:-1:1
-        best_path[t] = backpointers[best_path[t+1], t+1]
+    for t in (num_timepoints - 1):-1:1
+        best_path[t] = backpointers[best_path[t + 1], t + 1]
     end
 
     return best_path

@@ -1,6 +1,6 @@
 export GaussianHMM
-export SwitchingGaussianRegression, SwitchingBernoulliRegression,
-    SwitchingPoissonRegression, SwitchingAutoRegression
+export SwitchingGaussianRegression,
+    SwitchingBernoulliRegression, SwitchingPoissonRegression, SwitchingAutoRegression
 
 """
     GaussianHMM(;
@@ -74,10 +74,7 @@ Create a Switching Gaussian Regression Model
 - `::HiddenMarkovModel`: A Switching Gaussian Regression Model
 """
 function SwitchingGaussianRegression(;
-    K::Int,
-    emissions::AbstractVector,
-    A::AbstractMatrix,
-    πₖ::AbstractVector,
+    K::Int, emissions::AbstractVector, A::AbstractMatrix, πₖ::AbstractVector
 )
     # Return the HiddenMarkovModel
     return HiddenMarkovModel(; K=K, B=emissions, A=A, πₖ=πₖ)
@@ -120,10 +117,7 @@ Create a Switching AutoRegression Model
 - `::HiddenMarkovModel`: A Switching AutoRegression Model
 """
 function SwitchingAutoRegression(;
-    K::Int,
-    A::AbstractMatrix,
-    πₖ::AbstractVector,
-    emissions::AbstractVector,
+    K::Int, A::AbstractMatrix, πₖ::AbstractVector, emissions::AbstractVector
 )
     return HiddenMarkovModel(; K=K, B=emissions, A=A, πₖ=πₖ)
 end
@@ -160,20 +154,13 @@ Create a Switching Bernoulli Regression Model
 - `::HiddenMarkovModel`: A Switching Bernoulli Regression Model
 """
 function SwitchingBernoulliRegression(;
-    K::Int,
-    A::AbstractMatrix,
-    πₖ::AbstractVector,
-    emissions::AbstractVector,
+    K::Int, A::AbstractMatrix, πₖ::AbstractVector, emissions::AbstractVector
 )
     return HiddenMarkovModel(; K=K, B=emissions, A=A, πₖ=πₖ)
 end
 
-
 function SwitchingPoissonRegression(;
-    K::Int,
-    A::AbstractMatrix,
-    πₖ::AbstractVector,
-    emissions::AbstractVector,
+    K::Int, A::AbstractMatrix, πₖ::AbstractVector, emissions::AbstractVector
 )
     return HiddenMarkovModel(; K=K, B=emissions, A=A, πₖ=πₖ)
 end

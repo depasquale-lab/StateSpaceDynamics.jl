@@ -14,7 +14,7 @@ mutable struct SwitchingLinearDynamicalSystem{
     T<:Real,
     M<:AbstractMatrix{T},
     V<:AbstractVector{T},
-    VL<:AbstractVector{<:LinearDynamicalSystem}
+    VL<:AbstractVector{<:LinearDynamicalSystem},
 } <: AbstractHMM
     A::M
     B::VL
@@ -22,7 +22,7 @@ mutable struct SwitchingLinearDynamicalSystem{
     K::Int
 end
 
-function Base.show(io::IO, slds::SwitchingLinearDynamicalSystem; gap = "")
+function Base.show(io::IO, slds::SwitchingLinearDynamicalSystem; gap="")
     println(io, gap, "Switching Linear Dynamical System:")
     println(io, gap, "----------------------------------")
 
@@ -41,13 +41,13 @@ function Base.show(io::IO, slds::SwitchingLinearDynamicalSystem; gap = "")
 
     if slds.K > 4 && !show_all
         for lds in slds.B[1:3]
-            Base.show(io, lds, gap = gap * "  ")
+            Base.show(io, lds; gap=gap * "  ")
             println(io, gap, "  --------------")
         end
         println(io, gap, "  $(slds.K-3) more ..., see `print_full()`")
     else
         for (i, lds) in enumerate(slds.B)
-            Base.show(io, lds; gap = gap * "  ")
+            Base.show(io, lds; gap=gap * "  ")
             if i < slds.K
                 println(io, gap, "  --------------")
             end
@@ -82,17 +82,19 @@ function Random.rand(rng::AbstractRNG, slds::SwitchingLinearDynamicalSystem, T::
     # Sample initial mode
     z[1] = rand(rng, Categorical(slds.πₖ / sum(slds.πₖ)))
     x[:, 1] = rand(rng, MvNormal(zeros(state_dim), slds.B[z[1]].state_model.Q))
-    y[:, 1] = rand(rng, MvNormal(slds.B[z[1]].obs_model.C * x[:, 1], slds.B[z[1]].obs_model.R))
+    y[:, 1] = rand(
+        rng, MvNormal(slds.B[z[1]].obs_model.C * x[:, 1], slds.B[z[1]].obs_model.R)
+    )
 
     @views for t in 2:T
         # Sample mode based on transition probabilities
-        z[t] = rand(Categorical(slds.A[z[t-1], :] ./ sum(slds.A[z[t-1], :])))
+        z[t] = rand(Categorical(slds.A[z[t - 1], :] ./ sum(slds.A[z[t - 1], :])))
         # Update latent state and observation
         x[:, t] = rand(
-          MvNormal(slds.B[z[t]].state_model.A * x[:, t-1], slds.B[z[t]].state_model.Q)
+            MvNormal(slds.B[z[t]].state_model.A * x[:, t - 1], slds.B[z[t]].state_model.Q)
         )
         y[:, t] = rand(
-          MvNormal(slds.B[z[t]].obs_model.C * x[:, t], slds.B[z[t]].obs_model.R)
+            MvNormal(slds.B[z[t]].obs_model.C * x[:, t], slds.B[z[t]].obs_model.R)
         )
     end
 
@@ -108,7 +110,9 @@ end
 
 Initialize a Switching Linear Dynamical System with random parameters.
 """
-function initialize_slds(;K::Int=2, d::Int=2, p::Int=10, self_bias::Float64=5.0, seed::Int=42)
+function initialize_slds(;
+    K::Int=2, d::Int=2, p::Int=10, self_bias::Float64=5.0, seed::Int=42
+)
     Random.seed!(seed)
 
     # Transition matrix using Dirichlet with self-bias
@@ -143,12 +147,12 @@ function initialize_slds(;K::Int=2, d::Int=2, p::Int=10, self_bias::Float64=5.0,
         angle_factor = 2π * (k-1) / K
 
         # Add rotation components in 2D subspaces
-        for i in 1:2:d-1
+        for i in 1:2:(d - 1)
             if i+1 <= d  # Ensure we have a pair
                 # Create a 2D rotation with different angles for each state
                 theta = 0.1 + angle_factor + (i-1)*0.2
                 rotation = 0.95 * [cos(theta) -sin(theta); sin(theta) cos(theta)]
-                F[i:i+1, i:i+1] = rotation
+                F[i:(i + 1), i:(i + 1)] = rotation
             end
         end
 
@@ -196,8 +200,7 @@ algorithm with Kalman smoothing.
 - `FS::FilterSmooth`: FilterSmooth struct
 """
 function fit!(
-    slds::AbstractHMM, y::AbstractMatrix{T};
-    max_iter::Int=1000, tol::Real=1e-3,
+    slds::AbstractHMM, y::AbstractMatrix{T}; max_iter::Int=1000, tol::Real=1e-3
 ) where {T<:Real}
 
     # Initialize log-likelihood
@@ -209,9 +212,7 @@ function fit!(
 
     sizehint!(mls, max_iter)  # Pre-allocate for efficiency
 
-    prog = Progress(
-        max_iter; desc="Fitting SLDS via vEM...", barlen=50, showspeed=true
-    )
+    prog = Progress(max_iter; desc="Fitting SLDS via vEM...", barlen=50, showspeed=true)
 
     K = slds.K
     T_step = size(y, 2)
@@ -226,12 +227,14 @@ function fit!(
 
     # Run the Kalman Smoother for each model
     for k in 1:slds.K
-      #3. compute xs from hs
-        FS[k].x_smooth, FS[k].p_smooth, inverse_offdiag, total_entropy = smooth(slds.B[k], y, exp.(FB.γ[k,:]))
+        #3. compute xs from hs
+        FS[k].x_smooth, FS[k].p_smooth, inverse_offdiag, total_entropy = smooth(
+            slds.B[k], y, exp.(FB.γ[k, :])
+        )
         FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev = sufficient_statistics(
             reshape(FS[k].x_smooth, size(FS[k].x_smooth)..., 1),
             reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1),
-            reshape(inverse_offdiag, size(inverse_offdiag)..., 1)
+            reshape(inverse_offdiag, size(inverse_offdiag)..., 1),
         )
     end
 
@@ -298,14 +301,14 @@ function variational_expectation!(
     y::AbstractMatrix{T},
     FB::ForwardBackward,
     FS::Vector{FilterSmooth{T}},
-    ) where {T<:Real}
+) where {T<:Real}
     # For now a hardcoded tolerance
     tol = 1e-6
 
     # Get starting point for iterative E-step
     γ = FB.γ
     hs = exp.(γ)
-    ml_total = 0.
+    ml_total = 0.0
 
     # Initialize to something higher than the tolerance
     ml_diff = 1
@@ -331,11 +334,13 @@ function variational_expectation!(
 
         for k in 1:model.K
             #3. compute xs from hs
-            FS[k].x_smooth, FS[k].p_smooth, inverse_offdiag, total_entropy = smooth(model.B[k], y, vec(hs[k,:]))
+            FS[k].x_smooth, FS[k].p_smooth, inverse_offdiag, total_entropy = smooth(
+                model.B[k], y, vec(hs[k, :])
+            )
             FS[k].E_z, FS[k].E_zz, FS[k].E_zz_prev = sufficient_statistics(
                 reshape(FS[k].x_smooth, size(FS[k].x_smooth)..., 1),
                 reshape(FS[k].p_smooth, size(FS[k].p_smooth)..., 1),
-                reshape(inverse_offdiag, size(inverse_offdiag)..., 1)
+                reshape(inverse_offdiag, size(inverse_offdiag)..., 1),
             )
 
             # Calculate the ELBO contribution for the current SSM
@@ -347,7 +352,7 @@ function variational_expectation!(
                 reshape(FS[k].p_smooth, (size(FS[k].p_smooth)..., 1)),
                 reshape(y, (size(y)..., 1)),
                 total_entropy,
-                vec(hs[k,:])
+                vec(hs[k, :]),
             )
             ml_total += elbo
         end
@@ -359,7 +364,7 @@ function variational_expectation!(
         ml_prev = ml_total
     end
 
-  return ml_total, ml_storage
+    return ml_total, ml_storage
 end
 
 """
@@ -411,33 +416,27 @@ Compute the variational distributions (`qs`) and update the log-likelihoods for 
 Gaussian observation models within a Forward-Backward framework.
 """
 function variational_qs!(
-    model::AbstractVector{<:GaussianObservationModel{T, <:AbstractMatrix{T}}},
+    model::AbstractVector{<:GaussianObservationModel{T,<:AbstractMatrix{T}}},
     FB::ForwardBackward,
     y::AbstractMatrix{T},
     FS::Vector{FilterSmooth{T}},
 ) where {T<:Real}
-
     T_steps = size(y, 2)
     K = length(model)
 
     @threads for k in 1:K
-
         R_chol = cholesky(Symmetric(model[k].R))
         C = model[k].C
 
         @views @inbounds for t in 1:T_steps
-            FB.loglikelihoods[k, t] = -0.5 * tr(R_chol \ Q_obs(
-                C,
-                FS[k].E_z[:, t, 1],
-                FS[k].E_zz[:, :, t, 1],
-                y[:, t]
-            ))
+            FB.loglikelihoods[k, t] =
+                -0.5 *
+                tr(R_chol \ Q_obs(C, FS[k].E_z[:, t, 1], FS[k].E_zz[:, :, t, 1], y[:, t]))
         end
     end
 
     return nothing
 end
-
 
 """
     mstep!(
@@ -455,7 +454,6 @@ function mstep!(
     y::AbstractMatrix{T},
     FB::ForwardBackward,
 ) where {T<:Real}
-
     K = slds.K
 
     #update initial state distribution
@@ -476,7 +474,9 @@ function mstep!(
         update_initial_state_covariance!(slds.B[k], FS[k].E_z, FS[k].E_zz)
         update_A!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
         update_Q!(slds.B[k], FS[k].E_zz, FS[k].E_zz_prev)
-        update_C!(slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)...,1), vec(hs[k,:]))
+        update_C!(
+            slds.B[k], FS[k].E_z, FS[k].E_zz, reshape(y, size(y)..., 1), vec(hs[k, :])
+        )
 
         # In this case, we are not updating R. Empirically we have found this matrix causes
         # numerical instability, and we can fix without loss of generality. In future, we
