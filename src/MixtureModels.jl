@@ -13,6 +13,56 @@ mutable struct GaussianMixtureModel{T<:Real,M<:AbstractMatrix{T},V<:AbstractVect
     πₖ::V             # Mixing coefficients (K)
 end
 
+function Base.show(io::IO, gmm::GaussianMixtureModel; gap = "")
+    D = size(gmm.μₖ,1)
+
+    println(io, gap, "Gaussian Mixture Model:")
+    println(io, gap, " dimension D = $D")
+
+    if D > 4
+        println(io, gap, " size(μₖ) = ($(size(gmm.μₖ,1)),)")
+        println(io, gap, " size(Σₖ) = ($(size(gmm.Σₖ[1],1)), $(size(gmm.Σₖ[1],2)))")
+    end
+
+    println(io, gap, "-----------------------")
+
+    show_all = get(io, :limit, true) == false
+
+    if gmm.k > 4 && !show_all
+        for k in 1:3
+            println(io, gap, " Gaussian $k:")
+            println(io, gap, " -----------")
+
+            if D > 4
+                println(io, gap, "  πₖ = $(round(gmm.πₖ[k], sigdigits=3))")
+            else
+                println(io, gap, "  μₖ = $(round.(gmm.μₖ[:, k], digits=3))")
+                println(io, gap, "  Σₖ = $(round.(gmm.Σₖ[k], digits=3))")
+                println(io, gap, "  πₖ = $(round(gmm.πₖ[k], sigdigits=3))")
+            end
+            println(io, gap, " -----------")
+        end
+        println(io, gap, "  $(gmm.k - 3) more ..., see `print_full()`")
+    else
+        for k in 1:gmm.k
+            println(io, gap, " Gaussian $k:")
+            println(io, gap, " -----------")
+
+            if D > 4
+                println(io, gap, "  πₖ = $(round(gmm.πₖ[k], sigdigits=3))")
+            else
+                println(io, gap, "  μₖ = $(round.(gmm.μₖ[:, k], digits=3))")
+                println(io, gap, "  Σₖ = $(round.(gmm.Σₖ[k], digits=3))")
+                println(io, gap, "  πₖ = $(round(gmm.πₖ[k], sigdigits=3))")
+            end
+
+            if k < gmm.k
+                println(io, gap, " -----------")
+            end
+        end
+    end
+end
+
 """
     GaussianMixtureModel(k::Int, data_dim::Int)
     
@@ -176,6 +226,34 @@ mutable struct PoissonMixtureModel{T<:Real,V<:AbstractVector{T}} <: MixtureModel
     πₖ::V
 end
 
+function Base.show(io::IO, pmm::PoissonMixtureModel; gap = "")
+    println(io, gap, "Poisson Mixture Model:")
+    println(io, gap, "----------------------")
+
+    show_all = get(io, :limit, true) == false
+    
+    if pmm.k > 4 && !show_all
+        for k in 1:3
+            println(io, gap, " Poisson $k:")
+            println(io, gap, " ----------")
+            println(io, gap, "  λₖ = $(round(pmm.λₖ[k], sigdigits=3))")
+            println(io, gap, "  πₖ = $(round(pmm.πₖ[k], sigdigits=3))")
+            println(io, gap, " ----------")
+        end
+        println(io, gap, "  $(pmm.k - 3) more ..., see `print_full()`")
+    else
+        for k in 1:pmm.k
+            println(io, gap, " Poisson $k:")
+            println(io, gap, " ----------")
+            println(io, gap, "  λₖ = $(round(pmm.λₖ[k], sigdigits=3))")
+            println(io, gap, "  πₖ = $(round(pmm.πₖ[k], sigdigits=3))")
+
+            if k < pmm.k
+                println(io, gap, " ----------")
+            end
+        end
+    end
+end
 
 """
     PoissonMixtureModel(k::Int)

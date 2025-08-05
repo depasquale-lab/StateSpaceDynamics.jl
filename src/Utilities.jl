@@ -2,6 +2,7 @@ export kmeanspp_initialization,
     kmeans_clustering, fit!, block_tridgm, block_tridiagonal_inverse, block_tridiagonal_inverse_static
 export row_matrix, stabilize_covariance_matrix, valid_Σ, make_posdef!, gaussian_entropy
 export random_rotation_matrix
+export print_full
 
 # Type checking utilities
 """
@@ -513,3 +514,18 @@ function Base.setproperty!(model::AutoRegressiveEmission, sym::Symbol, value)
         setfield!(model, sym, value)
     end
 end
+
+# Pretty print function that doesn't truncate arrays of model objects
+
+"""
+    print_full([io::Union{IO, Base.TTY}, ] obj)
+
+Prints full description of object `obj`, overriding both `io`-based limits as
+well as the limits set in the default pretty printing of `StateSpaceDynamics`
+objects.
+"""
+function print_full(io::Union{IO, Base.TTY}, obj)
+    println(IOContext(io, :limit => false), obj)
+end
+
+print_full(obj) = print_full(stdout, obj)

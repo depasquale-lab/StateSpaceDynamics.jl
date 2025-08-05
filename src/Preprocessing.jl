@@ -1,5 +1,6 @@
 # Public API
 export ProbabilisticPCA, loglikelihood, fit!
+
 mutable struct ProbabilisticPCA{T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector{T}}
     W::M
     σ²::T
@@ -12,6 +13,20 @@ mutable struct ProbabilisticPCA{T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector
         D, k = size(W)
         z = Matrix{T}(undef, k, 0)  # placeholder, filled after E-step
         new{T, typeof(W), typeof(μ)}(W, σ², μ, k, D, z)
+    end
+end
+
+function Base.show(io::IO, ppca::ProbabilisticPCA; gap = "")
+    println(io, gap, "Probabilistic PCA Model:")
+    println(io, gap, "------------------------")
+    println(io, gap, " size(W) = ($(size(ppca.W,1)), $(size(ppca.W,2)))")
+    println(io, gap, " size(z) = ($(size(ppca.z,1)), $(size(ppca.z,2)))")
+    println(io, gap, "      σ² = $(round(ppca.σ², digits=2))")
+    
+    if length(ppca.μ) > 6
+        println(io, gap, " size(μ) = ($(length(ppca.μ)),)")
+    else
+        println(io, gap, "      μ  = $(round.(ppca.μ, digits=2))")
     end
 end
 
