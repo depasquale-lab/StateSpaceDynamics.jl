@@ -10,34 +10,42 @@ function test_GaussianMixtureModel_properties(gmm::GaussianMixtureModel, k::Int,
     @test isapprox(sum(gmm.πₖ), 1.0; atol=1e-6)
 end
 
-function testGaussianMixtureModel_EStep(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
+function testGaussianMixtureModel_EStep(
+    gmm::GaussianMixtureModel, data::Union{Matrix{Float64},Vector{Float64}}
+)
     data = isa(data, Vector) ? reshape(data, :, 1) : data
     D, N = size(data)
     k = gmm.k
     class_probabilities = StateSpaceDynamics.estep(gmm, data)
     @test size(class_probabilities) == (k, N)
     @test all(x -> isapprox(x, 1.0; atol=1e-6), sum(class_probabilities; dims=1))
-    test_GaussianMixtureModel_properties(gmm, k, D)
+    return test_GaussianMixtureModel_properties(gmm, k, D)
 end
 
-function testGaussianMixtureModel_MStep(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
+function testGaussianMixtureModel_MStep(
+    gmm::GaussianMixtureModel, data::Union{Matrix{Float64},Vector{Float64}}
+)
     data = isa(data, Vector) ? reshape(data, :, 1) : data
     D, _ = size(data)
     k = gmm.k
     γ = StateSpaceDynamics.estep(gmm, data)
     StateSpaceDynamics.mstep!(gmm, data, γ)
-    test_GaussianMixtureModel_properties(gmm, k, D)
+    return test_GaussianMixtureModel_properties(gmm, k, D)
 end
 
-function testGaussianMixtureModel_fit(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
+function testGaussianMixtureModel_fit(
+    gmm::GaussianMixtureModel, data::Union{Matrix{Float64},Vector{Float64}}
+)
     data = isa(data, Vector) ? reshape(data, :, 1) : data
     D, _ = size(data)
     k = gmm.k
     fit!(gmm, data; maxiter=10, tol=1e-3)
-    test_GaussianMixtureModel_properties(gmm, k, D)
+    return test_GaussianMixtureModel_properties(gmm, k, D)
 end
 
-function test_loglikelihood(gmm::GaussianMixtureModel, data::Union{Matrix{Float64}, Vector{Float64}})
+function test_loglikelihood(
+    gmm::GaussianMixtureModel, data::Union{Matrix{Float64},Vector{Float64}}
+)
     data = isa(data, Vector) ? reshape(data, :, 1) : data
     ll = StateSpaceDynamics.loglikelihood(gmm, data)
     @test isa(ll, Float64)
