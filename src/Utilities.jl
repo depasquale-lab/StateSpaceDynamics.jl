@@ -101,7 +101,8 @@ end
 """
     block_tridiagonal_inverse_static(A, B, C)
 
-Compute the inverse of a block tridiagonal matrix using static matrices. See `block_tridiagonal_inverse` for details.
+Compute the inverse of a block tridiagonal matrix using static matrices. See
+`block_tridiagonal_inverse` for details.
 """
 function block_tridiagonal_inverse_static(
     A::Vector{<:AbstractMatrix{T}},
@@ -175,7 +176,8 @@ end
 Construct a block tridiagonal matrix from three vectors of matrices.
 
 # Throws
-- `ErrorException` if the lengths of `upper_diag` and `lower_diag` are not one less than the length of `main_diag`.
+- `ErrorException` if the lengths of `upper_diag` and `lower_diag` are not one less than the
+    length of `main_diag`.
 """
 function block_tridgm(
     main_diag::Vector{<:AbstractMatrix{T}},
