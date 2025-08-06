@@ -105,17 +105,25 @@ BenchmarkTools.DEFAULT_PARAMETERS.seconds = 1.0
 # HMM Benchmarks
 # ----------------------
 
+# hmm_config = BenchConfig(
+#     [2, 4, 6, 8],  # num_states
+#     [1],           # emission_dim
+#     [100, 500, 1000],  # seq_lengths
+#     100,
+#     5
+# )
+
 hmm_config = BenchConfig(
-    [2, 4, 6, 8],  # num_states
+    [2, 4],  # num_states
     [1],           # emission_dim
-    [100, 500, 1000],  # seq_lengths
+    [100, 500],  # seq_lengths
     100,
     5
 )
 
 hmm_implementations = [
-    SSD_HMMImplem(),
-    HiddenMarkovModels_Implem(),
+    # SSD_HMMImplem(),
+    # HiddenMarkovModels_Implem(),
     Dynamax_HMMImplem()
 ]
 
@@ -137,7 +145,8 @@ for num_states in hmm_config.latent_dims
 
         for impl in hmm_implementations
             print("  Running $(string(impl))... ")
-            try
+            # try
+                println("GENERATING MODEL")
                 model = build_model(impl, instance, params)
                 result = run_benchmark(impl, model, y[1])
                 results_row[string(impl)] = result
@@ -147,10 +156,10 @@ for num_states in hmm_config.latent_dims
                 else
                     println("✗ failed")
                 end
-            catch e
-                results_row[string(impl)] = (time=NaN, memory=0, allocs=0, success=false)
-                println("✗ exception: ", e)
-            end
+            # catch e
+            #     results_row[string(impl)] = (time=NaN, memory=0, allocs=0, success=false)
+            #     println("✗ exception: ", e)
+            # end
         end
 
         push!(hmm_results, results_row)

@@ -109,17 +109,48 @@ function run_benchmark(::Dynamax_HMMImplem, model::Tuple{Any, Any, Any}, data::V
 
     (hmm, params, props) = model 
 
-    # Mark num_iters as static
-    fit_fn = jax.jit(hmm.fit_em, static_argnums=3)
+    # # Mark num_iters as static
+    # fit_fn = jax.jit(hmm.fit_em, static_argnums=3)
+
+    println("double done")
+
+    println("params: ", params)
+    println("props: ", props)
+    println("data type: ", typeof(data))
+    println("data.shape: ", data.shape)
+    println("data: ", data)
+    @assert !isnothing(data) "Data is None after reshape"
+
+    println("data is None? ", data === py"None")
+    println("params is None? ", params === py"None")
+    println("props is None? ", props === py"None")
+
+
 
     bench = @benchmark begin
-        params, lps = $fit_fn(
+        params, lps = $hmm.fit_em(
             $params,
             $props,
             $data,
             100
         )
     end samples=5
+
+
+    # params, lps = fit_fn(params, props, data, 100)
+
+    # bench = @benchmark begin
+    #     params, lps = $fit_fn(
+    #         $params,
+    #         $props,
+    #         $data,
+    #         100
+    #     )
+    # end samples=5
+
+
+    println("triple done")
+
     return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
 end
 

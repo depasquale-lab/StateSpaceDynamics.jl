@@ -1,0 +1,5 @@
+implementation,num_states,seq_len,time_sec,memory,allocs,success
+Dynamax.jl,2,100,NaN,0,0,false
+Dynamax.jl,2,500,NaN,0,0,false
+Dynamax.jl,4,100,NaN,0,0,false
+Dynamax.jl,4,500,NaN,0,0,false
