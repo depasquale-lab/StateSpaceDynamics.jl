@@ -62,7 +62,7 @@ function test_SwitchingGaussianRegression_fit()
         isapprox(hmm.dists[2].β, true_model.dists[1].β; atol=0.1)
 
     # Test that the ll is always increasing
-    # @test any(diff(lls) .< -1e-3) == false
+    @test any(diff(lls) .< -1e-3) == false
 end
 
 function test_SwitchingGaussianRegression_SingleState_fit()
@@ -96,7 +96,7 @@ function test_SwitchingGaussianRegression_SingleState_fit()
     @test isapprox(hmm.dists[1].β, true_model.dists[1].β, atol=0.1)
 
     # Test that the ll is always increasing
-    # @test any(diff(lls) .< -1e-3) == false
+    @test any(diff(lls) .< -1e-3) == false
 end
 
 function test_trialized_SwitchingGaussianRegression()

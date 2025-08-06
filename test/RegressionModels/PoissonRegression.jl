@@ -116,23 +116,67 @@ function test_PoissonRegression_sklearn()
     base_model = PoissonRegressionEmission(; input_dim=1, output_dim=1, include_intercept=true, β=reshape([0.2, 0.5],:,1), λ=0.0)
     fit!(base_model, X, y)
 
-    @test isapprox(base_model.β, [-2.405, 0.7125], atol=1e-3)
+    @test isapprox(base_model.β, [-2.4055, 0.7126], atol=1e-3)
 
     # now test with regularization
     regularized_model = PoissonRegressionEmission(; input_dim=1, output_dim=1, include_intercept=true, β=reshape([0.2, 0.5],:,1), λ=1.0)
     fit!(regularized_model, X, y)
 
-    @test_broken isapprox(regularized_model.β, [-1.1618, 0.3195], atol=1e-3)
+    @test_broken isapprox(regularized_model.β, [-1.1618, 0.3196], atol=1e-3)
 
     # test with regularization
     weighted_model = PoissonRegressionEmission(; input_dim=1, output_dim=1, include_intercept=true, β=reshape([0.2, 0.5],:,1), λ=0.0)
     fit!(weighted_model, X, y, w)
 
-    @test isapprox(weighted_model.β, [-3.8794, 1.3505], atol=1e-3)
+    @test isapprox(weighted_model.β, [-3.8796, 1.3505], atol=1e-3)
 
     # test with weights and regularization
     rw_model = PoissonRegressionEmission(; input_dim=1, output_dim=1, include_intercept=true, β=reshape([0.2, 0.5],:,1), λ=1.0)
     fit!(rw_model, X, y, w)
 
     @test_broken isapprox(rw_model.β, [-1.3611, 0.4338], atol=1e-3)
+end
+
+function test_PoissonRegression_sklearn_more_data()
+
+    rng = MersenneTwister(42) # same random object as python random seed 
+    n = 10000
+
+    X_vec = rand(rng, Uniform(0, 10), n)
+    X = reshape(X_vec, 1, :)
+
+    true_coef = 0.6
+    true_intercept = -1.0
+
+    η = true_intercept .+ true_coef .* X
+    λ = exp.(η)
+
+    y_vec = [rand(rng, Poisson(λ[t])) for t in 1:n]
+    y = reshape(y_vec, 1, :)
+
+    w = rand(rng, Uniform(0.5, 2.0), n)
+
+    base_model = PoissonRegressionEmission(; input_dim=1, output_dim=1, include_intercept=true, β=reshape([0.2, 0.5],:,1), λ=0.0)
+    fit!(base_model, X, y)
+
+    @test_broken isapprox(base_model.β, [-1.02332, 0.6039], atol=1e-2)
+
+    # now test with regularization
+    regularized_model = PoissonRegressionEmission(; input_dim=1, output_dim=1, include_intercept=true, β=reshape([0.2, 0.5],:,1), λ=1.0)
+    fit!(regularized_model, X, y)
+
+    @test_broken isapprox(regularized_model.β, [-0.94345, 0.59434], atol=1e-2)
+
+    # test with regularization
+    weighted_model = PoissonRegressionEmission(; input_dim=1, output_dim=1, include_intercept=true, β=reshape([0.2, 0.5],:,1), λ=0.0)
+    fit!(weighted_model, X, y, w)
+
+    @test_broken isapprox(weighted_model.β, [-1.04221, 0.60569], atol=1e-2)
+
+    # test with weights and regularization
+    rw_model = PoissonRegressionEmission(; input_dim=1, output_dim=1, include_intercept=true, β=reshape([0.2, 0.5],:,1), λ=1.0)
+    fit!(rw_model, X, y, w)
+
+    @test_broken isapprox(rw_model.β, [-0.96044, 0.5958], atol=1e-2)
+
 end

@@ -260,6 +260,7 @@ include("RegressionModels/PoissonRegression.jl")
     test_PoissonRegression_sample()
     test_PoissonRegression_optimization()
     test_PoissonRegression_sklearn()
+    test_PoissonRegression_sklearn_more_data()
 end
 
 include("RegressionModels/AutoRegression.jl")
