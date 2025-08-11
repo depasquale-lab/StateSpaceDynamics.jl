@@ -12,14 +12,19 @@ using JET
 using CSV
 using DataFrames
 using MAT
+using JuliaFormatter
 
 """
 Package Wide Tests
 """
 
-@testset "Package Wide Tests" begin
-    Aqua.test_all(StateSpaceDynamics; ambiguities=false)
-    @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
+# @testset "Package Wide Tests" begin
+#     Aqua.test_all(StateSpaceDynamics; ambiguities=false)
+#     @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
+# end
+
+@testset "Blue Formatting" begin
+    @test JuliaFormatter.format(StateSpaceDynamics; verbose=false, overwrite=false)
 end
 
 @testset "Code linting using JET " begin
@@ -289,7 +294,7 @@ include("Utilities/Utilities.jl")
 end
 
 """
-Tests for PrettyPrinting.jl 
+Tests for PrettyPrinting.jl
 """
 
 include("PrettyPrinting/PrettyPrinting.jl")

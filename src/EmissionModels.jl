@@ -21,9 +21,8 @@ Gaussian Emission Models
 
 GaussianEmission model with mean and covariance.
 """
-mutable struct GaussianEmission{
-    T<:Real,V<:AbstractVector{T},M<:AbstractMatrix{T}
-} <: EmissionModel
+mutable struct GaussianEmission{T<:Real,V<:AbstractVector{T},M<:AbstractMatrix{T}} <:
+               EmissionModel
     output_dim::Int # dimension of the data
     μ::V  # mean
     Σ::M  # covariance matrix
