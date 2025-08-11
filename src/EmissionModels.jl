@@ -16,17 +16,21 @@ export loglikelihood, fit!
 Gaussian Emission Models
 =#
 
+#! format: off
+# the formatting for this particular struct the JuliaFormatter package just gets wrong
 """
     mutable struct GaussianEmission <: EmissionModel
 
 GaussianEmission model with mean and covariance.
 """
-mutable struct GaussianEmission{T<:Real,V<:AbstractVector{T},M<:AbstractMatrix{T}} <:
-               EmissionModel
+mutable struct GaussianEmission{
+    T<:Real,V<:AbstractVector{T},M<:AbstractMatrix{T}
+}<:EmissionModel
     output_dim::Int # dimension of the data
     μ::V  # mean
     Σ::M  # covariance matrix
 end
+#! format: on
 
 function Base.show(io::IO, ge::GaussianEmission; gap="")
     println(io, gap, "Gaussian Emission model:")
