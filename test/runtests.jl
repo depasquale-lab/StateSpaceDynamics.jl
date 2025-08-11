@@ -1,18 +1,18 @@
-using StateSpaceDynamics
+using Aqua
+using CSV
+using DataFrames
 using Distributions
 using ForwardDiff
+using JET
+using JuliaFormatter
 using LinearAlgebra
+using MAT
 using Optim
 using Random
+using StateSpaceDynamics
 using StatsFuns
 using SpecialFunctions
 using Test
-using Aqua
-using JET
-using CSV
-using DataFrames
-using MAT
-using JuliaFormatter
 
 """
 Package Wide Tests
