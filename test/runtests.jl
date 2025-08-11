@@ -18,10 +18,10 @@ using JuliaFormatter
 Package Wide Tests
 """
 
-# @testset "Package Wide Tests" begin
-#     Aqua.test_all(StateSpaceDynamics; ambiguities=false)
-#     @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
-# end
+@testset "Package Wide Tests" begin
+    Aqua.test_all(StateSpaceDynamics; ambiguities=false)
+    @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
+end
 
 @testset "Blue Formatting" begin
     @test JuliaFormatter.format(StateSpaceDynamics; verbose=false, overwrite=false)
