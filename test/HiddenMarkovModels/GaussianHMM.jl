@@ -9,14 +9,14 @@ function test_SwitchingGaussian_fit()
     # Initialize the emission models
     μ_1 = [0.0, 0.0]
     Σ_1 = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
-    emission_1 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)
+    emission_1 = GaussianEmission(; output_dim=output_dim, μ=μ_1, Σ=Σ_1)
 
     μ_2 = [2.0, 1.0]
     Σ_2 = 0.2 * Matrix{Float64}(I, output_dim, output_dim)
-    emission_2 = GaussianEmission(output_dim=output_dim, μ=μ_2, Σ=Σ_2)
+    emission_2 = GaussianEmission(; output_dim=output_dim, μ=μ_2, Σ=Σ_2)
 
     # The general HMM constructor is used as follows
-    true_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
+    true_model = HiddenMarkovModel(; K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
 
     # Sample from the model
     n = 50000
@@ -25,15 +25,15 @@ function test_SwitchingGaussian_fit()
     # Initialize a new GaussianHMM
     μ_1 = rand(output_dim)
     Σ_1 = 0.3 * Matrix{Float64}(I, output_dim, output_dim)
-    emission_1 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)
+    emission_1 = GaussianEmission(; output_dim=output_dim, μ=μ_1, Σ=Σ_1)
 
     μ_2 = rand(output_dim)
     Σ_2 = 0.5 * Matrix{Float64}(I, output_dim, output_dim)
-    emission_2 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)
+    emission_2 = GaussianEmission(; output_dim=output_dim, μ=μ_1, Σ=Σ_1)
 
     A = [0.8 0.2; 0.05 0.95]
-    πₖ = [0.6,0.4]
-    test_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
+    πₖ = [0.6, 0.4]
+    test_model = HiddenMarkovModel(; K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
 
     # Fit the model to recover the original parameters
     ll = StateSpaceDynamics.fit!(test_model, data)
@@ -66,13 +66,13 @@ function test_SwitchingGaussian_fit_float32()
     # True emission models
     μ_1 = Float32[0.0, 0.0]
     Σ_1 = 0.1f0 * Matrix{Float32}(I, output_dim, output_dim)
-    emission_1 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)
+    emission_1 = GaussianEmission(; output_dim=output_dim, μ=μ_1, Σ=Σ_1)
 
     μ_2 = Float32[2.0, 1.0]
     Σ_2 = 0.2f0 * Matrix{Float32}(I, output_dim, output_dim)
-    emission_2 = GaussianEmission(output_dim=output_dim, μ=μ_2, Σ=Σ_2)
+    emission_2 = GaussianEmission(; output_dim=output_dim, μ=μ_2, Σ=Σ_2)
 
-    true_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
+    true_model = HiddenMarkovModel(; K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
 
     # Sample from the model
     n = 50_000
@@ -81,15 +81,15 @@ function test_SwitchingGaussian_fit_float32()
     # Random initialization for fitting model
     μ_1 = rand(Float32, output_dim)
     Σ_1 = 0.3f0 * Matrix{Float32}(I, output_dim, output_dim)
-    emission_1 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)
+    emission_1 = GaussianEmission(; output_dim=output_dim, μ=μ_1, Σ=Σ_1)
 
     μ_2 = rand(Float32, output_dim)
     Σ_2 = 0.5f0 * Matrix{Float32}(I, output_dim, output_dim)
-    emission_2 = GaussianEmission(output_dim=output_dim, μ=μ_2, Σ=Σ_2)
+    emission_2 = GaussianEmission(; output_dim=output_dim, μ=μ_2, Σ=Σ_2)
 
     A = Float32[0.8 0.2; 0.05 0.95]
     πₖ = Float32[0.6, 0.4]
-    test_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
+    test_model = HiddenMarkovModel(; K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
 
     # Fit model
     ll = StateSpaceDynamics.fit!(test_model, data)
@@ -99,20 +99,20 @@ function test_SwitchingGaussian_fit_float32()
 
     # Compare emission means
     @test isapprox(test_model.B[1].μ, true_model.B[1].μ; atol=0.1f0) ||
-          isapprox(test_model.B[1].μ, true_model.B[2].μ; atol=0.1f0)
+        isapprox(test_model.B[1].μ, true_model.B[2].μ; atol=0.1f0)
     @test isapprox(test_model.B[2].μ, true_model.B[2].μ; atol=0.1f0) ||
-          isapprox(test_model.B[2].μ, true_model.B[1].μ; atol=0.1f0)
+        isapprox(test_model.B[2].μ, true_model.B[1].μ; atol=0.1f0)
 
     # Compare emission covariances
     @test isapprox(test_model.B[1].Σ, true_model.B[1].Σ; atol=0.1f0) ||
-          isapprox(test_model.B[1].Σ, true_model.B[2].Σ; atol=0.1f0)
+        isapprox(test_model.B[1].Σ, true_model.B[2].Σ; atol=0.1f0)
     @test isapprox(test_model.B[2].Σ, true_model.B[2].Σ; atol=0.1f0) ||
-          isapprox(test_model.B[2].Σ, true_model.B[1].Σ; atol=0.1f0)
+        isapprox(test_model.B[2].Σ, true_model.B[1].Σ; atol=0.1f0)
 
     # Check log-likelihood is non-decreasing
-    @test all(diff(ll) .>= -1f0)
+    @test all(diff(ll) .>= -1.0f0)
 
-        # Check that all learned parameters are Float32
+    # Check that all learned parameters are Float32
     @test eltype(test_model.A) == Float32
     @test eltype(test_model.πₖ) == Float32
     @test eltype(test_model.B[1].μ) == Float32
@@ -133,9 +133,9 @@ function test_SwitchingGaussian_SingleState_fit()
     # Initialize the emission models
     μ_1 = [0.0, 0.0]
     Σ_1 = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
-    emission_1 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)
+    emission_1 = GaussianEmission(; output_dim=output_dim, μ=μ_1, Σ=Σ_1)
     # The general HMM constructor is used as follows
-    true_model = HiddenMarkovModel(K=1, B=[emission_1], A=A, πₖ=πₖ)
+    true_model = HiddenMarkovModel(; K=1, B=[emission_1], A=A, πₖ=πₖ)
 
     # Sample from the model
     n = 20000
@@ -144,8 +144,8 @@ function test_SwitchingGaussian_SingleState_fit()
     # Fit new model
     μ_1 = [1.0, -1.0]
     Σ_1 = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
-    emission_2 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)
-    test_model = HiddenMarkovModel(K=1, B=[emission_2], A=A, πₖ=πₖ)
+    emission_2 = GaussianEmission(; output_dim=output_dim, μ=μ_1, Σ=Σ_1)
+    test_model = HiddenMarkovModel(; K=1, B=[emission_2], A=A, πₖ=πₖ)
 
     ll = StateSpaceDynamics.fit!(test_model, data)
 
@@ -179,13 +179,13 @@ function test_kmeans_init()
 
     μ_1 = [0.0, 0.0]
     Σ_1 = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
-    emission_1 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)
+    emission_1 = GaussianEmission(; output_dim=output_dim, μ=μ_1, Σ=Σ_1)
 
     μ_2 = [2.0, 1.0]
     Σ_2 = 0.2 * Matrix{Float64}(I, output_dim, output_dim)
-    emission_2 = GaussianEmission(output_dim=output_dim, μ=μ_2, Σ=Σ_2)
+    emission_2 = GaussianEmission(; output_dim=output_dim, μ=μ_2, Σ=Σ_2)
 
-    model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
+    model = HiddenMarkovModel(; K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
 
     # Initialize the model using kmeans
     kmeans_init!(model, data)
@@ -199,7 +199,6 @@ function test_kmeans_init()
     @test isapprox(model.B[2].Σ, Σ₁, atol=0.1) || isapprox(model.B[2].Σ, Σ₂, atol=0.1)
 end
 
-
 function test_trialized_GaussianHMM()
 
     # Define the output dimensionality of the HMM
@@ -212,15 +211,14 @@ function test_trialized_GaussianHMM()
     # Initialize the emission models
     μ_1 = [0.0, 0.0]
     Σ_1 = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
-    emission_1 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)
+    emission_1 = GaussianEmission(; output_dim=output_dim, μ=μ_1, Σ=Σ_1)
 
     μ_2 = [2.0, 1.0]
     Σ_2 = 0.2 * Matrix{Float64}(I, output_dim, output_dim)
-    emission_2 = GaussianEmission(output_dim=output_dim, μ=μ_2, Σ=Σ_2)
+    emission_2 = GaussianEmission(; output_dim=output_dim, μ=μ_2, Σ=Σ_2)
 
     # The general HMM constructor is used as follows
-    true_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
-
+    true_model = HiddenMarkovModel(; K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
 
     """
     Here, we sample multiple trials of data by looping over our sample function.
@@ -235,7 +233,7 @@ function test_trialized_GaussianHMM()
 
     # Run 100 sampling trials
     for i in 1:n_trials
-        true_labels, data = rand(true_model, n=n_samples)
+        true_labels, data = rand(true_model; n=n_samples)
         all_true_labels[i] = true_labels
         all_data[i] = data
     end
@@ -246,15 +244,15 @@ function test_trialized_GaussianHMM()
     # Initialize a new GaussianHMM
     μ_1 = rand(output_dim)
     Σ_1 = 0.3 * Matrix{Float64}(I, output_dim, output_dim)
-    emission_1 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)
+    emission_1 = GaussianEmission(; output_dim=output_dim, μ=μ_1, Σ=Σ_1)
 
     μ_2 = rand(output_dim)
     Σ_2 = 0.5 * Matrix{Float64}(I, output_dim, output_dim)
-    emission_2 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)
+    emission_2 = GaussianEmission(; output_dim=output_dim, μ=μ_1, Σ=Σ_1)
 
     A = [0.8 0.2; 0.05 0.95]
-    πₖ = [0.6,0.4]
-    test_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
+    πₖ = [0.6, 0.4]
+    test_model = HiddenMarkovModel(; K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
 
     lls = StateSpaceDynamics.fit!(test_model, all_data)
 

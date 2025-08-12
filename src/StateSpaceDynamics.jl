@@ -9,11 +9,11 @@ using Optim
 using ProgressMeter
 using Random
 using SparseArrays
+using SpecialFunctions
 using StaticArrays
 using Statistics
 using StatsBase
 using StatsFuns
-using SpecialFunctions
 
 using Base.Threads: @threads
 using Base: show
