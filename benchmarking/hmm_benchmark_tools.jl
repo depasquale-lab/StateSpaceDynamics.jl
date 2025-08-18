@@ -52,25 +52,18 @@ function build_model(::Dynamax_HMMImplem, instance::HMMInstance, params::HMMPara
     A_jax = jnp.array(A)
     μ_jax = jnp.stack([jnp.array(μi) for μi in μ])
     Σ_jax = jnp.stack([jnp.array(Σi) for Σi in Σ])
-
-    @show μ_jax.shape
-    @show Σ_jax.shape
-
+    
     # Create and initialize the model
     hmm = dynamax_hmm.GaussianHMM(num_states, emission_dim)
 
-    init_result = hmm.initialize(
+    params, props = hmm.initialize(
         initial_probs=π_jax,
         transition_matrix=A_jax,
         emission_means=μ_jax,
         emission_covariances=Σ_jax
     )
 
-    params = init_result[0]
-    props = init_result[1]
-    
-
-    return (hmm, params, props)
+    return hmm, params, props
 end
 
 
@@ -100,57 +93,26 @@ function run_benchmark(::HiddenMarkovModels_Implem, model::HiddenMarkovModels.HM
     return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
 end
 
-function run_benchmark(::Dynamax_HMMImplem, model::Tuple{Any, Any, Any}, data::Vector{Float64})
-    dynamax = pyimport("dynamax")
+function run_benchmark(::Dynamax_HMMImplem, hmm::Any, params::Any, props::Any, data::Vector{Float64})
     np = pyimport("numpy")
+    jnp = pyimport("jax.numpy")
     jax = pyimport("jax")
 
-    data = np.reshape(np.array(data), (-1, 1))
+    dat_jax = jnp.array(np.expand_dims(Py(data).to_numpy(), axis=1))
 
-    (hmm, params, props) = model 
+    # Jit compile the fit_em function
+    fit_fn = jax.jit(hmm.fit_em, static_argnames=("num_iters",))
 
-    # # Mark num_iters as static
-    # fit_fn = jax.jit(hmm.fit_em, static_argnums=3)
-
-    println("double done")
-
-    println("params: ", params)
-    println("props: ", props)
-    println("data type: ", typeof(data))
-    println("data.shape: ", data.shape)
-    println("data: ", data)
-    @assert !isnothing(data) "Data is None after reshape"
-
-    println("data is None? ", data === py"None")
-    println("params is None? ", params === py"None")
-    println("props is None? ", props === py"None")
-
-
+    params, lps = fit_fn(params, props, dat_jax, num_iters=1)
 
     bench = @benchmark begin
-        params, lps = $hmm.fit_em(
+        $fit_fn(
             $params,
             $props,
-            $data,
-            100
+            $dat_jax,
+            num_iters=100
         )
     end samples=5
 
-
-    # params, lps = fit_fn(params, props, data, 100)
-
-    # bench = @benchmark begin
-    #     params, lps = $fit_fn(
-    #         $params,
-    #         $props,
-    #         $data,
-    #         100
-    #     )
-    # end samples=5
-
-
-    println("triple done")
-
     return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
 end
-

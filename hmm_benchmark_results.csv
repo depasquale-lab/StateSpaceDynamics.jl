@@ -1,5 +1,7 @@
 implementation,num_states,seq_len,time_sec,memory,allocs,success
-Dynamax.jl,2,100,NaN,0,0,false
-Dynamax.jl,2,500,NaN,0,0,false
-Dynamax.jl,4,100,NaN,0,0,false
-Dynamax.jl,4,500,NaN,0,0,false
+Dynamax.jl,2,100,0.0004733,160,8,true
+ssd_hmm,2,100,NaN,0,0,false
+HiddenMarkovModels.jl,2,100,NaN,0,0,false
+Dynamax.jl,4,100,0.0007676,160,8,true
+ssd_hmm,4,100,NaN,0,0,false
+HiddenMarkovModels.jl,4,100,NaN,0,0,false
