@@ -147,8 +147,9 @@ for num_states in hmm_config.latent_dims
             print("  Running $(string(impl))... ")
             try
                 println("GENERATING MODEL")
-                model, dparams, dprops = build_model(impl, instance, params)
-                result = run_benchmark(impl, model, dparams, dprops, y[1])
+                model = build_model(impl, instance, params)
+
+                result = run_benchmark(impl, model, y[1])
                 results_row[string(impl)] = result
 
                 if result.success

@@ -52,7 +52,7 @@ function build_model(::Dynamax_HMMImplem, instance::HMMInstance, params::HMMPara
     A_jax = jnp.array(A)
     μ_jax = jnp.stack([jnp.array(μi) for μi in μ])
     Σ_jax = jnp.stack([jnp.array(Σi) for Σi in Σ])
-    
+
     # Create and initialize the model
     hmm = dynamax_hmm.GaussianHMM(num_states, emission_dim)
 
@@ -63,7 +63,7 @@ function build_model(::Dynamax_HMMImplem, instance::HMMInstance, params::HMMPara
         emission_covariances=Σ_jax
     )
 
-    return hmm, params, props
+    return (hmm, params, props)
 end
 
 
@@ -93,10 +93,12 @@ function run_benchmark(::HiddenMarkovModels_Implem, model::HiddenMarkovModels.HM
     return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
 end
 
-function run_benchmark(::Dynamax_HMMImplem, hmm::Any, params::Any, props::Any, data::Vector{Float64})
+function run_benchmark(::Dynamax_HMMImplem, hmm_and_params::Any, data::Vector{Float64})
     np = pyimport("numpy")
     jnp = pyimport("jax.numpy")
     jax = pyimport("jax")
+
+    hmm, params, props = hmm_and_params
 
     dat_jax = jnp.array(np.expand_dims(Py(data).to_numpy(), axis=1))
 
@@ -106,12 +108,13 @@ function run_benchmark(::Dynamax_HMMImplem, hmm::Any, params::Any, props::Any, d
     params, lps = fit_fn(params, props, dat_jax, num_iters=1)
 
     bench = @benchmark begin
-        $fit_fn(
+        result = $fit_fn(
             $params,
             $props,
             $dat_jax,
             num_iters=100
         )
+    result[1].block_until_ready()  # ensure computation finished before timing ends
     end samples=5
 
     return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)

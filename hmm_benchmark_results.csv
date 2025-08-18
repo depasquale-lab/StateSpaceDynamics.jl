@@ -1,7 +1,7 @@
 implementation,num_states,seq_len,time_sec,memory,allocs,success
-Dynamax.jl,2,100,0.0004733,160,8,true
-ssd_hmm,2,100,NaN,0,0,false
-HiddenMarkovModels.jl,2,100,NaN,0,0,false
-Dynamax.jl,4,100,0.0007676,160,8,true
-ssd_hmm,4,100,NaN,0,0,false
-HiddenMarkovModels.jl,4,100,NaN,0,0,false
+Dynamax.jl,2,100,0.01641,280,14,true
+ssd_hmm,2,100,0.0434046,6389335,119251,true
+HiddenMarkovModels.jl,2,100,0.0077452,3012176,82363,true
+Dynamax.jl,4,100,0.0168561,280,14,true
+ssd_hmm,4,100,0.0567683,10519335,203973,true
+HiddenMarkovModels.jl,4,100,0.0136412,6018675,164462,true
