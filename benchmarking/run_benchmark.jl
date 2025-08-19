@@ -114,9 +114,9 @@ BenchmarkTools.DEFAULT_PARAMETERS.seconds = 1.0
 # )
 
 hmm_config = BenchConfig(
-    [2, 4],  # num_states
+    [2, 4, 6, 8],  # num_states
     [1],           # emission_dim
-    [100],  # seq_lengths
+    [100, 500, 1000],  # seq_lengths
     100,
     5
 )
