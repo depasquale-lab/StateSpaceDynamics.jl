@@ -331,14 +331,12 @@ function Hessian(
     inv_Q = Symmetric(inv(Q))
     inv_P0 = Symmetric(inv(P0))
 
-    # Pre-allocate all blocks
-    H_sub = Vector{Matrix{T}}(undef, tsteps - 1)
-    H_super = Vector{Matrix{T}}(undef, tsteps - 1)
-    H_diag = Vector{Matrix{T}}(undef, tsteps)
-
     # Off-diagonal terms
     H_sub_entry = inv_Q * A
     H_super_entry = Matrix(H_sub_entry')
+
+    H_sub = [H_sub_entry for _ in 1:(tsteps - 1)]
+    H_super = [H_super_entry for _ in 1:(tsteps - 1)]
 
     # Calculate main diagonal terms
     yt_given_xt = -C' * inv_R * C
@@ -346,18 +344,14 @@ function Hessian(
     xt1_given_xt = -A' * inv_Q * A
     x_t = -inv_P0
 
-    # Build off-diagonals
-    for i in 1:(tsteps - 1)
-        H_sub[i] = H_sub_entry
-        H_super[i] = H_super_entry
-    end
+    H_diag = [Matrix{T}(undef, size(A, 1), size(A, 1)) for _ in 1:tsteps]
 
     # Build main diagonal
-    H_diag[1] = w[1] * yt_given_xt + xt1_given_xt + x_t
+    H_diag[1] .= w[1] * yt_given_xt + xt1_given_xt + x_t
     for i in 2:(tsteps - 1)
-        H_diag[i] = w[i] * yt_given_xt + xt_given_xt_1 + xt1_given_xt
+        H_diag[i] .= w[i] * yt_given_xt + xt_given_xt_1 + xt1_given_xt
     end
-    H_diag[tsteps] = w[tsteps] * (yt_given_xt) + xt_given_xt_1
+    H_diag[tsteps] .= w[tsteps] * (yt_given_xt) + xt_given_xt_1
 
     H = StateSpaceDynamics.block_tridgm(H_diag, H_super, H_sub)
 
@@ -1188,6 +1182,7 @@ function Gradient(
     A, Q = lds.state_model.A, lds.state_model.Q
     C, log_d = lds.obs_model.C, lds.obs_model.log_d
     x0, P0 = lds.state_model.x0, lds.state_model.P0
+    obs_dim, latent_dim = size(C)
 
     # Convert log_d to d (non-log space)
     d = exp.(log_d)
@@ -1200,27 +1195,36 @@ function Gradient(
     inv_Q = inv(Q)
 
     # Pre-allocate gradient
-    grad = zeros(T, lds.latent_dim, tsteps)
+    grad = zeros(T, latent_dim, tsteps)
 
+    temp = zeros(T, obs_dim)
+    common_term = zeros(T, latent_dim)
+    dxt = zeros(T, latent_dim)
+    dxt_next = zeros(T, latent_dim)
     # Calculate gradient for each time step
     @views for t in 1:tsteps
 
         # Common term for all time steps
-        temp = exp.(C * x[:, t] .+ d)
-        common_term = C' * (y[:, t] - temp)
+        temp .= exp.(C * x[:, t] .+ d)
+        common_term .= C' * (y[:, t] - temp)
 
         if t == 1
-            # First time step                      
+            # First time step
+            dxt .= x[:, 1] .- x0
+            dxt_next .= x[:, 2] .- A * x[:, 1]                      
             grad[:, t] .=
                 common_term + A' * inv_Q * (x[:, 2] .- A * x[:, t]) - inv_P0 * (x[:, t] .- x0)
         elseif t == tsteps
+            dxt .= x[:, t] .- A * x[:, tsteps - 1]
             # Last time step                    
-            grad[:, t] .= common_term - inv_Q * (x[:, t] .- A * x[:, tsteps - 1])
+            grad[:, t] .= common_term - inv_Q * dxt
         else
+            dxt .= x[:, t] .- A * x[:, t - 1]
+            dxt_next .= x[:, t + 1] .- A * x[:, t]
             # Intermediate time steps
             grad[:, t] .=
-                common_term + A' * inv_Q * (x[:, t + 1] .- A * x[:, t]) -
-            inv_Q * (x[:, t] .- A * x[:, t - 1])
+                common_term + A' * inv_Q * dxt_next -
+            inv_Q * dxt
         end
     end
 
@@ -1258,39 +1262,52 @@ function Hessian(
     H_sub_entry = inv_Q * A
     H_super_entry = permutedims(H_sub_entry)
 
-    H_sub = Vector{typeof(H_sub_entry)}(undef, tsteps - 1)
-    H_super = Vector{typeof(H_super_entry)}(undef, tsteps - 1)
+    # Fill the super and sub diagonals
+    H_sub = [H_sub_entry for _ in 1:(tsteps - 1)]
+    H_super = [H_super_entry for _ in 1:(tsteps - 1)]   
 
-    for i in 1:(tsteps - 1)
-        H_sub[i] = H_sub_entry
-        H_super[i] = H_super_entry
+    λ = zeros(T, size(C, 1))
+    z = similar(λ)
+    poisson_tmp = Matrix{T}(undef, size(C, 2), size(C, 2))
+    H_diag = [Matrix{T}(undef, size(x, 1), size(x, 1)) for _ in 1:tsteps]
+
+    # minnimal allocation Hessian helper function
+    function calculate_poisson_hess!(out::Matrix{T}, C::Matrix{T}, λ::Vector{T}) where T
+        n, p = size(C)
+        @inbounds for j in 1:p, i in 1:p
+            acc = zero(T)
+            for k in 1:n
+                acc += C[k, i] * λ[k] * C[k, j]
+            end
+            out[i, j] = -acc
+        end
     end
 
-    # Pre-compute common terms
+    # Pre-computed values for the Hessian
     xt_given_xt_1 = -inv_Q
     xt1_given_xt = -A' * inv_Q * A
     x_t = -inv_P0
 
-    # Helper function to calculate the Poisson Hessian term
-    function calculate_poisson_hess(C::Matrix{T}, λ::Vector{T}) where {T<:Real}
-        return -C' * Diagonal(λ) * C
-    end
-
-    # Calculate the main diagonal
-    H_diag = Vector{Matrix{T}}(undef, tsteps)
+    Q_middle = xt1_given_xt + xt_given_xt_1
+    Q_first = x_t + xt1_given_xt
+    Q_last = xt_given_xt_1
 
     @views for t in 1:tsteps
-        λ = exp.(C * x[:, t] .+ d)
+        mul!(z, C, x[:, t])  # z = C * x[:, t]
+        @. λ = exp(z + d)
+
         if t == 1
-            H_diag[t] = x_t + xt1_given_xt + calculate_poisson_hess(C, λ)
+            H_diag[t] .= Q_first
         elseif t == tsteps
-            H_diag[t] = xt_given_xt_1 + calculate_poisson_hess(C, λ)
+            H_diag[t] .= Q_last
         else
-            H_diag[t] = xt_given_xt_1 + xt1_given_xt + calculate_poisson_hess(C, λ)
+            H_diag[t] .= Q_middle
         end
+
+        calculate_poisson_hess!(poisson_tmp, C, λ)
+        H_diag[t] .+= poisson_tmp
     end
 
-    # Construct full Hessian
     H = block_tridgm(H_diag, H_super, H_sub)
 
     return H, H_diag, H_super, H_sub
@@ -1341,6 +1358,7 @@ function Q_observation_model(
     Q_val = zero(T)
     trials = size(E_z, 3)
     tsteps = size(E_z, 2)
+    
 
     h = Vector{T}(undef, obs_dim)
     ρ = Vector{T}(undef, obs_dim)
@@ -1443,57 +1461,74 @@ function gradient_observation_model!(
     d = exp.(log_d)
     obs_dim, latent_dim = size(C)
     latent_dim, tsteps, trials = size(E_z)
-    
-    # Pre-allocate shared temporary arrays
-    h = zeros(T, obs_dim)
-    ρ = zeros(T, obs_dim)
-    λ = zeros(T, obs_dim)
-    CP_row = zeros(T, latent_dim)  # Single row buffer for CP computations
-    
+
     fill!(grad, zero(T))
+
+    nthreads = Threads.nthreads()
+    grad_buffers = [zeros(T, length(grad)) for _ in 1:nthreads]
     
-    @threads for k in 1:trials
-        # Local temporary arrays for each thread
-        local_grad = zeros(T, length(grad))
-        
-        @views for t in 1:tsteps
+    # Thread-local buffers to avoid race conditions
+    thread_buffers = [
+        (
+            h = zeros(T, obs_dim),
+            ρ = zeros(T, obs_dim),
+            λ = zeros(T, obs_dim),
+            CP_row = zeros(T, latent_dim)
+        ) for _ in 1:nthreads
+    ]
+
+    Threads.@threads for k in 1:trials
+        tid = Threads.threadid()
+        local_grad = grad_buffers[tid]
+        buffers = thread_buffers[tid]
+
+        for t in 1:tsteps
+            # Use views for all array slices
+            z_t = view(E_z, :, t, k)
+            y_t = view(y, :, t, k)
+            P_t = view(P_smooth, :, :, t, k)
+            P_t_transpose = transpose(P_t)
             
             # Compute h = C * z_t + d in-place
-            mul!(h, C, E_z[:, t, k])
-            @. h .+= d
-            
-            P_t = P_smooth[:, :, t, k] 
-            # Compute ρ more efficiently using local storage
+            mul!(buffers.h, C, z_t)
+            @. buffers.h += d
+
+            # Compute ρ using local buffer
             for i in 1:obs_dim
-                # Compute one row of CP at a time
-                mul!(CP_row, P_t', C[i, :])
-                ρ[i] = T(0.5) * dot(C[i, :], CP_row)
+                C_i = view(C, i, :)
+                mul!(buffers.CP_row, P_t_transpose, C_i)
+                buffers.ρ[i] = T(0.5) * dot(C_i, buffers.CP_row)
             end
-            
+
             # Compute λ in-place
-            @. λ = exp(h + ρ)
-            
-            # Gradient computation with fewer allocations
-            @views for j in 1:latent_dim 
+            @. buffers.λ = exp(buffers.h + buffers.ρ)
+
+            # Gradient update for C
+            for j in 1:latent_dim
+                P_t_j = view(P_t, :, j)  # View of column j of P_t
                 for i in 1:obs_dim
                     idx = (j - 1) * obs_dim + i
-                    CP_term = dot(C[i, :], P_t[:, j])
-                    y_t = y[:, t, k] 
-                    z_t = E_z[:, t, k]    
-                    local_grad[idx] += y_t[i]*z_t[j] - λ[i]*(z_t[j] + CP_term)
+                    C_i = view(C, i, :)
+                    CP_term = dot(C_i, P_t_j)
+                    local_grad[idx] += y_t[i] * z_t[j] - buffers.λ[i] * (z_t[j] + CP_term)
                 end
             end
-            
-            # Update log_d gradient
-            @views local_grad[(end - obs_dim + 1):end] .+= (y[:, t, k] .- λ) .* d
+
+            # Gradient update for log_d (using views)
+            grad_d = view(local_grad, (length(local_grad) - obs_dim + 1):length(local_grad))
+            @. grad_d += (y_t - buffers.λ) * d
         end
-        
-        # Thread-safe update of global gradient
+    end
+
+    # Final reduction: sum all local grads into shared grad
+    for local_grad in grad_buffers
         grad .+= local_grad
     end
-    
-    return grad .*= -1
+
+    grad .*= -1
+    return grad
 end
+
 
 """
     update_observation_model!(plds::LinearDynamicalSystem{T,S,O}, E_z::Array{T, 3}, P_smooth::Array{T, 4},
@@ -1526,7 +1561,7 @@ function update_observation_model!(
             C_size = plds.obs_dim * plds.latent_dim
             log_d = params[(end - plds.obs_dim + 1):end]
             C = reshape(params[1:C_size], plds.obs_dim, plds.latent_dim)
-            return gradient_observation_model!(grad, C, log_d, E_z, P_smooth, y)
+            gradient_observation_model!(grad, C, log_d, E_z, P_smooth, y)
         end
 
         opts = Optim.Options(
@@ -1538,7 +1573,7 @@ function update_observation_model!(
         )
 
         # use CG result as inital guess for LBFGS
-        result = optimize(f, g!, params, LBFGS(;linesearch=LineSearches.HagerZhang()), opts)
+        result = optimize(f, g!, params, LBFGS(;linesearch=LineSearches.MoreThuente()), opts)
 
         # Update the parameters
         C_size = plds.obs_dim * plds.latent_dim

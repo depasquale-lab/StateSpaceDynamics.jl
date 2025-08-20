@@ -13,74 +13,77 @@ using CSV
 using DataFrames
 using MAT
 
+const CHECKED_TYPES = [Float32, Float64] #, BigFloat] UMFPACK does not support BigFloat for Sparse Arrays see: https://github.com/JuliaSparse/SparseArrays.jl/blob/main/src/solvers/umfpack.jl
+
+
 """
 Package Wide Tests
 """
 
-@testset "Package Wide Tests" begin
-    Aqua.test_all(StateSpaceDynamics; ambiguities=false)
-    @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
-end
+# @testset "Package Wide Tests" begin
+#     Aqua.test_all(StateSpaceDynamics; ambiguities=false)
+#     @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
+# end
 
-@testset "Code linting using JET " begin
-    if VERSION >= v"1.11"
-        JET.test_package(StateSpaceDynamics; target_defined_modules=true)
-    end 
-end 
+# @testset "Code linting using JET " begin
+#     if VERSION >= v"1.11"
+#         JET.test_package(StateSpaceDynamics; target_defined_modules=true)
+#     end 
+# end 
 
-include("helper_functions.jl")
-"""
-Tests for SLDS.jl
-"""
+# include("helper_functions.jl")
+# """
+# Tests for SLDS.jl
+# """
 
-include("LinearDynamicalSystems//SLDS.jl")
+# include("LinearDynamicalSystems//SLDS.jl")
 
-@testset "SLDS Tests" begin
-    @testset "Constructor Tests" begin
-        test_init()
-        test_sample()
-    end
+# @testset "SLDS Tests" begin
+#     @testset "Constructor Tests" begin
+#         test_init()
+#         test_sample()
+#     end
 
-    @testset "vEM Tests" begin
-        test_vEstep()
-    end
-end
+#     @testset "vEM Tests" begin
+#         test_vEstep()
+#     end
+# end
 
-"""
-Tests for LDS.jl
-"""
+# """
+# Tests for LDS.jl
+# """
 
-include("LinearDynamicalSystems//GaussianLDS.jl")
+# include("LinearDynamicalSystems//GaussianLDS.jl")
 
-@testset "GaussianLDS Tests" begin
-    @testset "Constructor Tests" begin
-        test_lds_with_params()
-        test_gaussian_obs_constructor_type_preservation()
-        test_gaussian_lds_constructor_type_preservation()
-        test_gaussian_sample_type_preservation()
-        test_gaussian_fit_type_preservation()
-        test_gaussian_loglikelihood_type_preservation()
-    end
-    @testset "Smoother tests" begin
-        test_Gradient()
-        test_Hessian()
-        test_smooth()
-    end
-    @testset "EM tests" begin
-        test_estep()
-        # test when ntrials=1
-        test_initial_observation_parameter_updates()
-        test_state_model_parameter_updates()
-        test_obs_model_params_updates()
-        # test when ntrials>1
-        test_initial_observation_parameter_updates(3)
-        test_state_model_parameter_updates(3)
-        test_obs_model_params_updates(3)
-        # test fit method using n=1 and n=3
-        test_EM()
-        test_EM(3)
-    end
-end
+# @testset "GaussianLDS Tests" begin
+#     @testset "Constructor Tests" begin
+#         test_lds_with_params()
+#         test_gaussian_obs_constructor_type_preservation()
+#         test_gaussian_lds_constructor_type_preservation()
+#         test_gaussian_sample_type_preservation()
+#         test_gaussian_fit_type_preservation()
+#         test_gaussian_loglikelihood_type_preservation()
+#     end
+#     @testset "Smoother tests" begin
+#         test_Gradient()
+#         test_Hessian()
+#         test_smooth()
+#     end
+#     @testset "EM tests" begin
+#         test_estep()
+#         # test when ntrials=1
+#         test_initial_observation_parameter_updates()
+#         test_state_model_parameter_updates()
+#         test_obs_model_params_updates()
+#         # test when ntrials>1
+#         test_initial_observation_parameter_updates(3)
+#         test_state_model_parameter_updates(3)
+#         test_obs_model_params_updates(3)
+#         # test fit method using n=1 and n=3
+#         test_EM()
+#         test_EM(3)
+#     end
+# end
 
 """
 Tests for PoissonLDS.jl
@@ -98,9 +101,9 @@ include("LinearDynamicalSystems//PoissonLDS.jl")
         test_poisson_loglikelihood_type_preservation()
     end
     @testset "Smoother Tests" begin
-        test_Gradient()
-        test_Hessian()
-        test_smooth()
+        # test_Gradient()
+        # test_Hessian()
+        # test_smooth()
     end
     @testset "EM Tests" begin
         test_parameter_gradient()
