@@ -105,57 +105,87 @@ function block_tridiagonal_inverse_static(
     C::Vector{<:AbstractMatrix{T}}
 ) where {T<:Real}
     n = length(B)
-    N = size(B[1], 1)
-    N2 = N * N
+    
 
-    # Convert input vectors to static matrices
-    A_static = [SMatrix{N,N,T,N2}(A[i]) for i in eachindex(A)]
-    B_static = [SMatrix{N,N,T,N2}(B[i]) for i in eachindex(B)]
-    C_static = [SMatrix{N,N,T,N2}(C[i]) for i in eachindex(C)]
+    # Pre-allocate working matrices (reuse these)
+    M = MMatrix{2,2,T}(undef)  # Mutable static matrix for intermediate calculations
+    temp = MMatrix{2,2,T}(undef)
+    identity_static = @SMatrix [1.0 0.0; 0.0 1.0]
+    zero_static = @SMatrix [0.0 0.0; 0.0 0.0]
+    
+    # Initialize D and E arrays - use mutable static matrices
+    D = Vector{SMatrix{2,2,T,4}}(undef, n + 1)
+    E = Vector{SMatrix{2,2,T,4}}(undef, n + 1)
+    D[1] = zero_static
+    E[n + 1] = zero_static
 
-    # Initialize D and E arrays
-    D = Vector{SMatrix{N,N,T,N2}}(undef, n + 1)
-    E = Vector{SMatrix{N,N,T,N2}}(undef, n + 1)
-    D[1] = @SMatrix zeros(T, N, N)
-    E[n + 1] = @SMatrix zeros(T, N, N)
-
-    # Initialize λii and λij arrays
-    λii = Array{T}(undef, N, N, n)
-    λij = Array{T}(undef, N, N, n - 1)
-
-    # Static identity
-    identity_static = SMatrix{N,N,T,N2}(I)
-
-    # Add zero matrices to A and C
-    A_extended = vcat([(@SMatrix zeros(T, N, N))], A_static)
-    C_extended = vcat(C_static, [(@SMatrix zeros(T, N, N))])
+    # Pre-allocate output arrays
+    λii = Array{T}(undef, 2, 2, n)
+    λij = Array{T}(undef, 2, 2, n - 1)
 
     # Forward sweep for D
     for i in 1:n
-        M = B_static[i] - A_extended[i] * D[i]
-        lu_M = lu(M)  # LU factorization directly on static matrix
-        D[i + 1] = lu_M \ C_extended[i]
+        # M = B[i] - A_extended[i] * D[i]
+        if i == 1
+            M .= B[1]  # A_extended[1] is zeros
+        else
+            mul!(temp, SMatrix{2,2,T,4}(A[i-1]), D[i])  # Convert only when needed
+            M .= B[i] .- temp
+        end
+        
+        # D[i + 1] = inv(M) * C_extended[i]
+        if i == n
+            D[i + 1] = zero_static  # C_extended[n] is zeros
+        else
+            M_static = SMatrix{2,2,T,4}(M)
+            C_static = SMatrix{2,2,T,4}(C[i])
+            D[i + 1] = M_static \ C_static  # Fast 2x2 inverse
+        end
     end
 
     # Backward sweep for E
     for i in n:-1:1
-        M = B_static[i] - C_extended[i] * E[i + 1]
-        lu_M = lu(M)  # LU factorization directly on static matrix
-        E[i] = lu_M \ A_extended[i]
+        # M = B[i] - C_extended[i] * E[i + 1]
+        if i == n
+            M .= B[n]  # C_extended[n] is zeros
+        else
+            mul!(temp, SMatrix{2,2,T,4}(C[i]), E[i + 1])
+            M .= B[i] .- temp
+        end
+        
+        # E[i] = inv(M) * A_extended[i]
+        if i == 1
+            E[i] = zero_static  # A_extended[1] is zeros
+        else
+            M_static = SMatrix{2,2,T,4}(M)
+            A_static = SMatrix{2,2,T,4}(A[i-1])
+            E[i] = M_static \ A_static
+        end
     end
 
     # Compute λii
     for i in 1:n
-        term1 = identity_static - D[i + 1] * E[i + 1]
-        term2 = B_static[i] - A_extended[i] * D[i]
+        # term1 = identity - D[i + 1] * E[i + 1]
+        mul!(temp, D[i + 1], E[i + 1])
+        term1 = identity_static - SMatrix{2,2,T,4}(temp)
+        
+        # term2 = B[i] - A_extended[i] * D[i]
+        if i == 1
+            term2 = SMatrix{2,2,T,4}(B[1])
+        else
+            mul!(temp, SMatrix{2,2,T,4}(A[i-1]), D[i])
+            term2 = SMatrix{2,2,T,4}(B[i]) - SMatrix{2,2,T,4}(temp)
+        end
+        
+        # S = term2 * term1
         S = term2 * term1
-        lu_S = lu(S)  # LU factorization directly on static matrix
-        λii[:, :, i] = Matrix(lu_S \ identity_static)  # Convert only final result
+        λii[:, :, i] = Matrix(S \ identity_static)
     end
 
     # Compute λij
     for i in 2:n
-        λij[:, :, i - 1] = Matrix(E[i] * SMatrix{N,N,T,N2}(λii[:, :, i - 1]))
+        result = E[i] * SMatrix{2,2,T,4}(view(λii, :, :, i-1))
+        λij[:, :, i-1] = Matrix(result)
     end
 
     return λii, -λij
