@@ -2,13 +2,12 @@ channels = ["conda-forge"]
 
 [deps]
 pip = ""
-tensorflow-probability = ""
-hmmlearn = ""
-pykalman = ""
 
 [pip.deps]
+dynamax = ""
 jax = ">=0.3.15,<=0.5.0"
 jaxlib = ""
-dynamax = ""
-
+pykalman = ""
+scipy = ""
+tensorflow-probability = ""
 

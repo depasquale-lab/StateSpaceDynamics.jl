@@ -496,7 +496,7 @@ function smooth!(
         fs.p_smooth .= p_smooth_result
         fs.p_smooth_tt1[:, :, 2:end] .= p_smooth_tt1_result
     else
-        p_smooth_result, p_smooth_tt1_result = block_tridiagonal_inverse_static(-sub, -main, -super)
+        p_smooth_result, p_smooth_tt1_result = block_tridiagonal_inverse_static(-sub, -main, -super, Val(lds.latent_dim))
         fs.p_smooth .= p_smooth_result
         fs.p_smooth_tt1[:, :, 2:end] .= p_smooth_tt1_result
     end

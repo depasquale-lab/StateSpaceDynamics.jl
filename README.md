@@ -119,7 +119,7 @@ This approximation allows us to perform tractable, efficient inference in otherw
 
 ## Related Packages
 
-- [HiddenMarkovModels.jl](https://github.com/maxmouchet/HiddenMarkovModels.jl): A Julia package for Hidden Markov Models. We recommend this package if you are   exclusively interested in HMMs. We plan to integrate with this package in the future.
+- [HiddenMarkovModels.jl](https://github.com/maxmouchet/HiddenMarkovModels.jl): A Julia package for Hidden Markov Models. We recommend this package if you are exclusively interested in HMMs. We plan to integrate with this package in the future.
 
 - [StateSpaceLearning.jl](https://github.com/LAMPSPUC/StateSpaceLearning.jl) : A Julia package for time series analysis using state space models.
 
