@@ -5,7 +5,7 @@ using DataFrames
 using Plots
 using Statistics: median, quantile
 
-function plot_lds_benchmark(fp::AbstractString, sp::AbstractString="benchmarking/results/lds_benchmark_results.png")
+function plot_lds_benchmark(fp::AbstractString, sp::AbstractString="benchmarking/results/lds_benchmark_results.svg")
     df = CSV.read(fp, DataFrame)
    
     # Filter valid combinations (obs_dim >= latent_dim)

@@ -85,6 +85,15 @@ This procedure begins by maximizing the joint log-probability of the latent stat
 
 This approximation allows us to perform tractable, efficient inference in otherwise intractable models while still capturing uncertainty about the latent states. In the case of Gaussian observations and latents, this is equivalent to the canonical RTS smoothing algorithm.
 
+## Community Guidelines
+
+- Maintain professional, respectful discourse
+- Stay focused on `StateSpaceDynamics.jl` development and usage
+- Provide reproducible examples for bug reports and feature requests
+- Search existing issues before posting
+
+Help us maintain a welcoming environment for researchers and developers.
+
 ## Available Models
 
 - [x] Mixture Models
