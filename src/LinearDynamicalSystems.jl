@@ -1310,7 +1310,6 @@ function Gradient(
     A, Q = lds.state_model.A, lds.state_model.Q
     C, log_d = lds.obs_model.C, lds.obs_model.log_d
     x0, P0 = lds.state_model.x0, lds.state_model.P0
-    obs_dim, latent_dim = size(C)
 
     # Convert log_d to d (non-log space)
     d = exp.(log_d)
@@ -1339,14 +1338,11 @@ function Gradient(
     state_diff = Vector{T}(undef, latent_dim)  # Various state differences
     temp_grad = Vector{T}(undef, latent_dim)   # Temporary for accumulating gradient parts
 
-    temp = zeros(T, obs_dim)
-    common_term = zeros(T, latent_dim)
-    dxt = zeros(T, latent_dim)
-    dxt_next = zeros(T, latent_dim)
     # Calculate gradient for each time step
     @views for t in 1:tsteps
-
-        # Common term for all time steps
+        # Compute observation term efficiently
+        # temp = exp.(C * x[:, t] .+ d)
+        mul!(Cx_t, C, x[:, t])                 # Cx_t = C * x[:, t]
         for i in 1:obs_dim
             exp_term[i] = exp(Cx_t[i] + d[i])  # exp_term = exp(C * x[:, t] + d)
         end
@@ -1413,6 +1409,7 @@ function Gradient(
             grad[:, t] .-= temp_grad                 # grad[:, t] -= temp_grad
         end
     end
+
     return grad
 end
 
@@ -1543,7 +1540,6 @@ function Q_observation_model(
     Q_val = zero(T)
     trials = size(E_z, 3)
     tsteps = size(E_z, 2)
-    
 
     h = Vector{T}(undef, obs_dim)
     ρ = Vector{T}(undef, obs_dim)
@@ -1789,9 +1785,6 @@ function gradient_observation_model!(
     trials = length(tfs.FilterSmooths)
     
     fill!(grad, zero(T))
-
-    nthreads = Threads.nthreads()
-    grad_buffers = [zeros(T, length(grad)) for _ in 1:nthreads]
     
     # Accumulate gradients from all trials
     @threads for k in 1:trials
@@ -1806,9 +1799,8 @@ function gradient_observation_model!(
         # Thread-safe update of global gradient
         grad .+= local_grad
     end
-
-    grad .*= -1
-    return grad
+    
+    return grad .*= -1
 end
 
 
