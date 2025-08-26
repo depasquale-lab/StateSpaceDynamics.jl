@@ -100,9 +100,9 @@ function test_vEstep()
         @test size(FS[k].p_smooth) == (model.B[k].latent_dim, model.B[k].latent_dim, T_step)
         
         # Test sufficient statistics dimensions
-        @test size(FS[k].E_z) == (model.B[k].latent_dim, T_step, 1)
-        @test size(FS[k].E_zz) == (model.B[k].latent_dim, model.B[k].latent_dim, T_step, 1)
-        @test size(FS[k].E_zz_prev) == (model.B[k].latent_dim, model.B[k].latent_dim, T_step, 1)
+        @test size(FS[k].E_z) == (model.B[k].latent_dim, T_step)
+        @test size(FS[k].E_zz) == (model.B[k].latent_dim, model.B[k].latent_dim, T_step)
+        @test size(FS[k].E_zz_prev) == (model.B[k].latent_dim, model.B[k].latent_dim, T_step)
         
         # Test covariance properties
         for t in 1:T_step
