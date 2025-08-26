@@ -91,7 +91,7 @@ function test_vEstep()
     # Test 3: Check FB properties
     @test size(FB.α) == (K, T_step)  # Forward messages
     @test size(FB.β) == (K, T_step)  # Backward messages
-    @test size(FB.ξ) == (K, K, T_step-1)  # Transition expectations
+    @test size(FB.ξ) == (K, K)  # Transition expectations
     
     # Test 4: Check FS properties for each state
     for k in 1:K
