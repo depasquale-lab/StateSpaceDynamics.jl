@@ -25,6 +25,7 @@ using Plots              # Basic plotting
 using StableRNGs         # Reproducible randomness
 using Distributions      # Statistical distributions
 using StatsPlots         # Enhanced statistical plotting
+using Combinatorics
 
 # Set up reproducible random number generation
 rng = StableRNG(1234);
@@ -78,9 +79,8 @@ println("Samples per component: $(component_counts)")
 println("Empirical mixing proportions: $(round.(component_counts ./ n, digits=3))")
 
 # Generate the actual data points
-X = Matrix{Float64}(undef, D, n)  # Pre-allocate data matrix
+X = Matrix{Float64}(undef, D, n)
 for i in 1:n
-    # Sample from the multivariate normal distribution of the assigned component
     component = labels[i]
     X[:, i] = rand(rng, MvNormal(true_μs[:, component], true_Σs[component]))
 end
@@ -209,23 +209,17 @@ p3 = scatter(
 # Plot probability density contours for each learned component
 colors = [:red, :green, :blue]
 for i in 1:fit_gmm.k
-    # Create the multivariate normal distribution for this component
     comp_dist = MvNormal(fit_gmm.μₖ[:, i], fit_gmm.Σₖ[i])
-    
-    # Calculate weighted probability density over the grid
-    # (weighted by mixing coefficient πₖ)
     Z_i = [fit_gmm.πₖ[i] * pdf(comp_dist, [x, y]) for y in ys, x in xs]
     
-    # Add contour lines for this component
     contour!(
         p3, xs, ys, Z_i;
-        levels=8,                    # Number of contour levels
+        levels=8,               
         linewidth=2,
         c=colors[i],
         label="Component $i (π=$(round(fit_gmm.πₖ[i], digits=2)))"
     )
     
-    # Mark the component center
     scatter!(p3, [fit_gmm.μₖ[1, i]], [fit_gmm.μₖ[2, i]]; 
         marker=:star, markersize=8, color=colors[i], 
         markerstrokewidth=2, markerstrokecolor=:black,
@@ -251,9 +245,7 @@ predicted_labels = [argmax(class_probabilities[:, j]) for j in 1:n]
 function best_permutation_accuracy(true_labels, pred_labels, k)
     best_acc = 0.0
     best_perm = collect(1:k)
-    
-    # Try all possible permutations of k labels
-    import Combinatorics
+
     for perm in Combinatorics.permutations(1:k)
         mapped_pred = [perm[pred_labels[i]] for i in 1:length(pred_labels)]
         acc = mean(true_labels .== mapped_pred)

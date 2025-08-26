@@ -18,6 +18,7 @@ using Plots
 using Random
 using StateSpaceDynamics
 using StableRNGs
+using Statistics: mean, std
 
 # Set up reproducible random number generation
 rng = StableRNG(1234);
@@ -247,7 +248,6 @@ all_data = Vector{Matrix{Float64}}(undef, n_trials)
 
 # Generate independent sequences
 for i in 1:n_trials
-    # Each trial starts fresh from the initial state distribution
     true_labels, data = rand(rng, model, n=n_samples)
     all_true_labels[i] = true_labels
     all_data[i] = data

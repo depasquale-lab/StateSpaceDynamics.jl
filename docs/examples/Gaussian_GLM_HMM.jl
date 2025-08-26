@@ -18,6 +18,7 @@ using Plots
 using Random
 using StateSpaceDynamics
 using StableRNGs
+using Statistics: mean
 
 # Set up reproducible random number generation
 rng = StableRNG(1234);
@@ -295,13 +296,8 @@ num_trials = 100  # Number of independent sequences
 n = 1000         # Length of each sequence
 
 for i in 1:num_trials
-    # Generate independent input features for this trial
     Φ = randn(rng, 3, n)
-    
-    # Sample from HMM for this trial (each trial starts fresh from initial distribution)
     true_labels, data = rand(rng, true_model, Φ, n=n)
-    
-    # Store the results
     push!(all_true_labels, true_labels)
     push!(all_data, data)
     push!(Φ_total, Φ)

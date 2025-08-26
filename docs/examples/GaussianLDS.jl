@@ -95,7 +95,6 @@ V = zeros(size(Y))  # y-component of flow
 
 for i in 1:size(X, 1)
     for j in 1:size(X, 2)
-        # Apply dynamics and compute the displacement
         v = A * [X[i,j], Y[i,j]]
         U[i,j] = v[1] - X[i,j]  # Change in x
         V[i,j] = v[2] - Y[i,j]  # Change in y
@@ -178,7 +177,7 @@ naive_ssm = LinearDynamicalSystem(;
 # Before fitting, let's see how well our randomly initialized model can
 # infer the latent states. We use the "smoothing" algorithm, which estimates
 # the latent states given all observations (past, present, and future).
-x_smooth, _, _ = StateSpaceDynamics.smooth(naive_ssm, observations)
+x_smooth, p_smooth = StateSpaceDynamics.smooth(naive_ssm, observations)
 
 # Plot the true latent states vs. our initial (poor) estimates
 plot()
@@ -202,7 +201,7 @@ println("Starting EM algorithm to learn parameters...")
 elbo, _ = fit!(naive_ssm, observations; max_iter=100, tol=1e-6)
 
 # After EM has converged, let's see how much better our latent state estimates are
-x_smooth, _, _ = StateSpaceDynamics.smooth(naive_ssm, observations)
+x_smooth, p_smooth = StateSpaceDynamics.smooth(naive_ssm, observations)
 
 # Plot the results: true states vs. post-EM estimates
 plot()

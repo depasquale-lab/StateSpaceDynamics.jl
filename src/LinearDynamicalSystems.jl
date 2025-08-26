@@ -428,7 +428,16 @@ This function performs direct smoothing for a linear dynamical system (LDS) give
 """
 function smooth(lds::LinearDynamicalSystem, y::AbstractMatrix{T}, w::Union{Nothing, AbstractVector{T}}=nothing) where {T}
     fs = initialize_FilterSmooth(lds, size(y, 2))
-    return smooth!(lds, fs, y, w)
+    smooth!(lds, fs, y, w)
+    return fs.x_smooth, fs.p_smooth
+end
+
+function smooth(lds::LinearDynamicalSystem, y::AbstractArray{T, 3}, w::Union{Nothing, AbstractVector{T}}=nothing) where {T}
+    tfs = initialize_FilterSmooth(lds, size(y, 2), size(y,3))
+    smooth!(lds, tfs, y)
+    xs = [fs.x_smooth for fs in tfs.FilterSmooths]
+    Ps = [fs.p_smooth for fs in tfs.FilterSmooths]
+    return xs, Ps
 end
 
 

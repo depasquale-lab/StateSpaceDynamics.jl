@@ -92,10 +92,9 @@ V = zeros(size(Y))  # Flow in y-direction
 
 # Compute the deterministic flow at each grid point
 for i in 1:size(X, 1), j in 1:size(X, 2)
-    # Apply the linear dynamics: x_{t+1} = A * x_t
     v = A * [X[i,j], Y[i,j]]
-    U[i,j] = v[1] - X[i,j]  # Displacement in x
-    V[i,j] = v[2] - Y[i,j]  # Displacement in y
+    U[i,j] = v[1] - X[i,j] 
+    V[i,j] = v[2] - Y[i,j] 
 end
 
 # Normalize arrow lengths for cleaner visualization
@@ -137,11 +136,8 @@ plot!(subplot=1, yticks=(lim_states .* (0:latent_dim-1), [L"x_%$d" for d in 1:la
 # Each row represents one observed dimension, spikes shown as vertical lines
 colors = palette(:default, obs_dim)
 for f in 1:obs_dim
-    # Find time points where spikes occurred (count > 0)
     spike_times = findall(x -> x > 0, emissions[f, :])
     for t in spike_times
-        # Draw vertical lines for each spike occurrence
-        # Multiple spikes at same time would require multiple lines, but kept simple here
         plot!([t, t], [f-0.4, f+0.4], color=colors[f], linewidth=1, label="", subplot=2)
     end
 end
@@ -183,7 +179,7 @@ naive_plds = LinearDynamicalSystem(;
 # For Poisson observations, this requires Laplace approximations since the
 # posterior is no longer Gaussian (unlike the linear-Gaussian case)
 println("Performing initial smoothing with random parameters...")
-smoothed_x, smoothed_p, _ = smooth(naive_plds, observations)
+smoothed_x, smoothed_p = smooth(naive_plds, observations)
 
 # Compare true vs. initial estimated latent states
 plot()
@@ -213,7 +209,7 @@ elbo, _ = fit!(naive_plds, observations; max_iter=25, tol=1e-6)
 println("Laplace-EM completed after $(length(elbo)) iterations")
 
 # Perform smoothing with the learned parameters
-smoothed_x, smoothed_p, _ = smooth(naive_plds, observations)
+smoothed_x, smoothed_p = smooth(naive_plds, observations)
 
 # Compare true vs. learned latent state estimates
 plot()
