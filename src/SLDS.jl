@@ -354,9 +354,7 @@ function hmm_elbo(model::AbstractHMM, FB::ForwardBackward; ϵ::Float64=1e-10)
     log_p_x_z = sum(exp.(γ[:, 1]) .* log.(safe_πₖ))
     
     # Transition term using ξ
-    for t in 1:(time_steps - 1)
-        log_p_x_z += sum(exp.(ξ[:, :, t]) .* log.(safe_A))
-    end
+    log_p_x_z += sum(exp.(ξ) .* log.(safe_A))
     
     # Emission term
     log_p_x_z += sum(exp.(γ) .* loglikelihoods)
