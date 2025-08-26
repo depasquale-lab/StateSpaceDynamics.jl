@@ -32,7 +32,7 @@ function initialize_forward_backward(model::AbstractHMM, num_obs::Int, ::Type{T}
         zeros(T, num_states, num_obs),
         zeros(T, num_states, num_obs),
         zeros(T, num_states, num_obs),
-        zeros(T, num_states, num_states, num_obs - 1)
+        zeros(T, num_states, num_states)
     )
 end
 
@@ -43,7 +43,7 @@ end
         α::Matrix{T},
         β::Matrix{T},
         γ::Matrix{T},
-        ξ::Array{T,3}) where {T<:Real}
+        ξ::Matrix{T} where {T<:Real}
 
 Initialize the forward backward storage struct.
 """
@@ -52,9 +52,9 @@ function ForwardBackward(
     α::Matrix{T},
     β::Matrix{T},
     γ::Matrix{T},
-    ξ::Array{T,3}
+    ξ::Matrix{T}
 ) where {T<:Real}
-    ForwardBackward{T, Vector{T}, Matrix{T}, Array{T,3}}(loglikelihoods, α, β, γ, ξ)
+    ForwardBackward{T, Vector{T}, Matrix{T}, Matrix{T}}(loglikelihoods, α, β, γ, ξ)
 end
 
 """
@@ -71,7 +71,7 @@ function aggregate_forward_backward!(
     aggregated_FB.α .= hcat([fb.α for fb in FB_storages]...)
     aggregated_FB.β .= hcat([fb.β for fb in FB_storages]...)
     aggregated_FB.γ .= hcat([fb.γ for fb in FB_storages]...)
-    aggregated_FB.ξ = cat([fb.ξ for fb in FB_storages]..., dims=3)
+    aggregated_FB.ξ = hcat([fb.ξ for fb in FB_storages]...)
     
 end
 
@@ -340,6 +340,7 @@ end
 
 Calculate the joint posterior distribution for state transitions.
 """
+
 function calculate_ξ!(
     model::AbstractHMM,
     FB_storage::ForwardBackward
@@ -347,32 +348,40 @@ function calculate_ξ!(
     α = FB_storage.α
     β = FB_storage.β
     loglikelihoods = FB_storage.loglikelihoods
-    ξ = FB_storage.ξ
     A = model.A
-    log_A = log.(A)  # Precompute log transition probabilities
+    log_A = log.(A)
     K = model.K
     time_steps = size(α, 2)
 
-    # Preallocate reusable arrays
+    # Initialize ξ sum in log-space as -Inf
+    FB_storage.ξ .= -Inf
+    log_ξ_sum = FB_storage.ξ
+
+    # Reusable array
     log_ξ_unnormalized = zeros(K, K)
 
     for t in 1:(time_steps - 1)
-        @views begin
-            for i in 1:K
-                α_t = α[i, t]  # scalar, reuse as-is
-                for j in 1:K
-                    log_ξ_unnormalized[i, j] = α_t + log_A[i, j] + loglikelihoods[j, t + 1] + β[j, t + 1]
-                end
+        # Compute unnormalized log-ξ for this time step
+        @inbounds @views for i in 1:K
+            α_t = α[i, t]
+            for j in 1:K
+                log_ξ_unnormalized[i, j] = α_t + log_A[i, j] + loglikelihoods[j, t + 1] + β[j, t + 1]
             end
+        end
 
-            # Normalize log-space ξ with logsumexp over a view
-            log_norm_factor = logsumexp(log_ξ_unnormalized)
+        # Normalize
+        log_norm_factor = logsumexp(log_ξ_unnormalized)
+        log_ξ_normalized = log_ξ_unnormalized .- log_norm_factor
 
-            ξ[:, :, t] .= log_ξ_unnormalized .- log_norm_factor
+        # Accumulate in log space using logaddexp for each (i, j)
+        for i in 1:K
+            for j in 1:K
+                log_ξ_sum[i, j] = logaddexp(log_ξ_sum[i, j], log_ξ_normalized[i, j])
+            end
         end
     end
 end
-
+    
 """
     estep!(model::HiddenMarkovModel, data, FB_storage)
 
@@ -411,33 +420,42 @@ end
 Update the transition matrix of an HMM.
 """
 function update_transition_matrix!(
-    model::AbstractHMM, FB_storage::ForwardBackward
+    model::AbstractHMM,
+    FB_storage::ForwardBackward
 )
     γ = FB_storage.γ
-    ξ = FB_storage.ξ
+    ξ = FB_storage.ξ  # eventually use this
     for i in 1:model.K
         for j in 1:model.K
-            model.A[i, j] = exp(
-                logsumexp(@view ξ[i, j, :]) - logsumexp(@view γ[i, 1:end-1])
-            )
+            model.A[i, j] = exp(ξ[i, j] - logsumexp(@view γ[i, 1:end-1]))
         end
     end
 end
 
 function update_transition_matrix!(
-    model::AbstractHMM, FB_storage_vec::Vector{<:ForwardBackward}
+    model::AbstractHMM,
+    FB_storage_vec::Vector{<:ForwardBackward}
 )
-    for j in 1:model.K
-        for k in 1:model.K
-            # Numerator: aggregated ξ[j, k, :]
-            num = exp(logsumexp(vcat([@view FB_trial.ξ[j, k, :] for FB_trial in FB_storage_vec]...)))
+    K = model.K
 
-            # Denominator: aggregated ξ[j, :, :] over all t
-            denom = exp(logsumexp(vcat([
-                vec(@view FB_trial.γ[j, 1:end-1]) for FB_trial in FB_storage_vec
-            ]...)))
+    # Initialize numerator and denominator
+    log_num = fill(-Inf, K, K)
+    log_denom = fill(-Inf, K)
 
-            model.A[j, k] = num / denom
+    for FB_trial in FB_storage_vec
+        # Accumulate ξ sum (already in log space)
+        log_num .= map((x, y) -> logaddexp(x, y), log_num, FB_trial.ξ)
+
+        # Accumulate γ sum for denominator (exclude last time step)
+        for i in 1:K
+            log_denom[i] = logaddexp(log_denom[i], logsumexp(FB_trial.γ[i, 1:end-1]))
+        end
+    end
+
+    # Update A
+    for j in 1:K
+        for k in 1:K
+            model.A[j, k] = exp(log_num[j, k] - log_denom[j])
         end
     end
 end

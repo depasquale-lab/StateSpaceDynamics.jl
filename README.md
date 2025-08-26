@@ -136,6 +136,9 @@ Help us maintain a welcoming environment for researchers and developers.
 
 - [dynamax](https://github.com/probml/dynamax): A python package built on JAX for state space modelling (supercedes ssm).
 
+## Contributing
+If you would like to contribute, report a bug, request a new feature, or simply give feedback, please feel free to [open an issue](https://github.com/depasquale-lab/StateSpaceDynamics.jl/issues) and we will get back to you in a timely manner.
+
 ## References
 
 1. Bishop, C. M. (2006). Pattern recognition and machine learning. Springer.
