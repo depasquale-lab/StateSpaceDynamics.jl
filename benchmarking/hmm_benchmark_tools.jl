@@ -71,12 +71,11 @@ function run_benchmark(::SSD_HMMImplem, model::HiddenMarkovModel, data::Vector{F
     data_mat = reshape(data, 1, :)
 
     # Run 1 EM iteration to compile
-    StateSpaceDynamics.fit!(deepcopy(model), data_mat; max_iters=1, tol=1e-50);
+    StateSpaceDynamics.fit!(deepcopy(model), data_mat; max_iters=1, tol=1e-1000);
 
     bench = @benchmark begin
-        StateSpaceDynamics.fit!(deepcopy($model), $data_mat; max_iters=100, tol=1e-50);
+        StateSpaceDynamics.fit!(deepcopy($model), $data_mat; max_iters=100, tol=1e-1000);
     end samples=5
-
     return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
 end
 
@@ -84,10 +83,10 @@ function run_benchmark(::HiddenMarkovModels_Implem, model::HiddenMarkovModels.HM
     data_vec_vec = [[data[i]] for i in 1:length(data)]
 
     # Run initial iteration to compile
-    _, _ = baum_welch(deepcopy(model), data_vec_vec; max_iterations=1, atol=1e-50);
+    _, _ = baum_welch(deepcopy(model), data_vec_vec; max_iterations=1, atol=1e-1000);
 
     bench = @benchmark begin
-        hmm_est, lls = baum_welch(deepcopy($model), $data_vec_vec; max_iterations=100, atol=1e-50);
+        hmm_est, lls = baum_welch(deepcopy($model), $data_vec_vec; max_iterations=100, atol=1e-1000);
     end samples=5
 
     return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
