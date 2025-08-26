@@ -432,11 +432,23 @@ function smooth(lds::LinearDynamicalSystem, y::AbstractMatrix{T}, w::Union{Nothi
     return fs.x_smooth, fs.p_smooth
 end
 
-function smooth(lds::LinearDynamicalSystem, y::AbstractArray{T, 3}, w::Union{Nothing, AbstractVector{T}}=nothing) where {T}
-    tfs = initialize_FilterSmooth(lds, size(y, 2), size(y,3))
+function smooth(lds::LinearDynamicalSystem, y::AbstractArray{T,3},
+                w::Union{Nothing,AbstractVector{T}}=nothing) where {T}
+    tfs = initialize_FilterSmooth(lds, size(y,2), size(y,3))
     smooth!(lds, tfs, y)
-    xs = [fs.x_smooth for fs in tfs.FilterSmooths]
-    Ps = [fs.p_smooth for fs in tfs.FilterSmooths]
+
+    D  = lds.latent_dim
+    Tt = size(y, 2)
+    N  = size(y, 3)
+
+    xs = Array{T,3}(undef, D, Tt, N)
+    Ps = Array{T,4}(undef, D, D, Tt, N)
+
+    for n in 1:N
+        fs = tfs.FilterSmooths[n]
+        xs[:,:,n]      .= fs.x_smooth
+        Ps[:,:,:,n]    .= fs.p_smooth
+    end
     return xs, Ps
 end
 
