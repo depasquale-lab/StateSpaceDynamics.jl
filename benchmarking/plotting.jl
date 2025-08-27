@@ -109,7 +109,7 @@ end
 using CSV, DataFrames, Plots, Statistics, Measures
 
 
-function plot_hmm_benchmark(fp::AbstractString, sp::AbstractString="benchmarking/results/hmm_benchmark_results.png")
+function plot_hmm_benchmark(fp::AbstractString, sp::AbstractString="benchmarking/results/hmm_benchmark_results.svg")
 
     # Color palette
     package_colors = Dict(
