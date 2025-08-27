@@ -1,7 +1,7 @@
 export SSD_HMMImplem, HiddenMarkovModels_Implem, Dynamax_HMMImplem, run_benchmark
 
 struct SSD_HMMImplem <: Implementation end
-Base.string(::SSD_HMMImplem) = "ssd_hmm"
+Base.string(::SSD_HMMImplem) = "StateSpaceDynamics.jl"
 
 function build_model(::SSD_HMMImplem, instance::HMMInstance, params::HMMParams)
     (; num_states, num_trials, seq_length, emission_dim) = instance
@@ -38,7 +38,7 @@ function build_model(::HiddenMarkovModels_Implem, instance::HMMInstance, params:
 end
 
 struct Dynamax_HMMImplem <: Implementation end
-Base.string(::Dynamax_HMMImplem) = "Dynamax.jl"
+Base.string(::Dynamax_HMMImplem) = "Dynamax"
 
 function build_model(::Dynamax_HMMImplem, instance::HMMInstance, params::HMMParams)
     (; num_states, emission_dim) = instance
