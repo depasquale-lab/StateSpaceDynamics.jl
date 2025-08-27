@@ -12,7 +12,7 @@
 
 ## Description
 
-StateSpaceDynamics.jl is a comprehensive and self-contained Julia package for working with probabilistic state space models (SSMs). It implements a wide range of state-space models, taking inspiration from the [SSM](https://github.com/lindermanlab/ssm) package written in Python by the Linderman Lab. This package is designed to be fast, flexible, and all-encompassing, leveraging Julia's speed and expressiveness to provide researchers and data scientists with a powerful toolkit for state-space modeling.
+StateSpaceDynamics.jl is a comprehensive and self-contained Julia package for working with probabilistic state space models (SSMs). It implements a wide range of state-space models, taking inspiration from  [SSM](https://github.com/lindermanlab/ssm) and the [Dynamax](https://probml.github.io/dynamax/) packages written in Python by the Linderman Lab. This package is designed to be fast, flexible, and all-encompassing, leveraging Julia's speed and expressiveness to provide researchers and data scientists with a powerful toolkit for state-space modeling.
 
 This package is geared towards applications in neuroscience, so the models incorporate a certain neuroscience flavor (e.g., many of our models are trialized as common in experimental paradigms). However, the models are general enough to be used in other fields such as finance, robotics, and many other domains involving sequential data analysis.
 
@@ -44,7 +44,7 @@ x0 = [1.0, -1.0] # initial state
 P0 = Matrix(Diagonal([0.1, 0.1])) # initial state covariance
 
 # state model parameters
-A = [cos(0.1) -sin(0.1); sin(0.1) cos(0.1)] # transition matrix
+A = 0.95 * [cos(0.1) -sin(0.1); sin(0.1) cos(0.1)] # transition matrix
 Q = Matrix(Diagonal([0.01, 0.01])) # process noise
 
 # observation model parameters
@@ -58,7 +58,10 @@ trials = 10
 gaussian_state_model = GaussianStateModel(;A=A, Q=Q, P0=P0, x0=x0)
 poisson_obs_model = PoissonObservationModel(;C=C, log_d=log_d)
 
-plds_true = LinearDynamicalSystem(;state_model=gaussian_state_model, obs_model=poisson_obs_model, latent_dim=2, obs_dim=3, fit_bool=fill(true, 6))
+plds_true = LinearDynamicalSystem(;state_model=gaussian_state_model, 
+                                   obs_model=poisson_obs_model, 
+                                   latent_dim=2, obs_dim=3, fit_bool=fill(true, 6))
+
 latents, observations = rand(rng, plds_true; tsteps=tsteps, ntrials=trials)
 
 # fit the data to a new naive model
@@ -74,6 +77,23 @@ plds_true = LinearDynamicalSystem(;state_model=GaussianStateModel(;A=A_init, Q=Q
 fit!(plds_true, observations; max_iter=15, tol=1e-3)
 ```
 
+## Inference
+
+For inference in non-conjugate LDS models (e.g., PoissonLDS), StateSpaceDynamics.jl uses the **Laplace approximation** to estimate the posterior distribution over latent states.
+
+This procedure begins by maximizing the joint log-probability of the latent states and observations (i.e., the complete-data log-likelihood) to obtain a **maximum a posteriori (MAP)** estimate of the latent trajectory. We then approximate the posterior distribution with a Gaussian centered at this MAP estimate, where the covariance is derived from the inverse Hessian of the negative log-joint evaluated at the mode.
+
+This approximation allows us to perform tractable, efficient inference in otherwise intractable models while still capturing uncertainty about the latent states. In the case of Gaussian observations and latents, this is equivalent to the canonical RTS smoothing algorithm.
+
+## Community Guidelines
+
+- Maintain professional, respectful discourse
+- Stay focused on `StateSpaceDynamics.jl` development and usage
+- Provide reproducible examples for bug reports and feature requests
+- Search existing issues before posting
+
+Help us maintain a welcoming environment for researchers and developers.
+
 ## Available Models
 
 - [x] Mixture Models
@@ -87,7 +107,7 @@ fit!(plds_true, observations; max_iter=15, tol=1e-3)
   - [ ] Poisson HMMs
   - [ ] Binomial HMMs
   - [ ] Negative Binomial HMMs
-  - [ ] Autoregressive HMMs (ARHMM)
+  - [x] Autoregressive HMMs (ARHMM)
 - [x] Linear Dynamical Systems
   - [x] Gaussian Linear Dynamical Systems (Kalman Filter)
   - [x] Poisson Linear Dynamical Systems (PLDS)
@@ -108,11 +128,13 @@ fit!(plds_true, observations; max_iter=15, tol=1e-3)
 
 ## Related Packages
 
-- [HiddenMarkovModels.jl](https://github.com/maxmouchet/HiddenMarkovModels.jl): A Julia package for Hidden Markov Models. We recommend this package if you are   exclusively interested in HMMs. We plan to integrate with this package in the future.
+- [HiddenMarkovModels.jl](https://github.com/maxmouchet/HiddenMarkovModels.jl): A Julia package for Hidden Markov Models. We recommend this package if you are exclusively interested in HMMs. We plan to integrate with this package in the future.
 
 - [StateSpaceLearning.jl](https://github.com/LAMPSPUC/StateSpaceLearning.jl) : A Julia package for time series analysis using state space models.
 
 - [ssm](https://github.com/lindermanlab/ssm) : A python package for state space models.
+
+- [dynamax](https://github.com/probml/dynamax): A python package built on JAX for state space modelling (supercedes ssm).
 
 ## Contributing
 If you would like to contribute, report a bug, request a new feature, or simply give feedback, please feel free to [open an issue](https://github.com/depasquale-lab/StateSpaceDynamics.jl/issues) and we will get back to you in a timely manner.
