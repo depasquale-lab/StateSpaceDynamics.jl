@@ -1,2 +1,0 @@
-implementation,num_states,seq_len,time_sec,memory,allocs,success
-ssd_hmm,8,1000,0.3630166,219029968,1811446,true
