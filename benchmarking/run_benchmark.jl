@@ -106,9 +106,9 @@ CSV.write("benchmarking/results/lds_benchmark_results.csv", df_lds)
 # ----------------------
 
 hmm_config = BenchConfig(
-    [2, 4, 6, 8],  # num_states
-    [1],           # emission_dim
-    [100, 500, 1000],  # seq_lengths
+    [2, 4, 6, 8],          # num_states
+    [1],                   # emission_dim
+    [100, 500, 1000],      # seq_lengths
     100,
     5
 )
@@ -120,6 +120,7 @@ hmm_implementations = [
 ]
 
 hmm_results = []
+max_retries = 2  # number of times to retry on failure
 
 for num_states in hmm_config.latent_dims
     for seq_len in hmm_config.seq_lengths
@@ -137,22 +138,38 @@ for num_states in hmm_config.latent_dims
 
         for impl in hmm_implementations
             print("  Running $(string(impl))... ")
-            try
-                println("GENERATING MODEL")
-                model = build_model(impl, instance, params)
+            attempt = 1
+            success = false
+            result = (time=NaN, memory=0, allocs=0, success=false)  # default placeholder
 
-                result = run_benchmark(impl, model, y[1])
-                results_row[string(impl)] = result
+            while attempt <= max_retries && !success
+                try
+                    println("Attempt $attempt")
+                    model = build_model(impl, instance, params)
 
-                if result.success
-                    @printf("✓ time = %.3f sec\n", result.time / 1e9)
-                else
-                    println("✗ failed")
+                    result = run_benchmark(impl, model, y[1])
+                    success = result.success
+
+                    if success
+                        @printf("✓ time = %.3f sec\n", result.time / 1e9)
+                    else
+                        println("✗ failed")
+                        if attempt < max_retries
+                            println("Retrying...")
+                        end
+                    end
+                catch e
+                    println("✗ exception: ", e)
+                    result = (time=NaN, memory=0, allocs=0, success=false)
+                    if attempt < max_retries
+                        println("Retrying after exception...")
+                    end
                 end
-            catch e
-                results_row[string(impl)] = (time=NaN, memory=0, allocs=0, success=false)
-                println("✗ exception: ", e)
+                attempt += 1
             end
+
+            # Store final result (success or failure after retries)
+            results_row[string(impl)] = result
         end
 
         push!(hmm_results, results_row)
