@@ -114,6 +114,9 @@ fit!(plds_true, observations; max_iter=15, tol=1e-3)
 
 - [ssm](https://github.com/lindermanlab/ssm) : A python package for state space models.
 
+## Contributing
+If you would like to contribute, report a bug, request a new feature, or simply give feedback, please feel free to [open an issue](https://github.com/depasquale-lab/StateSpaceDynamics.jl/issues) and we will get back to you in a timely manner.
+
 ## References
 
 1. Bishop, C. M. (2006). Pattern recognition and machine learning. Springer.
