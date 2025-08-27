@@ -6,7 +6,15 @@ using Plots
 using Statistics: median, quantile
 using Measures
 
-function plot_lds_benchmark(fp::AbstractString, sp::AbstractString="benchmarking/results/lds_benchmark_results.svg")
+function plot_lds_benchmark(fp::AbstractString, sp::AbstractString="benchmarking/results/lds_benchmark_results.png")
+
+    # Color palette
+    package_colors = Dict(
+        "Dynamax" => "#0072B2",                # Blue
+        "pykalman" => "#009E73", # Green
+        "StateSpaceDynamics.jl" => "#E69F00"  # Orange
+    )
+
     df = CSV.read(fp, DataFrame)
    
     # Filter valid combinations (obs_dim >= latent_dim)
@@ -68,7 +76,7 @@ function plot_lds_benchmark(fp::AbstractString, sp::AbstractString="benchmarking
                 impl_data = @view panel[panel.implementation .== impl, :]
                 if !isempty(impl_data)
                     plot!(p, impl_data.seq_len, impl_data.median_time,
-                          label=impl, marker=:circle, linewidth=2)
+                          label=impl, marker=:circle, linewidth=2, color=package_colors[impl])
                 end
             end
            
@@ -84,7 +92,9 @@ function plot_lds_benchmark(fp::AbstractString, sp::AbstractString="benchmarking
     # Create legend plot
     legend_plot = plot(framestyle=:none, showaxis=false, size=(150, 250*length(ovals)))
     for impl in impls
-        plot!(legend_plot, [NaN], [NaN], label=impl, linewidth=2, marker=:circle)
+        plot!(legend_plot, [NaN], [NaN], 
+            label=impl, linewidth=2, marker=:circle, 
+            seriescolor=package_colors[impl])
     end
    
     # Combine with legend on the right
@@ -98,7 +108,16 @@ end
 
 using CSV, DataFrames, Plots, Statistics, Measures
 
+
 function plot_hmm_benchmark(fp::AbstractString, sp::AbstractString="benchmarking/results/hmm_benchmark_results.png")
+
+    # Color palette
+    package_colors = Dict(
+        "Dynamax" => "#0072B2",                # Blue
+        "HiddenMarkovModels.jl" => "#CC79A7", # Pink/Magenta
+        "StateSpaceDynamics.jl" => "#E69F00"  # Orange
+    )
+
     df = CSV.read(fp, DataFrame)
     df = filter(row -> !isnan(row.time_sec), df)
 
@@ -125,7 +144,7 @@ function plot_hmm_benchmark(fp::AbstractString, sp::AbstractString="benchmarking
         p = plot(
             xlabel = "",                  # WARNING: keep empty so there is no per-panel xlabel
             ylabel = (j == 1) ? "Time (s)" : "",   # optional local ylabel only on first column
-            title = "States = $ns",
+            title = "Latent Dim = $ns",
             framestyle = :box,
             grid = :y,
             minorgrid = true,
@@ -138,7 +157,7 @@ function plot_hmm_benchmark(fp::AbstractString, sp::AbstractString="benchmarking
         for impl in impls
             impl_data = @view panel[panel.implementation .== impl, :]
             if !isempty(impl_data)
-                plot!(p, impl_data.seq_len, impl_data.median_time, label = impl, marker = :circle, linewidth = 2)
+                plot!(p, impl_data.seq_len, impl_data.median_time, label = impl, marker = :circle, linewidth = 2, color=package_colors[impl])
             end
         end
         push!(subplots, p)
@@ -152,8 +171,11 @@ function plot_hmm_benchmark(fp::AbstractString, sp::AbstractString="benchmarking
     # Legend panel
     legend_plot = plot(framestyle = :none, showaxis = false, size = (150, 300))
     for impl in impls
-        plot!(legend_plot, [NaN], [NaN], label = impl, linewidth = 2, marker = :circle)
+        plot!(legend_plot, [NaN], [NaN], 
+            label=impl, linewidth=2, marker=:circle, 
+            seriescolor=package_colors[impl])
     end
+
 
     # Combine with legend and *set the global labels on the combined plot*
     final_plt = plot(plt, legend_plot,
@@ -168,8 +190,6 @@ function plot_hmm_benchmark(fp::AbstractString, sp::AbstractString="benchmarking
     return final_plt
 end
 
-
 # Usage:
 plot_hmm_benchmark("benchmarking/results/hmm_benchmark_results.csv")
 plot_lds_benchmark("benchmarking/results/lds_benchmark_results.csv")
-
