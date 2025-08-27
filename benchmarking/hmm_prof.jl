@@ -1,5 +1,3 @@
-cd("C:\\Users\\zlosc\\Documents\\GitHub\\StateSpaceDynamics.jl")
-
 using Pkg
 Pkg.activate("./benchmarking")
 

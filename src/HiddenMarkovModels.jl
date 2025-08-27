@@ -335,52 +335,75 @@ function calculate_γ!(model::AbstractHMM, FB_storage::ForwardBackward)
     end
 end
 
+using LinearAlgebra
+
 """
-    calculate_ξ!(model::AbstractHMM, FB_storage::ForwardBackward)
+    calculate_ξ!(model::AbstractHMM, FB::ForwardBackward)
 
-Calculate the joint posterior distribution for state transitions.
+Compute sum_t ξ_t(i,j) and store **log** of that sum in `FB.ξ`.
+
+Assumes:
+- FB.α, FB.β, FB.γ are in **log-space**
+- FB.loglikelihoods are **log p(y_t | state)**
+- model.A is the transition matrix in **linear** probabilities (not logs)
+
+Numerically stable: does per-t max-shifts, normalizes each ξ_t to sum to 1.
 """
+function calculate_ξ!(model::AbstractHMM, FB::ForwardBackward)
+    αlog = FB.α                 # K×T (log-space)
+    βlog = FB.β                 # K×T (log-space)
+    llik = FB.loglikelihoods    # K×T (log-space)
+    A    = model.A              # K×K (linear probs)
 
-function calculate_ξ!(
-    model::AbstractHMM,
-    FB_storage::ForwardBackward
-)
-    α = FB_storage.α
-    β = FB_storage.β
-    loglikelihoods = FB_storage.loglikelihoods
-    A = model.A
-    log_A = log.(A)
-    K = model.K
-    time_steps = size(α, 2)
+    K, T = size(αlog)
+    ξacc = FB.ξ                 # K×K accumulator (we'll store linear sums first)
+    fill!(ξacc, 0.0)
 
-    # Initialize ξ sum in log-space as -Inf
-    FB_storage.ξ .= -Inf
-    log_ξ_sum = FB_storage.ξ
+    tmp = similar(ξacc)         # K×K scratch
+    ax  = similar(αlog, K)      # K scratch vector (α in linear space with shift)
+    by  = similar(αlog, K)      # K scratch vector (β*lik in linear space with shift)
 
-    # Reusable array
-    log_ξ_unnormalized = zeros(K, K)
+    for t in 1:(T-1)
+        # ax := exp(αlog[:,t] - max)
+        x  = @view αlog[:, t]
+        mx = maximum(x)
+        @. ax = exp(x - mx)
 
-    for t in 1:(time_steps - 1)
-        # Compute unnormalized log-ξ for this time step
-        @inbounds @views for i in 1:K
-            α_t = α[i, t]
-            for j in 1:K
-                log_ξ_unnormalized[i, j] = α_t + log_A[i, j] + loglikelihoods[j, t + 1] + β[j, t + 1]
-            end
+        # by := exp( (βlog[:,t+1] + llik[:,t+1]) - max )
+        v  = @view βlog[:, t+1]
+        w  = @view llik[:, t+1]
+        # First accumulate v+w in by to avoid a temporary:
+        m = -Inf
+        for j in 1:K
+            y    = v[j] + w[j]
+            by[j] = y
+            m     = ifelse(y > m, y, m)
+        end
+        for j in 1:K
+            by[j] = exp(by[j] - m)
         end
 
-        # Normalize
-        log_norm_factor = logsumexp(log_ξ_unnormalized)
-        log_ξ_normalized = log_ξ_unnormalized .- log_norm_factor
+        # tmp := (ax * by') ⊙ A
+        mul!(tmp, ax, transpose(by))  # outer product
+        tmp .*= A
 
-        # Accumulate in log space using logaddexp for each (i, j)
-        for i in 1:K
-            for j in 1:K
-                log_ξ_sum[i, j] = logaddexp(log_ξ_sum[i, j], log_ξ_normalized[i, j])
-            end
+        # Normalize ξ_t and accumulate in linear space
+        s = sum(tmp)
+        if s > 0.0
+            ξacc .+= tmp .* (1.0 / s)
         end
+        # If s == 0.0, this t contributes nothing (all prob mass underflowed)
     end
+
+    # Convert accumulator to log-space once (matching logaddexp over t)
+    for j in 1:K, i in 1:K
+        v = ξacc[i, j]
+        ξacc[i, j] = v > 0.0 ? log(v) : -Inf
+    end
+
+    return nothing
 end
+
     
 """
     estep!(model::HiddenMarkovModel, data, FB_storage)
