@@ -169,10 +169,7 @@ function plot_hmm_benchmark(fp::AbstractString, sp::AbstractString="benchmarking
 end
 
 
-
-
-# Example usage:
+# Usage:
 plot_hmm_benchmark("benchmarking/results/hmm_benchmark_results.csv")
-
-# plot_lds_benchmark("benchmarking/results/lds_benchmark_results.csv")
+plot_lds_benchmark("benchmarking/results/lds_benchmark_results.csv")
 

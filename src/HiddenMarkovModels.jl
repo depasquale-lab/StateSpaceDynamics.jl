@@ -251,91 +251,144 @@ function emission_loglikelihoods!(model::HiddenMarkovModel, FB_storage::ForwardB
     end
 end
 
+# Thin wrapper that computes logs once if needed
+function forward!(model::AbstractHMM, FB::ForwardBackward)
+    forward!(model, FB, log.(model.A), log.(model.πₖ))
+end
+
 """
-    forward!(model::AbstractHMM, FB_storage::ForwardBackward)
+    forward!(model, FB, logA, logπ)
 
-Run the forward algorithm given an `AbstractHMM` and `ForwardBackd` storage struct.
+Compute α in log-space using precomputed `logA = log.(A)` and `logπ = log.(πₖ)`.
 """
-function forward!(model::AbstractHMM, FB_storage::ForwardBackward)
-    # Reference storage
-    α = FB_storage.α
-    loglikelihoods = FB_storage.loglikelihoods
-    A = model.A
-    πₖ = model.πₖ
-    K = model.K
-    time_steps = size(loglikelihoods, 2)
+function forward!(model::AbstractHMM, FB::ForwardBackward,
+                  logA::AbstractMatrix, logπ::AbstractVector)
+    @assert size(logA,1) == model.K && size(logA,2) == model.K
+    @assert length(logπ) == model.K
 
-    # Preallocate reusable arrays
-    values_to_sum = zeros(K)
-    log_A = log.(A)  # Precompute log of transition probabilities
-    log_πₖ = log.(πₖ)  # Precompute log of initial state probabilities
+    α   = FB.α                  # K×T (log)
+    ll  = FB.loglikelihoods     # K×T (log)
+    K,T = size(α,1), size(α,2)
 
-    # Calculate α₁
-    for k in 1:K
-        α[k, 1] = log_πₖ[k] + loglikelihoods[k, 1]
-    end
-
-    # Compute α for all time steps
-    for t in 2:time_steps
+    @inbounds @views begin
+        # t = 1
         for k in 1:K
-            for i in 1:K
-                values_to_sum[i] = log_A[i, k] + α[i, t - 1]
+            α[k,1] = logπ[k] + ll[k,1]
+        end
+
+        # t ≥ 2
+        for t in 2:T
+            # for each destination state k, do logsumexp over i
+            for k in 1:K
+                # compute logsumexp_i (α[i,t-1] + logA[i,k])
+                # do the max pass
+                m = -Inf
+                for i in 1:K
+                    v = α[i,t-1] + logA[i,k]
+                    m = ifelse(v > m, v, m)
+                end
+                # sum exp pass
+                s = 0.0
+                if isfinite(m)
+                    for i in 1:K
+                        s += exp(α[i,t-1] + logA[i,k] - m)
+                    end
+                    α[k,t] = (m + log(s)) + ll[k,t]
+                else
+                    α[k,t] = -Inf
+                end
             end
-            α[k, t] = logsumexp(values_to_sum) + loglikelihoods[k, t]
         end
     end
+    return nothing
+end
+
+# Thin wrapper that computes logA if needed
+function backward!(model::AbstractHMM, FB::ForwardBackward)
+    backward!(model, FB, log.(model.A))
 end
 
 """
-    backward!(model::AbstractHMM, FB_storage::ForwardBackward)
+    backward!(model, FB, logA)
 
-Run the backward algorithm given an `AbstractHMM` and `ForwardBackd` storage struct.
+Compute β in log-space using precomputed `logA = log.(A)`.
 """
-function backward!(model::AbstractHMM, FB_storage::ForwardBackward)
-    # Reference storage
-    β = FB_storage.β
-    loglikelihoods = FB_storage.loglikelihoods
-    A = model.A
-    K = model.K
-    time_steps = size(loglikelihoods, 2)
-    
-    # Preallocate reusable arrays
-    values_to_sum = zeros(K)
-    log_A = log.(A)
-    
-    # Initialize last column of β
-    β[:, end] .= 0
+function backward!(model::AbstractHMM, FB::ForwardBackward,
+                   logA::AbstractMatrix)
+    β   = FB.β
+    ll  = FB.loglikelihoods
+    K,T = size(β,1), size(β,2)
 
-    # Compute β for all time steps
-    for t in (time_steps - 1):-1:1
+    @inbounds @views begin
+        # β_T = 0 in log-space
         for i in 1:K
-            for j in 1:K
-                values_to_sum[j] = log_A[i, j] + loglikelihoods[j, t + 1] + β[j, t + 1]
+            β[i,T] = 0.0
+        end
+
+        for t in (T-1):-1:1
+            # for each source state i, do logsumexp over j
+            for i in 1:K
+                # compute logsumexp_j (logA[i,j] + ll[j,t+1] + β[j,t+1])
+                m = -Inf
+                for j in 1:K
+                    v = logA[i,j] + ll[j,t+1] + β[j,t+1]
+                    m = ifelse(v > m, v, m)
+                end
+                s = 0.0
+                if isfinite(m)
+                    for j in 1:K
+                        s += exp(logA[i,j] + ll[j,t+1] + β[j,t+1] - m)
+                    end
+                    β[i,t] = m + log(s)
+                else
+                    β[i,t] = -Inf
+                end
             end
-            β[i, t] = logsumexp(values_to_sum)
         end
     end
+    return nothing
 end
 
 """
-    calculate_γ!(model::AbstractHMM, FB_storage::ForwardBackward)
+    calculate_γ!(model, FB)
 
-Calculate the marginal posterior distribution for each state.
+Compute γ = log-normalized α+β (still in log-space).
 """
-function calculate_γ!(model::AbstractHMM, FB_storage::ForwardBackward)
-    α = FB_storage.α
-    β = FB_storage.β
+function calculate_γ!(::AbstractHMM, FB::ForwardBackward)
+    γ = FB.γ
+    α = FB.α
+    β = FB.β
+    K,T = size(γ,1), size(γ,2)
 
-    time_steps = size(α, 2)
-    FB_storage.γ = α .+ β
-    γ = FB_storage.γ
+    @inbounds @views begin
+        # γ = α + β
+        γ .= α .+ β
 
-    for t in 1:time_steps
-        γ[:, t] .-= logsumexp(view(γ,:,t))
+        # subtract logsumexp per column
+        for t in 1:T
+            # find max
+            m = -Inf
+            for i in 1:K
+                v = γ[i,t]
+                m = ifelse(v > m, v, m)
+            end
+            # sum exp
+            s = 0.0
+            if isfinite(m)
+                for i in 1:K
+                    s += exp(γ[i,t] - m)
+                end
+                lZ = m + log(s)
+                for i in 1:K
+                    γ[i,t] -= lZ
+                end
+            else
+                # all -Inf: leave as -Inf
+            end
+        end
     end
+    return nothing
 end
-
-using LinearAlgebra
 
 """
     calculate_ξ!(model::AbstractHMM, FB::ForwardBackward)

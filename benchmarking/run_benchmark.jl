@@ -98,7 +98,7 @@ for row in lds_results
         ))
     end
 end
-CSV.write("lds_benchmark_results.csv", df_lds)
+CSV.write("benchmarking/results/lds_benchmark_results.csv", df_lds)
 
 
 # ----------------------
@@ -177,4 +177,4 @@ for row in hmm_results
         ))
     end
 end
-CSV.write("hmm_benchmark_results.csv", df_hmm)
+CSV.write("benchmarking/results/hmm_benchmark_results.csv", df_hmm)
