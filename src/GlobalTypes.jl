@@ -62,12 +62,12 @@ A mutable struct that encapsulates the forward–backward algorithm outputs for 
 
 Typically, `α` and `β` are computed by the forward–backward algorithm to find the likelihood of an observation sequence. `γ` and `ξ` are derived from these calculations to estimate how states transition over time.
 """
-mutable struct ForwardBackward{T<:Real, V<:AbstractVector{T}, M<:AbstractMatrix{T}, A<:Array{T,3}}
+mutable struct ForwardBackward{T<:Real, V<:AbstractVector{T}, M<:AbstractMatrix{T}, MM<:AbstractMatrix{T}}
     loglikelihoods::M
     α::M
     β::M
     γ::M
-    ξ::A
+    ξ::MM
 end
 
 
@@ -109,7 +109,16 @@ filter = FilterSmooth{Float64}(
 mutable struct FilterSmooth{T<:Real}
     x_smooth::Matrix{T}
     p_smooth::Array{T, 3}
-    E_z::Array{T, 3}
-    E_zz::Array{T, 4}
-    E_zz_prev::Array{T, 4}
+    p_smooth_tt1::Array{T, 3}
+    E_z::Matrix{T}
+    E_zz::Array{T, 3}
+    E_zz_prev::Array{T, 3}
+    entropy::T
 end
+
+struct TrialFilterSmooth{T<:Real}
+  FilterSmooths::Vector{FilterSmooth{T}}
+end
+
+Base.getindex(f::TrialFilterSmooth, i::Int) = f.FilterSmooths[i]
+Base.setindex!(f::TrialFilterSmooth, value::FilterSmooth{T}, i::Int) where T<:Real = (f.FilterSmooths[i] = value)
