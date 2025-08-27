@@ -17,3 +17,11 @@ To run the benchmarking code please do the following:
 1. `cd` into the StateSpaceDynamics.jl directory (i.e., one level above the benchmarking folder).
 2. Run `julia benchmarking/run_benchmark.jl` to run the benchmark code.
 3. Results will be stored in `benchmarking/results`.
+
+## Plotting the results
+
+To generate plots of the results please do the following:
+
+1. Similar to the previous section, `cd` into the StateSpaceDynamics.jl directory (i.e., one level above the benchmarking folder).
+2. Run `julia benchmarking/plotting.jl` to run the benchmark code.
+3. Results will be stored in `benchmarking/results`
