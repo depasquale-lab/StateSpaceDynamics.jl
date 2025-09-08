@@ -1,12 +1,11 @@
 export HMMInstance, LDSInstance
 
-# Define struct for storing glmhmm benchmarking params
+# Define struct for storing hmm benchmarking params
 @kwdef struct HMMInstance
     num_states::Int
     num_trials::Int
     seq_length::Int
-    input_dim::Int
-    output_dim::Int
+    emission_dim::Int
 end
 
 @kwdef struct LDSInstance
