@@ -1,16 +1,3 @@
-@article{Dalle2024, 
-  doi = {10.21105/joss.06436}, 
-  url = {https://doi.org/10.21105/joss.06436}, 
-  year = {2024}, 
-  publisher = {The Open Journal}, 
-  volume = {9}, 
-  number = {96}, 
-  pages = {6436}, 
-  author = {Guillaume Dalle}, 
-  title = {HiddenMarkovModels.jl: generic, fast and reliable state space modeling}, 
-  journal = {Journal of Open Source Software}
-}
-
 @software{PySSM2022,
   title = {SSM: Bayesian learning and inference for state space models},
   author = {Linderman, Scott},
@@ -20,34 +7,52 @@
   keywords = {SSM}
 }
 
-@software{Turing2018,
-  title = {Turing.jl: Bayesian inference with probabilistic programming},
-  author = {{Ge, H.}, {Xu, K.}, {Ghahramani, Z.}},
-  date = {2018},
-  url = {https://github.com/TuringLang/Turing.jl},
-  abstract = {Bayesian inference with probabilistic programming},
-  keywords = {Turing}
+@article{10.1145/3711897,
+author = {Fjelde, Tor Erlend and Xu, Kai and Widmann, David and Tarek, Mohamed and Pfiffer, Cameron and Trapp, Martin and Axen, Seth D. and Sun, Xianda and Hauru, Markus and Yong, Penelope and Tebbutt, Will and Ghahramani, Zoubin and Ge, Hong},
+title = {Turing.jl: a general-purpose probabilistic programming language},
+year = {2025},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+url = {https://doi.org/10.1145/3711897},
+doi = {10.1145/3711897},
+note = {Just Accepted},
+journal = {ACM Trans. Probab. Mach. Learn.},
+month = feb,
 }
 
-@software{HMMjl2024,
-  title = {HiddenMarkovModels.jl},
-  author = {Dalle, Guillaume},
-  date = {2024},
-  url = {https://github.com/gdalle/HiddenMarkovModels.jl},
-  abstract = {A Julia package for simulation, inference and learning of Hidden Markov Models},
-  keywords = {HMM}
+@InProceedings{pmlr-v84-ge18b,
+  title = 	 {Turing: A Language for Flexible Probabilistic Inference},
+  author = 	 {Ge, Hong and Xu, Kai and Ghahramani, Zoubin},
+  booktitle = 	 {Proceedings of the Twenty-First International Conference on Artificial Intelligence and Statistics},
+  pages = 	 {1682--1690},
+  year = 	 {2018},
+  editor = 	 {Storkey, Amos and Perez-Cruz, Fernando},
+  volume = 	 {84},
+  series = 	 {Proceedings of Machine Learning Research},
+  month = 	 {09--11 Apr},
+  publisher =    {PMLR},
+  pdf = 	 {http://proceedings.mlr.press/v84/ge18b/ge18b.pdf},
+  url = 	 {https://proceedings.mlr.press/v84/ge18b.html},
 }
 
-@software{SSMjl2024,
-  title = {StateSpaceModels.jl},
-  author = {{Bodin, Guilherme}, {Saavedra, Raphael}},
-  date = {2024},
-  url = {https://github.com/LAMPSPUC/StateSpaceModels.jl},
-  abstract = {StateSpaceModels.jl is a package for modeling, forecasting, 
-    and simulating time series in a state-space framework. Implementations were made based on the book 
-    "Time Series Analysis by State Space Methods" (2012) by James Durbin and Siem Jan Koopman. 
-    The notation of the variables in the code also follows the book.},
-  keywords = {SSM}
+@article{Dalle2024,
+    doi = {10.21105/joss.06436},
+    url = {https://doi.org/10.21105/joss.06436},
+    year = {2024},
+    publisher = {The Open Journal},
+    volume = {9},
+    number = {96},
+    pages = {6436},
+    author = {Guillaume Dalle},
+    title = {HiddenMarkovModels.jl: generic, fast and reliable state space modeling},
+    journal = {Journal of Open Source Software}
+}
+
+@article{SaavedraBodinSouto2019,
+  title={StateSpaceModels.jl: a Julia Package for Time-Series Analysis in a State-Space Framework},
+  author={Raphael Saavedra and Guilherme Bodin and Mario Souto},
+  journal={arXiv preprint arXiv:1908.01757},
+  year={2019}
 }
 
 @software{SSLjl2024,
@@ -238,11 +243,19 @@ state space models},
   howpublished = {\url{https://github.com/JuliaPy/PythonCall.jl}}
 }
 
-@software{bench,
-  title    = {BenchmarkTools.jl},
-  author   = {Jarrett Revels},
-  date     = {2017},
-  howpublished = {\url{https://github.com/JuliaCI/BenchmarkTools.jl}}
+@ARTICLE{BenchmarkTools.jl-2016,
+  author =	 {{Chen}, Jiahao and {Revels}, Jarrett},
+  title =	 "{Robust benchmarking in noisy environments}",
+  journal =	 {arXiv e-prints},
+  keywords =	 {Computer Science - Performance, 68N30, B.8.1, D.2.5},
+  year =	 2016,
+  month =	 "Aug",
+  eid =		 {arXiv:1608.04295},
+  archivePrefix ={arXiv},
+  eprint =	 {1608.04295},
+  primaryClass = {cs.PF},
+  adsurl =	 {https://ui.adsabs.harvard.edu/abs/2016arXiv160804295C},
+  adsnote =	 {Provided by the SAO/NASA Astrophysics Data System}
 }
 
 @article{ForwardDiff,
@@ -267,11 +280,12 @@ state space models},
   bibsource    = {dblp computer science bibliography, https://dblp.org}
 }
 
-@software{DiffInterface,
-      author={Dalle, Guillaume and Hill, Adrian},
-      title={Differentiation{I}nterface.jl},
-      year={2024},
-      publisher={Zenodo},
-      doi={10.5281/zenodo.11092033},
-      url={https://doi.org/10.5281/zenodo.11092033},
+@misc{dalle2025commoninterfaceautomaticdifferentiation,
+      title={A Common Interface for Automatic Differentiation},
+      author={Guillaume Dalle and Adrian Hill},
+      year={2025},
+      eprint={2505.05542},
+      archivePrefix={arXiv},
+      primaryClass={cs.MS},
+      url={https://arxiv.org/abs/2505.05542},
 }
