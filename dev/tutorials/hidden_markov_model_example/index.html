@@ -1,44 +1,60 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Hidden Markov Model Example · StateSpaceDynamics.jl</title><meta name="title" content="Hidden Markov Model Example · StateSpaceDynamics.jl"/><meta property="og:title" content="Hidden Markov Model Example · StateSpaceDynamics.jl"/><meta property="twitter:title" content="Hidden Markov Model Example · StateSpaceDynamics.jl"/><meta name="description" content="Documentation for StateSpaceDynamics.jl."/><meta property="og:description" content="Documentation for StateSpaceDynamics.jl."/><meta property="twitter:description" content="Documentation for StateSpaceDynamics.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="StateSpaceDynamics.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">StateSpaceDynamics.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Models</span><ul><li><a class="tocitem" href="../../LinearDynamicalSystems/">Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../HiddenMarkovModels/">Hidden Markov Models</a></li><li><a class="tocitem" href="../../SLDS/">Switching Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../EmissionModels/">EmissionModels</a></li><li><a class="tocitem" href="../../MixtureModels/">Mixture Models</a></li></ul></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../gaussian_latent_dynamics_example/">Gaussian LDS Example</a></li><li><a class="tocitem" href="../poisson_latent_dynamics_example/">Poisson LDS Example</a></li><li class="is-active"><a class="tocitem" href>Hidden Markov Model Example</a><ul class="internal"><li><a class="tocitem" href="#Simulating-and-Fitting-a-Hidden-Markov-Model"><span>Simulating and Fitting a Hidden Markov Model</span></a></li><li><a class="tocitem" href="#Load-Packages"><span>Load Packages</span></a></li><li><a class="tocitem" href="#Create-an-HMM"><span>Create an HMM</span></a></li><li><a class="tocitem" href="#Sample-from-the-HMM"><span>Sample from the HMM</span></a></li><li><a class="tocitem" href="#Visualize-the-sampled-dataset"><span>Visualize the sampled dataset</span></a></li><li><a class="tocitem" href="#Initialize-and-fit-a-new-HMM-to-the-sampled-data"><span>Initialize and fit a new HMM to the sampled data</span></a></li><li><a class="tocitem" href="#Visualize-the-latent-state-predictions-using-Viterbi"><span>Visualize the latent state predictions using Viterbi</span></a></li><li><a class="tocitem" href="#Sampling-multiple,-independent-trials-of-data-from-an-HMM"><span>Sampling multiple, independent trials of data from an HMM</span></a></li><li><a class="tocitem" href="#Fitting-an-HMM-to-multiple,-independent-trials-of-data"><span>Fitting an HMM to multiple, independent trials of data</span></a></li><li><a class="tocitem" href="#Visualize-latent-state-predictions-for-multiple-trials-of-data-using-Viterbi"><span>Visualize latent state predictions for multiple trials of data using Viterbi</span></a></li></ul></li><li><a class="tocitem" href="../gaussian_glm_hmm_example/">Gaussian GLM-GMM Example</a></li><li><a class="tocitem" href="../gaussian_mixture_model_example/">Gaussian Mixture Model Example</a></li><li><a class="tocitem" href="../poisson_mixture_model_example/">Poisson Mixture Model Example</a></li><li><a class="tocitem" href="../Probabilistic_PCA_example/">Probabilistic PCA Example</a></li><li><a class="tocitem" href="../switching_linear_dynamical_system_example/">Switching Linear Dynamical System Example</a></li></ul></li><li><a class="tocitem" href="../../Misc/">Miscellaneous</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Hidden Markov Model Example</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Hidden Markov Model Example</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/blob/main/docs/examples/HMM.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h2 id="Simulating-and-Fitting-a-Hidden-Markov-Model"><a class="docs-heading-anchor" href="#Simulating-and-Fitting-a-Hidden-Markov-Model">Simulating and Fitting a Hidden Markov Model</a><a id="Simulating-and-Fitting-a-Hidden-Markov-Model-1"></a><a class="docs-heading-anchor-permalink" href="#Simulating-and-Fitting-a-Hidden-Markov-Model" title="Permalink"></a></h2><p>This tutorial demonstrates how to use <code>StateSpaceDynamics.jl</code> to create, sample from, and fit Hidden Markov Models (HMMs).</p><h2 id="Load-Packages"><a class="docs-heading-anchor" href="#Load-Packages">Load Packages</a><a id="Load-Packages-1"></a><a class="docs-heading-anchor-permalink" href="#Load-Packages" title="Permalink"></a></h2><pre><code class="language-julia hljs">using LinearAlgebra
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Hidden Markov Model Example · StateSpaceDynamics.jl</title><meta name="title" content="Hidden Markov Model Example · StateSpaceDynamics.jl"/><meta property="og:title" content="Hidden Markov Model Example · StateSpaceDynamics.jl"/><meta property="twitter:title" content="Hidden Markov Model Example · StateSpaceDynamics.jl"/><meta name="description" content="Documentation for StateSpaceDynamics.jl."/><meta property="og:description" content="Documentation for StateSpaceDynamics.jl."/><meta property="twitter:description" content="Documentation for StateSpaceDynamics.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="StateSpaceDynamics.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">StateSpaceDynamics.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Models</span><ul><li><a class="tocitem" href="../../LinearDynamicalSystems/">Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../HiddenMarkovModels/">Hidden Markov Models</a></li><li><a class="tocitem" href="../../SLDS/">Switching Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../EmissionModels/">EmissionModels</a></li><li><a class="tocitem" href="../../MixtureModels/">Mixture Models</a></li></ul></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../gaussian_latent_dynamics_example/">Gaussian LDS Example</a></li><li><a class="tocitem" href="../poisson_latent_dynamics_example/">Poisson LDS Example</a></li><li class="is-active"><a class="tocitem" href>Hidden Markov Model Example</a><ul class="internal"><li><a class="tocitem" href="#Simulating-and-Fitting-a-Hidden-Markov-Model-with-Gaussian-Emissions"><span>Simulating and Fitting a Hidden Markov Model with Gaussian Emissions</span></a></li><li><a class="tocitem" href="#Load-Required-Packages"><span>Load Required Packages</span></a></li><li><a class="tocitem" href="#Create-a-Gaussian-Emission-HMM"><span>Create a Gaussian Emission HMM</span></a></li><li><a class="tocitem" href="#Sample-from-the-HMM"><span>Sample from the HMM</span></a></li><li><a class="tocitem" href="#Visualize-the-Sampled-Dataset"><span>Visualize the Sampled Dataset</span></a></li><li><a class="tocitem" href="#Initialize-and-Fit-a-New-HMM-to-the-Sampled-Data"><span>Initialize and Fit a New HMM to the Sampled Data</span></a></li><li><a class="tocitem" href="#Visualize-the-Latent-State-Predictions-using-Viterbi-Algorithm"><span>Visualize the Latent State Predictions using Viterbi Algorithm</span></a></li><li><a class="tocitem" href="#Sampling-Multiple,-Independent-Trials-of-Data-from-an-HMM"><span>Sampling Multiple, Independent Trials of Data from an HMM</span></a></li><li><a class="tocitem" href="#Fitting-an-HMM-to-Multiple,-Independent-Trials-of-Data"><span>Fitting an HMM to Multiple, Independent Trials of Data</span></a></li><li><a class="tocitem" href="#Visualize-Latent-State-Predictions-for-Multiple-Trials-using-Viterbi"><span>Visualize Latent State Predictions for Multiple Trials using Viterbi</span></a></li><li><a class="tocitem" href="#Parameter-Recovery-Analysis"><span>Parameter Recovery Analysis</span></a></li><li><a class="tocitem" href="#Summary"><span>Summary</span></a></li></ul></li><li><a class="tocitem" href="../gaussian_glm_hmm_example/">Gaussian GLM-GMM Example</a></li><li><a class="tocitem" href="../gaussian_mixture_model_example/">Gaussian Mixture Model Example</a></li><li><a class="tocitem" href="../poisson_mixture_model_example/">Poisson Mixture Model Example</a></li><li><a class="tocitem" href="../Probabilistic_PCA_example/">Probabilistic PCA Example</a></li><li><a class="tocitem" href="../switching_linear_dynamical_system_example/">Switching Linear Dynamical System Example</a></li></ul></li><li><a class="tocitem" href="../../Misc/">Miscellaneous</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Hidden Markov Model Example</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Hidden Markov Model Example</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/blob/main/docs/examples/HMM.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h2 id="Simulating-and-Fitting-a-Hidden-Markov-Model-with-Gaussian-Emissions"><a class="docs-heading-anchor" href="#Simulating-and-Fitting-a-Hidden-Markov-Model-with-Gaussian-Emissions">Simulating and Fitting a Hidden Markov Model with Gaussian Emissions</a><a id="Simulating-and-Fitting-a-Hidden-Markov-Model-with-Gaussian-Emissions-1"></a><a class="docs-heading-anchor-permalink" href="#Simulating-and-Fitting-a-Hidden-Markov-Model-with-Gaussian-Emissions" title="Permalink"></a></h2><p>This tutorial demonstrates how to use <code>StateSpaceDynamics.jl</code> to create, sample from, and fit Hidden Markov Models (HMMs) with Gaussian emission distributions. This is the classical HMM formulation where each hidden state generates observations from a different multivariate Gaussian distribution.</p><p>Unlike the GLM-HMM in the previous tutorial, this model doesn&#39;t have input features - each state simply emits observations from its own characteristic Gaussian distribution. This makes it ideal for clustering time series data, identifying behavioral regimes, or modeling switching dynamics in systems where each state has a distinct statistical signature.</p><h2 id="Load-Required-Packages"><a class="docs-heading-anchor" href="#Load-Required-Packages">Load Required Packages</a><a id="Load-Required-Packages-1"></a><a class="docs-heading-anchor-permalink" href="#Load-Required-Packages" title="Permalink"></a></h2><p>We load the essential packages for HMM modeling, visualization, and reproducible analysis.</p><pre><code class="language-julia hljs">using LinearAlgebra
 using Plots
 using Random
 using StateSpaceDynamics
-using StableRNGs</code></pre><pre><code class="language-julia hljs">rng = StableRNG(1234);</code></pre><h2 id="Create-an-HMM"><a class="docs-heading-anchor" href="#Create-an-HMM">Create an HMM</a><a id="Create-an-HMM-1"></a><a class="docs-heading-anchor-permalink" href="#Create-an-HMM" title="Permalink"></a></h2><pre><code class="language-julia hljs">output_dim = 2
+using StableRNGs
+using Statistics: mean, std</code></pre><p>Set up reproducible random number generation</p><pre><code class="language-julia hljs">rng = StableRNG(1234);</code></pre><h2 id="Create-a-Gaussian-Emission-HMM"><a class="docs-heading-anchor" href="#Create-a-Gaussian-Emission-HMM">Create a Gaussian Emission HMM</a><a id="Create-a-Gaussian-Emission-HMM-1"></a><a class="docs-heading-anchor-permalink" href="#Create-a-Gaussian-Emission-HMM" title="Permalink"></a></h2><p>We&#39;ll create an HMM with two hidden states, each emitting 2D Gaussian observations. This creates a simple but illustrative model where the hidden states correspond to different regions in the observation space.</p><pre><code class="language-julia hljs">output_dim = 2  # Each observation is a 2D vector</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">2</code></pre><p>Define the state transition dynamics High diagonal values mean states are &quot;sticky&quot; (tend to persist)</p><pre><code class="language-julia hljs">A = [0.99 0.01;    # From state 1: 99% stay in state 1, 1% switch to state 2
+     0.05 0.95];   # From state 2: 5% switch to state 1, 95% stay in state 2</code></pre><p>Initial state probabilities (equal probability of starting in either state)</p><pre><code class="language-julia hljs">πₖ = [0.5; 0.5]</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">2-element Vector{Float64}:
+ 0.5
+ 0.5</code></pre><p>Define emission distributions for each hidden state State 1: Centered at (-1, -1) with small variance (tight cluster)</p><pre><code class="language-julia hljs">μ_1 = [-1.0, -1.0]                                          # Mean vector
+Σ_1 = 0.1 * Matrix{Float64}(I, output_dim, output_dim)      # Covariance matrix (0.1 * Identity)
+emission_1 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">GaussianEmission{Float64, Vector{Float64}, Matrix{Float64}}(2, [-1.0, -1.0], [0.1 0.0; 0.0 0.1])</code></pre><p>State 2: Centered at (1, 1) with larger variance (more spread out)</p><pre><code class="language-julia hljs">μ_2 = [1.0, 1.0]                                           # Mean vector
+Σ_2 = 0.2 * Matrix{Float64}(I, output_dim, output_dim)     # Covariance matrix (0.2 * Identity)
+emission_2 = GaussianEmission(output_dim=output_dim, μ=μ_2, Σ=Σ_2)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">GaussianEmission{Float64, Vector{Float64}, Matrix{Float64}}(2, [1.0, 1.0], [0.2 0.0; 0.0 0.2])</code></pre><p>Construct the complete HMM</p><pre><code class="language-julia hljs">model = HiddenMarkovModel(
+    K=2,                        # Number of hidden states
+    B=[emission_1, emission_2], # Emission distributions
+    A=A,                        # State transition matrix
+    πₖ=πₖ                      # Initial state distribution
+)
 
-A = [0.99 0.01; 0.05 0.95];
-πₖ = [0.5; 0.5]
+println(&quot;Created Gaussian HMM with 2 states:&quot;)
+println(&quot;  State 1: μ = $μ_1, σ² = $(Σ_1[1,1]) (tight cluster in lower-left)&quot;)
+println(&quot;  State 2: μ = $μ_2, σ² = $(Σ_2[1,1]) (looser cluster in upper-right)&quot;)
+println(&quot;  Transition probabilities encourage state persistence&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Created Gaussian HMM with 2 states:
+  State 1: μ = [-1.0, -1.0], σ² = 0.1 (tight cluster in lower-left)
+  State 2: μ = [1.0, 1.0], σ² = 0.2 (looser cluster in upper-right)
+  Transition probabilities encourage state persistence</code></pre><h2 id="Sample-from-the-HMM"><a class="docs-heading-anchor" href="#Sample-from-the-HMM">Sample from the HMM</a><a id="Sample-from-the-HMM-1"></a><a class="docs-heading-anchor-permalink" href="#Sample-from-the-HMM" title="Permalink"></a></h2><p>Generate synthetic data from our true model. Unlike GLM-HMMs, we don&#39;t need input features - each state generates observations from its own Gaussian distribution.</p><pre><code class="language-julia hljs">num_samples = 10000
+println(&quot;Generating $num_samples samples from the Gaussian HMM...&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Generating 10000 samples from the Gaussian HMM...</code></pre><p>Sample both hidden state sequence and corresponding observations</p><pre><code class="language-julia hljs">true_labels, data = rand(rng, model, n=num_samples)
 
-μ_1 = [-1.0, -1.0]
-Σ_1 = 0.1 * Matrix{Float64}(I, output_dim, output_dim)
-emission_1 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)
-
-μ_2 = [1.0, 1.0]
-Σ_2 = 0.2 * Matrix{Float64}(I, output_dim, output_dim)
-emission_2 = GaussianEmission(output_dim=output_dim, μ=μ_2, Σ=Σ_2)
-
-model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">HiddenMarkovModel{Float64, Vector{Float64}, Matrix{Float64}, Vector{GaussianEmission{Float64, Vector{Float64}, Matrix{Float64}}}}([0.99 0.01; 0.05 0.95], GaussianEmission{Float64, Vector{Float64}, Matrix{Float64}}[GaussianEmission{Float64, Vector{Float64}, Matrix{Float64}}(2, [-1.0, -1.0], [0.1 0.0; 0.0 0.1]), GaussianEmission{Float64, Vector{Float64}, Matrix{Float64}}(2, [1.0, 1.0], [0.2 0.0; 0.0 0.2])], [0.5, 0.5], 2)</code></pre><h2 id="Sample-from-the-HMM"><a class="docs-heading-anchor" href="#Sample-from-the-HMM">Sample from the HMM</a><a id="Sample-from-the-HMM-1"></a><a class="docs-heading-anchor-permalink" href="#Sample-from-the-HMM" title="Permalink"></a></h2><pre><code class="language-julia hljs">num_samples = 10000
-true_labels, data = rand(rng, model, n=num_samples)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">([2, 2, 2, 2, 2, 2, 2, 1, 1, 1  …  2, 2, 2, 2, 2, 2, 2, 2, 2, 2], [1.4047907916794145 0.6939424571412892 … 0.6216506081766058 0.5659043566187294; 0.25062154873164444 0.6931441433341328 … 1.6380448790988147 1.0830411162585103])</code></pre><h2 id="Visualize-the-sampled-dataset"><a class="docs-heading-anchor" href="#Visualize-the-sampled-dataset">Visualize the sampled dataset</a><a id="Visualize-the-sampled-dataset-1"></a><a class="docs-heading-anchor-permalink" href="#Visualize-the-sampled-dataset" title="Permalink"></a></h2><pre><code class="language-julia hljs">x_vals = data[1, 1:num_samples]
-y_vals = data[2, 1:num_samples]
+println(&quot;Generated data summary:&quot;)
+println(&quot;  Data shape: $(size(data)) (dimensions × time)&quot;)
+println(&quot;  Labels shape: $(size(true_labels))&quot;)
+println(&quot;  State 1 proportion: $(round(mean(true_labels .== 1), digits=3))&quot;)
+println(&quot;  State 2 proportion: $(round(mean(true_labels .== 2), digits=3))&quot;)
+println(&quot;  Data range: [$(round(minimum(data), digits=2)), $(round(maximum(data), digits=2))]&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Generated data summary:
+  Data shape: (2, 10000) (dimensions × time)
+  Labels shape: (10000,)
+  State 1 proportion: 0.821
+  State 2 proportion: 0.179
+  Data range: [-2.4, 2.71]</code></pre><h2 id="Visualize-the-Sampled-Dataset"><a class="docs-heading-anchor" href="#Visualize-the-Sampled-Dataset">Visualize the Sampled Dataset</a><a id="Visualize-the-Sampled-Dataset-1"></a><a class="docs-heading-anchor-permalink" href="#Visualize-the-Sampled-Dataset" title="Permalink"></a></h2><p>Create a 2D scatter plot showing the observations colored by their true hidden state. This illustrates how each state generates observations from a distinct region of space.</p><pre><code class="language-julia hljs">x_vals = data[1, 1:num_samples]  # First dimension
+y_vals = data[2, 1:num_samples]  # Second dimension
 labels_slice = true_labels[1:num_samples]
 
-state_colors = [:dodgerblue, :crimson]
+state_colors = [:dodgerblue, :crimson]  # Blue for state 1, red for state 2
 
-plt = plot()
-for state in 1:2
+plt = plot()</code></pre><img src="c210a648.svg" alt="Example block output"/><p>Plot observations for each state separately to get proper legends</p><pre><code class="language-julia hljs">for state in 1:2
     idx = findall(labels_slice .== state)
     scatter!(x_vals[idx], y_vals[idx];
         color=state_colors[state],
         label=&quot;State $state&quot;,
-        markersize=6)
-end
-
-plot!(x_vals, y_vals;
+        markersize=4,
+        alpha=0.6)
+end</code></pre><p>Add a trajectory line to show temporal evolution (faded)</p><pre><code class="language-julia hljs">plot!(x_vals[1:1000], y_vals[1:1000];  # Show first 1000 points for clarity
     color=:gray,
     lw=1.5,
     linealpha=0.4,
-    label=&quot;&quot;)
-
-scatter!([x_vals[1]], [y_vals[1]];
+    label=&quot;Trajectory&quot;)</code></pre><img src="afdaf2f7.svg" alt="Example block output"/><p>Mark start and end points</p><pre><code class="language-julia hljs">scatter!([x_vals[1]], [y_vals[1]];
     color=:green,
     markershape=:star5,
     markersize=10,
@@ -50,33 +66,55 @@ scatter!([x_vals[end]], [y_vals[end]];
     markersize=8,
     label=&quot;End&quot;)
 
-xlabel!(&quot;Output dim 1&quot;)
-ylabel!(&quot;Output dim 2&quot;)
-title!(&quot;Emissions from HMM (First 100 Points)&quot;)</code></pre><img src="cc093113.svg" alt="Example block output"/><h2 id="Initialize-and-fit-a-new-HMM-to-the-sampled-data"><a class="docs-heading-anchor" href="#Initialize-and-fit-a-new-HMM-to-the-sampled-data">Initialize and fit a new HMM to the sampled data</a><a id="Initialize-and-fit-a-new-HMM-to-the-sampled-data-1"></a><a class="docs-heading-anchor-permalink" href="#Initialize-and-fit-a-new-HMM-to-the-sampled-data" title="Permalink"></a></h2><pre><code class="language-julia hljs">μ_1 = [-0.25, -0.25]
-Σ_1 = 0.3 * Matrix{Float64}(I, output_dim, output_dim)
+xlabel!(&quot;Output Dimension 1&quot;)
+ylabel!(&quot;Output Dimension 2&quot;)
+title!(&quot;HMM Emissions Colored by True Hidden State&quot;)
+
+println(&quot;Note: The trajectory line shows the temporal sequence connecting observations&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Note: The trajectory line shows the temporal sequence connecting observations</code></pre><h2 id="Initialize-and-Fit-a-New-HMM-to-the-Sampled-Data"><a class="docs-heading-anchor" href="#Initialize-and-Fit-a-New-HMM-to-the-Sampled-Data">Initialize and Fit a New HMM to the Sampled Data</a><a id="Initialize-and-Fit-a-New-HMM-to-the-Sampled-Data-1"></a><a class="docs-heading-anchor-permalink" href="#Initialize-and-Fit-a-New-HMM-to-the-Sampled-Data" title="Permalink"></a></h2><p>Now we&#39;ll simulate the realistic scenario where we observe only the data, not the hidden states. We&#39;ll initialize an HMM with incorrect parameters and use EM to learn the true parameters from the observations alone.</p><pre><code class="language-julia hljs">println(&quot;Initializing naive HMM with incorrect parameters...&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Initializing naive HMM with incorrect parameters...</code></pre><p>Initialize with biased/incorrect parameters</p><pre><code class="language-julia hljs">μ_1 = [-0.25, -0.25]  # Closer to center than true value
+Σ_1 = 0.3 * Matrix{Float64}(I, output_dim, output_dim)  # Larger variance than true
 emission_1 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)
 
-μ_2 = [0.25, 0.25]
-Σ_2 = 0.5 * Matrix{Float64}(I, output_dim, output_dim)
-emission_2 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)
+μ_2 = [0.25, 0.25]    # Closer to center than true value
+Σ_2 = 0.5 * Matrix{Float64}(I, output_dim, output_dim)  # Much larger variance than true</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">2×2 Matrix{Float64}:
+ 0.5  0.0
+ 0.0  0.5</code></pre><p>Note: There&#39;s a bug in the original code - emission<em>2 uses μ</em>1 and Σ_1, let&#39;s fix it:</p><pre><code class="language-julia hljs">emission_2 = GaussianEmission(output_dim=output_dim, μ=μ_2, Σ=Σ_2)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">GaussianEmission{Float64, Vector{Float64}, Matrix{Float64}}(2, [0.25, 0.25], [0.5 0.0; 0.0 0.5])</code></pre><p>Different transition matrix and initial distribution</p><pre><code class="language-julia hljs">A = [0.8 0.2;     # Less persistent than true model
+     0.05 0.95]   # Asymmetric transitions
+πₖ = [0.6, 0.4]   # Biased toward state 1</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">2-element Vector{Float64}:
+ 0.6
+ 0.4</code></pre><p>Create the test model</p><pre><code class="language-julia hljs">test_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
 
-A = [0.8 0.2; 0.05 0.95]
-πₖ = [0.6,0.4]
-test_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
-
+println(&quot;Initial guesses:&quot;)
+println(&quot;  State 1: μ = $μ_1, σ² = $(Σ_1[1,1])&quot;)
+println(&quot;  State 2: μ = $μ_2, σ² = $(Σ_2[1,1])&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Initial guesses:
+  State 1: μ = [-0.25, -0.25], σ² = 0.3
+  State 2: μ = [0.25, 0.25], σ² = 0.5</code></pre><p>Fit the model using the Expectation-Maximization algorithm</p><pre><code class="language-julia hljs">println(&quot;Running EM algorithm to learn parameters...&quot;)
 lls = fit!(test_model, data)
 
-plot(lls)
+println(&quot;EM algorithm converged after $(length(lls)) iterations&quot;)
+println(&quot;Log-likelihood improvement: $(round(lls[end] - lls[1], digits=2))&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Running EM algorithm to learn parameters...
+EM algorithm converged after 5 iterations
+Log-likelihood improvement: 23097.5</code></pre><p>Plot the convergence of the log-likelihood</p><pre><code class="language-julia hljs">plot(lls)
 title!(&quot;Log-likelihood over EM Iterations&quot;)
 xlabel!(&quot;EM Iteration&quot;)
-ylabel!(&quot;Log-Likelihood&quot;)</code></pre><img src="195873c7.svg" alt="Example block output"/><h2 id="Visualize-the-latent-state-predictions-using-Viterbi"><a class="docs-heading-anchor" href="#Visualize-the-latent-state-predictions-using-Viterbi">Visualize the latent state predictions using Viterbi</a><a id="Visualize-the-latent-state-predictions-using-Viterbi-1"></a><a class="docs-heading-anchor-permalink" href="#Visualize-the-latent-state-predictions-using-Viterbi" title="Permalink"></a></h2><pre><code class="language-julia hljs">pred_labels= viterbi(test_model, data);
+ylabel!(&quot;Log-Likelihood&quot;)</code></pre><img src="85564f78.svg" alt="Example block output"/><p>Display learned parameters</p><pre><code class="language-julia hljs">println(&quot;Learned parameters:&quot;)
+println(&quot;  State 1: μ = $(round.(test_model.B[1].μ, digits=3)), σ² = $(round(test_model.B[1].Σ[1,1], digits=3))&quot;)
+println(&quot;  State 2: μ = $(round.(test_model.B[2].μ, digits=3)), σ² = $(round(test_model.B[2].Σ[1,1], digits=3))&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Learned parameters:
+  State 1: μ = [-1.005, -1.001], σ² = 0.101
+  State 2: μ = [1.011, 1.01], σ² = 0.205</code></pre><h2 id="Visualize-the-Latent-State-Predictions-using-Viterbi-Algorithm"><a class="docs-heading-anchor" href="#Visualize-the-Latent-State-Predictions-using-Viterbi-Algorithm">Visualize the Latent State Predictions using Viterbi Algorithm</a><a id="Visualize-the-Latent-State-Predictions-using-Viterbi-Algorithm-1"></a><a class="docs-heading-anchor-permalink" href="#Visualize-the-Latent-State-Predictions-using-Viterbi-Algorithm" title="Permalink"></a></h2><p>The Viterbi algorithm finds the most likely sequence of hidden states given the observed data and learned parameters. We&#39;ll compare this with the true sequence.</p><pre><code class="language-julia hljs">println(&quot;Running Viterbi algorithm to decode most likely state sequence...&quot;)
+pred_labels = viterbi(test_model, data);</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Running Viterbi algorithm to decode most likely state sequence...</code></pre><p>Calculate the accuracy of state prediction</p><pre><code class="language-julia hljs">accuracy = mean(true_labels .== pred_labels)
+println(&quot;State sequence prediction accuracy: $(round(accuracy*100, digits=1))%&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">State sequence prediction accuracy: 100.0%</code></pre><p>Handle potential label switching (EM can converge with states swapped) Check if swapping labels gives better accuracy</p><pre><code class="language-julia hljs">swapped_pred = 3 .- pred_labels  # Convert 1→2, 2→1
+swapped_accuracy = mean(true_labels .== swapped_pred)
 
-true_mat = reshape(true_labels[1:1000], 1, :)
+if swapped_accuracy &gt; accuracy
+    println(&quot;Detected label switching - corrected accuracy: $(round(swapped_accuracy*100, digits=1))%&quot;)
+    pred_labels = swapped_pred
+    accuracy = swapped_accuracy
+end</code></pre><p>Visualize state sequences as heatmaps</p><pre><code class="language-julia hljs">true_mat = reshape(true_labels[1:1000], 1, :)
 pred_mat = reshape(pred_labels[1:1000], 1, :)
 
 p1 = heatmap(true_mat;
     colormap = :roma50,
-    title = &quot;True State Labels&quot;,
+    title = &quot;True State Labels (first 1000 timepoints)&quot;,
     xlabel = &quot;&quot;,
     ylabel = &quot;&quot;,
     xticks = false,
@@ -86,7 +124,7 @@ p1 = heatmap(true_mat;
 
 p2 = heatmap(pred_mat;
     colormap = :roma50,
-    title = &quot;Predicted State Labels&quot;,
+    title = &quot;Predicted State Labels (Viterbi)&quot;,
     xlabel = &quot;Timepoints&quot;,
     ylabel = &quot;&quot;,
     xticks = 0:200:1000,
@@ -97,51 +135,130 @@ p2 = heatmap(pred_mat;
 plot(p1, p2;
     layout = (2, 1),
     size = (700, 500),
-    margin = 5Plots.mm)</code></pre><img src="1299d95f.svg" alt="Example block output"/><h2 id="Sampling-multiple,-independent-trials-of-data-from-an-HMM"><a class="docs-heading-anchor" href="#Sampling-multiple,-independent-trials-of-data-from-an-HMM">Sampling multiple, independent trials of data from an HMM</a><a id="Sampling-multiple,-independent-trials-of-data-from-an-HMM-1"></a><a class="docs-heading-anchor-permalink" href="#Sampling-multiple,-independent-trials-of-data-from-an-HMM" title="Permalink"></a></h2><pre><code class="language-julia hljs">n_trials = 100
-n_samples = 1000
+    margin = 5Plots.mm)</code></pre><img src="48bccc73.svg" alt="Example block output"/><h2 id="Sampling-Multiple,-Independent-Trials-of-Data-from-an-HMM"><a class="docs-heading-anchor" href="#Sampling-Multiple,-Independent-Trials-of-Data-from-an-HMM">Sampling Multiple, Independent Trials of Data from an HMM</a><a id="Sampling-Multiple,-Independent-Trials-of-Data-from-an-HMM-1"></a><a class="docs-heading-anchor-permalink" href="#Sampling-Multiple,-Independent-Trials-of-Data-from-an-HMM" title="Permalink"></a></h2><p>In many real applications, we have multiple independent sequences rather than one long sequence. For example: multiple subjects in an experiment, multiple recording sessions, or multiple independent time series. We&#39;ll demonstrate how to handle this scenario.</p><pre><code class="language-julia hljs">println(&quot;Generating multiple independent trials...&quot;)
 
-all_true_labels = Vector{Vector{Int}}(undef, n_trials)
-all_data = Vector{Matrix{Float64}}(undef, n_trials)
-
-for i in 1:n_trials
+n_trials = 100    # Number of independent sequences
+n_samples = 1000  # Length of each sequence</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">1000</code></pre><p>Pre-allocate storage for efficiency</p><pre><code class="language-julia hljs">all_true_labels = Vector{Vector{Int}}(undef, n_trials)
+all_data = Vector{Matrix{Float64}}(undef, n_trials)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">100-element Vector{Matrix{Float64}}:
+ #undef
+ #undef
+ #undef
+ #undef
+ #undef
+ #undef
+ #undef
+ #undef
+ #undef
+ #undef
+   ⋮
+ #undef
+ #undef
+ #undef
+ #undef
+ #undef
+ #undef
+ #undef
+ #undef
+ #undef</code></pre><p>Generate independent sequences</p><pre><code class="language-julia hljs">for i in 1:n_trials
     true_labels, data = rand(rng, model, n=n_samples)
     all_true_labels[i] = true_labels
     all_data[i] = data
-end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">┌ Warning: Assignment to `true_labels` in soft scope is ambiguous because a global variable by the same name exists: `true_labels` will be treated as a new local. Disambiguate by using `local true_labels` to suppress this warning or `global true_labels` to assign to the existing global variable.
-└ @ hidden_markov_model_example.md:159
+end
+
+println(&quot;Generated $n_trials independent trials of length $n_samples each&quot;)
+println(&quot;Total data points: $(n_trials * n_samples)&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">┌ Warning: Assignment to `true_labels` in soft scope is ambiguous because a global variable by the same name exists: `true_labels` will be treated as a new local. Disambiguate by using `local true_labels` to suppress this warning or `global true_labels` to assign to the existing global variable.
+└ @ hidden_markov_model_example.md:338
 ┌ Warning: Assignment to `data` in soft scope is ambiguous because a global variable by the same name exists: `data` will be treated as a new local. Disambiguate by using `local data` to suppress this warning or `global data` to assign to the existing global variable.
-└ @ hidden_markov_model_example.md:159</code></pre><h2 id="Fitting-an-HMM-to-multiple,-independent-trials-of-data"><a class="docs-heading-anchor" href="#Fitting-an-HMM-to-multiple,-independent-trials-of-data">Fitting an HMM to multiple, independent trials of data</a><a id="Fitting-an-HMM-to-multiple,-independent-trials-of-data-1"></a><a class="docs-heading-anchor-permalink" href="#Fitting-an-HMM-to-multiple,-independent-trials-of-data" title="Permalink"></a></h2><pre><code class="language-julia hljs">μ_1 = [-0.25, -0.25]
+└ @ hidden_markov_model_example.md:338
+Generated 100 independent trials of length 1000 each
+Total data points: 100000</code></pre><p>Calculate statistics across trials</p><pre><code class="language-julia hljs">total_state1_prop = mean([mean(labels .== 1) for labels in all_true_labels])
+println(&quot;Average proportion of state 1 across trials: $(round(total_state1_prop, digits=3))&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Average proportion of state 1 across trials: 0.84</code></pre><h2 id="Fitting-an-HMM-to-Multiple,-Independent-Trials-of-Data"><a class="docs-heading-anchor" href="#Fitting-an-HMM-to-Multiple,-Independent-Trials-of-Data">Fitting an HMM to Multiple, Independent Trials of Data</a><a id="Fitting-an-HMM-to-Multiple,-Independent-Trials-of-Data-1"></a><a class="docs-heading-anchor-permalink" href="#Fitting-an-HMM-to-Multiple,-Independent-Trials-of-Data" title="Permalink"></a></h2><p>When fitting to multiple independent sequences, the EM algorithm must account for the fact that each sequence starts independently from the initial state distribution. This typically provides more robust parameter estimates.</p><pre><code class="language-julia hljs">println(&quot;Fitting HMM to multiple independent trials...&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Fitting HMM to multiple independent trials...</code></pre><p>Initialize a fresh model for multi-trial fitting</p><pre><code class="language-julia hljs">μ_1 = [-0.25, -0.25]
 Σ_1 = 0.3 * Matrix{Float64}(I, output_dim, output_dim)
 emission_1 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)
 
 μ_2 = [0.25, 0.25]
 Σ_2 = 0.5 * Matrix{Float64}(I, output_dim, output_dim)
-emission_2 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)
+emission_2 = GaussianEmission(output_dim=output_dim, μ=μ_2, Σ=Σ_2)
 
 A = [0.8 0.2; 0.05 0.95]
-πₖ = [0.6,0.4]
-test_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
+πₖ = [0.6, 0.4]
+test_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">HiddenMarkovModel{Float64, Vector{Float64}, Matrix{Float64}, Vector{GaussianEmission{Float64, Vector{Float64}, Matrix{Float64}}}}([0.8 0.2; 0.05 0.95], GaussianEmission{Float64, Vector{Float64}, Matrix{Float64}}[GaussianEmission{Float64, Vector{Float64}, Matrix{Float64}}(2, [-0.25, -0.25], [0.3 0.0; 0.0 0.3]), GaussianEmission{Float64, Vector{Float64}, Matrix{Float64}}(2, [0.25, 0.25], [0.5 0.0; 0.0 0.5])], [0.6, 0.4], 2)</code></pre><p>Fit to all trials simultaneously The package automatically handles the multi-trial structure</p><pre><code class="language-julia hljs">lls = fit!(test_model, all_data)
 
-lls = fit!(test_model, all_data)
-
-plot(lls)
-title!(&quot;Log-likelihood over EM Iterations&quot;)
+println(&quot;Multi-trial EM converged after $(length(lls)) iterations&quot;)
+println(&quot;Final log-likelihood: $(round(lls[end], digits=2))&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Running EM algorithm...   2%|█                                                 |  ETA: 0:00:24 ( 0.24  s/it)Running EM algorithm...   4%|██                                                |  ETA: 0:00:15 ( 0.16  s/it)Running EM algorithm...   6%|███                                               |  ETA: 0:00:12 ( 0.13  s/it)Running EM algorithm... 100%|██████████████████████████████████████████████████| Time: 0:00:00 ( 7.96 ms/it)
+Multi-trial EM converged after 6 iterations
+Final log-likelihood: -73032.91</code></pre><p>Plot convergence for multi-trial case</p><pre><code class="language-julia hljs">plot(lls)
+title!(&quot;Log-likelihood over EM Iterations (Multi-Trial Fitting)&quot;)
 xlabel!(&quot;EM Iteration&quot;)
-ylabel!(&quot;Log-Likelihood&quot;)</code></pre><img src="645e7421.svg" alt="Example block output"/><h2 id="Visualize-latent-state-predictions-for-multiple-trials-of-data-using-Viterbi"><a class="docs-heading-anchor" href="#Visualize-latent-state-predictions-for-multiple-trials-of-data-using-Viterbi">Visualize latent state predictions for multiple trials of data using Viterbi</a><a id="Visualize-latent-state-predictions-for-multiple-trials-of-data-using-Viterbi-1"></a><a class="docs-heading-anchor-permalink" href="#Visualize-latent-state-predictions-for-multiple-trials-of-data-using-Viterbi" title="Permalink"></a></h2><pre><code class="language-julia hljs">all_pred_labels_vec = viterbi(test_model, all_data)
-all_pred_labels = hcat(all_pred_labels_vec...)&#39;
-all_true_labels_matrix = hcat(all_true_labels...)&#39;
+ylabel!(&quot;Log-Likelihood&quot;)
 
-state_colors = [:dodgerblue, :crimson]
-true_subset = all_true_labels_matrix[1:10, 1:500]
+println(&quot;Final learned parameters (multi-trial):&quot;)
+println(&quot;  State 1: μ = $(round.(test_model.B[1].μ, digits=3)), σ² = $(round(test_model.B[1].Σ[1,1], digits=3))&quot;)
+println(&quot;  State 2: μ = $(round.(test_model.B[2].μ, digits=3)), σ² = $(round(test_model.B[2].Σ[1,1], digits=3))&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Final learned parameters (multi-trial):
+  State 1: μ = [-0.997, -1.0], σ² = 0.1
+  State 2: μ = [1.006, 1.004], σ² = 0.2</code></pre><h2 id="Visualize-Latent-State-Predictions-for-Multiple-Trials-using-Viterbi"><a class="docs-heading-anchor" href="#Visualize-Latent-State-Predictions-for-Multiple-Trials-using-Viterbi">Visualize Latent State Predictions for Multiple Trials using Viterbi</a><a id="Visualize-Latent-State-Predictions-for-Multiple-Trials-using-Viterbi-1"></a><a class="docs-heading-anchor-permalink" href="#Visualize-Latent-State-Predictions-for-Multiple-Trials-using-Viterbi" title="Permalink"></a></h2><p>Decode the hidden state sequences for all trials and visualize the results as a heatmap showing state assignments across multiple independent sequences.</p><pre><code class="language-julia hljs">println(&quot;Running Viterbi decoding on all trials...&quot;)
+all_pred_labels_vec = viterbi(test_model, all_data)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">100-element Vector{Vector{Int64}}:
+ [2, 2, 2, 2, 1, 1, 1, 1, 1, 1  …  1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+ [1, 1, 1, 1, 1, 1, 1, 1, 1, 1  …  1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+ [2, 2, 2, 1, 1, 1, 1, 1, 1, 1  …  1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+ [1, 1, 1, 1, 1, 1, 1, 1, 1, 1  …  2, 2, 2, 1, 1, 1, 1, 1, 1, 1]
+ [1, 1, 1, 1, 1, 1, 1, 1, 1, 1  …  1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+ [1, 1, 1, 1, 1, 1, 1, 1, 1, 1  …  2, 2, 1, 1, 1, 1, 1, 1, 1, 1]
+ [2, 2, 1, 1, 1, 1, 1, 1, 1, 1  …  1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+ [2, 2, 2, 2, 1, 1, 1, 1, 1, 1  …  1, 1, 2, 2, 2, 2, 2, 2, 2, 2]
+ [1, 1, 1, 1, 1, 1, 1, 1, 1, 1  …  1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+ [2, 2, 2, 2, 2, 2, 2, 2, 2, 2  …  1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+ ⋮
+ [2, 2, 2, 2, 2, 2, 2, 2, 2, 2  …  1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+ [1, 1, 1, 1, 1, 1, 1, 2, 2, 1  …  1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+ [1, 1, 1, 1, 1, 1, 1, 1, 1, 1  …  1, 1, 1, 1, 2, 2, 2, 2, 2, 2]
+ [1, 2, 2, 2, 2, 2, 2, 2, 2, 2  …  1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+ [1, 1, 1, 1, 1, 1, 1, 1, 1, 1  …  1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+ [1, 1, 1, 1, 1, 1, 1, 1, 1, 1  …  1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+ [2, 2, 2, 1, 1, 1, 1, 1, 1, 2  …  1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+ [1, 1, 1, 1, 1, 1, 1, 1, 1, 1  …  1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+ [1, 1, 1, 1, 1, 1, 1, 1, 1, 1  …  1, 1, 1, 1, 1, 1, 1, 1, 1, 1]</code></pre><p>Reshape data for easier analysis and visualization</p><pre><code class="language-julia hljs">all_pred_labels = hcat(all_pred_labels_vec...)&#39;      # trials × time
+all_true_labels_matrix = hcat(all_true_labels...)&#39;   # trials × time</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">100×1000 adjoint(::Matrix{Int64}) with eltype Int64:
+ 2  2  2  2  1  1  1  1  1  1  1  1  1  …  2  1  1  1  1  1  1  1  1  1  1  1
+ 1  1  1  1  1  1  1  1  1  1  1  1  1     1  1  1  1  1  1  1  1  1  1  1  1
+ 2  2  2  1  1  1  1  1  1  1  1  1  1     1  1  1  1  1  1  1  1  1  1  1  1
+ 1  1  1  1  1  1  1  1  1  1  1  1  1     2  2  2  2  2  1  1  1  1  1  1  1
+ 1  1  1  1  1  1  1  1  1  1  1  1  1     1  1  1  1  1  1  1  1  1  1  1  1
+ 1  1  1  1  1  1  1  1  1  1  1  1  1  …  2  2  2  2  1  1  1  1  1  1  1  1
+ 2  2  1  1  1  1  1  1  1  1  1  1  1     1  1  1  1  1  1  1  1  1  1  1  1
+ 2  2  2  2  1  1  1  1  1  1  1  1  1     1  1  1  1  2  2  2  2  2  2  2  2
+ 1  1  1  1  1  1  1  1  1  1  1  1  1     1  1  1  1  1  1  1  1  1  1  1  1
+ 2  2  2  2  2  2  2  2  2  2  2  2  1     1  1  1  1  1  1  1  1  1  1  1  1
+ ⋮              ⋮              ⋮        ⋱        ⋮              ⋮           
+ 2  2  2  2  2  2  2  2  2  2  2  2  2     1  1  1  1  1  1  1  1  1  1  1  1
+ 1  1  1  1  1  1  1  2  2  1  1  1  1     1  1  1  1  1  1  1  1  1  1  1  1
+ 1  1  1  1  1  1  1  1  1  1  1  1  1     1  1  1  1  1  1  2  2  2  2  2  2
+ 1  2  2  2  2  2  2  2  2  2  2  2  2     1  1  1  1  1  1  1  1  1  1  1  1
+ 1  1  1  1  1  1  1  1  1  1  1  1  1  …  1  1  1  1  1  1  1  1  1  1  1  1
+ 1  1  1  1  1  1  1  1  1  1  1  1  1     1  1  1  1  1  1  1  1  1  1  1  1
+ 2  2  2  1  1  1  1  1  1  2  2  2  2     1  1  1  1  1  1  1  1  1  1  1  1
+ 1  1  1  1  1  1  1  1  1  1  1  1  1     1  1  1  1  1  1  1  1  1  1  1  1
+ 1  1  1  1  1  1  1  1  1  1  1  1  1     1  1  1  1  1  1  1  1  1  1  1  1</code></pre><p>Calculate overall accuracy across all trials and timepoints</p><pre><code class="language-julia hljs">overall_accuracy = mean(all_true_labels_matrix .== all_pred_labels)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">1.0</code></pre><p>Check for label switching across the entire dataset</p><pre><code class="language-julia hljs">swapped_pred_all = 3 .- all_pred_labels
+swapped_accuracy_all = mean(all_true_labels_matrix .== swapped_pred_all)
+
+if swapped_accuracy_all &gt; overall_accuracy
+    println(&quot;Detected label switching in multi-trial analysis&quot;)
+    all_pred_labels = swapped_pred_all
+    overall_accuracy = swapped_accuracy_all
+end
+
+println(&quot;Overall state prediction accuracy across all trials: $(round(overall_accuracy*100, digits=1))%&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Overall state prediction accuracy across all trials: 100.0%</code></pre><p>Calculate per-trial accuracies for robustness assessment</p><pre><code class="language-julia hljs">trial_accuracies = [mean(all_true_labels_matrix[i, :] .== all_pred_labels[i, :]) for i in 1:n_trials]
+println(&quot;Mean per-trial accuracy: $(round(mean(trial_accuracies)*100, digits=1))% ± $(round(std(trial_accuracies)*100, digits=1))%&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Mean per-trial accuracy: 100.0% ± 0.0%</code></pre><p>Visualize a subset of trials to show consistency across independent sequences</p><pre><code class="language-julia hljs">state_colors = [:dodgerblue, :crimson]
+true_subset = all_true_labels_matrix[1:10, 1:500]   # First 10 trials, first 500 timepoints
 pred_subset = all_pred_labels[1:10, 1:500]
 
 p1 = heatmap(
     true_subset,
     colormap = :roma50,
     colorbar = false,
-    title = &quot;True State Labels&quot;,
+    title = &quot;True State Labels (10 trials × 500 timepoints)&quot;,
     xlabel = &quot;&quot;,
-    ylabel = &quot;Trials&quot;,
+    ylabel = &quot;Trial Number&quot;,
     xticks = false,
     yticks = true,
     margin = 5Plots.mm,
@@ -152,9 +269,9 @@ p2 = heatmap(
     pred_subset,
     colormap = :roma50,
     colorbar = false,
-    title = &quot;Predicted State Labels&quot;,
+    title = &quot;Predicted State Labels (Viterbi Decoding)&quot;,
     xlabel = &quot;Timepoints&quot;,
-    ylabel = &quot;Trials&quot;,
+    ylabel = &quot;Trial Number&quot;,
     xticks = true,
     yticks = true,
     margin = 5Plots.mm,
@@ -169,4 +286,30 @@ final_plot = plot(
     legend = false,
 )
 
-display(final_plot)</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../poisson_latent_dynamics_example/">« Poisson LDS Example</a><a class="docs-footer-nextpage" href="../gaussian_glm_hmm_example/">Gaussian GLM-GMM Example »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Friday 18 July 2025 22:54">Friday 18 July 2025</span>. Using Julia version 1.11.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+display(final_plot)</code></pre><h2 id="Parameter-Recovery-Analysis"><a class="docs-heading-anchor" href="#Parameter-Recovery-Analysis">Parameter Recovery Analysis</a><a id="Parameter-Recovery-Analysis-1"></a><a class="docs-heading-anchor-permalink" href="#Parameter-Recovery-Analysis" title="Permalink"></a></h2><pre><code class="language-julia hljs">println(&quot;\n=== Parameter Recovery Assessment ===&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">
+=== Parameter Recovery Assessment ===</code></pre><p>Compare true vs learned emission parameters</p><pre><code class="language-julia hljs">true_μ1, true_μ2 = [-1.0, -1.0], [1.0, 1.0]
+learned_μ1 = test_model.B[1].μ
+learned_μ2 = test_model.B[2].μ
+
+μ1_error = norm(true_μ1 - learned_μ1) / norm(true_μ1)
+μ2_error = norm(true_μ2 - learned_μ2) / norm(true_μ2)
+
+println(&quot;Mean vector recovery errors:&quot;)
+println(&quot;  State 1: $(round(μ1_error*100, digits=1))%&quot;)
+println(&quot;  State 2: $(round(μ2_error*100, digits=1))%&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Mean vector recovery errors:
+  State 1: 0.2%
+  State 2: 0.5%</code></pre><p>Compare transition matrices</p><pre><code class="language-julia hljs">true_A = [0.99 0.01; 0.05 0.95]
+learned_A = test_model.A
+A_error = norm(true_A - learned_A) / norm(true_A)
+println(&quot;Transition matrix recovery error: $(round(A_error*100, digits=1))%&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Transition matrix recovery error: 0.3%</code></pre><p>Compare covariance matrices</p><pre><code class="language-julia hljs">true_Σ1, true_Σ2 = 0.1, 0.2
+learned_Σ1 = test_model.B[1].Σ[1,1]
+learned_Σ2 = test_model.B[2].Σ[1,1]
+
+Σ1_error = abs(true_Σ1 - learned_Σ1) / true_Σ1
+Σ2_error = abs(true_Σ2 - learned_Σ2) / true_Σ2
+
+println(&quot;Variance recovery errors:&quot;)
+println(&quot;  State 1: $(round(Σ1_error*100, digits=1))%&quot;)
+println(&quot;  State 2: $(round(Σ2_error*100, digits=1))%&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Variance recovery errors:
+  State 1: 0.4%
+  State 2: 0.2%</code></pre><h2 id="Summary"><a class="docs-heading-anchor" href="#Summary">Summary</a><a id="Summary-1"></a><a class="docs-heading-anchor-permalink" href="#Summary" title="Permalink"></a></h2><p>This tutorial demonstrated the complete workflow for Gaussian emission Hidden Markov Models:</p><ol><li><strong>Model Structure</strong>: Discrete hidden states with Gaussian emission distributions</li><li><strong>Applications</strong>: Time series clustering, regime detection, behavioral state analysis</li><li><strong>Parameter Learning</strong>: EM algorithm successfully recovered emission parameters and transition dynamics</li><li><strong>State Inference</strong>: Viterbi algorithm accurately decoded hidden state sequences</li><li><strong>Multi-Trial Analysis</strong>: Robust parameter estimation from multiple independent sequences</li><li><strong>Label Switching</strong>: Demonstrated detection and handling of the label switching problem</li><li><strong>Scalability</strong>: Efficient handling of large datasets with multiple trials</li></ol><p>Gaussian HMMs provide a fundamental framework for modeling time series with discrete latent structure, forming the foundation for more complex state-space models and serving as a powerful tool for exploratory data analysis in temporal datasets.</p><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../poisson_latent_dynamics_example/">« Poisson LDS Example</a><a class="docs-footer-nextpage" href="../gaussian_glm_hmm_example/">Gaussian GLM-GMM Example »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Monday 8 September 2025 15:26">Monday 8 September 2025</span>. Using Julia version 1.11.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

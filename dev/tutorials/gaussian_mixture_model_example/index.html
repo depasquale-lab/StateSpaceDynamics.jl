@@ -1,24 +1,35 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Gaussian Mixture Model Example · StateSpaceDynamics.jl</title><meta name="title" content="Gaussian Mixture Model Example · StateSpaceDynamics.jl"/><meta property="og:title" content="Gaussian Mixture Model Example · StateSpaceDynamics.jl"/><meta property="twitter:title" content="Gaussian Mixture Model Example · StateSpaceDynamics.jl"/><meta name="description" content="Documentation for StateSpaceDynamics.jl."/><meta property="og:description" content="Documentation for StateSpaceDynamics.jl."/><meta property="twitter:description" content="Documentation for StateSpaceDynamics.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="StateSpaceDynamics.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">StateSpaceDynamics.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Models</span><ul><li><a class="tocitem" href="../../LinearDynamicalSystems/">Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../HiddenMarkovModels/">Hidden Markov Models</a></li><li><a class="tocitem" href="../../SLDS/">Switching Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../EmissionModels/">EmissionModels</a></li><li><a class="tocitem" href="../../MixtureModels/">Mixture Models</a></li></ul></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../gaussian_latent_dynamics_example/">Gaussian LDS Example</a></li><li><a class="tocitem" href="../poisson_latent_dynamics_example/">Poisson LDS Example</a></li><li><a class="tocitem" href="../hidden_markov_model_example/">Hidden Markov Model Example</a></li><li><a class="tocitem" href="../gaussian_glm_hmm_example/">Gaussian GLM-GMM Example</a></li><li class="is-active"><a class="tocitem" href>Gaussian Mixture Model Example</a><ul class="internal"><li><a class="tocitem" href="#Simulating-and-Fitting-a-Gaussian-Mixture-Model"><span>Simulating and Fitting a Gaussian Mixture Model</span></a></li><li><a class="tocitem" href="#Create-a-true-GaussianMixtureModel-to-simulate-from"><span>Create a true GaussianMixtureModel to simulate from</span></a></li><li><a class="tocitem" href="#Sample-data-from-the-true-GMM"><span>Sample data from the true GMM</span></a></li><li><a class="tocitem" href="#Fit-a-new-GaussianMixtureModel-to-the-data"><span>Fit a new GaussianMixtureModel to the data</span></a></li><li><a class="tocitem" href="#Plot-log-likelihoods-to-visualize-EM-convergence"><span>Plot log-likelihoods to visualize EM convergence</span></a></li><li><a class="tocitem" href="#Visualize-model-contours-over-the-data"><span>Visualize model contours over the data</span></a></li></ul></li><li><a class="tocitem" href="../poisson_mixture_model_example/">Poisson Mixture Model Example</a></li><li><a class="tocitem" href="../Probabilistic_PCA_example/">Probabilistic PCA Example</a></li><li><a class="tocitem" href="../switching_linear_dynamical_system_example/">Switching Linear Dynamical System Example</a></li></ul></li><li><a class="tocitem" href="../../Misc/">Miscellaneous</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Gaussian Mixture Model Example</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Gaussian Mixture Model Example</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/blob/main/docs/examples/GaussianMixtureModel.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h2 id="Simulating-and-Fitting-a-Gaussian-Mixture-Model"><a class="docs-heading-anchor" href="#Simulating-and-Fitting-a-Gaussian-Mixture-Model">Simulating and Fitting a Gaussian Mixture Model</a><a id="Simulating-and-Fitting-a-Gaussian-Mixture-Model-1"></a><a class="docs-heading-anchor-permalink" href="#Simulating-and-Fitting-a-Gaussian-Mixture-Model" title="Permalink"></a></h2><p>This tutorial demonstrates how to use <code>StateSpaceDynamics.jl</code> to create a Gaussian Mixture Model and fit it using the EM algorithm.</p><pre><code class="language-julia hljs">using StateSpaceDynamics
-using LinearAlgebra
-using Random
-using Plots
-using StableRNGs
-using Distributions
-using StatsPlots
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Gaussian Mixture Model Example · StateSpaceDynamics.jl</title><meta name="title" content="Gaussian Mixture Model Example · StateSpaceDynamics.jl"/><meta property="og:title" content="Gaussian Mixture Model Example · StateSpaceDynamics.jl"/><meta property="twitter:title" content="Gaussian Mixture Model Example · StateSpaceDynamics.jl"/><meta name="description" content="Documentation for StateSpaceDynamics.jl."/><meta property="og:description" content="Documentation for StateSpaceDynamics.jl."/><meta property="twitter:description" content="Documentation for StateSpaceDynamics.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="StateSpaceDynamics.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">StateSpaceDynamics.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Models</span><ul><li><a class="tocitem" href="../../LinearDynamicalSystems/">Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../HiddenMarkovModels/">Hidden Markov Models</a></li><li><a class="tocitem" href="../../SLDS/">Switching Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../EmissionModels/">EmissionModels</a></li><li><a class="tocitem" href="../../MixtureModels/">Mixture Models</a></li></ul></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../gaussian_latent_dynamics_example/">Gaussian LDS Example</a></li><li><a class="tocitem" href="../poisson_latent_dynamics_example/">Poisson LDS Example</a></li><li><a class="tocitem" href="../hidden_markov_model_example/">Hidden Markov Model Example</a></li><li><a class="tocitem" href="../gaussian_glm_hmm_example/">Gaussian GLM-GMM Example</a></li><li class="is-active"><a class="tocitem" href>Gaussian Mixture Model Example</a><ul class="internal"><li><a class="tocitem" href="#Simulating-and-Fitting-a-Gaussian-Mixture-Model"><span>Simulating and Fitting a Gaussian Mixture Model</span></a></li><li><a class="tocitem" href="#Load-Required-Packages"><span>Load Required Packages</span></a></li><li><a class="tocitem" href="#Create-a-True-Gaussian-Mixture-Model-to-Simulate-From"><span>Create a True Gaussian Mixture Model to Simulate From</span></a></li><li><a class="tocitem" href="#Sample-Data-from-the-True-GMM"><span>Sample Data from the True GMM</span></a></li><li><a class="tocitem" href="#Fit-a-New-Gaussian-Mixture-Model-to-the-Data"><span>Fit a New Gaussian Mixture Model to the Data</span></a></li><li><a class="tocitem" href="#Plot-Log-Likelihoods-to-Visualize-EM-Convergence"><span>Plot Log-Likelihoods to Visualize EM Convergence</span></a></li><li><a class="tocitem" href="#Visualize-Model-Contours-Over-the-Data"><span>Visualize Model Contours Over the Data</span></a></li><li><a class="tocitem" href="#Analyze-Component-Assignments"><span>Analyze Component Assignments</span></a></li><li><a class="tocitem" href="#Parameter-Recovery-Analysis"><span>Parameter Recovery Analysis</span></a></li><li><a class="tocitem" href="#Create-Final-Comparison-Visualization"><span>Create Final Comparison Visualization</span></a></li><li><a class="tocitem" href="#Model-Selection-Considerations"><span>Model Selection Considerations</span></a></li><li><a class="tocitem" href="#Summary"><span>Summary</span></a></li></ul></li><li><a class="tocitem" href="../poisson_mixture_model_example/">Poisson Mixture Model Example</a></li><li><a class="tocitem" href="../Probabilistic_PCA_example/">Probabilistic PCA Example</a></li><li><a class="tocitem" href="../switching_linear_dynamical_system_example/">Switching Linear Dynamical System Example</a></li></ul></li><li><a class="tocitem" href="../../Misc/">Miscellaneous</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Gaussian Mixture Model Example</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Gaussian Mixture Model Example</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/blob/main/docs/examples/GaussianMixtureModel.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h2 id="Simulating-and-Fitting-a-Gaussian-Mixture-Model"><a class="docs-heading-anchor" href="#Simulating-and-Fitting-a-Gaussian-Mixture-Model">Simulating and Fitting a Gaussian Mixture Model</a><a id="Simulating-and-Fitting-a-Gaussian-Mixture-Model-1"></a><a class="docs-heading-anchor-permalink" href="#Simulating-and-Fitting-a-Gaussian-Mixture-Model" title="Permalink"></a></h2><p>This tutorial demonstrates how to use <code>StateSpaceDynamics.jl</code> to create a Gaussian Mixture Model (GMM) and fit it using the EM algorithm. Unlike Hidden Markov Models which model temporal sequences, GMMs are designed for clustering and density estimation of independent observations. Each data point is assumed to come from one of several Gaussian components, but there&#39;s no temporal dependence.</p><p>GMMs are fundamental in machine learning for tasks like:</p><ul><li>Unsupervised clustering of data</li><li>Density estimation for anomaly detection</li><li>Dimensionality reduction (when combined with factor analysis)</li><li>As building blocks for more complex models</li></ul><p>The key insight is that complex data distributions can often be well-approximated as mixtures of simpler Gaussian distributions, each representing a different &quot;mode&quot; or cluster in the data.</p><h2 id="Load-Required-Packages"><a class="docs-heading-anchor" href="#Load-Required-Packages">Load Required Packages</a><a id="Load-Required-Packages-1"></a><a class="docs-heading-anchor-permalink" href="#Load-Required-Packages" title="Permalink"></a></h2><p>We need several packages for GMM modeling, data generation, and comprehensive visualization.</p><pre><code class="language-julia hljs">using StateSpaceDynamics  # Core GMM functionality
+using LinearAlgebra       # Matrix operations
+using Random             # Random number generation
+using Plots              # Basic plotting
+using StableRNGs         # Reproducible randomness
+using Distributions      # Statistical distributions
+using StatsPlots         # Enhanced statistical plotting
+using Combinatorics</code></pre><p>Set up reproducible random number generation</p><pre><code class="language-julia hljs">rng = StableRNG(1234);</code></pre><h2 id="Create-a-True-Gaussian-Mixture-Model-to-Simulate-From"><a class="docs-heading-anchor" href="#Create-a-True-Gaussian-Mixture-Model-to-Simulate-From">Create a True Gaussian Mixture Model to Simulate From</a><a id="Create-a-True-Gaussian-Mixture-Model-to-Simulate-From-1"></a><a class="docs-heading-anchor-permalink" href="#Create-a-True-Gaussian-Mixture-Model-to-Simulate-From" title="Permalink"></a></h2><p>We&#39;ll create a &quot;ground truth&quot; GMM with known parameters, generate data from it, then see how well we can recover these parameters using only the observed data.</p><pre><code class="language-julia hljs">k = 3  # Number of mixture components (clusters)
+D = 2  # Data dimensionality (2D for easy visualization)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">2</code></pre><p>Define the true component means Each column represents the mean vector for one component</p><pre><code class="language-julia hljs">true_μs = [
+    -1.0  1.0  0.0;   # x₁ coordinates of the 3 component centers
+    -1.0 -1.5  2.0    # x₂ coordinates of the 3 component centers
+]  # Shape: (D, K) = (2, 3)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">2×3 Matrix{Float64}:
+ -1.0   1.0  0.0
+ -1.0  -1.5  2.0</code></pre><p>Define covariance matrices for each component Using isotropic (spherical) covariances for simplicity</p><pre><code class="language-julia hljs">true_Σs = [Matrix{Float64}(0.3 * I(2)) for _ in 1:k]  # All components have same shape</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">3-element Vector{Matrix{Float64}}:
+ [0.3 0.0; 0.0 0.3]
+ [0.3 0.0; 0.0 0.3]
+ [0.3 0.0; 0.0 0.3]</code></pre><p>Define mixing weights (must sum to 1) These represent the probability that a random sample comes from each component</p><pre><code class="language-julia hljs">true_πs = [0.5, 0.2, 0.3]  # Component 1 is most likely, component 2 least likely</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">3-element Vector{Float64}:
+ 0.5
+ 0.2
+ 0.3</code></pre><p>Construct the complete GMM</p><pre><code class="language-julia hljs">true_gmm = GaussianMixtureModel(k, true_μs, true_Σs, true_πs)
 
-rng = StableRNG(1234);</code></pre><h2 id="Create-a-true-GaussianMixtureModel-to-simulate-from"><a class="docs-heading-anchor" href="#Create-a-true-GaussianMixtureModel-to-simulate-from">Create a true GaussianMixtureModel to simulate from</a><a id="Create-a-true-GaussianMixtureModel-to-simulate-from-1"></a><a class="docs-heading-anchor-permalink" href="#Create-a-true-GaussianMixtureModel-to-simulate-from" title="Permalink"></a></h2><pre><code class="language-julia hljs">k = 3
-D = 2  # data dimension
-
-true_μs = [
-    -1.0  1.0  0.0;
-    -1.0 -1.5  2.0
-]  # shape (D, K)
-
-true_Σs = [Matrix{Float64}(0.3 * I(2)) for _ in 1:k]
-true_πs = [0.5, 0.2, 0.3]
-
-true_gmm = GaussianMixtureModel(k, true_μs, true_Σs, true_πs)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">GaussianMixtureModel{Float64, Matrix{Float64}, Vector{Float64}}(3, [-1.0 1.0 0.0; -1.0 -1.5 2.0], [[0.3 0.0; 0.0 0.3], [0.3 0.0; 0.0 0.3], [0.3 0.0; 0.0 0.3]], [0.5, 0.2, 0.3])</code></pre><h2 id="Sample-data-from-the-true-GMM"><a class="docs-heading-anchor" href="#Sample-data-from-the-true-GMM">Sample data from the true GMM</a><a id="Sample-data-from-the-true-GMM-1"></a><a class="docs-heading-anchor-permalink" href="#Sample-data-from-the-true-GMM" title="Permalink"></a></h2><pre><code class="language-julia hljs">n = 500</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">500</code></pre><p>generate component labels (for plotting)</p><pre><code class="language-julia hljs">labels = rand(rng, Categorical(true_πs), n)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">500-element Vector{Int64}:
+println(&quot;Created true GMM with $k components in $D dimensions:&quot;)
+for i in 1:k
+    println(&quot;  Component $i: μ = $(true_μs[:, i]), π = $(true_πs[i])&quot;)
+end
+println(&quot;  All components have isotropic covariance with σ² = 0.3&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Created true GMM with 3 components in 2 dimensions:
+  Component 1: μ = [-1.0, -1.0], π = 0.5
+  Component 2: μ = [1.0, -1.5], π = 0.2
+  Component 3: μ = [0.0, 2.0], π = 0.3
+  All components have isotropic covariance with σ² = 0.3</code></pre><h2 id="Sample-Data-from-the-True-GMM"><a class="docs-heading-anchor" href="#Sample-Data-from-the-True-GMM">Sample Data from the True GMM</a><a id="Sample-Data-from-the-True-GMM-1"></a><a class="docs-heading-anchor-permalink" href="#Sample-Data-from-the-True-GMM" title="Permalink"></a></h2><p>Generate synthetic data from our true model. We&#39;ll sample both the component assignments (for visualization) and the actual observations.</p><pre><code class="language-julia hljs">n = 500  # Number of data points to generate
+println(&quot;Generating $n samples from the true GMM...&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Generating 500 samples from the true GMM...</code></pre><p>First, determine which component each sample comes from</p><pre><code class="language-julia hljs">labels = rand(rng, Categorical(true_πs), n)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">500-element Vector{Int64}:
  3
  1
  2
@@ -38,55 +49,332 @@ true_gmm = GaussianMixtureModel(k, true_μs, true_Σs, true_πs)</code></pre><pr
  1
  1
  2
- 1</code></pre><p>generate samples from the GMM</p><pre><code class="language-julia hljs">X = Matrix{Float64}(undef, D, n)
+ 1</code></pre><p>Count samples per component</p><pre><code class="language-julia hljs">component_counts = [sum(labels .== i) for i in 1:k]
+println(&quot;Samples per component: $(component_counts)&quot;)
+println(&quot;Empirical mixing proportions: $(round.(component_counts ./ n, digits=3))&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Samples per component: [252, 96, 152]
+Empirical mixing proportions: [0.504, 0.192, 0.304]</code></pre><p>Generate the actual data points</p><pre><code class="language-julia hljs">X = Matrix{Float64}(undef, D, n)
 for i in 1:n
-    X[:, i] = rand(rng, MvNormal(true_μs[:, labels[i]], true_Σs[labels[i]]))
+    component = labels[i]
+    X[:, i] = rand(rng, MvNormal(true_μs[:, component], true_Σs[component]))
 end
 
-p1 = scatter(
+println(&quot;Generated data summary:&quot;)
+println(&quot;  Data shape: $(size(X)) (dimensions × samples)&quot;)
+println(&quot;  Data range: x₁ ∈ [$(round(minimum(X[1,:]), digits=2)), $(round(maximum(X[1,:]), digits=2))], x₂ ∈ [$(round(minimum(X[2,:]), digits=2)), $(round(maximum(X[2,:]), digits=2))]&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Generated data summary:
+  Data shape: (2, 500) (dimensions × samples)
+  Data range: x₁ ∈ [-2.93, 2.53], x₂ ∈ [-3.07, 3.43]</code></pre><p>Visualize the generated data colored by true component membership</p><pre><code class="language-julia hljs">p1 = scatter(
     X[1, :], X[2, :];
-    group=labels,
-    title=&quot;GMM Samples&quot;,
+    group=labels,                    # Color by true component
+    title=&quot;GMM Samples (colored by true component)&quot;,
     xlabel=&quot;x₁&quot;, ylabel=&quot;x₂&quot;,
     markersize=4,
     alpha=0.8,
-    legend=false,
-)
-p1</code></pre><img src="666c012c.svg" alt="Example block output"/><h2 id="Fit-a-new-GaussianMixtureModel-to-the-data"><a class="docs-heading-anchor" href="#Fit-a-new-GaussianMixtureModel-to-the-data">Fit a new GaussianMixtureModel to the data</a><a id="Fit-a-new-GaussianMixtureModel-to-the-data-1"></a><a class="docs-heading-anchor-permalink" href="#Fit-a-new-GaussianMixtureModel-to-the-data" title="Permalink"></a></h2><pre><code class="language-julia hljs">fit_gmm = GaussianMixtureModel(k, D)
-
-class_probabilities, lls = fit!(fit_gmm, X;
-    maxiter=100, tol=1e-6, initialize_kmeans=true)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">([0.513482061448307 0.0007204149902823635 … 6.955478008199006e-6 0.00020115725340173515; 7.780237468657748e-7 0.9992795637433366 … 0.9999930445219912 0.9997988424130013; 0.48651716052794625 2.1266380845833782e-8 … 4.685497370023384e-16 3.3359703402941283e-10], [-1386.2371199852955, -1373.5765321121091, -1368.2888511213357, -1366.1047790904727, -1365.3628412157057, -1365.07201825234, -1364.889140002475, -1364.7262397861114, -1364.5667563823345, -1364.41269892413  …  -1362.984554974611, -1362.9765159480553, -1362.9685796813808, -1362.9607449989578, -1362.9530107195387, -1362.9453756579949, -1362.937838625479, -1362.9303984282824, -1362.9230538655233, -1362.9158037258667])</code></pre><h2 id="Plot-log-likelihoods-to-visualize-EM-convergence"><a class="docs-heading-anchor" href="#Plot-log-likelihoods-to-visualize-EM-convergence">Plot log-likelihoods to visualize EM convergence</a><a id="Plot-log-likelihoods-to-visualize-EM-convergence-1"></a><a class="docs-heading-anchor-permalink" href="#Plot-log-likelihoods-to-visualize-EM-convergence" title="Permalink"></a></h2><pre><code class="language-julia hljs">p2 = plot(
-    lls;
-    xlabel=&quot;Iteration&quot;,
-    ylabel=&quot;Log-Likelihood&quot;,
-    title=&quot;EM Convergence&quot;,
-    label=&quot;log_likelihood&quot;,
-    marker=:circle,
-)
-p2</code></pre><img src="1955753e.svg" alt="Example block output"/><h2 id="Visualize-model-contours-over-the-data"><a class="docs-heading-anchor" href="#Visualize-model-contours-over-the-data">Visualize model contours over the data</a><a id="Visualize-model-contours-over-the-data-1"></a><a class="docs-heading-anchor-permalink" href="#Visualize-model-contours-over-the-data" title="Permalink"></a></h2><pre><code class="language-julia hljs">xs = collect(range(minimum(X[1, :]) - 1, stop=maximum(X[1, :]) + 1, length=150))
-ys = collect(range(minimum(X[2, :]) - 1, stop=maximum(X[2, :]) + 1, length=150))
-
-p3 = scatter(
-    X[1, :], X[2, :];
-    markersize=3, alpha=0.5,
-    xlabel=&quot;x₁&quot;, ylabel=&quot;x₂&quot;,
-    title=&quot;Data &amp; Fitted GMM Contours by Component&quot;,
     legend=:topright,
+    palette=:Set1_3
+)</code></pre><img src="4e2458b3.svg" alt="Example block output"/><p>Add component centers for reference</p><pre><code class="language-julia hljs">for i in 1:k
+    scatter!(p1, [true_μs[1, i]], [true_μs[2, i]];
+        marker=:star, markersize=10, color=i,
+        markerstrokewidth=2, markerstrokecolor=:black,
+        label=&quot;Center $i&quot;)
+end
+
+display(p1)</code></pre><h2 id="Fit-a-New-Gaussian-Mixture-Model-to-the-Data"><a class="docs-heading-anchor" href="#Fit-a-New-Gaussian-Mixture-Model-to-the-Data">Fit a New Gaussian Mixture Model to the Data</a><a id="Fit-a-New-Gaussian-Mixture-Model-to-the-Data-1"></a><a class="docs-heading-anchor-permalink" href="#Fit-a-New-Gaussian-Mixture-Model-to-the-Data" title="Permalink"></a></h2><p>Now we simulate the realistic scenario: we observe only the data points X, not the true component labels or parameters. Our goal is to recover the underlying mixture structure using the EM algorithm.</p><pre><code class="language-julia hljs">println(&quot;Initializing GMM for fitting...&quot;)
+println(&quot;Note: We assume we know the correct number of components k=$k&quot;)
+println(&quot;      (In practice, this often requires model selection)&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Initializing GMM for fitting...
+Note: We assume we know the correct number of components k=3
+      (In practice, this often requires model selection)</code></pre><p>Initialize a GMM with the correct number of components but unknown parameters</p><pre><code class="language-julia hljs">fit_gmm = GaussianMixtureModel(k, D)
+
+println(&quot;Running EM algorithm to learn GMM parameters...&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Running EM algorithm to learn GMM parameters...</code></pre><p>Fit the model using EM algorithm</p><ul><li>maxiter: maximum number of EM iterations</li><li>tol: convergence tolerance (change in log-likelihood)</li><li>initialize_kmeans: use k-means to initialize component centers</li></ul><pre><code class="language-julia hljs">class_probabilities, lls = fit!(fit_gmm, X;
+    maxiter=100,
+    tol=1e-6,
+    initialize_kmeans=true  # This often helps convergence
 )
 
-colors = [:red, :green, :blue]
+println(&quot;EM algorithm completed:&quot;)
+println(&quot;  Converged after $(length(lls)) iterations&quot;)
+println(&quot;  Final log-likelihood: $(round(lls[end], digits=2))&quot;)
+println(&quot;  Log-likelihood improvement: $(round(lls[end] - lls[1], digits=2))&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Iteration 1: Log-likelihood = -1396.849836154299
+Iteration 2: Log-likelihood = -1363.4882761860601
+Iteration 3: Log-likelihood = -1352.592955027511
+Iteration 4: Log-likelihood = -1344.9271195685553
+Iteration 5: Log-likelihood = -1339.18405137741
+Iteration 6: Log-likelihood = -1334.6347867776042
+Iteration 7: Log-likelihood = -1331.101775370309
+Iteration 8: Log-likelihood = -1328.7755983761208
+Iteration 9: Log-likelihood = -1327.490414591483
+Iteration 10: Log-likelihood = -1326.8284259769416
+Iteration 11: Log-likelihood = -1326.4667490521897
+Iteration 12: Log-likelihood = -1326.2460116836933
+Iteration 13: Log-likelihood = -1326.0985434243673
+Iteration 14: Log-likelihood = -1325.9937826611151
+Iteration 15: Log-likelihood = -1325.9158641656575
+Iteration 16: Log-likelihood = -1325.855590348553
+Iteration 17: Log-likelihood = -1325.8072802960833
+Iteration 18: Log-likelihood = -1325.767298984019
+Iteration 19: Log-likelihood = -1325.7332672593345
+Iteration 20: Log-likelihood = -1325.70360129306
+Iteration 21: Log-likelihood = -1325.6772316788067
+Iteration 22: Log-likelihood = -1325.6534271711455
+Iteration 23: Log-likelihood = -1325.6316817469688
+Iteration 24: Log-likelihood = -1325.611640996556
+Iteration 25: Log-likelihood = -1325.5930534476456
+Iteration 26: Log-likelihood = -1325.5757379730867
+Iteration 27: Log-likelihood = -1325.5595617325732
+Iteration 28: Log-likelihood = -1325.5444251070571
+Iteration 29: Log-likelihood = -1325.5302513307336
+Iteration 30: Log-likelihood = -1325.51697931287
+Iteration 31: Log-likelihood = -1325.5045586470883
+Iteration 32: Log-likelihood = -1325.4929461346496
+Iteration 33: Log-likelihood = -1325.4821033650785
+Iteration 34: Log-likelihood = -1325.47199504164
+Iteration 35: Log-likelihood = -1325.462587836063
+Iteration 36: Log-likelihood = -1325.4538496222285
+Iteration 37: Log-likelihood = -1325.4457489830245
+Iteration 38: Log-likelihood = -1325.4382549147851
+Iteration 39: Log-likelihood = -1325.4313366745937
+Iteration 40: Log-likelihood = -1325.424963730071
+Iteration 41: Log-likelihood = -1325.4191057813618
+Iteration 42: Log-likelihood = -1325.413732832181
+Iteration 43: Log-likelihood = -1325.4088152921236
+Iteration 44: Log-likelihood = -1325.4043240962685
+Iteration 45: Log-likelihood = -1325.4002308313718
+Iteration 46: Log-likelihood = -1325.3965078603192
+Iteration 47: Log-likelihood = -1325.3931284386574
+Iteration 48: Log-likelihood = -1325.3900668187412
+Iteration 49: Log-likelihood = -1325.3872983385215
+Iteration 50: Log-likelihood = -1325.384799493236
+Iteration 51: Log-likelihood = -1325.3825479892496
+Iteration 52: Log-likelihood = -1325.380522780231
+Iteration 53: Log-likelihood = -1325.3787040863174
+Iteration 54: Log-likelihood = -1325.3770733976012
+Iteration 55: Log-likelihood = -1325.375613463423
+Iteration 56: Log-likelihood = -1325.374308269276
+Iteration 57: Log-likelihood = -1325.3731430031733
+Iteration 58: Log-likelihood = -1325.372104013369
+Iteration 59: Log-likelihood = -1325.3711787591706
+Iteration 60: Log-likelihood = -1325.3703557566505
+Iteration 61: Log-likelihood = -1325.3696245206881
+Iteration 62: Log-likelihood = -1325.368975504831
+Iteration 63: Log-likelihood = -1325.3684000401117
+Iteration 64: Log-likelihood = -1325.3678902738775
+Iteration 65: Log-likelihood = -1325.367439109501
+Iteration 66: Log-likelihood = -1325.3670401476365
+Iteration 67: Log-likelihood = -1325.3666876295845
+Iteration 68: Log-likelihood = -1325.3663763831935
+Iteration 69: Log-likelihood = -1325.366101771532
+Iteration 70: Log-likelihood = -1325.3658596446003
+Iteration 71: Log-likelihood = -1325.3656462941376
+Iteration 72: Log-likelihood = -1325.3654584115648
+Iteration 73: Log-likelihood = -1325.365293049064
+Iteration 74: Log-likelihood = -1325.3651475837034
+Iteration 75: Log-likelihood = -1325.365019684513
+Iteration 76: Log-likelihood = -1325.3649072823894
+Iteration 77: Log-likelihood = -1325.3648085426669
+Iteration 78: Log-likelihood = -1325.364721840196
+Iteration 79: Log-likelihood = -1325.3646457368118
+Iteration 80: Log-likelihood = -1325.3645789609352
+Iteration 81: Log-likelihood = -1325.3645203892158
+Iteration 82: Log-likelihood = -1325.364469030042
+Iteration 83: Log-likelihood = -1325.3644240087115
+Iteration 84: Log-likelihood = -1325.3643845541924
+Iteration 85: Log-likelihood = -1325.3643499872624
+Iteration 86: Log-likelihood = -1325.3643197099404
+Iteration 87: Log-likelihood = -1325.3642931960578
+Iteration 88: Log-likelihood = -1325.3642699828827
+Iteration 89: Log-likelihood = -1325.3642496636758
+Iteration 90: Log-likelihood = -1325.3642318810628
+Iteration 91: Log-likelihood = -1325.3642163212028
+Iteration 92: Log-likelihood = -1325.3642027085705
+Iteration 93: Log-likelihood = -1325.3641908013822
+Iteration 94: Log-likelihood = -1325.3641803875455
+Iteration 95: Log-likelihood = -1325.3641712810595
+Iteration 96: Log-likelihood = -1325.3641633188645
+Iteration 97: Log-likelihood = -1325.3641563580497
+Iteration 98: Log-likelihood = -1325.3641502733979
+Iteration 99: Log-likelihood = -1325.3641449552258
+Iteration 100: Log-likelihood = -1325.3641403074757
+EM algorithm completed:
+  Converged after 100 iterations
+  Final log-likelihood: -1325.36
+  Log-likelihood improvement: 71.49</code></pre><p>Display learned parameters</p><pre><code class="language-julia hljs">println(&quot;\nLearned GMM parameters:&quot;)
+for i in 1:k
+    println(&quot;  Component $i: μ = $(round.(fit_gmm.μₖ[:, i], digits=3)), π = $(round(fit_gmm.πₖ[i], digits=3))&quot;)
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">
+Learned GMM parameters:
+  Component 1: μ = [0.824, -1.426], π = 0.217
+  Component 2: μ = [-1.039, -1.005], π = 0.48
+  Component 3: μ = [-0.059, 2.022], π = 0.303</code></pre><h2 id="Plot-Log-Likelihoods-to-Visualize-EM-Convergence"><a class="docs-heading-anchor" href="#Plot-Log-Likelihoods-to-Visualize-EM-Convergence">Plot Log-Likelihoods to Visualize EM Convergence</a><a id="Plot-Log-Likelihoods-to-Visualize-EM-Convergence-1"></a><a class="docs-heading-anchor-permalink" href="#Plot-Log-Likelihoods-to-Visualize-EM-Convergence" title="Permalink"></a></h2><p>The EM algorithm should monotonically increase the log-likelihood at each iteration. Plotting this helps us verify convergence and understand the optimization process.</p><pre><code class="language-julia hljs">p2 = plot(
+    lls;
+    xlabel=&quot;EM Iteration&quot;,
+    ylabel=&quot;Log-Likelihood&quot;,
+    title=&quot;EM Algorithm Convergence&quot;,
+    label=&quot;Log-Likelihood&quot;,
+    marker=:circle,
+    markersize=4,
+    linewidth=2,
+    grid=true
+)</code></pre><img src="a036a1a9.svg" alt="Example block output"/><p>Add annotations about convergence behavior</p><pre><code class="language-julia hljs">if length(lls) &gt; 1
+    initial_rate = lls[min(5, end)] - lls[1]
+    final_rate = lls[end] - lls[max(1, end-5)]
 
+    annotate!(p2, length(lls)*0.7, lls[end]*0.95,
+        text(&quot;Final LL: $(round(lls[end], digits=1))&quot;, 10))
+
+    if length(lls) &lt; 100  # Converged before max iterations
+        annotate!(p2, length(lls)*0.7, lls[end]*0.90,
+            text(&quot;Converged in $(length(lls)) iterations&quot;, 10))
+    end
+end
+
+display(p2)</code></pre><h2 id="Visualize-Model-Contours-Over-the-Data"><a class="docs-heading-anchor" href="#Visualize-Model-Contours-Over-the-Data">Visualize Model Contours Over the Data</a><a id="Visualize-Model-Contours-Over-the-Data-1"></a><a class="docs-heading-anchor-permalink" href="#Visualize-Model-Contours-Over-the-Data" title="Permalink"></a></h2><p>Create a comprehensive visualization showing both the data and the fitted model. We&#39;ll plot probability density contours for each learned component.</p><pre><code class="language-julia hljs">println(&quot;Creating visualization of fitted GMM...&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Creating visualization of fitted GMM...</code></pre><p>Create a grid for plotting contours</p><pre><code class="language-julia hljs">x_range = range(minimum(X[1, :]) - 1, stop=maximum(X[1, :]) + 1, length=150)
+y_range = range(minimum(X[2, :]) - 1, stop=maximum(X[2, :]) + 1, length=150)
+xs = collect(x_range)
+ys = collect(y_range)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">150-element Vector{Float64}:
+ -4.073999575665585
+ -4.016958547613193
+ -3.9599175195608005
+ -3.902876491508408
+ -3.8458354634560155
+ -3.788794435403623
+ -3.731753407351231
+ -3.6747123792988385
+ -3.6176713512464462
+ -3.560630323194054
+  ⋮
+  3.9687853797217403
+  4.025826407774132
+  4.082867435826525
+  4.139908463878918
+  4.19694949193131
+  4.253990519983702
+  4.311031548036095
+  4.368072576088487
+  4.425113604140879</code></pre><p>Start with a scatter plot of the data (without true labels this time)</p><pre><code class="language-julia hljs">p3 = scatter(
+    X[1, :], X[2, :];
+    markersize=3,
+    alpha=0.5,
+    color=:gray,
+    xlabel=&quot;x₁&quot;,
+    ylabel=&quot;x₂&quot;,
+    title=&quot;Data with Fitted GMM Components&quot;,
+    legend=:topright,
+    label=&quot;Data points&quot;
+)</code></pre><img src="691355e0.svg" alt="Example block output"/><p>Plot probability density contours for each learned component</p><pre><code class="language-julia hljs">colors = [:red, :green, :blue]
 for i in 1:fit_gmm.k
     comp_dist = MvNormal(fit_gmm.μₖ[:, i], fit_gmm.Σₖ[i])
     Z_i = [fit_gmm.πₖ[i] * pdf(comp_dist, [x, y]) for y in ys, x in xs]
 
     contour!(
         p3, xs, ys, Z_i;
-        levels=10,
+        levels=8,
         linewidth=2,
         c=colors[i],
-        label=&quot;Comp $i&quot;,
+        label=&quot;Component $i (π=$(round(fit_gmm.πₖ[i], digits=2)))&quot;
     )
+
+    scatter!(p3, [fit_gmm.μₖ[1, i]], [fit_gmm.μₖ[2, i]];
+        marker=:star, markersize=8, color=colors[i],
+        markerstrokewidth=2, markerstrokecolor=:black,
+        label=&quot;&quot;)
 end
 
-p3</code></pre><img src="40fb3293.svg" alt="Example block output"/><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../gaussian_glm_hmm_example/">« Gaussian GLM-GMM Example</a><a class="docs-footer-nextpage" href="../poisson_mixture_model_example/">Poisson Mixture Model Example »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Friday 18 July 2025 22:54">Friday 18 July 2025</span>. Using Julia version 1.11.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+display(p3)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">┌ Warning: Multiple series with different color share a colorbar.
+│ Colorbar may not reflect all series correctly.
+└ @ Plots ~/.julia/packages/Plots/xKhUG/src/backends/gr.jl:530
+┌ Warning: Multiple series with different line color share a colorbar.
+│ Colorbar may not reflect all series correctly.
+└ @ Plots ~/.julia/packages/Plots/xKhUG/src/backends/gr.jl:530</code></pre><h2 id="Analyze-Component-Assignments"><a class="docs-heading-anchor" href="#Analyze-Component-Assignments">Analyze Component Assignments</a><a id="Analyze-Component-Assignments-1"></a><a class="docs-heading-anchor-permalink" href="#Analyze-Component-Assignments" title="Permalink"></a></h2><p>Use the fitted model to assign each data point to its most likely component and compare with the true assignments.</p><pre><code class="language-julia hljs">println(&quot;Analyzing component assignments...&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Analyzing component assignments...</code></pre><p>Get posterior probabilities for each data point class_probabilities[i, j] = P(component i | data point j)</p><pre><code class="language-julia hljs">predicted_labels = [argmax(class_probabilities[:, j]) for j in 1:n]</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">500-element Vector{Int64}:
+ 3
+ 2
+ 1
+ 2
+ 3
+ 2
+ 2
+ 1
+ 1
+ 3
+ ⋮
+ 2
+ 2
+ 3
+ 2
+ 3
+ 2
+ 2
+ 1
+ 2</code></pre><p>Calculate assignment accuracy (accounting for possible label permutation) Since EM can converge with components in different order, we need to find the best permutation of labels</p><pre><code class="language-julia hljs">function best_permutation_accuracy(true_labels, pred_labels, k)
+    best_acc = 0.0
+    best_perm = collect(1:k)
+
+    for perm in Combinatorics.permutations(1:k)
+        mapped_pred = [perm[pred_labels[i]] for i in 1:length(pred_labels)]
+        acc = mean(true_labels .== mapped_pred)
+        if acc &gt; best_acc
+            best_acc = acc
+            best_perm = perm
+        end
+    end
+
+    return best_acc, best_perm
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">best_permutation_accuracy (generic function with 1 method)</code></pre><p>Calculate accuracy with best label permutation</p><pre><code class="language-julia hljs">accuracy, best_perm = best_permutation_accuracy(labels, predicted_labels, k)
+println(&quot;Component assignment accuracy: $(round(accuracy*100, digits=1))%&quot;)
+println(&quot;Best label permutation: $best_perm&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Component assignment accuracy: 97.0%
+Best label permutation: [2, 1, 3]</code></pre><h2 id="Parameter-Recovery-Analysis"><a class="docs-heading-anchor" href="#Parameter-Recovery-Analysis">Parameter Recovery Analysis</a><a id="Parameter-Recovery-Analysis-1"></a><a class="docs-heading-anchor-permalink" href="#Parameter-Recovery-Analysis" title="Permalink"></a></h2><pre><code class="language-julia hljs">println(&quot;\n=== Parameter Recovery Assessment ===&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">
+=== Parameter Recovery Assessment ===</code></pre><p>Compare true vs learned parameters (accounting for label permutation)</p><pre><code class="language-julia hljs">mapped_μs = fit_gmm.μₖ[:, best_perm]
+mapped_πs = fit_gmm.πₖ[best_perm]
+mapped_Σs = fit_gmm.Σₖ[best_perm]</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">3-element Vector{Matrix{Float64}}:
+ [0.2905504290262535 -0.006686415927242627; -0.006686415927242627 0.34432909814244544]
+ [0.400526476358312 -0.05292802758025161; -0.05292802758025161 0.40141923870903207]
+ [0.2422381951258048 0.01714248986993529; 0.01714248986993529 0.3302161582318384]</code></pre><p>Mean vector errors</p><pre><code class="language-julia hljs">μ_errors = [norm(true_μs[:, i] - mapped_μs[:, i]) for i in 1:k]
+println(&quot;Mean vector recovery errors:&quot;)
+for i in 1:k
+    println(&quot;  Component $i: $(round(μ_errors[i], digits=3))&quot;)
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Mean vector recovery errors:
+  Component 1: 0.039
+  Component 2: 0.191
+  Component 3: 0.063</code></pre><p>Mixing weight errors</p><pre><code class="language-julia hljs">π_errors = [abs(true_πs[i] - mapped_πs[i]) for i in 1:k]
+println(&quot;Mixing weight recovery errors:&quot;)
+for i in 1:k
+    println(&quot;  Component $i: $(round(π_errors[i], digits=3))&quot;)
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Mixing weight recovery errors:
+  Component 1: 0.02
+  Component 2: 0.017
+  Component 3: 0.003</code></pre><p>Covariance matrix errors (Frobenius norm)</p><pre><code class="language-julia hljs">Σ_errors = [norm(true_Σs[i] - mapped_Σs[i]) for i in 1:k]
+println(&quot;Covariance matrix recovery errors:&quot;)
+for i in 1:k
+    println(&quot;  Component $i: $(round(Σ_errors[i], digits=3))&quot;)
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Covariance matrix recovery errors:
+  Component 1: 0.046
+  Component 2: 0.161
+  Component 3: 0.07</code></pre><h2 id="Create-Final-Comparison-Visualization"><a class="docs-heading-anchor" href="#Create-Final-Comparison-Visualization">Create Final Comparison Visualization</a><a id="Create-Final-Comparison-Visualization-1"></a><a class="docs-heading-anchor-permalink" href="#Create-Final-Comparison-Visualization" title="Permalink"></a></h2><p>Create a side-by-side comparison of true vs learned GMM</p><pre><code class="language-julia hljs">p_true = scatter(X[1, :], X[2, :]; group=labels, title=&quot;True GMM&quot;,
+                xlabel=&quot;x₁&quot;, ylabel=&quot;x₂&quot;, markersize=3, alpha=0.7,
+                palette=:Set1_3, legend=false)
+
+p_learned = scatter(X[1, :], X[2, :]; group=predicted_labels, title=&quot;Learned GMM&quot;,
+                   xlabel=&quot;x₁&quot;, ylabel=&quot;x₂&quot;, markersize=3, alpha=0.7,
+                   palette=:Set1_3, legend=false)
+
+final_comparison = plot(p_true, p_learned, layout=(1, 2), size=(800, 400))
+display(final_comparison)</code></pre><h2 id="Model-Selection-Considerations"><a class="docs-heading-anchor" href="#Model-Selection-Considerations">Model Selection Considerations</a><a id="Model-Selection-Considerations-1"></a><a class="docs-heading-anchor-permalink" href="#Model-Selection-Considerations" title="Permalink"></a></h2><pre><code class="language-julia hljs">println(&quot;\n=== Model Selection Notes ===&quot;)
+println(&quot;In this tutorial, we assumed the correct number of components k=$k was known.&quot;)
+println(&quot;In practice, you would need to select k using techniques like:&quot;)
+println(&quot;  - Information criteria (AIC, BIC)&quot;)
+println(&quot;  - Cross-validation&quot;)
+println(&quot;  - Gap statistic&quot;)
+println(&quot;  - Elbow method on within-cluster sum of squares&quot;)
+println(&quot;&quot;)
+println(&quot;The EM algorithm is guaranteed to converge to a local optimum, but not&quot;)
+println(&quot;necessarily the global optimum. Multiple random initializations are often&quot;)
+println(&quot;used to find better solutions.&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">
+=== Model Selection Notes ===
+In this tutorial, we assumed the correct number of components k=3 was known.
+In practice, you would need to select k using techniques like:
+  - Information criteria (AIC, BIC)
+  - Cross-validation
+  - Gap statistic
+  - Elbow method on within-cluster sum of squares
+
+The EM algorithm is guaranteed to converge to a local optimum, but not
+necessarily the global optimum. Multiple random initializations are often
+used to find better solutions.</code></pre><h2 id="Summary"><a class="docs-heading-anchor" href="#Summary">Summary</a><a id="Summary-1"></a><a class="docs-heading-anchor-permalink" href="#Summary" title="Permalink"></a></h2><p>This tutorial demonstrated the complete workflow for Gaussian Mixture Models:</p><ol><li><strong>Model Structure</strong>: Independent observations from a mixture of Gaussian distributions</li><li><strong>Parameter Learning</strong>: EM algorithm iteratively improves component parameters and mixing weights</li><li><strong>Initialization</strong>: K-means initialization helps EM converge to better solutions</li><li><strong>Visualization</strong>: Contour plots reveal the learned probability landscape</li><li><strong>Evaluation</strong>: Component assignment accuracy and parameter recovery assessment</li><li><strong>Label Permutation</strong>: Handling the identifiability issue where components can be reordered</li><li><strong>Convergence Monitoring</strong>: Log-likelihood plots verify proper algorithm convergence</li></ol><p>GMMs provide a flexible framework for clustering and density estimation, serving as building blocks for more complex probabilistic models while remaining interpretable and efficient to fit.</p><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../gaussian_glm_hmm_example/">« Gaussian GLM-GMM Example</a><a class="docs-footer-nextpage" href="../poisson_mixture_model_example/">Poisson Mixture Model Example »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Monday 8 September 2025 15:26">Monday 8 September 2025</span>. Using Julia version 1.11.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
