@@ -33,15 +33,15 @@ An SLDS with $K$ discrete states is defined by the following generative model:
 
 Where:
 
-- $s_t \in \{1, 2, \ldots, K\}$ is the **discrete switching state** at time $t$
-- $z_t \in \mathbb{R}^D$ is the **continuous latent state** at time $t$  
-- $y_t \in \mathbb{R}^P$ is the **observed data** at time $t$
-- $\pi_k$ is the **initial discrete state distribution**
-- $A$ is the **discrete state transition matrix**
-- $F_{s_t}$ is the **state-dependent dynamics matrix** for discrete state $s_t$
-- $Q_{s_t}$ is the **state-dependent process noise covariance** for discrete state $s_t$
-- $C_{s_t}$ is the **state-dependent observation matrix** for discrete state $s_t$
-- $R_{s_t}$ is the **state-dependent observation noise covariance** for discrete state $s_t$
+- ``s_t ∈ {1, 2, …, K}`` is the **discrete switching state** at time ``t``
+- ``z_t ∈ ℝᴰ`` is the **continuous latent state** at time ``t``
+- ``y_t ∈ ℝᴾ`` is the **observed data** at time ``t``
+- ``π_k`` is the **initial discrete state distribution**
+- ``A`` is the **discrete state transition matrix**
+- ``F_{s_t}`` is the **state-dependent dynamics matrix** for discrete state ``s_t``
+- ``Q_{s_t}`` is the **state-dependent process noise covariance** for discrete state ``s_t``
+- ``C_{s_t}`` is the **state-dependent observation matrix** for discrete state ``s_t``
+- ``R_{s_t}`` is the **state-dependent observation noise covariance** for discrete state ``s_t``
 
 ## Implementation Structure
 

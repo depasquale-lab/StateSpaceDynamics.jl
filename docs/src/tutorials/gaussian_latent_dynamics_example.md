@@ -176,11 +176,7 @@ lim_states = maximum(abs.(states))
 lim_emissions = maximum(abs.(emissions))
 
 p2 = plot(size=(800, 600), layout=@layout[a{0.3h}; b])
-````
 
-Plot latent states (offset vertically for clarity)
-
-````@example gaussian_latent_dynamics_example
 for d in 1:latent_dim
     plot!(1:tSteps, states[d, :] .+ lim_states * (d-1), color=:black,
           linewidth=2, label="", subplot=1)

@@ -68,15 +68,10 @@ true_plds = LinearDynamicalSystem(;
 # to linear dynamics, while observations are drawn from Poisson distributions
 # whose rates depend exponentially on the current latent state.
 
-tSteps = 500
-
-print("Simulating $tSteps time steps...")
-
 # Generate both latent trajectories and count observations
-latents, observations = rand(rng, true_plds; tsteps=tSteps, ntrials=1);
 
-print("Latent range: [$(round(minimum(latents), digits=2)), $(round(maximum(latents), digits=2))]\n")
-print("Count range: [$(minimum(observations)), $(maximum(observations))]\n");
+tSteps = 500
+latents, observations = rand(rng, true_plds; tsteps=tSteps, ntrials=1);
 
 # ## Visualize Latent Dynamics
 

@@ -100,19 +100,11 @@ Generate synthetic data from our Poisson LDS. Latent states evolve according
 to linear dynamics, while observations are drawn from Poisson distributions
 whose rates depend exponentially on the current latent state.
 
-````@example poisson_latent_dynamics_example
-tSteps = 500
-
-print("Simulating $tSteps time steps...")
-````
-
 Generate both latent trajectories and count observations
 
 ````@example poisson_latent_dynamics_example
+tSteps = 500
 latents, observations = rand(rng, true_plds; tsteps=tSteps, ntrials=1);
-
-print("Latent range: [$(round(minimum(latents), digits=2)), $(round(maximum(latents), digits=2))]\n")
-print("Count range: [$(minimum(observations)), $(maximum(observations))]\n");
 nothing #hide
 ````
 

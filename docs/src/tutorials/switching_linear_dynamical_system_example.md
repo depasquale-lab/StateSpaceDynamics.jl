@@ -123,11 +123,7 @@ This shows how dynamics change when the system switches between modes.
 ````@example switching_linear_dynamical_system_example
 p1 = plot(1:T, x[1, :], label=L"x_1", linewidth=1.5, color=:black)
 plot!(1:T, x[2, :], label=L"x_2", linewidth=1.5, color=:blue)
-````
 
-Add mode-specific background shading
-
-````@example switching_linear_dynamical_system_example
 transition_points = [1; findall(diff(vec(z)) .!= 0) .+ 1; T + 1]
 for i in 1:(length(transition_points) - 1)
     start_idx = transition_points[i]
@@ -161,27 +157,16 @@ Random initial state probabilities
 πₖ_init ./= sum(πₖ_init)
 ````
 
-Initialize dynamics with different frequencies
+Use the initialize_slds function for proper initialization
 
 ````@example switching_linear_dynamical_system_example
-Q_init = Matrix(0.001 * I(state_dim))
-P0_init = Matrix(0.001 * I(state_dim))
-C_init = randn(rng, obs_dim, state_dim)
-R_init = Matrix(0.1 * I(obs_dim))
-````
-
-Create mode-specific dynamics with different rotation frequencies
-
-````@example switching_linear_dynamical_system_example
-dynamics_init = [
-    LinearDynamicalSystem(
-        GaussianStateModel(0.95 * [cos(f) -sin(f); sin(f) cos(f)], Q_init, x0, P0_init),
-        GaussianObservationModel(C_init, R_init),
-        state_dim, obs_dim, fill(true, 6)
-    ) for f in (0.7, 0.1)  # Different initial frequencies
-]
-
-learned_model = SwitchingLinearDynamicalSystem(A_init, dynamics_init, πₖ_init, K)
+learned_model = initialize_slds(;
+    K=K,
+    d=state_dim,
+    p=obs_dim,
+    self_bias=5.0,
+    seed=456  # Different seed from true model
+)
 
 print("Running variational EM algorithm...")
 ````
@@ -236,29 +221,17 @@ Plot comparison with offset for clarity
 ````@example switching_linear_dynamical_system_example
 p3 = plot(size=(900, 400))
 offset = 2.5
-````
 
-True states
-
-````@example switching_linear_dynamical_system_example
 plot!(1:T, x[1, :] .+ offset, label=L"x_1 \text{ (true)}",
       linewidth=2, color=:black, alpha=0.8)
 plot!(1:T, x[2, :] .- offset, label=L"x_2 \text{ (true)}",
       linewidth=2, color=:black, alpha=0.8)
-````
 
-Learned states
-
-````@example switching_linear_dynamical_system_example
 plot!(1:T, latents_learned[1, :] .+ offset, label=L"x_1 \text{ (learned)}",
       linewidth=1.5, color=:red, alpha=0.8)
 plot!(1:T, latents_learned[2, :] .- offset, label=L"x_2 \text{ (learned)}",
       linewidth=1.5, color=:blue, alpha=0.8)
-````
 
-Reference lines
-
-````@example switching_linear_dynamical_system_example
 hline!([offset, -offset], color=:gray, alpha=0.3, linestyle=:dash, label="")
 
 plot!(title="True vs. Learned Latent States",
@@ -337,37 +310,6 @@ end
 print("True vs. Learned HMM Transitions:\n")
 print("True A_hmm:\n$(round.(A_hmm, digits=3))\n")
 print("Learned A_hmm:\n$(round.(learned_model.A, digits=3))\n");
-nothing #hide
-````
-
-## Practical Considerations
-
-````@example switching_linear_dynamical_system_example
-print("\n=== Practical Guidelines ===\n")
-print("• Initialization: Use different frequencies/directions for mode-specific dynamics\n")
-print("• Stickiness: Increase diagonal elements in A_hmm for more persistent modes\n")
-print("• Identifiability: Consider sharing parameters (e.g., R) across modes to avoid degeneracies\n")
-print("• Diagnostics: Monitor ELBO convergence and visualize mode responsibilities\n")
-print("• Model selection: Use information criteria or cross-validation to choose K\n")
-print("• Convergence: Try multiple random initializations for robust results\n");
-nothing #hide
-````
-
-## Extensions and Applications
-
-````@example switching_linear_dynamical_system_example
-print("\n=== Applications and Extensions ===\n")
-print("Applications:\n")
-print("• Neural population dynamics with distinct behavioral states\n")
-print("• Financial time series with regime changes\n")
-print("• Speech recognition with phoneme-specific dynamics\n")
-print("• Climate modeling with seasonal/regime transitions\n")
-
-print("\nExtensions:\n")
-print("• Non-linear dynamics: Switching between different non-linear models\n")
-print("• Hierarchical structure: Multi-level switching systems\n")
-print("• Input-dependent switching: Mode transitions driven by external inputs\n")
-print("• Sticky SLDS: Geometric or negative binomial dwell times\n");
 nothing #hide
 ````
 
