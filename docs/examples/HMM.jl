@@ -29,7 +29,7 @@ rng = StableRNG(1234);
 # This creates a simple but illustrative model where the hidden states correspond
 # to different regions in the observation space.
 
-output_dim = 2  # Each observation is a 2D vector
+output_dim = 2;  # Each observation is a 2D vector
 
 # Define the state transition dynamics
 # High diagonal values mean states are "sticky" (tend to persist)
@@ -37,18 +37,18 @@ A = [0.99 0.01;    # From state 1: 99% stay in state 1, 1% switch to state 2
      0.05 0.95];   # From state 2: 5% switch to state 1, 95% stay in state 2
 
 # Initial state probabilities (equal probability of starting in either state)
-πₖ = [0.5; 0.5]
+πₖ = [0.5; 0.5];
 
 # Define emission distributions for each hidden state
 # State 1: Centered at (-1, -1) with small variance (tight cluster)
 μ_1 = [-1.0, -1.0]                                          # Mean vector
 Σ_1 = 0.1 * Matrix{Float64}(I, output_dim, output_dim)      # Covariance matrix (0.1 * Identity)
-emission_1 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)
+emission_1 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1);
 
 # State 2: Centered at (1, 1) with larger variance (more spread out)
 μ_2 = [1.0, 1.0]                                           # Mean vector
 Σ_2 = 0.2 * Matrix{Float64}(I, output_dim, output_dim)     # Covariance matrix (0.2 * Identity)
-emission_2 = GaussianEmission(output_dim=output_dim, μ=μ_2, Σ=Σ_2)
+emission_2 = GaussianEmission(output_dim=output_dim, μ=μ_2, Σ=Σ_2);
 
 # Construct the complete HMM
 model = HiddenMarkovModel(
@@ -56,7 +56,7 @@ model = HiddenMarkovModel(
     B=[emission_1, emission_2], # Emission distributions
     A=A,                        # State transition matrix
     πₖ=πₖ                      # Initial state distribution
-)
+);
 
 println("Created Gaussian HMM with 2 states:")
 println("  State 1: μ = $μ_1, σ² = $(Σ_1[1,1]) (tight cluster in lower-left)")
@@ -92,7 +92,7 @@ labels_slice = true_labels[1:num_samples]
 
 state_colors = [:dodgerblue, :crimson]  # Blue for state 1, red for state 2
 
-plt = plot()
+plt = plot();
 
 # Plot observations for each state separately to get proper legends
 for state in 1:2
@@ -102,21 +102,21 @@ for state in 1:2
         label="State $state",
         markersize=4,
         alpha=0.6)
-end
+end;
 
 # Add a trajectory line to show temporal evolution (faded)
 plot!(x_vals[1:1000], y_vals[1:1000];  # Show first 1000 points for clarity
     color=:gray,
     lw=1.5,
     linealpha=0.4,
-    label="Trajectory")
+    label="Trajectory");
 
 # Mark start and end points
 scatter!([x_vals[1]], [y_vals[1]];
     color=:green,
     markershape=:star5,
     markersize=10,
-    label="Start")
+    label="Start");
 
 scatter!([x_vals[end]], [y_vals[end]];
     color=:black,
