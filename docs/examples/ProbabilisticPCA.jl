@@ -1,34 +1,27 @@
 # # Simulating and Fitting a Probabilistic PCA (PPCA) Model
-# 
-# This tutorial walks through **Probabilistic PCA (PPCA)** in
-# `StateSpaceDynamics.jl`: simulating data, fitting with EM, and interpreting
-# the results. PPCA is a maximum-likelihood, probabilistic version of PCA with a
-# simple latent-variable generative model and an explicit noise model.
-#
-# ## The PPCA model at a glance
-# The generative story for \(x\in\mathbb R^D\) with \(k\) latent factors:
-# \[
-# z \sim \mathcal N(0, I_k),\qquad
-# x \mid z \sim \mathcal N(\mu + W z,\ \sigma^2 I_D),
-# \]
-# where \(W\in\mathbb R^{D\times k}\) (factor loadings), \(\mu\in\mathbb R^D\), and
-# \(\sigma^2>0\) (isotropic noise). The marginal covariance is
-# \(\operatorname{Cov}(x)=W W^\top + \sigma^2 I\). When \(\sigma^2\to 0\), PPCA
-# approaches standard PCA. Rotations of \(W\) (\(W R\) for orthogonal \(R\)) span
-# the same principal subspace—this is the usual rotational non-identifiability.
-#
-# **Posterior over latents.** Given an observed \(x\), the posterior is Gaussian
-# with
-# \[
-# M = I_k + \tfrac{1}{\sigma^2} W^\top W,\qquad
-# \mathbb E[z\mid x] = M^{-1} W^\top (x-\mu)/\sigma^2,\qquad
-# \operatorname{Cov}(z\mid x) = M^{-1}.
-# \]
-# `fit!` in `StateSpaceDynamics.jl` performs EM to maximize the likelihood.
-#
-# ---
 
-# ## Load Packages
+# This tutorial demonstrates **Probabilistic PCA (PPCA)** in `StateSpaceDynamics.jl`:
+# simulating data, fitting with EM, and interpreting results. PPCA is a maximum-likelihood,
+# probabilistic version of PCA with an explicit latent-variable generative model and noise model.
+
+# ## The PPCA Model
+
+# The generative model for observations $\mathbf{x} \in \mathbb{R}^D$ with $k$ latent factors:
+# $$\mathbf{z} \sim \mathcal{N}(\mathbf{0}, \mathbf{I}_k), \quad \mathbf{x} | \mathbf{z} \sim \mathcal{N}(\boldsymbol{\mu} + \mathbf{W}\mathbf{z}, \sigma^2 \mathbf{I}_D)$$
+
+# where $\mathbf{W} \in \mathbb{R}^{D \times k}$ (factor loadings), $\boldsymbol{\mu} \in \mathbb{R}^D$ (mean), 
+# and $\sigma^2 > 0$ (isotropic noise variance).
+
+# **Key properties:**
+# - Marginal covariance: $\text{Cov}(\mathbf{x}) = \mathbf{W}\mathbf{W}^T + \sigma^2 \mathbf{I}$
+# - As $\sigma^2 \to 0$, PPCA approaches standard PCA
+# - Rotational non-identifiability: $\mathbf{W}\mathbf{R}$ for orthogonal $\mathbf{R}$ spans same subspace
+
+# **Posterior over latents:** Given observation $\mathbf{x}$, the posterior is Gaussian with:
+# $$\mathbf{M} = \mathbf{I}_k + \frac{1}{\sigma^2}\mathbf{W}^T\mathbf{W}, \quad \mathbb{E}[\mathbf{z}|\mathbf{x}] = \mathbf{M}^{-1}\mathbf{W}^T(\mathbf{x}-\boldsymbol{\mu})/\sigma^2$$
+
+# ## Load Required Packages
+
 using StateSpaceDynamics
 using LinearAlgebra
 using Random
@@ -36,172 +29,252 @@ using Plots
 using StatsPlots
 using StableRNGs
 using Distributions
+using LaTeXStrings
 
-# Reproducible randomness for simulation and initialization.
+# Set reproducible randomness for simulation and initialization
 rng = StableRNG(1234);
 
-# ## Create a PPCA model and simulate
-# We'll work in 2D with two latent factors for easy visualization.
+# ## Create and Simulate PPCA Model
 
-D = 2
-k = 2; 
+# We'll work in 2D with two latent factors for easy visualization and interpretation.
 
-# True parameters used to generate synthetic data
-W_true = [
-   -1.64   0.2;
-    0.9   -2.8
-]
+D = 2  # Observation dimensionality
+k = 2  # Number of latent factors
 
-σ²_true = 0.5
-μ_true  = [1.65, -1.3];
+# True parameters for data generation
+W_true = [-1.64  0.2;   # Factor loading matrix
+           0.9  -2.8]
+σ²_true = 0.5           # Noise variance
+μ_true = [1.65, -1.3];  # Mean vector
 
 ppca = ProbabilisticPCA(W_true, σ²_true, μ_true)
 
-# Draw IID samples from the model
+# Generate synthetic data
 num_obs = 500 
 X, z = rand(rng, ppca, num_obs);
 
-# ## Visualize the simulated data
-# We'll color points by the dominant latent dimension (for intuition only—latent
-# variables are unobserved in real data).
+print("Generated $num_obs observations in $D dimensions with $k latent factors\n")
+print("Data range: X₁ ∈ [$(round(minimum(X[1,:]), digits=2)), $(round(maximum(X[1,:]), digits=2))], ")
+print("X₂ ∈ [$(round(minimum(X[2,:]), digits=2)), $(round(maximum(X[2,:]), digits=2))]\n");
 
-x1 = X[1, :]
-x2 = X[2, :]
-labels = map(i -> (abs(z[1,i]) > abs(z[2,i]) ? 1 : 2), 1:size(z,2))
+# ## Visualize Simulated Data
 
-p = plot()
-scatter!(
-    p, x1, x2;
-    group      = labels,
-    xlabel     = "X₁",
-    ylabel     = "X₂",
-    title      = "Samples grouped by dominant latent factor",
-    label      = ["Latent 1" "Latent 2"],
-    legend     = :topright,
-    markersize = 5,
-)
-
-p
-
-# ## Parameter recovery: fit PPCA with EM
-# We'll start from random loadings/mean and a reasonable noise variance, then
-# call `fit!` to run EM until convergence.
-
-# (Re)define defaults to emphasize the fitting path
-D = 2
-k = 2 
-W = randn(rng, D, k)
-σ² = 0.5
-μ_vector = randn(rng, 2)
-
-fit_ppca = ProbabilisticPCA(W, σ², μ_vector);
-
-# ### Fit with EM
-# `fit!` returns the log-likelihood trace. Monotone ascent is a good sanity check.
-lls = fit!(fit_ppca, X)
-
-# ### Log-likelihood diagnostic
-ll_plot = plot(
-    lls;
-    xlabel="Iteration",
-    ylabel="Log-Likelihood",
-    title="EM Convergence (PPCA)",
-    marker=:circle,
-    label="log_likelihood",
-    reuse=false,
-)
-
-ll_plot
-
-# ## Interpreting the learned parameters
-# - `fit_ppca.W` are the learned loading directions. Columns span the principal
-#   subspace (up to rotation). For k=2 in 2D, they form a basis centered at μ.
-# - `fit_ppca.μ` is the learned mean of the data.
-# - `fit_ppca.σ²` is the isotropic residual variance.
+# Color points by dominant latent dimension for intuition (latent variables are unobserved in practice)
 
 x1, x2 = X[1, :], X[2, :]
-μ1, μ2  = fit_ppca.μ
-W_fit   = fit_ppca.W
-w1      = W_fit[:, 1]  
-w2      = W_fit[:, 2] 
+labels = [abs(z[1,i]) > abs(z[2,i]) ? 1 : 2 for i in 1:size(z,2)]
 
-P = plot()
-scatter!(
-    P, x1, x2;
-    xlabel     = "X₁",
-    ylabel     = "X₂",
-    title      = "Data with PPCA loading directions",
-    label      = "Data",
-    alpha      = 0.5,
-    markersize = 4,
-);
+p1 = scatter(x1, x2;
+    group=labels, xlabel=L"X_1", ylabel=L"X_2",
+    title="Simulated Data (colored by dominant latent factor)",
+    markersize=4, alpha=0.7,
+    palette=[:dodgerblue, :crimson],
+    legend=:topright
+)
 
-# Draw loading vectors from the mean in both directions for visibility
-quiver!(P, [μ1], [μ2]; quiver=([ w1[1]], [ w1[2]]), arrow=:arrow, lw=3, color=:red,   label="W₁")
-quiver!(P, [μ1], [μ2]; quiver=([-w1[1]], [-w1[2]]), arrow=:arrow, lw=3, color=:red,   label="")
-quiver!(P, [μ1], [μ2]; quiver=([ w2[1]], [ w2[2]]), arrow=:arrow, lw=3, color=:green, label="W₂")
-quiver!(P, [μ1], [μ2]; quiver=([-w2[1]], [-w2[2]]), arrow=:arrow, lw=3, color=:green, label="")
+# ## Fit PPCA Using EM Algorithm
 
-P
+# Start from random initialization and use EM to learn parameters.
+# The algorithm maximizes the marginal log-likelihood of the observed data.
 
-# ## Posterior latents and reconstructions
-# Compute \nE[z|x]\n and optional reconstructions \(\hat x = \mu + W\,\mathbb E[z|x]\).
+# Initialize with random parameters
+W_init = randn(rng, D, k)
+σ²_init = 0.5
+μ_init = randn(rng, D)
+
+fit_ppca = ProbabilisticPCA(W_init, σ²_init, μ_init)
+
+print("Running EM algorithm...")
+
+# Fit with EM - returns log-likelihood trace for convergence monitoring
+lls = fit!(fit_ppca, X);
+
+print("EM converged in $(length(lls)) iterations\n")
+print("Log-likelihood improved by $(round(lls[end] - lls[1], digits=1))\n");
+
+# Monitor EM convergence - should show monotonic increase
+p2 = plot(lls;
+    xlabel="Iteration", ylabel="Log-Likelihood",
+    title="EM Convergence", marker=:circle, markersize=3,
+    lw=2, legend=false, color=:darkblue
+)
+
+# ## Visualize Learned Loading Directions
+
+# The columns of $\mathbf{W}$ span the principal subspace (up to rotation).
+# We'll plot these loading vectors from the learned mean.
+
+μ_fit = fit_ppca.μ
+W_fit = fit_ppca.W
+w1, w2 = W_fit[:, 1], W_fit[:, 2]
+
+p3 = scatter(x1, x2;
+    xlabel=L"X_1", ylabel=L"X_2",
+    title="Data with Learned PPCA Loading Directions",
+    label="Data", alpha=0.5, markersize=3, color=:gray
+)
+
+# Draw loading vectors in both directions for visibility
+scale = 2.0  # Scale for better visualization
+quiver!(p3, [μ_fit[1]], [μ_fit[2]]; 
+    quiver=([scale*w1[1]], [scale*w1[2]]), 
+    arrow=:arrow, lw=3, color=:red, label="W₁")
+quiver!(p3, [μ_fit[1]], [μ_fit[2]]; 
+    quiver=([-scale*w1[1]], [-scale*w1[2]]), 
+    arrow=:arrow, lw=3, color=:red, label="")
+quiver!(p3, [μ_fit[1]], [μ_fit[2]]; 
+    quiver=([scale*w2[1]], [scale*w2[2]]), 
+    arrow=:arrow, lw=3, color=:green, label="W₂")
+quiver!(p3, [μ_fit[1]], [μ_fit[2]]; 
+    quiver=([-scale*w2[1]], [-scale*w2[2]]), 
+    arrow=:arrow, lw=3, color=:green, label="")
+
+# ## Posterior Inference and Reconstruction
+
+# Compute posterior means $\mathbb{E}[\mathbf{z}|\mathbf{x}]$ and reconstructions $\hat{\mathbf{x}} = \boldsymbol{\mu} + \mathbf{W}\mathbb{E}[\mathbf{z}|\mathbf{x}]$
 
 function ppca_posterior_means(W::AbstractMatrix, σ²::Real, μ::AbstractVector, X::AbstractMatrix)
-    D, N = size(X)
-    k    = size(W, 2)
-    M = I(k) + (W' * W) / σ²            # k×k
-    B = M \ (W' / σ²)                  # k×D, equals M^{-1} W^T / σ²
-    Zmean = B * (X .- μ)               # k×N
-    return Zmean
+    k = size(W, 2)
+    M = I(k) + (W' * W) / σ²            # Posterior precision matrix
+    B = M \ (W' / σ²)                   # Efficient computation of M⁻¹W^T/σ²
+    Z_mean = B * (X .- μ)               # Posterior means
+    return Z_mean
 end
 
-Ẑ = ppca_posterior_means(W_fit, fit_ppca.σ², fit_ppca.μ, X)
-X̂ = fit_ppca.μ .+ W_fit * Ẑ;
+# Compute posterior latent means and reconstructions
+Ẑ = ppca_posterior_means(W_fit, fit_ppca.σ², μ_fit, X)
+X̂ = μ_fit .+ W_fit * Ẑ
 
-# Example: reconstruction error (per-dimension MSE)
-recon_mse = mean(norm.(eachcol(X - X̂)).^2) / size(X,1)
+# Calculate reconstruction error
+recon_mse = mean(sum((X - X̂).^2, dims=1)) / D
+print("Reconstruction MSE: $(round(recon_mse, digits=4))\n");
 
-# ## Variance explained and choosing k
-# A quick check is to compare the sample covariance eigenvalues to the PPCA model.
-# For PPCA with k factors, the top-k eigenvalues should be captured by W W^T and
-# the remainder approximated by σ².
+# ## Variance Explained Analysis
 
-Σ̂ = cov(permutedims(X))            # D×D sample covariance
-λs = sort(eigvals(Symmetric(Σ̂)); rev=true);
+# Compare sample covariance eigenvalues to PPCA model structure.
+# PPCA should capture top-k eigenvalues via $\mathbf{W}\mathbf{W}^T$ and 
+# approximate remainder with isotropic noise $\sigma^2$.
 
-# Proportion of variance explained by top-k sample eigenvalues
+Σ_sample = cov(X, dims=2)  # Sample covariance matrix
+λs = sort(eigvals(Σ_sample), rev=true)  # Eigenvalues in descending order
+
+# Proportion of variance explained by top-k eigenvalues
 pve_sample = sum(λs[1:k]) / sum(λs)
 
-# PPCA-implied total variance: tr(WW^T) + D*σ²
-pve_ppca = (tr(W_fit * W_fit') ) / (tr(W_fit * W_fit') + size(X,1) * 0 + length(μ1:μ2) * fit_ppca.σ²)  # placeholder formula to keep inline; see note below
+# PPCA-implied variance components
+total_var_ppca = tr(W_fit * W_fit') + D * fit_ppca.σ²
+explained_var_ppca = tr(W_fit * W_fit')
+pve_ppca = explained_var_ppca / total_var_ppca
 
-# NOTE: For PPCA in D dims, total variance is tr(WW^T) + D*σ².
-# If you prefer, compute: pve_ppca = tr(W_fit*W_fit') / (tr(W_fit*W_fit') + D*fit_ppca.σ²)
+print("Variance Analysis:\n")
+print("Sample eigenvalues: $(round.(λs, digits=3))\n")
+print("PVE (sample top-$k): $(round(pve_sample*100, digits=1))%\n")
+print("PVE (PPCA model): $(round(pve_ppca*100, digits=1))%\n");
 
-# ## Practical tips & pitfalls
-# - **Scaling matters.** Standardize your features if units differ.
-# - **Initialization:** Multiple random starts can help avoid poor local optima.
-# - **Rotational ambiguity:** For presentation, you can orthonormalize W or align it
-#   with PCA loadings via Procrustes.
-# - **Choosing k:** Use scree plots, PVE, or information criteria (AIC/BIC) on the
-#   marginal likelihood returned by `fit!`.
-# - **Outliers/heavy tails:** Consider robust variants (e.g., t-PCA) if needed.
+# ## Parameter Recovery Assessment
 
-# ## Where this fits in `StateSpaceDynamics.jl`
-# PPCA is an IID latent-factor model. In the ecosystem, it bridges to time-series
-# models with latent structure, such as LDS/PLDS where factors evolve over time.
-# The workflow mirrors those models: specify (W, σ², μ), simulate, fit with EM,
-# and validate with likelihood curves and posterior diagnostics.
+print("\n=== Parameter Recovery Assessment ===\n")
 
-# ## Exercises
-# 1. **Compare to PCA:** Compute the top-2 eigenvectors of the sample covariance
-#    and align `fit_ppca.W` to them with an orthogonal Procrustes transform.
-# 2. **Vary noise:** Increase `σ²_true` and see how loading directions and
-#    convergence behave.
-# 3. **Model selection:** Fit k=1..D and report AIC/BIC (parameter count is
-#    p = D*k + 1 (σ²) + D (μ)).
-# 4. **Held-out likelihood:** Split X into train/validation and compare models.
+# Compare true vs learned parameters
+W_error = norm(W_true - W_fit) / norm(W_true)
+μ_error = norm(μ_true - μ_fit) / norm(μ_true)
+σ²_error = abs(σ²_true - fit_ppca.σ²) / σ²_true
 
-# ---
-# End of tutorial.
+print("Parameter recovery errors:\n")
+print("Loading matrix W: $(round(W_error*100, digits=1))%\n") 
+print("Mean vector μ: $(round(μ_error*100, digits=1))%\n")
+print("Noise variance σ²: $(round(σ²_error*100, digits=1))%\n")
+
+print("True parameters:\n")
+print("W = $(round.(W_true, digits=2))\n")
+print("μ = $(round.(μ_true, digits=2)), σ² = $(σ²_true)\n")
+
+print("Learned parameters:\n")
+print("W = $(round.(W_fit, digits=2))\n")
+print("μ = $(round.(μ_fit, digits=2)), σ² = $(round(fit_ppca.σ², digits=2))\n");
+
+# ## Model Selection Example
+
+# Demonstrate fitting models with different numbers of latent factors
+# and comparing via information criteria.
+
+function compute_aic_bic(ll::Real, n_params::Int, n_obs::Int)
+    aic = 2*n_params - 2*ll
+    bic = n_params*log(n_obs) - 2*ll
+    return (aic, bic)
+end
+
+print("\n=== Model Selection Demo ===\n")
+
+k_range = 1:min(D, 4)
+aic_scores = Float64[]
+bic_scores = Float64[]
+lls_final = Float64[]
+
+for k_test in k_range
+    W_test = randn(rng, D, k_test) # Initialize and fit model with k_test factors
+    ppca_test = ProbabilisticPCA(W_test, 0.5, zeros(D))
+    lls_test = fit!(ppca_test, X)
+        
+    n_params = D * k_test + D + 1 # Parameter count: D*k_test (W) + D (μ) + 1 (σ²)
+    ll_final = lls_test[end]
+    aic, bic = compute_aic_bic(ll_final, n_params, num_obs)  # Calculate information criteria
+        
+    push!(aic_scores, aic)
+    push!(bic_scores, bic)
+    push!(lls_final, ll_final)
+        
+    print("k=$k_test: LL=$(round(ll_final, digits=1)), AIC=$(round(aic, digits=1)), BIC=$(round(bic, digits=1))\n")
+end
+
+# Plot information criteria
+p4 = plot(k_range, [aic_scores bic_scores];
+    xlabel="Number of Latent Factors (k)", ylabel="Information Criterion",
+    title="Model Selection via Information Criteria",
+    label=["AIC" "BIC"], marker=:circle, lw=2
+)
+
+optimal_k = k_range[argmin(bic_scores)]
+print("BIC suggests optimal k = $optimal_k\n");
+
+# ## Practical Considerations
+
+print("\n=== Practical Guidelines ===\n")
+print("• Feature scaling: Standardize variables if units differ significantly\n")
+print("• Initialization: Try multiple random starts to avoid poor local optima\n") 
+print("• Rotational ambiguity: Use orthonormalization or PCA alignment for presentation\n")
+print("• Model selection: Compare k via information criteria or cross-validation\n")
+print("• Outliers: Consider robust variants (e.g., Student-t PCA) for heavy-tailed data\n")
+print("• Interpretability: Loading directions indicate principal variation patterns\n");
+
+# ## Summary
+#
+# This tutorial demonstrated the complete Probabilistic PCA workflow:
+#
+# **Key Concepts:**
+# - **Probabilistic framework**: Explicit generative model with latent factors and noise
+# - **EM algorithm**: Iterative maximum-likelihood parameter estimation
+# - **Posterior inference**: Probabilistic latent variable estimates and reconstructions
+# - **Model selection**: Information criteria for choosing appropriate number of factors
+#
+# **Advantages over Standard PCA:**
+# - Principled handling of missing data and noise
+# - Probabilistic interpretation enables uncertainty quantification  
+# - Natural framework for model selection and comparison
+# - Seamless extension to more complex latent variable models
+#
+# **Applications:**
+# - Dimensionality reduction for high-dimensional data
+# - Exploratory data analysis and visualization
+# - Feature extraction for machine learning pipelines
+# - Foundation for more complex factor models and state-space models
+#
+# **Technical Insights:**
+# - Loading matrix $\mathbf{W}$ captures principal directions of variation
+# - Noise parameter $\sigma^2$ quantifies unexplained variance
+# - Rotational non-identifiability requires care in interpretation
+# - EM convergence monitoring ensures reliable parameter estimates
+#
+# PPCA provides a flexible, probabilistic approach to factor analysis that bridges
+# classical multivariate statistics with modern latent variable modeling, serving as
+# both a standalone technique and building block for more sophisticated models.

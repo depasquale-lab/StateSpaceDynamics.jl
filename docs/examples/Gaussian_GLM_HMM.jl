@@ -1,4 +1,4 @@
-# ## Simulating and Fitting a Hidden Markov Model
+# # Simulating and Fitting a Hidden Markov Model
 
 # This tutorial demonstrates how to use `StateSpaceDynamics.jl` to create, sample from, and fit Hidden 
 # Markov Models (HMMs). Unlike Linear Dynamical Systems which have continuous latent states, HMMs have
@@ -11,8 +11,6 @@
 
 # ## Load Required Packages
 
-# We load the essential packages for HMM modeling, visualization, and reproducible random sampling.
-
 using LinearAlgebra
 using Plots
 using Random
@@ -23,7 +21,7 @@ using Statistics: mean
 # Set up reproducible random number generation
 rng = StableRNG(1234);
 
-# ## Create a Gaussian Generalized Linear Model-Hidden Markov Model (GLM-HMM)
+# ## Create a Gaussian GLM-HMM
 
 # In a GLM-HMM, each hidden state defines a different regression model. The system switches
 # between these regression models according to Markovian dynamics. This is useful for modeling
@@ -35,7 +33,7 @@ emission_1 = GaussianRegressionEmission(
     input_dim=3,                                    # Number of input features
     output_dim=1,                                   # Number of output dimensions  
     include_intercept=true,                         # Include intercept term
-    β=reshape([3.0, 2.0, 2.0, 3.0], :, 1),        # Regression coefficients [intercept, β1, β2, β3]
+    β=reshape([3.0, 2.0, 2.0, 3.0], :, 1),        # Regression coefficients [intercept, β₁, β₂, β₃]
     Σ=[1.0;;],                                     # Observation noise variance
     λ=0.0                                          # Regularization parameter
 );
@@ -50,13 +48,13 @@ emission_2 = GaussianRegressionEmission(
     λ=0.0
 );
 
-# Define the state transition matrix A
-# A[i,j] = probability of transitioning from state i to state j
+# Define the state transition matrix $\mathbf{A}$:
+# $A_{ij} = P(\text{state}_t = j \mid \text{state}_{t-1} = i)$
 # Diagonal elements are high (states are persistent), off-diagonal elements are low
 A = [0.99 0.01;    # From state 1: 99% stay, 1% switch to state 2
      0.05 0.95];    # From state 2: 5% switch to state 1, 95% stay
 
-# Initial state distribution: probability of starting in each state
+# Initial state distribution: $\pi_k = P(\text{state}_1 = k)$
 πₖ = [0.8; 0.2];    # 80% chance of starting in state 1, 20% in state 2
 
 # Construct the complete HMM
@@ -67,18 +65,16 @@ true_model = HiddenMarkovModel(
     B=[emission_1, emission_2]  # Emission models for each state
 );
 
-println("Created GLM-HMM with 2 states and 3 input features")
-println("State 1 regression: y = 3.0 + 2.0*x₁ + 2.0*x₂ + 3.0*x₃ + ε")
-println("State 2 regression: y = -4.0 - 2.0*x₁ + 3.0*x₂ + 2.0*x₃ + ε")
+print("Created GLM-HMM with regression models:\n")
+print("State 1: y = 3.0 + 2.0x₁ + 2.0x₂ + 3.0x₃ + ε\n")
+print("State 2: y = -4.0 - 2.0x₁ + 3.0x₂ + 2.0x₃ + ε\n");
 
 # ## Sample from the GLM-HMM
 
 # Generate synthetic data from our true model. This will give us both the observed
-# data (inputs and outputs) and the true hidden state sequence, which we'll use
-# to evaluate our parameter recovery.
+# data (inputs and outputs) and the true hidden state sequence.
 
 n = 20000  # Number of time points
-println("Generating $n samples from the GLM-HMM...")
 
 # Generate random input features (predictors)
 Φ = randn(rng, 3, n);  # 3 features × n time points
@@ -86,349 +82,247 @@ println("Generating $n samples from the GLM-HMM...")
 # Sample from the HMM: returns both hidden states and observations
 true_labels, data = rand(rng, true_model, Φ, n=n);
 
-println("Generated data summary:")
-println("  - Input features shape: $(size(Φ))")
-println("  - Output data shape: $(size(data))")
-println("  - True labels shape: $(size(true_labels))")
-println("  - State 1 proportion: $(round(mean(true_labels .== 1), digits=3))")
-println("  - State 2 proportion: $(round(mean(true_labels .== 2), digits=3))")
+print("Generated $(n) samples: State 1 ($(round(mean(true_labels .== 1)*100, digits=1))%), State 2 ($(round(mean(true_labels .== 2)*100, digits=1))%)\n");
 
 # ## Visualize the Sampled Dataset
 
 # Create a scatter plot showing how the input-output relationship differs between
-# the two hidden states. Points are colored by their true hidden state.
+# the two hidden states. We'll plot feature 1 vs output, with points colored by true state.
 
-colors = [:dodgerblue, :crimson];  # Blue for state 1, red for state 2
+colors = [:dodgerblue, :crimson]  # Blue for state 1, red for state 2
 
-scatter(Φ[1, :], vec(data);
+p1 = scatter(Φ[1, :], vec(data);
     color = colors[true_labels],
-    ms = 3,
+    ms = 2,
+    alpha = 0.4,
     label = "",
-    xlabel = "Input Feature 1",
+    xlabel = "Input Feature 1", 
     ylabel = "Output",
-    title = "GLM-HMM Sampled Data (colored by true state)",
-    alpha = 0.6
-);
+    title = "GLM-HMM Data (colored by true state)"
+)
 
-# Overlay the true regression lines for each state
-# We'll plot the relationship between feature 1 and output, holding other features at 0
+# Overlay true regression lines (holding other features at 0)
+xvals = range(extrema(Φ[1, :])..., length=100)
 
-xvals = range(minimum(Φ[1, :]), stop=maximum(Φ[1, :]), length=100);
-
-# State 1 regression line: y = β₀ + β₁*x₁ (setting x₂=x₃=0)
 β1 = emission_1.β[:, 1]
 y_pred_1 = β1[1] .+ β1[2] .* xvals  # intercept + slope*x₁
 plot!(xvals, y_pred_1;
     color = :dodgerblue,
     lw = 3,
-    label = "State 1 regression",
-    legend = :topright,
-);
+    label = "State 1 regression"
+)
 
-# State 2 regression line
 β2 = emission_2.β[:, 1]
 y_pred_2 = β2[1] .+ β2[2] .* xvals  # intercept + slope*x₁
 plot!(xvals, y_pred_2;
     color = :crimson,
     lw = 3,
     label = "State 2 regression",
-    legend = :topright,
+    legend = :topright
 )
 
-# ## Initialize and Fit a New HMM to the Sampled Data
+# ## Initialize and Fit HMM with EM
 
-# Now we'll pretend we don't know the true parameters and try to learn them from
-# the observed data alone. We start with a randomly initialized HMM and use the
-# Expectation-Maximization (EM) algorithm to learn the parameters.
+# Now we'll learn the parameters from observed data alone using EM algorithm.
+# Start with a randomly initialized HMM with different parameters than the true model.
 
-println("Initializing naive HMM with random parameters...")
-
-# Initialize with different parameters than the true model
-A = [0.8 0.2; 0.1 0.9]          # Different transition probabilities
-πₖ = [0.6; 0.4];                 # Different initial distribution
+# Initialize with different parameters
+A_init = [0.8 0.2; 0.1 0.9]     # Different transition probabilities
+πₖ_init = [0.6; 0.4]            # Different initial distribution
 
 # Initialize emission models with random regression coefficients
-emission_1 = GaussianRegressionEmission(
+emission_1_init = GaussianRegressionEmission(
     input_dim=3, output_dim=1, include_intercept=true,
     β=reshape([2.0, -1.0, 1.0, 2.0], :, 1),    # Random coefficients
-    Σ=[2.0;;],                                  # Different noise variance
-    λ=0.0
+    Σ=[2.0;;], λ=0.0
 );
 
-emission_2 = GaussianRegressionEmission(
+emission_2_init = GaussianRegressionEmission(
     input_dim=3, output_dim=1, include_intercept=true,
     β=reshape([-2.5, -1.0, 3.5, 3.0], :, 1),   # Random coefficients
-    Σ=[0.5;;],                                  # Different noise variance
-    λ=0.0
+    Σ=[0.5;;], λ=0.0
 );
 
-# Create the test model with naive initialization
-test_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2]);
+# Create and fit the test model
+test_model = HiddenMarkovModel(K=2, A=A_init, πₖ=πₖ_init, B=[emission_1_init, emission_2_init])
 
-# Fit the model using EM algorithm
-println("Running EM algorithm to learn HMM parameters...")
+print("Running EM algorithm...")
 lls = fit!(test_model, data, Φ);
 
-println("EM converged after $(length(lls)) iterations")
-println("Initial log-likelihood: $(round(lls[1], digits=2))")
-println("Final log-likelihood: $(round(lls[end], digits=2))")
-println("Improvement: $(round(lls[end] - lls[1], digits=2))")
+print("EM converged after $(length(lls)) iterations\n")
+print("Log-likelihood improved by $(round(lls[end] - lls[1], digits=1))\n");
 
-# Plot the convergence of the log-likelihood
-plot(lls)
-title!("Log-likelihood over EM Iterations")
-xlabel!("EM Iteration")
-ylabel!("Log-Likelihood")
+# Plot EM convergence
+p2 = plot(lls, xlabel="EM Iteration", ylabel="Log-Likelihood", 
+          title="Model Convergence", legend=false, lw=2, color=:darkblue)
 
-# ## Visualize the Emission Model Predictions
+# ## Visualize Learned vs True Regression Models
 
 # Compare the true regression relationships with what our fitted model learned.
-# This shows how well we recovered the underlying GLM parameters.
 
-state_colors = [:dodgerblue, :crimson]  # Data points colored by true state
-true_colors = [:green, :orange]         # True regression lines
-pred_colors = [:teal, :yellow];         # Predicted regression lines
-
-scatter(Φ[1, :], vec(data);
-    color = state_colors[true_labels],
-    ms = 3,
-    alpha = 0.6,
+p3 = scatter(Φ[1, :], vec(data);
+    color = colors[true_labels],
+    ms = 2,
+    alpha = 0.3,
     label = "",
     xlabel = "Input Feature 1",
-    ylabel = "Output",
-    title = "True vs. Predicted Regression Relationships"
-);
-
-xvals = range(minimum(Φ[1, :]), stop=maximum(Φ[1, :]), length=100);
-
-# Plot true regression lines
-β1_true = emission_1.β[:, 1]  # Note: this is now the fitted model's β, not true model's
-y_true_1 = β1_true[1] .+ β1_true[2] .* xvals
-plot!(xvals, y_true_1;
-    color = true_colors[1],
-    lw = 3,
-    linestyle = :solid,
-    label = "State 1 (true)"
-);
-
-β2_true = emission_2.β[:, 1]
-y_true_2 = β2_true[1] .+ β2_true[2] .* xvals
-plot!(xvals, y_true_2;
-    color = true_colors[2],
-    lw = 3,
-    linestyle = :solid,
-    label = "State 2 (true)"
-);
-
-# Plot learned regression lines
-β1_pred = test_model.B[1].β[:, 1]
-y_pred_1 = β1_pred[1] .+ β1_pred[2] .* xvals
-plot!(xvals, y_pred_1;
-    color = pred_colors[1],
-    lw = 3,
-    linestyle = :dash,
-    label = "State 1 (learned)"
-);
-
-β2_pred = test_model.B[2].β[:, 1]
-y_pred_2 = β2_pred[1] .+ β2_pred[2] .* xvals
-plot!(xvals, y_pred_2;
-    color = pred_colors[2],
-    lw = 3,
-    linestyle = :dash,
-    label = "State 2 (learned)"
+    ylabel = "Output", 
+    title = "True vs. Learned Regression Models"
 )
 
-# ## Visualize the Latent State Predictions using Viterbi Algorithm
+xvals = range(extrema(Φ[1, :])..., length=100)
+
+# Plot true regression lines
+plot!(xvals, β1[1] .+ β1[2] .* xvals;
+    color = :green, lw = 3, linestyle = :solid, label = "State 1 (true)"
+)
+plot!(xvals, β2[1] .+ β2[2] .* xvals;
+    color = :orange, lw = 3, linestyle = :solid, label = "State 2 (true)"
+)
+
+# Plot learned regression lines
+β1_learned = test_model.B[1].β[:, 1]
+β2_learned = test_model.B[2].β[:, 1]
+plot!(xvals, β1_learned[1] .+ β1_learned[2] .* xvals;
+    color = :teal, lw = 3, linestyle = :dash, label = "State 1 (learned)"
+)
+plot!(xvals, β2_learned[1] .+ β2_learned[2] .* xvals;
+    color = :purple, lw = 3, linestyle = :dash, label = "State 2 (learned)",
+    legend = :topright
+)
+
+# ## Hidden State Decoding with Viterbi Algorithm
 
 # The Viterbi algorithm finds the most likely sequence of hidden states given the
-# observed data. We'll compare the true hidden state sequence with our predictions.
+# observed data. We'll compare true vs predicted state sequences.
 
-println("Running Viterbi algorithm to decode hidden state sequence...")
 pred_labels = viterbi(test_model, data, Φ);
 
-# Calculate accuracy of state prediction
-accuracy = mean(true_labels .== pred_labels);
-println("Hidden state prediction accuracy: $(round(accuracy*100, digits=1))%")
+# Calculate accuracy
+accuracy = mean(true_labels .== pred_labels)
+print("Hidden state prediction accuracy: $(round(accuracy*100, digits=1))%\n");
 
-# Visualize a subset of the state sequences as heatmaps
-true_mat = reshape(true_labels[1:1000], 1, :)
-pred_mat = reshape(pred_labels[1:1000], 1, :);
+# Visualize state sequences as heatmaps (subset for clarity)
+n_display = 1000
+true_seq = reshape(true_labels[1:n_display], 1, :)
+pred_seq = reshape(pred_labels[1:n_display], 1, :)
 
-p1 = heatmap(true_mat;
-    colormap = :roma50,
-    title = "True State Labels",
-    xlabel = "",
-    ylabel = "",
-    xticks = false,
-    yticks = false,
-    colorbar = false,
-    framestyle = :box)
+p4 = plot(
+    heatmap(true_seq, colormap=:roma, title="True State Sequence", 
+           xticks=false, yticks=false, colorbar=false),
+    heatmap(pred_seq, colormap=:roma, title="Predicted State Sequence (Viterbi)",
+           xlabel="Time Steps (1-$n_display)", xticks=0:200:n_display, 
+           yticks=false, colorbar=false),
+    layout=(2, 1), size=(800, 300)
+)
 
-p2 = heatmap(pred_mat;
-    colormap = :roma50,
-    title = "Predicted State Labels (Viterbi)",
-    xlabel = "Timepoints (1-1000)",
-    ylabel = "",
-    xticks = 0:200:1000,
-    yticks = false,
-    colorbar = false,
-    framestyle = :box)
+# ## Multiple Independent Trials
 
-plot(p1, p2;
-    layout = (2, 1),
-    size = (700, 500),
-    margin = 5Plots.mm)
+# Real-world scenarios often involve multiple independent sequences. We'll generate 
+# multiple trials and show how to fit HMMs to this data structure.
 
-# ## Sampling Multiple, Independent Trials of Data from an HMM
+num_trials = 100   # Number of independent sequences
+n_trial = 1000;    # Length of each sequence
 
-# Real-world scenarios often involve multiple independent sequences (e.g., multiple
-# subjects, experimental sessions, or trials). We'll generate multiple independent
-# sequences and show how to fit HMMs to this type of data structure.
+print("Generating $num_trials independent trials of length $n_trial...\n")
 
-println("Generating multiple independent trials...")
-
-all_data = Vector{Matrix{Float64}}()     # Store data from each trial
-Φ_total = Vector{Matrix{Float64}}()      # Store input features from each trial
-all_true_labels = [];                     # Store true state sequences
-
-num_trials = 100  # Number of independent sequences
-n = 1000;         # Length of each sequence
+all_data = Vector{Matrix{Float64}}()
+Φ_total = Vector{Matrix{Float64}}()
+all_true_labels = Vector{Vector{Int64}}()
 
 for i in 1:num_trials
-    Φ = randn(rng, 3, n)
-    true_labels, data = rand(rng, true_model, Φ, n=n)
-    push!(all_true_labels, true_labels)
-    push!(all_data, data)
-    push!(Φ_total, Φ)
+    Φ_trial = randn(rng, 3, n_trial)
+    true_labels_trial, data_trial = rand(rng, true_model, Φ_trial, n=n_trial)
+    push!(all_true_labels, true_labels_trial)
+    push!(all_data, data_trial)
+    push!(Φ_total, Φ_trial)
 end
 
-println("Generated $num_trials independent trials, each with $n time points")
-println("Total data points: $(num_trials * n)")
+print("Total data points: $(num_trials * n_trial)\n");
 
-# ## Fitting an HMM to Multiple, Independent Trials of Data
+# ## Fitting HMM to Multiple Trials
 
-# When we have multiple independent sequences, the EM algorithm needs to account
-# for the fact that each sequence starts fresh from the initial state distribution.
-# This provides more robust parameter estimates than fitting to a single long sequence.
+# When we have multiple independent sequences, EM accounts for each sequence 
+# starting fresh from the initial distribution, providing more robust estimates.
 
-println("Fitting HMM to multiple independent trials...")
+# Initialize fresh model for multi-trial fitting
+test_model_multi = HiddenMarkovModel(
+    K=2, A=A_init, πₖ=πₖ_init, 
+    B=[deepcopy(emission_1_init), deepcopy(emission_2_init)]
+)
 
-# Initialize a new model for multi-trial fitting
-A = [0.8 0.2; 0.1 0.9]
-πₖ = [0.6; 0.4]
-emission_1 = GaussianRegressionEmission(
-    input_dim=3, output_dim=1, include_intercept=true,
-    β=reshape([2.0, -1.0, 1.0, 2.0], :, 1), Σ=[2.0;;], λ=0.0
-);
-emission_2 = GaussianRegressionEmission(
-    input_dim=3, output_dim=1, include_intercept=true,
-    β=reshape([-2.5, -1.0, 3.5, 3.0], :, 1), Σ=[0.5;;], λ=0.0
-);
+print("Fitting HMM to multiple trials...")
+lls_multi = fit!(test_model_multi, all_data, Φ_total);
 
-test_model = HiddenMarkovModel(K=2, A=A, πₖ=πₖ, B=[emission_1, emission_2]);
+print("Multi-trial EM converged after $(length(lls_multi)) iterations\n")
+print("Log-likelihood improved by $(round(lls_multi[end] - lls_multi[1], digits=1))\n");
 
-# Fit to multiple trials - the package handles the multi-trial structure automatically
-lls = fit!(test_model, all_data, Φ_total);
+# Plot multi-trial convergence
+p5 = plot(lls_multi, xlabel="EM Iteration", ylabel="Log-Likelihood",
+          title="Multi-Trial Model Convergence", legend=false, lw=2, color=:darkgreen)
 
-println("Multi-trial EM converged after $(length(lls)) iterations")
-println("Initial log-likelihood: $(round(lls[1], digits=2))")
-println("Final log-likelihood: $(round(lls[end], digits=2))")
+# ## Multi-Trial State Decoding
 
-# Plot convergence for multi-trial fitting
-plot(lls)
-title!("Log-likelihood over EM Iterations (Multi-Trial)")
-xlabel!("EM Iteration")
-ylabel!("Log-Likelihood")
+# Decode hidden states for all trials and visualize as a multi-trial heatmap.
 
-# ## Visualize Latent State Predictions for Multiple Trials using Viterbi
-
-# Decode hidden states for all trials and visualize the results as a multi-trial heatmap.
-# This shows how well we can predict state sequences across different independent runs.
-
-println("Running Viterbi decoding on all trials...")
-all_pred_labels_vec = viterbi(test_model, all_data, Φ_total);
-
-# Reshape for visualization
-all_pred_labels = hcat(all_pred_labels_vec...)'      # trials × time
-all_true_labels_matrix = hcat(all_true_labels...)';   # trials × time
+all_pred_labels = viterbi(test_model_multi, all_data, Φ_total)
 
 # Calculate overall accuracy across all trials
-total_accuracy = mean(all_true_labels_matrix .== all_pred_labels)
-println("Overall hidden state accuracy across all trials: $(round(total_accuracy*100, digits=1))%")
+all_true_matrix = hcat(all_true_labels...)
+all_pred_matrix = hcat(all_pred_labels...)
+total_accuracy = mean(all_true_matrix .== all_pred_matrix)
 
-# Visualize a subset of trials
-state_colors = [:dodgerblue, :crimson]
-true_subset = all_true_labels_matrix[1:10, 1:500]   # First 10 trials, first 500 time points
-pred_subset = all_pred_labels[1:10, 1:500];
+print("Overall state prediction accuracy: $(round(total_accuracy*100, digits=1))%\n");
 
-p1 = heatmap(
-    true_subset,
-    colormap = :roma50,
-    colorbar = false,
-    title = "True State Labels (10 trials × 500 timepoints)",
-    xlabel = "",
-    ylabel = "Trial Number",
-    xticks = false,
-    yticks = true,
-    margin = 5Plots.mm,
-    legend = false
-);
+# Visualize subset of trials (first 10 trials, first 500 time points)
+n_trials_display = 10
+n_time_display = 500
 
-p2 = heatmap(
-    pred_subset,
-    colormap = :roma50,
-    colorbar = false,
-    title = "Predicted State Labels (Viterbi)",
-    xlabel = "Timepoints",
-    ylabel = "Trial Number",
-    xticks = true,
-    yticks = true,
-    margin = 5Plots.mm,
-    legend = false
-);
+true_subset = hcat(all_true_labels[1:n_trials_display]...)'[:, 1:n_time_display]
+pred_subset = hcat(all_pred_labels[1:n_trials_display]...)'[:, 1:n_time_display]
 
-final_plot = plot(
-    p1, p2,
-    layout = (2, 1),
-    size = (850, 550),
-    margin = 5Plots.mm,
-    legend = false,
-);
+p6 = plot(
+    heatmap(true_subset, colormap=:roma, title="True States ($n_trials_display trials)",
+           xticks=false, ylabel="Trial", colorbar=false),
+    heatmap(pred_subset, colormap=:roma, title="Predicted States (Viterbi)", 
+           xlabel="Time Steps", ylabel="Trial", colorbar=false),
+    layout=(2, 1), size=(900, 400)
+)
 
-display(final_plot)
+# ## Model Assessment Summary
 
-# ## Summary and Model Assessment
-
-println("\n=== Final Model Assessment ===")
+print("\n=== Final Model Assessment ===\n")
 
 # Compare learned parameters with true parameters
-true_A = [0.99 0.01; 0.05 0.95]
-learned_A = test_model.A
-A_error = norm(true_A - learned_A) / norm(true_A)
-println("Transition matrix relative error: $(round(A_error, digits=4))")
+true_A_orig = [0.99 0.01; 0.05 0.95]
+A_error = norm(true_A_orig - test_model_multi.A) / norm(true_A_orig)
+print("Transition matrix relative error: $(round(A_error, digits=4))\n")
 
-true_π = [0.8; 0.2]
-learned_π = test_model.πₖ
-π_error = norm(true_π - learned_π) / norm(true_π)
-println("Initial distribution relative error: $(round(π_error, digits=4))")
+true_π_orig = [0.8; 0.2]
+π_error = norm(true_π_orig - test_model_multi.πₖ) / norm(true_π_orig)
+print("Initial distribution relative error: $(round(π_error, digits=4))\n")
 
-println("\nTrue vs Learned Regression Coefficients:")
-println("State 1 - True β: [3.0, 2.0, 2.0, 3.0]")
-println("State 1 - Learned β: $(round.(test_model.B[1].β[:, 1], digits=2))")
-println("State 2 - True β: [-4.0, -2.0, 3.0, 2.0]")
-println("State 2 - Learned β: $(round.(test_model.B[2].β[:, 1], digits=2))")
+print("\nRegression Coefficient Recovery:\n")
+print("State 1 - True β:    [3.0, 2.0, 2.0, 3.0]\n")
+print("State 1 - Learned β: $(round.(test_model_multi.B[1].β[:, 1], digits=2))\n")
+print("State 2 - True β:    [-4.0, -2.0, 3.0, 2.0]\n") 
+print("State 2 - Learned β: $(round.(test_model_multi.B[2].β[:, 1], digits=2))\n");
 
 # ## Summary
 #
 # This tutorial demonstrated the complete workflow for Hidden Markov Models with regression emissions:
 #
-# 1. **Model Structure**: Discrete latent states with different regression relationships in each state
-# 2. **Applications**: Ideal for modeling switching dynamics, regime changes, or context-dependent relationships
-# 3. **Single vs Multiple Trials**: Showed how to handle both single long sequences and multiple independent trials
-# 4. **Parameter Recovery**: EM algorithm successfully learned transition dynamics and emission parameters
-# 5. **State Decoding**: Viterbi algorithm accurately recovered hidden state sequences
-# 6. **Scalability**: Framework handles multiple trials efficiently for robust parameter estimation
+# **Key Concepts:**
+# - **Discrete latent states** with different regression relationships in each state
+# - **Markovian dynamics** governing state transitions over time  
+# - **EM algorithm** for joint parameter learning and state inference
+# - **Viterbi decoding** for finding most likely state sequences
 #
-# GLM-HMMs provide a powerful framework for modeling data with discrete latent structure and
-# context-dependent input-output relationships, making them valuable for many real-world applications.
+# **Applications:**
+# - Modeling switching dynamics and regime changes
+# - Context-dependent input-output relationships  
+# - Multiple independent trial analysis
+# - Robust parameter estimation across sequences
+#
+# GLM-HMMs provide a powerful framework for modeling data with discrete latent structure,
+# making them valuable for neuroscience, economics, and other domains with switching behaviors.

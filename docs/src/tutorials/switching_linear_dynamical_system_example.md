@@ -4,31 +4,24 @@ EditURL = "../../examples/SLDS.jl"
 
 # Simulating and Fitting a Switching Linear Dynamical System (SLDS)
 
-This tutorial walks through building, simulating, and fitting a
-**Switching Linear Dynamical System (SLDS)** with `StateSpaceDynamics.jl`.
-SLDS combines a discrete Hidden Markov Model (HMM) over modes with a set of
-linear-Gaussian state-space models (one per mode). It captures time series that
-switch among distinct linear dynamics (e.g., slow vs. fast oscillators).
+This tutorial demonstrates building, simulating, and fitting a **Switching Linear Dynamical System (SLDS)**
+with `StateSpaceDynamics.jl`. SLDS combines a discrete Hidden Markov Model over modes with
+linear-Gaussian state-space models, capturing time series that switch among distinct linear dynamics
+(e.g., alternating between slow and fast oscillatory behaviors).
 
-## Model overview
-The SLDS has:
-- Discrete mode \(s_t \in \{1,\dots,K\}\) with Markov dynamics
-  \(p(s_t\mid s_{t-1}) = A_{\text{hmm}}[s_{t-1}, s_t]\), initial \(\pi_0\).
-- Continuous latent state \(x_t \in \mathbb R^{d_x}\) evolving as
-  \(x_t = A_{s_t} x_{t-1} + \varepsilon_t\), with \(\varepsilon_t \sim \mathcal N(0, Q_{s_t})\).
-- Observations \(y_t \in \mathbb R^{d_y}\) via
-  \(y_t = C_{s_t} x_t + \eta_t\), with \(\eta_t \sim \mathcal N(0, R_{s_t})\).
-- Initial distribution \(x_0 \sim \mathcal N(\mu_0, P_0)\).
+## Model Overview
 
-**Inference & learning.** Exact EM is intractable because of the exponential
-number of mode sequences. `fit!` uses a structured variational EM: a forward–
-backward step for the HMM (variational E-step) coupled with Kalman smoothing in
-each mode (continuous E-step), followed by M-step updates of parameters.
-The objective reported as `mls` is an ELBO that should increase monotonically.
+The SLDS combines discrete and continuous latent structure:
+- **Discrete mode** $s_t \in \{1,\ldots,K\}$ with Markov dynamics: $P(s_t | s_{t-1}) = A_{\text{hmm}}[s_{t-1}, s_t]$
+- **Continuous state** $\mathbf{x}_t \in \mathbb{R}^{d_x}$ evolving as: $\mathbf{x}_t = \mathbf{A}_{s_t} \mathbf{x}_{t-1} + \boldsymbol{\varepsilon}_t$
+- **Observations** $\mathbf{y}_t \in \mathbb{R}^{d_y}$ via: $\mathbf{y}_t = \mathbf{C}_{s_t} \mathbf{x}_t + \boldsymbol{\eta}_t$
+- **Process noise** $\boldsymbol{\varepsilon}_t \sim \mathcal{N}(\mathbf{0}, \mathbf{Q}_{s_t})$
+- **Observation noise** $\boldsymbol{\eta}_t \sim \mathcal{N}(\mathbf{0}, \mathbf{R}_{s_t})$
 
----
+**Inference:** Exact EM is intractable due to exponential mode sequences. The `fit!` function
+uses structured variational EM combining HMM forward-backward with mode-specific Kalman smoothing.
 
-## Load Packages
+## Load Required Packages
 
 ````@example switching_linear_dynamical_system_example
 using StateSpaceDynamics
@@ -43,32 +36,40 @@ rng = StableRNG(123);
 nothing #hide
 ````
 
-## Simulate data from an SLDS
+## Create and Simulate SLDS
+
+We'll create an SLDS with two modes representing different oscillatory dynamics:
+Mode 1 (slow oscillator) and Mode 2 (fast oscillator).
 
 ````@example switching_linear_dynamical_system_example
-state_dim = 2
-obs_dim   = 10
-K         = 2  # two modes
+state_dim = 2   # Latent state dimensionality
+obs_dim = 10    # Observation dimensionality
+K = 2           # Number of discrete modes
 ````
 
-HMM (mode) parameters
+HMM parameters for mode switching
 
 ````@example switching_linear_dynamical_system_example
-A_hmm = [0.92 0.08; 0.06 0.94]
-π₀    = [1.0, 0.0]
+A_hmm = [0.92 0.08;    # Mode transitions: sticky dynamics
+         0.06 0.94]    # High probability of staying in current mode
+π₀ = [1.0, 0.0]        # Start in mode 1
 ````
 
-Mode-specific state dynamics (two oscillators)
+Mode-specific continuous dynamics (two oscillators with different frequencies)
 
 ````@example switching_linear_dynamical_system_example
-A₁ = 0.95 * [cos(0.05) -sin(0.05); sin(0.05) cos(0.05)]  # slower
-A₂ = 0.95 * [cos(0.55) -sin(0.55); sin(0.55) cos(0.55)]  # faster
-
-Q₁ = [0.001 0.0; 0.0 0.001]
-Q₂ = [0.1   0.0; 0.0 0.1]
+A₁ = 0.95 * [cos(0.05) -sin(0.05); sin(0.05) cos(0.05)]  # Slow oscillator
+A₂ = 0.95 * [cos(0.55) -sin(0.55); sin(0.55) cos(0.55)]  # Fast oscillator
 ````
 
-Shared initial state distribution for simplicity
+Mode-specific process noise (different noise levels)
+
+````@example switching_linear_dynamical_system_example
+Q₁ = [0.001 0.0; 0.0 0.001]  # Low noise for mode 1
+Q₂ = [0.1   0.0; 0.0 0.1]    # Higher noise for mode 2
+````
+
+Shared initial state distribution
 
 ````@example switching_linear_dynamical_system_example
 x0 = [0.0, 0.0]
@@ -78,10 +79,15 @@ P0 = [0.1 0.0; 0.0 0.1]
 Mode-specific observation models
 
 ````@example switching_linear_dynamical_system_example
-C₁ = randn(rng, obs_dim, state_dim)
-C₂ = randn(rng, obs_dim, state_dim)
-R  = Matrix(0.1 * I(obs_dim))  # shared observation noise
+C₁ = randn(rng, obs_dim, state_dim)  # Random observation mapping for mode 1
+C₂ = randn(rng, obs_dim, state_dim)  # Different mapping for mode 2
+R = Matrix(0.1 * I(obs_dim));        # Shared observation noise
+nothing #hide
+````
 
+Construct the complete SLDS
+
+````@example switching_linear_dynamical_system_example
 model = SwitchingLinearDynamicalSystem(
     A_hmm,
     [
@@ -90,162 +96,312 @@ model = SwitchingLinearDynamicalSystem(
     ],
     π₀,
     K,
+);
+
+print("Created SLDS with $K modes, $(state_dim)D latent states, $(obs_dim)D observations\n")
+````
+
+## Simulate Data
+
+Generate synthetic data showing mode switches between different dynamics.
+
+````@example switching_linear_dynamical_system_example
+T = 1000  # Number of time steps
+x, y, z = rand(rng, model, T);
+
+print("Simulated $T time steps\n")
+print("Mode proportions: Mode 1 ($(round(mean(z.==1)*100, digits=1))%), Mode 2 ($(round(mean(z.==2)*100, digits=1))%)\n")
+print("Number of mode switches: $(sum(diff(vec(z)) .!= 0))\n");
+nothing #hide
+````
+
+## Visualize Latent Dynamics with Mode Shading
+
+Plot the true latent trajectories with background shading indicating the active mode.
+This shows how dynamics change when the system switches between modes.
+
+````@example switching_linear_dynamical_system_example
+p1 = plot(1:T, x[1, :], label=L"x_1", linewidth=1.5, color=:black)
+plot!(1:T, x[2, :], label=L"x_2", linewidth=1.5, color=:blue)
+````
+
+Add mode-specific background shading
+
+````@example switching_linear_dynamical_system_example
+transition_points = [1; findall(diff(vec(z)) .!= 0) .+ 1; T + 1]
+for i in 1:(length(transition_points) - 1)
+    start_idx = transition_points[i]
+    end_idx = transition_points[i + 1] - 1
+    state_val = z[start_idx]
+    bg_color = state_val == 1 ? :lightblue : :lightyellow
+    vspan!([start_idx, end_idx], fillalpha=0.3, color=bg_color,
+           label=(i == 1 && start_idx < 100 ? "Mode $state_val" : ""))
+end
+
+plot!(title="Latent Dynamics with Mode Switching",
+      xlabel="Time", ylabel="State Value",
+      ylims=(-3, 3), legend=:topright)
+````
+
+## Initialize and Fit SLDS
+
+Initialize SLDS with reasonable but imperfect parameters, then use variational EM to learn.
+
+Initialize HMM transition matrix (moderately sticky)
+
+````@example switching_linear_dynamical_system_example
+A_init = [0.9 0.1; 0.1 0.9]
+A_init ./= sum(A_init, dims=2)  # Ensure row-stochastic
+````
+
+Random initial state probabilities
+
+````@example switching_linear_dynamical_system_example
+πₖ_init = rand(rng, K)
+πₖ_init ./= sum(πₖ_init)
+````
+
+Initialize dynamics with different frequencies
+
+````@example switching_linear_dynamical_system_example
+Q_init = Matrix(0.001 * I(state_dim))
+P0_init = Matrix(0.001 * I(state_dim))
+C_init = randn(rng, obs_dim, state_dim)
+R_init = Matrix(0.1 * I(obs_dim))
+````
+
+Create mode-specific dynamics with different rotation frequencies
+
+````@example switching_linear_dynamical_system_example
+dynamics_init = [
+    LinearDynamicalSystem(
+        GaussianStateModel(0.95 * [cos(f) -sin(f); sin(f) cos(f)], Q_init, x0, P0_init),
+        GaussianObservationModel(C_init, R_init),
+        state_dim, obs_dim, fill(true, 6)
+    ) for f in (0.7, 0.1)  # Different initial frequencies
+]
+
+learned_model = SwitchingLinearDynamicalSystem(A_init, dynamics_init, πₖ_init, K)
+
+print("Running variational EM algorithm...")
+````
+
+Fit using variational EM
+
+````@example switching_linear_dynamical_system_example
+mls, param_diff, FB, FS = fit!(learned_model, y; max_iter=25);
+
+print("Variational EM converged in $(length(mls)) iterations\n")
+print("ELBO improved by $(round(mls[end] - mls[1], digits=1))\n");
+nothing #hide
+````
+
+## Monitor ELBO Convergence
+
+Plot the Evidence Lower BOund (ELBO) to verify monotonic improvement.
+For SLDS, this tracks the variational approximation quality.
+
+````@example switching_linear_dynamical_system_example
+p2 = plot(mls, xlabel="Iteration", ylabel="ELBO",
+          title="Variational EM Convergence",
+          marker=:circle, markersize=3, lw=2,
+          legend=false, color=:darkgreen)
+````
+
+Add convergence annotation
+
+````@example switching_linear_dynamical_system_example
+annotate!(p2, length(mls)*0.7, mls[end]*0.98,
+    text("Final ELBO: $(round(mls[end], digits=1))", 10))
+````
+
+## Compare True vs Learned Latent States
+
+Reconstruct latent states by weighting mode-specific smoothed states
+with their posterior responsibilities.
+
+````@example switching_linear_dynamical_system_example
+latents_learned = zeros(state_dim, T)
+responsibilities = exp.(FB.γ)  # Convert from log-space
+
+for t in 1:T
+    for k in 1:K
+        latents_learned[:, t] += FS[k].x_smooth[:, t] .* responsibilities[k, t]
+    end
+end
+````
+
+Plot comparison with offset for clarity
+
+````@example switching_linear_dynamical_system_example
+p3 = plot(size=(900, 400))
+offset = 2.5
+````
+
+True states
+
+````@example switching_linear_dynamical_system_example
+plot!(1:T, x[1, :] .+ offset, label=L"x_1 \text{ (true)}",
+      linewidth=2, color=:black, alpha=0.8)
+plot!(1:T, x[2, :] .- offset, label=L"x_2 \text{ (true)}",
+      linewidth=2, color=:black, alpha=0.8)
+````
+
+Learned states
+
+````@example switching_linear_dynamical_system_example
+plot!(1:T, latents_learned[1, :] .+ offset, label=L"x_1 \text{ (learned)}",
+      linewidth=1.5, color=:red, alpha=0.8)
+plot!(1:T, latents_learned[2, :] .- offset, label=L"x_2 \text{ (learned)}",
+      linewidth=1.5, color=:blue, alpha=0.8)
+````
+
+Reference lines
+
+````@example switching_linear_dynamical_system_example
+hline!([offset, -offset], color=:gray, alpha=0.3, linestyle=:dash, label="")
+
+plot!(title="True vs. Learned Latent States",
+      xlabel="Time", ylabel="",
+      yticks=([-offset, offset], [L"x_2", L"x_1"]),
+      xlims=(1, T), legend=:topright)
+````
+
+## Mode Decoding and Accuracy Assessment
+
+Decode discrete modes using posterior responsibilities and assess accuracy.
+
+````@example switching_linear_dynamical_system_example
+z_decoded = [argmax(responsibilities[:, t]) for t in 1:T]
+````
+
+Handle label permutation by trying both assignments
+
+````@example switching_linear_dynamical_system_example
+function align_labels_2way(z_true::AbstractVector, z_pred::AbstractVector)
+    acc_direct = mean(z_true .== z_pred)
+    z_flipped = 3 .- z_pred  # Flip 1↔2
+    acc_flipped = mean(z_true .== z_flipped)
+
+    if acc_flipped > acc_direct
+        return z_flipped, acc_flipped
+    else
+        return z_pred, acc_direct
+    end
+end
+
+z_aligned, accuracy = align_labels_2way(vec(z), z_decoded)
+print("Mode decoding accuracy: $(round(accuracy*100, digits=1))%\n");
+nothing #hide
+````
+
+Visualize mode assignments over time (first 200 time steps for clarity)
+
+````@example switching_linear_dynamical_system_example
+t_subset = 1:200
+true_modes = reshape(z[t_subset], 1, :)
+decoded_modes = reshape(z_aligned[t_subset], 1, :)
+
+p4 = plot(
+    heatmap(true_modes, colormap=:roma, title="True Mode Sequence",
+           xticks=false, yticks=false, colorbar=false),
+    heatmap(decoded_modes, colormap=:roma, title="Decoded Mode Sequence",
+           xlabel="Time Steps (1-200)", yticks=false, colorbar=false),
+    layout=(2, 1), size=(800, 300)
 )
 ````
 
-Simulate
+## Parameter Recovery Assessment
 
 ````@example switching_linear_dynamical_system_example
-T = 1000
-x, y, z = rand(rng, model, T)
+print("\n=== Parameter Recovery Assessment ===\n")
 ````
 
-## Plot latent dynamics with mode shading
+Compare HMM transition matrices
 
 ````@example switching_linear_dynamical_system_example
-p1 = plot(1:T, x[1, :], label="x₁", linewidth=1.5)
-plot!(1:T, x[2, :], label="x₂", linewidth=1.5)
+A_error = norm(A_hmm - learned_model.A) / norm(A_hmm)
+print("HMM transition matrix error: $(round(A_error*100, digits=1))%\n")
 ````
 
-Shade regions by discrete mode z
+Compare dynamics matrices for each mode
 
 ````@example switching_linear_dynamical_system_example
-transition_points = [1; findall(diff(z) .!= 0) .+ 1; T + 1]
-for i in 1:(length(transition_points) - 1)
-    start_idx = transition_points[i]
-    end_idx   = transition_points[i + 1] - 1
-    state_val = z[start_idx]
-    bg_color  = state_val == 1 ? :lightblue : :lightyellow
-    vspan!([start_idx, end_idx], fillalpha=0.5, color=bg_color, label=(i == 1 ? "State $state_val" : ""))
+for k in 1:K
+    A_true = k == 1 ? A₁ : A₂
+    A_learned = learned_model.B[k].state_model.A
+    dyn_error = norm(A_true - A_learned) / norm(A_true)
+    print("Mode $k dynamics error: $(round(dyn_error*100, digits=1))%\n")
 end
 
-title!("Latent Dynamics with Mode Shading")
-xlabel!("Time")
-ylabel!("State Value")
-ylims!(-3, 3)
-
-p1
+print("True vs. Learned HMM Transitions:\n")
+print("True A_hmm:\n$(round.(A_hmm, digits=3))\n")
+print("Learned A_hmm:\n$(round.(learned_model.A, digits=3))\n");
+nothing #hide
 ````
 
-## Initialize and fit an SLDS to the observations
-Good initialization helps. We'll set a moderately sticky HMM and rough dynamics,
-then call `fit!` for variational EM.
+## Practical Considerations
 
 ````@example switching_linear_dynamical_system_example
-A = [0.9 0.1; 0.1 0.9]
-A ./= sum(A, dims=2)   # row-stochastic
-
-πₖ = rand(rng, K); πₖ ./= sum(πₖ)
-
-Q  = Matrix(0.001 * I(state_dim))
-P0 = Matrix(0.001 * I(state_dim))
-C  = randn(rng, obs_dim, state_dim)
-R  = Matrix(0.1 * I(obs_dim))
-
-B = [
-    LinearDynamicalSystem(
-        GaussianStateModel(0.95 * [cos(f) -sin(f); sin(f) cos(f)], Q, x0, P0),
-        GaussianObservationModel(C, R),
-        state_dim, obs_dim, fill(true, 6),
-    ) for f in (0.7, 0.1)
-]
-
-learned_model = SwitchingLinearDynamicalSystem(A, B, πₖ, K)
+print("\n=== Practical Guidelines ===\n")
+print("• Initialization: Use different frequencies/directions for mode-specific dynamics\n")
+print("• Stickiness: Increase diagonal elements in A_hmm for more persistent modes\n")
+print("• Identifiability: Consider sharing parameters (e.g., R) across modes to avoid degeneracies\n")
+print("• Diagnostics: Monitor ELBO convergence and visualize mode responsibilities\n")
+print("• Model selection: Use information criteria or cross-validation to choose K\n")
+print("• Convergence: Try multiple random initializations for robust results\n");
+nothing #hide
 ````
 
-Fit with variational EM
+## Extensions and Applications
 
 ````@example switching_linear_dynamical_system_example
-mls, param_diff, FB, FS = fit!(learned_model, y; max_iter=25)
+print("\n=== Applications and Extensions ===\n")
+print("Applications:\n")
+print("• Neural population dynamics with distinct behavioral states\n")
+print("• Financial time series with regime changes\n")
+print("• Speech recognition with phoneme-specific dynamics\n")
+print("• Climate modeling with seasonal/regime transitions\n")
+
+print("\nExtensions:\n")
+print("• Non-linear dynamics: Switching between different non-linear models\n")
+print("• Hierarchical structure: Multi-level switching systems\n")
+print("• Input-dependent switching: Mode transitions driven by external inputs\n")
+print("• Sticky SLDS: Geometric or negative binomial dwell times\n");
+nothing #hide
 ````
 
-`mls` is the ELBO trace; `param_diff` can be used as an additional stopping metric
-if desired; `FB` holds HMM posteriors and `FS` holds per-mode Kalman smoothing.
+## Summary
 
-## ELBO over iterations
+This tutorial demonstrated the complete Switching Linear Dynamical System workflow:
 
-````@example switching_linear_dynamical_system_example
-plot(mls, label="ELBO", linewidth=1.5)
-xlabel!("Iteration")
-ylabel!("ELBO")
-````
+**Key Concepts:**
+- **Hybrid dynamics**: Discrete mode switching combined with continuous state evolution
+- **Variational EM**: Structured approximation handling intractable exact inference
+- **Mode-specific parameters**: Each discrete state has its own linear dynamics
+- **Responsibility weighting**: Soft assignment of observations to modes
 
-## Compare true vs. learned latent states
-We combine mode-specific smoothed states using HMM responsibilities as weights.
+**Technical Insights:**
+- ELBO monitoring ensures proper variational approximation convergence
+- Label permutation requires careful accuracy assessment
+- Parameter sharing across modes can improve identifiability
+- Multiple initializations help avoid poor local optima
 
-````@example switching_linear_dynamical_system_example
-latents = zeros(state_dim, T)
-resp    = exp.(FB.γ)
-for t in 1:T
-    for k in 1:K
-        latents[:, t] += FS[k].x_smooth[:, t] .* resp[k, t]
-    end
-end
+**Modeling Power:**
+- Captures complex time series with multiple dynamic regimes
+- Enables automatic segmentation and regime detection
+- Provides probabilistic framework for switching systems
+- Extends both HMMs and LDS to richer model class
 
-plt = plot(size=(800, 500), background_color=:white, margin=5Plots.mm)
-plot!(x[1, :] .+ 2, label="x₁ (True)",   linewidth=2, color=:black,    alpha=0.8)
-plot!(x[2, :] .- 2, label="x₂ (True)",   linewidth=2, color=:black,    alpha=0.8)
-plot!(latents[1, :] .+ 2, label="x₁ (Learned)", linewidth=1.5, color=:firebrick)
-plot!(latents[2, :] .- 2, label="x₂ (Learned)", linewidth=1.5, color=:royalblue)
+**Applications:**
+- Neuroscience: population dynamics across behavioral states
+- Finance: regime-switching in market dynamics
+- Engineering: fault detection in dynamical systems
+- Climate: seasonal transitions and regime changes
 
-title!("SLDS: True vs Learned Latent States")
-xlabel!("Time")
-ylabel!("")
-yticks!([-2, 2], ["x₂", "x₁"])
-hline!([2],  color=:gray, alpha=0.3, linestyle=:dash, label="")
-hline!([-2], color=:gray, alpha=0.3, linestyle=:dash, label="")
-xlims!(0, T)
-
-plt
-````
-
-## Decoding modes and basic accuracy metrics
-Hard-decoded modes by argmax responsibilities, and a simple confusion rate with
-the simulated ground truth (up to label permutation).
-
-````@example switching_linear_dynamical_system_example
-z_hat = map(t -> argmax(view(resp, :, t)), 1:T)
-````
-
-Since labels are arbitrary, align them to best match truth via a 2x2 sweep.
-
-````@example switching_linear_dynamical_system_example
-function align_labels_2way(z_true::AbstractVector{<:Integer}, z_pred::AbstractVector{<:Integer})
-    acc1 = mean(z_true .== z_pred)
-    acc2 = mean(z_true .== (3 .- z_pred))  # flip 1<->2
-    if acc2 > acc1
-        return (3 .- z_pred), acc2
-    else
-        return z_pred, acc1
-    end
-end
-
-z_aligned, acc = align_labels_2way(vec(z), z_hat)
-@info "Mode decoding accuracy (up to permutation)" acc
-````
-
-## Practical tips & pitfalls
-- **Stickiness:** If modes switch too frequently, increase self-transition mass
-  in A_hmm or add a stickiness prior in the M-step.
-- **Scaling/identifiability:** With per-mode C, Q, R all free, degeneracies can
-  appear. Consider tying certain parameters across modes (e.g., shared R).
-- **Stability:** Ensure A_k are stable (spectral radius < 1) or use
-  parameterizations that enforce stability during optimization.
-- **Initialization:** Seed A_hmm near diagonal; initialize A_k with different
-  frequencies/directions to avoid identical modes; run from multiple starts.
-- **Diagnostics:** Monitor ELBO and parameter differences; visualize responsibilities
-  over time and check that each mode explains distinct dynamics.
-
-## Exercises
-1. Increase K to 3 and create a third oscillator; verify that modes separate.
-2. Make R state-specific and observe the tradeoff between Q and R in explaining
-   variability.
-3. Start from nearly identical A_k and show that without good initialization the
-   model collapses to a single effective mode; then fix with sticky A_hmm.
-4. Plot the responsibilities `resp[k, :]` over time and compare against ground truth.
-
----
-End of tutorial.
+SLDS provides a powerful framework for modeling complex temporal data with
+multiple underlying dynamics, bridging discrete regime detection with
+continuous state-space modeling in a principled probabilistic framework.
 
 ---
 
