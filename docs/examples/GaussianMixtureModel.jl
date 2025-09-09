@@ -36,25 +36,25 @@ rng = StableRNG(1234);
 # then see how well we can recover these parameters using only the observed data.
 
 k = 3  # Number of mixture components (clusters)
-D = 2  # Data dimensionality (2D for easy visualization)
+D = 2; # Data dimensionality (2D for easy visualization)
 
 # Define the true component means
 # Each column represents the mean vector for one component
 true_μs = [
     -1.0  1.0  0.0;   # x₁ coordinates of the 3 component centers
     -1.0 -1.5  2.0    # x₂ coordinates of the 3 component centers
-]  # Shape: (D, K) = (2, 3)
+];  # Shape: (D, K) = (2, 3)
 
 # Define covariance matrices for each component
 # Using isotropic (spherical) covariances for simplicity
-true_Σs = [Matrix{Float64}(0.3 * I(2)) for _ in 1:k]  # All components have same shape
+true_Σs = [Matrix{Float64}(0.3 * I(2)) for _ in 1:k];  # All components have same shape
 
 # Define mixing weights (must sum to 1)
 # These represent the probability that a random sample comes from each component
-true_πs = [0.5, 0.2, 0.3]  # Component 1 is most likely, component 2 least likely
+true_πs = [0.5, 0.2, 0.3];  # Component 1 is most likely, component 2 least likely
 
 # Construct the complete GMM
-true_gmm = GaussianMixtureModel(k, true_μs, true_Σs, true_πs)
+true_gmm = GaussianMixtureModel(k, true_μs, true_Σs, true_πs);
 
 println("Created true GMM with $k components in $D dimensions:")
 for i in 1:k
@@ -67,14 +67,14 @@ println("  All components have isotropic covariance with σ² = 0.3")
 # Generate synthetic data from our true model. We'll sample both the component
 # assignments (for visualization) and the actual observations.
 
-n = 500  # Number of data points to generate
+n = 500;  # Number of data points to generate
 println("Generating $n samples from the true GMM...")
 
 # First, determine which component each sample comes from
-labels = rand(rng, Categorical(true_πs), n)
+labels = rand(rng, Categorical(true_πs), n);
 
 # Count samples per component
-component_counts = [sum(labels .== i) for i in 1:k]
+component_counts = [sum(labels .== i) for i in 1:k];
 println("Samples per component: $(component_counts)")
 println("Empirical mixing proportions: $(round.(component_counts ./ n, digits=3))")
 
@@ -82,7 +82,7 @@ println("Empirical mixing proportions: $(round.(component_counts ./ n, digits=3)
 X = Matrix{Float64}(undef, D, n)
 for i in 1:n
     component = labels[i]
-    X[:, i] = rand(rng, MvNormal(true_μs[:, component], true_Σs[component]))
+    X[:, i] = rand(rng, MvNormal(true_μs[:, component], true_Σs[component]));
 end
 
 println("Generated data summary:")
@@ -99,7 +99,7 @@ p1 = scatter(
     alpha=0.8,
     legend=:topright,
     palette=:Set1_3
-)
+);
 
 # Add component centers for reference
 for i in 1:k
@@ -107,7 +107,7 @@ for i in 1:k
         marker=:star, markersize=10, color=i, 
         markerstrokewidth=2, markerstrokecolor=:black,
         label="Center $i")
-end
+end;
 
 display(p1)
 
@@ -122,7 +122,7 @@ println("Note: We assume we know the correct number of components k=$k")
 println("      (In practice, this often requires model selection)")
 
 # Initialize a GMM with the correct number of components but unknown parameters
-fit_gmm = GaussianMixtureModel(k, D)
+fit_gmm = GaussianMixtureModel(k, D);
 
 println("Running EM algorithm to learn GMM parameters...")
 
@@ -134,7 +134,7 @@ class_probabilities, lls = fit!(fit_gmm, X;
     maxiter=100, 
     tol=1e-6, 
     initialize_kmeans=true  # This often helps convergence
-)
+);
 
 println("EM algorithm completed:")
 println("  Converged after $(length(lls)) iterations")
@@ -162,7 +162,7 @@ p2 = plot(
     markersize=4,
     linewidth=2,
     grid=true
-)
+);
 
 # Add annotations about convergence behavior
 if length(lls) > 1
@@ -191,7 +191,7 @@ println("Creating visualization of fitted GMM...")
 x_range = range(minimum(X[1, :]) - 1, stop=maximum(X[1, :]) + 1, length=150)
 y_range = range(minimum(X[2, :]) - 1, stop=maximum(X[2, :]) + 1, length=150)
 xs = collect(x_range)
-ys = collect(y_range)
+ys = collect(y_range);
 
 # Start with a scatter plot of the data (without true labels this time)
 p3 = scatter(
@@ -204,7 +204,7 @@ p3 = scatter(
     title="Data with Fitted GMM Components",
     legend=:topright,
     label="Data points"
-)
+);
 
 # Plot probability density contours for each learned component
 colors = [:red, :green, :blue]
@@ -237,7 +237,7 @@ println("Analyzing component assignments...")
 
 # Get posterior probabilities for each data point
 # class_probabilities[i, j] = P(component i | data point j)
-predicted_labels = [argmax(class_probabilities[:, j]) for j in 1:n]
+predicted_labels = [argmax(class_probabilities[:, j]) for j in 1:n];
 
 # Calculate assignment accuracy (accounting for possible label permutation)
 # Since EM can converge with components in different order, we need to find
@@ -270,7 +270,7 @@ println("\n=== Parameter Recovery Assessment ===")
 # Compare true vs learned parameters (accounting for label permutation)
 mapped_μs = fit_gmm.μₖ[:, best_perm]
 mapped_πs = fit_gmm.πₖ[best_perm]
-mapped_Σs = fit_gmm.Σₖ[best_perm]
+mapped_Σs = fit_gmm.Σₖ[best_perm];
 
 # Mean vector errors
 μ_errors = [norm(true_μs[:, i] - mapped_μs[:, i]) for i in 1:k]
@@ -298,11 +298,11 @@ end
 # Create a side-by-side comparison of true vs learned GMM
 p_true = scatter(X[1, :], X[2, :]; group=labels, title="True GMM", 
                 xlabel="x₁", ylabel="x₂", markersize=3, alpha=0.7,
-                palette=:Set1_3, legend=false)
+                palette=:Set1_3, legend=false);
 
 p_learned = scatter(X[1, :], X[2, :]; group=predicted_labels, title="Learned GMM", 
                    xlabel="x₁", ylabel="x₂", markersize=3, alpha=0.7,
-                   palette=:Set1_3, legend=false)
+                   palette=:Set1_3, legend=false);
 
 final_comparison = plot(p_true, p_learned, layout=(1, 2), size=(800, 400))
 display(final_comparison)

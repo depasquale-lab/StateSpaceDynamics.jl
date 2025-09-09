@@ -44,7 +44,7 @@ rng = StableRNG(1234);
 # We'll work in 2D with two latent factors for easy visualization.
 
 D = 2
-k = 2 
+k = 2; 
 
 # True parameters used to generate synthetic data
 W_true = [
@@ -53,13 +53,13 @@ W_true = [
 ]
 
 σ²_true = 0.5
-μ_true  = [1.65, -1.3]
+μ_true  = [1.65, -1.3];
 
 ppca = ProbabilisticPCA(W_true, σ²_true, μ_true)
 
 # Draw IID samples from the model
 num_obs = 500 
-X, z = rand(rng, ppca, num_obs)
+X, z = rand(rng, ppca, num_obs);
 
 # ## Visualize the simulated data
 # We'll color points by the dominant latent dimension (for intuition only—latent
@@ -94,7 +94,7 @@ W = randn(rng, D, k)
 σ² = 0.5
 μ_vector = randn(rng, 2)
 
-fit_ppca = ProbabilisticPCA(W, σ², μ_vector)
+fit_ppca = ProbabilisticPCA(W, σ², μ_vector);
 
 # ### Fit with EM
 # `fit!` returns the log-likelihood trace. Monotone ascent is a good sanity check.
@@ -134,7 +134,7 @@ scatter!(
     label      = "Data",
     alpha      = 0.5,
     markersize = 4,
-)
+);
 
 # Draw loading vectors from the mean in both directions for visibility
 quiver!(P, [μ1], [μ2]; quiver=([ w1[1]], [ w1[2]]), arrow=:arrow, lw=3, color=:red,   label="W₁")
@@ -157,7 +157,7 @@ function ppca_posterior_means(W::AbstractMatrix, σ²::Real, μ::AbstractVector,
 end
 
 Ẑ = ppca_posterior_means(W_fit, fit_ppca.σ², fit_ppca.μ, X)
-X̂ = fit_ppca.μ .+ W_fit * Ẑ
+X̂ = fit_ppca.μ .+ W_fit * Ẑ;
 
 # Example: reconstruction error (per-dimension MSE)
 recon_mse = mean(norm.(eachcol(X - X̂)).^2) / size(X,1)
@@ -168,7 +168,7 @@ recon_mse = mean(norm.(eachcol(X - X̂)).^2) / size(X,1)
 # the remainder approximated by σ².
 
 Σ̂ = cov(permutedims(X))            # D×D sample covariance
-λs = sort(eigvals(Symmetric(Σ̂)); rev=true)
+λs = sort(eigvals(Symmetric(Σ̂)); rev=true);
 
 # Proportion of variance explained by top-k sample eigenvalues
 pve_sample = sum(λs[1:k]) / sum(λs)
