@@ -6,13 +6,19 @@ using Plots
 using Statistics: median, quantile
 using Measures
 
-function plot_lds_benchmark(fp::AbstractString, sp::AbstractString="benchmarking/results/lds_benchmark_results.png")
+function plot_lds_benchmark(fp::AbstractString, sp::AbstractString="benchmarking/results/lds_benchmark_results.svg")
 
     # Color palette
     package_colors = Dict(
         "Dynamax" => "#0072B2",                # Blue
         "pykalman" => "#009E73", # Green
         "StateSpaceDynamics.jl" => "#E69F00"  # Orange
+    )
+
+    package_markers = Dict(
+        "Dynamax" => :circle,
+        "pykalman" => :square,
+        "StateSpaceDynamics.jl" => :diamond
     )
 
     df = CSV.read(fp, DataFrame)
@@ -76,7 +82,7 @@ function plot_lds_benchmark(fp::AbstractString, sp::AbstractString="benchmarking
                 impl_data = @view panel[panel.implementation .== impl, :]
                 if !isempty(impl_data)
                     plot!(p, impl_data.seq_len, impl_data.median_time,
-                          label=impl, marker=:circle, linewidth=2, color=package_colors[impl])
+                          label=impl, marker=package_markers[impl], linewidth=2, color=package_colors[impl])
                 end
             end
            
@@ -118,6 +124,12 @@ function plot_hmm_benchmark(fp::AbstractString, sp::AbstractString="benchmarking
         "StateSpaceDynamics.jl" => "#E69F00"  # Orange
     )
 
+    package_markers = Dict(
+        "Dynamax" => :circle,
+        "HiddenMarkovModels.jl" => :utriangle,
+        "StateSpaceDynamics.jl" => :diamond
+    )
+
     df = CSV.read(fp, DataFrame)
     df = filter(row -> !isnan(row.time_sec), df)
 
@@ -157,7 +169,7 @@ function plot_hmm_benchmark(fp::AbstractString, sp::AbstractString="benchmarking
         for impl in impls
             impl_data = @view panel[panel.implementation .== impl, :]
             if !isempty(impl_data)
-                plot!(p, impl_data.seq_len, impl_data.median_time, label = impl, marker = :circle, linewidth = 2, color=package_colors[impl])
+                plot!(p, impl_data.seq_len, impl_data.median_time, label = impl, marker=package_markers[impl], linewidth = 2, color=package_colors[impl])
             end
         end
         push!(subplots, p)
