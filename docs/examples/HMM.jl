@@ -116,7 +116,7 @@ scatter!([x_vals[1]], [y_vals[1]];
     color=:green,
     markershape=:star5,
     markersize=10,
-    label="Start");
+    label="Start")
 
 scatter!([x_vals[end]], [y_vals[end]];
     color=:black,
@@ -141,20 +141,20 @@ println("Initializing naive HMM with incorrect parameters...")
 # Initialize with biased/incorrect parameters
 μ_1 = [-0.25, -0.25]  # Closer to center than true value
 Σ_1 = 0.3 * Matrix{Float64}(I, output_dim, output_dim)  # Larger variance than true
-emission_1 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1)
+emission_1 = GaussianEmission(output_dim=output_dim, μ=μ_1, Σ=Σ_1);
 
 μ_2 = [0.25, 0.25]    # Closer to center than true value
 Σ_2 = 0.5 * Matrix{Float64}(I, output_dim, output_dim)  # Much larger variance than true
 # Note: There's a bug in the original code - emission_2 uses μ_1 and Σ_1, let's fix it:
-emission_2 = GaussianEmission(output_dim=output_dim, μ=μ_2, Σ=Σ_2)
+emission_2 = GaussianEmission(output_dim=output_dim, μ=μ_2, Σ=Σ_2);
 
 # Different transition matrix and initial distribution
 A = [0.8 0.2;     # Less persistent than true model
      0.05 0.95]   # Asymmetric transitions
-πₖ = [0.6, 0.4]   # Biased toward state 1
+πₖ = [0.6, 0.4];  # Biased toward state 1
 
 # Create the test model
-test_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
+test_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ);
 
 println("Initial guesses:")
 println("  State 1: μ = $μ_1, σ² = $(Σ_1[1,1])")
@@ -162,7 +162,7 @@ println("  State 2: μ = $μ_2, σ² = $(Σ_2[1,1])")
 
 # Fit the model using the Expectation-Maximization algorithm
 println("Running EM algorithm to learn parameters...")
-lls = fit!(test_model, data)
+lls = fit!(test_model, data);
 
 println("EM algorithm converged after $(length(lls)) iterations")
 println("Log-likelihood improvement: $(round(lls[end] - lls[1], digits=2))")
@@ -193,7 +193,7 @@ println("State sequence prediction accuracy: $(round(accuracy*100, digits=1))%")
 # Handle potential label switching (EM can converge with states swapped)
 # Check if swapping labels gives better accuracy
 swapped_pred = 3 .- pred_labels  # Convert 1→2, 2→1
-swapped_accuracy = mean(true_labels .== swapped_pred)
+swapped_accuracy = mean(true_labels .== swapped_pred);
 
 if swapped_accuracy > accuracy
     println("Detected label switching - corrected accuracy: $(round(swapped_accuracy*100, digits=1))%")
@@ -203,7 +203,7 @@ end
 
 # Visualize state sequences as heatmaps
 true_mat = reshape(true_labels[1:1000], 1, :)
-pred_mat = reshape(pred_labels[1:1000], 1, :)
+pred_mat = reshape(pred_labels[1:1000], 1, :);
 
 p1 = heatmap(true_mat;
     colormap = :roma50,
@@ -240,11 +240,11 @@ plot(p1, p2;
 println("Generating multiple independent trials...")
 
 n_trials = 100    # Number of independent sequences
-n_samples = 1000  # Length of each sequence
+n_samples = 1000;  # Length of each sequence
 
 # Pre-allocate storage for efficiency
 all_true_labels = Vector{Vector{Int}}(undef, n_trials)
-all_data = Vector{Matrix{Float64}}(undef, n_trials)
+all_data = Vector{Matrix{Float64}}(undef, n_trials);
 
 # Generate independent sequences
 for i in 1:n_trials
@@ -279,11 +279,11 @@ emission_2 = GaussianEmission(output_dim=output_dim, μ=μ_2, Σ=Σ_2)
 
 A = [0.8 0.2; 0.05 0.95]
 πₖ = [0.6, 0.4]
-test_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
+test_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ);
 
 # Fit to all trials simultaneously
 # The package automatically handles the multi-trial structure
-lls = fit!(test_model, all_data)
+lls = fit!(test_model, all_data);
 
 println("Multi-trial EM converged after $(length(lls)) iterations")
 println("Final log-likelihood: $(round(lls[end], digits=2))")
@@ -304,18 +304,18 @@ println("  State 2: μ = $(round.(test_model.B[2].μ, digits=3)), σ² = $(round
 # as a heatmap showing state assignments across multiple independent sequences.
 
 println("Running Viterbi decoding on all trials...")
-all_pred_labels_vec = viterbi(test_model, all_data)
+all_pred_labels_vec = viterbi(test_model, all_data);
 
 # Reshape data for easier analysis and visualization
 all_pred_labels = hcat(all_pred_labels_vec...)'      # trials × time
-all_true_labels_matrix = hcat(all_true_labels...)'   # trials × time
+all_true_labels_matrix = hcat(all_true_labels...)';   # trials × time
 
 # Calculate overall accuracy across all trials and timepoints
-overall_accuracy = mean(all_true_labels_matrix .== all_pred_labels)
+overall_accuracy = mean(all_true_labels_matrix .== all_pred_labels);
 
 # Check for label switching across the entire dataset
 swapped_pred_all = 3 .- all_pred_labels
-swapped_accuracy_all = mean(all_true_labels_matrix .== swapped_pred_all)
+swapped_accuracy_all = mean(all_true_labels_matrix .== swapped_pred_all);
 
 if swapped_accuracy_all > overall_accuracy
     println("Detected label switching in multi-trial analysis")

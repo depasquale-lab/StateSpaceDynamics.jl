@@ -50,7 +50,7 @@ k = 3
 true_λs = [5.0, 10.0, 25.0]   # Poisson means (rates) per component
 true_πs = [0.25, 0.45, 0.30]  # Mixing weights (must sum to 1)
 
-true_pmm = PoissonMixtureModel(k, true_λs, true_πs)
+true_pmm = PoissonMixtureModel(k, true_λs, true_πs);
 
 # ## Generate data from the true model
 # We'll draw n IID samples. `labels` are the latent component indices used for
@@ -58,7 +58,7 @@ true_pmm = PoissonMixtureModel(k, true_λs, true_πs)
 
 n = 500
 labels = rand(rng, Categorical(true_πs), n)
-data   = [rand(rng, Poisson(true_λs[labels[i]])) for i in 1:n]  # Vector{Int}
+data   = [rand(rng, Poisson(true_λs[labels[i]])) for i in 1:n];  # Vector{Int}
 
 # ## Quick look: histogram of Poisson samples by component
 # In real applications we don't see the true `labels`, but plotting them here helps
@@ -87,7 +87,7 @@ p1
 # from multiple random starts when you care about global optima.
 
 fit_pmm = PoissonMixtureModel(k)
-_, lls = fit!(fit_pmm, data; maxiter=100, tol=1e-6, initialize_kmeans=true)
+_, lls = fit!(fit_pmm, data; maxiter=100, tol=1e-6, initialize_kmeans=true);
 
 # ## Convergence diagnostics
 # EM guarantees non-decreasing log-likelihood. Monotone ascent is a good basic check.
@@ -168,10 +168,10 @@ function responsibilities_pmm(λs::AbstractVector, πs::AbstractVector, x::Abstr
     return Γ
 end
 
-Γ = responsibilities_pmm(fit_pmm.λₖ, fit_pmm.πₖ, data)
+Γ = responsibilities_pmm(fit_pmm.λₖ, fit_pmm.πₖ, data);
 
 # Hard labels (if you need them) are argmax over responsibilities.
-hard_labels = map(i -> argmax(view(Γ, i, :)), 1:n)
+hard_labels = map(i -> argmax(view(Γ, i, :)), 1:n);
 
 # ## Information criteria: picking k
 # If you don't know k, you can fit several models and compare AIC/BIC:
