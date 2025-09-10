@@ -17,6 +17,7 @@ using Random
 using Plots
 using Statistics
 using StableRNGs
+using Printf
 ````
 
 Fix RNG for reproducible simulation and k-means seeding
@@ -137,16 +138,16 @@ function initialize_hmm_kmeans(obs, k, rng)
 
     π_init = fill(1/k, k)
 
-    return HiddenMarkovModel(k,
-                           [GaussianEmission(means[i], covs[i]) for i in 1:k],
-                           A_init,
-                           π_init)
+    return HiddenMarkovModel(A_init,
+                           [GaussianEmission(2, means[i], covs[i]) for i in 1:k],
+                           π_init,
+                           k)
 end
 
 function count_parameters(hmm)
     """Count the number of free parameters in an HMM"""
     K = hmm.K
-    D = length(hmm.emissions[1].μ)
+    D = length(hmm.B[1].μ)
 
     transition_params = K * (K - 1)
     initial_params = K - 1
@@ -162,7 +163,7 @@ for k in K_range
 
     hmm_k = initialize_hmm_kmeans(observations, k, rng)
 
-    fit!(hmm_k, observations; max_iter=100, tol=1e-6)
+    fit!(hmm_k, observations; max_iters=100, tol=1e-6)
 
     ll = loglikelihood(hmm_k, observations)
     n_params = count_parameters(hmm_k)
@@ -257,7 +258,7 @@ function cross_validate_hmm(observations, k, n_folds=5)
         test_obs = observations[:, test_idx]
 
         hmm_cv = initialize_hmm_kmeans(train_obs, k, rng)
-        fit!(hmm_cv, train_obs; max_iter=50, tol=1e-4)
+        fit!(hmm_cv, train_obs; max_iters=50, tol=1e-4)
 
         test_ll = loglikelihood(hmm_cv, test_obs)
         push!(cv_scores, test_ll / length(test_idx))  # Normalize by sequence length
@@ -321,10 +322,10 @@ best_aic_k = results["K"][aic_min_idx]
 best_bic_k = results["K"][bic_min_idx]
 
 hmm_aic = initialize_hmm_kmeans(observations, best_aic_k, rng)
-fit!(hmm_aic, observations; max_iter=100, tol=1e-6)
+fit!(hmm_aic, observations; max_iters=100, tol=1e-6)
 
 hmm_bic = initialize_hmm_kmeans(observations, best_bic_k, rng)
-fit!(hmm_bic, observations; max_iter=100, tol=1e-6)
+fit!(hmm_bic, observations; max_iters=100, tol=1e-6)
 ````
 
 Get most likely state sequences
@@ -387,7 +388,7 @@ display(p4)
 
 **Model Selection Caveats**:
 - Local optima in EM can affect comparisons
-- Small datasets make selection unreliable
+- Small datasets can make selection unreliable
 - True model may not be in your candidate set
 - Consider ensemble approaches for robust predictions
 

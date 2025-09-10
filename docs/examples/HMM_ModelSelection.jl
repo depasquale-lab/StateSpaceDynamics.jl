@@ -144,14 +144,12 @@ end
 # Create a comprehensive plot showing all criteria
 p2 = plot(layout=(2, 2), size=(800, 600))
 
-# Plot 1: Log-likelihood
 plot!(results["K"], results["log_likelihood"], 
       marker=:circle, linewidth=2, label="Log-likelihood",
       xlabel="Number of States (K)", ylabel="Log-likelihood",
       title="Model Log-likelihood", subplot=1)
 vline!([K], linestyle=:dash, color=:red, label="True K=$K", subplot=1)
 
-# Plot 2: AIC
 plot!(results["K"], results["AIC"], 
       marker=:circle, linewidth=2, label="AIC", color=:orange,
       xlabel="Number of States (K)", ylabel="AIC",
@@ -161,7 +159,6 @@ vline!([results["K"][aic_min_idx]], linestyle=:dash, color=:orange,
        label="AIC min (K=$(results["K"][aic_min_idx]))", subplot=2)
 vline!([K], linestyle=:dash, color=:red, label="True K=$K", subplot=2)
 
-# Plot 3: BIC
 plot!(results["K"], results["BIC"], 
       marker=:circle, linewidth=2, label="BIC", color=:green,
       xlabel="Number of States (K)", ylabel="BIC",
@@ -171,7 +168,6 @@ vline!([results["K"][bic_min_idx]], linestyle=:dash, color=:green,
        label="BIC min (K=$(results["K"][bic_min_idx]))", subplot=3)
 vline!([K], linestyle=:dash, color=:red, label="True K=$K", subplot=3)
 
-# Plot 4: Number of parameters
 plot!(results["K"], results["n_params"], 
       marker=:circle, linewidth=2, label="# Parameters", color=:purple,
       xlabel="Number of States (K)", ylabel="Number of Parameters",
@@ -268,17 +264,14 @@ states_bic = viterbi(hmm_bic, observations)
 # Create comparison plots
 p4 = plot(layout=(1, 3), size=(1200, 400))
 
-# True states
 scatter!(observations[1, :], observations[2, :], group=states,
          xlabel="x1", ylabel="x2", title="True States (K=$K)",
          legend=false, alpha=0.7, subplot=1)
 
-# AIC selected model
 scatter!(observations[1, :], observations[2, :], group=states_aic,
          xlabel="x1", ylabel="x2", title="AIC Model (K=$best_aic_k)",
          legend=false, alpha=0.7, subplot=2)
 
-# BIC selected model  
 scatter!(observations[1, :], observations[2, :], group=states_bic,
          xlabel="x1", ylabel="x2", title="BIC Model (K=$best_bic_k)",
          legend=false, alpha=0.7, subplot=3)
@@ -306,6 +299,6 @@ display(p4)
 #
 # **Model Selection Caveats**:
 # - Local optima in EM can affect comparisons
-# - Small datasets make selection unreliable
+# - Small datasets can make selection unreliable
 # - True model may not be in your candidate set
 # - Consider ensemble approaches for robust predictions
