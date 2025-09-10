@@ -25,9 +25,11 @@ rng = StableRNG(1234);
 
 # In a GLM-HMM, each hidden state defines a different regression model. The system switches
 # between these regression models according to Markovian dynamics. This is useful for modeling
-# scenarios where the relationship between predictors and outcomes changes over time.
+# scenarios where the relationship between predictors and outcomes changes over time. In this example,
+# we will demonstrate how to use `StateSpaceDynamics.jl` to create a GLM-HMM, generate synthetic data,
+# fit the model using the EM algorithm, and perform state inference with the Viterbi algorithm.
 
-# Define emission models for each hidden state
+# We will start by defining a simple GLM-HMM with two hidden states.
 # State 1: Positive relationship between input and output
 emission_1 = GaussianRegressionEmission(
     input_dim=3,                                    # Number of input features
@@ -50,14 +52,15 @@ emission_2 = GaussianRegressionEmission(
 
 # Define the state transition matrix $\mathbf{A}$:
 # $A_{ij} = P(\text{state}_t = j \mid \text{state}_{t-1} = i)$
-# Diagonal elements are high (states are persistent), off-diagonal elements are low
+
+# Diagonal elements are high (states are persistent)
 A = [0.99 0.01;    # From state 1: 99% stay, 1% switch to state 2
      0.05 0.95];    # From state 2: 5% switch to state 1, 95% stay
 
 # Initial state distribution: $\pi_k = P(\text{state}_1 = k)$
 πₖ = [0.8; 0.2];    # 80% chance of starting in state 1, 20% in state 2
 
-# Construct the complete HMM
+# Now that we have defined our emission models, we can construct the complete GLM-HMM.
 true_model = HiddenMarkovModel(
     K=2,                        # Number of hidden states
     A=A,                        # Transition matrix
@@ -71,23 +74,23 @@ print("State 2: y = -4.0 - 2.0x₁ + 3.0x₂ + 2.0x₃ + ε\n");
 
 # ## Sample from the GLM-HMM
 
-# Generate synthetic data from our true model. This will give us both the observed
-# data (inputs and outputs) and the true hidden state sequence.
+# Generate synthetic data from our true model. To do this, we must define the inputs to the model.
+# Then, sampling will yield the outputs nad the true hidden state sequence.
 
 n = 20000  # Number of time points
 
-# Generate random input features (predictors)
-Φ = randn(rng, 3, n);  # 3 features × n time points
+Φ = randn(rng, 3, n);  # Generate random input features (predictors)
 
-# Sample from the HMM: returns both hidden states and observations
-true_labels, data = rand(rng, true_model, Φ, n=n);
+true_labels, data = rand(rng, true_model, Φ, n=n);  # Sample from the HMM: returns both hidden states and observations
 
 print("Generated $(n) samples: State 1 ($(round(mean(true_labels .== 1)*100, digits=1))%), State 2 ($(round(mean(true_labels .== 2)*100, digits=1))%)\n");
 
 # ## Visualize the Sampled Dataset
 
-# Create a scatter plot showing how the input-output relationship differs between
-# the two hidden states. We'll plot feature 1 vs output, with points colored by true state.
+# Here, we create a scatter plot to show how the input-output relationship differs between
+# the two hidden states. We plot feature 1 vs output, with points colored by true state. State 1 (blue)
+# has a positive slope, while State 2 (red) has a negative slopes. In addition to the scatter plot, we overlay
+# the true regression lines for each state.
 
 colors = [:dodgerblue, :crimson]  # Blue for state 1, red for state 2
 
@@ -101,8 +104,7 @@ p1 = scatter(Φ[1, :], vec(data);
     title = "GLM-HMM Data (colored by true state)"
 )
 
-# Overlay true regression lines (holding other features at 0)
-xvals = range(extrema(Φ[1, :])..., length=100)
+xvals = range(extrema(Φ[1, :])..., length=100) # Overlay true regression lines (holding other features at 0)
 
 β1 = emission_1.β[:, 1]
 y_pred_1 = β1[1] .+ β1[2] .* xvals  # intercept + slope*x₁
@@ -123,14 +125,15 @@ plot!(xvals, y_pred_2;
 
 # ## Initialize and Fit HMM with EM
 
-# Now we'll learn the parameters from observed data alone using EM algorithm.
-# Start with a randomly initialized HMM with different parameters than the true model.
+# In a realistic scenario, we would not have access to the latent states; we would only observe the inputs and outputs.
+# We can use the Expectation-Maximization (EM) algorithm to learn the model parameters and infer the hidden states from
+# the observed data alone.
 
-# Initialize with different parameters
+# To demonstrate this process, we start with a randomly initialized GLM-HMM with different parameters than the true model.
+
 A_init = [0.8 0.2; 0.1 0.9]     # Different transition probabilities
 πₖ_init = [0.6; 0.4]            # Different initial distribution
 
-# Initialize emission models with random regression coefficients
 emission_1_init = GaussianRegressionEmission(
     input_dim=3, output_dim=1, include_intercept=true,
     β=reshape([2.0, -1.0, 1.0, 2.0], :, 1),    # Random coefficients
@@ -143,10 +146,10 @@ emission_2_init = GaussianRegressionEmission(
     Σ=[0.5;;], λ=0.0
 );
 
-# Create and fit the test model
+
 test_model = HiddenMarkovModel(K=2, A=A_init, πₖ=πₖ_init, B=[emission_1_init, emission_2_init])
 
-print("Running EM algorithm...")
+# Now that we have definedour test model, we can fit it to the data using the EM algorithm.
 lls = fit!(test_model, data, Φ);
 
 print("EM converged after $(length(lls)) iterations\n")
@@ -158,7 +161,9 @@ p2 = plot(lls, xlabel="EM Iteration", ylabel="Log-Likelihood",
 
 # ## Visualize Learned vs True Regression Models
 
-# Compare the true regression relationships with what our fitted model learned.
+# Now that we have done parameter learning, we can visualize how well the learned regression models
+# match the true models. We plot the data again, colored by true state, and overlay both the true and learned regression lines.
+# As you can see, the learned models (dashed lines) closely match the true models (solid lines).
 
 p3 = scatter(Φ[1, :], vec(data);
     color = colors[true_labels],
@@ -172,7 +177,6 @@ p3 = scatter(Φ[1, :], vec(data);
 
 xvals = range(extrema(Φ[1, :])..., length=100)
 
-# Plot true regression lines
 plot!(xvals, β1[1] .+ β1[2] .* xvals;
     color = :green, lw = 3, linestyle = :solid, label = "State 1 (true)"
 )
@@ -180,11 +184,10 @@ plot!(xvals, β2[1] .+ β2[2] .* xvals;
     color = :orange, lw = 3, linestyle = :solid, label = "State 2 (true)"
 )
 
-# Plot learned regression lines
 β1_learned = test_model.B[1].β[:, 1]
 β2_learned = test_model.B[2].β[:, 1]
 plot!(xvals, β1_learned[1] .+ β1_learned[2] .* xvals;
-    color = :teal, lw = 3, linestyle = :dash, label = "State 1 (learned)"
+    color = :yellow, lw = 3, linestyle = :dash, label = "State 1 (learned)"
 )
 plot!(xvals, β2_learned[1] .+ β2_learned[2] .* xvals;
     color = :purple, lw = 3, linestyle = :dash, label = "State 2 (learned)",
@@ -193,16 +196,15 @@ plot!(xvals, β2_learned[1] .+ β2_learned[2] .* xvals;
 
 # ## Hidden State Decoding with Viterbi Algorithm
 
-# The Viterbi algorithm finds the most likely sequence of hidden states given the
+# Now we use the Viterbi algorithm to find the most likely sequence of hidden states given the
 # observed data. We'll compare true vs predicted state sequences.
 
 pred_labels = viterbi(test_model, data, Φ);
 
-# Calculate accuracy
 accuracy = mean(true_labels .== pred_labels)
 print("Hidden state prediction accuracy: $(round(accuracy*100, digits=1))%\n");
 
-# Visualize state sequences as heatmaps (subset for clarity)
+# We can also visualize the true and predicted state sequences as heatmaps (first 1000 time points).
 n_display = 1000
 true_seq = reshape(true_labels[1:n_display], 1, :)
 pred_seq = reshape(pred_labels[1:n_display], 1, :)
@@ -218,8 +220,9 @@ p4 = plot(
 
 # ## Multiple Independent Trials
 
-# Real-world scenarios often involve multiple independent sequences. We'll generate 
-# multiple trials and show how to fit HMMs to this data structure.
+# Real-world scenarios often involve multiple independent sequences. Here, we generate 
+# multiple trials of synthetic data and show how to fit GLM-HMMs to this data structure
+# using `StateSpaceDynamics.jl`.
 
 num_trials = 100   # Number of independent sequences
 n_trial = 1000;    # Length of each sequence
@@ -230,7 +233,7 @@ all_data = Vector{Matrix{Float64}}()
 Φ_total = Vector{Matrix{Float64}}()
 all_true_labels = Vector{Vector{Int64}}()
 
-for i in 1:num_trials
+for i in 1:num_trials  # Generate multiple trials from our ground truth model
     Φ_trial = randn(rng, 3, n_trial)
     true_labels_trial, data_trial = rand(rng, true_model, Φ_trial, n=n_trial)
     push!(all_true_labels, true_labels_trial)
@@ -244,14 +247,15 @@ print("Total data points: $(num_trials * n_trial)\n");
 
 # When we have multiple independent sequences, EM accounts for each sequence 
 # starting fresh from the initial distribution, providing more robust estimates.
+# To fit models of this kind, simply create a test model as before and call `fit!` with
+# the data and inputs as vectors of the independent sequences! We will use the same 
+# random initialization as before.
 
-# Initialize fresh model for multi-trial fitting
 test_model_multi = HiddenMarkovModel(
     K=2, A=A_init, πₖ=πₖ_init, 
     B=[deepcopy(emission_1_init), deepcopy(emission_2_init)]
-)
+)  # Initialize fresh model for multi-trial fitting
 
-print("Fitting HMM to multiple trials...")
 lls_multi = fit!(test_model_multi, all_data, Φ_total);
 
 print("Multi-trial EM converged after $(length(lls_multi)) iterations\n")
@@ -265,12 +269,12 @@ p5 = plot(lls_multi, xlabel="EM Iteration", ylabel="Log-Likelihood",
 
 # Decode hidden states for all trials and visualize as a multi-trial heatmap.
 
-all_pred_labels = viterbi(test_model_multi, all_data, Φ_total)
+all_pred_labels = viterbi(test_model_multi, all_data, Φ_total);
 
 # Calculate overall accuracy across all trials
-all_true_matrix = hcat(all_true_labels...)
-all_pred_matrix = hcat(all_pred_labels...)
-total_accuracy = mean(all_true_matrix .== all_pred_matrix)
+all_true_matrix = hcat(all_true_labels...);
+all_pred_matrix = hcat(all_pred_labels...);
+total_accuracy = mean(all_true_matrix .== all_pred_matrix);
 
 print("Overall state prediction accuracy: $(round(total_accuracy*100, digits=1))%\n");
 
@@ -290,8 +294,6 @@ p6 = plot(
 )
 
 # ## Model Assessment Summary
-
-print("\n=== Final Model Assessment ===\n")
 
 # Compare learned parameters with true parameters
 true_A_orig = [0.99 0.01; 0.05 0.95]

@@ -64,17 +64,17 @@ print("State 2: μ = $μ_2, σ² = $(Σ_2[1,1]) (looser cluster)\n");
 # ## Sample from the HMM
 
 # Generate synthetic data from our true model. Each state generates observations 
-# from its own Gaussian distribution without requiring input features.
+# from its own Gaussian distribution without requiring input features. The rand function
+# samples both the hidden state sequence and the corresponding observations.
 
 num_samples = 10000;
-
-# Sample both hidden state sequence and corresponding observations
 true_labels, data = rand(rng, model, n=num_samples);
 
 # ## Visualize the Sampled Dataset
 
 # Create a 2D scatter plot showing observations colored by their true hidden state.
 # This illustrates how each state generates observations from a distinct region of space.
+# We will also plot a trajectory line to show the temporal evolution for the first 1000 timepoints.
 
 x_vals = data[1, 1:num_samples]
 y_vals = data[2, 1:num_samples]
@@ -93,7 +93,6 @@ for state in 1:2
         alpha=0.6)
 end
 
-# Add trajectory line showing temporal evolution (first 1000 points)
 plot!(x_vals[1:1000], y_vals[1:1000];
     color=:gray, lw=1, alpha=0.3, label="Trajectory")
 
@@ -104,14 +103,15 @@ scatter!([x_vals[end]], [y_vals[end]]; marker=:diamond, markersize=6,
 
 plot!(xlabel=L"x_1", ylabel=L"x_2", 
       title="HMM Emissions by True Hidden State",
-      legend=:topright)
+      legend=:topleft)
 
 # ## Initialize and Fit HMM with EM
 
-# Now simulate the realistic scenario: observe only data, not hidden states.
-# Initialize HMM with incorrect parameters and use EM to learn true parameters.
+# In reality, we only observe the data, not the hidden states. The goal of fitting
+# is to learn the latent state sequence and the model parameters that best explain the data.
+# We will initialize a new HMM with incorrect parameters and use the Expectation-Maximization (EM)
+# algorithm to iteratively refine the parameters and infer the hidden states.
 
-# Initialize with biased/incorrect parameters
 μ_1_init = [-0.25, -0.25]  # Closer to center than true
 Σ_1_init = 0.3 * Matrix{Float64}(I, output_dim, output_dim)  # Larger variance
 emission_1_init = GaussianEmission(output_dim=output_dim, μ=μ_1_init, Σ=Σ_1_init);
@@ -120,11 +120,9 @@ emission_1_init = GaussianEmission(output_dim=output_dim, μ=μ_1_init, Σ=Σ_1_
 Σ_2_init = 0.5 * Matrix{Float64}(I, output_dim, output_dim)  # Much larger variance
 emission_2_init = GaussianEmission(output_dim=output_dim, μ=μ_2_init, Σ=Σ_2_init);
 
-# Different transition matrix and initial distribution
 A_init = [0.8 0.2; 0.05 0.95]  # Less persistent than true model
 πₖ_init = [0.6, 0.4];           # Biased toward state 1
 
-# Create test model with naive initialization
 test_model = HiddenMarkovModel(K=2, B=[emission_1_init, emission_2_init], 
                               A=A_init, πₖ=πₖ_init);
 
@@ -145,15 +143,18 @@ print("State 2: μ = $(round.(test_model.B[2].μ, digits=3)), σ² = $(round(tes
 
 # ## Hidden State Decoding with Viterbi
 
-# Use Viterbi algorithm to find the most likely sequence of hidden states
-# given the observed data and learned parameters.
+# Now that we have learned the model parameters from the observed data, we can decode the most likely sequence
+# of hidden states using the Viterbi algorithm. Then, in this toy example where we know the true latent state path,
+# we can assess the accuracy of our state predictions.
 
 pred_labels = viterbi(test_model, data);
 
-# Calculate accuracy of state prediction
 accuracy = mean(true_labels .== pred_labels)
 
-# Handle potential label switching (EM can converge with states swapped)
+# Calling a specific set of parameters "state 1" and "state 2" is arbitrary and does not affect the
+# correctness of the model. The EM algorithm can converge with the states swapped from our 
+# original convention. We check for this and correct it if necessary. 
+
 swapped_pred = 3 .- pred_labels  # Convert 1→2, 2→1
 swapped_accuracy = mean(true_labels .== swapped_pred)
 
@@ -165,7 +166,8 @@ end
 
 print("State prediction accuracy: $(round(accuracy*100, digits=1))%\n");
 
-# Visualize state sequences as heatmaps (first 1000 timepoints)
+# Our model looks like it is doing pretty well! Let's visualize the predicted and true
+# state sequences as heatmaps (first 1000 timepoints)
 n_display = 1000
 true_seq = reshape(true_labels[1:n_display], 1, :)
 pred_seq = reshape(pred_labels[1:n_display], 1, :)
@@ -182,19 +184,17 @@ p3 = plot(
 # ## Multiple Independent Trials
 
 # Many real applications involve multiple independent sequences (e.g., multiple subjects,
-# sessions, or trials). Demonstrate how to handle this scenario.
+# sessions, or trials). In `StateSpaceDynamics.jl`, it is easy to incorporate data from multiple
+# trials in parameters learning. Once again, we will generate a synthetic dataset from our 
+# ground truth model to illustrate this process.
 
 n_trials = 100    # Number of independent sequences
 n_samples = 1000  # Length of each sequence
 
-print("Generating $n_trials independent trials...")
+all_true_labels = Vector{Vector{Int}}(undef, n_trials);
+all_data = Vector{Matrix{Float64}}(undef, n_trials);
 
-# Pre-allocate storage for efficiency
-all_true_labels = Vector{Vector{Int}}(undef, n_trials)
-all_data = Vector{Matrix{Float64}}(undef, n_trials)
-
-# Generate independent sequences
-for i in 1:n_trials
+for i in 1:n_trials  # Sample each trial independently
     labels_trial, data_trial = rand(rng, model, n=n_samples)
     all_true_labels[i] = labels_trial
     all_data[i] = data_trial
@@ -206,48 +206,44 @@ print("Average State 1 proportion: $(round(total_state1_prop, digits=3))\n");
 # ## Multi-Trial HMM Fitting
 
 # When fitting to multiple independent sequences, EM accounts for each sequence 
-# starting independently from the initial state distribution.
+# starting independently from the initial state distribution. Here, we initialize
+# a new model and fit it to all trials simultaneously.
 
-print("Fitting HMM to multiple trials...")
-
-# Initialize fresh model for multi-trial fitting
 test_model_multi = HiddenMarkovModel(
     K=2, 
     B=[deepcopy(emission_1_init), deepcopy(emission_2_init)], 
     A=A_init, πₖ=πₖ_init
 )
 
-# Fit to all trials simultaneously
 lls_multi = fit!(test_model_multi, all_data);
 
+# Let's check on how our training went and what parameters we learned.
 print("Multi-trial EM converged in $(length(lls_multi)) iterations\n")
 print("Log-likelihood improved by $(round(lls_multi[end] - lls_multi[1], digits=1))\n");
-
-# Plot multi-trial convergence
-p4 = plot(lls_multi, xlabel="EM Iteration", ylabel="Log-Likelihood",
-          title="Multi-Trial EM Convergence", legend=false,
-          marker=:circle, markersize=3, lw=2, color=:darkgreen)
-
 print("Multi-trial learned parameters:\n")
 print("State 1: μ = $(round.(test_model_multi.B[1].μ, digits=3)), σ² = $(round(test_model_multi.B[1].Σ[1,1], digits=3))\n")
 print("State 2: μ = $(round.(test_model_multi.B[2].μ, digits=3)), σ² = $(round(test_model_multi.B[2].Σ[1,1], digits=3))\n");
 
+# Visualize multi-trial EM convergence
+p4 = plot(lls_multi, xlabel="EM Iteration", ylabel="Log-Likelihood",
+          title="Multi-Trial EM Convergence", legend=false,
+          marker=:circle, markersize=3, lw=2, color=:darkgreen)
+
+
 # ## Multi-Trial State Decoding
 
-# Decode hidden state sequences for all trials and visualize as multi-trial heatmap.
+# Now that we have done parameter learning, we can use Viterbi to find the
+# most likely hidden state sequence for each trial with a single function call. 
+all_pred_labels_vec = viterbi(test_model_multi, all_data);
 
-all_pred_labels_vec = viterbi(test_model_multi, all_data)
-
-# Reshape for analysis and visualization
-all_pred_labels = hcat(all_pred_labels_vec...)'      # trials × time
+all_pred_labels = hcat(all_pred_labels_vec...)';      # trials × time
 all_true_labels_matrix = hcat(all_true_labels...)';   # trials × time
 
-# Calculate overall accuracy across all trials
-overall_accuracy = mean(all_true_labels_matrix .== all_pred_labels)
+# Calculate overall accuracy across all trials accounting for label switching
+overall_accuracy = mean(all_true_labels_matrix .== all_pred_labels);
 
-# Check for label switching across entire dataset
-swapped_pred_all = 3 .- all_pred_labels
-swapped_accuracy_all = mean(all_true_labels_matrix .== swapped_pred_all)
+swapped_pred_all = 3 .- all_pred_labels;
+swapped_accuracy_all = mean(all_true_labels_matrix .== swapped_pred_all);
 
 if swapped_accuracy_all > overall_accuracy
     all_pred_labels = swapped_pred_all
@@ -257,7 +253,7 @@ end
 
 print("Overall state prediction accuracy: $(round(overall_accuracy*100, digits=1))%\n");
 
-# Calculate per-trial statistics
+# We can also look at per-trial accuracies to see how consistent the model is across trials.
 trial_accuracies = [mean(all_true_labels_matrix[i, :] .== all_pred_labels[i, :]) for i in 1:n_trials]
 print("Per-trial accuracy: $(round(mean(trial_accuracies)*100, digits=1))% ± $(round(std(trial_accuracies)*100, digits=1))%\n");
 
@@ -277,24 +273,19 @@ p5 = plot(
 )
 
 # ## Parameter Recovery Assessment
+# Since we have access to the true model parameters, we can quantitatively assess
+# how well the multi-trial fitting procedure recovered them.
 
-print("\n=== Parameter Recovery Assessment ===\n")
-
-# Compare true vs learned emission parameters
 true_μ1_orig, true_μ2_orig = [-1.0, -1.0], [1.0, 1.0]
 learned_μ1 = test_model_multi.B[1].μ
 learned_μ2 = test_model_multi.B[2].μ
 
+# Compare emission model mean vectors
 μ1_error = norm(true_μ1_orig - learned_μ1) / norm(true_μ1_orig)
 μ2_error = norm(true_μ2_orig - learned_μ2) / norm(true_μ2_orig)
 
 print("Mean vector recovery errors:\n")
 print("State 1: $(round(μ1_error*100, digits=1))%, State 2: $(round(μ2_error*100, digits=1))%\n")
-
-# Compare transition matrices
-true_A_orig = [0.99 0.01; 0.05 0.95]
-A_error = norm(true_A_orig - test_model_multi.A) / norm(true_A_orig)
-print("Transition matrix error: $(round(A_error*100, digits=1))%\n")
 
 # Compare covariance matrices
 true_Σ1_orig, true_Σ2_orig = 0.1, 0.2
@@ -307,9 +298,16 @@ learned_Σ2 = test_model_multi.B[2].Σ[1,1]
 print("Variance recovery errors:\n")
 print("State 1: $(round(Σ1_error*100, digits=1))%, State 2: $(round(Σ2_error*100, digits=1))%\n");
 
+# Compare transition matrices
+true_A_orig = [0.99 0.01; 0.05 0.95]
+A_error = norm(true_A_orig - test_model_multi.A) / norm(true_A_orig)
+print("Transition matrix error: $(round(A_error*100, digits=1))%\n")
+
 # ## Summary
 #
-# This tutorial demonstrated the complete workflow for Gaussian emission Hidden Markov Models:
+# This tutorial demonstrated the complete workflow for Gaussian emission Hidden Markov Models.
+# We covered how to create, sample from, fit, and perform state inference with HMMs using
+# `StateSpaceDynamics.jl`.
 #
 # **Key Concepts:**
 # - **Discrete hidden states** with Gaussian emission distributions
