@@ -7,6 +7,7 @@ CollapsedDocStrings = true
 A **Switching Linear Dynamical System (SLDS)** is a powerful probabilistic model that combines the temporal structure of linear dynamical systems with the discrete switching behavior of Hidden Markov Models. SLDS can model complex time series data that exhibits multiple dynamical regimes, where the system can switch between different linear dynamics over time.
 
 An SLDS extends the standard Linear Dynamical System (LDS) by introducing a discrete latent state that determines which linear dynamics are active at each time step. This makes SLDS particularly suitable for modeling systems with:
+
 - **Multiple operational modes** (e.g., different flight phases of an aircraft)
 - **Regime changes** (e.g., economic cycles, behavioral states)
 - **Non-stationary dynamics** where linear dynamics change over time
@@ -31,15 +32,16 @@ An SLDS with $K$ discrete states is defined by the following generative model:
 ```
 
 Where:
-- $s_t \in \{1, 2, \ldots, K\}$ is the **discrete switching state** at time $t$
-- $z_t \in \mathbb{R}^D$ is the **continuous latent state** at time $t$  
-- $y_t \in \mathbb{R}^P$ is the **observed data** at time $t$
-- $\pi_k$ is the **initial discrete state distribution**
-- $A$ is the **discrete state transition matrix**
-- $F_{s_t}$ is the **state-dependent dynamics matrix** for discrete state $s_t$
-- $Q_{s_t}$ is the **state-dependent process noise covariance** for discrete state $s_t$
-- $C_{s_t}$ is the **state-dependent observation matrix** for discrete state $s_t$
-- $R_{s_t}$ is the **state-dependent observation noise covariance** for discrete state $s_t$
+
+- ``s_t ∈ {1, 2, …, K}`` is the **discrete switching state** at time ``t``
+- ``z_t ∈ ℝᴰ`` is the **continuous latent state** at time ``t``
+- ``y_t ∈ ℝᴾ`` is the **observed data** at time ``t``
+- ``π_k`` is the **initial discrete state distribution**
+- ``A`` is the **discrete state transition matrix**
+- ``F_{s_t}`` is the **state-dependent dynamics matrix** for discrete state ``s_t``
+- ``Q_{s_t}`` is the **state-dependent process noise covariance** for discrete state ``s_t``
+- ``C_{s_t}`` is the **state-dependent observation matrix** for discrete state ``s_t``
+- ``R_{s_t}`` is the **state-dependent observation noise covariance** for discrete state ``s_t``
 
 ## Implementation Structure
 
@@ -55,10 +57,11 @@ end
 ```
 
 Each mode in the `B` vector contains its own `LinearDynamicalSystem` with:
+
 - **State model**: Defines the continuous latent dynamics $F_k$, $Q_k$
 - **Observation model**: Defines the emission process $C_k$, $R_k$
 
-# Sampling from SLDS
+## Sampling from SLDS
 
 You can generate synthetic data from an SLDS to test algorithms or create simulated datasets:
 
@@ -68,13 +71,14 @@ Random.rand(slds::SwitchingLinearDynamicalSystem, T::Int)
 ```
 
 The sampling process follows the generative model:
+
 1. **Initialize**: Sample initial discrete state from $\pi_k$ and initial continuous state
 2. **For each time step**:
    - Sample next discrete state based on current state and transition matrix $A$
    - Sample continuous state using the dynamics of the current discrete state
    - Generate observation using the observation model of the current discrete state
 
-# Learning in SLDS
+## Learning in SLDS
 
 `StateSpaceDynamics.jl` implements a **Variational Expectation-Maximization (EM)** algorithm for parameter estimation in SLDS. This approach handles the interaction between discrete and continuous latent variables efficiently.
 
@@ -88,22 +92,18 @@ The variational EM algorithm maximizes the **Evidence Lower Bound (ELBO)** inste
 
 ### Variational Expectation Step
 
-The E-step iteratively updates the variational distributions until convergence:
-
-```@docs
-variational_expectation!(model::SwitchingLinearDynamicalSystem, y, FB, FS)
-```
-
-This involves two coupled updates:
+The E-step iteratively updates the variational distributions until convergence. This involves two coupled updates:
 
 **1. Update continuous state posteriors ($q(z_{1:T})$):**
 For each discrete state $k$, run weighted Kalman smoothing:
+
 ```math
 q(z_{1:T} \mid s_{1:T} = k) = \prod_{t=1}^T \mathcal{N}(z_t; \hat{z}_{t|T}^{(k)}, P_{t|T}^{(k)})
 ```
 
 **2. Update discrete state posteriors ($q(s_{1:T})$):**
 Run forward-backward algorithm with observation likelihoods computed from current continuous posteriors:
+
 ```math
 q(s_t = k) = \gamma_t(k) = p(s_t = k \mid y_{1:T}, q(z_{1:T}))
 ```
@@ -119,11 +119,14 @@ mstep!(slds::AbstractHMM, FS::Vector{FilterSmooth{T}}, y::AbstractMatrix{T}, FB:
 ```
 
 **Discrete state parameters:**
+
 - Initial distribution: $\pi_k^{(new)} = \gamma_1(k)$
 - Transition matrix: $A_{ij}^{(new)} = \frac{\sum_{t=1}^{T-1} \xi_{t,t+1}(i,j)}{\sum_{t=1}^{T-1} \gamma_t(i)}$
 
 **Continuous state parameters for each mode $k$:**
+
 Using sufficient statistics from weighted Kalman smoothing:
+
 - Dynamics matrix: $F_k^{(new)}$ from weighted regression
 - Process covariance: $Q_k^{(new)}$ from weighted residuals
 - Observation matrix: $C_k^{(new)}$ from weighted regression
@@ -137,36 +140,10 @@ The ELBO consists of contributions from both discrete and continuous components:
 \text{ELBO} = \underbrace{\mathbb{E}_{q(s_{1:T})}[\log p(s_{1:T})] - \mathbb{E}_{q(s_{1:T})}[\log q(s_{1:T})]}_{\text{Discrete HMM contribution}} + \sum_{k=1}^K \underbrace{\mathbb{E}_{q(z_{1:T}|s_{1:T}=k)}[\log p(y_{1:T}, z_{1:T} | s_{1:T}=k)] + H[q(z_{1:T}|s_{1:T}=k)]}_{\text{Continuous LDS contribution for mode } k}
 ```
 
-The implementation computes:
-
-```@docs
-hmm_elbo(model::AbstractHMM, FB::ForwardBackward; ϵ::Float64=1e-10)
-calculate_elbo_single_trial(lds, fs, y, w)
-```
-
-## Computational Implementation
-
-### Weighted Kalman Smoothing
-
-The core computational challenge is performing Kalman smoothing with time-varying weights from the discrete posterior:
-
-```@docs
-smooth_with_weights!(fs::FilterSmooth{T}, lds::LinearDynamicalSystem{T,S,O}, y::AbstractMatrix{T}, weights::AbstractVector{T}) where {T<:Real,S,O}
-```
-
-### Variational Q-function Updates
-
-The observation likelihoods for the discrete states are computed using the current continuous posteriors:
-
-```@docs
-variational_qs!(obs_models, FB::ForwardBackward, y::AbstractMatrix{T}, FS::Vector{FilterSmooth{T}}) where {T<:Real}
-```
-
-This efficiently computes $p(y_t | s_t = k)$ by integrating over the continuous latent states using their current posterior distributions.
-
 # References
 
 For theoretical foundations and algorithmic details:
+
 - **"Learning and Inference in Switching Linear Dynamical Systems"** by **Zoubin Ghahramani and Geoffrey Hinton**
 - **"Variational Learning for Switching State-Space Models"** by **Zoubin Ghahramani and Sam Roweis**  
 - **"A Unifying Review of Linear Gaussian Models"** by **Sam Roweis and Zoubin Ghahramani**

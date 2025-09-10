@@ -1,4 +1,4 @@
-# ## Simulating and Fitting a Linear Dynamical System
+# # Simulating and Fitting a Linear Dynamical System
 
 # This tutorial demonstrates how to use `StateSpaceDynamics.jl` to simulate a latent
 # linear dynamical system and fit it using the EM algorithm. We'll walk through the
@@ -6,10 +6,6 @@
 # a naive model, and then learning the parameters through iterative optimization.
 
 # ## Load Required Packages
-
-# We begin by loading all the necessary packages for our analysis. StateSpaceDynamics.jl
-# provides the core functionality, while the other packages handle linear algebra,
-# random number generation, plotting, and mathematical notation.
 
 using StateSpaceDynamics
 using LinearAlgebra
@@ -29,42 +25,48 @@ rng = StableRNG(123);
 # generates 10-dimensional observations.
 
 obs_dim = 10      # Number of observed variables at each time step
-latent_dim = 2    # Number of latent state variables
+latent_dim = 2;   # Number of latent state variables
 
-# Define the state transition matrix A. This matrix governs how the latent state
-# evolves from one time step to the next: x_{t+1} = A * x_t + noise.
+# Define the state transition matrix $\mathbf{A}$. This matrix governs how the latent state
+# evolves from one time step to the next: $\mathbf{x}_{t+1} = \mathbf{A} \mathbf{x}_t + \boldsymbol{\epsilon}$.
 # We create a rotation matrix scaled by 0.95, which creates a stable spiral
 # dynamic that slowly contracts toward the origin.
-A = 0.95 * [cos(0.25) -sin(0.25); sin(0.25) cos(0.25)]
 
-# Process noise covariance Q controls how much random variation we add to the
-# latent state transitions. A smaller Q means more predictable dynamics.
-Q = Matrix(0.1 * I(2))
+A = 0.95 * [cos(0.25) -sin(0.25); sin(0.25) cos(0.25)];
+
+# Process noise covariance $\mathbf{Q}$ controls how much random variation we add to the
+# latent state transitions. A smaller $\mathbf{Q}$ means more predictable dynamics.
+
+Q = Matrix(0.1 * I(2));
 
 # Initial state parameters: where the latent trajectory starts and how uncertain
 # we are about this initial position.
+
 x0 = [0.0; 0.0]           # Mean of initial state
-P0 = Matrix(0.1 * I(2))   # Covariance of initial state
+P0 = Matrix(0.1 * I(2));  # Covariance of initial state
 
 # Observation parameters: how the latent states map to observed data.
-# C is the observation matrix (latent-to-observed mapping), and R is the
+# $\mathbf{C}$ is the observation matrix (latent-to-observed mapping), and $\mathbf{R}$ is the
 # observation noise covariance.
+
 C = randn(rng, obs_dim, latent_dim)  # Random linear mapping from 2D latent to 10D observed
-R = Matrix(0.5 * I(obs_dim))         # Independent noise on each observation dimension
+R = Matrix(0.5 * I(obs_dim));         # Independent noise on each observation dimension
 
 # Construct the state and observation model components
+
 true_gaussian_sm = GaussianStateModel(;A=A, Q=Q, x0=x0, P0=P0)
-true_gaussian_om = GaussianObservationModel(;C=C, R=R)
+true_gaussian_om = GaussianObservationModel(;C=C, R=R);
 
 # Combine them into a complete Linear Dynamical System
 # The fit_bool parameter indicates which parameters should be learned during fitting
+
 true_lds = LinearDynamicalSystem(;
     state_model=true_gaussian_sm,
     obs_model=true_gaussian_om,
     latent_dim=latent_dim,
     obs_dim=obs_dim,
     fit_bool=fill(true, 6)  # Fit all 6 parameter matrices: A, Q, C, R, x0, P0
-)
+);
 
 # ## Simulate Latent and Observed Data
 
@@ -72,44 +74,40 @@ true_lds = LinearDynamicalSystem(;
 # latent states (which we'll later try to recover) and the observations (which
 # is all a real algorithm would see).
 
-tSteps = 500  # Number of time points to simulate
+tSteps = 500;  # Number of time points to simulate
 
 # The rand function generates both latent trajectories and corresponding observations
-latents, observations = rand(rng, true_lds; tsteps=tSteps, ntrials=1)
+latents, observations = rand(rng, true_lds; tsteps=tSteps, ntrials=1);
 
 # ## Plot Vector Field of Latent Dynamics
 
-# To better understand the dynamics encoded by our transition matrix A, we'll
+# To better understand the dynamics encoded by our transition matrix $\mathbf{A}$, we'll
 # create a vector field plot. This shows how the latent state would evolve
 # from any starting point in the 2D latent space.
 
-# Create a grid of starting points
+# Create a grid of starting points and calculate the flow field
 x = y = -3:0.5:3
 X = repeat(x', length(y), 1)
 Y = repeat(y, 1, length(x))
 
-# Calculate the flow field: at each point (x,y), compute where it would move
-# in one time step under the dynamics x_{t+1} = A * x_t
 U = zeros(size(X))  # x-component of flow
 V = zeros(size(Y))  # y-component of flow
 
-for i in 1:size(X, 1)
-    for j in 1:size(X, 2)
-        v = A * [X[i,j], Y[i,j]]
-        U[i,j] = v[1] - X[i,j]  # Change in x
-        V[i,j] = v[2] - Y[i,j]  # Change in y
-    end
+for i in 1:size(X, 1), j in 1:size(X, 2)
+    v = A * [X[i,j], Y[i,j]]
+    U[i,j] = v[1] - X[i,j]  # Change in x
+    V[i,j] = v[2] - Y[i,j]  # Change in y
 end
 
 # Normalize arrows for cleaner visualization
 magnitude = @. sqrt(U^2 + V^2)
 U_norm = U ./ magnitude
-V_norm = V ./ magnitude
+V_norm = V ./ magnitude;
 
 # Create the vector field plot with the actual trajectory overlaid
-p = quiver(X, Y, quiver=(U_norm, V_norm), color=:blue, alpha=0.3,
+p1 = quiver(X, Y, quiver=(U_norm, V_norm), color=:blue, alpha=0.3,
            linewidth=1, arrow=arrow(:closed, :head, 0.1, 0.1))
-plot!(latents[1, :, 1], latents[2, :, 1], xlabel="x₁", ylabel="x₂",
+plot!(latents[1, :, 1], latents[2, :, 1], xlabel=L"x_1", ylabel=L"x_2",
       color=:black, linewidth=1.5, title="Latent Dynamics", legend=false)
 
 # ## Plot Latent States and Observations
@@ -118,13 +116,14 @@ plot!(latents[1, :, 1], latents[2, :, 1], xlabel="x₁", ylabel="x₂",
 # dynamics) and the observations (which are noisy linear combinations of the latents).
 
 states = latents[:, :, 1]      # Extract the latent trajectory
-emissions = observations[:, :, 1]  # Extract the observed data
+emissions = observations[:, :, 1];  # Extract the observed data
 
 # Create a two-panel plot: latent states on top, observations below
-plot(size=(800, 600), layout=@layout[a{0.3h}; b])
-
-# Plot latent states (offset vertically for clarity)
 lim_states = maximum(abs.(states))
+lim_emissions = maximum(abs.(emissions))
+
+p2 = plot(size=(800, 600), layout=@layout[a{0.3h}; b])
+
 for d in 1:latent_dim
     plot!(1:tSteps, states[d, :] .+ lim_states * (d-1), color=:black,
           linewidth=2, label="", subplot=1)
@@ -132,34 +131,31 @@ end
 
 plot!(subplot=1, yticks=(lim_states .* (0:latent_dim-1), [L"x_%$d" for d in 1:latent_dim]),
       xticks=[], xlims=(0, tSteps), title="Simulated Latent States",
-      yformatter=y->"", tickfontsize=12)
+      yformatter=y->"", tickfontsize=12);
 
-# Plot observations (also offset vertically since there are many dimensions)
-lim_emissions = maximum(abs.(emissions))
 for n in 1:obs_dim
     plot!(1:tSteps, emissions[n, :] .- lim_emissions * (n-1), color=:black,
-          linewidth=2, label="", subplot=2)
+          linewidth=2, label="", subplot=2); # Plot observations (offset vertically since there are many dimensions)
+
 end
 
 plot!(subplot=2, yticks=(-lim_emissions .* (obs_dim-1:-1:0), [L"y_{%$n}" for n in 1:obs_dim]),
       xlabel="time", xlims=(0, tSteps), title="Simulated Emissions",
-      yformatter=y->"", tickfontsize=12)
-
-plot!(link=:x, size=(800, 600), left_margin=10Plots.mm)
+      yformatter=y->"", tickfontsize=12, left_margin=10Plots.mm)
 
 # ## Initialize a Model and Perform Smoothing
 
 # In a real scenario, we would only observe the emissions, not the latent states.
-# Our goal is to learn the parameters A, Q, C, R from the observations alone.
+# Our goal is to learn the parameters $\mathbf{A}$, $\mathbf{Q}$, $\mathbf{C}$, $\mathbf{R}$ from the observations alone.
 # We start by creating a "naive" model with random initial parameters.
 
 # Initialize with random parameters (this simulates not knowing the true system)
 A_init = random_rotation_matrix(2, rng)    # Random rotation matrix for dynamics
-Q_init = Matrix(0.1 * I(2))                # Same process noise variance (could be random too)
+Q_init = Matrix(0.1 * I(2))                # Same process noise variance
 C_init = randn(rng, obs_dim, latent_dim)   # Random observation mapping
-R_init = Matrix(0.5 * I(obs_dim))          # Same observation noise (could vary)
+R_init = Matrix(0.5 * I(obs_dim))          # Same observation noise
 x0_init = zeros(latent_dim)                # Start from origin
-P0_init = Matrix(0.1 * I(latent_dim))      # Same initial uncertainty
+P0_init = Matrix(0.1 * I(latent_dim));      # Same initial uncertainty
 
 # Create the naive model components
 gaussian_sm_init = GaussianStateModel(;A=A_init, Q=Q_init, x0=x0_init, P0=P0_init)
@@ -172,66 +168,76 @@ naive_ssm = LinearDynamicalSystem(;
     latent_dim=latent_dim,
     obs_dim=obs_dim,
     fit_bool=fill(true, 6)  # We'll learn all parameters
-)
+);
 
 # Before fitting, let's see how well our randomly initialized model can
-# infer the latent states. We use the "smoothing" algorithm, which estimates
-# the latent states given all observations (past, present, and future).
-x_smooth, p_smooth = StateSpaceDynamics.smooth(naive_ssm, observations)
+# infer the latent states using the smoothing algorithm.
+
+x_smooth, p_smooth = StateSpaceDynamics.smooth(naive_ssm, observations);
 
 # Plot the true latent states vs. our initial (poor) estimates
-plot()
+p3 = plot()
 for d in 1:latent_dim
-    plot!(1:tSteps, states[d, :] .+ lim_states * (d-1), color=:black, linewidth=2, label="", subplot=1)
-    plot!(1:tSteps, x_smooth[d, :, 1] .+ lim_states * (d-1), color=:firebrick, linewidth=2, label="", subplot=1)
+    plot!(1:tSteps, states[d, :] .+ lim_states * (d-1), color=:black,
+          linewidth=2, label=(d==1 ? "True" : ""), alpha=0.8)
+    plot!(1:tSteps, x_smooth[d, :, 1] .+ lim_states * (d-1), color=:firebrick,
+          linewidth=2, label=(d==1 ? "Predicted" : ""), alpha=0.8)
 end
-plot!(subplot=1, yticks=(lim_states .* (0:latent_dim-1), [L"x_%$d" for d in 1:latent_dim]),
-      xticks=[], xlims=(0, tSteps), yformatter=y->"", tickfontsize=12,
-      title="True vs. Predicted Latent States (Pre-EM)")
+plot!(yticks=(lim_states .* (0:latent_dim-1), [L"x_%$d" for d in 1:latent_dim]),
+      xlabel="time", xlims=(0, tSteps), yformatter=y->"", tickfontsize=12,
+      title="True vs. Predicted Latent States (Pre-EM)",
+      legend=:topright)
 
 # ## Fit Model Using EM Algorithm
 
 # Now comes the crucial step: parameter learning via the Expectation-Maximization (EM)
 # algorithm. EM alternates between two steps:
-# 1. E-step: Estimate latent states given current parameters
-# 2. M-step: Update parameters given current state estimates
+# 1. **E-step**: Estimate latent states given current parameters  
+# 2. **M-step**: Update parameters given current state estimates
+#
 # This process iteratively improves both the parameter estimates and state inferences.
 
 println("Starting EM algorithm to learn parameters...")
-elbo, _ = fit!(naive_ssm, observations; max_iter=100, tol=1e-6)
 
-# After EM has converged, let's see how much better our latent state estimates are
-x_smooth, p_smooth = StateSpaceDynamics.smooth(naive_ssm, observations)
-
-# Plot the results: true states vs. post-EM estimates
-plot()
-for d in 1:latent_dim
-    plot!(1:tSteps, states[d, :] .+ lim_states * (d-1), color=:black, linewidth=2, label="", subplot=1)
-    plot!(1:tSteps, x_smooth[d, :, 1] .+ lim_states * (d-1), color=:firebrick, linewidth=2, label="", subplot=1)
-end
-plot!(subplot=1, yticks=(lim_states .* (0:latent_dim-1), [L"x_%$d" for d in 1:latent_dim]),
-      xticks=[], xlims=(0, tSteps), yformatter=y->"", tickfontsize=12,
-      title="True vs. Predicted Latent States (Post-EM)")
-
-# ## Confirm Model Convergence
-
-# The Evidence Lower BOund (ELBO) is a measure of how well our model explains
-# the data. In EM, this should increase monotonically and plateau when the
-# algorithm has converged to a local optimum.
-
-plot(elbo, xlabel="iteration", ylabel="ELBO", title="ELBO (Marginal Loglikelihood)", legend=false)
+# Suppress output and capture ELBO values
+elbo, _ = fit!(naive_ssm, observations; max_iter=100, tol=1e-6);
 
 println("EM converged after $(length(elbo)) iterations")
-println("Final ELBO: $(elbo[end])")
+
+# After EM has converged, let's see how much better our latent state estimates are
+x_smooth_post, p_smooth_post = StateSpaceDynamics.smooth(naive_ssm, observations);
+
+# Plot the results: true states vs. post-EM estimates
+p4 = plot()
+for d in 1:latent_dim
+    plot!(1:tSteps, states[d, :] .+ lim_states * (d-1), color=:black,
+          linewidth=2, label=(d==1 ? "True" : ""), alpha=0.8)
+    plot!(1:tSteps, x_smooth_post[d, :, 1] .+ lim_states * (d-1), color=:firebrick,
+          linewidth=2, label=(d==1 ? "Predicted" : ""), alpha=0.8)
+end
+plot!(yticks=(lim_states .* (0:latent_dim-1), [L"x_%$d" for d in 1:latent_dim]),
+      xlabel="time", xlims=(0, tSteps), yformatter=y->"", tickfontsize=12,
+      title="True vs. Predicted Latent States (Post-EM)",
+      legend=:topright)
+
+# ## Model Convergence Analysis
+
+# The Evidence Lower Bound (ELBO) measures how well our model explains the data.
+# In EM, this should increase monotonically and plateau when the algorithm
+# has converged to a local optimum.
+
+p5 = plot(elbo, xlabel="Iteration", ylabel="ELBO", 
+          title="Model Convergence (ELBO)", legend=false,
+          linewidth=2, color=:darkblue)
 
 # ## Summary
 # 
 # This tutorial demonstrated the complete workflow for fitting a Linear Dynamical System:
-# 1. We defined a true LDS with known parameters and generated synthetic data
+# 1. We defined a true LDS with spiral dynamics and generated synthetic data
 # 2. We initialized a naive model with random parameters  
 # 3. We used EM to iteratively improve our parameter estimates
-# 4. We visualized how the latent state inference improved after learning
+# 4. We visualized the dramatic improvement in latent state inference
 # 
 # The EM algorithm successfully recovered the underlying dynamics from observations alone,
 # as evidenced by the improved match between true and estimated latent states and the
-# convergence of the ELBO objective function.
+# monotonic convergence of the ELBO objective function.
