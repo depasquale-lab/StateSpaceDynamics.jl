@@ -192,27 +192,6 @@ end
 accuracy, best_perm = best_permutation_accuracy(labels, predicted_labels, k)
 print("Component assignment accuracy: $(round(accuracy*100, digits=1))%\n");
 
-# ## Parameter Recovery Assessment
-
-# Compare true vs learned parameters (accounting for label permutation)
-mapped_μs = fit_gmm.μₖ[:, best_perm]
-mapped_πs = fit_gmm.πₖ[best_perm]
-mapped_Σs = fit_gmm.Σₖ[best_perm]
-
-print("\n=== Parameter Recovery Assessment ===\n")
-
-# Mean vector recovery errors
-μ_errors = [norm(true_μs[:, i] - mapped_μs[:, i]) for i in 1:k]
-print("Mean vector errors: $(round.(μ_errors, digits=3))\n")
-
-# Mixing weight recovery errors  
-π_errors = [abs(true_πs[i] - mapped_πs[i]) for i in 1:k]
-print("Mixing weight errors: $(round.(π_errors, digits=3))\n")
-
-# Covariance matrix recovery errors (Frobenius norm)
-Σ_errors = [norm(true_Σs[i] - mapped_Σs[i]) for i in 1:k]
-print("Covariance errors: $(round.(Σ_errors, digits=3))\n");
-
 # ## Final Comparison Visualization
 
 # Side-by-side comparison of true vs learned component assignments
