@@ -18,19 +18,27 @@ using StableRNGs
 rng = StableRNG(123);
 
 # ## Create a State-Space Model
-
-# We start by defining the dimensions of our system. A linear dynamical system (LDS)
-# models how a low-dimensional latent state evolves over time and generates high-dimensional
-# observations. Here we use a 2D latent space (which we can visualize easily) that
-# generates 10-dimensional observations.
+# ## Mathematical Foundation of Linear Dynamical Systems
+#
+# A Linear Dynamical System describes how a hidden state evolves over time and 
+# generates observations through two key equations:
+#
+# **State Evolution**: x_{t+1} = A * x_t + ε_t,  where ε_t ~ N(0, Q)
+# **Observation**: y_t = C * x_t + η_t,  where η_t ~ N(0, R)
+#
+# The beauty of this formulation is that it separates the underlying dynamics 
+# (governed by A) from what we can actually measure (governed by C). The noise
+# terms ε and η represent our uncertainty about the process and measurements.
 
 obs_dim = 10      # Number of observed variables at each time step
 latent_dim = 2;   # Number of latent state variables
 
 # Define the state transition matrix $\mathbf{A}$. This matrix governs how the latent state
 # evolves from one time step to the next: $\mathbf{x}_{t+1} = \mathbf{A} \mathbf{x}_t + \boldsymbol{\epsilon}$.
-# We create a rotation matrix scaled by 0.95, which creates a stable spiral
-# dynamic that slowly contracts toward the origin.
+# The rotation angle of 0.25 radians (≈14.3°) creates a gentle spiral, while
+# the 0.95 scaling ensures the system is stable (eigenvalues < 1). Without the
+# scaling factor, trajectories would spiral outward indefinitely. This particular
+# combination creates visually appealing dynamics that are easy to interpret.
 
 A = 0.95 * [cos(0.25) -sin(0.25); sin(0.25) cos(0.25)];
 
@@ -143,11 +151,16 @@ plot!(subplot=2, yticks=(-lim_emissions .* (obs_dim-1:-1:0), [L"y_{%$n}" for n i
       xlabel="time", xlims=(0, tSteps), title="Simulated Emissions",
       yformatter=y->"", tickfontsize=12, left_margin=10Plots.mm)
 
-# ## Initialize a Model and Perform Smoothing
-
-# In a real scenario, we would only observe the emissions, not the latent states.
-# Our goal is to learn the parameters $\mathbf{A}$, $\mathbf{Q}$, $\mathbf{C}$, $\mathbf{R}$ from the observations alone.
-# We start by creating a "naive" model with random initial parameters.
+# ## The Learning Problem
+#
+# In real applications, we only observe y_t (the emissions) - the latent states x_t
+# are hidden from us. Our challenge is to recover both:
+# 1. The system parameters (A, Q, C, R) that generated the data
+# 2. The most likely latent state sequence given our observations
+#
+# This is a classic "chicken and egg" problem: if we knew the parameters, we could
+# infer the states; if we knew the states, we could estimate the parameters.
+# The EM algorithm elegantly solves this by alternating between these two problems.
 
 # Initialize with random parameters (this simulates not knowing the true system)
 A_init = random_rotation_matrix(2, rng)    # Random rotation matrix for dynamics
@@ -157,7 +170,10 @@ R_init = Matrix(0.5 * I(obs_dim))          # Same observation noise
 x0_init = zeros(latent_dim)                # Start from origin
 P0_init = Matrix(0.1 * I(latent_dim));      # Same initial uncertainty
 
-# Create the naive model components
+# Our "naive" initialization uses random parameters, simulating a real scenario
+# where we don't know the true system. The quality of initialization can affect
+# convergence speed and which local optimum we find, but EM is generally robust
+# to reasonable starting points.
 gaussian_sm_init = GaussianStateModel(;A=A_init, Q=Q_init, x0=x0_init, P0=P0_init)
 gaussian_om_init = GaussianObservationModel(;C=C_init, R=R_init)
 
@@ -188,14 +204,21 @@ plot!(yticks=(lim_states .* (0:latent_dim-1), [L"x_%$d" for d in 1:latent_dim]),
       title="True vs. Predicted Latent States (Pre-EM)",
       legend=:topright)
 
-# ## Fit Model Using EM Algorithm
-
-# Now comes the crucial step: parameter learning via the Expectation-Maximization (EM)
-# algorithm. EM alternates between two steps:
-# 1. **E-step**: Estimate latent states given current parameters  
-# 2. **M-step**: Update parameters given current state estimates
+# ## Understanding the EM Algorithm
 #
-# This process iteratively improves both the parameter estimates and state inferences.
+# EM alternates between two steps until convergence:
+#
+# **E-step (Expectation)**: Given current parameter estimates, compute the posterior
+# distribution over latent states using the Kalman smoother. This gives us
+# p(x_1:T | y_1:T, θ_current).
+#
+# **M-step (Maximization)**: Given the state estimates from the E-step, update
+# the parameters to maximize the expected log-likelihood. This involves solving
+# closed-form equations for A, Q, C, and R.
+#
+# The Evidence Lower BOund (ELBO) measures how well our model explains the data.
+# It's guaranteed to increase (or stay constant) at each iteration, ensuring
+# convergence to at least a local optimum.
 
 println("Starting EM algorithm to learn parameters...")
 
@@ -229,6 +252,15 @@ plot!(yticks=(lim_states .* (0:latent_dim-1), [L"x_%$d" for d in 1:latent_dim]),
 p5 = plot(elbo, xlabel="Iteration", ylabel="ELBO", 
           title="Model Convergence (ELBO)", legend=false,
           linewidth=2, color=:darkblue)
+
+# ## Interpreting the Results
+#
+# The dramatic improvement in state estimation shows that EM successfully
+# recovered the underlying dynamics. However, keep in mind:
+# - We may have found a local optimum, not the global one
+# - The recovered parameters might differ from the true ones due to identifiability
+#   issues (multiple parameter sets can generate similar observations)
+# - In practice, you'd validate the model on held-out data to ensure generalization
 
 # ## Summary
 # 

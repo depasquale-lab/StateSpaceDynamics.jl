@@ -475,6 +475,40 @@ function estep!(model::HiddenMarkovModel, data, FB_storage)
 end
 
 """
+    loglikelihood(model::HiddenMarkovModel, Y::AbstractMatrix{T}, X::Union{AbstractMatrix{<:Real},Nothing}=nothing) where {T<:Real}
+
+Calculate the log-likelihood of observed data given the HMM.
+
+# Arguments
+- `model::HiddenMarkovModel`: The fitted HMM model
+- `Y::AbstractMatrix{T}`: The emission data (D × T)
+- `X::Union{AbstractMatrix{<:Real},Nothing}=nothing`: Optional input data for switching regression models
+
+# Returns
+- `ll::Float64`: The total log-likelihood of the data
+"""
+function loglikelihood(
+    model::HiddenMarkovModel, 
+    Y::AbstractMatrix{T}, 
+    X::Union{AbstractMatrix{<:Real},Nothing}=nothing
+) where {T<:Real}
+    data = X === nothing ? (Y,) : (X, Y)
+    
+    # Transpose data to match expected dimensions
+    transpose_data = Matrix.(transpose.(data))
+    num_obs = size(transpose_data[1], 1)
+    
+    # Initialize forward-backward storage
+    FB_storage = initialize_forward_backward(model, num_obs, T)
+    
+    # Run E-step to compute forward probabilities
+    estep!(model, transpose_data, FB_storage)
+    
+    # The log-likelihood is the log-sum-exp of the final forward probabilities
+    return logsumexp(FB_storage.α[:, end])
+end
+
+"""
     update_initial_state_distribution!(model::AbstractHMM, FB_storage::ForwardBackward)
 
 Update the initial state distribution of an HMM.
