@@ -27,7 +27,7 @@ using LaTeXStrings
 using Statistics
 using StableRNGs
 
-rng = StableRNG(123);
+rng = StableRNG(1234);
 
 # ## Create and Simulate SLDS
 
