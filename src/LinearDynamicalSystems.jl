@@ -1682,13 +1682,14 @@ function Q_function(
     E_z::AbstractMatrix{T},
     E_zz::AbstractArray{T,3},
     E_zz_prev::AbstractArray{T,3},
+    p_smooth::AbstractArray{T,3},
     y::AbstractMatrix{T},
 ) where {T<:Real}
     # Calculate the Q-function for the state model (single trial)
     Q_state_val = Q_state(A, Q, P0, x0, E_z, E_zz, E_zz_prev)
     
     # Calculate the Q-function for the observation model (single trial)
-    Q_obs_val = Q_observation_model(C, log_d, E_z, E_zz, y)
+    Q_obs_val = Q_observation_model(C, log_d, E_z, p_smooth, y)
     
     return Q_state_val + Q_obs_val
 end
@@ -1723,6 +1724,7 @@ function calculate_elbo(
             fs.E_z,                    
             fs.E_zz,                   
             fs.E_zz_prev,
+            fs.p_smooth,
             view(y, :, :, trial)
         )
     end
