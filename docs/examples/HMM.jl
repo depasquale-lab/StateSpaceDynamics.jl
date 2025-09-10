@@ -28,7 +28,7 @@ rng = StableRNG(1234);
 # This creates a simple but illustrative model where hidden states correspond
 # to different regions in the observation space.
 
-output_dim = 2  # Each observation is a 2D vector
+output_dim = 2;  # Each observation is a 2D vector
 
 # Define state transition dynamics: $A_{ij} = P(\text{state}_t = j \mid \text{state}_{t-1} = i)$
 # High diagonal values mean states are "sticky" (tend to persist)
@@ -66,14 +66,10 @@ print("State 2: μ = $μ_2, σ² = $(Σ_2[1,1]) (looser cluster)\n");
 # Generate synthetic data from our true model. Each state generates observations 
 # from its own Gaussian distribution without requiring input features.
 
-num_samples = 10000
+num_samples = 10000;
 
 # Sample both hidden state sequence and corresponding observations
 true_labels, data = rand(rng, model, n=num_samples);
-
-print("Generated $num_samples samples:\n")
-print("State 1: $(round(mean(true_labels .== 1)*100, digits=1))%, ")
-print("State 2: $(round(mean(true_labels .== 2)*100, digits=1))%\n");
 
 # ## Visualize the Sampled Dataset
 
@@ -88,7 +84,6 @@ state_colors = [:dodgerblue, :crimson]
 
 p1 = plot()
 
-# Plot observations for each state separately for proper legends
 for state in 1:2
     idx = findall(labels_slice .== state)
     scatter!(x_vals[idx], y_vals[idx];
@@ -102,7 +97,6 @@ end
 plot!(x_vals[1:1000], y_vals[1:1000];
     color=:gray, lw=1, alpha=0.3, label="Trajectory")
 
-# Mark start and end points
 scatter!([x_vals[1]], [y_vals[1]]; marker=:star5, markersize=8, 
          color=:green, label="Start")
 scatter!([x_vals[end]], [y_vals[end]]; marker=:diamond, markersize=6,
@@ -120,21 +114,19 @@ plot!(xlabel=L"x_1", ylabel=L"x_2",
 # Initialize with biased/incorrect parameters
 μ_1_init = [-0.25, -0.25]  # Closer to center than true
 Σ_1_init = 0.3 * Matrix{Float64}(I, output_dim, output_dim)  # Larger variance
-emission_1_init = GaussianEmission(output_dim=output_dim, μ=μ_1_init, Σ=Σ_1_init)
+emission_1_init = GaussianEmission(output_dim=output_dim, μ=μ_1_init, Σ=Σ_1_init);
 
 μ_2_init = [0.25, 0.25]    # Closer to center than true  
 Σ_2_init = 0.5 * Matrix{Float64}(I, output_dim, output_dim)  # Much larger variance
-emission_2_init = GaussianEmission(output_dim=output_dim, μ=μ_2_init, Σ=Σ_2_init)
+emission_2_init = GaussianEmission(output_dim=output_dim, μ=μ_2_init, Σ=Σ_2_init);
 
 # Different transition matrix and initial distribution
 A_init = [0.8 0.2; 0.05 0.95]  # Less persistent than true model
-πₖ_init = [0.6, 0.4]           # Biased toward state 1
+πₖ_init = [0.6, 0.4];           # Biased toward state 1
 
 # Create test model with naive initialization
 test_model = HiddenMarkovModel(K=2, B=[emission_1_init, emission_2_init], 
-                              A=A_init, πₖ=πₖ_init)
-
-print("Running EM algorithm...")
+                              A=A_init, πₖ=πₖ_init);
 
 # Fit using Expectation-Maximization
 lls = fit!(test_model, data);
@@ -248,7 +240,7 @@ all_pred_labels_vec = viterbi(test_model_multi, all_data)
 
 # Reshape for analysis and visualization
 all_pred_labels = hcat(all_pred_labels_vec...)'      # trials × time
-all_true_labels_matrix = hcat(all_true_labels...)'   # trials × time
+all_true_labels_matrix = hcat(all_true_labels...)';   # trials × time
 
 # Calculate overall accuracy across all trials
 overall_accuracy = mean(all_true_labels_matrix .== all_pred_labels)

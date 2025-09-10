@@ -199,7 +199,6 @@ print("Information criteria: AIC = $(round(ic.AIC, digits=1)), BIC = $(round(ic.
 
 print("\n=== Parameter Recovery Assessment ===\n")
 
-# Compare true vs learned rates (account for potential label permutation)
 λ_errors = [abs(true_λs[i] - fit_pmm.λₖ[i]) / true_λs[i] for i in 1:k]
 π_errors = [abs(true_πs[i] - fit_pmm.πₖ[i]) for i in 1:k]
 
@@ -212,16 +211,6 @@ print("Mixing weight recovery errors:\n")
 for i in 1:k
     print("Component $i: $(round(π_errors[i], digits=3))\n")
 end
-
-# ## Practical Considerations and Extensions
-
-print("\n=== Practical Tips ===\n")
-print("• Initialization matters: try multiple random starts or k-means seeding\n")
-print("• Label switching: component indices are arbitrary, sort by λ for stability\n") 
-print("• Empty components: if πⱼ ≈ 0, consider reducing k\n")
-print("• Model selection: use cross-validation or information criteria to choose k\n")
-print("• Zero-inflation: consider zero-inflated Poisson for excess zeros\n")
-print("• Overdispersion: use Negative Binomial mixtures if variance >> mean\n");
 
 # ## Model Selection Example
 

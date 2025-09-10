@@ -200,8 +200,8 @@ function fit!(
     FS = [initialize_FilterSmooth(slds.B[k], T_step) for k in 1:K]
 
     # Initialize the parameters by running the Kalman Smoother for each model
-    FB.γ = log.(ones(size(y)) * 0.5)
-
+    FB.γ = log.(ones(K, T_step) * (1.0/K))
+    
     # Run the Kalman Smoother for each model
     for k in 1:slds.K
         weights = exp.(FB.γ[k,:])

@@ -303,19 +303,6 @@ print("BIC suggests optimal k = $optimal_k\n");
 nothing #hide
 ````
 
-## Practical Considerations
-
-````@example Probabilistic_PCA_example
-print("\n=== Practical Guidelines ===\n")
-print("• Feature scaling: Standardize variables if units differ significantly\n")
-print("• Initialization: Try multiple random starts to avoid poor local optima\n")
-print("• Rotational ambiguity: Use orthonormalization or PCA alignment for presentation\n")
-print("• Model selection: Compare k via information criteria or cross-validation\n")
-print("• Outliers: Consider robust variants (e.g., Student-t PCA) for heavy-tailed data\n")
-print("• Interpretability: Loading directions indicate principal variation patterns\n");
-nothing #hide
-````
-
 ## Summary
 
 This tutorial demonstrated the complete Probabilistic PCA workflow:

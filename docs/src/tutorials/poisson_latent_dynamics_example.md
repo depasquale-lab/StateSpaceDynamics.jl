@@ -28,7 +28,7 @@ using StableRNGs
 Set up reproducible random number generation
 
 ````@example poisson_latent_dynamics_example
-rng = StableRNG(1234);
+rng = StableRNG(54321);
 nothing #hide
 ````
 
@@ -120,7 +120,7 @@ x = y = -3:0.5:3
 X = repeat(x', length(y), 1)
 Y = repeat(y, 1, length(x))
 U = zeros(size(X))  # Flow in x-direction
-V = zeros(size(Y))  # Flow in y-direction
+V = zeros(size(Y));  # Flow in y-direction
 
 for i in 1:size(X, 1), j in 1:size(X, 2)
     v = A * [X[i,j], Y[i,j]]
@@ -130,7 +130,8 @@ end
 
 magnitude = @. sqrt(U^2 + V^2)  # Normalize arrow lengths for cleaner visualization
 U_norm = U ./ magnitude
-V_norm = V ./ magnitude
+V_norm = V ./ magnitude;
+nothing #hide
 ````
 
 Plot vector field with simulated trajectory
@@ -168,12 +169,7 @@ end
 plot!(subplot=1, yticks=(lim_states .* (0:latent_dim-1), [L"x_%$d" for d in 1:latent_dim]),
       xticks=[], xlims=(0, tSteps), title="Simulated Latent States",
       yformatter=y->"", tickfontsize=12)
-````
 
-Plot discrete observations as spike rasters
-Each row represents one observed dimension, spikes shown as vertical lines
-
-````@example poisson_latent_dynamics_example
 colors = palette(:default, obs_dim)
 for f in 1:obs_dim
     spike_times = findall(x -> x > 0, emissions[f, :])
@@ -201,7 +197,8 @@ Q_init = Matrix(0.1 * I(latent_dim))              # Process noise guess
 C_init = randn(rng, obs_dim, latent_dim)          # Random observation mapping
 log_d_init = log.(fill(0.1, obs_dim))             # Baseline log-rate guess
 x0_init = zeros(latent_dim)                       # Start from origin
-P0_init = Matrix(0.1 * I(latent_dim))             # Initial uncertainty
+P0_init = Matrix(0.1 * I(latent_dim));             # Initial uncertainty
+nothing #hide
 ````
 
 Construct naive model
@@ -218,12 +215,6 @@ naive_plds = LinearDynamicalSystem(;
     fit_bool=fill(true, 6)
 );
 nothing #hide
-````
-
-Perform initial smoothing with random parameters
-
-````@example poisson_latent_dynamics_example
-print("Initial smoothing with random parameters...")
 ````
 
 For Poisson observations, this requires Laplace approximations since
@@ -251,17 +242,6 @@ plot!(yticks=(lim_states .* (0:latent_dim-1), [L"x_%$d" for d in 1:latent_dim]),
 ````
 
 ## Fit Using Laplace-EM Algorithm
-
-Use Laplace-EM to learn parameters. This is more complex than standard EM because:
-1. E-step requires Laplace approximations for non-Gaussian posteriors
-2. M-step updates account for Poisson likelihood structure
-3. Convergence can be slower due to non-conjugate nature
-
-````@example poisson_latent_dynamics_example
-print("Starting Laplace-EM algorithm...")
-print("Note: Poisson LDS fitting is computationally intensive\n")
-````
-
 Fit the model - using fewer iterations due to computational cost
 
 ````@example poisson_latent_dynamics_example
@@ -335,22 +315,6 @@ print("Relative error: $(round(C_error, digits=3))\n")
 print("Process Noise Q Recovery:\n")
 Q_error = norm(Q - naive_plds.state_model.Q) / norm(Q)
 print("Relative error: $(round(Q_error, digits=3))\n");
-nothing #hide
-````
-
-## Computational Complexity Notes
-
-````@example poisson_latent_dynamics_example
-print("\n=== Computational Considerations ===\n")
-print("Poisson LDS fitting challenges:\n")
-print("• Non-conjugate Poisson-Gaussian combination requires approximations\n")
-print("• Laplace approximation adds computational overhead per E-step\n")
-print("• Optimization landscape can be more complex than Gaussian case\n")
-print("• Convergence typically slower than standard EM\n")
-print("\nBenefits:\n")
-print("• Principled handling of count/spike data\n")
-print("• Maintains interpretable continuous latent dynamics\n")
-print("• Extends LDS framework to discrete observations\n");
 nothing #hide
 ````
 

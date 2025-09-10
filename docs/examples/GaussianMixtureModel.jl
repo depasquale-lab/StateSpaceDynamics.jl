@@ -227,17 +227,6 @@ p_learned = scatter(X[1, :], X[2, :]; group=remapped_predicted, title="Learned C
 
 p4 = plot(p_true, p_learned, layout=(1, 2), size=(800, 350))
 
-# ## Model Selection Notes
-
-print("\n=== Model Selection Considerations ===\n")
-print("This tutorial assumed k=$k was known. In practice, select k using:\n")
-print("• Information criteria (AIC, BIC)\n")
-print("• Cross-validation\n") 
-print("• Gap statistic\n")
-print("• Elbow method\n")
-print("\nEM guarantees convergence to local (not global) optimum.\n")
-print("Multiple random initializations often improve results.\n");
-
 # ## Summary
 #
 # This tutorial demonstrated the complete Gaussian Mixture Model workflow:

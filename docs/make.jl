@@ -92,7 +92,7 @@ makedocs(;
             "Gaussian LDS Example" => "tutorials/gaussian_latent_dynamics_example.md",
             "Poisson LDS Example" => "tutorials/poisson_latent_dynamics_example.md",
             "Hidden Markov Model Example" => "tutorials/hidden_markov_model_example.md",
-            "Gaussian GLM-GMM Example" => "tutorials/gaussian_glm_hmm_example.md",
+            "Gaussian GLM-HMM Example" => "tutorials/gaussian_glm_hmm_example.md",
             "Gaussian Mixture Model Example" => "tutorials/gaussian_mixture_model_example.md",
             "Poisson Mixture Model Example" => "tutorials/poisson_mixture_model_example.md",
             "Probabilistic PCA Example" => "tutorials/Probabilistic_PCA_example.md",

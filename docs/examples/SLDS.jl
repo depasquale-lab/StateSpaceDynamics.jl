@@ -71,18 +71,11 @@ model = SwitchingLinearDynamicalSystem(
     K,
 );
 
-print("Created SLDS with $K modes, $(state_dim)D latent states, $(obs_dim)D observations\n")
-
 # ## Simulate Data
 
 # Generate synthetic data showing mode switches between different dynamics.
-
 T = 1000  # Number of time steps
 x, y, z = rand(rng, model, T);
-
-print("Simulated $T time steps\n")
-print("Mode proportions: Mode 1 ($(round(mean(z.==1)*100, digits=1))%), Mode 2 ($(round(mean(z.==2)*100, digits=1))%)\n")
-print("Number of mode switches: $(sum(diff(vec(z)) .!= 0))\n");
 
 # ## Visualize Latent Dynamics with Mode Shading
 
@@ -107,9 +100,7 @@ plot!(title="Latent Dynamics with Mode Switching",
       ylims=(-3, 3), legend=:topright)
 
 # ## Initialize and Fit SLDS 
-
 # Initialize SLDS with reasonable but imperfect parameters, then use variational EM to learn.
-
 # Initialize HMM transition matrix (moderately sticky)
 A_init = [0.9 0.1; 0.1 0.9]
 A_init ./= sum(A_init, dims=2)  # Ensure row-stochastic
@@ -126,17 +117,10 @@ learned_model = initialize_slds(;
     self_bias=5.0, 
     seed=456  # Different seed from true model
 )
-
-print("Running variational EM algorithm...")
-
 # Fit using variational EM
-mls, param_diff, FB, FS = fit!(learned_model, y; max_iter=25);
-
-print("Variational EM converged in $(length(mls)) iterations\n")
-print("ELBO improved by $(round(mls[end] - mls[1], digits=1))\n");
+mls, param_diff, FB, FS = fit!(learned_model, y; max_iter=25)
 
 # ## Monitor ELBO Convergence
-
 # Plot the Evidence Lower BOund (ELBO) to verify monotonic improvement.
 # For SLDS, this tracks the variational approximation quality.
 
@@ -145,7 +129,6 @@ p2 = plot(mls, xlabel="Iteration", ylabel="ELBO",
           marker=:circle, markersize=3, lw=2, 
           legend=false, color=:darkgreen)
 
-# Add convergence annotation
 annotate!(p2, length(mls)*0.7, mls[end]*0.98, 
     text("Final ELBO: $(round(mls[end], digits=1))", 10))
 
