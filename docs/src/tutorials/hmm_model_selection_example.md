@@ -6,7 +6,7 @@ EditURL = "../../examples/HMM_ModelSelection.jl"
 In principle, one can fit an HMM with any number of states, but how do we choose?
 One generally has no ground truth, except for the most rare cases. So it begs the question:
 How do we select the number of hidden states K? In this tutorial we will demonstrate a few
-typical approaches for model selection.
+typical approaches for model selection with enhanced cross-validation integration.
 
 ## Load Required Packages
 
@@ -111,8 +111,10 @@ results = Dict(
     "log_likelihood" => Float64[],
     "AIC" => Float64[],
     "BIC" => Float64[],
-    "n_params" => Int[]
-)
+    "n_params" => Int[],
+    "CV_score" => Float64[]
+);
+nothing #hide
 ````
 
 ## Helper Functions for Model Selection
@@ -156,86 +158,6 @@ function count_parameters(hmm)
     return transition_params + initial_params + emission_params
 end
 
-println("Fitting HMMs with different numbers of states...")
-
-for k in K_range
-    println("Fitting HMM with K=$k states...")
-
-    hmm_k = initialize_hmm_kmeans(observations, k, rng)
-
-    fit!(hmm_k, observations; max_iters=100, tol=1e-6)
-
-    ll = loglikelihood(hmm_k, observations)
-    n_params = count_parameters(hmm_k)
-    aic_val = -2*ll + 2*n_params
-    bic_val = -2*ll + log(T)*n_params
-
-    push!(results["K"], k)
-    push!(results["log_likelihood"], ll)
-    push!(results["AIC"], aic_val)
-    push!(results["BIC"], bic_val)
-    push!(results["n_params"], n_params)
-end
-````
-
-## Visualize Model Selection Results
-
-Create a comprehensive plot showing all criteria
-
-````@example hmm_model_selection_example
-p2 = plot(layout=(2, 2), size=(800, 600))
-````
-
-Plot 1: Log-likelihood
-
-````@example hmm_model_selection_example
-plot!(results["K"], results["log_likelihood"],
-      marker=:circle, linewidth=2, label="Log-likelihood",
-      xlabel="Number of States (K)", ylabel="Log-likelihood",
-      title="Model Log-likelihood", subplot=1)
-vline!([K], linestyle=:dash, color=:red, label="True K=$K", subplot=1)
-````
-
-Plot 2: AIC
-
-````@example hmm_model_selection_example
-plot!(results["K"], results["AIC"],
-      marker=:circle, linewidth=2, label="AIC", color=:orange,
-      xlabel="Number of States (K)", ylabel="AIC",
-      title="Akaike Information Criterion", subplot=2)
-aic_min_idx = argmin(results["AIC"])
-vline!([results["K"][aic_min_idx]], linestyle=:dash, color=:orange,
-       label="AIC min (K=$(results["K"][aic_min_idx]))", subplot=2)
-vline!([K], linestyle=:dash, color=:red, label="True K=$K", subplot=2)
-````
-
-Plot 3: BIC
-
-````@example hmm_model_selection_example
-plot!(results["K"], results["BIC"],
-      marker=:circle, linewidth=2, label="BIC", color=:green,
-      xlabel="Number of States (K)", ylabel="BIC",
-      title="Bayesian Information Criterion", subplot=3)
-bic_min_idx = argmin(results["BIC"])
-vline!([results["K"][bic_min_idx]], linestyle=:dash, color=:green,
-       label="BIC min (K=$(results["K"][bic_min_idx]))", subplot=3)
-vline!([K], linestyle=:dash, color=:red, label="True K=$K", subplot=3)
-````
-
-Plot 4: Number of parameters
-
-````@example hmm_model_selection_example
-plot!(results["K"], results["n_params"],
-      marker=:circle, linewidth=2, label="# Parameters", color=:purple,
-      xlabel="Number of States (K)", ylabel="Number of Parameters",
-      title="Model Complexity", subplot=4)
-
-display(p2)
-````
-
-## Cross-Validation Approach
-
-````@example hmm_model_selection_example
 function cross_validate_hmm(observations, k, n_folds=5)
     """Perform k-fold cross-validation for HMM with k states"""
     T = size(observations, 2)
@@ -243,7 +165,6 @@ function cross_validate_hmm(observations, k, n_folds=5)
     cv_scores = Float64[]
 
     for fold in 1:n_folds
-
         test_start = (fold - 1) * fold_size + 1
         test_end = min(fold * fold_size, T)
 
@@ -266,66 +187,139 @@ function cross_validate_hmm(observations, k, n_folds=5)
 
     return mean(cv_scores)
 end
-````
 
-Perform cross-validation for each K
-
-````@example hmm_model_selection_example
-println("\nPerforming cross-validation...")
-cv_scores = Float64[]
 for k in K_range
-    println("Cross-validating K=$k...")
+    println("Evaluating HMM with K=$k states...")
+
+    hmm_k = initialize_hmm_kmeans(observations, k, rng)
+    fit!(hmm_k, observations; max_iters=100, tol=1e-6)
+
+    ll = loglikelihood(hmm_k, observations)
+    n_params = count_parameters(hmm_k)
+    aic_val = -2*ll + 2*n_params
+    bic_val = -2*ll + log(T)*n_params
+
     cv_score = cross_validate_hmm(observations, k, 5)
-    push!(cv_scores, cv_score)
+
+    push!(results["K"], k)
+    push!(results["log_likelihood"], ll)
+    push!(results["AIC"], aic_val)
+    push!(results["BIC"], bic_val)
+    push!(results["n_params"], n_params)
+    push!(results["CV_score"], cv_score)
 end
 ````
 
-Plot cross-validation results
+## Find optimal K for each criterion
 
 ````@example hmm_model_selection_example
-p3 = plot(K_range, cv_scores,
-          marker=:circle, linewidth=2, label="CV Score",
-          xlabel="Number of States (K)", ylabel="CV Log-likelihood",
-          title="Cross-Validation Results", color=:blue)
-cv_max_idx = argmax(cv_scores)
-vline!([K_range[cv_max_idx]], linestyle=:dash, color=:blue,
-       label="CV max (K=$(K_range[cv_max_idx]))")
-vline!([K], linestyle=:dash, color=:red, label="True K=$K")
-````
+aic_min_idx = argmin(results["AIC"])
+bic_min_idx = argmin(results["BIC"])
+cv_max_idx = argmax(results["CV_score"])
 
-## Summary of Results
-
-````@example hmm_model_selection_example
-println("\n" * "="^50)
-println("MODEL SELECTION SUMMARY")
-println("="^50)
-println("True K: $K")
-println("AIC selects: K = $(results["K"][aic_min_idx])")
-println("BIC selects: K = $(results["K"][bic_min_idx])")
-println("Cross-validation selects: K = $(K_range[cv_max_idx])")
-println("\nDetailed Results:")
-println("K\tLog-lik\t\tAIC\t\tBIC\t\tCV Score")
-println("-"^60)
-for i in 1:length(K_range)
-    @printf("%d\t%.2f\t\t%.2f\t\t%.2f\t\t%.2f\n",
-            results["K"][i], results["log_likelihood"][i],
-            results["AIC"][i], results["BIC"][i], cv_scores[i])
-end
-````
-
-## Compare Best Models Visually
-
-Fit models with AIC and BIC selected K values for visual comparison
-
-````@example hmm_model_selection_example
 best_aic_k = results["K"][aic_min_idx]
 best_bic_k = results["K"][bic_min_idx]
+best_cv_k = results["K"][cv_max_idx]
+````
 
+## Visualization of Model Selection Results
+In our plots we will plot 1.) the loglikelihood 2.) negative AIC 3.) negative BIC and 4.) the loglikelihood of the test dataset
+We plot the negative AIC and BIC as those metrics are defined such that a lower score is better, so we invert the statistic, so
+like regular likelihood, higher indicates better model performance.
+
+Create comprehensive plot showing all criteria including CV
+
+````@example hmm_model_selection_example
+p2 = plot(layout=(2, 2), size=(1000, 800))
+````
+
+Log-likelihood subplot
+
+````@example hmm_model_selection_example
+plot!(results["K"], results["log_likelihood"],
+      marker=:circle, linewidth=2, label="Log-likelihood",
+      xlabel="Number of States (K)", ylabel="Log-likelihood",
+      title="Model Log-likelihood", subplot=1)
+vline!([K], linestyle=:dash, color=:red, label="True K=$K", subplot=1)
+
+plot!(results["K"], -results["AIC"],
+      marker=:circle, linewidth=2, label="AIC", color=:orange,
+      xlabel="Number of States (K)", ylabel="AIC",
+      title="Negative AIC", subplot=2)
+vline!([best_aic_k], linestyle=:dash, color=:orange,
+       label="nAIC max (K=$best_aic_k)", subplot=2)
+vline!([K], linestyle=:dash, color=:red, label="True K=$K", subplot=2)
+
+plot!(results["K"], -results["BIC"],
+      marker=:circle, linewidth=2, label="BIC", color=:green,
+      xlabel="Number of States (K)", ylabel="BIC",
+      title="Negative BIC", subplot=3)
+vline!([best_bic_k], linestyle=:dash, color=:green,
+       label="nBIC max (K=$best_bic_k)", subplot=3)
+vline!([K], linestyle=:dash, color=:red, label="True K=$K", subplot=3)
+
+plot!(results["K"], results["CV_score"],
+      marker=:circle, linewidth=2, label="CV Score", color=:blue,
+      xlabel="Number of States (K)", ylabel="CV Log-likelihood",
+      title="Cross-Validation Results", subplot=4)
+vline!([best_cv_k], linestyle=:dash, color=:blue,
+       label="CV max (K=$best_cv_k)", subplot=4)
+vline!([K], linestyle=:dash, color=:red, label="True K=$K", subplot=4)
+
+display(p2)
+````
+
+## Unified Model Selection Comparison
+Create a single plot showing all criteria on normalized scales for direct comparison
+
+````@example hmm_model_selection_example
+p3 = plot(size=(800, 500))
+````
+
+Normalize each metric to [0,1] for comparison
+
+````@example hmm_model_selection_example
+norm_aic = (-results["AIC"] .- maximum(-results["AIC"])) ./ (maximum(-results["AIC"]) - minimum(-results["AIC"])) .+ 1
+norm_bic = (-results["BIC"] .- maximum(-results["BIC"])) ./ (maximum(-results["BIC"]) - minimum(-results["BIC"])) .+ 1
+norm_cv = (results["CV_score"] .- maximum(results["CV_score"])) ./ (maximum(results["CV_score"]) - minimum(results["CV_score"])) .+ 1
+
+plot!(results["K"], norm_aic, marker=:circle, linewidth=2,
+      label="nAIC (normalized)", color=:orange)
+plot!(results["K"], norm_bic, marker=:square, linewidth=2,
+      label="nBIC (normalized)", color=:green)
+plot!(results["K"], norm_cv, marker=:diamond, linewidth=2,
+      label="CV (normalized)", color=:blue)
+
+xlabel!("Number of States (K)")
+ylabel!("Normalized Score (lower is better)")
+title!("Unified Model Selection Comparison")
+vline!([K], linestyle=:dash, color=:red, linewidth=2, label="True K=$K")
+````
+
+Mark optimal points
+
+````@example hmm_model_selection_example
+scatter!([best_aic_k], [norm_aic[aic_min_idx]], markersize=8, color=:orange, markershape=:star5, label="")
+scatter!([best_bic_k], [norm_bic[bic_min_idx]], markersize=8, color=:green, markershape=:star5, label="")
+scatter!([best_cv_k], [norm_cv[cv_max_idx]], markersize=8, color=:blue, markershape=:star5, label="");
+
+display(p3)
+````
+
+## Compare ALL Best Models Visually (including CV)
+
+Fit models with AIC, BIC, and CV selected K values
+
+````@example hmm_model_selection_example
 hmm_aic = initialize_hmm_kmeans(observations, best_aic_k, rng)
 fit!(hmm_aic, observations; max_iters=100, tol=1e-6)
 
 hmm_bic = initialize_hmm_kmeans(observations, best_bic_k, rng)
 fit!(hmm_bic, observations; max_iters=100, tol=1e-6)
+
+hmm_cv = initialize_hmm_kmeans(observations, best_cv_k, rng)
+fit!(hmm_cv, observations; max_iters=100, tol=1e-6);
+nothing #hide
 ````
 
 Get most likely state sequences
@@ -333,36 +327,30 @@ Get most likely state sequences
 ````@example hmm_model_selection_example
 states_aic = viterbi(hmm_aic, observations)
 states_bic = viterbi(hmm_bic, observations)
+states_cv = viterbi(hmm_cv, observations);
+nothing #hide
 ````
 
-Create comparison plots
+Create enhanced comparison plots (2x2 layout)
 
 ````@example hmm_model_selection_example
-p4 = plot(layout=(1, 3), size=(1200, 400))
-````
+p4 = plot(layout=(2, 2), size=(1000, 800))
 
-True states
-
-````@example hmm_model_selection_example
 scatter!(observations[1, :], observations[2, :], group=states,
          xlabel="x1", ylabel="x2", title="True States (K=$K)",
          legend=false, alpha=0.7, subplot=1)
-````
 
-AIC selected model
-
-````@example hmm_model_selection_example
 scatter!(observations[1, :], observations[2, :], group=states_aic,
          xlabel="x1", ylabel="x2", title="AIC Model (K=$best_aic_k)",
          legend=false, alpha=0.7, subplot=2)
-````
 
-BIC selected model
-
-````@example hmm_model_selection_example
 scatter!(observations[1, :], observations[2, :], group=states_bic,
          xlabel="x1", ylabel="x2", title="BIC Model (K=$best_bic_k)",
          legend=false, alpha=0.7, subplot=3)
+
+scatter!(observations[1, :], observations[2, :], group=states_cv,
+         xlabel="x1", ylabel="x2", title="Cross-Validation Model (K=$best_cv_k)",
+         legend=false, alpha=0.7, subplot=4)
 
 display(p4)
 ````
@@ -376,21 +364,23 @@ display(p4)
 
 **Cross-Validation**:
 - More robust estimate of generalization performance
-- Computationally expensive but often worth it
+- Computationally expensive but often provides the most reliable selection
 - Less sensitive to the specific penalty terms in AIC/BIC
+- Directly measures out-of-sample performance
 
 **Practical Recommendations**:
-1. Start with domain knowledge if available
-2. Use multiple criteria - they don't always agree
-3. Consider interpretability alongside statistical fit
-4. Visualize results when possible (as we did here)
-5. Remember that the "best" K depends on your specific goals
+1. **Use multiple criteria** - they don't always agree, and disagreement is informative
+2. **Prioritize cross-validation** when computational resources allow
+3. Consider the **practical significance** of differences between close K values
+4. **Visualize results** to understand model behavior across different K values
+5. Remember that model selection depends on your **specific goals and constraints**
+6. When methods disagree, consider **ensemble approaches** or **domain knowledge**
 
-**Model Selection Caveats**:
-- Local optima in EM can affect comparisons
-- Small datasets can make selection unreliable
-- True model may not be in your candidate set
-- Consider ensemble approaches for robust predictions
+**Model Selection Insights from This Example**:
+- Raw likelihood always increases with K (overfitting tendency)
+- Information criteria balance fit vs. complexity differently
+- Cross-validation provides unbiased performance estimates
+- Visual inspection can reveal whether selected models make practical sense
 
 ---
 
