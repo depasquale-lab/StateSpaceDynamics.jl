@@ -175,7 +175,40 @@ plot!(results["K"], results["n_params"],
 
 display(p2)
 
-# ## Cross-Validation Approach
+ ## Interpreting Information Criteria
+#
+# **AIC (Akaike Information Criterion)**:
+# - Estimates relative model quality for prediction
+# - Asymptotically equivalent to leave-one-out cross-validation
+# - Tends to select more complex models (higher K)
+# - Better for prediction tasks
+#
+# **BIC (Bayesian Information Criterion)**:
+# - Estimates probability that model is true among candidates
+# - Stronger complexity penalty, especially for large datasets
+# - Tends to select simpler models (lower K)
+# - Better for identifying "true" model structure
+#
+# **Key insight**: Lower values are better for both AIC and BIC
+# (they measure "badness" - deviance plus penalty)
+
+# ## Cross-Validation: The Gold Standard
+#
+# Cross-validation provides the most honest estimate of generalization performance:
+# - Trains on subset of data, tests on held-out portion
+# - Directly measures what we care about: performance on unseen data
+# - Less dependent on specific penalty terms than AIC/BIC
+# - More computationally expensive but often worth it
+#
+# **Challenges for HMMs**:
+# - Temporal data makes random splits problematic
+# - Sequential structure should be preserved when possible
+# - We use contiguous blocks to maintain temporal coherence
+#
+# **Interpreting CV results**:
+# - Higher CV likelihood indicates better generalization
+# - Plateauing suggests additional complexity isn't helpful
+# - Large variance across folds may indicate unstable model
 
 function cross_validate_hmm(observations, k, n_folds=5)
     """Perform k-fold cross-validation for HMM with k states"""
@@ -244,6 +277,29 @@ for i in 1:length(K_range)
             results["K"][i], results["log_likelihood"][i], 
             results["AIC"][i], results["BIC"][i], cv_scores[i])
 end
+
+# ## Practical Decision Framework
+#
+# When information criteria disagree (which is common), consider:
+#
+# **If BIC < AIC optimal K**:
+# - BIC favors simpler models, better for interpretation
+# - Choose BIC if you want parsimonious, interpretable model
+# - Choose AIC if prediction performance is primary goal
+#
+# **If all methods agree**:
+# - High confidence in the selected K
+# - Proceed with that choice
+#
+# **If results are highly variable**:
+# - May indicate insufficient data or poor model fit
+# - Consider ensemble approaches or different model class
+# - Examine residuals and model assumptions
+#
+# **Domain knowledge integration**:
+# - Use subject matter expertise to constrain K range
+# - Some applications have natural interpretations for states
+# - Don't ignore practical constraints (computational, interpretability)
 
 # ## Compare Best Models Visually
 

@@ -35,7 +35,6 @@ rng = StableRNG(54321);
 # Poisson LDS elegantly handles this by maintaining Gaussian latent dynamics while
 # modeling observations as count data with rates that depend on the hidden state.
 
-
 # ## Create a Poisson Linear Dynamical System
 
 # We define a system where continuous latent dynamics generate discrete count observations.
@@ -62,6 +61,20 @@ log_d = log.(fill(0.1, obs_dim));    # Log baseline rates (small positive rates)
 # Observation matrix C: maps 2D latent states to log-rates for each observed dimension
 # Use positive values so latent activity increases firing rates
 C = permutedims([abs.(randn(rng, obs_dim))'; abs.(randn(rng, obs_dim))']);
+
+# ## Understanding Poisson LDS Parameters
+#
+# **Latent dynamics parameters (same as Gaussian LDS):**
+# - A: How latent states evolve (rotation + contraction creates stable oscillation)
+# - Q: Process noise (uncertainty in latent evolution)
+# - x0, P0: Initial state distribution
+#
+# **Observation parameters (unique to Poisson case):**
+# - C[i,:]: How latent dimensions affect log-rate of observation i
+#   - Positive C[i,j]: latent dimension j increases firing rate of unit i
+#   - Negative C[i,j]: latent dimension j decreases firing rate of unit i
+# - d[i]: Baseline log-rate for observation i when latent state = 0
+#   - exp(d[i]) gives the baseline firing rate
 
 # ## The Exponential Link Function
 #
@@ -226,6 +239,11 @@ elbo, _ = fit!(naive_plds, observations; max_iter=25, tol=1e-6);
 
 print("Laplace-EM completed in $(length(elbo)) iterations\n")
 
+# **Parameter identifiability:**
+# - Scale ambiguity: (C, d) and (αC, d + log(α)) give same likelihood
+# - Can be resolved by constraining norm of C or fixing one element
+# - Rotation ambiguity in latent space (same as Gaussian LDS)
+
 # Perform smoothing with learned parameters
 smoothed_x_post, smoothed_p_post = smooth(naive_plds, observations);
 
@@ -257,8 +275,6 @@ if length(elbo) > 1
     annotate!(p5, length(elbo)*0.7, elbo[end]*0.95, 
         text("Improvement: $(round(improvement, digits=1))", 10)) # Add convergence annotation
 end
-
-
 
 # ## Summary
 #
