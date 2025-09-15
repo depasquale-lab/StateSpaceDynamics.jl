@@ -81,8 +81,8 @@ C = permutedims([abs.(randn(rng, obs_dim))'; abs.(randn(rng, obs_dim))']);
 # The key innovation is how we connect continuous latent states to discrete counts.
 # Instead of linear observations y = Cx + noise, we use:
 #
-# λᵢ(t) = exp(Cᵢᵀx_t + dᵢ)
-# yᵢ(t) ~ Poisson(λᵢ(t))
+# $λᵢ(t) = exp(Cᵢᵀx_t + dᵢ)$
+# $yᵢ(t) ~ Poisson(λᵢ(t))$
 #
 # The exponential ensures rates are always positive (required for Poisson), and
 # the log-linear relationship means latent states multiplicatively affect firing rates.
@@ -180,7 +180,7 @@ plot!(subplot=2, yticks=(1:obs_dim, [L"y_{%$d}" for d in 1:obs_dim]),
 #
 # Unlike Gaussian LDS where exact inference is possible via Kalman filtering,
 # Poisson observations break the conjugate Gaussian structure. The posterior
-# p(x_t | y_{1:T}) is no longer Gaussian, requiring approximations.
+# $p(x_t | y_{1:T})$ is no longer Gaussian, requiring approximations.
 #
 # **Laplace-EM Algorithm**:
 # - **E-step**: Use Laplace approximation to make posterior "locally Gaussian"
@@ -285,12 +285,6 @@ end
 # - **Exponential link**: $\log(\lambda_i) = \mathbf{C}_i^T \mathbf{x}_t + d_i$ connects latent states to count rates
 # - **Laplace-EM**: Handles non-conjugate Poisson-Gaussian combination through approximations
 # - **Count data modeling**: Extends LDS framework to spike trains and event sequences
-#
-# **Applications:**
-# - Neural spike train analysis and decoding
-# - Customer arrival modeling and forecasting  
-# - Event sequence analysis in discrete-time systems
-# - Any scenario with latent continuous dynamics generating discrete observations
 #
 # **Technical Insights:**
 # - More computationally intensive than Gaussian LDS due to required approximations
