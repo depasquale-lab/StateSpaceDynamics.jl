@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Non-Identifiability in LDS Models · StateSpaceDynamics.jl</title><meta name="title" content="Non-Identifiability in LDS Models · StateSpaceDynamics.jl"/><meta property="og:title" content="Non-Identifiability in LDS Models · StateSpaceDynamics.jl"/><meta property="twitter:title" content="Non-Identifiability in LDS Models · StateSpaceDynamics.jl"/><meta name="description" content="Documentation for StateSpaceDynamics.jl."/><meta property="og:description" content="Documentation for StateSpaceDynamics.jl."/><meta property="twitter:description" content="Documentation for StateSpaceDynamics.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="StateSpaceDynamics.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">StateSpaceDynamics.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Models</span><ul><li><a class="tocitem" href="../../LinearDynamicalSystems/">Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../HiddenMarkovModels/">Hidden Markov Models</a></li><li><a class="tocitem" href="../../SLDS/">Switching Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../EmissionModels/">EmissionModels</a></li><li><a class="tocitem" href="../../MixtureModels/">Mixture Models</a></li></ul></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../gaussian_latent_dynamics_example/">Gaussian LDS Example</a></li><li><a class="tocitem" href="../poisson_latent_dynamics_example/">Poisson LDS Example</a></li><li><a class="tocitem" href="../lds_model_selection_example/">LDS Model Selection Example</a></li><li class="is-active"><a class="tocitem" href>Non-Identifiability in LDS Models</a><ul class="internal"><li><a class="tocitem" href="#Load-Required-Packages"><span>Load Required Packages</span></a></li><li><a class="tocitem" href="#Create-a-Reference-(&quot;True&quot;)-LDS"><span>Create a Reference (&quot;True&quot;) LDS</span></a></li><li><a class="tocitem" href="#Non-Identifiability:-Similarity-(Rotation)-Invariance"><span>Non-Identifiability: Similarity (Rotation) Invariance</span></a></li><li><a class="tocitem" href="#Visualize-Parameter-Differences-(Before-Alignment)"><span>Visualize Parameter Differences (Before Alignment)</span></a></li><li><a class="tocitem" href="#Procrustes-Alignment:-Apples-to-Apples-Comparisons"><span>Procrustes Alignment: Apples-to-Apples Comparisons</span></a></li><li><a class="tocitem" href="#Invariants:-What-*is*-identifiable?"><span>Invariants: What <em>is</em> identifiable?</span></a></li><li><a class="tocitem" href="#Observational-Equivalence:-Predictions-Match"><span>Observational Equivalence: Predictions Match</span></a></li><li><a class="tocitem" href="#Summary-Diagnostics-Across-Transforms"><span>Summary Diagnostics Across Transforms</span></a></li><li><a class="tocitem" href="#Practical-Takeaways"><span>Practical Takeaways</span></a></li></ul></li><li><a class="tocitem" href="../hidden_markov_model_example/">Hidden Markov Model Example</a></li><li><a class="tocitem" href="../hmm_model_selection_example/">HMM Model Selection</a></li><li><a class="tocitem" href="../gaussian_glm_hmm_example/">Gaussian GLM-HMM Example</a></li><li><a class="tocitem" href="../gaussian_mixture_model_example/">Gaussian Mixture Model Example</a></li><li><a class="tocitem" href="../poisson_mixture_model_example/">Poisson Mixture Model Example</a></li><li><a class="tocitem" href="../Probabilistic_PCA_example/">Probabilistic PCA Example</a></li><li><a class="tocitem" href="../switching_linear_dynamical_system_example/">Switching Linear Dynamical System Example</a></li></ul></li><li><a class="tocitem" href="../../Misc/">Miscellaneous</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Non-Identifiability in LDS Models</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Non-Identifiability in LDS Models</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/blob/main/docs/examples/LDSIdentifiability.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Understanding-Non-Identifiability-in-Linear-Dynamical-Systems"><a class="docs-heading-anchor" href="#Understanding-Non-Identifiability-in-Linear-Dynamical-Systems">Understanding Non-Identifiability in Linear Dynamical Systems</a><a id="Understanding-Non-Identifiability-in-Linear-Dynamical-Systems-1"></a><a class="docs-heading-anchor-permalink" href="#Understanding-Non-Identifiability-in-Linear-Dynamical-Systems" title="Permalink"></a></h1><p>This tutorial walks through the fundamental non-identifiability issues in Linear Dynamical Systems (LDS), shows them numerically, and adds <strong>Procrustes alignment</strong> so we can compare models &quot;apples to apples&quot;. It follows a simple pattern:</p><ol><li>build a reference LDS and data; 2) generate <em>equivalent</em> models via similarity transforms; 3) show identical likelihood/predictions; 4) align states/parameters with Procrustes; 5) summarize diagnostics and discuss what <em>is</em> identifiable.</li></ol><h2 id="Load-Required-Packages"><a class="docs-heading-anchor" href="#Load-Required-Packages">Load Required Packages</a><a id="Load-Required-Packages-1"></a><a class="docs-heading-anchor-permalink" href="#Load-Required-Packages" title="Permalink"></a></h2><pre><code class="language-julia hljs">using StateSpaceDynamics
+using LinearAlgebra
+using Random
+using Plots
+using Statistics
+using StableRNGs
+using Printf
+
+rng = StableRNG(12345);</code></pre><h2 id="Create-a-Reference-(&quot;True&quot;)-LDS"><a class="docs-heading-anchor" href="#Create-a-Reference-(&quot;True&quot;)-LDS">Create a Reference (&quot;True&quot;) LDS</a><a id="Create-a-Reference-(&quot;True&quot;)-LDS-1"></a><a class="docs-heading-anchor-permalink" href="#Create-a-Reference-(&quot;True&quot;)-LDS" title="Permalink"></a></h2><pre><code class="language-julia hljs">K_true = 3  # latent dimensionality
+D      = 8  # observation dimensionality
+T      = 200;  # time steps for training/demo</code></pre><p>Stable but nontrivial dynamics</p><pre><code class="language-julia hljs">A_true = [0.9  0.1  0.0;
+          -0.1 0.8  0.2;
+           0.0 0.0  0.7];
+
+Q_true = 0.05 * Matrix(I(K_true));</code></pre><p>Observation matrix with interpretable rows</p><pre><code class="language-julia hljs">C_true = [1.0  0.5  0.0;   # Obs 1: mainly latent dim 1
+          0.8  0.3  0.1;   # Obs 2: mix of dims 1 &amp; 2
+          0.2  1.0  0.0;   # Obs 3: mainly latent dim 2
+          0.0  0.7  0.4;   # Obs 4: dims 2 &amp; 3
+          0.1  0.2  0.9;   # Obs 5: mainly latent dim 3
+          0.3  0.0  0.8;   # Obs 6: dims 1 &amp; 3
+          0.6  0.4  0.2;   # Obs 7: mixture
+          0.4  0.6  0.5]   # Obs 8: mixture
+
+R_true  = 0.1 * Matrix(I(D))
+x0_true = zeros(K_true)
+P0_true = 0.2 * Matrix(I(K_true))
+
+true_lds = LinearDynamicalSystem(
+    GaussianStateModel(A_true, Q_true, x0_true, P0_true),
+    GaussianObservationModel(C_true, R_true),
+    K_true, D, fill(true, 6)
+);</code></pre><p>Generate data from the reference model</p><pre><code class="language-julia hljs">x_true, y_true = rand(rng, true_lds; tsteps=T, ntrials=1)
+
+print(&quot;Generated data from reference LDS model
+&quot;)
+print(&quot;True latent dynamics eigenvalues: &quot;, round.(eigvals(A_true), digits=3), &quot;
+&quot;)
+print(&quot;Data variance explained by each latent dim: &quot;, round.(var(x_true[:,:,1], dims=2)[:], digits=3), &quot;
+&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Generated data from reference LDS model
+True latent dynamics eigenvalues: ComplexF64[0.7 + 0.0im, 0.85 - 0.087im, 0.85 + 0.087im]
+Data variance explained by each latent dim: [0.189, 0.217, 0.097]</code></pre><h2 id="Non-Identifiability:-Similarity-(Rotation)-Invariance"><a class="docs-heading-anchor" href="#Non-Identifiability:-Similarity-(Rotation)-Invariance">Non-Identifiability: Similarity (Rotation) Invariance</a><a id="Non-Identifiability:-Similarity-(Rotation)-Invariance-1"></a><a class="docs-heading-anchor-permalink" href="#Non-Identifiability:-Similarity-(Rotation)-Invariance" title="Permalink"></a></h2><p>For any invertible matrix R, the transformation produces an equivalent model:   A&#39; = R<em>A</em>R⁻¹,   C&#39; = C<em>R⁻¹,   Q&#39; = R</em>Q<em>Rᵀ,   x₀&#39; = R</em>x₀,   P₀&#39; = R<em>P₀</em>Rᵀ Such models yield identical likelihoods and predictions.</p><p>A helper to build transformed copies</p><pre><code class="language-julia hljs">function rotate_lds(lds, R)
+    A_rot = R * lds.state_model.A * inv(R)
+    Q_rot = R * lds.state_model.Q * R&#39;
+    C_rot = lds.obs_model.C * inv(R)
+    x0_rot = R * lds.state_model.x0
+    P0_rot = R * lds.state_model.P0 * R&#39;
+    return LinearDynamicalSystem(
+        GaussianStateModel(A_rot, Q_rot, x0_rot, P0_rot),
+        GaussianObservationModel(C_rot, lds.obs_model.R),
+        size(A_rot, 1), size(C_rot, 1), fill(true, 6)
+    )
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">rotate_lds (generic function with 1 method)</code></pre><p>A small mix of orthogonal and non-orthogonal transforms</p><pre><code class="language-julia hljs">rotations = [
+    [cos(π/4) -sin(π/4) 0.0;  sin(π/4) cos(π/4) 0.0;  0.0 0.0 1.0],     # R1: rot in (1,2)
+    [1.0 0.0 0.0;              0.0 cos(π/2) -sin(π/2); 0.0 sin(π/2) cos(π/2)],  # R2: rot in (2,3) 90°
+    Matrix(qr(randn(rng, K_true, K_true)).Q),                             # R3: random orthogonal
+    [0.0 0.0 1.0; 0.0 1.0 0.0; 1.0 0.0 0.0],                              # R4: axis swap (1↔3)
+    Diagonal([2.0, 0.5, -1.2]) |&gt; Matrix,                                 # R5: scaling + sign flip
+    [0.0 1.0 0.0; 1.0 0.0 0.0; 0.0 0.0 1.0]                               # R6: permutation (1↔2)
+]
+
+rot_names = [
+    &quot;R1: rot(1,2, 45°)&quot;,
+    &quot;R2: rot(2,3, 90°)&quot;,
+    &quot;R3: random orthogonal&quot;,
+    &quot;R4: axis swap (1↔3)&quot;,
+    &quot;R5: scaling+sign&quot;,
+    &quot;R6: permutation (1↔2)&quot;
+]</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">6-element Vector{String}:
+ &quot;R1: rot(1,2, 45°)&quot;
+ &quot;R2: rot(2,3, 90°)&quot;
+ &quot;R3: random orthogonal&quot;
+ &quot;R4: axis swap (1↔3)&quot;
+ &quot;R5: scaling+sign&quot;
+ &quot;R6: permutation (1↔2)&quot;</code></pre><p>Helper diagnostics</p><pre><code class="language-julia hljs">isorthogonal(R; atol=1e-10) = isapprox(R&#39; * R, I(size(R,1)), atol=atol)
+
+function subspace_angles_deg(C1, C2)
+    Q1 = qr(C1).Q[:, 1:size(C1,2)]
+    Q2 = qr(C2).Q[:, 1:size(C2,2)]
+    σ = svdvals(Q1&#39; * Q2)
+    σ = clamp.(σ, -1.0, 1.0)           # numerical safety
+    θ = acos.(σ)
+    return θ .* (180/π)
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">subspace_angles_deg (generic function with 1 method)</code></pre><p>Build rotated models</p><pre><code class="language-julia hljs">rotated_models = [rotate_lds(true_lds, R) for R in rotations]</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">6-element Vector{LinearDynamicalSystem{Float64, GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}, GaussianObservationModel{Float64, Matrix{Float64}}}}:
+ LinearDynamicalSystem{Float64, GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}, GaussianObservationModel{Float64, Matrix{Float64}}}(GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}([0.8500000000000001 0.15000000000000002 -0.1414213562373095; -0.04999999999999999 0.8500000000000001 0.14142135623730953; 0.0 0.0 0.7], [0.05 0.0 0.0; 0.0 0.05 0.0; 0.0 0.0 0.05], [0.0, 0.0, 0.0], [0.2 0.0 0.0; 0.0 0.2 0.0; 0.0 0.0 0.2]), GaussianObservationModel{Float64, Matrix{Float64}}([0.35355339059327384 1.0606601717798212 0.0; 0.3535533905932739 0.7778174593052023 0.1; … ; 0.1414213562373095 0.7071067811865475 0.2; -0.1414213562373094 0.7071067811865476 0.5], [0.1 0.0 … 0.0 0.0; 0.0 0.1 … 0.0 0.0; … ; 0.0 0.0 … 0.1 0.0; 0.0 0.0 … 0.0 0.1]), 3, 8, Bool[1, 1, 1, 1, 1, 1])
+ LinearDynamicalSystem{Float64, GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}, GaussianObservationModel{Float64, Matrix{Float64}}}(GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}([0.9 6.123233995736766e-18 0.1; -6.123233995736766e-18 0.7 6.123233995736771e-18; -0.1 -0.2 0.8], [0.05 0.0 0.0; 0.0 0.05 0.0; 0.0 0.0 0.05], [0.0, 0.0, 0.0], [0.2 0.0 0.0; 0.0 0.2 0.0; 0.0 0.0 0.2]), GaussianObservationModel{Float64, Matrix{Float64}}([1.0 3.061616997868383e-17 0.5; 0.8 -0.09999999999999999 0.3; … ; 0.6 -0.19999999999999998 0.4; 0.4 -0.49999999999999994 0.6], [0.1 0.0 … 0.0 0.0; 0.0 0.1 … 0.0 0.0; … ; 0.0 0.0 … 0.1 0.0; 0.0 0.0 … 0.0 0.1]), 3, 8, Bool[1, 1, 1, 1, 1, 1])
+ LinearDynamicalSystem{Float64, GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}, GaussianObservationModel{Float64, Matrix{Float64}}}(GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}([0.8633260669337636 0.059848593244057446 -0.10780515244556814; -0.14473661871683313 0.6496705006878114 0.0443010849424703; 0.08579906560910605 0.018565937801727717 0.8870034323784249], [0.04999999999999999 -1.0408340855860843e-17 9.540979117872439e-18; -1.0408340855860843e-17 0.05000000000000002 -3.469446951953614e-18; 1.1275702593849246e-17 -6.071532165918825e-18 0.049999999999999996], [0.0, 0.0, 0.0], [0.19999999999999996 -4.163336342344337e-17 3.8163916471489756e-17; -4.163336342344337e-17 0.20000000000000007 -1.3877787807814457e-17; 4.5102810375396984e-17 -2.42861286636753e-17 0.19999999999999998]), GaussianObservationModel{Float64, Matrix{Float64}}([-0.1566294875601379 -0.11013686714245222 1.101515807477448; -0.1287059026897557 0.0495765071527755 0.8491036217985094; … ; 0.09081469198880905 0.030068650697073325 0.7421917326164683; 0.49512767119226553 0.10671156522391584 0.7165620915644265], [0.1 0.0 … 0.0 0.0; 0.0 0.1 … 0.0 0.0; … ; 0.0 0.0 … 0.1 0.0; 0.0 0.0 … 0.0 0.1]), 3, 8, Bool[1, 1, 1, 1, 1, 1])
+ LinearDynamicalSystem{Float64, GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}, GaussianObservationModel{Float64, Matrix{Float64}}}(GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}([0.7 0.0 0.0; 0.2 0.8 -0.1; 0.0 0.1 0.9], [0.05 0.0 0.0; 0.0 0.05 0.0; 0.0 0.0 0.05], [0.0, 0.0, 0.0], [0.2 0.0 0.0; 0.0 0.2 0.0; 0.0 0.0 0.2]), GaussianObservationModel{Float64, Matrix{Float64}}([0.0 0.5 1.0; 0.1 0.3 0.8; … ; 0.2 0.4 0.6; 0.5 0.6 0.4], [0.1 0.0 … 0.0 0.0; 0.0 0.1 … 0.0 0.0; … ; 0.0 0.0 … 0.1 0.0; 0.0 0.0 … 0.0 0.1]), 3, 8, Bool[1, 1, 1, 1, 1, 1])
+ LinearDynamicalSystem{Float64, GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}, GaussianObservationModel{Float64, Matrix{Float64}}}(GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}([0.9 0.4 0.0; -0.025 0.8 -0.08333333333333334; 0.0 0.0 0.7], [0.2 0.0 0.0; 0.0 0.0125 0.0; 0.0 0.0 0.072], [0.0, 0.0, 0.0], [0.8 0.0 0.0; 0.0 0.05 0.0; 0.0 0.0 0.288]), GaussianObservationModel{Float64, Matrix{Float64}}([0.5 1.0 0.0; 0.4 0.6 -0.08333333333333334; … ; 0.3 0.8 -0.16666666666666669; 0.2 1.2 -0.4166666666666667], [0.1 0.0 … 0.0 0.0; 0.0 0.1 … 0.0 0.0; … ; 0.0 0.0 … 0.1 0.0; 0.0 0.0 … 0.0 0.1]), 3, 8, Bool[1, 1, 1, 1, 1, 1])
+ LinearDynamicalSystem{Float64, GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}, GaussianObservationModel{Float64, Matrix{Float64}}}(GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}([0.8 -0.1 0.2; 0.1 0.9 0.0; 0.0 0.0 0.7], [0.05 0.0 0.0; 0.0 0.05 0.0; 0.0 0.0 0.05], [0.0, 0.0, 0.0], [0.2 0.0 0.0; 0.0 0.2 0.0; 0.0 0.0 0.2]), GaussianObservationModel{Float64, Matrix{Float64}}([0.5 1.0 0.0; 0.3 0.8 0.1; … ; 0.4 0.6 0.2; 0.6 0.4 0.5], [0.1 0.0 … 0.0 0.0; 0.0 0.1 … 0.0 0.0; … ; 0.0 0.0 … 0.1 0.0; 0.0 0.0 … 0.0 0.1]), 3, 8, Bool[1, 1, 1, 1, 1, 1])</code></pre><p>Compute likelihoods: should match (up to numerical tolerance)</p><pre><code class="language-julia hljs">y_data = reshape(y_true, D, T, 1)
+x_smooth_orig, _ = smooth(true_lds, y_data)
+ll_orig = loglikelihood(x_smooth_orig[:,:,1], true_lds, y_true[:,:,1])
+
+print(&quot;
+&quot; * &quot;=&quot;^60 * &quot;
+&quot;)
+print(&quot;ROTATION / SIMILARITY INVARIANCE DEMONSTRATION
+&quot;)
+print(&quot;=&quot;^60 * &quot;
+&quot;)
+@printf(&quot;Original model likelihood: %.6f
+&quot;, ll_orig)
+
+for (name, R, model) in zip(rot_names, rotations, rotated_models)
+    x_s_rot, _ = smooth(model, y_data)
+    ll_rot = loglikelihood(x_s_rot[:,:,1], model, y_true[:,:,1])
+    @printf(&quot;%-24s  LL: %.6f  ΔLL: %.3e  cond(R): %-8.2f  orth? %s
+&quot;,
+            name, ll_rot, abs(ll_rot - ll_orig), cond(R), isorthogonal(R) ? &quot;yes&quot; : &quot;no&quot;)
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">
+============================================================
+ROTATION / SIMILARITY INVARIANCE DEMONSTRATION
+============================================================
+Original model likelihood: -826.154686
+R1: rot(1,2, 45°)         LL: -826.154686  ΔLL: 1.137e-13  cond(R): 1.00      orth? yes
+R2: rot(2,3, 90°)         LL: -826.154686  ΔLL: 1.137e-13  cond(R): 1.00      orth? yes
+R3: random orthogonal     LL: -826.154686  ΔLL: 2.274e-13  cond(R): 1.00      orth? yes
+R4: axis swap (1↔3)       LL: -826.154686  ΔLL: 0.000e+00  cond(R): 1.00      orth? yes
+R5: scaling+sign          LL: -826.154686  ΔLL: 2.274e-13  cond(R): 4.00      orth? no
+R6: permutation (1↔2)     LL: -826.154686  ΔLL: 1.137e-13  cond(R): 1.00      orth? yes</code></pre><h2 id="Visualize-Parameter-Differences-(Before-Alignment)"><a class="docs-heading-anchor" href="#Visualize-Parameter-Differences-(Before-Alignment)">Visualize Parameter Differences (Before Alignment)</a><a id="Visualize-Parameter-Differences-(Before-Alignment)-1"></a><a class="docs-heading-anchor-permalink" href="#Visualize-Parameter-Differences-(Before-Alignment)" title="Permalink"></a></h2><pre><code class="language-julia hljs">p1 = plot(layout=(2,2), size=(1000, 800))
+heatmap!(A_true, title=&quot;Original A&quot;, color=:RdBu, subplot=1, aspect_ratio=:equal)
+heatmap!(rotated_models[3].state_model.A, title=&quot;Rotated A (R3)&quot;, color=:RdBu, subplot=2, aspect_ratio=:equal)
+heatmap!(C_true, title=&quot;Original C&quot;, color=:RdBu, subplot=3, aspect_ratio=:equal)
+heatmap!(rotated_models[3].obs_model.C, title=&quot;Rotated C (R3)&quot;, color=:RdBu, subplot=4, aspect_ratio=:equal)</code></pre><img src="d750118a.svg" alt="Example block output"/><h2 id="Procrustes-Alignment:-Apples-to-Apples-Comparisons"><a class="docs-heading-anchor" href="#Procrustes-Alignment:-Apples-to-Apples-Comparisons">Procrustes Alignment: Apples-to-Apples Comparisons</a><a id="Procrustes-Alignment:-Apples-to-Apples-Comparisons-1"></a><a class="docs-heading-anchor-permalink" href="#Procrustes-Alignment:-Apples-to-Apples-Comparisons" title="Permalink"></a></h2><p>The latent coordinates are arbitrary: we can rotate them without changing the model&#39;s likelihood. To compare two fits (or a rotated copy) <strong>fairly</strong>, align the states with an orthogonal Procrustes transform R̂ that minimizes ‖R̂ X - Y‖_F.</p><pre><code class="language-julia hljs">function procrustes_R(X::AbstractMatrix, Y::AbstractMatrix; proper::Bool=false)
+    S = svd(Y * X&#39;)
+    R̂ = S.U * S.Vt                    # (not S.U * S.V!)
+    if proper &amp;&amp; det(R̂) &lt; 0           # optionally enforce det=+1
+        U2 = copy(S.U); U2[:,end] .= -U2[:,end]
+        R̂ = U2 * S.Vt
+    end
+    return R̂
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">procrustes_R (generic function with 1 method)</code></pre><p>Choose R3 for demonstration (random orthogonal)</p><pre><code class="language-julia hljs">R_idx = 3
+m_rot = rotated_models[R_idx]
+x_rot, _ = smooth(m_rot, y_data)
+
+Rhat = procrustes_R(x_rot[:,:,1], x_smooth_orig[:,:,1])  # map rotated -&gt; original
+state_align_relerr = norm(Rhat * x_rot[:,:,1] - x_smooth_orig[:,:,1]) / norm(x_smooth_orig[:,:,1])
+@printf(&quot;
+Procrustes state alignment (R%d): rel. error = %.3e
+&quot;, R_idx, state_align_relerr)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">
+Procrustes state alignment (R3): rel. error = 1.060e-15</code></pre><p>Align parameters via R̂ for direct visual comparison:   Ã = R̂ * A<em>rot * R̂&#39;     and     C̃ = C</em>rot * R̂&#39;</p><pre><code class="language-julia hljs">A_rot_aligned = Rhat * m_rot.state_model.A * Rhat&#39;
+C_rot_aligned = m_rot.obs_model.C * Rhat&#39;
+
+ΔA = norm(A_true - A_rot_aligned)
+ΔC = norm(C_true - C_rot_aligned)
+@printf(&quot;Aligned parameter diffs (R%d): ||ΔA||=%.3e  ||ΔC||=%.3e
+&quot;, R_idx, ΔA, ΔC)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Aligned parameter diffs (R3): ||ΔA||=1.653e-15  ||ΔC||=2.057e-15</code></pre><p>Visualize with matched color scales for fairness</p><pre><code class="language-julia hljs">Amin = minimum([minimum(A_true), minimum(A_rot_aligned)])
+Amax = maximum([maximum(A_true), maximum(A_rot_aligned)])
+Cmin = minimum([minimum(C_true), minimum(C_rot_aligned)])
+Cmax = maximum([maximum(C_true), maximum(C_rot_aligned)])
+
+p_align = plot(layout=(2,2), size=(1000, 800))
+heatmap!(A_true, title=&quot;Original A&quot;, color=:RdBu, subplot=1, aspect_ratio=:equal, clims=(Amin, Amax))
+heatmap!(A_rot_aligned, title=&quot;Aligned A (R3)&quot;, color=:RdBu, subplot=2, aspect_ratio=:equal, clims=(Amin, Amax))
+heatmap!(C_true, title=&quot;Original C&quot;, color=:RdBu, subplot=3, aspect_ratio=:equal, clims=(Cmin, Cmax))
+heatmap!(C_rot_aligned, title=&quot;Aligned C (R3)&quot;, color=:RdBu, subplot=4, aspect_ratio=:equal, clims=(Cmin, Cmax))</code></pre><img src="6ea33094.svg" alt="Example block output"/><p>Residual over time (after Procrustes): should be ~0 except numerical noise</p><pre><code class="language-julia hljs">restit = [norm(Rhat * x_rot[:, t, 1] - x_smooth_orig[:, t, 1]) for t in 1:T]
+plot(1:T, restit, lw=2, xlabel=&quot;time&quot;, ylabel=&quot;‖R̂ x_rot − x_orig‖₂&quot;,
+     title=&quot;Procrustes residual over time (R3)&quot;)</code></pre><img src="9bfea51e.svg" alt="Example block output"/><h2 id="Invariants:-What-*is*-identifiable?"><a class="docs-heading-anchor" href="#Invariants:-What-*is*-identifiable?">Invariants: What <em>is</em> identifiable?</a><a id="Invariants:-What-*is*-identifiable?-1"></a><a class="docs-heading-anchor-permalink" href="#Invariants:-What-*is*-identifiable?" title="Permalink"></a></h2><p>Similarity transforms preserve certain summaries:</p><ul><li>eigenvalues of A (up to ordering), hence modal timescales τ ≈ -1/log|λ|</li><li>column space of C (compare via principal angles)</li></ul><pre><code class="language-julia hljs">function invariants_summary(lds)
+    λ = eigvals(lds.state_model.A)
+    τ = [-1 / log(abs(l)) for l in λ]  # (real-mode heuristic)
+    return λ, τ
+end
+
+λ_true, τ_true = invariants_summary(true_lds)
+
+for (i, (name, model)) in enumerate(zip(rot_names, rotated_models))
+    λ_i, τ_i = invariants_summary(model)
+    θ = subspace_angles_deg(C_true, model.obs_model.C)
+    @printf(&quot;Invariant check %-24s  max|Δλ|=%.2e  max|Δτ|=%.2e  max angle(C)=%.3f°
+&quot;,
+            name,
+            maximum(abs.(sort(λ_true; by=abs) - sort(λ_i; by=abs))),
+            maximum(abs.(sort(τ_true; by=abs) - sort(τ_i; by=abs))),
+            maximum(θ))
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Invariant check R1: rot(1,2, 45°)         max|Δλ|=2.78e-17  max|Δτ|=0.00e+00  max angle(C)=0.000°
+Invariant check R2: rot(2,3, 90°)         max|Δλ|=2.78e-17  max|Δτ|=0.00e+00  max angle(C)=0.000°
+Invariant check R3: random orthogonal     max|Δλ|=7.77e-16  max|Δτ|=8.88e-15  max angle(C)=0.000°
+Invariant check R4: axis swap (1↔3)       max|Δλ|=0.00e+00  max|Δτ|=0.00e+00  max angle(C)=0.000°
+Invariant check R5: scaling+sign          max|Δλ|=0.00e+00  max|Δτ|=0.00e+00  max angle(C)=0.000°
+Invariant check R6: permutation (1↔2)     max|Δλ|=0.00e+00  max|Δτ|=0.00e+00  max angle(C)=0.000°</code></pre><h2 id="Observational-Equivalence:-Predictions-Match"><a class="docs-heading-anchor" href="#Observational-Equivalence:-Predictions-Match">Observational Equivalence: Predictions Match</a><a id="Observational-Equivalence:-Predictions-Match-1"></a><a class="docs-heading-anchor-permalink" href="#Observational-Equivalence:-Predictions-Match" title="Permalink"></a></h2><p>New data from a rotated model and prediction with both models should have identical error.</p><pre><code class="language-julia hljs">x_rot_new, y_rot_new = rand(rng, rotated_models[1]; tsteps=100, ntrials=1)
+
+test_data = reshape(y_rot_new, D, 100, 1)
+
+x_pred_orig, _ = smooth(true_lds, test_data)
+y_pred_orig = true_lds.obs_model.C * x_pred_orig[:, :, 1]
+
+x_pred_rot, _ = smooth(rotated_models[1], test_data)
+y_pred_rot = rotated_models[1].obs_model.C * x_pred_rot[:, :, 1]
+
+mse_orig = mean((y_rot_new[:, :, 1] - y_pred_orig).^2)
+mse_rot  = mean((y_rot_new[:, :, 1] - y_pred_rot).^2)
+@printf(&quot;
+Prediction MSE (same test seq): original=%.6f  rotated=%.6f
+&quot;, mse_orig, mse_rot)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">
+Prediction MSE (same test seq): original=0.084133  rotated=0.084133</code></pre><h2 id="Summary-Diagnostics-Across-Transforms"><a class="docs-heading-anchor" href="#Summary-Diagnostics-Across-Transforms">Summary Diagnostics Across Transforms</a><a id="Summary-Diagnostics-Across-Transforms-1"></a><a class="docs-heading-anchor-permalink" href="#Summary-Diagnostics-Across-Transforms" title="Permalink"></a></h2><p>A compact table: ΔLL, cond(R), orthogonality, max subspace angle for C, and Procrustes alignment error versus the original smoothed states.</p><pre><code class="language-julia hljs">struct RotDiag
+    name::String
+    dLL::Float64
+    condR::Float64
+    orth::Bool
+    max_angle_deg::Float64
+    proc_relerr::Float64
+end
+
+diagnostics = RotDiag[]
+
+for (name, R, model) in zip(rot_names, rotations, rotated_models)
+    x_s, _ = smooth(model, y_data)
+    ll = loglikelihood(x_s[:,:,1], model, y_true[:,:,1])
+    dLL = abs(ll - ll_orig)
+    Rhat_i = procrustes_R(x_s[:,:,1], x_smooth_orig[:,:,1])
+    relerr = norm(Rhat_i * x_s[:,:,1] - x_smooth_orig[:,:,1]) / max(norm(x_smooth_orig[:,:,1]), eps())
+    θ = subspace_angles_deg(C_true, model.obs_model.C)
+    push!(diagnostics, RotDiag(name, dLL, cond(R), isorthogonal(R), maximum(θ), relerr))
+end
+
+print(&quot;
+&quot; * &quot;-&quot;^90 * &quot;
+&quot;)
+@printf(&quot;%-24s | %-9s | %-8s | %-6s | %-14s | %-14s
+&quot;,
+        &quot;Transform&quot;, &quot;ΔLL&quot;, &quot;cond(R)&quot;, &quot;orth?&quot;, &quot;max angle(C)°&quot;, &quot;Procrustes err&quot;)
+print(&quot;-&quot;^90 * &quot;
+&quot;)
+for d in diagnostics
+    @printf(&quot;%-24s | %-.3e | %-8.2f | %-6s | %-14.3f | %-14.3e
+&quot;,
+            d.name, d.dLL, d.condR, d.orth ? &quot;yes&quot; : &quot;no&quot;, d.max_angle_deg, d.proc_relerr)
+end
+print(&quot;-&quot;^90 * &quot;
+&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">
+------------------------------------------------------------------------------------------
+Transform                | ΔLL       | cond(R)  | orth?  | max angle(C)°  | Procrustes err
+------------------------------------------------------------------------------------------
+R1: rot(1,2, 45°)        | 1.137e-13 | 1.00     | yes    | 0.000          | 5.690e-16
+R2: rot(2,3, 90°)        | 1.137e-13 | 1.00     | yes    | 0.000          | 2.838e-15
+R3: random orthogonal    | 2.274e-13 | 1.00     | yes    | 0.000          | 1.060e-15
+R4: axis swap (1↔3)      | 0.000e+00 | 1.00     | yes    | 0.000          | 3.091e-16
+R5: scaling+sign         | 2.274e-13 | 4.00     | no     | 0.000          | 7.117e-01
+R6: permutation (1↔2)    | 1.137e-13 | 1.00     | yes    | 0.000          | 5.198e-16
+------------------------------------------------------------------------------------------</code></pre><h2 id="Practical-Takeaways"><a class="docs-heading-anchor" href="#Practical-Takeaways">Practical Takeaways</a><a id="Practical-Takeaways-1"></a><a class="docs-heading-anchor-permalink" href="#Practical-Takeaways" title="Permalink"></a></h2><ul><li>Don’t interpret individual latent coordinates; they are defined only up to an invertible change of basis.</li><li>When comparing models/fits, either <strong>align</strong> with Procrustes or <strong>report invariants</strong> (eigenvalues/timescales, subspace angles, predictive metrics).</li><li>Watch conditioning: extreme transforms (large cond(R)) can inflate numerical errors even when theory says models are identical.</li><li>(Optional next step) Implement a small <strong>canonicalization</strong>: whiten Q≈I, real-Schur form for A, mode ordering &amp; sign conventions. This “fixes the gauge” so different runs are directly comparable without per-pair alignment.</li></ul><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../lds_model_selection_example/">« LDS Model Selection Example</a><a class="docs-footer-nextpage" href="../hidden_markov_model_example/">Hidden Markov Model Example »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Tuesday 16 September 2025 22:12">Tuesday 16 September 2025</span>. Using Julia version 1.11.7.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
