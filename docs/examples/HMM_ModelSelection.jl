@@ -120,98 +120,6 @@ function count_parameters(hmm)
     return transition_params + initial_params + emission_params
 end
 
-println("Fitting HMMs with different numbers of states...")
-
-for k in K_range
-    println("Fitting HMM with K=$k states...")
-    
-    hmm_k = initialize_hmm_kmeans(observations, k, rng)
-    
-    fit!(hmm_k, observations; max_iters=100, tol=1e-6)
-    
-    ll = loglikelihood(hmm_k, observations)
-    n_params = count_parameters(hmm_k)
-    aic_val = -2*ll + 2*n_params
-    bic_val = -2*ll + log(T)*n_params
-    
-    push!(results["K"], k)
-    push!(results["log_likelihood"], ll)
-    push!(results["AIC"], aic_val)
-    push!(results["BIC"], bic_val)
-    push!(results["n_params"], n_params)
-end
-
-# ## Visualize Model Selection Results
-
-# Create a comprehensive plot showing all criteria
-p2 = plot(layout=(2, 2), size=(800, 600))
-
-plot!(results["K"], results["log_likelihood"], 
-      marker=:circle, linewidth=2, label="Log-likelihood",
-      xlabel="Number of States (K)", ylabel="Log-likelihood",
-      title="Model Log-likelihood", subplot=1)
-vline!([K], linestyle=:dash, color=:red, label="True K=$K", subplot=1)
-
-plot!(results["K"], results["AIC"], 
-      marker=:circle, linewidth=2, label="AIC", color=:orange,
-      xlabel="Number of States (K)", ylabel="AIC",
-      title="Akaike Information Criterion", subplot=2)
-aic_min_idx = argmin(results["AIC"])
-vline!([results["K"][aic_min_idx]], linestyle=:dash, color=:orange, 
-       label="AIC min (K=$(results["K"][aic_min_idx]))", subplot=2)
-vline!([K], linestyle=:dash, color=:red, label="True K=$K", subplot=2)
-
-plot!(results["K"], results["BIC"], 
-      marker=:circle, linewidth=2, label="BIC", color=:green,
-      xlabel="Number of States (K)", ylabel="BIC",
-      title="Bayesian Information Criterion", subplot=3)
-bic_min_idx = argmin(results["BIC"])
-vline!([results["K"][bic_min_idx]], linestyle=:dash, color=:green, 
-       label="BIC min (K=$(results["K"][bic_min_idx]))", subplot=3)
-vline!([K], linestyle=:dash, color=:red, label="True K=$K", subplot=3)
-
-plot!(results["K"], results["n_params"], 
-      marker=:circle, linewidth=2, label="# Parameters", color=:purple,
-      xlabel="Number of States (K)", ylabel="Number of Parameters",
-      title="Model Complexity", subplot=4)
-
-display(p2)
-
- ## Interpreting Information Criteria
-#
-# **AIC (Akaike Information Criterion)**:
-# - Estimates relative model quality for prediction
-# - Asymptotically equivalent to leave-one-out cross-validation
-# - Tends to select more complex models (higher K)
-# - Better for prediction tasks
-#
-# **BIC (Bayesian Information Criterion)**:
-# - Estimates probability that model is true among candidates
-# - Stronger complexity penalty, especially for large datasets
-# - Tends to select simpler models (lower K)
-# - Better for identifying "true" model structure
-#
-# **Key insight**: Lower values are better for both AIC and BIC
-# (they measure "badness" - deviance plus penalty)
-
-# ## Cross-Validation: The Gold Standard
-#
-# Cross-validation provides the most honest estimate of generalization performance:
-# - Trains on subset of data, tests on held-out portion
-# - Directly measures what we care about: performance on unseen data
-# - Less dependent on specific penalty terms than AIC/BIC
-# - More computationally expensive but often worth it
-#
-# **Challenges for HMMs**:
-# - Temporal data makes random splits problematic
-# - Sequential structure should be preserved when possible
-# - We use contiguous blocks to maintain temporal coherence
-#
-# **Interpreting CV results**:
-# - Higher CV likelihood indicates better generalization
-# - Plateauing suggests additional complexity isn't helpful
-# - Large variance across folds may indicate unstable model
-
 function cross_validate_hmm(observations, k, n_folds=5)
     """Perform k-fold cross-validation for HMM with k states"""
     T = size(observations, 2)
@@ -268,53 +176,44 @@ aic_min_idx = argmin(results["AIC"])
 bic_min_idx = argmin(results["BIC"])
 cv_max_idx = argmax(results["CV_score"])
 
-# ## Summary of Results
-
-println("\n" * "="^50)
-println("MODEL SELECTION SUMMARY")
-println("="^50)
-println("True K: $K")
-println("AIC selects: K = $(results["K"][aic_min_idx])")
-println("BIC selects: K = $(results["K"][bic_min_idx])")
-println("Cross-validation selects: K = $(K_range[cv_max_idx])")
-println("\nDetailed Results:")
-println("K\tLog-lik\t\tAIC\t\tBIC\t\tCV Score")
-println("-"^60)
-for i in 1:length(K_range)
-    @printf("%d\t%.2f\t\t%.2f\t\t%.2f\t\t%.2f\n", 
-            results["K"][i], results["log_likelihood"][i], 
-            results["AIC"][i], results["BIC"][i], cv_scores[i])
-end
-
-# ## Practical Decision Framework
-#
-# When information criteria disagree (which is common), consider:
-#
-# **If BIC < AIC optimal K**:
-# - BIC favors simpler models, better for interpretation
-# - Choose BIC if you want parsimonious, interpretable model
-# - Choose AIC if prediction performance is primary goal
-#
-# **If all methods agree**:
-# - High confidence in the selected K
-# - Proceed with that choice
-#
-# **If results are highly variable**:
-# - May indicate insufficient data or poor model fit
-# - Consider ensemble approaches or different model class
-# - Examine residuals and model assumptions
-#
-# **Domain knowledge integration**:
-# - Use subject matter expertise to constrain K range
-# - Some applications have natural interpretations for states
-# - Don't ignore practical constraints (computational, interpretability)
-
-# ## Compare Best Models Visually
-
-# Fit models with AIC and BIC selected K values for visual comparison
 best_aic_k = results["K"][aic_min_idx]
 best_bic_k = results["K"][bic_min_idx]
 best_cv_k = results["K"][cv_max_idx]
+
+# ## Interpreting Information Criteria
+#
+# **AIC (Akaike Information Criterion)**:
+# - Estimates relative model quality for prediction
+# - Asymptotically equivalent to leave-one-out cross-validation
+# - Tends to select more complex models (higher K)
+# - Better for prediction tasks
+#
+# **BIC (Bayesian Information Criterion)**:
+# - Estimates probability that model is true among candidates
+# - Stronger complexity penalty, especially for large datasets
+# - Tends to select simpler models (lower K)
+# - Better for identifying "true" model structure
+#
+# **Key insight**: Lower values are better for both AIC and BIC
+# (they measure "badness" - deviance plus penalty)
+
+# ## Cross-Validation: The Gold Standard
+#
+# Cross-validation provides the most honest estimate of generalization performance:
+# - Trains on subset of data, tests on held-out portion
+# - Directly measures what we care about: performance on unseen data
+# - Less dependent on specific penalty terms than AIC/BIC
+# - More computationally expensive but often worth it
+#
+# **Challenges for HMMs**:
+# - Temporal data makes random splits problematic
+# - Sequential structure should be preserved when possible
+# - We use contiguous blocks to maintain temporal coherence
+#
+# **Interpreting CV results**:
+# - Higher CV likelihood indicates better generalization
+# - Plateauing suggests additional complexity isn't helpful
+# - Large variance across folds may indicate unstable model
 
 # ## Visualization of Model Selection Results
 # In our plots we will plot 1.) the loglikelihood 2.) negative AIC 3.) negative BIC and 4.) the loglikelihood of the test dataset
@@ -324,7 +223,6 @@ best_cv_k = results["K"][cv_max_idx]
 # Create comprehensive plot showing all criteria including CV
 p2 = plot(layout=(2, 2), size=(1000, 800))
 
-# Log-likelihood subplot
 plot!(results["K"], results["log_likelihood"], 
       marker=:circle, linewidth=2, label="Log-likelihood",
       xlabel="Number of States (K)", ylabel="Log-likelihood",
@@ -355,14 +253,13 @@ vline!([best_cv_k], linestyle=:dash, color=:blue,
        label="CV max (K=$best_cv_k)", subplot=4)
 vline!([K], linestyle=:dash, color=:red, label="True K=$K", subplot=4)
 
-display(p2)
+p2
 
 # ## Unified Model Selection Comparison
 # Create a single plot showing all criteria on normalized scales for direct comparison
 
 p3 = plot(size=(800, 500))
 
-# Normalize each metric to [0,1] for comparison
 norm_aic = (-results["AIC"] .- maximum(-results["AIC"])) ./ (maximum(-results["AIC"]) - minimum(-results["AIC"])) .+ 1
 norm_bic = (-results["BIC"] .- maximum(-results["BIC"])) ./ (maximum(-results["BIC"]) - minimum(-results["BIC"])) .+ 1
 norm_cv = (results["CV_score"] .- maximum(results["CV_score"])) ./ (maximum(results["CV_score"]) - minimum(results["CV_score"])) .+ 1
@@ -379,12 +276,11 @@ ylabel!("Normalized Score (lower is better)")
 title!("Unified Model Selection Comparison")
 vline!([K], linestyle=:dash, color=:red, linewidth=2, label="True K=$K")
 
-# Mark optimal points
 scatter!([best_aic_k], [norm_aic[aic_min_idx]], markersize=8, color=:orange, markershape=:star5, label="")
 scatter!([best_bic_k], [norm_bic[bic_min_idx]], markersize=8, color=:green, markershape=:star5, label="")
 scatter!([best_cv_k], [norm_cv[cv_max_idx]], markersize=8, color=:blue, markershape=:star5, label="");
 
-display(p3)
+p3
 
 # ## Compare ALL Best Models Visually (including CV)
 
@@ -422,8 +318,7 @@ scatter!(observations[1, :], observations[2, :], group=states_cv,
          xlabel="x1", ylabel="x2", title="Cross-Validation Model (K=$best_cv_k)",
          legend=false, alpha=0.7, subplot=4)
 
-display(p4)
-
+p4
 
 # ## Key Takeaways
 #

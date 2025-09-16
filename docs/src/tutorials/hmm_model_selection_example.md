@@ -222,6 +222,41 @@ best_bic_k = results["K"][bic_min_idx]
 best_cv_k = results["K"][cv_max_idx]
 ````
 
+## Interpreting Information Criteria
+
+**AIC (Akaike Information Criterion)**:
+- Estimates relative model quality for prediction
+- Asymptotically equivalent to leave-one-out cross-validation
+- Tends to select more complex models (higher K)
+- Better for prediction tasks
+
+**BIC (Bayesian Information Criterion)**:
+- Estimates probability that model is true among candidates
+- Stronger complexity penalty, especially for large datasets
+- Tends to select simpler models (lower K)
+- Better for identifying "true" model structure
+
+**Key insight**: Lower values are better for both AIC and BIC
+(they measure "badness" - deviance plus penalty)
+
+## Cross-Validation: The Gold Standard
+
+Cross-validation provides the most honest estimate of generalization performance:
+- Trains on subset of data, tests on held-out portion
+- Directly measures what we care about: performance on unseen data
+- Less dependent on specific penalty terms than AIC/BIC
+- More computationally expensive but often worth it
+
+**Challenges for HMMs**:
+- Temporal data makes random splits problematic
+- Sequential structure should be preserved when possible
+- We use contiguous blocks to maintain temporal coherence
+
+**Interpreting CV results**:
+- Higher CV likelihood indicates better generalization
+- Plateauing suggests additional complexity isn't helpful
+- Large variance across folds may indicate unstable model
+
 ## Visualization of Model Selection Results
 In our plots we will plot 1.) the loglikelihood 2.) negative AIC 3.) negative BIC and 4.) the loglikelihood of the test dataset
 We plot the negative AIC and BIC as those metrics are defined such that a lower score is better, so we invert the statistic, so
@@ -231,11 +266,7 @@ Create comprehensive plot showing all criteria including CV
 
 ````@example hmm_model_selection_example
 p2 = plot(layout=(2, 2), size=(1000, 800))
-````
 
-Log-likelihood subplot
-
-````@example hmm_model_selection_example
 plot!(results["K"], results["log_likelihood"],
       marker=:circle, linewidth=2, label="Log-likelihood",
       xlabel="Number of States (K)", ylabel="Log-likelihood",
@@ -266,7 +297,7 @@ vline!([best_cv_k], linestyle=:dash, color=:blue,
        label="CV max (K=$best_cv_k)", subplot=4)
 vline!([K], linestyle=:dash, color=:red, label="True K=$K", subplot=4)
 
-display(p2)
+p2
 ````
 
 ## Unified Model Selection Comparison
@@ -274,11 +305,7 @@ Create a single plot showing all criteria on normalized scales for direct compar
 
 ````@example hmm_model_selection_example
 p3 = plot(size=(800, 500))
-````
 
-Normalize each metric to [0,1] for comparison
-
-````@example hmm_model_selection_example
 norm_aic = (-results["AIC"] .- maximum(-results["AIC"])) ./ (maximum(-results["AIC"]) - minimum(-results["AIC"])) .+ 1
 norm_bic = (-results["BIC"] .- maximum(-results["BIC"])) ./ (maximum(-results["BIC"]) - minimum(-results["BIC"])) .+ 1
 norm_cv = (results["CV_score"] .- maximum(results["CV_score"])) ./ (maximum(results["CV_score"]) - minimum(results["CV_score"])) .+ 1
@@ -294,16 +321,12 @@ xlabel!("Number of States (K)")
 ylabel!("Normalized Score (lower is better)")
 title!("Unified Model Selection Comparison")
 vline!([K], linestyle=:dash, color=:red, linewidth=2, label="True K=$K")
-````
 
-Mark optimal points
-
-````@example hmm_model_selection_example
 scatter!([best_aic_k], [norm_aic[aic_min_idx]], markersize=8, color=:orange, markershape=:star5, label="")
 scatter!([best_bic_k], [norm_bic[bic_min_idx]], markersize=8, color=:green, markershape=:star5, label="")
 scatter!([best_cv_k], [norm_cv[cv_max_idx]], markersize=8, color=:blue, markershape=:star5, label="");
 
-display(p3)
+p3
 ````
 
 ## Compare ALL Best Models Visually (including CV)
@@ -352,7 +375,7 @@ scatter!(observations[1, :], observations[2, :], group=states_cv,
          xlabel="x1", ylabel="x2", title="Cross-Validation Model (K=$best_cv_k)",
          legend=false, alpha=0.7, subplot=4)
 
-display(p4)
+p4
 ````
 
 ## Key Takeaways

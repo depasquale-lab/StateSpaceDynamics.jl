@@ -86,6 +86,20 @@ C = permutedims([abs.(randn(rng, obs_dim))'; abs.(randn(rng, obs_dim))']);
 nothing #hide
 ````
 
+## Understanding Poisson LDS Parameters
+
+**Latent dynamics parameters (same as Gaussian LDS):**
+- A: How latent states evolve (rotation + contraction creates stable oscillation)
+- Q: Process noise (uncertainty in latent evolution)
+- x0, P0: Initial state distribution
+
+**Observation parameters (unique to Poisson case):**
+- C[i,:]: How latent dimensions affect log-rate of observation i
+  - Positive C[i,j]: latent dimension j increases firing rate of unit i
+  - Negative C[i,j]: latent dimension j decreases firing rate of unit i
+- d[i]: Baseline log-rate for observation i when latent state = 0
+  - exp(d[i]) gives the baseline firing rate
+
 ## The Exponential Link Function
 
 The key innovation is how we connect continuous latent states to discrete counts.
@@ -289,6 +303,11 @@ elbo, _ = fit!(naive_plds, observations; max_iter=25, tol=1e-6);
 
 print("Laplace-EM completed in $(length(elbo)) iterations\n")
 ````
+
+**Parameter identifiability:**
+- Scale ambiguity: (C, d) and (αC, d + log(α)) give same likelihood
+- Can be resolved by constraining norm of C or fixing one element
+- Rotation ambiguity in latent space (same as Gaussian LDS)
 
 Perform smoothing with learned parameters
 

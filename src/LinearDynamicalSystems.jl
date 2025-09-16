@@ -1146,61 +1146,66 @@ Fit a Linear Dynamical System using the Expectation-Maximization (EM) algorithm 
 function fit!(
     lds::LinearDynamicalSystem{T,S,O},
     y::AbstractArray{T,3};
-    max_iter::Int=1000, tol::Float64=1e-12
+    max_iter::Int=1000, tol::Float64=1e-12, progress=true
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+
     if eltype(y) !== T
         error("Observed data must be of type $(T); Got $(eltype(y)))")
     end
+
     # Initialize log-likelihood
     prev_ml = -T(Inf)
-
     # Create a vector to store the log-likelihood values
     mls = Vector{T}()
     param_diff = Vector{T}()
-
     sizehint!(mls, max_iter)  # Pre-allocate for efficiency
-
     # Create a FilterSmooth object
     tfs = initialize_FilterSmooth(lds, size(y, 2), size(y,3))
-
-    # Initialize progress bar
-    if O <: GaussianObservationModel
-        prog = Progress(max_iter; desc="Fitting LDS via EM...", barlen=50, showspeed=true)
-    elseif O <: PoissonObservationModel
-        prog = Progress(
-            max_iter; desc="Fitting Poisson LDS via LaPlaceEM...", barlen=50, showspeed=true
-        )
+    
+    # Initialize progress bar only if progress=true
+    prog = if progress
+        if O <: GaussianObservationModel
+            Progress(max_iter; desc="Fitting LDS via EM...", barlen=50, showspeed=true)
+        elseif O <: PoissonObservationModel
+            Progress(max_iter; desc="Fitting Poisson LDS via LaPlaceEM...", barlen=50, showspeed=true)
+        else
+            error("Unknown LDS model type")
+        end
     else
-        error("Unknown LDS model type")
+        nothing
     end
-
+    
     # Run EM
     for i in 1:max_iter
         # E-step
         ml = estep!(lds, tfs, y)
-
         # M-step
         Δparams = mstep!(lds, tfs, y)
         # Update the log-likelihood vector and parameter difference
-
         push!(mls, ml)
         push!(param_diff, Δparams)
-
-        # Update the progress bar
-        next!(prog)
-
+        
+        # Update the progress bar only if it exists
+        if progress && prog !== nothing
+            next!(prog)
+        end
+        
         # Check convergence
         if abs(ml - prev_ml) < tol
-            finish!(prog)
+            if progress && prog !== nothing
+                finish!(prog)
+            end
             return mls, param_diff
         end
-
+        
         prev_ml = ml
     end
-
+    
     # Finish the progress bar if max_iter is reached
-    finish!(prog)
-
+    if progress && prog !== nothing
+        finish!(prog)
+    end
+    
     return mls, param_diff
 end
 

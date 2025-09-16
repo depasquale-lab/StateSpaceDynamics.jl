@@ -38,10 +38,33 @@ nothing #hide
 
 ## Create and Simulate SLDS
 
-We'll create an SLDS with two modes representing different oscillatory dynamics:
-Mode 1 (slow oscillator) and Mode 2 (fast oscillator).
+## Understanding SLDS Components
+
+An SLDS has several key components we need to specify:
+
+**Discrete State Dynamics:**
+- `A_hmm`: Transition matrix between discrete states (how likely to switch)
+- `π₀`: Initial distribution over discrete states
+
+**Continuous State Dynamics (for each discrete state k):**
+- `Aₖ`: State transition matrix (how the continuous state evolves)
+- `Qₖ`: Process noise covariance (uncertainty in state evolution)
+- `Cₖ`: Observation matrix (how continuous states map to observations)
+- `R`: Observation noise covariance
+
+For our specific test case, we will create two distinct states:
+- **State 1:** A slower oscillator with low process noise
+- **State 2:** A faster oscillator with higher process noise
+We will multiply the dynamics matrices by a 0.95 scaling factor to provide stability (eigenvalues < 1),
+State 2 oscillates ~11x faster than State 1. The observation matrices C₁ and C₂ are different random projections.
+This means each discrete state not only has different dynamics, but also
+different ways of manifesting in the observed data.
 
 ````@example switching_linear_dynamical_system_example
+# Create the HMM parameters
+A_hmm = [0.92 0.08; 0.06 0.94]
+π₀ = [1.0, 0.0]
+
 state_dim = 2   # Latent state dimensionality
 obs_dim = 10    # Observation dimensionality
 K = 2           # Number of discrete modes
@@ -97,23 +120,26 @@ model = SwitchingLinearDynamicalSystem(
     π₀,
     K,
 );
-nothing #hide
+
+# Simulate data
+T = 1000
+x, y, z = rand(rng, model, 1000)
 ````
 
-## Simulate Data
+The simulation returns:
+- x: continuous latent states (2 × T matrix)
+- y: observations (10 × T matrix)
+- z: discrete state sequence (length T vector)
 
-Generate synthetic data showing mode switches between different dynamics.
-
-````@example switching_linear_dynamical_system_example
-T = 1000  # Number of time steps
-x, y, z = rand(rng, model, T);
-nothing #hide
-````
+Notice how the discrete states z create "regimes" in the continuous dynamics x.
 
 ## Visualize Latent Dynamics with Mode Shading
 
-Plot the true latent trajectories with background shading indicating the active mode.
-This shows how dynamics change when the system switches between modes.
+The plot shows the continuous latent dynamics (x₁, x₂) with background shading
+indicating the active discrete state. Notice:
+- Light blue regions: State 1 (slow, tight oscillations)
+- Light yellow regions: State 2 (fast, wide oscillations)
+- The system "remembers" where it was when switching between states
 
 ````@example switching_linear_dynamical_system_example
 p1 = plot(1:T, x[1, :], label=L"x_1", linewidth=1.5, color=:black)

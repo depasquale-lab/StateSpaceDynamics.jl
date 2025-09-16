@@ -10,6 +10,7 @@ DocMeta.setdocmeta!(StateSpaceDynamics, :DocTestSetup, :(using StateSpaceDynamic
 tutorials = [
     ("GaussianLDS.jl", "gaussian_latent_dynamics_example"),
     ("PoissonLDS.jl", "poisson_latent_dynamics_example"),
+    ("LDSModelSelection.jl", "lds_model_selection_example"),
     ("SLDS.jl", "switching_linear_dynamical_system_example"),
     ("HMM.jl", "hidden_markov_model_example"),
     ("HMM_ModelSelection.jl", "hmm_model_selection_example"),
@@ -53,6 +54,7 @@ makedocs(;
         "Tutorials" => [
             "Gaussian LDS Example" => "tutorials/gaussian_latent_dynamics_example.md",
             "Poisson LDS Example" => "tutorials/poisson_latent_dynamics_example.md",
+            "LDS Model Selection Example" => "tutorials/lds_model_selection_example.md",
             "Hidden Markov Model Example" => "tutorials/hidden_markov_model_example.md",
             "HMM Model Selection" => "tutorials/hmm_model_selection_example.md",
             "Gaussian GLM-HMM Example" => "tutorials/gaussian_glm_hmm_example.md",

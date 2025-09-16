@@ -34,7 +34,7 @@ A Linear Dynamical System describes how a hidden state evolves over time and
 generates observations through two key equations:
 
 **State Evolution**: $x_{t+1} = \mathbf{A} * x_t + ε_t$,  where $ε_t \sim N(0, \mathbf{Q})$
-**Observation**: $y_t = \mathvf{C} * x_t + η_t$,  where $η_t \sim N(0, \mathbf{R})$
+**Observation**: $y_t = \mathbf{C} * x_t + η_t$,  where $η_t \sim N(0, \mathbf{R})$
 
 The beauty of this formulation is that it separates the underlying dynamics
 (governed by A) from what we can actually measure (governed by C). The noise
