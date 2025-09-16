@@ -161,12 +161,6 @@ println("="^60)
 @printf("Best K: %d (CV Score: %.3f ± %.3f)\n", best_K, cv_mean[best_k_idx], cv_std[best_k_idx])
 println()
 
-# Print all results
-for (k_idx, K) in enumerate(K_candidates)
-    marker = K == best_K ? " ← BEST" : ""
-    @printf("K=%d: %.3f ± %.3f%s\n", K, cv_mean[k_idx], cv_std[k_idx], marker)
-end
-
 p2 = plot(K_candidates, cv_mean, 
           yerr=cv_std,
           marker=:circle, 

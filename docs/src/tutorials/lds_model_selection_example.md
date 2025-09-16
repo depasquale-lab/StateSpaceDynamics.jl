@@ -32,7 +32,8 @@ This system will exhibit interesting dynamics like oscillations and decay patter
 ````@example lds_model_selection_example
 K_true = 4  # True latent dimensionality
 D = 10       # Observation dimensionality
-T = 300     # Number of time steps
+T = 300;    # Number of time steps
+nothing #hide
 ````
 
 Create interesting dynamics: oscillating + decaying modes
@@ -44,33 +45,38 @@ Create interesting dynamics: oscillating + decaying modes
 true_A = [cos(θ) -sin(θ)  0.0    0.0;
           sin(θ)  cos(θ)  0.0    0.0;
           0.0     0.0     λ      0.0;
-          0.0     0.0     0.0    0.85*λ]
+          0.0     0.0     0.0    0.85*λ];
+nothing #hide
 ````
 
 Process noise covariance
 
 ````@example lds_model_selection_example
-true_Q = 0.05 * Matrix(I(K_true))
+true_Q = 0.05 * Matrix(I(K_true));
+nothing #hide
 ````
 
 Observation matrix - each latent dimension affects multiple observations
 
 ````@example lds_model_selection_example
 Random.seed!(rng, 42)
-true_C = randn(rng, D, K_true) * 0.6
+true_C = randn(rng, D, K_true) * 0.6;
+nothing #hide
 ````
 
 Observation noise covariance
 
 ````@example lds_model_selection_example
-true_R = 0.1 * Matrix(I(D))
+true_R = 0.1 * Matrix(I(D));
+nothing #hide
 ````
 
 Initial state parameters
 
 ````@example lds_model_selection_example
 true_μ0 = zeros(K_true)
-true_Σ0 = 0.1 * Matrix(I(K_true))
+true_Σ0 = 0.1 * Matrix(I(K_true));
+nothing #hide
 ````
 
 Create the true LDS
@@ -82,13 +88,15 @@ true_lds = LinearDynamicalSystem(
     K_true,
     D,
     fill(true, 6)
-)
+);
+nothing #hide
 ````
 
 Generate ground truth data
 
 ````@example lds_model_selection_example
-latent_states, observations = rand(rng, true_lds; tsteps=T, ntrials=1)
+latent_states, observations = rand(rng, true_lds; tsteps=T, ntrials=1);
+nothing #hide
 ````
 
 Visualize the true latent dynamics and observations
@@ -126,7 +134,8 @@ y_data = reshape(observations, D, T, 1)  # (obs_dim, tsteps, ntrials)
 # Cross-Validation Setup
 K_candidates = 1:8  # Test latent dimensions from 1 to 8
 n_folds = 5         # Number of CV folds
-fold_size = T ÷ n_folds
+fold_size = T ÷ n_folds;
+nothing #hide
 ````
 
 Storage for CV results
@@ -134,7 +143,7 @@ Storage for CV results
 ````@example lds_model_selection_example
 cv_scores = zeros(length(K_candidates), n_folds)
 cv_mean = zeros(length(K_candidates))
-cv_std = zeros(length(K_candidates))
+cv_std = zeros(length(K_candidates));
 
 println("Starting Cross-Validation for Model Selection...")
 println("="^60)
@@ -202,15 +211,6 @@ println("="^60)
 @printf("True K: %d\n", K_true)
 @printf("Best K: %d (CV Score: %.3f ± %.3f)\n", best_K, cv_mean[best_k_idx], cv_std[best_k_idx])
 println()
-````
-
-Print all results
-
-````@example lds_model_selection_example
-for (k_idx, K) in enumerate(K_candidates)
-    marker = K == best_K ? " ← BEST" : ""
-    @printf("K=%d: %.3f ± %.3f%s\n", K, cv_mean[k_idx], cv_std[k_idx], marker)
-end
 
 p2 = plot(K_candidates, cv_mean,
           yerr=cv_std,
@@ -229,9 +229,6 @@ vline!([best_K], linestyle=:dot, color=:red, linewidth=2,
        annotations=[(best_K, maximum(cv_mean)*0.8, "Selected K=$best_K", :red)])
 
 p2
-
-# Fit Final Model with Optimal K
-println("\nFitting final model with K = $best_K...")
 ````
 
 Initialize final model
@@ -304,11 +301,6 @@ plot!(xlabel="Time",
       subplot=2)
 
 p3
-
-# Model Comparison Summary
-println("\n" * "="^60)
-println("FINAL MODEL COMPARISON:")
-println("="^60)
 ````
 
 Compute reconstruction error
@@ -321,21 +313,6 @@ y_pred = final_lds.obs_model.C * x_learned
 reconstruction_error = mean((observations - y_pred).^2)
 
 @printf("Reconstruction MSE: %.6f\n", reconstruction_error)
-````
-
-Compare key statistics
-
-````@example lds_model_selection_example
-if best_K == K_true
-    println("✓ Cross-validation correctly identified the true dimensionality!")
-else
-    println("⚠ Cross-validation selected K=$best_K, but true K=$K_true")
-    if best_K < K_true
-        println("  → Model may be underfitting (missing dynamics)")
-    else
-        println("  → Model may be overfitting (extra noise dimensions)")
-    end
-end
 ````
 
 ---
