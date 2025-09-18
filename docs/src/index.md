@@ -111,7 +111,15 @@ lds = LinearDynamicalSystem(state_model, obs_model, latent_dim, obs_dim, fill(tr
 
 ## Contributing
 
-If you encounter a bug or would like to contribute to the package, please [open an issue](https://github.com/depasquale-lab/StateSpaceDynamics.jl/issues) on our GitHub repository. Once the suggested change has received positive feedback feel free to submit a PR adhering to the [blue](https://github.com/JuliaDiff/BlueStyle) style guide. 
+If you encounter a bug or would like to contribute to the package, please [open an issue](https://github.com/depasquale-lab/StateSpaceDynamics.jl/issues) on our GitHub repository. Once the suggested change has received positive feedback, feel free to submit a PR adhering to the [BlueStyle](https://github.com/JuliaDiff/BlueStyle) guide.
+
+Please include or update **tests** for any user-facing change. Tests live in the `test/` folder and are run with:
+
+```julia
+julia --project -e 'using Pkg; Pkg.test()'
+# or from the Pkg REPL by typing "]":
+add StateSpaceDynamics
+```
 
 ## Citing StateSpaceDynamics.jl
 

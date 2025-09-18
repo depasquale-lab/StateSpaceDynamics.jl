@@ -173,9 +173,9 @@ p2 = plot(K_candidates, cv_mean,
           size=(800, 500))
 
 vline!([K_true], linestyle=:dash, color=:green, linewidth=2, 
-       annotations=[(K_true, maximum(cv_mean)*0.9, "True K=$K_true", :green)])
+       annotations=[(K_true, maximum(cv_mean)-20, "True K=$K_true", :green)])
 vline!([best_K], linestyle=:dot, color=:red, linewidth=2,
-       annotations=[(best_K, maximum(cv_mean)*0.8, "Selected K=$best_K", :red)])
+       annotations=[(best_K, maximum(cv_mean)-30, "Selected K=$best_K", :red)])
 
 p2
 

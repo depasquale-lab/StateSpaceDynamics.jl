@@ -204,7 +204,7 @@ p2 = plot(mls, xlabel="Iteration", ylabel="ELBO",
           marker=:circle, markersize=3, lw=2,
           legend=false, color=:darkgreen)
 
-annotate!(p2, length(mls)*0.7, mls[end]*0.98,
+annotate!(p2, length(mls)*0.7, mls[end]*0.5,
     text("Final ELBO: $(round(mls[end], digits=1))", 10))
 ````
 
@@ -281,7 +281,7 @@ Visualize mode assignments over time (first 200 time steps for clarity)
 ````@example switching_linear_dynamical_system_example
 t_subset = 1:200
 true_modes = reshape(z[t_subset], 1, :)
-decoded_modes = reshape(z_aligned[t_subset], 1, :)
+decoded_modes = reshape(z_aligned[t_subset], 1, :);
 
 p4 = plot(
     heatmap(true_modes, colormap=:roma, title="True Mode Sequence",
@@ -290,35 +290,6 @@ p4 = plot(
            xlabel="Time Steps (1-200)", yticks=false, colorbar=false),
     layout=(2, 1), size=(800, 300)
 )
-````
-
-## Parameter Recovery Assessment
-
-````@example switching_linear_dynamical_system_example
-print("\n=== Parameter Recovery Assessment ===\n")
-````
-
-Compare HMM transition matrices
-
-````@example switching_linear_dynamical_system_example
-A_error = norm(A_hmm - learned_model.A) / norm(A_hmm)
-print("HMM transition matrix error: $(round(A_error*100, digits=1))%\n")
-````
-
-Compare dynamics matrices for each mode
-
-````@example switching_linear_dynamical_system_example
-for k in 1:K
-    A_true = k == 1 ? A₁ : A₂
-    A_learned = learned_model.B[k].state_model.A
-    dyn_error = norm(A_true - A_learned) / norm(A_true)
-    print("Mode $k dynamics error: $(round(dyn_error*100, digits=1))%\n")
-end
-
-print("True vs. Learned HMM Transitions:\n")
-print("True A_hmm:\n$(round.(A_hmm, digits=3))\n")
-print("Learned A_hmm:\n$(round.(learned_model.A, digits=3))\n");
-nothing #hide
 ````
 
 ## Summary

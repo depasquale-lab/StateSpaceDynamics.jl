@@ -66,8 +66,7 @@ Each mode in the `B` vector contains its own `LinearDynamicalSystem` with:
 You can generate synthetic data from an SLDS to test algorithms or create simulated datasets:
 
 ```@docs
-Random.rand(rng::AbstractRNG, slds::SwitchingLinearDynamicalSystem, T::Int)
-Random.rand(slds::SwitchingLinearDynamicalSystem, T::Int)
+rand(rng::AbstractRNG, slds::SwitchingLinearDynamicalSystem, T::Int)
 ```
 
 The sampling process follows the generative model:
@@ -113,10 +112,6 @@ The E-step converges when the ELBO stabilizes, ensuring consistency between disc
 ### Maximization Step
 
 The M-step updates all model parameters using weighted maximum likelihood:
-
-```@docs
-mstep!(slds::AbstractHMM, FS::Vector{FilterSmooth{T}}, y::AbstractMatrix{T}, FB::ForwardBackward) where {T<:Real}
-```
 
 **Discrete state parameters:**
 

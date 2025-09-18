@@ -1,4 +1,4 @@
-export SwitchingLinearDynamicalSystem, fit!, initialize_slds, variational_expectation!
+export SwitchingLinearDynamicalSystem, fit!, initialize_slds, variational_expectation!, rand
 
 """
 Switching Linear Dynamical System
