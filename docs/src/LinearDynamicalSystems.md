@@ -139,6 +139,31 @@ Despite the requirement of inverting a Hessian of dimension ``(d \times T) \time
 
 Given the latent structure of state-space models, we must rely on either the Expectation-Maximization (EM) or Variational Inference (VI) approaches to learn the parameters of the model. StateSpaceDynamics.jl supports both EM and VI. For LDS models, we can use Laplace EM, where we approximate the posterior of the latent state path using the Laplace approximation as outlined above. Using these approximate posteriors (or exact ones in the Gaussian case), we can apply closed-form updates for the model parameters.
 
+!!! warning "Identifiability caveats in LDS"
+    LDS parameters are **not uniquely identifiable**. For any invertible matrix $$S$$,
+    the reparameterization
+    ```math
+    \begin{aligned}
+    x'_t &= S x_t,\\
+    A' &= S A S^{-1},\\
+    C' &= C S^{-1},\\
+    Q' &= S Q S^\top,\\
+    R' &= R
+    \end{aligned}
+    ```
+    yields the **same likelihood**. Practical consequences:
+    
+    - **Scale/rotation ambiguity:** the latent space can be arbitrarily scaled/rotated.
+    - **Sign & permutation flips:** columns of $$C$$ (and corresponding rows/cols of $$A$$) can swap or flip signs with no change in fit.
+    
+    **Common remedies**
+    
+    - Fix a convention for the latent scale, e.g. set $$Q = I$$ or constrain $$\mathrm{diag}(Q)=1$$.
+    - Encourage a canonical orientation, e.g. enforce **orthonormal columns in $$C$$** (up to sign) after each M-step. (Not yet implemented)
+    - When comparing fits across runs, align parameters via a **Procrustes** or **Hungarian** matching step.
+    
+    These issues affect **parameter interpretability** but not **predictive performance**; be cautious when interpreting individual entries of $$A$$, $$C$$, or $$Q$$.
+
 ```@docs
 fit!(lds::LinearDynamicalSystem{T,S,O}, y::AbstractArray{T,3}; max_iter::Int=1000, tol::Float64=1e-12) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
 ```
