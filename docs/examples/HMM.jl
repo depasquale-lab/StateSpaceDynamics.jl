@@ -137,9 +137,7 @@ p2 = plot(lls, xlabel="EM Iteration", ylabel="Log-Likelihood",
           title="EM Algorithm Convergence", legend=false,
           marker=:circle, markersize=3, lw=2, color=:darkblue)
 
-print("Learned parameters:\n")
-print("State 1: μ = $(round.(test_model.B[1].μ, digits=3)), σ² = $(round(test_model.B[1].Σ[1,1], digits=3))\n")
-print("State 2: μ = $(round.(test_model.B[2].μ, digits=3)), σ² = $(round(test_model.B[2].Σ[1,1], digits=3))\n");
+p2
 
 # ## Hidden State Decoding with Viterbi
 

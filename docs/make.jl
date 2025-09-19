@@ -66,8 +66,7 @@ makedocs(;
             "Poisson Mixture Model Example" => "tutorials/poisson_mixture_model_example.md",
             "Probabilistic PCA Example" => "tutorials/Probabilistic_PCA_example.md",
             "Switching Linear Dynamical System Example" => "tutorials/switching_linear_dynamical_system_example.md",
-        ],
-        "Miscellaneous" => "Misc.md",
+        ]
     ],
     checkdocs = :exports,
     warnonly = true
