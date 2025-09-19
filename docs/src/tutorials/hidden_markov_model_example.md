@@ -43,7 +43,7 @@ output_dim = 2;  # Each observation is a 2D vector
 nothing #hide
 ````
 
-Define state transition dynamics: $A_{ij} = P(\text{state}_t = j \mid \text{state}_{t-1} = i)$
+Define state transition dynamics: $A_{ij} = P(\text{state}_t = j \mid \text{state}_{t-1} = i)$  \\
 High diagonal values mean states are "sticky" (tend to persist)
 
 ````@example hidden_markov_model_example
