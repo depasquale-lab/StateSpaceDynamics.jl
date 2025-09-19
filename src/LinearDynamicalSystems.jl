@@ -181,6 +181,10 @@ end
     Random.rand(rng::AbstractRNG, lds::LinearDynamicalSystem; tsteps::Int, ntrials::Int)
 
 Sample from a Linear Dynamical System.
+
+# Returns
+- `x::Array{T,3}`: The latent states of shape `(latent_dim, tsteps, ntrials)`.
+- `y::Array{T,3}`: The observations of shape `(obs_dim, tsteps, ntrials)`.
 """
 function Random.rand(lds::LinearDynamicalSystem; kwargs...)
     return rand(Random.default_rng(), lds; kwargs...)
