@@ -204,7 +204,7 @@ p2 = plot(mls, xlabel="Iteration", ylabel="ELBO",
           marker=:circle, markersize=3, lw=2,
           legend=false, color=:darkgreen)
 
-annotate!(p2, length(mls)*0.7, mls[end]*0.5,
+annotate!(p2, length(mls)*0.7, mls[end]-10,
     text("Final ELBO: $(round(mls[end], digits=1))", 10))
 ````
 

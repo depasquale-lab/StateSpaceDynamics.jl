@@ -195,8 +195,8 @@ for (k_idx, K) in enumerate(K_candidates)
     end
 
     cv_scores[k_idx, :] = fold_scores
-    cv_mean[k_idx] = mean(fold_scores[isfinite.(fold_scores)])
-    cv_std[k_idx] = std(fold_scores[isfinite.(fold_scores)])
+    cv_mean[k_idx] = mean(fold_scores)
+    cv_std[k_idx] = std(fold_scores)
 
     @printf("  K=%d: CV Score = %.3f ± %.3f\n", K, cv_mean[k_idx], cv_std[k_idx])
 end
@@ -224,9 +224,9 @@ p2 = plot(K_candidates, cv_mean,
           size=(800, 500))
 
 vline!([K_true], linestyle=:dash, color=:green, linewidth=2,
-       annotations=[(K_true, maximum(cv_mean)*0.6, "True K=$K_true", :green)])
+       annotations=[(K_true, maximum(cv_mean)-20, "True K=$K_true", :green)])
 vline!([best_K], linestyle=:dot, color=:red, linewidth=2,
-       annotations=[(best_K, maximum(cv_mean)*0.5, "Selected K=$best_K", :red)])
+       annotations=[(best_K, maximum(cv_mean)-30, "Selected K=$best_K", :red)])
 
 p2
 ````

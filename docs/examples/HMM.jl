@@ -30,7 +30,7 @@ rng = StableRNG(1234);
 
 output_dim = 2;  # Each observation is a 2D vector
 
-# Define state transition dynamics: $A_{ij} = P(\text{state}_t = j \mid \text{state}_{t-1} = i)$
+# Define state transition dynamics: $A_{ij} = P(\text{state}_t = j \mid \text{state}_{t-1} = i)$  \\
 # High diagonal values mean states are "sticky" (tend to persist)
 A = [0.99 0.01;    # From state 1: 99% stay, 1% switch to state 2
      0.05 0.95];   # From state 2: 5% switch to state 1, 95% stay
