@@ -23,7 +23,7 @@ end
 
 Generate synthetic data with switching LDS models
 
-#Arguments 
+# Arguments 
 - `rng:AbstractRNG`: Random number generator
 - `slds::SwitchingLinearDynamicalSystem`: The switching LDS model 
 - `T::Int`: Number of time steps to sample
@@ -163,7 +163,7 @@ Fit a Switching Linear Dynamical System using the variational Expectation-Maximi
 
 # Arguments
 - `slds::SwitchingLinearDynamicalSystem`: The Switching Linear Dynamical System to be fitted.
-- `y::Matrix{T}`: Observed data, size (obs_dim, T_steps).
+- `y::Matrix{T}`: Observed data, size `(obs_dim, T_steps)`.
 
 # Keyword Arguments
 - `max_iter::Int=1000`: Maximum number of EM iterations.

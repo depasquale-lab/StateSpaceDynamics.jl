@@ -153,7 +153,7 @@ plot!(subplot=2, yticks=(-lim_emissions .* (obs_dim-1:-1:0), [L"y_{%$n}" for n i
 
 # ## The Learning Problem
 #
-# In real applications, we only observe y_t (the emissions) - the latent states x_t
+# In real applications, we only observe $y_t$ (the emissions) - the latent states $x_t$
 # are hidden from us. Our challenge is to recover both:
 # 1. The system parameters (A, Q, C, R) that generated the data
 # 2. The most likely latent state sequence given our observations
@@ -210,7 +210,7 @@ plot!(yticks=(lim_states .* (0:latent_dim-1), [L"x_%$d" for d in 1:latent_dim]),
 #
 # **E-step (Expectation)**: Given current parameter estimates, compute the posterior
 # distribution over latent states using the Kalman smoother. This gives us
-# p(x_1:T | y_1:T, θ_current).
+# `p(x_{1:T} | y_1:T, θ_current)`.
 #
 # **M-step (Maximization)**: Given the state estimates from the E-step, update
 # the parameters to maximize the expected log-likelihood. This involves solving
