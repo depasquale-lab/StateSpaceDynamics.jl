@@ -106,12 +106,12 @@ The key innovation is how we connect continuous latent states to discrete counts
 Instead of linear observations y = Cx + noise, we use:
 
 $λᵢ(t) = exp(Cᵢᵀx_t + dᵢ)$
-$yᵢ(t) ~ Poisson(λᵢ(t))$
+$yᵢ(t) \sim Poisson(λᵢ(t))$
 
 The exponential ensures rates are always positive (required for Poisson), and
 the log-linear relationship means latent states multiplicatively affect firing rates.
 
-The baseline parameter d_i sets the minimum firing rate when latent states are zero.
+The baseline parameter $d_i$ sets the minimum firing rate when latent states are zero.
 
 Construct the model components
 

@@ -19,7 +19,7 @@ SwitchingLinearDynamicalSystem
 
 ## Mathematical Formulation
 
-An SLDS with $K$ discrete states is defined by the following generative model:
+An SLDS with ``K`` discrete states is defined by the following generative model:
 
 ```math
 \begin{align*}
@@ -58,8 +58,8 @@ end
 
 Each mode in the `B` vector contains its own `LinearDynamicalSystem` with:
 
-- **State model**: Defines the continuous latent dynamics $F_k$, $Q_k$
-- **Observation model**: Defines the emission process $C_k$, $R_k$
+- **State model**: Defines the continuous latent dynamics ``F_k``, ``Q_k``
+- **Observation model**: Defines the emission process ``C_k``, ``R_k``
 
 ## Sampling from SLDS
 
@@ -71,9 +71,9 @@ rand(rng::AbstractRNG, slds::SwitchingLinearDynamicalSystem, T::Int)
 
 The sampling process follows the generative model:
 
-1. **Initialize**: Sample initial discrete state from $\pi_k$ and initial continuous state
+1. **Initialize**: Sample initial discrete state from ``\pi_k`` and initial continuous state
 2. **For each time step**:
-   - Sample next discrete state based on current state and transition matrix $A$
+   - Sample next discrete state based on current state and transition matrix ``A``
    - Sample continuous state using the dynamics of the current discrete state
    - Generate observation using the observation model of the current discrete state
 
@@ -93,14 +93,14 @@ The variational EM algorithm maximizes the **Evidence Lower Bound (ELBO)** inste
 
 The E-step iteratively updates the variational distributions until convergence. This involves two coupled updates:
 
-**1. Update continuous state posteriors ($q(z_{1:T})$):**
-For each discrete state $k$, run weighted Kalman smoothing:
+**1. Update continuous state posteriors (``q(z_{1:T})``):**
+For each discrete state ``k``, run weighted Kalman smoothing:
 
 ```math
 q(z_{1:T} \mid s_{1:T} = k) = \prod_{t=1}^T \mathcal{N}(z_t; \hat{z}_{t|T}^{(k)}, P_{t|T}^{(k)})
 ```
 
-**2. Update discrete state posteriors ($q(s_{1:T})$):**
+**2. Update discrete state posteriors (``q(s_{1:T})``):**
 Run forward-backward algorithm with observation likelihoods computed from current continuous posteriors:
 
 ```math
@@ -115,17 +115,17 @@ The M-step updates all model parameters using weighted maximum likelihood:
 
 **Discrete state parameters:**
 
-- Initial distribution: $\pi_k^{(new)} = \gamma_1(k)$
-- Transition matrix: $A_{ij}^{(new)} = \frac{\sum_{t=1}^{T-1} \xi_{t,t+1}(i,j)}{\sum_{t=1}^{T-1} \gamma_t(i)}$
+- Initial distribution: ``\pi_k^{(new)} = \gamma_1(k)``
+- Transition matrix: ``A_{ij}^{(new)} = \frac{\sum_{t=1}^{T-1} \xi_{t,t+1}(i,j)}{\sum_{t=1}^{T-1} \gamma_t(i)}``
 
-**Continuous state parameters for each mode $k$:**
+**Continuous state parameters for each mode ``k``:**
 
 Using sufficient statistics from weighted Kalman smoothing:
 
-- Dynamics matrix: $F_k^{(new)}$ from weighted regression
-- Process covariance: $Q_k^{(new)}$ from weighted residuals
-- Observation matrix: $C_k^{(new)}$ from weighted regression
-- Initial state parameters: $\mu_0^{(k)}, P_0^{(k)}$
+- Dynamics matrix: ``F_k^{(new)}`` from weighted regression
+- Process covariance: ``Q_k^{(new)}`` from weighted residuals
+- Observation matrix: ``C_k^{(new)}`` from weighted regression
+- Initial state parameters: ``\mu_0^{(k)}, P_0^{(k)}``
 
 ## Evidence Lower Bound (ELBO)
 

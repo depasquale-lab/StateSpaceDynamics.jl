@@ -2,7 +2,7 @@
 EditURL = "../../examples/LDSModelSelection.jl"
 ```
 
-Choosing Latent Dimensionality for Linear Dynamical Systems (LDS)
+# Choosing Latent Dimensionality for Linear Dynamical Systems (LDS)
 One of the most critical decisions when fitting an LDS is selecting the latent dimensionality K.
 Cross-validation is the universal approach that works for ANY state-space model - Gaussian LDS,
 Poisson LDS, nonlinear SSMs, etc. This tutorial demonstrates robust CV-based model selection.
@@ -254,10 +254,9 @@ Fit on full dataset
 
 ````@example lds_model_selection_example
 final_lls, _ = fit!(final_lds, y_data; max_iter=500, tol=1e-8)
-
-# Compare Learned vs True Dynamics
 ````
 
+Compare Learned vs True Dynamics
 Use the correct input format for smooth function (needs 3D array)
 
 ````@example lds_model_selection_example
@@ -304,7 +303,7 @@ p3
 ````
 
 Compute reconstruction error
-x_learned is now (latent_dim, tsteps, 1), so we need to handle the singleton trial dimension
+`x_learned` is now `(latent_dim, tsteps, 1)`, so we need to handle the singleton trial dimension
 
 ````@example lds_model_selection_example
 x_learned = x_learned[:, :, 1]
