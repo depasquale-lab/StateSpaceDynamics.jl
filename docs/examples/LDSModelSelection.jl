@@ -144,9 +144,9 @@ for (k_idx, K) in enumerate(K_candidates)
     end
     
     cv_scores[k_idx, :] = fold_scores
-    cv_mean[k_idx] = mean(fold_scores[isfinite.(fold_scores)])
-    cv_std[k_idx] = std(fold_scores[isfinite.(fold_scores)])
-    
+    cv_mean[k_idx] = mean(fold_scores)
+    cv_std[k_idx] = std(fold_scores)
+
     @printf("  K=%d: CV Score = %.3f ± %.3f\n", K, cv_mean[k_idx], cv_std[k_idx])
 end
 
