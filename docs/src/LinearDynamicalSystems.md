@@ -30,12 +30,12 @@ The generative model is given by:
 
 Where:
 
-- `x_t` is the hidden state at time `t`
-- `y_t` is the observed data at time `t`  
-- `A` is the state transition matrix
-- `C` is the observation matrix
-- `Q` is the process noise covariance
-- `R` is the observation noise covariance
+- ``x_t`` is the hidden state at time ``t``
+- ``y_t`` is the observed data at time ``t``  
+- ``A`` is the state transition matrix
+- ``C`` is the observation matrix
+- ``Q`` is the process noise covariance
+- ``R`` is the observation noise covariance
 
 This can equivalently be written in equation form:
 
@@ -48,8 +48,8 @@ This can equivalently be written in equation form:
 
 Where:
 
-- `ε_t ~ N(0, Q)` is the process noise
-- `η_t ~ N(0, R)` is the observation noise
+- ``ε_t ~ N(0, Q)`` is the process noise
+- ``η_t ~ N(0, R)`` is the observation noise
 
 ```@docs
 GaussianStateModel

@@ -6,7 +6,7 @@ StateSpaceDynamics.jl is a comprehensive Julia package for state space modeling,
 
 To install
 [StateSpaceDynamics.jl](https://github.com/depasquale-lab/StateSpaceDynamics.jl), start up
-Julia and type the following code-snipped into the REPL.
+Julia and type the following code snippet into the REPL.
 
 ```julia
 using Pkg

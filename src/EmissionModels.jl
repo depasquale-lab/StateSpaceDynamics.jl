@@ -212,7 +212,7 @@ Store a Gaussian regression Emission model.
 - `input_dim::Int`: Dimension of the input data.
 - `output_dim::Int`: Dimension of the output data.
 - `include_intercept::Bool`: Whether to include an intercept term; if true, the first column of β is assumed to be the intercept/bias.
-- `β::AbstractMatrix{<:Real} = if include_intercept zeros(input_dim + 1, output_dim) else zeros(input_dim, output_dim) end`: Coefficient matrix of the model. Shape input_dim by output_dim. The first row are the intercept terms, if included.
+- `β::AbstractMatrix{<:Real} = if include_intercept zeros(input_dim + 1, output_dim) else zeros(input_dim, output_dim) end`: Coefficient matrix of the model. Shape `input_dim` by `output_dim`. The first row are the intercept terms, if included.
 - `Σ::AbstractMatrix{<:Real}`: Covariance matrix of the model.
 - `λ:<Real`: Regularization parameter.
 """
@@ -923,13 +923,15 @@ end
 Fit a regression emission model give input data `X`, output data `y`, and weights `w`.
 
 # Arguments
-    - `model::RegressionEmission`: A regression emission model.
-    - `X::AbstractMatrix{<:Real}:`: Input data.
-    - `y::AbstractMatrix{<:Real}`: Output data.
-    - `w::AbstractVector{<:Real}`: Weights to define each point's contribution to the fit.
+
+- `model::RegressionEmission`: A regression emission model.
+- `X::AbstractMatrix{<:Real}:`: Input data.
+- `y::AbstractMatrix{<:Real}`: Output data.
+- `w::AbstractVector{<:Real}`: Weights to define each point's contribution to the fit.
 
 # Returns
-    - `model::RegressionEmission`: The regression model with the newly updated parameters.
+
+- `model::RegressionEmission`: The regression model with the newly updated parameters.
 
 """
 function fit!(

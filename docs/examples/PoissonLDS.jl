@@ -58,36 +58,36 @@ P0 = Matrix(0.1 * I(latent_dim));   # Initial state covariance
 
 log_d = log.(fill(0.1, obs_dim));    # Log baseline rates (small positive rates)
 
-# Observation matrix C: maps 2D latent states to log-rates for each observed dimension
+# Observation matrix $\mathbf{C}$: maps 2D latent states to log-rates for each observed dimension
 # Use positive values so latent activity increases firing rates
 C = permutedims([abs.(randn(rng, obs_dim))'; abs.(randn(rng, obs_dim))']);
 
 # ## Understanding Poisson LDS Parameters
 #
 # **Latent dynamics parameters (same as Gaussian LDS):**
-# - A: How latent states evolve (rotation + contraction creates stable oscillation)
-# - Q: Process noise (uncertainty in latent evolution)
-# - x0, P0: Initial state distribution
+# - ``A``: How latent states evolve (rotation + contraction creates stable oscillation)
+# - ``Q``: Process noise (uncertainty in latent evolution)
+# - ``x_0``, ``P_0``: Initial state distribution
 #
 # **Observation parameters (unique to Poisson case):**
-# - C[i,:]: How latent dimensions affect log-rate of observation i
-#   - Positive C[i,j]: latent dimension j increases firing rate of unit i
-#   - Negative C[i,j]: latent dimension j decreases firing rate of unit i
-# - d[i]: Baseline log-rate for observation i when latent state = 0
-#   - exp(d[i]) gives the baseline firing rate
+#   - ``C[i,:]``: How latent dimensions affect log-rate of observation ``i``
+#   - Positive ``C[i,j]``: latent dimension ``j`` increases firing rate of unit ``i``
+#   - Negative ``C[i,j]``: latent dimension ``j`` decreases firing rate of unit ``i``
+#   - ``d[i]``: Baseline log-rate for observation ``i`` when latent state = 0
+#   - ``\exp(d[i])`` gives the baseline firing rate
 
 # ## The Exponential Link Function
 #
 # The key innovation is how we connect continuous latent states to discrete counts.
-# Instead of linear observations y = Cx + noise, we use:
+# Instead of linear observations $y = \mathbf{C} \mathbf{x} + \text{noise}$, we use:
 #
-# $λᵢ(t) = exp(Cᵢᵀx_t + dᵢ)$
-# $yᵢ(t) ~ Poisson(λᵢ(t))$
+# $\lambda_i(t) = \exp(\mathbf{C}_i^T \mathbf{x}_t + d_i)$
+# $y_i(t) \sim \text{Poisson}(\lambda_i(t))$
 #
 # The exponential ensures rates are always positive (required for Poisson), and
 # the log-linear relationship means latent states multiplicatively affect firing rates.
 #
-# The baseline parameter d_i sets the minimum firing rate when latent states are zero.
+# The baseline parameter $d_i$ sets the minimum firing rate when latent states are zero.
 
 # Construct the model components
 state_model = GaussianStateModel(; A, Q, x0, P0)          # Gaussian latent dynamics
@@ -240,8 +240,8 @@ elbo, _ = fit!(naive_plds, observations; max_iter=25, tol=1e-6);
 print("Laplace-EM completed in $(length(elbo)) iterations\n")
 
 # **Parameter identifiability:**
-# - Scale ambiguity: (C, d) and (αC, d + log(α)) give same likelihood
-# - Can be resolved by constraining norm of C or fixing one element
+# - Scale ambiguity: ($\mathbf{C}$, $d$) and ($\alpha \mathbf{C}$, $d + \log(\alpha)$) give same likelihood
+# - Can be resolved by constraining norm of $\mathbf{C}$ or fixing one element
 # - Rotation ambiguity in latent space (same as Gaussian LDS)
 
 # Perform smoothing with learned parameters

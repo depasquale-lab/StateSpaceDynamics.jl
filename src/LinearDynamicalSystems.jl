@@ -9,7 +9,7 @@ Represents the state model of a Linear Dynamical System with Gaussian noise.
 - `A::M`: Transition matrix (size `latent_dim×latent_dim`). 
 - `Q::M`: Process noise covariance matrix 
 - `x0::V`: Initial state vector (length `latent_dim`).
-- `P0::M`: Initial state covariance matrix (size `latent_dim×latent_dim
+- `P0::M`: Initial state covariance matrix (size `latent_dim×latent_dim`)
 """
 Base.@kwdef mutable struct GaussianStateModel{T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector{T}} <: AbstractStateModel{T}
     A::M
@@ -1133,7 +1133,7 @@ Fit a Linear Dynamical System using the Expectation-Maximization (EM) algorithm 
 
 # Arguments
 - `lds::LinearDynamicalSystem{T,S,O}`: The Linear Dynamical System to be fitted.
-- `y::AbstractArray{T,3}`: Observed data, size(obs_dim, T_steps, n_trials)
+- `y::AbstractArray{T,3}`: Observed data, size `(obs_dim, T_steps, n_trials)`
 
 # Keyword Arguments
 - `max_iter::Int=1000`: Maximum number of EM iterations.

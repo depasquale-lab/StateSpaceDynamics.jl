@@ -63,7 +63,7 @@ Where:
 
 - ``x_t`` is the hidden (discrete) state at time $t$
 - ``y_t`` is the observed output at time $t$
-- ``$u_t$`` is the observed input (covariate) at time $t$
+- ``u_t`` is the observed input (covariate) at time $t$
 - ``\theta_{x_t}`` are the parameters of the GLM emission model for state $x_t$
 
 ### Example Emission Models
