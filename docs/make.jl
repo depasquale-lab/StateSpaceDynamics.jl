@@ -69,6 +69,8 @@ makedocs(;
         ]
     ],
     checkdocs = :exports,
+    doctest=true,
+    doctestfilters = [r"docs/src/tutorials/.*\.md"],    
     warnonly = true
 )
 

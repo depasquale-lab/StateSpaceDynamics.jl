@@ -15,6 +15,11 @@ using MAT
 
 const CHECKED_TYPES = [Float32, Float64] #, BigFloat] UMFPACK does not support BigFloat for Sparse Arrays see: https://github.com/JuliaSparse/SparseArrays.jl/blob/main/src/solvers/umfpack.jl
 
+"""
+Tests for Index.md
+"""
+
+include("docs/index.jl")
 
 """
 Package Wide Tests

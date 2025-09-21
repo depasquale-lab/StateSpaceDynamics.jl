@@ -97,12 +97,12 @@ obs_dim = 10
 A = 0.95 * I(latent_dim)
 Q = 0.01 * I(latent_dim)
 x0 = zeros(latent_dim)
-P0 = I(latent_dim)
+P0 = 0.1 * I(latent_dim)
 state_model = GaussianStateModel(A, Q, x0, P0)
 
 # Define observation model parameters
-C = randn(obs_dim, latent_dim)
-R = 0.1 * I(obs_dim)
+C = ones(obs_dim, latent_dim)
+R = Matrix(0.5 * I(obs_dim))
 obs_model = GaussianObservationModel(C, R)
 
 # Construct the LDS

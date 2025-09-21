@@ -33,7 +33,7 @@ nothing #hide
 A Linear Dynamical System describes how a hidden state evolves over time and
 generates observations through two key equations:
 
-**State Evolution**: $x_{t+1} = \mathbf{A}  x_t + ε_t$,  where $ε_t \sim N(0, \mathbf{Q})$
+**State Evolution**: $x_{t+1} = \mathbf{A}  x_t + ε_t$,  where $ε_t \sim N(0, \mathbf{Q})$ \\
 **Observation**: $y_t = \mathbf{C}  x_t + η_t$,  where $η_t \sim N(0, \mathbf{R})$
 
 The beauty of this formulation is that it separates the underlying dynamics
@@ -281,7 +281,7 @@ EM alternates between two steps until convergence:
 
 **E-step (Expectation)**: Given current parameter estimates, compute the posterior
 distribution over latent states using the Kalman smoother. This gives us
-$p(x_{1:T} | y_1:T, θ_{current})$.
+$p(x_{1:T} | y_{1:T}, θ_{current})$.
 
 **M-step (Maximization)**: Given the state estimates from the E-step, update
 the parameters to maximize the expected log-likelihood. This involves solving
