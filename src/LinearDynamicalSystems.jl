@@ -58,8 +58,9 @@ Represents the observation model of a Linear Dynamical System with Gaussian nois
 - `R::M`: Observation noise covariance of size `(obs_dim × obs_dim)`.
 - `d::V`: Bias vector of length `(obs_dim)`.
 """
-Base.@kwdef mutable struct GaussianObservationModel{T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}} <:
-                           AbstractObservationModel{T}
+Base.@kwdef mutable struct GaussianObservationModel{
+    T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}
+} <: AbstractObservationModel{T}
     C::M
     R::M
     d::V
@@ -176,8 +177,11 @@ function stateparams(
 ) where {T<:Real,S<:AbstractStateModel{T},O<:AbstractObservationModel{T}}
     if isa(lds.state_model, GaussianStateModel)
         return [
-            lds.state_model.A, lds.state_model.Q, lds.state_model.b,
-            lds.state_model.x0, lds.state_model.P0
+            lds.state_model.A,
+            lds.state_model.Q,
+            lds.state_model.b,
+            lds.state_model.x0,
+            lds.state_model.P0,
         ]
     end
     return nothing
@@ -222,8 +226,8 @@ function Random.rand(
     rng::AbstractRNG, lds::LinearDynamicalSystem{T,S,O}; tsteps::Int, ntrials::Int
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     A, Q, x0, P0 = lds.state_model.A,
-                   lds.state_model.Q, lds.state_model.x0,
-                   lds.state_model.P0
+    lds.state_model.Q, lds.state_model.x0,
+    lds.state_model.P0
     C, R, b, d = lds.obs_model.C, lds.obs_model.R, lds.state_model.b, lds.obs_model.d
 
     x = Array{T,3}(undef, lds.latent_dim, tsteps, ntrials)
@@ -316,8 +320,8 @@ function loglikelihood(
 
     tsteps = size(y, 2)
     A, Q, x0, P0 = lds.state_model.A,
-                   lds.state_model.Q, lds.state_model.x0,
-                   lds.state_model.P0
+    lds.state_model.Q, lds.state_model.x0,
+    lds.state_model.P0
     C, R, b, d = lds.obs_model.C, lds.obs_model.R, lds.state_model.b, lds.obs_model.d
 
     R_chol = cholesky(Symmetric(R)).U
@@ -364,8 +368,8 @@ function Gradient(
     end
     latent_dim, tsteps = size(x)
     A, Q, x0, P0 = lds.state_model.A,
-                   lds.state_model.Q, lds.state_model.x0,
-                   lds.state_model.P0
+    lds.state_model.Q, lds.state_model.x0,
+    lds.state_model.P0
     C, R, b, d = lds.obs_model.C, lds.obs_model.R, lds.state_model.b, lds.obs_model.d
 
     R_chol = cholesky(Symmetric(R))
@@ -606,22 +610,21 @@ function smooth(
         )
     end
 
-    x_smooth        = Array{T,3}(undef, latent_dim, tsteps, ntrials)
-    p_smooth        = Array{T,4}(undef, latent_dim, latent_dim, tsteps, ntrials)
+    x_smooth = Array{T,3}(undef, latent_dim, tsteps, ntrials)
+    p_smooth = Array{T,4}(undef, latent_dim, latent_dim, tsteps, ntrials)
     inverse_offdiag = Array{T,4}(undef, latent_dim, latent_dim, tsteps, ntrials)
-    entropies       = zeros(T, ntrials)  # ← per-trial buffer
+    entropies = zeros(T, ntrials)  # ← per-trial buffer
 
     @views @threads for trial in 1:ntrials
         x_sm, p_sm, p_prev, ent = smooth(lds, y[:, :, trial])
-        x_smooth[:, :, trial]        .= x_sm
-        p_smooth[:, :, :, trial]     .= p_sm
+        x_smooth[:, :, trial] .= x_sm
+        p_smooth[:, :, :, trial] .= p_sm
         inverse_offdiag[:, :, :, trial] .= p_prev
         entropies[trial] = ent        # thread-safe
     end
 
-    return x_smooth, p_smooth, inverse_offdiag, sum(entropies) 
+    return x_smooth, p_smooth, inverse_offdiag, sum(entropies)
 end
-
 
 """
     Q_state(A, b, Q, P0, x0, E_z, E_zz, E_zz_prev)
@@ -630,9 +633,14 @@ State Q-term for an LDS with affine dynamics x_t ~ N(A x_{t-1} + b, Q).
 Matches the style of `Q_state` but includes the bias contributions.
 """
 function Q_state(
-    A::AbstractMatrix{T}, b::AbstractVector{T},
-    Q::AbstractMatrix{T}, P0::AbstractMatrix{T}, x0::AbstractVector{T},
-    E_z::AbstractMatrix{T}, E_zz::AbstractArray{T,3}, E_zz_prev::AbstractArray{T,3},
+    A::AbstractMatrix{T},
+    b::AbstractVector{T},
+    Q::AbstractMatrix{T},
+    P0::AbstractMatrix{T},
+    x0::AbstractVector{T},
+    E_z::AbstractMatrix{T},
+    E_zz::AbstractArray{T,3},
+    E_zz_prev::AbstractArray{T,3},
 ) where {T<:Real}
     tstep = size(E_z, 2)
     D = size(A, 1)
@@ -644,25 +652,25 @@ function Q_state(
 
     # initial-state part (unchanged)
     temp = zeros(T, D, D)
-    mul!(temp, E_z[:,1], x0', T(-1), T(0))
-    temp .+= @view E_zz[:,:,1]
-    temp .-= x0 * E_z[:,1]'
+    mul!(temp, E_z[:, 1], x0', T(-1), T(0))
+    temp .+= @view E_zz[:, :, 1]
+    temp .-= x0 * E_z[:, 1]'
     temp .+= x0 * x0'
     Q_val = T(-0.5) * (log_det_P0 + tr(P0_chol \ temp))
 
     # transition part with bias
-    sum_E_zz     = zeros(T, D, D)
-    sum_E_zzm1   = zeros(T, D, D)
-    sum_E_cross  = zeros(T, D, D)
-    sum_mu_t     = zeros(T, D)
-    sum_mu_tm1   = zeros(T, D)
+    sum_E_zz = zeros(T, D, D)
+    sum_E_zzm1 = zeros(T, D, D)
+    sum_E_cross = zeros(T, D, D)
+    sum_mu_t = zeros(T, D)
+    sum_mu_tm1 = zeros(T, D)
 
     for t in 2:tstep
-        sum_E_zz    .+= @view E_zz[:,:,t]
-        sum_E_zzm1  .+= @view E_zz[:,:,t-1]
-        sum_E_cross .+= @view E_zz_prev[:,:,t]
-        sum_mu_t    .+= @view E_z[:,t]
-        sum_mu_tm1  .+= @view E_z[:,t-1]
+        sum_E_zz .+= @view E_zz[:, :, t]
+        sum_E_zzm1 .+= @view E_zz[:, :, t - 1]
+        sum_E_cross .+= @view E_zz_prev[:, :, t]
+        sum_mu_t .+= @view E_z[:, t]
+        sum_mu_tm1 .+= @view E_z[:, t - 1]
     end
 
     copyto!(temp, sum_E_zz)
@@ -679,7 +687,6 @@ function Q_state(
     Q_val += T(-0.5) * ((tstep - 1) * log_det_Q + tr(Q_chol \ temp))
     return Q_val
 end
-
 
 """
     Q_obs(C, d, E_z, E_zz, y)
@@ -751,7 +758,6 @@ function Q_obs(
     return T(-0.5) * (total_weight * (const_term + log_det_R) + tr(R_chol \ temp))
 end
 
-
 """
     Q_function(A, b, Q, C, d, R, P0, x0, E_z, E_zz, E_zz_prev, y, w=nothing)
 
@@ -774,10 +780,9 @@ function Q_function(
     w::Union{Nothing,AbstractVector{T}}=nothing,
 ) where {T<:Real}
     Q_val_state = Q_state(A, b, Q, P0, x0, E_z, E_zz, E_zz_prev)
-    Q_val_obs   = Q_obs(C, d, R, E_z, E_zz, y, w)
+    Q_val_obs = Q_obs(C, d, R, E_z, E_zz, y, w)
     return Q_val_state + Q_val_obs
 end
-
 
 """
     sufficient_statistics(x_smooth, p_smooth, p_smooth_t1)
@@ -966,17 +971,17 @@ function update_A_b!(
     @views for k in 1:ntrials, t in 2:tsteps
         # Sxz
         Sxz[:, 1:D] .+= E_zz_prev[:, :, t, k]   # E[x_t x_{t-1}ᵀ]
-        Sxz[:, D+1] .+= E_z[:, t, k]            # E[x_t] * 1
+        Sxz[:, D + 1] .+= E_z[:, t, k]            # E[x_t] * 1
         # Szz for z_{t-1} = [x_{t-1}; 1]
-        Szz[1:D, 1:D] .+= E_zz[:, :, t-1, k]    # E[x_{t-1} x_{t-1}ᵀ]
-        Szz[1:D, D+1] .+= E_z[:, t-1, k]
-        Szz[D+1, 1:D] .+= E_z[:, t-1, k]
-        Szz[D+1, D+1] += one(T)
+        Szz[1:D, 1:D] .+= E_zz[:, :, t - 1, k]    # E[x_{t-1} x_{t-1}ᵀ]
+        Szz[1:D, D + 1] .+= E_z[:, t - 1, k]
+        Szz[D + 1, 1:D] .+= E_z[:, t - 1, k]
+        Szz[D + 1, D + 1] += one(T)
     end
 
     AB = Sxz / Szz
     lds.state_model.A = AB[:, 1:D]
-    lds.state_model.b = AB[:, D+1]
+    lds.state_model.b = AB[:, D + 1]
     return nothing
 end
 
@@ -1009,11 +1014,11 @@ function update_Q!(
     b = lds.state_model.b
 
     @views for k in 1:ntrials, t in 2:tsteps
-        Σt     = E_zz[:, :, t, k]          # E[x_t x_tᵀ]
-        Σtm1   = E_zz[:, :, t-1, k]        # E[x_{t-1} x_{t-1}ᵀ]
+        Σt = E_zz[:, :, t, k]          # E[x_t x_tᵀ]
+        Σtm1 = E_zz[:, :, t - 1, k]        # E[x_{t-1} x_{t-1}ᵀ]
         Σcross = E_zz_prev[:, :, t, k]     # E[x_t x_{t-1}ᵀ]
-        μt     = E_z[:, t, k]
-        μtm1   = E_z[:, t-1, k]
+        μt = E_z[:, t, k]
+        μtm1 = E_z[:, t - 1, k]
 
         # E[(x_t - A x_{t-1} - b)(x_t - A x_{t-1} - b)ᵀ]
         # (all are second-moment terms, consistent with E_zz and E_zz_prev)
@@ -1055,9 +1060,12 @@ function update_C_d!(
     E_zz::AbstractArray{T,4},
     y::AbstractArray{T,3},
     w::Union{Nothing,AbstractVector{T}}=nothing,
-) where {T<:Real, S<:GaussianStateModel{T}, O<:GaussianObservationModel{T}}
+) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     lds.fit_bool[5] || return nothing
-    if w === nothing; w = ones(T, size(y, 2)); end
+    if w === nothing
+        ;
+        w = ones(T, size(y, 2));
+    end
 
     D = size(E_z, 1)
     p = size(y, 1)
@@ -1074,18 +1082,18 @@ function update_C_d!(
 
         # Syz accumulates y_t [μ;1]ᵀ
         Syz[:, 1:D] .+= wt * (y[:, t, k] * μ')
-        Syz[:, D+1] .+= wt * y[:, t, k]
+        Syz[:, D + 1] .+= wt * y[:, t, k]
 
         # Szz accumulates E[[x;1][x;1]ᵀ]
         Szz[1:D, 1:D] .+= wt * Σ
-        Szz[1:D, D+1] .+= wt * μ
-        Szz[D+1, 1:D] .+= wt * μ
-        Szz[D+1, D+1] += wt
+        Szz[1:D, D + 1] .+= wt * μ
+        Szz[D + 1, 1:D] .+= wt * μ
+        Szz[D + 1, D + 1] += wt
     end
 
     CD = Syz / Szz
     lds.obs_model.C = CD[:, 1:D]
-    lds.obs_model.d = CD[:, D+1]
+    lds.obs_model.d = CD[:, D + 1]
     return nothing
 end
 
@@ -1144,7 +1152,6 @@ function update_R!(
     return nothing
 end
 
-
 """
     mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
 
@@ -1171,8 +1178,8 @@ function mstep!(
     update_initial_state_mean!(lds, E_z)
     update_initial_state_covariance!(lds, E_z, E_zz)
     update_A_b!(lds, E_z, E_zz, E_zz_prev)
-    update_Q!(lds, E_zz, E_zz_prev, E_z)     
-    update_C_d!(lds, E_z, E_zz, y, w)        
+    update_Q!(lds, E_zz, E_zz_prev, E_z)
+    update_C_d!(lds, E_z, E_zz, y, w)
     update_R!(lds, E_z, E_zz, y, w)
 
     # get new params
@@ -1508,12 +1515,12 @@ function Q_state(
     vals = zeros(T, size(E_z, 3))
 
     @views @threads for k in axes(E_z, 3)
-        vals[k] = Q_state(A, b, Q, P0, x0,
-                        E_z[:, :, k], E_zz[:, :, :, k], E_zz_prev[:, :, :, k])
+        vals[k] = Q_state(
+            A, b, Q, P0, x0, E_z[:, :, k], E_zz[:, :, :, k], E_zz_prev[:, :, :, k]
+        )
     end
 
     return sum(vals)
-
 end
 
 """

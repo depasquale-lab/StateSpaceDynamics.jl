@@ -272,7 +272,7 @@ function test_PoissonLDS_with_params()
     @test poisson_lds.state_model.Q == Q
     @test poisson_lds.obs_model.C == C
     @test poisson_lds.state_model.x0 == x0
-    @test poisson_lds.state_model.P0 == P0  
+    @test poisson_lds.state_model.P0 == P0
     @test poisson_lds.obs_dim == 3
     @test poisson_lds.latent_dim == 2
     @test poisson_lds.fit_bool == [true, true, true, true, true, true]
@@ -378,17 +378,21 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
     E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(plds, y)
 
     function obj(x0::AbstractVector, P0_sqrt::AbstractMatrix, plds)
-        A  = plds.state_model.A
-        b  = plds.state_model.b              # ← add this
-        Q  = plds.state_model.Q
+        A = plds.state_model.A
+        b = plds.state_model.b              # ← add this
+        Q = plds.state_model.Q
         P0 = P0_sqrt * P0_sqrt'
         Q_val = 0.0
         for i in axes(E_z, 3)
             Q_val += StateSpaceDynamics.Q_state(
-                A, b, Q, P0, x0,                      # ← include b, correct order
+                A,
+                b,
+                Q,
+                P0,
+                x0,                      # ← include b, correct order
                 E_z[:, :, i],                         # 2D (D × T)
                 E_zz[:, :, :, i],                     # 3D (D × D × T)
-                E_zz_prev[:, :, :, i]                 # 3D (D × D × T)
+                E_zz_prev[:, :, :, i],                 # 3D (D × D × T)
             )
         end
         return -Q_val
@@ -426,14 +430,11 @@ function test_state_model_parameter_updates(ntrials::Int=1)
     function obj_AB_Q(AB_flat::AbstractVector, Q_sqrt::AbstractMatrix, plds)
         AB = reshape(AB_flat, D, D+1)
         A = @view AB[:, 1:D]
-        b = @view AB[:, D+1]
+        b = @view AB[:, D + 1]
         Q = Q_sqrt * Q_sqrt'  # SPD
 
         return -StateSpaceDynamics.Q_state(
-            A, b, Q,
-            plds.state_model.P0,
-            plds.state_model.x0,
-            E_z, E_zz, E_zz_prev
+            A, b, Q, plds.state_model.P0, plds.state_model.x0, E_z, E_zz, E_zz_prev
         )
     end
 
@@ -444,22 +445,20 @@ function test_state_model_parameter_updates(ntrials::Int=1)
     # keep Q fixed for the first subproblem
     f_AB = AB_flat -> obj_AB_Q(AB_flat, Q_sqrt0, plds)
     AB_opt_flat = optimize(
-        f_AB, AB0_flat,
+        f_AB,
+        AB0_flat,
         LBFGS(),
-        Optim.Options(; g_abstol=1e-12, x_abstol=1e-12, f_abstol=1e-12)
+        Optim.Options(; g_abstol=1e-12, x_abstol=1e-12, f_abstol=1e-12),
     ).minimizer
     AB_opt = reshape(AB_opt_flat, D, D+1)
-    A_opt  = AB_opt[:, 1:D]
-    b_opt  = AB_opt[:, D+1]
+    A_opt = AB_opt[:, 1:D]
+    b_opt = AB_opt[:, D + 1]
 
     # ---- Step 2: optimize Q given [A b] from Step 1 ----
     function obj_Q(Q_sqrt::AbstractMatrix, plds)
         Q = Q_sqrt * Q_sqrt'
         return -StateSpaceDynamics.Q_state(
-            A_opt, b_opt, Q,
-            plds.state_model.P0,
-            plds.state_model.x0,
-            E_z, E_zz, E_zz_prev
+            A_opt, b_opt, Q, plds.state_model.P0, plds.state_model.x0, E_z, E_zz, E_zz_prev
         )
     end
 
@@ -467,7 +466,7 @@ function test_state_model_parameter_updates(ntrials::Int=1)
         Q_sqrt -> obj_Q(Q_sqrt, plds),
         Q_sqrt0,
         LBFGS(),
-        Optim.Options(; g_abstol=1e-12, x_abstol=1e-12, f_abstol=1e-12)
+        Optim.Options(; g_abstol=1e-12, x_abstol=1e-12, f_abstol=1e-12),
     ).minimizer
     Q_opt = Q_sqrt_opt * Q_sqrt_opt'
 
@@ -526,7 +525,7 @@ function test_EM_matlab()
         Q=0.00001 * Matrix{Float64}(I(2)),
         x0=[1.0, -1.0],
         P0=0.00001 * Matrix{Float64}(I(2)),
-        b=zeros(2)
+        b=zeros(2),
     )
 
     pom = PoissonObservationModel(;

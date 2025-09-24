@@ -405,8 +405,8 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
         @views for k in axes(E_z, 3)
             val += StateSpaceDynamics.Q_state(
                 lds.state_model.A,
-                lds.state_model.b, 
-                lds.state_model.Q,       
+                lds.state_model.b,
+                lds.state_model.Q,
                 P0,
                 x0,
                 E_z[:, :, k],
@@ -416,7 +416,6 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
         end
         return -val
     end
-
 
     P0_sqrt = Matrix(cholesky(lds.state_model.P0).U)
 
@@ -440,20 +439,25 @@ function test_state_model_parameter_updates(ntrials::Int=1)
     lds, x, y = toy_lds(ntrials, [false, false, true, true, false, false])
 
     # E-step
-    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total =
-        StateSpaceDynamics.estep(lds, y)
+    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(lds, y)
 
     # Objective over (A,b,Q)
     function obj_state(AB::AbstractMatrix, Q_sqrt::AbstractMatrix, lds)
         D = size(AB, 1)
         A = AB[:, 1:D]
-        b = AB[:, D+1]
+        b = AB[:, D + 1]
         Q = Q_sqrt * Q_sqrt'
         val = zero(eltype(Q))
         @views for k in axes(E_z, 3)
             val += StateSpaceDynamics.Q_state(
-                A, b, Q, lds.state_model.P0, lds.state_model.x0,
-                E_z[:, :, k], E_zz[:, :, :, k], E_zz_prev[:, :, :, k]
+                A,
+                b,
+                Q,
+                lds.state_model.P0,
+                lds.state_model.x0,
+                E_z[:, :, k],
+                E_zz[:, :, :, k],
+                E_zz_prev[:, :, :, k],
             )
         end
         return -val
@@ -463,14 +467,14 @@ function test_state_model_parameter_updates(ntrials::Int=1)
     AB0 = hcat(lds.state_model.A, lds.state_model.b)
     Q_sqrt0 = Matrix(cholesky(lds.state_model.Q).U)
 
-    AB_opt     = optimize(AB  -> obj_state(AB,  Q_sqrt0, lds), AB0,     LBFGS()).minimizer
-    Q_opt_sqrt = optimize(Qs  -> obj_state(AB_opt, Qs,      lds), Q_sqrt0, LBFGS()).minimizer
+    AB_opt = optimize(AB -> obj_state(AB, Q_sqrt0, lds), AB0, LBFGS()).minimizer
+    Q_opt_sqrt = optimize(Qs -> obj_state(AB_opt, Qs, lds), Q_sqrt0, LBFGS()).minimizer
 
     # M-step updates the model
     StateSpaceDynamics.mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
 
     @test isapprox(lds.state_model.A, AB_opt[:, 1:D], atol=1e-6, rtol=1e-6)
-    @test isapprox(lds.state_model.b, AB_opt[:, D+1], atol=1e-6, rtol=1e-6)
+    @test isapprox(lds.state_model.b, AB_opt[:, D + 1], atol=1e-6, rtol=1e-6)
     @test isapprox(lds.state_model.Q, Q_opt_sqrt * Q_opt_sqrt', atol=1e-6, rtol=1e-6)
 end
 
@@ -479,14 +483,13 @@ function test_obs_model_parameter_updates(ntrials::Int=1)
     lds, x, y = toy_lds(ntrials, [false, false, false, false, true, true])
 
     # E-step
-    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total =
-        StateSpaceDynamics.estep(lds, y)
+    E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(lds, y)
 
     # Objective over (C,d,R)
     function obj_obs(CD::AbstractMatrix, R_sqrt::AbstractMatrix, lds)
         D = size(CD, 2) - 1
         C = CD[:, 1:D]
-        d = CD[:, D+1]
+        d = CD[:, D + 1]
         R = R_sqrt * R_sqrt'
 
         val = zero(eltype(R))
@@ -502,18 +505,16 @@ function test_obs_model_parameter_updates(ntrials::Int=1)
     CD0 = hcat(lds.obs_model.C, lds.obs_model.d)
     R_sqrt0 = Matrix(cholesky(lds.obs_model.R).U)
 
-    CD_opt     = optimize(CD -> obj_obs(CD, R_sqrt0, lds), CD0,      LBFGS()).minimizer
-    R_opt_sqrt = optimize(Rs -> obj_obs(CD_opt, Rs, lds), R_sqrt0,   LBFGS()).minimizer
+    CD_opt = optimize(CD -> obj_obs(CD, R_sqrt0, lds), CD0, LBFGS()).minimizer
+    R_opt_sqrt = optimize(Rs -> obj_obs(CD_opt, Rs, lds), R_sqrt0, LBFGS()).minimizer
 
     # M-step updates the model
     StateSpaceDynamics.mstep!(lds, E_z, E_zz, E_zz_prev, p_smooth, y)
 
     @test isapprox(lds.obs_model.C, CD_opt[:, 1:D], atol=1e-6, rtol=1e-6)
-    @test isapprox(lds.obs_model.d, CD_opt[:, D+1], atol=1e-6, rtol=1e-6)
+    @test isapprox(lds.obs_model.d, CD_opt[:, D + 1], atol=1e-6, rtol=1e-6)
     @test isapprox(lds.obs_model.R, R_opt_sqrt * R_opt_sqrt', atol=1e-6, rtol=1e-6)
 end
-
-
 
 function test_EM(n_trials::Int=1)
     # create a toy LDS
