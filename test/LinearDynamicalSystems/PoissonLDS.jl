@@ -414,43 +414,70 @@ end
 function test_state_model_parameter_updates(ntrials::Int=1)
     plds, x, y = toy_PoissonLDS(ntrials, [false, false, true, true, false, false])
 
-    # run the E_Step
+    # E-step
     E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(plds, y)
 
-    function obj(A::AbstractMatrix, Q_sqrt::AbstractMatrix, plds)
-        b = plds.state_model.b                        # ← add this
-        Q = Q_sqrt * Q_sqrt'
-        Q_val = StateSpaceDynamics.Q_state(
-            A, b, Q,                                  # ← include b
+    # We will optimize jointly over [A  b] and Q (via its Cholesky factor)
+    D = plds.latent_dim
+    Q_sqrt0 = Matrix(cholesky(plds.state_model.Q).U)
+
+    # Objective that takes the (D×(D+1)) block AB = [A  b] and Q_sqrt
+    # and returns the NEGATIVE state Q-term (so we can minimize).
+    function obj_AB_Q(AB_flat::AbstractVector, Q_sqrt::AbstractMatrix, plds)
+        AB = reshape(AB_flat, D, D+1)
+        A = @view AB[:, 1:D]
+        b = @view AB[:, D+1]
+        Q = Q_sqrt * Q_sqrt'  # SPD
+
+        return -StateSpaceDynamics.Q_state(
+            A, b, Q,
             plds.state_model.P0,
             plds.state_model.x0,
-            E_z,                                      # 3D (D × T × trials)
-            E_zz,                                     # 4D (D × D × T × trials)
-            E_zz_prev                                  # 4D (D × D × T × trials)
+            E_z, E_zz, E_zz_prev
         )
-        return -Q_val
     end
 
-    Q_sqrt = Matrix(cholesky(plds.state_model.Q).U)
+    # ---- Step 1: optimize [A b] given current Q ----
+    AB0 = hcat(plds.state_model.A, plds.state_model.b)          # D×(D+1)
+    AB0_flat = vec(AB0)
 
-    A_opt = optimize(
-        A -> obj(A, Q_sqrt, plds),
-        plds.state_model.A,
+    # keep Q fixed for the first subproblem
+    f_AB = AB_flat -> obj_AB_Q(AB_flat, Q_sqrt0, plds)
+    AB_opt_flat = optimize(
+        f_AB, AB0_flat,
         LBFGS(),
-        Optim.Options(; g_abstol=1e-12),
+        Optim.Options(; g_abstol=1e-12, x_abstol=1e-12, f_abstol=1e-12)
     ).minimizer
-    Q_opt = optimize(
-        Q_sqrt -> obj(A_opt, Q_sqrt, plds),
-        Q_sqrt,
-        LBFGS(),
-        Optim.Options(; g_abstol=1e-12),
-    ).minimizer
+    AB_opt = reshape(AB_opt_flat, D, D+1)
+    A_opt  = AB_opt[:, 1:D]
+    b_opt  = AB_opt[:, D+1]
 
-    # update the state model
+    # ---- Step 2: optimize Q given [A b] from Step 1 ----
+    function obj_Q(Q_sqrt::AbstractMatrix, plds)
+        Q = Q_sqrt * Q_sqrt'
+        return -StateSpaceDynamics.Q_state(
+            A_opt, b_opt, Q,
+            plds.state_model.P0,
+            plds.state_model.x0,
+            E_z, E_zz, E_zz_prev
+        )
+    end
+
+    Q_sqrt_opt = optimize(
+        Q_sqrt -> obj_Q(Q_sqrt, plds),
+        Q_sqrt0,
+        LBFGS(),
+        Optim.Options(; g_abstol=1e-12, x_abstol=1e-12, f_abstol=1e-12)
+    ).minimizer
+    Q_opt = Q_sqrt_opt * Q_sqrt_opt'
+
+    # Now run your M-step (which uses update_A_b! / update_Q!)
     StateSpaceDynamics.mstep!(plds, E_z, E_zz, E_zz_prev, p_smooth, y)
 
+    # Check both A AND b, plus Q
     @test isapprox(plds.state_model.A, A_opt, atol=1e-6)
-    @test isapprox(plds.state_model.Q, Q_opt * Q_opt', atol=1e-6)
+    @test isapprox(plds.state_model.b, b_opt, atol=1e-6)
+    @test isapprox(plds.state_model.Q, Q_opt, atol=1e-6)
 end
 
 function test_EM(n_trials::Int=1)
@@ -464,8 +491,9 @@ function test_EM(n_trials::Int=1)
     log_d = zeros(Float64, 3)  # Fixed: 3 observations
     x0 = fill(one(Float64), 2)
     P0 = Matrix{Float64}(I, 2, 2)
+    b = zeros(Float64, 2)
 
-    gsm_new = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0)
+    gsm_new = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0, b=b)
     pom_new = PoissonObservationModel(; C=C, log_d=log_d)
     plds_new = LinearDynamicalSystem(;
         state_model=gsm_new,
@@ -477,7 +505,7 @@ function test_EM(n_trials::Int=1)
 
     elbo, norm_grad = fit!(plds_new, y; max_iter=100)
 
-    # check that the ELBO increases over the whole algorithm, we cannot use monotonicity as a check as we are using Laplace EM.
+    # check that the ELBO increases over the whole algorithm.
     @test elbo[end] > elbo[1]
 end
 
@@ -498,6 +526,7 @@ function test_EM_matlab()
         Q=0.00001 * Matrix{Float64}(I(2)),
         x0=[1.0, -1.0],
         P0=0.00001 * Matrix{Float64}(I(2)),
+        b=zeros(2)
     )
 
     pom = PoissonObservationModel(;
