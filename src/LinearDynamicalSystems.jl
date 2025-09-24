@@ -28,11 +28,12 @@ function Base.show(io::IO, gsm::GaussianStateModel; gap="")
     println(io, gap, "Gaussian State Model:")
     println(io, gap, "---------------------")
 
-    if size(gsm.A, 1) > 4
+    if size(gsm.A, 1) > 4 || size(gsm.A, 2) > 4
         println(io, gap, " State Parameters:")
         println(io, gap, "  size(A)  = ($(size(gsm.A,1)), $(size(gsm.A,2)))")
         println(io, gap, "  size(Q)  = ($(size(gsm.Q,1)), $(size(gsm.Q,2)))")
         println(io, gap, " Initial State:")
+        println(io, gap, "  size(b)  = ($(length(gsm.b)), )")
         println(io, gap, "  size(x0) = ($(length(gsm.x0)), )")
         println(io, gap, "  size(P0) = ($(size(gsm.P0,1)), $(size(gsm.P0,2)))")
     else
@@ -40,6 +41,7 @@ function Base.show(io::IO, gsm::GaussianStateModel; gap="")
         println(io, gap, "  A  = $(round.(gsm.A, sigdigits=3))")
         println(io, gap, "  Q  = $(round.(gsm.Q, sigdigits=3))")
         println(io, gap, " Initial State:")
+        println(io, gap, "  b  = $(round.(gsm.b, digits=2))")
         println(io, gap, "  x0 = $(round.(gsm.x0, digits=2))")
         println(io, gap, "  P0 = $(round.(gsm.P0, sigdigits=3))")
     end
@@ -73,9 +75,11 @@ function Base.show(io::IO, gom::GaussianObservationModel; gap="")
     if size(gom.C, 1) > 3 || size(gom.C, 2) > 3
         println(io, gap, " size(C) = ($(size(gom.C,1)), $(size(gom.C,2)))")
         println(io, gap, " size(R) = ($(size(gom.R,1)), $(size(gom.R,2)))")
+        println(io, gap, " size(d) = ($(length(gom.d)),)")
     else
         println(io, gap, " C = $(round.(gom.C, digits=2))")
         println(io, gap, " R = $(round.(gom.R, digits=2))")
+        println(io, gap, " d = $(round.(gom.d, digits=2))")
     end
 
     return nothing
@@ -109,14 +113,10 @@ function Base.show(io::IO, pom::PoissonObservationModel; gap="")
     println(io, gap, "--------------------------")
 
     if nobs > 4 || nstate > 4
-        println(io, gap, " size(C) = ($nobs, $nstate)")
-    else
-        println(io, gap, " C = $(round.(pom.C, digits=2))")
-    end
-
-    if length(pom.log_d) > 4
+        println(io, gap, " size(C)     = ($nobs, $nstate)")
         println(io, gap, " size(log_d) = ($(length(pom.log_d)),)")
     else
+        println(io, gap, " C       = $(round.(pom.C, digits=2))")
         println(io, gap, " log_d   = $(round.(pom.log_d, sigdigits = 3))")
         println(io, gap, " d       = $(round.(exp.(pom.log_d), digits = 2))")
     end
@@ -157,13 +157,12 @@ function Base.show(io::IO, lds::LinearDynamicalSystem; gap="")
 
     if lds.obs_model isa PoissonObservationModel
         # C and log_d are either both updated or neither
-        prms = ["x0", "P0", "A", "Q", "C, log_d"][lds.fit_bool[1:5]]
+        prms = ["x0", "P0", "A (and b)", "Q", "C, log_d"][lds.fit_bool[1:5]]
     else
-        prms = ["x0", "P0", "A", "Q", "C", "R"][lds.fit_bool[1:6]]
+        prms = ["x0", "P0", "A (and b)", "Q", "C", "R"][lds.fit_bool[1:6]]
     end
 
     println(io, gap, "  $(join(prms, ", "))")
-
     return nothing
 end
 

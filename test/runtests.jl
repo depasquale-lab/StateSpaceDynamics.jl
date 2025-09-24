@@ -18,20 +18,20 @@ using Test
 Package Wide Tests
 """
 
-# @testset "Package Wide Tests" begin
-#     Aqua.test_all(StateSpaceDynamics; ambiguities=false)
-#     @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
-# end
+@testset "Package Wide Tests" begin
+    Aqua.test_all(StateSpaceDynamics; ambiguities=false)
+    @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
+end
 
-# @testset "Blue Formatting" begin
-#     @test JuliaFormatter.format(StateSpaceDynamics; verbose=false, overwrite=false)
-# end
+@testset "Blue Formatting" begin
+    @test JuliaFormatter.format(StateSpaceDynamics; verbose=false, overwrite=false)
+end
 
-# @testset "Code linting using JET " begin
-#     if VERSION >= v"1.11"
-#         JET.test_package(StateSpaceDynamics; target_defined_modules=true)
-#     end
-# end
+@testset "Code linting using JET " begin
+    if VERSION >= v"1.11"
+        JET.test_package(StateSpaceDynamics; target_defined_modules=true)
+    end
+end
 
 include("helper_functions.jl")
 
@@ -292,6 +292,7 @@ include("Utilities/Utilities.jl")
     test_kmeans_clustering()
     test_block_tridgm()
     test_autoregressive_setters_and_getters()
+    test_gaussian_entropy()
 end
 
 """

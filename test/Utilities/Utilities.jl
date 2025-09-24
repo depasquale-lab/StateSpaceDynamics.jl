@@ -111,3 +111,15 @@ function test_autoregressive_setters_and_getters()
     AR.innerGaussianRegression = GR
     @test AR.innerGaussianRegression == GR
 end
+
+function test_gaussian_entropy()
+    Λ = randn(3, 3)
+    Λ = Symmetric(Λ' * Λ)  # make it symmetric positive definite
+
+    Σ = inv(Λ)  # covariance matrix
+
+    gaus_entropy_dist = entropy(MvNormal(zeros(3), Σ))
+    gauss_entropy_ssd = gaussian_entropy(-Λ)
+
+    @test isapprox(gaus_entropy_dist, gauss_entropy_ssd; atol=1e-6)
+end
