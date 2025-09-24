@@ -5,11 +5,12 @@ A = [cos(0.1) -sin(0.1); sin(0.1) cos(0.1)]
 Q = Matrix(Diagonal([0.1, 0.1]))
 C = [0.6 0.6; 0.6 0.6; 0.6 0.6] .* 2
 log_d = log.([0.1, 0.1, 0.1])
+b = zeros(2)
 
 function toy_PoissonLDS(
     ntrials::Int=1, fit_bool::Vector{Bool}=[true, true, true, true, true, true]
 )
-    gaussian_sm = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0)
+    gaussian_sm = GaussianStateModel(; A=A, b=b, Q=Q, x0=x0, P0=P0)
     poisson_om = PoissonObservationModel(; C=C, log_d=log_d)  # Fixed: was poisson_sm
     poisson_lds = LinearDynamicalSystem(;
         state_model=gaussian_sm,
@@ -85,8 +86,9 @@ function test_plds_constructor_type_preservation()
     log_d_int = [7, 8]
     x0_int = [5, 6]
     P0_int = [4 0; 0 4]
+    b_int = [0, 0]
 
-    gsm_int = GaussianStateModel(; A=A_int, Q=Q_int, x0=x0_int, P0=P0_int)
+    gsm_int = GaussianStateModel(; A=A_int, Q=Q_int, x0=x0_int, P0=P0_int, b=b_int)
     pom_int = PoissonObservationModel(; C=C_int, log_d=log_d_int)
     plds_int = LinearDynamicalSystem(;
         state_model=gsm_int,
@@ -112,8 +114,9 @@ function test_plds_constructor_type_preservation()
     log_d_f32 = Float32[0.5, 1.5]
     x0_f32 = Float32[0.7, 0.8]
     P0_f32 = Float32[4 0; 0 4]
+    b_f32 = Float32[0, 0]
 
-    gsm_f32 = GaussianStateModel(; A=A_f32, Q=Q_f32, x0=x0_f32, P0=P0_f32)
+    gsm_f32 = GaussianStateModel(; A=A_f32, Q=Q_f32, x0=x0_f32, P0=P0_f32, b=b_f32)
     pom_f32 = PoissonObservationModel(; C=C_f32, log_d=log_d_f32)
     plds_f32 = LinearDynamicalSystem(;
         state_model=gsm_f32,
@@ -134,8 +137,9 @@ function test_plds_constructor_type_preservation()
     log_d_bf = BigFloat[0.1, 0.2]
     x0_bf = BigFloat[0.3, 0.4]
     P0_bf = BigFloat[4 0; 0 4]
+    b_bf = BigFloat[0, 0]
 
-    gsm_bf = GaussianStateModel(; A=A_bf, Q=Q_bf, x0=x0_bf, P0=P0_bf)
+    gsm_bf = GaussianStateModel(; A=A_bf, Q=Q_bf, x0=x0_bf, P0=P0_bf, b=b_bf)
     pom_bf = PoissonObservationModel(; C=C_bf, log_d=log_d_bf)
     plds_bf = LinearDynamicalSystem(;
         state_model=gsm_bf,
@@ -158,8 +162,9 @@ function test_poisson_sample_type_preservation()
     log_d32 = zeros(Float32, 2)
     x0_f32 = fill(one(Float32), 2)
     P0_f32 = Matrix{Float32}(I, 2, 2)
+    b_f32 = zeros(Float32, 2)
 
-    gsm_f32 = GaussianStateModel(; A=A_f32, Q=Q_f32, x0=x0_f32, P0=P0_f32)
+    gsm_f32 = GaussianStateModel(; A=A_f32, Q=Q_f32, x0=x0_f32, P0=P0_f32, b=b_f32)
     pom_f32 = PoissonObservationModel(; C=C_f32, log_d=log_d32)
     plds_f32 = LinearDynamicalSystem(;
         state_model=gsm_f32,
@@ -183,8 +188,9 @@ function test_poisson_sample_type_preservation()
     log_bf = zeros(BigFloat, 2)
     x0_bf = fill(one(BigFloat), 2)
     P0_bf = Matrix{BigFloat}(I, 2, 2)
+    b_bf = zeros(BigFloat, 2)
 
-    gsm_bf = GaussianStateModel(; A=A_bf, Q=Q_bf, x0=x0_bf, P0=P0_bf)
+    gsm_bf = GaussianStateModel(; A=A_bf, Q=Q_bf, x0=x0_bf, P0=P0_bf, b=b_bf)
     pom_bf = PoissonObservationModel(; C=C_bf, log_d=log_bf)
     plds_bf = LinearDynamicalSystem(;
         state_model=gsm_bf,
@@ -210,8 +216,9 @@ function test_poisson_fit_type_preservation()
         log_d = zeros(T, 2)
         x0 = fill(one(T), 2)
         P0 = Matrix{T}(I, 2, 2)
+        b = zeros(T, 2)
 
-        gsm = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0)
+        gsm = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0, b=b)
         pom = PoissonObservationModel(; C=C, log_d=log_d)
         lds = LinearDynamicalSystem(;
             state_model=gsm, obs_model=pom, latent_dim=2, obs_dim=2, fit_bool=fill(true, 6)
@@ -234,8 +241,9 @@ function test_poisson_loglikelihood_type_preservation()
         log_d = zeros(T, 2)
         x0 = fill(one(T), 2)
         P0 = Matrix{T}(I, 2, 2)
+        b = zeros(T, 2)
 
-        gsm = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0)
+        gsm = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0, b=b)
         pom = PoissonObservationModel(; C=C, log_d=log_d)
         lds = LinearDynamicalSystem(;
             state_model=gsm, obs_model=pom, latent_dim=2, obs_dim=2, fit_bool=fill(true, 6)
@@ -264,7 +272,7 @@ function test_PoissonLDS_with_params()
     @test poisson_lds.state_model.Q == Q
     @test poisson_lds.obs_model.C == C
     @test poisson_lds.state_model.x0 == x0
-    @test poisson_lds.state_model.P0 == P0  # Fixed: was p0
+    @test poisson_lds.state_model.P0 == P0  
     @test poisson_lds.obs_dim == 3
     @test poisson_lds.latent_dim == 2
     @test poisson_lds.fit_bool == [true, true, true, true, true, true]
@@ -369,14 +377,18 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
     # run the E_Step
     E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(plds, y)
 
-    # optimize the x0 and p0 entries using autograd
     function obj(x0::AbstractVector, P0_sqrt::AbstractMatrix, plds)
-        A, Q = plds.state_model.A, plds.state_model.Q
+        A  = plds.state_model.A
+        b  = plds.state_model.b              # ← add this
+        Q  = plds.state_model.Q
         P0 = P0_sqrt * P0_sqrt'
         Q_val = 0.0
         for i in axes(E_z, 3)
             Q_val += StateSpaceDynamics.Q_state(
-                A, Q, P0, x0, E_z[:, :, i], E_zz[:, :, :, i], E_zz_prev[:, :, :, i]
+                A, b, Q, P0, x0,                      # ← include b, correct order
+                E_z[:, :, i],                         # 2D (D × T)
+                E_zz[:, :, :, i],                     # 3D (D × D × T)
+                E_zz_prev[:, :, :, i]                 # 3D (D × D × T)
             )
         end
         return -Q_val
@@ -405,11 +417,16 @@ function test_state_model_parameter_updates(ntrials::Int=1)
     # run the E_Step
     E_z, E_zz, E_zz_prev, x_smooth, p_smooth, ml_total = StateSpaceDynamics.estep(plds, y)
 
-    # optimize the A and Q entries using autograd
     function obj(A::AbstractMatrix, Q_sqrt::AbstractMatrix, plds)
+        b = plds.state_model.b                        # ← add this
         Q = Q_sqrt * Q_sqrt'
         Q_val = StateSpaceDynamics.Q_state(
-            A, Q, plds.state_model.P0, plds.state_model.x0, E_z, E_zz, E_zz_prev
+            A, b, Q,                                  # ← include b
+            plds.state_model.P0,
+            plds.state_model.x0,
+            E_z,                                      # 3D (D × T × trials)
+            E_zz,                                     # 4D (D × D × T × trials)
+            E_zz_prev                                  # 4D (D × D × T × trials)
         )
         return -Q_val
     end

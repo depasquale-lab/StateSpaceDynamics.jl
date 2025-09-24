@@ -472,15 +472,14 @@ end
 """
     gaussian_entropy(H::Symmetric{T}) where {T<:Real}
 
-Calculate the entropy of a Gaussian distribution with Hessian (i.e. negative precision)
-matrix `H`.
+Entropy (in nats) of a Gaussian whose log-posterior Hessian at the MAP is `H`
+(i.e., `H = ∇² log p` so the precision is `Λ = -H`).
 """
 function gaussian_entropy(H::Symmetric{T}) where {T<:Real}
     n = size(H, 1)
-    F = cholesky(-H)
-    logdet_H = 2 * sum(log.(diag(F)))
-
-    return 0.5 * (n * log(2π) + logdet_H)
+    F = cholesky(-H)                    # factorize Λ = -H (SPD)
+    logdetΛ = 2 * sum(log, diag(F))     # logdet precision
+    return 0.5 * (n * (1 + log(2π)) - logdetΛ)
 end
 
 """
@@ -492,7 +491,7 @@ function gaussian_entropy(H::Symmetric{BigFloat,<:AbstractSparseMatrix})
     n = size(H, 1)
     logdet_H = logdet(-H)
 
-    return 0.5 * (n * log(BigFloat(2π)) + logdet_H)
+    return 0.5 * (n * (BigFloat(1 + log(BigFloat(2π))) - logdet_H))
 end
 
 """
