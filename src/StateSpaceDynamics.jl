@@ -27,5 +27,6 @@ include("HMMConstructors.jl")
 include("SLDS.jl")
 include("MixtureModels.jl")
 include("Preprocessing.jl")
+include("Valid.jl")
 
 end

@@ -112,13 +112,17 @@ function test_autoregressive_setters_and_getters()
     @test AR.innerGaussianRegression == GR
 end
 
+
 function test_gaussian_entropy()
-    Λ = randn(3, 3)
-    Λ = Symmetric(Λ' * Λ)  # make it symmetric positive definite
+    n = 3
+    A = sprandn(n, n, 0.6)
+    Λ = Symmetric(A' * A) + 1e-8I          # sparse, SPD
 
-    Σ = inv(Λ)  # covariance matrix
+    # Compute Σ without forming a sparse inverse explicitly:
+    F = cholesky(Λ)
+    Σ = Symmetric(Matrix(F \ I))           # dense Σ via solve (not inv)
 
-    gaus_entropy_dist = entropy(MvNormal(zeros(3), Σ))
+    gaus_entropy_dist = entropy(MvNormal(zeros(n), Σ))
     gauss_entropy_ssd = gaussian_entropy(-Λ)
 
     @test isapprox(gaus_entropy_dist, gauss_entropy_ssd; atol=1e-6)

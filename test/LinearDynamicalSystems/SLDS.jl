@@ -1,132 +1,109 @@
-function test_init()
-    # Test the random initialization of the model with default parameters
-    model = initialize_slds()
+# Build a Gaussian LDS with given dims
+function _make_gaussian_lds(latent_dim::Int, obs_dim::Int)
+    A  = rand(latent_dim, latent_dim)
+    Q  = Matrix(0.1 * I(latent_dim))
+    b  = zeros(latent_dim)
+    x0 = zeros(latent_dim)
+    P0 = Matrix(1.0 * I(latent_dim))
 
-    # Check basic model dimensions
-    @test size(model.A) == (model.K, model.K)
-    @test length(model.B) == model.K
-    @test length(model.πₖ) == model.K
+    C = zeros(obs_dim, latent_dim)
+    R = Matrix(1.0 * I(obs_dim))
+    d = zeros(obs_dim)
 
-    # Check transition matrix properties
-    @test all(sum(model.A, dims=2) .≈ 1)  # Row sums should be 1
-    @test all(model.A .>= 0)  # Non-negative probabilities
-    @test all(sum(model.A, dims=2) .≈ 1)  # Each row should sum to 1
-
-    # Check initial state distribution
-    @test sum(model.πₖ) ≈ 1
-    @test all(model.πₖ .>= 0)
-
-    # Check LDS components
-    for lds in model.B
-        @test lds.latent_dim == 2  # Default latent dimension
-        @test lds.obs_dim == 10    # Default observation dimension
-        @test size(lds.state_model.A) == (2, 2)
-        @test size(lds.state_model.Q) == (2, 2)
-        @test size(lds.obs_model.C) == (10, 2)
-        @test size(lds.obs_model.R) == (10, 10)
-        @test all(isposdef(lds.state_model.Q))  # Covariance matrices should be positive definite
-        @test all(isposdef(lds.obs_model.R))
-    end
-
-    # # Test initialization with different parameters
-    # model_alt = initialize_slds(K=3, d=3, p=15)
-    # @test size(model_alt.A) == (3, 3)
-    # @test length(model_alt.B) == 3
-    # @test model_alt.B[1].latent_dim == 3
-    # @test model_alt.B[1].obs_dim == 15
-
-    # Test seed reproducibility
-    model1 = initialize_slds(; seed=42)
-    model2 = initialize_slds(; seed=42)
-    @test all(model1.A .== model2.A)
-    @test all(model1.πₖ .== model2.πₖ)
-    @test all(model1.B[1].obs_model.C .== model2.B[1].obs_model.C)
+    gsm = GaussianStateModel(; A=A, Q=Q, b=b, x0=x0, P0=P0)       # state model
+    gom = GaussianObservationModel(; C=C, R=R, d=d)               # obs model
+    return LinearDynamicalSystem(;
+        state_model=gsm, obs_model=gom,
+        latent_dim=latent_dim, obs_dim=obs_dim, fit_bool=fill(true, 6)
+    )
 end
 
-function test_sample()
-    model = StateSpaceDynamics.initialize_slds()
+# Build a Poisson-observation LDS (Gaussian state model)
+function _make_poisson_lds(latent_dim::Int, obs_dim::Int)
+    A  = rand(latent_dim, latent_dim)
+    Q  = Matrix(0.1 * I(latent_dim))
+    b  = zeros(latent_dim)
+    x0 = zeros(latent_dim)
+    P0 = Matrix(1.0 * I(latent_dim))
 
-    # sample from the model
-    x, y, z = rand(model, 1000)  # 1000 time steps
+    C = zeros(obs_dim, latent_dim)
+    log_d = zeros(obs_dim)
 
-    # check the dimensions of the samples
-    @test size(x) == (model.B[1].latent_dim, 1000)
-    @test size(y) == (model.B[1].obs_dim, 1000)
-    @test size(z) == (1000,)
+    gsm = GaussianStateModel(; A=A, Q=Q, b=b, x0=x0, P0=P0)
+    pom = PoissonObservationModel(; C=C, log_d=log_d)
+    return LinearDynamicalSystem(;
+        state_model=gsm, obs_model=pom,
+        latent_dim=latent_dim, obs_dim=obs_dim, fit_bool=fill(true, 6)
+    )
 end
 
-function test_vEstep()
-    # get a model
-    model = StateSpaceDynamics.initialize_slds()
-    # sample from the model
-    x, y, z = rand(model, 1000)  # 1000 time steps
-
-    ty = typeof(y[1])
-
-    # just a few vars
-    K = model.K
-    T_step = 1000
-    # initialize the FS and FB structs
-    FS = [StateSpaceDynamics.initialize_FilterSmooth(model.B[k], T_step) for k in 1:K]
-    FB = StateSpaceDynamics.initialize_forward_backward(model, T_step, ty)
-
-    # run the vEstep
-    ml_total, mls = variational_expectation!(model, y, FB, FS)
-
-    # Test 1: Check ELBO increases
-    if !all(diff(mls) .>= -1e-10)
-        bad_vals = findall(diff(mls) .< -1e-3) # 
-        # print the vad values
-        println("Bad values: ", diff(mls)[bad_vals])
+# Simple probability vector / row-stochastic makers
+_probvec(K) = fill(1.0 / K, K)
+function _rowstochastic(K)
+    A = fill(0.0, K, K)
+    for i in 1:K
+        A[i, :] .= _probvec(K)
     end
-    @test all(diff(mls) .>= -1e-3)  # Allow for small numerical instability. this is a bit too permissive, most exteeme i've seen is -1e-6, but this calculation is a wee bit unstable
+    return A
+end
 
-    # Test 2: Check gamma normalization and properties
-    γ = exp.(FB.γ)
-    @test size(γ) == (K, T_step)
-    @test all(isapprox.(sum(γ, dims=1), 1, rtol=1e-5))
-    @test all(γ .>= 0)  # Probabilities should be non-negative
-
-    # Test 3: Check FB properties
-    @test size(FB.α) == (K, T_step)  # Forward messages
-    @test size(FB.β) == (K, T_step)  # Backward messages
-    @test size(FB.ξ) == (K, K, T_step-1)  # Transition expectations
-
-    # Test 4: Check FS properties for each state
-    for k in 1:K
-        # Test dimensions
-        @test size(FS[k].x_smooth) == (model.B[k].latent_dim, T_step)
-        @test size(FS[k].p_smooth) == (model.B[k].latent_dim, model.B[k].latent_dim, T_step)
-
-        # Test sufficient statistics dimensions
-        @test size(FS[k].E_z) == (model.B[k].latent_dim, T_step, 1)
-        @test size(FS[k].E_zz) == (model.B[k].latent_dim, model.B[k].latent_dim, T_step, 1)
-        @test size(FS[k].E_zz_prev) ==
-            (model.B[k].latent_dim, model.B[k].latent_dim, T_step, 1)
-
-        # Test covariance properties
-        for t in 1:T_step
-            P_t = FS[k].p_smooth[:, :, t]
-            @test isposdef(P_t)  # Covariance should be positive definite
-            @test ishermitian(P_t)  # Covariance should be symmetric
-        end
-
-        # Test smoothed state properties
-        @test !any(isnan.(FS[k].x_smooth))  # No NaN values
-        @test !any(isinf.(FS[k].x_smooth))  # No Inf values
-
-        # Test sufficient statistics properties
-        @test !any(isnan.(FS[k].E_z))
-        @test !any(isinf.(FS[k].E_z))
-        @test all(isposdef.(eachslice(FS[k].E_zz[:, :, :, 1], dims=3)))  # Each time slice should be positive definite
+function test_valid_SLDS_happy_path()
+    K = 3
+    lds = _make_gaussian_lds(2, 4)
+    s = SLDS(A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K))
+    @test begin
+        valid_SLDS(s)    # should not throw
+        true
     end
+end
 
-    # Test 5: Check numerical properties of the final ELBO
-    @test !isnan(ml_total)
-    @test !isinf(ml_total)
-    @test ml_total > -Inf # ELBO should be finite
+function test_valid_SLDS_dimension_mismatches()
+    K = 2
+    lds = _make_gaussian_lds(2, 3)
 
-    # Test 6: Check convergence
-    @test length(mls) > 1  # Should have multiple iterations
-    @test abs(mls[end] - mls[end - 1]) < 1e-6  # Should have converged
+    # size(A,1)=K, but length(Z₀) ≠ K
+    s_badZ0 = SLDS(A=_rowstochastic(K), Z₀=_probvec(K+1), LDSs=fill(lds, K))
+    @test_throws AssertionError valid_SLDS(s_badZ0)
+
+    # size(A,1)=K, but number of LDSs ≠ K
+    s_badLDSs = SLDS(A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K+1))
+    @test_throws AssertionError valid_SLDS(s_badLDSs)
+end
+
+function test_valid_SLDS_nonstochastic_rows_and_invalid_Z0()
+    K = 3
+    lds = _make_gaussian_lds(2, 2)
+
+    # Non-probability row in A (negative entry)
+    A_bad = _rowstochastic(K)
+    A_bad[2, :] .= (-0.1, 0.5, 0.6)  # sums to 1 but has a negative entry
+    s_badA = SLDS(A=A_bad, Z₀=_probvec(K), LDSs=fill(lds, K))
+    @test_throws AssertionError valid_SLDS(s_badA)
+
+    # Z0 does not sum to 1
+    Z0_bad = _probvec(K); Z0_bad[1] += 0.1
+    s_badZ0 = SLDS(A=_rowstochastic(K), Z₀=Z0_bad, LDSs=fill(lds, K))
+    @test_throws AssertionError valid_SLDS(s_badZ0)
+end
+
+function test_valid_SLDS_mixed_observation_model_types()
+    # mode 1..K-1 Gaussian obs; last mode Poisson obs → should assert (type mismatch)
+    K = 3
+    lds_g = _make_gaussian_lds(2, 2)
+    lds_p = _make_poisson_lds(2, 2)  # different obs model type
+    s = SLDS(A=_rowstochastic(K), Z₀=_probvec(K), LDSs=[lds_g, lds_g, lds_p])
+    @test_throws AssertionError valid_SLDS(s)
+end
+
+function test_valid_SLDS_inconsistent_latent_or_obs_dims()
+    K = 2
+    lds_a = _make_gaussian_lds(2, 3)
+    lds_b_state = _make_gaussian_lds(3, 3) # different latent_dim
+    lds_b_obs   = _make_gaussian_lds(2, 4) # different obs_dim
+
+    s_bad_state = SLDS(A=_rowstochastic(K), Z₀=_probvec(K), LDSs=[lds_a, lds_b_state])
+    @test_throws AssertionError valid_SLDS(s_bad_state)
+
+    s_bad_obs = SLDS(A=_rowstochastic(K), Z₀=_probvec(K), LDSs=[lds_a, lds_b_obs])
+    @test_throws AssertionError valid_SLDS(s_bad_obs)
 end

@@ -147,6 +147,40 @@ Base.@kwdef struct LinearDynamicalSystem{
     fit_bool::Vector{Bool}
 end
 
+function LinearDynamicalSystem(
+    state_model::S,
+    obs_model::O;
+    fit_bool::Union{Vector{Bool}, Nothing} = nothing
+) where {T<:Real, S<:AbstractStateModel{T}, O<:AbstractObservationModel{T}}
+    
+    # Infer dimensions from matrices
+    latent_dim = size(state_model.A, 1)
+    obs_dim = size(obs_model.C, 1)
+    
+    # Set default fit_bool based on observation model type
+    if fit_bool === nothing
+        if obs_model isa PoissonObservationModel
+            # For Poisson: [x0, P0, A&b, Q, C&log_d] (5 parameters)
+            fit_bool = [true, true, true, true, true]
+        else
+            # For Gaussian: [x0, P0, A&b, Q, C&d, R] (6 parameters)
+            fit_bool = [true, true, true, true, true, true]
+        end
+    end
+    
+    # Create the LDS
+    lds = LinearDynamicalSystem{T, S, O}(
+        state_model, obs_model, latent_dim, obs_dim, fit_bool
+    )
+    
+    # Validate the constructed LDS
+    if !isvalid_LDS(lds)
+        error("Invalid LinearDynamicalSystem parameters")
+    end
+    
+    return lds
+end
+
 function Base.show(io::IO, lds::LinearDynamicalSystem; gap="")
     println(io, gap, "Linear Dynamical System:")
     println(io, gap, "------------------------")

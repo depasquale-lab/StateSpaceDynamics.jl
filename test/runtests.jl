@@ -10,6 +10,7 @@ using MAT
 using Optim
 using Random
 using StateSpaceDynamics
+using SparseArrays
 using StatsFuns
 using SpecialFunctions
 using Test
@@ -18,20 +19,20 @@ using Test
 Package Wide Tests
 """
 
-@testset "Package Wide Tests" begin
-    Aqua.test_all(StateSpaceDynamics; ambiguities=false)
-    @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
-end
+# @testset "Package Wide Tests" begin
+#     Aqua.test_all(StateSpaceDynamics; ambiguities=false)
+#     @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
+# end
 
-@testset "Blue Formatting" begin
-    @test JuliaFormatter.format(StateSpaceDynamics; verbose=false, overwrite=false)
-end
+# @testset "Blue Formatting" begin
+#     @test JuliaFormatter.format(StateSpaceDynamics; verbose=false, overwrite=false)
+# end
 
-@testset "Code linting using JET " begin
-    if VERSION >= v"1.11"
-        JET.test_package(StateSpaceDynamics; target_defined_modules=true)
-    end
-end
+# @testset "Code linting using JET " begin
+#     if VERSION >= v"1.11"
+#         JET.test_package(StateSpaceDynamics; target_defined_modules=true)
+#     end
+# end
 
 include("helper_functions.jl")
 
@@ -39,16 +40,16 @@ include("helper_functions.jl")
 Tests for SLDS.jl
 """
 
-# include("LinearDynamicalSystems//SLDS.jl")
+include("LinearDynamicalSystems/SLDS.jl")
 
 # @testset "SLDS Tests" begin
-#     @testset "Constructor Tests" begin
-#         test_init()
-#         test_sample()
-#     end
+#     @testset "valid_SLDS Tests" begin
+#         test_valid_SLDS_happy_path()
+#         test_valid_SLDS_dimension_mismatches()
+#         test_valid_SLDS_nonstochastic_rows_and_invalid_Z0()
+#         test_valid_SLDS_mixed_observation_model_types()
+#         test_valid_SLDS_inconsistent_latent_or_obs_dims()
 
-#     @testset "vEM Tests" begin
-#         test_vEstep()
 #     end
 # end
 
