@@ -52,7 +52,7 @@ function test_valid_SLDS_happy_path()
     lds = _make_gaussian_lds(2, 4)
     s = SLDS(A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K))
     @test begin
-        valid_SLDS(s)    # should not throw
+        isvalid_SLDS(s)    # should not throw
         true
     end
 end
@@ -63,11 +63,11 @@ function test_valid_SLDS_dimension_mismatches()
 
     # size(A,1)=K, but length(Z₀) ≠ K
     s_badZ0 = SLDS(A=_rowstochastic(K), Z₀=_probvec(K+1), LDSs=fill(lds, K))
-    @test_throws AssertionError valid_SLDS(s_badZ0)
+    @test_throws AssertionError isvalid_SLDS(s_badZ0)
 
     # size(A,1)=K, but number of LDSs ≠ K
     s_badLDSs = SLDS(A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K+1))
-    @test_throws AssertionError valid_SLDS(s_badLDSs)
+    @test_throws AssertionError isvalid_SLDS(s_badLDSs)
 end
 
 function test_valid_SLDS_nonstochastic_rows_and_invalid_Z0()
@@ -78,12 +78,12 @@ function test_valid_SLDS_nonstochastic_rows_and_invalid_Z0()
     A_bad = _rowstochastic(K)
     A_bad[2, :] .= (-0.1, 0.5, 0.6)  # sums to 1 but has a negative entry
     s_badA = SLDS(A=A_bad, Z₀=_probvec(K), LDSs=fill(lds, K))
-    @test_throws AssertionError valid_SLDS(s_badA)
+    @test_throws AssertionError isvalid_SLDS(s_badA)
 
     # Z0 does not sum to 1
     Z0_bad = _probvec(K); Z0_bad[1] += 0.1
     s_badZ0 = SLDS(A=_rowstochastic(K), Z₀=Z0_bad, LDSs=fill(lds, K))
-    @test_throws AssertionError valid_SLDS(s_badZ0)
+    @test_throws AssertionError isvalid_SLDS(s_badZ0)
 end
 
 function test_valid_SLDS_mixed_observation_model_types()
@@ -91,8 +91,8 @@ function test_valid_SLDS_mixed_observation_model_types()
     K = 3
     lds_g = _make_gaussian_lds(2, 2)
     lds_p = _make_poisson_lds(2, 2)  # different obs model type
-    s = SLDS(A=_rowstochastic(K), Z₀=_probvec(K), LDSs=[lds_g, lds_g, lds_p])
-    @test_throws AssertionError valid_SLDS(s)
+    @test_throws MethodError SLDS(A=_rowstochastic(K), Z₀=_probvec(K), LDSs=[lds_g, lds_g, lds_p])
+    
 end
 
 function test_valid_SLDS_inconsistent_latent_or_obs_dims()
@@ -102,8 +102,129 @@ function test_valid_SLDS_inconsistent_latent_or_obs_dims()
     lds_b_obs   = _make_gaussian_lds(2, 4) # different obs_dim
 
     s_bad_state = SLDS(A=_rowstochastic(K), Z₀=_probvec(K), LDSs=[lds_a, lds_b_state])
-    @test_throws AssertionError valid_SLDS(s_bad_state)
+    @test_throws AssertionError isvalid_SLDS(s_bad_state)
 
     s_bad_obs = SLDS(A=_rowstochastic(K), Z₀=_probvec(K), LDSs=[lds_a, lds_b_obs])
-    @test_throws AssertionError valid_SLDS(s_bad_obs)
+    @test_throws AssertionError isvalid_SLDS(s_bad_obs)
+end
+
+function test_SLDS_sampling_gaussian()
+    K = 3
+    lds = _make_gaussian_lds(2, 4)
+    s = SLDS(A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K))
+    
+    tsteps, ntrials = 50, 5
+    z, x, y = rand(s; tsteps=tsteps, ntrials=ntrials)
+    
+    @test size(z) == (tsteps, ntrials)
+    @test size(x) == (2, tsteps, ntrials)
+    @test size(y) == (4, tsteps, ntrials)
+    @test all(1 ≤ z[t, n] ≤ K for t in 1:tsteps, n in 1:ntrials)
+    @test all(isfinite, x)
+    @test all(isfinite, y)
+end
+
+function test_SLDS_sampling_poisson()
+    K = 2
+    lds = _make_poisson_lds(2, 3)
+    s = SLDS(A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K))
+    
+    tsteps, ntrials = 30, 3
+    z, x, y = rand(s; tsteps=tsteps, ntrials=ntrials)
+    
+    @test size(z) == (tsteps, ntrials)
+    @test size(x) == (2, tsteps, ntrials)
+    @test size(y) == (3, tsteps, ntrials)
+    @test all(1 ≤ z[t, n] ≤ K for t in 1:tsteps, n in 1:ntrials)
+    @test all(y[i, t, n] ≥ 0 for i in 1:3, t in 1:tsteps, n in 1:ntrials)
+    @test all(y[i, t, n] == round(y[i, t, n]) for i in 1:3, t in 1:tsteps, n in 1:ntrials)
+end
+
+function test_SLDS_deterministic_transitions()
+    K = 2
+    lds = _make_gaussian_lds(2, 2)
+    
+    # Always transition 1 → 2 → 2 → 2...
+    A_det = [0.0 1.0; 0.0 1.0]
+    Z0_det = [1.0, 0.0]  # Always start in state 1
+    
+    s = SLDS(A=A_det, Z₀=Z0_det, LDSs=fill(lds, K))
+    
+    tsteps = 10
+    z, x, y = rand(s; tsteps=tsteps, ntrials=3)
+    
+    # Should always start in state 1
+    @test all(z[1, n] == 1 for n in 1:3)
+    # Should always be in state 2 after first step
+    @test all(z[t, n] == 2 for t in 2:tsteps, n in 1:3)
+end
+
+function test_SLDS_single_trial()
+    K = 3
+    lds = _make_gaussian_lds(2, 4)
+    s = SLDS(A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K))
+    
+    tsteps = 100
+    z, x, y = rand(s; tsteps=tsteps, ntrials=1)
+    
+    @test size(z) == (tsteps, 1)
+    @test size(x) == (2, tsteps, 1)
+    @test size(y) == (4, tsteps, 1)
+end
+
+function test_SLDS_reproducibility()
+    K = 2
+    lds = _make_gaussian_lds(2, 3)
+    s = SLDS(A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K))
+    
+    # Same seed should give same results
+    Random.seed!(42)
+    z1, x1, y1 = rand(s; tsteps=20, ntrials=2)
+    
+    Random.seed!(42)
+    z2, x2, y2 = rand(s; tsteps=20, ntrials=2)
+    
+    @test z1 == z2
+    @test x1 ≈ x2
+    @test y1 ≈ y2
+end
+
+function test_SLDS_single_state_edge_case()
+    K = 1
+    lds = _make_gaussian_lds(2, 3)
+    s = SLDS(A=reshape([1.0], 1, 1), Z₀=[1.0], LDSs=[lds])
+    
+    @test isvalid_SLDS(s)
+    
+    z, x, y = rand(s; tsteps=10, ntrials=2)
+    @test all(z .== 1)  # Should always be in state 1
+end
+
+function test_SLDS_minimal_dimensions()
+    K = 2
+    lds = _make_gaussian_lds(1, 1)  # Minimal dimensions
+    s = SLDS(A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K))
+    
+    z, x, y = rand(s; tsteps=10, ntrials=3)
+    
+    @test size(x) == (1, 10, 3)
+    @test size(y) == (1, 10, 3)
+    @test all(isfinite, x)
+    @test all(isfinite, y)
+end
+
+function test_valid_SLDS_probability_helper_functions()
+    # Test probability vector validation
+    @test isvalid_probvec([0.3, 0.7])
+    @test isvalid_probvec([0.25, 0.25, 0.25, 0.25])
+    @test !isvalid_probvec([0.6, 0.5])   # Sums to > 1
+    @test !isvalid_probvec([-0.1, 1.1])  # Has negative
+    
+    # Test helper functions
+    @test _probvec(4) ≈ [0.25, 0.25, 0.25, 0.25]
+    
+    A = _rowstochastic(3)
+    @test size(A) == (3, 3)
+    @test all(isapprox(sum(A[i, :]), 1.0) for i in 1:3)
+    @test all(A[i, j] ≥ 0 for i in 1:3, j in 1:3)
 end

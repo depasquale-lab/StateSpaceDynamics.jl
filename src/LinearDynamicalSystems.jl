@@ -201,42 +201,6 @@ function Base.show(io::IO, lds::LinearDynamicalSystem; gap="")
 end
 
 """
-    stateparams(lds::LinearDynamicalSystem{T,S,O})
-
-Extract the state parameters from a Linear Dynamical System.
-"""
-function stateparams(
-    lds::LinearDynamicalSystem{T,S,O}
-) where {T<:Real,S<:AbstractStateModel{T},O<:AbstractObservationModel{T}}
-    if isa(lds.state_model, GaussianStateModel)
-        return [
-            lds.state_model.A,
-            lds.state_model.Q,
-            lds.state_model.b,
-            lds.state_model.x0,
-            lds.state_model.P0,
-        ]
-    end
-    return nothing
-end
-
-"""
-    obsparams(lds::LinearDynamicalSystem{S,O})
-
-Extract the observation parameters from a Linear Dynamical System.
-"""
-function obsparams(
-    lds::LinearDynamicalSystem{T,S,O}
-) where {T<:Real,S<:AbstractStateModel{T},O<:AbstractObservationModel{T}}
-    if isa(lds.obs_model, GaussianObservationModel)
-        return [lds.obs_model.C, lds.obs_model.R, lds.obs_model.d]
-    elseif isa(lds.obs_model, PoissonObservationModel)
-        return [lds.obs_model.C, lds.obs_model.log_d]
-    end
-    return nothing
-end
-
-"""
     initialize_FilterSmooth(model, num_obs)
 
 Initialize a `FilterSmooth` object for a given linear dynamical system model and number of
@@ -255,60 +219,96 @@ function initialize_FilterSmooth(
     )
 end
 
-function Random.rand(
-    rng::AbstractRNG, lds::LinearDynamicalSystem{T,S,O}; tsteps::Int, ntrials::Int
-) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
-    A, Q, x0, P0 = lds.state_model.A,
-    lds.state_model.Q, lds.state_model.x0,
-    lds.state_model.P0
-    C, R, b, d = lds.obs_model.C, lds.obs_model.R, lds.state_model.b, lds.obs_model.d
+function _extract_state_params(state_model::GaussianStateModel{T}) where T
+    return (A = state_model.A, Q = state_model.Q, b = state_model.b, 
+            x0 = state_model.x0, P0 = state_model.P0)
+end
 
+function _extract_obs_params(obs_model::GaussianObservationModel{T}) where T
+    return (C = obs_model.C, R = obs_model.R, d = obs_model.d)
+end
+
+function _extract_obs_params(obs_model::PoissonObservationModel{T}) where T
+    return (C = obs_model.C, log_d = obs_model.log_d, d = exp.(obs_model.log_d))
+end
+
+function _get_all_params_vec(lds::LinearDynamicalSystem{T,S,O}) where {T<:Real,S<:AbstractStateModel{T},O<:AbstractObservationModel{T}}
+    state_params = _extract_state_params(lds.state_model)
+    obs_params = _extract_obs_params(lds.obs_model)
+    
+    # Convert named tuples to vectors and concatenate
+    state_vec = vcat(vec(state_params.A), vec(state_params.Q), vec(state_params.b), 
+                     vec(state_params.x0), vec(state_params.P0))
+    
+    if lds.obs_model isa GaussianObservationModel
+        obs_vec = vcat(vec(obs_params.C), vec(obs_params.R), vec(obs_params.d))
+    else # PoissonObservationModel
+        obs_vec = vcat(vec(obs_params.C), vec(obs_params.log_d))
+    end
+    
+    return vcat(state_vec, obs_vec)
+end
+
+function _sample_trial!(rng, x_trial, y_trial, state_params, obs_params, obs_model::GaussianObservationModel)
+    tsteps = size(x_trial, 2)
+    
+    # Initial state
+    x_trial[:, 1] = rand(rng, MvNormal(state_params.x0, state_params.P0))
+    y_trial[:, 1] = rand(rng, MvNormal(obs_params.C * x_trial[:, 1] + obs_params.d, obs_params.R))
+    
+    # Subsequent states
+    for t in 2:tsteps
+        x_trial[:, t] = rand(rng, MvNormal(state_params.A * x_trial[:, t-1] + state_params.b, state_params.Q))
+        y_trial[:, t] = rand(rng, MvNormal(obs_params.C * x_trial[:, t] + obs_params.d, obs_params.R))
+    end
+end
+
+function _sample_trial!(rng, x_trial, y_trial, state_params, obs_params, obs_model::PoissonObservationModel)
+    tsteps = size(x_trial, 2)
+    
+    # Initial state
+    x_trial[:, 1] = rand(rng, MvNormal(state_params.x0, state_params.P0))
+    y_trial[:, 1] = rand.(rng, Poisson.(exp.(obs_params.C * x_trial[:, 1] + obs_params.d)))
+    
+    # Subsequent states
+    for t in 2:tsteps
+        x_trial[:, t] = rand(rng, MvNormal(state_params.A * x_trial[:, t-1] + state_params.b, state_params.Q))
+        y_trial[:, t] = rand.(rng, Poisson.(exp.(obs_params.C * x_trial[:, t] + obs_params.d)))
+    end
+end
+
+function Random.rand(
+    rng::AbstractRNG, 
+    lds::LinearDynamicalSystem{T,S,O}; 
+    tsteps::Int, 
+    ntrials::Int = 1
+) where {T<:Real, S<:GaussianStateModel{T}, O<:AbstractObservationModel{T}}
+    
+    # Extract parameters once using a more systematic approach
+    state_params = _extract_state_params(lds.state_model)
+    obs_params = _extract_obs_params(lds.obs_model)
+    
+    # Pre-allocate based on observation model type
     x = Array{T,3}(undef, lds.latent_dim, tsteps, ntrials)
     y = Array{T,3}(undef, lds.obs_dim, tsteps, ntrials)
-
-    for trial in 1:ntrials
-        x[:, 1, trial] = rand(rng, MvNormal(x0, P0))
-        y[:, 1, trial] = rand(rng, MvNormal(C * x[:, 1, trial] .+ d, R))
-
-        for t in 2:tsteps
-            x[:, t, trial] = rand(rng, MvNormal(A * x[:, t - 1, trial] .+ b, Q))
-            y[:, t, trial] = rand(rng, MvNormal(C * x[:, t, trial] .+ d, R))
+    
+    # Sample trials (potentially in parallel for large ntrials)
+    if ntrials > 10  # Threshold for parallelization
+        Threads.@threads for trial in 1:ntrials
+            _sample_trial!(rng, view(x, :, :, trial), view(y, :, :, trial), 
+                          state_params, obs_params, lds.obs_model)
+        end
+    else
+        for trial in 1:ntrials
+            _sample_trial!(rng, view(x, :, :, trial), view(y, :, :, trial), 
+                          state_params, obs_params, lds.obs_model)
         end
     end
-
+    
     return x, y
 end
 
-# For Poisson LDS
-function Random.rand(
-    rng::AbstractRNG, lds::LinearDynamicalSystem{T,S,O}; tsteps::Int, ntrials::Int
-) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    # Extract model components
-    A, Q, b = lds.state_model.A, lds.state_model.Q, lds.state_model.b
-    C, log_d = lds.obs_model.C, lds.obs_model.log_d
-    x0, P0 = lds.state_model.x0, lds.state_model.P0
 
-    # Convert log_d to d i.e. non-log space
-    d = exp.(log_d)
-
-    # Pre-allocate arrays
-    x = zeros(T, lds.latent_dim, tsteps, ntrials)
-    y = zeros(T, lds.obs_dim, tsteps, ntrials)
-
-    for k in 1:ntrials
-        # Sample the initial state
-        x[:, 1, k] = rand(rng, MvNormal(x0, P0))
-        y[:, 1, k] = rand.(rng, Poisson.(exp.(C * x[:, 1, k] .+ d)))
-
-        # Sample the rest of the states
-        for t in 2:tsteps
-            x[:, t, k] = rand(rng, MvNormal(A * x[:, t - 1, k] .+ b, Q))
-            y[:, t, k] = rand.(rng, Poisson.(exp.(C * x[:, t, k] .+ d)))
-        end
-    end
-
-    return x, y
-end
 
 """
     Random.rand(lds::LinearDynamicalSystem; tsteps::Int, ntrials::Int)
@@ -1198,14 +1198,13 @@ function mstep!(
     p_smooth::AbstractArray{T,4},
     y::AbstractArray{T,3},
     w::Union{Nothing,AbstractVector{T}}=nothing,
-) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     if w === nothing
         w = ones(T, size(y, 2))
     end
 
-    # get initial parameters
-    old_params = vec(stateparams(lds))
-    old_params = [old_params; vec(obsparams(lds))]
+    # Get initial parameters using new approach
+    old_params = _get_all_params_vec(lds)
 
     # Update parameters
     update_initial_state_mean!(lds, E_z)
@@ -1215,11 +1214,10 @@ function mstep!(
     update_C_d!(lds, E_z, E_zz, y, w)
     update_R!(lds, E_z, E_zz, y, w)
 
-    # get new params
-    new_params = vec(stateparams(lds))
-    new_params = [new_params; vec(obsparams(lds))]
+    # Get new parameters using new approach
+    new_params = _get_all_params_vec(lds)
 
-    # parameter delta
+    # Parameter delta
     norm_change = norm(new_params - old_params)
     return norm_change
 end
@@ -1824,11 +1822,11 @@ function mstep!(
     p_smooth::AbstractArray{T,4},
     y::AbstractArray{T,3},
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    # Get old params
-    old_params = vec(stateparams(plds))
-    old_params = vcat(old_params, vec(obsparams(plds)))
+    
+    # Get old params using new approach
+    old_params = _get_all_params_vec(plds)
 
-    # State-side
+    # State-side updates
     update_initial_state_mean!(plds, E_z)
     update_initial_state_covariance!(plds, E_z, E_zz)
     update_A_b!(plds, E_z, E_zz, E_zz_prev)
@@ -1837,8 +1835,7 @@ function mstep!(
     # Update obs model
     update_observation_model!(plds, E_z, p_smooth, y)
 
-    # Return parameter delta (optional)
-    new_params = vec(stateparams(plds))
-    new_params = vcat(new_params, vec(obsparams(plds)))
+    # Return parameter delta
+    new_params = _get_all_params_vec(plds)
     return norm(new_params - old_params)
 end

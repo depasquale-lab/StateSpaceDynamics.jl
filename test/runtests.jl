@@ -42,16 +42,23 @@ Tests for SLDS.jl
 
 include("LinearDynamicalSystems/SLDS.jl")
 
-# @testset "SLDS Tests" begin
-#     @testset "valid_SLDS Tests" begin
-#         test_valid_SLDS_happy_path()
-#         test_valid_SLDS_dimension_mismatches()
-#         test_valid_SLDS_nonstochastic_rows_and_invalid_Z0()
-#         test_valid_SLDS_mixed_observation_model_types()
-#         test_valid_SLDS_inconsistent_latent_or_obs_dims()
-
-#     end
-# end
+@testset "SLDS Tests" begin
+    @testset "valid_SLDS Tests" begin
+        test_valid_SLDS_happy_path()
+        test_valid_SLDS_dimension_mismatches()
+        test_valid_SLDS_nonstochastic_rows_and_invalid_Z0()
+        test_valid_SLDS_mixed_observation_model_types()
+        test_valid_SLDS_inconsistent_latent_or_obs_dims()
+        test_SLDS_sampling_gaussian()
+        test_SLDS_sampling_poisson()
+        test_SLDS_deterministic_transitions()
+        test_SLDS_single_trial()
+        test_SLDS_reproducibility()
+        test_SLDS_single_state_edge_case()
+        test_SLDS_minimal_dimensions()
+        test_valid_SLDS_probability_helper_functions()
+    end
+end
 
 """
 Tests for LDS.jl

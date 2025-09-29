@@ -194,7 +194,6 @@ Check if SLDS structure is valid under the following criteria:
     - Dims of A match the length of Z₀ and the number of LDSs
     - Rows of A and Z₀ sum to 1
     - Each LDS has the same state dimension and observation dimension
-    - Each LDS has equivalent state and observation models
  """
  function isvalid_SLDS(slds::SLDS)
     k = size(slds.A, 1)
@@ -212,18 +211,13 @@ Check if SLDS structure is valid under the following criteria:
     @assert isprobvec(slds.Z₀) "Z₀ is not a valid probability vector"
 
     # Checks for LDS models
-    s1_type = typeof(slds.LDSs[1].state_model)
-    o1_type = typeof(slds.LDSs[1].obs_model)
-
-    s1_dim = size(slds.LDSs[1].state_model.A, 1)
-    o1_dim = size(slds.LDSs[1].obs_model.C, 1)
-
-    for i in 2:lds_count
-        lds = slds.LDSs[i]
-        @assert typeof(lds.state_model) == s1_type "LDS $i has a different state model type"
-        @assert typeof(lds.obs_model) == o1_type "LDS $i has a different observation model type"
-        @assert size(lds.state_model.A, 1) == s1_dim "LDS $i has a different state dimension"
-        @assert size(lds.obs_model.C, 1) == o1_dim "LDS $i has a different observation dimension"
+    latent_dim = slds.LDSs[1].latent_dim
+    obs_dim = slds.LDSs[1].obs_dim
+    for (i, lds) in enumerate(slds.LDSs)
+        @assert lds.latent_dim == latent_dim "LDS $i has inconsistent latent_dim"
+        @assert lds.obs_dim == obs_dim "LDS $i has inconsistent obs_dim"
+        @assert isvalid_LDS(lds) "LDS $i is not valid"
     end
+    return true
 end
 
