@@ -334,7 +334,6 @@ observed data.
 - `x::AbstractMatrix{T}`: The state sequence of the LDS.
 - `lds::LinearDynamicalSystem{S,O}`: The Linear Dynamical System.
 - `y::AbstractMatrix{T}`: The observed data.
-- `w::AbstractVector{T}`: coeffcients to weight the data.
 
 # Returns
 - `ll::T`: The complete-data log-likelihood of the LDS.
@@ -343,14 +342,7 @@ function loglikelihood(
     x::AbstractMatrix{U},
     lds::LinearDynamicalSystem{T,S,O},
     y::AbstractMatrix{T},
-    w::Union{Nothing,AbstractVector{T}}=nothing,
 ) where {U<:Real,T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
-    if w === nothing
-        w = ones(eltype(y), size(y, 2))
-    elseif eltype(w) !== eltype(y)
-        error("weights must be Vector{$(eltype(y))}; Got Vector{$(eltype(w))}")
-    end
-
     tsteps = size(y, 2)
     A, Q, x0, P0 = lds.state_model.A,
     lds.state_model.Q, lds.state_model.x0,
@@ -369,16 +361,14 @@ function loglikelihood(
 
     for t in 1:tsteps
         if t > 1
-            # residual: x_t - (A x_{t-1} + b)
             mul!(temp_dx, A, view(x, :, t-1), -one(eltype(x)), false)
             temp_dx .+= view(x, :, t) .- b
             ll += sum(abs2, Q_chol \ temp_dx)
         end
 
-        # residual: y_t - (C x_t + d)
         mul!(temp_dy, C, view(x, :, t), -one(eltype(x)), false)
         temp_dy .+= view(y, :, t) .- d
-        ll += w[t] * sum(abs2, R_chol \ temp_dy)
+        ll += sum(abs2, R_chol \ temp_dy)
     end
 
     return -eltype(x)(0.5) * ll
@@ -394,11 +384,7 @@ function Gradient(
     lds::LinearDynamicalSystem{T,S,O},
     y::AbstractMatrix{T},
     x::AbstractMatrix{T},
-    w::Union{Nothing,AbstractVector{T}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
-    if w === nothing
-        w = ones(T, size(y, 2))
-    end
     latent_dim, tsteps = size(x)
     A, Q, x0, P0 = lds.state_model.A,
     lds.state_model.Q, lds.state_model.x0,
@@ -418,12 +404,12 @@ function Gradient(
     dx1 = x[:, 1] .- x0
     dx2 = x[:, 2] .- (A * x[:, 1] .+ b)
     dy1 = y[:, 1] .- (C * x[:, 1] .+ d)
-    grad[:, 1] .= A_inv_Q * dx2 + w[1] * C_inv_R * dy1 - (P0_chol \ dx1)
+    grad[:, 1] .= A_inv_Q * dx2 + C_inv_R * dy1 - (P0_chol \ dx1)
 
     # Middle steps
     @views for t in 2:(tsteps - 1)
         grad[:, t] .=
-            w[t] * C_inv_R * (y[:, t] .- (C * x[:, t] .+ d)) -
+            C_inv_R * (y[:, t] .- (C * x[:, t] .+ d)) -
             (Q_chol \ (x[:, t] .- (A * x[:, t - 1] .+ b))) +
             (A_inv_Q * (x[:, t + 1] .- (A * x[:, t] .+ b)))
     end
@@ -431,7 +417,7 @@ function Gradient(
     # Last time step
     dxT = x[:, tsteps] .- (A * x[:, tsteps - 1] .+ b)
     dyT = y[:, tsteps] .- (C * x[:, tsteps] .+ d)
-    grad[:, tsteps] .= w[tsteps] * (C_inv_R * dyT) - (Q_chol \ dxT)
+    grad[:, tsteps] .= (C_inv_R * dyT) - (Q_chol \ dxT)
 
     return grad
 end
@@ -461,12 +447,7 @@ function Hessian(
     lds::LinearDynamicalSystem{T,S,O},
     y::AbstractMatrix{T},
     x::AbstractMatrix{T},
-    w::Union{Nothing,AbstractVector{T}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
-    if w === nothing
-        w = ones(T, size(y, 2))
-    end
-
     A, Q, x0, P0 = lds.state_model.A,
     lds.state_model.Q, lds.state_model.x0,
     lds.state_model.P0
@@ -501,13 +482,13 @@ function Hessian(
     end
 
     # Build main diagonal
-    H_diag[1] = w[1] * yt_given_xt + xt1_given_xt + x_t
+    H_diag[1] = yt_given_xt + xt1_given_xt + x_t
 
     for i in 2:(tsteps - 1)
-        H_diag[i] = w[i] * yt_given_xt + xt_given_xt_1 + xt1_given_xt
+        H_diag[i] = yt_given_xt + xt_given_xt_1 + xt1_given_xt
     end
 
-    H_diag[tsteps] = w[tsteps] * (yt_given_xt) + xt_given_xt_1
+    H_diag[tsteps] = yt_given_xt + xt_given_xt_1
     H = StateSpaceDynamics.block_tridgm(H_diag, H_super, H_sub)
 
     return H, H_diag, H_super, H_sub
@@ -522,7 +503,6 @@ parameters and the observed data for a single trial
 # Arguments
 - `lds::LinearDynamicalSystem{T,S,O}`: The LDS object representing the system parameters.
 - `y::AbstractMatrix{T}`: The observed data matrix.
-- `w::Union{Nothing,AbstractVector{T}}`: coeffcients to weight the data.
 
 # Returns
 - `x::AbstractMatrix{T}`: The optimal state estimate.
@@ -533,76 +513,59 @@ parameters and the observed data for a single trial
 function smooth(
     lds::LinearDynamicalSystem{T,S,O},
     y::AbstractMatrix{T},
-    w::Union{Nothing,AbstractVector{T}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
-    if w === nothing
-        w = ones(T, size(y, 2))
-    elseif eltype(w) !== T
-        error("weights must be Vector{$(T)}; Got Vector{$(eltype(w))}")
-    end
-
     tsteps, D = size(y, 2), lds.latent_dim
-
-    # set initial "solution" and preallocate x_reshape
     X₀ = zeros(T, D * tsteps)
 
     function nll(vec_x::Vector{T})
         x = reshape(vec_x, D, tsteps)
-        return -loglikelihood(x, lds, y, w)
+        return -loglikelihood(x, lds, y)
     end
 
     function g!(g::Vector{T}, vec_x::Vector{T})
         x = reshape(vec_x, D, tsteps)
-        grad = Gradient(lds, y, x, w)
+        grad = Gradient(lds, y, x)
         return g .= vec(-grad)
     end
 
     function h!(h::SparseMatrixCSC{T}, vec_x::Vector{T}) where {T<:Real}
         x = reshape(vec_x, D, tsteps)
-        H, _, _, _ = Hessian(lds, y, x, w)
-        mul!(h, -1.0, H)  # h .= -H, in-place
+        H, _, _, _ = Hessian(lds, y, x)
+        mul!(h, -1.0, H)
         return nothing
     end
 
-    # set up initial values
+    # Initial values setup
     initial_f = nll(X₀)
-
     inital_g = similar(X₀)
     g!(inital_g, X₀)
-
     initial_h = spzeros(T, length(X₀), length(X₀))
     h!(initial_h, X₀)
 
-    # set up a TwiceDifferentiable object i guess?
+    # Set up TwiceDifferentiable object I guess?
     td = TwiceDifferentiable(nll, g!, h!, X₀, initial_f, inital_g, initial_h)
-
-    # set up Optim.Options
     opts = Optim.Options(; g_abstol=1e-8, x_abstol=1e-8, f_abstol=1e-8, iterations=100)
 
     # Go!
     res = optimize(td, X₀, Newton(; linesearch=LineSearches.BackTracking()), opts)
 
-    # Profit
     x = reshape(res.minimizer, D, tsteps)
+    H, main, super, sub = Hessian(lds, y, x)
 
-    H, main, super, sub = Hessian(lds, y, x, w)
-
-    # Get the second moments of the latent state path, use static matrices if the latent dimension is small
     if lds.latent_dim > 10
         p_smooth, inverse_offdiag = block_tridiagonal_inverse(-sub, -main, -super)
     else
         p_smooth, inverse_offdiag = block_tridiagonal_inverse_static(-sub, -main, -super)
     end
 
-    # Calculate the entropy, see Utilities.jl for the function
+    # See Utilities.jl for definition
     gauss_entropy = gaussian_entropy(Symmetric(H))
 
-    # Symmetrize the covariance matrices
+    # Symmetrize
     @views for i in 1:tsteps
         p_smooth[:, :, i] .= 0.5 .* (p_smooth[:, :, i] .+ p_smooth[:, :, i]')
     end
 
-    # Add a zero matrix for later compatibility
     inverse_offdiag = cat(zeros(T, D, D), inverse_offdiag; dims=3)
 
     return x, p_smooth, inverse_offdiag, gauss_entropy
@@ -757,7 +720,7 @@ function Q_obs(
 end
 
 """
-    Q_obs(C, d, R, E_z, E_zz, y, w=nothing)
+    Q_obs(C, d, R, E_z, E_zz, y)
 
 Full observation Q-term for Gaussian LDS over all time steps.
 """
@@ -768,31 +731,24 @@ function Q_obs(
     E_z::AbstractMatrix{T},
     E_zz::AbstractArray{T,3},
     y::AbstractMatrix{T},
-    w::Union{Nothing,AbstractVector{T}}=nothing,
 ) where {T<:Real}
-    if w === nothing
-        w = ones(T, size(y, 2))
-    end
-
     obs_dim = size(C, 1)
+    tsteps = size(y, 2)
 
-    # Pre-compute constants
     R_chol = cholesky(Symmetric(R))
     log_det_R = logdet(R_chol)
     const_term = obs_dim * log(2π)
 
-    # Accumulate the quadratic form (pre R^{-1})
     temp = zeros(T, obs_dim, obs_dim)
     @views for t in axes(y, 2)
-        temp .+= w[t] * Q_obs(C, d, E_z[:, t], E_zz[:, :, t], y[:, t])
+        temp .+= Q_obs(C, d, E_z[:, t], E_zz[:, :, t], y[:, t])
     end
 
-    total_weight = sum(w)
-    return T(-0.5) * (total_weight * (const_term + log_det_R) + tr(R_chol \ temp))
+    return T(-0.5) * (tsteps * (const_term + log_det_R) + tr(R_chol \ temp))
 end
 
 """
-    Q_function(A, b, Q, C, d, R, P0, x0, E_z, E_zz, E_zz_prev, y, w=nothing)
+    Q_function(A, b, Q, C, d, R, P0, x0, E_z, E_zz, E_zz_prev, y)
 
 Complete Q-function for Gaussian LDS:
 x_t ~ 𝓝(A x_{t-1} + b, Q),  y_t ~ 𝓝(C x_t + d, R).
@@ -810,10 +766,9 @@ function Q_function(
     E_zz::AbstractArray{T,3},
     E_zz_prev::AbstractArray{T,3},
     y::AbstractMatrix{T},
-    w::Union{Nothing,AbstractVector{T}}=nothing,
 ) where {T<:Real}
     Q_val_state = Q_state(A, b, Q, P0, x0, E_z, E_zz, E_zz_prev)
-    Q_val_obs = Q_obs(C, d, R, E_z, E_zz, y, w)
+    Q_val_obs = Q_obs(C, d, R, E_z, E_zz, y)
     return Q_val_state + Q_val_obs
 end
 
@@ -892,16 +847,10 @@ function calculate_elbo(
     p_smooth::AbstractArray{T,4},
     y::AbstractArray{T,3},
     total_entropy::AbstractFloat,
-    w::Union{Nothing,AbstractVector{T}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
-    if w === nothing
-        w = ones(T, size(y, 2))
-    end
-
     ntrials = size(y, 3)
     Q_vals = zeros(T, ntrials)
 
-    # Thread over trials
     @threads for trial in 1:ntrials
         Q_vals[trial] = StateSpaceDynamics.Q_function(
             lds.state_model.A,
@@ -916,7 +865,6 @@ function calculate_elbo(
             view(E_zz,:,:,:,trial),
             view(E_zz_prev,:,:,:,trial),
             view(y,:,:,trial),
-            w,
         )
     end
 

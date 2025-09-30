@@ -1,4 +1,5 @@
 export SLDS
+
 @kwdef struct SLDS{T<:Real,
                    S<:AbstractStateModel,
                    O<:AbstractObservationModel,
@@ -114,4 +115,62 @@ end
 # Convenience method without explicit RNG
 Random.rand(slds::SLDS; kwargs...) = rand(Random.default_rng(), slds; kwargs...)
 
+function Gradient(slds::SLDS,
+    y::AbstractMatrix{T},
+    x::AbstractMatrix{T},
+    w::AbstractMatrix{T}) where {T <: Real}
 
+    latent_dim, tsteps = size(x)
+    grad = zeros(T, latent_dim, tsteps)
+    K = length(slds.LDSs)
+
+    for k in 1:K
+        lds_k = slds.LDSs[k]
+
+        # Compute unweighted gradient for LDS k
+        grad_k = Gradient(lds_k, y, x)
+
+        # Weight each timestep by discrete state posterior
+        for t in 1:tsteps
+            grad[:, t] .+= w[k, t] .* grad_k[:, t]
+        end
+    end
+
+    return grad
+end
+
+function Hessian(slds::SLDS,
+   y::AbstractMatrix{T},
+   x::AbstractMatrix{T},
+   w::AbstractMatrix{T}) where {T <: Real}
+
+    K = length(slds.LDSs)
+    latent_dim, tsteps = size(x)
+
+    # Initialize block-tridiagonal structure
+    H_diag_total = [zeros(T, latent_dim, latent_dim) for _ in 1:tsteps]
+    H_sub_total = [zeros(T, latent_dim, latent_dim) for _ in 1:(tsteps-1)]
+    H_super_total = [zeros(T, latent_dim, latent_dim) for _ in 1:(tsteps-1)]
+
+    for k in 1:K
+        lds_k = slds.LDSs[k]
+
+        # Compute unweighted Hessian blocks for LDS k
+        _, H_diag_k, H_super_k, H_sub_k = Hessian(lds_k, y, x)
+
+        # Weight diagonal blocks by discrete state posterior at time t
+        for t in 1:tsteps
+            H_diag_total[t] .+= w[k, t] .* H_diag_k[t]
+        end
+
+        # Weight off-diagonal blocks by discrete state posterior at time t+1
+        # (where the dynamics land)
+        for t in 1:(tsteps-1)
+            H_sub_total[t] .+= w[k, t+1] .* H_sub_k[t]
+            H_super_total[t] .+= w[k, t+1] .* H_super_k[t]
+        end
+    end
+
+    H = block_tridgm(H_diag_total, H_super_total, H_sub_total)
+    return H, H_diag_total, H_super_total, H_sub_total
+end

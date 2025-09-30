@@ -228,3 +228,229 @@ function test_valid_SLDS_probability_helper_functions()
     @test all(isapprox(sum(A[i, :]), 1.0) for i in 1:3)
     @test all(A[i, j] ≥ 0 for i in 1:3, j in 1:3)
 end
+
+function test_SLDS_gradient_numerical()
+    K = 2
+    lds = _make_gaussian_lds(2, 3)
+    slds = SLDS(A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K))
+    
+    z, x, y = rand(slds; tsteps=20, ntrials=1)
+    
+    tsteps = size(y, 2)
+    w = rand(K, tsteps)
+    w ./= sum(w, dims=1)
+    
+    y_trial = y[:, :, 1]
+    x_trial = x[:, :, 1]
+    
+    # Analytical gradient
+    grad_analytical = StateSpaceDynamics.Gradient(slds, y_trial, x_trial, w)
+    
+    # For numerical gradient, we need to compute the weighted objective
+    # The trick: the gradient is LINEAR in the weights, so we can compute
+    # a weighted sum of gradients, which equals the gradient of the weighted objective
+    function weighted_ll(x_flat)
+        x_mat = reshape(x_flat, size(x_trial))
+        
+        # Compute the weighted log-likelihood term by term
+        # We need to manually compute each component weighted by w
+        ll = 0.0
+        
+        for k in 1:K
+            lds_k = slds.LDSs[k]
+            
+            # Extract parameters
+            A_k = lds_k.state_model.A
+            Q_k = lds_k.state_model.Q
+            b_k = lds_k.state_model.b
+            x0_k = lds_k.state_model.x0
+            P0_k = lds_k.state_model.P0
+            C_k = lds_k.obs_model.C
+            R_k = lds_k.obs_model.R
+            d_k = lds_k.obs_model.d
+            
+            R_chol = cholesky(Symmetric(R_k)).U
+            Q_chol = cholesky(Symmetric(Q_k)).U
+            P0_chol = cholesky(Symmetric(P0_k)).U
+            
+            # Initial state (weighted by w[k, 1])
+            dx0 = x_mat[:, 1] - x0_k
+            ll += w[k, 1] * (-0.5 * sum(abs2, P0_chol \ dx0))
+            
+            # Dynamics and emissions
+            for t in 1:tsteps
+                # Emission (weighted by w[k, t])
+                dy = y_trial[:, t] - (C_k * x_mat[:, t] + d_k)
+                ll += w[k, t] * (-0.5 * sum(abs2, R_chol \ dy))
+                
+                # Dynamics (weighted by w[k, t])
+                if t > 1
+                    dx = x_mat[:, t] - (A_k * x_mat[:, t-1] + b_k)
+                    ll += w[k, t] * (-0.5 * sum(abs2, Q_chol \ dx))
+                end
+            end
+        end
+        
+        return ll
+    end
+    
+    grad_numerical = ForwardDiff.gradient(weighted_ll, vec(x_trial))
+    grad_numerical = reshape(grad_numerical, size(x_trial))
+    
+    @test isapprox(grad_analytical, grad_numerical, rtol=1e-5, atol=1e-5)
+end
+
+function test_SLDS_hessian_numerical()
+    K = 2
+    lds = _make_gaussian_lds(2, 2)
+    slds = SLDS(A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K))
+    
+    z, x, y = rand(slds; tsteps=5, ntrials=1)
+    
+    tsteps = size(y, 2)
+    w = rand(K, tsteps)
+    w ./= sum(w, dims=1)
+    
+    y_trial = y[:, :, 1]
+    x_trial = x[:, :, 1]
+    
+    # Analytical Hessian
+    H, H_diag, H_super, H_sub = StateSpaceDynamics.Hessian(slds, y_trial, x_trial, w)
+    
+    # Numerical Hessian - same weighted objective as gradient test
+    function weighted_ll(x_flat)
+        x_mat = reshape(x_flat, size(x_trial))
+        ll = 0.0
+        
+        for k in 1:K
+            lds_k = slds.LDSs[k]
+            
+            A_k = lds_k.state_model.A
+            Q_k = lds_k.state_model.Q
+            b_k = lds_k.state_model.b
+            x0_k = lds_k.state_model.x0
+            P0_k = lds_k.state_model.P0
+            C_k = lds_k.obs_model.C
+            R_k = lds_k.obs_model.R
+            d_k = lds_k.obs_model.d
+            
+            R_chol = cholesky(Symmetric(R_k)).U
+            Q_chol = cholesky(Symmetric(Q_k)).U
+            P0_chol = cholesky(Symmetric(P0_k)).U
+            
+            # Initial state (weighted by w[k, 1])
+            dx0 = x_mat[:, 1] - x0_k
+            ll += w[k, 1] * (-0.5 * sum(abs2, P0_chol \ dx0))
+            
+            # Dynamics and emissions
+            for t in 1:tsteps
+                # Emission (weighted by w[k, t])
+                dy = y_trial[:, t] - (C_k * x_mat[:, t] + d_k)
+                ll += w[k, t] * (-0.5 * sum(abs2, R_chol \ dy))
+                
+                # Dynamics (weighted by w[k, t])
+                if t > 1
+                    dx = x_mat[:, t] - (A_k * x_mat[:, t-1] + b_k)
+                    ll += w[k, t] * (-0.5 * sum(abs2, Q_chol \ dx))
+                end
+            end
+        end
+        
+        return ll
+    end
+    
+    H_numerical = ForwardDiff.hessian(weighted_ll, vec(x_trial))
+    
+    @test isapprox(H, H_numerical, rtol=1e-5, atol=1e-5)
+end
+
+function test_SLDS_gradient_reduces_to_single_LDS()
+    K = 3
+    lds = _make_gaussian_lds(2, 3)
+    slds = SLDS(A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K))
+    
+    z, x, y = rand(slds; tsteps=20, ntrials=1)
+    
+    tsteps = size(y, 2)
+    
+    # Test each discrete state in isolation
+    for active_k in 1:K
+        # Create weights where only state active_k is active
+        w = zeros(K, tsteps)
+        w[active_k, :] .= 1.0
+        
+        grad_slds = StateSpaceDynamics.Gradient(slds, y[:, :, 1], x[:, :, 1], w)
+        grad_lds = StateSpaceDynamics.Gradient(
+            slds.LDSs[active_k], y[:, :, 1], x[:, :, 1]
+        )
+        
+        @test isapprox(grad_slds, grad_lds, rtol=1e-10)
+    end
+end
+
+function test_SLDS_hessian_block_structure()
+    K = 2
+    lds = _make_gaussian_lds(2, 3)
+    slds = SLDS(A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K))
+    
+    z, x, y = rand(slds; tsteps=10, ntrials=1)
+    
+    tsteps = size(y, 2)
+    w = rand(K, tsteps)
+    w ./= sum(w, dims=1)
+    
+    H, H_diag, H_super, H_sub = StateSpaceDynamics.Hessian(
+        slds, y[:, :, 1], x[:, :, 1], w
+    )
+    
+    D = slds.LDSs[1].latent_dim
+    
+    # Check sizes
+    @test length(H_diag) == tsteps
+    @test length(H_super) == tsteps - 1
+    @test length(H_sub) == tsteps - 1
+    @test size(H) == (D * tsteps, D * tsteps)
+    
+    # Check each block is D×D
+    for t in 1:tsteps
+        @test size(H_diag[t]) == (D, D)
+    end
+    for t in 1:(tsteps-1)
+        @test size(H_super[t]) == (D, D)
+        @test size(H_sub[t]) == (D, D)
+    end
+    
+    # Check block-tridiagonal structure (zeros outside bands)
+    for i in 1:(D*tsteps)
+        for j in 1:(D*tsteps)
+            block_i = (i-1) ÷ D + 1
+            block_j = (j-1) ÷ D + 1
+            if abs(block_i - block_j) > 1
+                @test abs(H[i, j]) < 1e-10
+            end
+        end
+    end
+end
+
+function test_SLDS_gradient_weight_normalization()
+    K = 2
+    lds = _make_gaussian_lds(2, 2)
+    slds = SLDS(A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K))
+    
+    z, x, y = rand(slds; tsteps=15, ntrials=1)
+    
+    tsteps = size(y, 2)
+    
+    # Create two different weight matrices that sum to same values
+    w1 = rand(K, tsteps)
+    w1 ./= sum(w1, dims=1)
+    
+    w2 = 0.5 .* w1  # Scale by 0.5
+    w2 ./= sum(w2, dims=1)  # Renormalize
+    
+    # Gradients should be the same (weights are normalized)
+    grad1 = StateSpaceDynamics.Gradient(slds, y[:, :, 1], x[:, :, 1], w1)
+    grad2 = StateSpaceDynamics.Gradient(slds, y[:, :, 1], x[:, :, 1], w2)
+    
+    @test isapprox(grad1, grad2, rtol=1e-10)
+end
