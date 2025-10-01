@@ -254,7 +254,7 @@ function test_poisson_loglikelihood_type_preservation()
         x_mat = x[:, :, 1]
         y_mat = y[:, :, 1]
 
-        ll = StateSpaceDynamics.loglikelihood(x_mat, lds, y_mat)
+        ll = sum(StateSpaceDynamics.loglikelihood(x_mat, lds, y_mat))
 
         if ll isa Number
             @test typeof(ll) === T
@@ -284,7 +284,7 @@ function test_Gradient()
     # for each trial check the gradient
     for i in axes(y, 3)
         # numerically calculate the gradient
-        f = latents -> StateSpaceDynamics.loglikelihood(latents, plds, y[:, :, i])
+        f = latents -> sum(StateSpaceDynamics.loglikelihood(latents, plds, y[:, :, i]))
         grad_numerical = ForwardDiff.gradient(f, x[:, :, i])
 
         # calculate the gradient
@@ -299,7 +299,7 @@ function test_Hessian()
 
     # create function that allows that we can pass the latents to the loglikelihood transposed
     function log_likelihood(x::AbstractArray, plds, y::AbstractArray)
-        return StateSpaceDynamics.loglikelihood(x, plds, y)
+        return sum(StateSpaceDynamics.loglikelihood(x, plds, y))
     end
 
     # check hessian for each trial
@@ -334,8 +334,8 @@ function test_smooth()
 
     # test gradient is zero
     for i in axes(y, 3)
-        # may as well test the gradient here too 
-        f = latents -> StateSpaceDynamics.loglikelihood(latents, plds, y[:, :, i])
+        # may as well test the gradient here too
+        f = latents -> sum(StateSpaceDynamics.loglikelihood(latents, plds, y[:, :, i]))
         grad_numerical = ForwardDiff.gradient(f, x_smooth[:, :, i])
         grad_analytical = StateSpaceDynamics.Gradient(plds, y[:, :, i], x_smooth[:, :, i])
 

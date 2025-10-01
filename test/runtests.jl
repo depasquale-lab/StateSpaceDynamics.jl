@@ -34,7 +34,7 @@ Package Wide Tests
 #     end
 # end
 
-include("helper_functions.jl")
+# include("helper_functions.jl")
 
 """
 Tests for SLDS.jl

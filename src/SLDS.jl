@@ -1,5 +1,21 @@
 export SLDS
 
+"""
+    SLDS{T,S,O,TM,ISV}
+
+A Switching Linear Dynamical System (SLDS). A hierarchical time-series model of the form:
+
+```math
+z_t | z_{t-1} ~ Categorical(A_{z_{t-1}, :})
+x_t | x_{t-1}, z_t ~ N(A^{(z_t)} x_{t-1} + b^{(z_t)}, Q^{(z_t)})
+y_t | x_t, z_t ~ N(C^{(z_t)} x_t + d^{(z_t)}, R^{(z_t)})
+```
+
+# Fields
+- `A::TM`: Transition matrix for the discrete states (K x K)
+- `Z₀::ISV`: Initial state distribution for the discrete states (K-dimensional vector)
+- `LDSs::Vector{LinearDynamicalSystem{T,S,O}}`: Vector of K Linear Dynamical Systems, one for each discrete state
+"""
 @kwdef struct SLDS{T<:Real,
                    S<:AbstractStateModel,
                    O<:AbstractObservationModel,
@@ -115,6 +131,33 @@ end
 # Convenience method without explicit RNG
 Random.rand(slds::SLDS; kwargs...) = rand(Random.default_rng(), slds; kwargs...)
 
+"""
+    loglikelihood(slds::SLDS, x, y, w)
+    
+Compute weighted complete-data log-likelihood for SLDS.
+Returns vector of per-timestep log-likelihoods.
+"""
+function loglikelihood(
+    slds::SLDS{T,S,O},
+    x::AbstractMatrix{T},
+    y::AbstractMatrix{T},
+    w::AbstractMatrix{T}  # (K, tsteps)
+) where {T<:Real, S<:AbstractStateModel, O<:AbstractObservationModel}
+    
+    K, tsteps = size(w)
+    ll_vec = zeros(T, tsteps)
+    
+    for k in 1:K
+        # Get per-timestep log-likelihoods from LDS k
+        ll_k = loglikelihood(x, slds.LDSs[k], y)  # Vector{T}
+        
+        # Weight by discrete state posterior
+        ll_vec .+= w[k, :] .* ll_k
+    end
+    
+    return ll_vec
+end
+
 function Gradient(slds::SLDS,
     y::AbstractMatrix{T},
     x::AbstractMatrix{T},
@@ -173,4 +216,12 @@ function Hessian(slds::SLDS,
 
     H = block_tridgm(H_diag_total, H_super_total, H_sub_total)
     return H, H_diag_total, H_super_total, H_sub_total
+end
+
+function smooth(slds::SLDS,
+                y::AbstractMatrix{T},
+                w::AbstractMatrix{T}) where {T <: Real}
+
+    K = length(slds.LDSs)
+    
 end

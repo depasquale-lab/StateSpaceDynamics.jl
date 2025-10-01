@@ -336,7 +336,7 @@ observed data.
 - `y::AbstractMatrix{T}`: The observed data.
 
 # Returns
-- `ll::T`: The complete-data log-likelihood of the LDS.
+- `ll::Vector{T}`: The complete-data log-likelihood of the LDS at each timestep.
 """
 function loglikelihood(
     x::AbstractMatrix{U},
@@ -344,34 +344,43 @@ function loglikelihood(
     y::AbstractMatrix{T},
 ) where {U<:Real,T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     tsteps = size(y, 2)
-    A, Q, x0, P0 = lds.state_model.A,
-    lds.state_model.Q, lds.state_model.x0,
-    lds.state_model.P0
+    A, Q, x0, P0 = lds.state_model.A, lds.state_model.Q, lds.state_model.x0, lds.state_model.P0
     C, R, b, d = lds.obs_model.C, lds.obs_model.R, lds.state_model.b, lds.obs_model.d
 
     R_chol = cholesky(Symmetric(R)).U
     Q_chol = cholesky(Symmetric(Q)).U
     P0_chol = cholesky(Symmetric(P0)).U
 
-    dx0 = view(x, :, 1) .- x0
-    ll = sum(abs2, P0_chol \ dx0)
-
+    ll_vec = Vector{eltype(x)}(undef, tsteps)
+    
     temp_dx = zeros(eltype(x), size(x, 1))
     temp_dy = zeros(eltype(x), size(y, 1))
 
     for t in 1:tsteps
+        ll_t = zero(eltype(x))
+        
+        # Initial state contribution (only at t=1)
+        if t == 1
+            dx0 = view(x, :, 1) .- x0
+            ll_t += sum(abs2, P0_chol \ dx0)
+        end
+        
+        # Dynamics contribution (t > 1)
         if t > 1
             mul!(temp_dx, A, view(x, :, t-1), -one(eltype(x)), false)
             temp_dx .+= view(x, :, t) .- b
-            ll += sum(abs2, Q_chol \ temp_dx)
+            ll_t += sum(abs2, Q_chol \ temp_dx)
         end
-
+        
+        # Emission contribution
         mul!(temp_dy, C, view(x, :, t), -one(eltype(x)), false)
         temp_dy .+= view(y, :, t) .- d
-        ll += sum(abs2, R_chol \ temp_dy)
+        ll_t += sum(abs2, R_chol \ temp_dy)
+        
+        ll_vec[t] = -eltype(x)(0.5) * ll_t
     end
 
-    return -eltype(x)(0.5) * ll
+    return ll_vec
 end
 
 """
@@ -519,7 +528,7 @@ function smooth(
 
     function nll(vec_x::Vector{T})
         x = reshape(vec_x, D, tsteps)
-        return -loglikelihood(x, lds, y)
+        return -sum(loglikelihood(x, lds, y))
     end
 
     function g!(g::Vector{T}, vec_x::Vector{T})
@@ -1268,7 +1277,7 @@ single trial.
     currently used.
 
 # Returns
-- `ll::T`: The log-likelihood value.
+- `ll::Vector{T}`: The log-likelihood value.
 
 # Ref
 - loglikelihood(
@@ -1281,52 +1290,47 @@ function loglikelihood(
     x::AbstractMatrix{U},
     plds::LinearDynamicalSystem{T,S,O},
     y::AbstractMatrix{T},
-    w::Union{Nothing,AbstractVector{T}}=nothing,
 ) where {U<:Real,T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    if w === nothing
-        w = ones(U, size(y, 2))
-    elseif eltype(w) !== T
-        error("weights must be Vector{$(U)}; Got Vector{$(eltype(w))}")
-    end
+
+    # Result type and setup
+    R = promote_type(T, U)
+    tsteps = size(y, 2)
+    ll = zeros(R, tsteps)
 
     # Convert the log firing rate to firing rate
     d = exp.(plds.obs_model.log_d)
-    tsteps = size(y, 2)
 
-    # Pre-compute matrix inverses
+    # Pre-compute inverses
     inv_p0 = inv(plds.state_model.P0)
-    inv_Q = inv(plds.state_model.Q)
+    inv_Q  = inv(plds.state_model.Q)
 
-    # Calculate p(yₜ|xₜ)
+    # Observation term p(yₜ|xₜ), per timepoint
     C = plds.obs_model.C
     obs_dim, latent_dim = size(C)
-    temp = Vector{eltype(x)}(undef, obs_dim) # Temporary vector for calculations
-
-    pygivenx_sum = zero(T)
+    obs_tmp = Vector{eltype(x)}(undef, obs_dim)
 
     @views for t in 1:tsteps
-        temp .= C * x[:, t] .+ d
-        pygivenx_sum += dot(y[:, t], temp) - sum(exp, temp)
+        obs_tmp .= C * x[:, t] .+ d
+        ll[t] += (dot(y[:, t], obs_tmp) - sum(exp, obs_tmp))
     end
 
-    # Calculate p(x₁)
+    # Prior term p(x₁) goes to t = 1
     dx1 = @view(x[:, 1]) .- plds.state_model.x0
-    px1 = -U(0.5) * dot(dx1, inv_p0 * dx1)
+    ll[1] += -R(0.5) * dot(dx1, inv_p0 * dx1)
 
-    # Calculate p(xₜ|xₜ₋₁)
-    pxtgivenxt1_sum = zero(U)
+    # Transition terms p(xₜ|xₜ₋₁) go to their respective t (t ≥ 2)
     A = plds.state_model.A
     b = plds.state_model.b
-    temp = Vector{eltype(x)}(undef, latent_dim)  # Temporary vector for calculations
+    trans_tmp = Vector{eltype(x)}(undef, latent_dim)
 
     @views for t in 2:tsteps
-        temp .= x[:, t] .- (A * x[:, t - 1] .+ b)
-        pxtgivenxt1_sum += -U(0.5) * dot(temp, inv_Q * temp)
+        trans_tmp .= x[:, t] .- (A * x[:, t - 1] .+ b)
+        ll[t] += -R(0.5) * dot(trans_tmp, inv_Q * trans_tmp)
     end
 
-    # Return the log-posterior
-    return pygivenx_sum + px1 + pxtgivenxt1_sum
+    return ll
 end
+
 
 """
     loglikelihood(x::AbstractArray{T,3}, plds::LinearDynamicalSystem{T,S,O}, y::AbstractArray{T,3})
@@ -1340,7 +1344,7 @@ function loglikelihood(
     ll = zeros(T, size(y, 3))
 
     @threads for n in axes(y, 3)
-        ll[n] .= loglikelihood(x[:, :, n], plds, y[:, :, n])
+        ll[n] .= sum(loglikelihood(x[:, :, n], plds, y[:, :, n]))
     end
 
     return sum(ll)
