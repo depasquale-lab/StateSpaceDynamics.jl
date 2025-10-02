@@ -109,59 +109,90 @@ function block_tridiagonal_inverse_static(
     A::Vector{<:AbstractMatrix{T}},
     B::Vector{<:AbstractMatrix{T}},
     C::Vector{<:AbstractMatrix{T}},
-) where {T<:Real}
+    ::Val{N}
+) where {T<:Real, N}
     n = length(B)
-    N = size(B[1], 1)
-    N2 = N * N
+    
 
-    # Convert input vectors to static matrices
-    A_static = [SMatrix{N,N,T,N2}(A[i]) for i in eachindex(A)]
-    B_static = [SMatrix{N,N,T,N2}(B[i]) for i in eachindex(B)]
-    C_static = [SMatrix{N,N,T,N2}(C[i]) for i in eachindex(C)]
+    # Pre-allocate working matrices (reuse these)
+    M = MMatrix{N,N,T}(undef)  # Mutable static matrix for intermediate calculations
+    temp = MMatrix{N,N,T}(undef)
+    identity_static = MMatrix{N,N,T}(I)
+    zero_static = @SMatrix zeros(N,N)
 
-    # Initialize D and E arrays
-    D = Vector{SMatrix{N,N,T,N2}}(undef, n + 1)
-    E = Vector{SMatrix{N,N,T,N2}}(undef, n + 1)
-    D[1] = @SMatrix zeros(T, N, N)
-    E[n + 1] = @SMatrix zeros(T, N, N)
+    # Initialize D and E arrays - use mutable static matrices
+    D = Vector{SMatrix{N,N,T}}(undef, n + 1)
+    E = Vector{SMatrix{N,N,T}}(undef, n + 1)
+    D[1] = zero_static
+    E[n + 1] = zero_static
 
-    # Initialize λii and λij arrays
+    # Pre-allocate output arrays
     λii = Array{T}(undef, N, N, n)
     λij = Array{T}(undef, N, N, n - 1)
 
-    # Static identity
-    identity_static = SMatrix{N,N,T,N2}(I)
-
-    # Add zero matrices to A and C
-    A_extended = vcat([(@SMatrix zeros(T, N, N))], A_static)
-    C_extended = vcat(C_static, [(@SMatrix zeros(T, N, N))])
-
     # Forward sweep for D
     for i in 1:n
-        M = B_static[i] - A_extended[i] * D[i]
-        lu_M = lu(M)  # LU factorization directly on static matrix
-        D[i + 1] = lu_M \ C_extended[i]
+        # M = B[i] - A_extended[i] * D[i]
+        if i == 1
+            M .= B[1]  # A_extended[1] is zeros
+        else
+            mul!(temp, SMatrix{N,N,T}(A[i-1]), D[i])  # Convert only when needed
+            M .= B[i] .- temp
+        end
+        
+        # D[i + 1] = inv(M) * C_extended[i]
+        if i == n
+            D[i + 1] = zero_static  # C_extended[n] is zeros
+        else
+            M_static = SMatrix{N,N,T}(M)
+            C_static = SMatrix{N,N,T}(C[i])
+            D[i + 1] = M_static \ C_static 
+        end
     end
 
     # Backward sweep for E
     for i in n:-1:1
-        M = B_static[i] - C_extended[i] * E[i + 1]
-        lu_M = lu(M)  # LU factorization directly on static matrix
-        E[i] = lu_M \ A_extended[i]
+        # M = B[i] - C_extended[i] * E[i + 1]
+        if i == n
+            M .= B[n]  # C_extended[n] is zeros
+        else
+            mul!(temp, SMatrix{N,N,T}(C[i]), E[i + 1])
+            M .= B[i] .- temp
+        end
+        
+        # E[i] = inv(M) * A_extended[i]
+        if i == 1
+            E[i] = zero_static  # A_extended[1] is zeros
+        else
+            M_static = SMatrix{N,N,T}(M)
+            A_static = SMatrix{N,N,T}(A[i-1])
+            E[i] = M_static \ A_static
+        end
     end
 
     # Compute λii
     for i in 1:n
-        term1 = identity_static - D[i + 1] * E[i + 1]
-        term2 = B_static[i] - A_extended[i] * D[i]
+        # term1 = identity - D[i + 1] * E[i + 1]
+        mul!(temp, D[i + 1], E[i + 1])
+        term1 = identity_static - SMatrix{N,N,T}(temp)
+
+        # term2 = B[i] - A_extended[i] * D[i]
+        if i == 1
+            term2 = SMatrix{N,N,T}(B[1])
+        else
+            mul!(temp, SMatrix{N,N,T}(A[i-1]), D[i])
+            term2 = SMatrix{N,N,T}(B[i]) - SMatrix{N,N,T}(temp)
+        end
+        
+        # S = term2 * term1
         S = term2 * term1
-        lu_S = lu(S)  # LU factorization directly on static matrix
-        λii[:, :, i] = Matrix(lu_S \ identity_static)  # Convert only final result
+        λii[:, :, i] = Matrix(S \ identity_static)
     end
 
     # Compute λij
     for i in 2:n
-        λij[:, :, i - 1] = Matrix(E[i] * SMatrix{N,N,T,N2}(λii[:, :, i - 1]))
+        result = E[i] * SMatrix{N,N,T}(view(λii, :, :, i-1))
+        λij[:, :, i-1] = Matrix(result)
     end
 
     return λii, -λij
@@ -185,41 +216,21 @@ function block_tridgm(
     upper_diag::Vector{<:AbstractMatrix{T}},
     lower_diag::Vector{<:AbstractMatrix{T}},
 ) where {T<:Real}
-    # Input validation
-    if length(upper_diag) != length(main_diag) - 1 ||
-        length(lower_diag) != length(main_diag) - 1
-        throw(
-            DimensionMismatch(
-                "The length of upper_diag and lower_diag must be one less than the length of main_diag",
-            ),
-        )
-    end
+    n = length(main_diag)
+    m = size(main_diag[1], 1)
+    N = n * m
+    total_nnz = n * m * m + 2 * (n - 1) * m * m
 
-    # Determine dimensions
-    m = size(main_diag[1], 1)  # block size
-    n = length(main_diag)      # number of blocks
-    N = m * n                  # total matrix size
-
-    # Pre-calculate number of non-zero elements for each section
-    nnz_main = n * m * m           # main diagonal blocks
-    nnz_off = 2 * (n - 1) * m * m   # upper and lower diagonal blocks
-    total_nnz = nnz_main + nnz_off
-
-    # Pre-allocate arrays with exact sizes
     I = Vector{Int}(undef, total_nnz)
     J = Vector{Int}(undef, total_nnz)
     V = Vector{T}(undef, total_nnz)
 
-    # Use linear indexing for better performance
     idx = 1
 
-    # Fill main diagonal blocks
-    for block_idx in 1:n
-        block = main_diag[block_idx]
-        base = (block_idx - 1) * m
-
-        # Use linear indexing for the block
-        for j in 1:m, i in 1:m
+    for k in 1:n
+        base = (k - 1) * m
+        block = main_diag[k]
+        for i in 1:m, j in 1:m
             I[idx] = base + i
             J[idx] = base + j
             V[idx] = block[i, j]
@@ -227,33 +238,26 @@ function block_tridgm(
         end
     end
 
-    # Fill upper and lower diagonal blocks simultaneously
-    for block_idx in 1:(n - 1)
-        upper_block = upper_diag[block_idx]
-        lower_block = lower_diag[block_idx]
-
-        base_current = (block_idx - 1) * m
-        base_next = block_idx * m
-
-        # Upper diagonal block
-        for j in 1:m, i in 1:m
-            I[idx] = base_current + i
-            J[idx] = base_next + j
-            V[idx] = upper_block[i, j]
+    for k in 1:(n - 1)
+        base_k = (k - 1) * m
+        base_kp1 = k * m
+        block_up = upper_diag[k]
+        block_low = lower_diag[k]
+        for i in 1:m, j in 1:m
+            I[idx] = base_k + i
+            J[idx] = base_kp1 + j
+            V[idx] = block_up[i, j]
             idx += 1
         end
-
-        # Lower diagonal block
-        for j in 1:m, i in 1:m
-            I[idx] = base_next + i
-            J[idx] = base_current + j
-            V[idx] = lower_block[i, j]
+        for i in 1:m, j in 1:m
+            I[idx] = base_kp1 + i
+            J[idx] = base_k + j
+            V[idx] = block_low[i, j]
             idx += 1
         end
     end
 
-    # Create sparse matrix optimized for subsequent operations
-    return sparse(I, J, V, N, N, +)
+    return sparse(I, J, V, N, N)
 end
 
 # Initialization utilities

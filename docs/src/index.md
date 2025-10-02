@@ -6,7 +6,7 @@ StateSpaceDynamics.jl is a comprehensive Julia package for state space modeling,
 
 To install
 [StateSpaceDynamics.jl](https://github.com/depasquale-lab/StateSpaceDynamics.jl), start up
-Julia and type the following code-snipped into the REPL. 
+Julia and type the following code-snipped into the REPL.
 
 ```julia
 using Pkg
@@ -48,10 +48,11 @@ A fundamental example is the Linear Dynamical System (LDS), which combines linea
 ```
 
 where:
- * ``\mathbf{A}`` is the state transition matrix
- * ``\mathbf{C}`` is the observation matrix  
- * ``\mathbf{b}`` and ``\mathbf{d}`` are bias terms
- * ``\boldsymbol{\epsilon}_t`` and ``\boldsymbol{\delta}_t`` are Gaussian noise terms with covariances ``\mathbf{Q}`` and ``\mathbf{R}`` respectively
+
+* ``\mathbf{A}`` is the state transition matrix
+* ``\mathbf{C}`` is the observation matrix  
+* ``\mathbf{b}`` and ``\mathbf{d}`` are bias terms
+* ``\boldsymbol{\epsilon}_t`` and ``\boldsymbol{\delta}_t`` are Gaussian noise terms with covariances ``\mathbf{Q}`` and ``\mathbf{R}`` respectively
 
 2. Distributional form:
 
@@ -69,16 +70,16 @@ where ``\mathbf{Q}`` and ``\mathbf{R}`` are the state and observation noise cova
 StateSpaceDynamics.jl implements several types of state space models:
 
 1. **Linear Dynamical Systems (LDS)**
-   - Gaussian LDS
-   - Poisson LDS
+   * Gaussian LDS
+   * Poisson LDS
 
 2. **Hidden Markov Models (HMM)**
-   - Gaussian emissions
-   - Regression-based emissions
-      - Gaussian regression
-      - Bernoulli regression
-      - Poisson regression
-      - Autoregressive emissions
+   * Gaussian emissions
+   * Regression-based emissions
+      * Gaussian regression
+      * Bernoulli regression
+      * Poisson regression
+      * Autoregressive emissions
 
 ## Quick Start
 
@@ -110,7 +111,15 @@ lds = LinearDynamicalSystem(state_model, obs_model, latent_dim, obs_dim, fill(tr
 
 ## Contributing
 
-If you encounter a bug or would like to contribute to the package, please [open an issue](https://github.com/depasquale-lab/StateSpaceDynamics.jl/issues) on our GitHub repository. Once the suggested change has received positive feedback feel free to submit a PR adhering to the [blue](https://github.com/JuliaDiff/BlueStyle) style guide.
+If you encounter a bug or would like to contribute to the package, please [open an issue](https://github.com/depasquale-lab/StateSpaceDynamics.jl/issues) on our GitHub repository. Once the suggested change has received positive feedback, feel free to submit a PR adhering to the [BlueStyle](https://github.com/JuliaDiff/BlueStyle) guide.
+
+Please include or update **tests** for any user-facing change. Tests live in the `test/` folder and are run with:
+
+```julia
+julia --project -e 'using Pkg; Pkg.test()'
+# or from the Pkg REPL by typing "]":
+add StateSpaceDynamics
+```
 
 ## Citing StateSpaceDynamics.jl
 

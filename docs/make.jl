@@ -6,78 +6,43 @@ using Random
 # Set up the documentation environment
 DocMeta.setdocmeta!(StateSpaceDynamics, :DocTestSetup, :(using StateSpaceDynamics, Random); recursive=true)
 
-# SLDS example
-Literate.markdown(
-    joinpath(@__DIR__, "examples", "SLDS.jl"),
-    joinpath(@__DIR__, "src", "tutorials");
-    name = "switching_linear_dynamical_system_example",
-    documenter = true
-)
+# Define tutorial configurations
+tutorials = [
+    ("GaussianLDS.jl", "gaussian_latent_dynamics_example"),
+    ("PoissonLDS.jl", "poisson_latent_dynamics_example"),
+    ("LDSModelSelection.jl", "lds_model_selection_example"),
+    ("LDSIdentifiability.jl", "lds_identifiability_example"),
+    ("SLDS.jl", "switching_linear_dynamical_system_example"),
+    ("HMM.jl", "hidden_markov_model_example"),
+    ("HMM_ModelSelection.jl", "hmm_model_selection_example"),
+    ("HMMIdentifiability.jl", "hmm_identifiability_example"),
+    ("Gaussian_GLM_HMM.jl", "gaussian_glm_hmm_example"),
+    ("GaussianMixtureModel.jl", "gaussian_mixture_model_example"),
+    ("PoissonMixtureModel.jl", "poisson_mixture_model_example"),
+    ("ProbabilisticPCA.jl", "Probabilistic_PCA_example"),
+]
 
-# Convert Gaussian LDS example
-Literate.markdown(
-    joinpath(@__DIR__, "examples", "GaussianLDS.jl"),
-    joinpath(@__DIR__, "src", "tutorials");
-    name = "gaussian_latent_dynamics_example",
-    documenter = true
-)
-
-# Convert Poisson LDS example
-Literate.markdown(
-    joinpath(@__DIR__, "examples", "PoissonLDS.jl"),
-    joinpath(@__DIR__, "src", "tutorials");
-    name = "poisson_latent_dynamics_example",
-    documenter = true
-)
-
-# Convert Hidden Markov Model example
-Literate.markdown(
-    joinpath(@__DIR__, "examples", "HMM.jl"),
-    joinpath(@__DIR__, "src", "tutorials");
-    name = "hidden_markov_model_example",
-    documenter = true
-)
-
-# Convert Gaussian GLM-HMM example
-Literate.markdown(
-    joinpath(@__DIR__, "examples", "Gaussian_GLM_HMM.jl"),
-    joinpath(@__DIR__, "src", "tutorials");
-    name = "gaussian_glm_hmm_example",
-    documenter = true
-)
-
-# Convert Gaussian Mixture model example
-Literate.markdown(
-    joinpath(@__DIR__, "examples", "GaussianMixtureModel.jl"),
-    joinpath(@__DIR__, "src", "tutorials");
-    name = "gaussian_mixture_model_example",
-    documenter = true
-)
-
-# Convert Poisson Mixture model example
-Literate.markdown(
-    joinpath(@__DIR__, "examples", "PoissonMixtureModel.jl"),
-    joinpath(@__DIR__, "src", "tutorials");
-    name = "poisson_mixture_model_example",
-    documenter = true
-)
-
-# Convert PPCA example
-Literate.markdown(
-    joinpath(@__DIR__, "examples", "ProbabilisticPCA.jl"),
-    joinpath(@__DIR__, "src", "tutorials");
-    name = "Probabilistic_PCA_example",
-    documenter = true
-)
+# Convert all Julia examples to Markdown tutorials
+println("Converting tutorial examples...")
+for (source_file, output_name) in tutorials
+    println("  Converting $source_file -> $output_name.md")
+    Literate.markdown(
+        joinpath(@__DIR__, "examples", source_file),
+        joinpath(@__DIR__, "src", "tutorials");
+        name = output_name,
+        documenter = true
+    )
+end
 
 # Generate the documentation site
+println("Building documentation...")
 makedocs(;
     modules=[StateSpaceDynamics],
     authors="Ryan Senne",
     sitename="StateSpaceDynamics.jl",
     format = Documenter.HTML(
-    prettyurls = get(ENV, "CI", "false") == "true",
-    repolink = "https://github.com/depasquale-lab/StateSpaceDynamics.jl",
+        prettyurls = get(ENV, "CI", "false") == "true",
+        repolink = "https://github.com/depasquale-lab/StateSpaceDynamics.jl",
     ),
     pages=[
         "Home" => "index.md",
@@ -91,8 +56,12 @@ makedocs(;
         "Tutorials" => [
             "Gaussian LDS Example" => "tutorials/gaussian_latent_dynamics_example.md",
             "Poisson LDS Example" => "tutorials/poisson_latent_dynamics_example.md",
+            "LDS Model Selection Example" => "tutorials/lds_model_selection_example.md",
+            "Non-Identifiability in LDS Models" => "tutorials/lds_identifiability_example.md",
             "Hidden Markov Model Example" => "tutorials/hidden_markov_model_example.md",
-            "Gaussian GLM-GMM Example" => "tutorials/gaussian_glm_hmm_example.md",
+            "HMM Model Selection" => "tutorials/hmm_model_selection_example.md",
+            "Gaussian GLM-HMM Example" => "tutorials/gaussian_glm_hmm_example.md",
+            "HMM Identifiability" => "tutorials/hmm_identifiability_example.md",
             "Gaussian Mixture Model Example" => "tutorials/gaussian_mixture_model_example.md",
             "Poisson Mixture Model Example" => "tutorials/poisson_mixture_model_example.md",
             "Probabilistic PCA Example" => "tutorials/Probabilistic_PCA_example.md",
@@ -105,4 +74,8 @@ makedocs(;
 )
 
 # Deploy the documentation
-deploydocs(; repo="github.com/depasquale-lab/StateSpaceDynamics.jl", devbranch="docs_dev_")
+println("Deploying documentation...")
+deploydocs(; 
+    repo="github.com/depasquale-lab/StateSpaceDynamics.jl", 
+    devbranch="docs_dev_"
+)

@@ -116,14 +116,12 @@ end
 function test_gaussian_entropy()
     n = 3
     A = sprandn(n, n, 0.6)
-    Λ = Symmetric(A' * A) + 1e-8I          # sparse, SPD
-
-    # Compute Σ without forming a sparse inverse explicitly:
+    Λ = Symmetric(A' * A) + 1e-8I
+    
     F = cholesky(Λ)
-    Σ = Symmetric(Matrix(F \ I))           # dense Σ via solve (not inv)
-
+    Σ = Symmetric(Matrix(F \ Matrix{Float64}(I, n, n)))
+    
     gaus_entropy_dist = entropy(MvNormal(zeros(n), Σ))
     gauss_entropy_ssd = gaussian_entropy(-Λ)
-
     @test isapprox(gaus_entropy_dist, gauss_entropy_ssd; atol=1e-6)
 end

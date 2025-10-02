@@ -1,3 +1,4 @@
 # remove jupyter notebook from language stats
 notebooks/** linguist-vendored
 benchmarking/** linguist-vendored
+paper/** linguist-vendored

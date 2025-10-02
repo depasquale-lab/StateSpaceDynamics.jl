@@ -15,26 +15,29 @@ using StatsFuns
 using SpecialFunctions
 using Test
 
+const CHECKED_TYPES = [Float32, Float64] #, BigFloat] UMFPACK does not support BigFloat for Sparse Arrays see: https://github.com/JuliaSparse/SparseArrays.jl/blob/main/src/solvers/umfpack.jl
+
+
 """
 Package Wide Tests
 """
 
-# @testset "Package Wide Tests" begin
-#     Aqua.test_all(StateSpaceDynamics; ambiguities=false)
-#     @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
-# end
+@testset "Package Wide Tests" begin
+    Aqua.test_all(StateSpaceDynamics; ambiguities=false)
+    @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
+end
 
-# @testset "Blue Formatting" begin
-#     @test JuliaFormatter.format(StateSpaceDynamics; verbose=false, overwrite=false)
-# end
+@testset "Blue Formatting" begin
+    @test JuliaFormatter.format(StateSpaceDynamics; verbose=false, overwrite=false)
+end
 
-# @testset "Code linting using JET " begin
-#     if VERSION >= v"1.11"
-#         JET.test_package(StateSpaceDynamics; target_defined_modules=true)
-#     end
-# end
+@testset "Code linting using JET " begin
+    if VERSION >= v"1.11"
+        JET.test_package(StateSpaceDynamics; target_defined_modules=true)
+    end
+end
 
-# include("helper_functions.jl")
+include("helper_functions.jl")
 
 """
 Tests for SLDS.jl
