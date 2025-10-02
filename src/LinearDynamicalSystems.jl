@@ -148,15 +148,13 @@ Base.@kwdef struct LinearDynamicalSystem{
 end
 
 function LinearDynamicalSystem(
-    state_model::S,
-    obs_model::O;
-    fit_bool::Union{Vector{Bool}, Nothing} = nothing
-) where {T<:Real, S<:AbstractStateModel{T}, O<:AbstractObservationModel{T}}
-    
+    state_model::S, obs_model::O; fit_bool::Union{Vector{Bool},Nothing}=nothing
+) where {T<:Real,S<:AbstractStateModel{T},O<:AbstractObservationModel{T}}
+
     # Infer dimensions from matrices
     latent_dim = size(state_model.A, 1)
     obs_dim = size(obs_model.C, 1)
-    
+
     # Set default fit_bool based on observation model type
     if fit_bool === nothing
         if obs_model isa PoissonObservationModel
@@ -167,17 +165,17 @@ function LinearDynamicalSystem(
             fit_bool = [true, true, true, true, true, true]
         end
     end
-    
+
     # Create the LDS
-    lds = LinearDynamicalSystem{T, S, O}(
+    lds = LinearDynamicalSystem{T,S,O}(
         state_model, obs_model, latent_dim, obs_dim, fit_bool
     )
-    
+
     # Validate the constructed LDS
     if !isvalid_LDS(lds)
         error("Invalid LinearDynamicalSystem parameters")
     end
-    
+
     return lds
 end
 
@@ -200,9 +198,14 @@ function Base.show(io::IO, lds::LinearDynamicalSystem; gap="")
     return nothing
 end
 
-function _extract_state_params(state_model::GaussianStateModel{T}) where T
-    return (A = state_model.A, Q = state_model.Q, b = state_model.b, 
-            x0 = state_model.x0, P0 = state_model.P0)
+function _extract_state_params(state_model::GaussianStateModel{T}) where {T}
+    return (
+        A=state_model.A,
+        Q=state_model.Q,
+        b=state_model.b,
+        x0=state_model.x0,
+        P0=state_model.P0,
+    )
 end
 
 """
@@ -211,111 +214,140 @@ end
 Initialize a `FilterSmooth` object for a given linear dynamical system model and number of observations.
 """
 function initialize_FilterSmooth(
-    model::LinearDynamicalSystem{T,S,O}, 
-    num_obs::Int
-) where {T<:Real, S<:GaussianStateModel{T}, O<:AbstractObservationModel{T}}
+    model::LinearDynamicalSystem{T,S,O}, num_obs::Int
+) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     num_states = model.latent_dim
-    FilterSmooth{T}(
+    return FilterSmooth{T}(
         zeros(T, num_states, num_obs),                    # x_smooth
         zeros(T, num_states, num_states, num_obs),        # p_smooth  
         zeros(T, num_states, num_states, num_obs),        # p_smooth_tt1
         zeros(T, num_states, num_obs),                    # E_z
         zeros(T, num_states, num_states, num_obs),        # E_zz
         zeros(T, num_states, num_states, num_obs),        # E_zz_prev
-        zero(T)                                           # entropy
+        zero(T),                                           # entropy
     )
 end
 
 function initialize_FilterSmooth(
-    model::LinearDynamicalSystem{T,S,O},
-    tsteps::Int,
-    ntrials::Int
-) where {T<:Real, S<:GaussianStateModel{T}, O<:AbstractObservationModel{T}}
+    model::LinearDynamicalSystem{T,S,O}, tsteps::Int, ntrials::Int
+) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     filter_smooths = [initialize_FilterSmooth(model, tsteps) for _ in 1:ntrials]
     return TrialFilterSmooth(filter_smooths)
 end
 
-function _extract_obs_params(obs_model::GaussianObservationModel{T}) where T
-    return (C = obs_model.C, R = obs_model.R, d = obs_model.d)
+function _extract_obs_params(obs_model::GaussianObservationModel{T}) where {T}
+    return (C=obs_model.C, R=obs_model.R, d=obs_model.d)
 end
 
-function _extract_obs_params(obs_model::PoissonObservationModel{T}) where T
-    return (C = obs_model.C, log_d = obs_model.log_d, d = exp.(obs_model.log_d))
+function _extract_obs_params(obs_model::PoissonObservationModel{T}) where {T}
+    return (C=obs_model.C, log_d=obs_model.log_d, d=exp.(obs_model.log_d))
 end
 
-function _get_all_params_vec(lds::LinearDynamicalSystem{T,S,O}) where {T<:Real,S<:AbstractStateModel{T},O<:AbstractObservationModel{T}}
+function _get_all_params_vec(
+    lds::LinearDynamicalSystem{T,S,O}
+) where {T<:Real,S<:AbstractStateModel{T},O<:AbstractObservationModel{T}}
     state_params = _extract_state_params(lds.state_model)
     obs_params = _extract_obs_params(lds.obs_model)
-    
+
     # Convert named tuples to vectors and concatenate
-    state_vec = vcat(vec(state_params.A), vec(state_params.Q), vec(state_params.b), 
-                     vec(state_params.x0), vec(state_params.P0))
-    
+    state_vec = vcat(
+        vec(state_params.A),
+        vec(state_params.Q),
+        vec(state_params.b),
+        vec(state_params.x0),
+        vec(state_params.P0),
+    )
+
     if lds.obs_model isa GaussianObservationModel
         obs_vec = vcat(vec(obs_params.C), vec(obs_params.R), vec(obs_params.d))
     else # PoissonObservationModel
         obs_vec = vcat(vec(obs_params.C), vec(obs_params.log_d))
     end
-    
+
     return vcat(state_vec, obs_vec)
 end
 
-function _sample_trial!(rng, x_trial, y_trial, state_params, obs_params, obs_model::GaussianObservationModel)
+function _sample_trial!(
+    rng, x_trial, y_trial, state_params, obs_params, obs_model::GaussianObservationModel
+)
     tsteps = size(x_trial, 2)
-    
+
     # Initial state
     x_trial[:, 1] = rand(rng, MvNormal(state_params.x0, state_params.P0))
-    y_trial[:, 1] = rand(rng, MvNormal(obs_params.C * x_trial[:, 1] + obs_params.d, obs_params.R))
-    
+    y_trial[:, 1] = rand(
+        rng, MvNormal(obs_params.C * x_trial[:, 1] + obs_params.d, obs_params.R)
+    )
+
     # Subsequent states
     for t in 2:tsteps
-        x_trial[:, t] = rand(rng, MvNormal(state_params.A * x_trial[:, t-1] + state_params.b, state_params.Q))
-        y_trial[:, t] = rand(rng, MvNormal(obs_params.C * x_trial[:, t] + obs_params.d, obs_params.R))
+        x_trial[:, t] = rand(
+            rng,
+            MvNormal(state_params.A * x_trial[:, t - 1] + state_params.b, state_params.Q),
+        )
+        y_trial[:, t] = rand(
+            rng, MvNormal(obs_params.C * x_trial[:, t] + obs_params.d, obs_params.R)
+        )
     end
 end
 
-function _sample_trial!(rng, x_trial, y_trial, state_params, obs_params, obs_model::PoissonObservationModel)
+function _sample_trial!(
+    rng, x_trial, y_trial, state_params, obs_params, obs_model::PoissonObservationModel
+)
     tsteps = size(x_trial, 2)
-    
+
     # Initial state
     x_trial[:, 1] = rand(rng, MvNormal(state_params.x0, state_params.P0))
     y_trial[:, 1] = rand.(rng, Poisson.(exp.(obs_params.C * x_trial[:, 1] + obs_params.d)))
-    
+
     # Subsequent states
     for t in 2:tsteps
-        x_trial[:, t] = rand(rng, MvNormal(state_params.A * x_trial[:, t-1] + state_params.b, state_params.Q))
-        y_trial[:, t] = rand.(rng, Poisson.(exp.(obs_params.C * x_trial[:, t] + obs_params.d)))
+        x_trial[:, t] = rand(
+            rng,
+            MvNormal(state_params.A * x_trial[:, t - 1] + state_params.b, state_params.Q),
+        )
+        y_trial[:, t] = rand.(
+            rng, Poisson.(exp.(obs_params.C * x_trial[:, t] + obs_params.d))
+        )
     end
 end
 
 function Random.rand(
-    rng::AbstractRNG, 
-    lds::LinearDynamicalSystem{T,S,O}; 
-    tsteps::Int, 
-    ntrials::Int = 1
-) where {T<:Real, S<:GaussianStateModel{T}, O<:AbstractObservationModel{T}}
-    
+    rng::AbstractRNG, lds::LinearDynamicalSystem{T,S,O}; tsteps::Int, ntrials::Int=1
+) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+
     # Extract parameters once using a more systematic approach
     state_params = _extract_state_params(lds.state_model)
     obs_params = _extract_obs_params(lds.obs_model)
-    
+
     # Pre-allocate based on observation model type
     x = Array{T,3}(undef, lds.latent_dim, tsteps, ntrials)
     y = Array{T,3}(undef, lds.obs_dim, tsteps, ntrials)
-    
+
     # Sample trials (potentially in parallel for large ntrials)
     if ntrials > 10  # Threshold for parallelization
         Threads.@threads for trial in 1:ntrials
-            _sample_trial!(rng, view(x, :, :, trial), view(y, :, :, trial), 
-                          state_params, obs_params, lds.obs_model)
+            _sample_trial!(
+                rng,
+                view(x,:,:,trial),
+                view(y,:,:,trial),
+                state_params,
+                obs_params,
+                lds.obs_model,
+            )
         end
     else
         for trial in 1:ntrials
-            _sample_trial!(rng, view(x, :, :, trial), view(y, :, :, trial), 
-                          state_params, obs_params, lds.obs_model)
+            _sample_trial!(
+                rng,
+                view(x,:,:,trial),
+                view(y,:,:,trial),
+                state_params,
+                obs_params,
+                lds.obs_model,
+            )
         end
     end
-    
+
     return x, y
 end
 
@@ -348,12 +380,12 @@ observed data.
 - `ll::Vector{T}`: The complete-data log-likelihood of the LDS at each timestep.
 """
 function loglikelihood(
-    x::AbstractMatrix{U},
-    lds::LinearDynamicalSystem{T,S,O},
-    y::AbstractMatrix{T},
+    x::AbstractMatrix{U}, lds::LinearDynamicalSystem{T,S,O}, y::AbstractMatrix{T}
 ) where {U<:Real,T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     tsteps = size(y, 2)
-    A, Q, x0, P0 = lds.state_model.A, lds.state_model.Q, lds.state_model.x0, lds.state_model.P0
+    A, Q, x0, P0 = lds.state_model.A,
+    lds.state_model.Q, lds.state_model.x0,
+    lds.state_model.P0
     C, R, b, d = lds.obs_model.C, lds.obs_model.R, lds.state_model.b, lds.obs_model.d
 
     R_chol = cholesky(Symmetric(R)).U
@@ -361,35 +393,35 @@ function loglikelihood(
     P0_chol = cholesky(Symmetric(P0)).U
 
     ll_vec = Vector{eltype(x)}(undef, tsteps)
-    
+
     temp_dx = zeros(eltype(x), size(x, 1))
     temp_dy = zeros(eltype(x), size(y, 1))
-    
+
     # Pre-allocate solve result vectors (reuse these!)
     temp_solve_Q = zeros(eltype(x), size(x, 1))
     temp_solve_R = zeros(eltype(x), size(y, 1))
 
     for t in 1:tsteps
         ll_t = zero(eltype(x))
-        
+
         # Initial state contribution (only at t=1)
         if t == 1
             dx0 = view(x, :, 1) .- x0
             ll_t += sum(abs2, P0_chol \ dx0)
         end
-        
+
         # Dynamics contribution (t > 1)
         if t > 1
             mul!(temp_dx, A, view(x, :, t-1), -one(eltype(x)), false)
             temp_dx .+= view(x, :, t) .- b
             ll_t += sum(abs2, Q_chol \ temp_dx)
         end
-        
+
         # Emission contribution
         mul!(temp_dy, C, view(x, :, t), -one(eltype(x)), false)
         temp_dy .+= view(y, :, t) .- d
         ll_t += sum(abs2, R_chol \ temp_dy)
-        
+
         ll_vec[t] = -eltype(x)(0.5) * ll_t
     end
 
@@ -403,9 +435,7 @@ Compute the gradient of the log-likelihood with respect to the latent states for
 dynamical system.
 """
 function Gradient(
-    lds::LinearDynamicalSystem{T,S,O},
-    y::AbstractMatrix{T},
-    x::AbstractMatrix{T},
+    lds::LinearDynamicalSystem{T,S,O}, y::AbstractMatrix{T}, x::AbstractMatrix{T}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     latent_dim, tsteps = size(x)
     A, Q, x0, P0 = lds.state_model.A,
@@ -466,9 +496,7 @@ gradient of the log-likelihood.
     Hessian calculations e.g., in PoissonLDS.
 """
 function Hessian(
-    lds::LinearDynamicalSystem{T,S,O},
-    y::AbstractMatrix{T},
-    x::AbstractMatrix{T},
+    lds::LinearDynamicalSystem{T,S,O}, y::AbstractMatrix{T}, x::AbstractMatrix{T}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     A, Q, x0, P0 = lds.state_model.A,
     lds.state_model.Q, lds.state_model.x0,
@@ -538,29 +566,26 @@ function smooth(lds::LinearDynamicalSystem, y::AbstractMatrix{T}) where {T}
 end
 
 function smooth(lds::LinearDynamicalSystem, y::AbstractArray{T,3}) where {T}
-    tfs = initialize_FilterSmooth(lds, size(y,2), size(y,3))
+    tfs = initialize_FilterSmooth(lds, size(y, 2), size(y, 3))
     smooth!(lds, tfs, y)
 
-    D  = lds.latent_dim
+    D = lds.latent_dim
     Tt = size(y, 2)
-    N  = size(y, 3)
+    N = size(y, 3)
 
     xs = Array{T,3}(undef, D, Tt, N)
     Ps = Array{T,4}(undef, D, D, Tt, N)
 
     for n in 1:N
         fs = tfs.FilterSmooths[n]
-        xs[:,:,n]      .= fs.x_smooth
-        Ps[:,:,:,n]    .= fs.p_smooth
+        xs[:, :, n] .= fs.x_smooth
+        Ps[:, :, :, n] .= fs.p_smooth
     end
     return xs, Ps
 end
 
-
 function smooth!(
-    lds::LinearDynamicalSystem{T,S,O},
-    fs::FilterSmooth{T},
-    y::AbstractMatrix{T}
+    lds::LinearDynamicalSystem{T,S,O}, fs::FilterSmooth{T}, y::AbstractMatrix{T}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     tsteps, D = size(y, 2), lds.latent_dim
 
@@ -606,11 +631,15 @@ function smooth!(
 
     # Get the second moments of the latent state path, use static matrices if the latent dimension is small
     if lds.latent_dim > 10
-        p_smooth_result, p_smooth_tt1_result = block_tridiagonal_inverse(-sub, -main, -super)
+        p_smooth_result, p_smooth_tt1_result = block_tridiagonal_inverse(
+            -sub, -main, -super
+        )
         fs.p_smooth .= p_smooth_result
         fs.p_smooth_tt1[:, :, 2:end] .= p_smooth_tt1_result
     else
-        p_smooth_result, p_smooth_tt1_result = block_tridiagonal_inverse_static(-sub, -main, -super, Val(lds.latent_dim))
+        p_smooth_result, p_smooth_tt1_result = block_tridiagonal_inverse_static(
+            -sub, -main, -super, Val(lds.latent_dim)
+        )
         fs.p_smooth .= p_smooth_result
         fs.p_smooth_tt1[:, :, 2:end] .= p_smooth_tt1_result
     end
@@ -645,12 +674,10 @@ parameters and the observed data for multiple trials.
     (latent_dim, latent_dim, tsteps, ntrials).
 """
 function smooth!(
-    lds::LinearDynamicalSystem{T,S,O},
-    tfs::TrialFilterSmooth{T},
-    y::AbstractArray{T,3}
+    lds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}, y::AbstractArray{T,3}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     ntrials = size(y, 3)
-    
+
     if ntrials == 1
         # Single trial - no threading overhead
         smooth!(lds, tfs[1], y[:, :, 1])
@@ -660,7 +687,7 @@ function smooth!(
             smooth!(lds, tfs[trial], y[:, :, trial])
         end
     end
-    
+
     return tfs
 end
 
@@ -739,22 +766,22 @@ function Q_obs!(
     E_z::AbstractVector{T},
     E_zz::AbstractMatrix{T},
     y::AbstractVector{T},
-    buffers
+    buffers,
 ) where {T<:Real}
-   
+
     # Unpack buffers
     ytil, sum_yy, sum_yz, work1, work2 = buffers
-   
+
     # Residualize: ytil = y - d (pre-allocated buffer)
     ytil .= y .- d
-   
+
     # All operations use pre-allocated buffers
     mul!(sum_yy, ytil, ytil')
-    
+
     # Efficient outer product: sum_yz = ytil * E_z'
     fill!(sum_yz, zero(T))
     BLAS.ger!(one(T), ytil, E_z, sum_yz)
-   
+
     # Build result using buffers
     copyto!(result, sum_yy)
     mul!(result, C, sum_yz', -one(T), one(T))   # result -= C * sum_yz'
@@ -762,7 +789,7 @@ function Q_obs!(
     result .-= work1                             # result -= work1
     mul!(work2, E_zz, C')                        # work2 = E_zz * C'
     mul!(result, C, work2, one(T), one(T))       # result += C * work2
-   
+
     return result
 end
 
@@ -781,34 +808,34 @@ function Q_obs(
     obs_dim = size(C, 1)
     latent_dim = size(E_z, 1)
     tsteps = size(y, 2)
-   
+
     # Pre-compute constants
     R_chol = cholesky(Symmetric(R))
     log_det_R = logdet(R_chol)
     const_term = obs_dim * log(2π)
-   
+
     # Pre-allocate ALL buffers once (reuse across all timesteps!)
     temp = zeros(T, obs_dim, obs_dim)
     work_matrix = zeros(T, obs_dim, obs_dim)
-   
+
     # Buffers for the lower-level Q_obs! (including ytil for bias)
     buffers = (
-        ytil = zeros(T, obs_dim),
-        sum_yy = zeros(T, obs_dim, obs_dim),
-        sum_yz = zeros(T, obs_dim, latent_dim),
-        work1 = zeros(T, obs_dim, obs_dim),
-        work2 = zeros(T, latent_dim, obs_dim)
+        ytil=zeros(T, obs_dim),
+        sum_yy=zeros(T, obs_dim, obs_dim),
+        sum_yz=zeros(T, obs_dim, latent_dim),
+        work1=zeros(T, obs_dim, obs_dim),
+        work2=zeros(T, latent_dim, obs_dim),
     )
-   
+
     # Use views in the loop - now with buffer passing
     @views for t in axes(y, 2)
         # Pass buffers to lower-level function (with bias d)
-        Q_obs!(work_matrix, C, d, E_z[:,t], E_zz[:,:,t], y[:,t], buffers)
-       
+        Q_obs!(work_matrix, C, d, E_z[:, t], E_zz[:, :, t], y[:, t], buffers)
+
         # Accumulate in-place
         temp .+= work_matrix
     end
-    
+
     return T(-0.5) * (tsteps * (const_term + log_det_R) + tr(R_chol \ temp))
 end
 
@@ -848,19 +875,21 @@ Compute sufficient statistics for the EM algorithm in a Linear Dynamical System.
 """
 function sufficient_statistics!(fs::FilterSmooth{T}) where {T<:Real}
     latent_dim, tsteps = size(fs.x_smooth)
-    
+
     # E_z is just a copy of x_smooth
     fs.E_z .= fs.x_smooth
-    
+
     # Compute E_zz and E_zz_prev in-place
     @views for t in 1:tsteps
         # E_zz[:,:,t] = p_smooth[:,:,t] + x_smooth[:,t] * x_smooth[:,t]'
         mul!(fs.E_zz[:, :, t], fs.x_smooth[:, t:t], fs.x_smooth[:, t:t]')
         fs.E_zz[:, :, t] .+= fs.p_smooth[:, :, t]
-        
+
         if t > 1
             # E_zz_prev[:,:,t] = p_smooth_tt1[:,:,t] + x_smooth[:,t] * x_smooth[:,t-1]'
-            mul!(fs.E_zz_prev[:, :, t], fs.x_smooth[:, t:t], fs.x_smooth[:, t-1:t-1]')
+            mul!(
+                fs.E_zz_prev[:, :, t], fs.x_smooth[:, t:t], fs.x_smooth[:, (t - 1):(t - 1)]'
+            )
             fs.E_zz_prev[:, :, t] .+= fs.p_smooth_tt1[:, :, t]
         else
             fs.E_zz_prev[:, :, 1] .= 0
@@ -873,13 +902,12 @@ function sufficient_statistics!(tfs::TrialFilterSmooth{T}) where {T<:Real}
 
     if ntrials == 1
         sufficient_statistics!(tfs[1])
-    else 
+    else
         @threads for i in 1:ntrials
             sufficient_statistics!(tfs[i])
         end
     end
 end
-
 
 """
     estep(lds::LinearDynamicalSystem{T,S,O}, y::AbstractArray{T,3})
@@ -894,10 +922,10 @@ multi-trial.
     `ntrials = 1`.
 """
 function estep!(lds, tfs, y)
-    smooth!(lds, tfs, y)  
+    smooth!(lds, tfs, y)
     sufficient_statistics!(tfs)
-    elbo = calculate_elbo(lds, tfs, y) 
-    return elbo 
+    elbo = calculate_elbo(lds, tfs, y)
+    return elbo
 end
 
 """
@@ -906,9 +934,7 @@ end
 Calculate the Evidence Lower Bound (ELBO) for a Linear Dynamical System.
 """
 function calculate_elbo(
-    lds::LinearDynamicalSystem{T,S,O},
-    tfs::TrialFilterSmooth{T},
-    y::AbstractArray{T,3} 
+    lds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}, y::AbstractArray{T,3}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     ntrials = size(y, 3)
     Q_vals = zeros(T, ntrials)
@@ -928,10 +954,10 @@ function calculate_elbo(
             lds.obs_model.R,
             lds.state_model.P0,
             lds.state_model.x0,
-            fs.E_z,                    
-            fs.E_zz,                   
+            fs.E_z,
+            fs.E_zz,
             fs.E_zz_prev,
-            view(y, :, :, trial),
+            view(y,:,:,trial),
         )
     end
 
@@ -945,17 +971,17 @@ Update the initial state mean of the Linear Dynamical System using the average a
 trials.
 """
 function update_initial_state_mean!(
-    lds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}, 
+    lds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     if lds.fit_bool[1]
         ntrials = length(tfs.FilterSmooths)
         x0_new = zeros(T, lds.latent_dim)
-        
+
         for trial in 1:ntrials
             fs = tfs[trial]
             x0_new .+= fs.E_z[:, 1]
         end
-        
+
         lds.state_model.x0 .= x0_new ./ ntrials
     end
 end
@@ -971,7 +997,7 @@ Update the initial state covariance of the Linear Dynamical System using the ave
 all trials.
 """
 function update_initial_state_covariance!(
-    lds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}, 
+    lds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     if lds.fit_bool[2]
         ntrials = length(tfs.FilterSmooths)
@@ -1004,27 +1030,26 @@ Update the transition matrix A of the Linear Dynamical System.
 
 """
 function update_A_b!(
-    lds::LinearDynamicalSystem{T,S,O}, 
-    tfs::TrialFilterSmooth{T}
+    lds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     lds.fit_bool[3] || return nothing
-    
+
     D = lds.latent_dim
     ntrials = length(tfs)
-    
+
     # Accumulate statistics for [A b] jointly
     Sxz = zeros(T, D, D + 1)
     Szz = zeros(T, D + 1, D + 1)
-    
+
     for trial in 1:ntrials
         fs = tfs[trial]
         tsteps = size(fs.E_z, 2)
-        
+
         @views for t in 2:tsteps
             # Sxz accumulation
             Sxz[:, 1:D] .+= fs.E_zz_prev[:, :, t]   # E[x_t x_{t-1}ᵀ]
             Sxz[:, D + 1] .+= fs.E_z[:, t]           # E[x_t] for bias
-            
+
             # Szz for augmented state z_{t-1} = [x_{t-1}; 1]
             Szz[1:D, 1:D] .+= fs.E_zz[:, :, t - 1]   # E[x_{t-1} x_{t-1}ᵀ]
             Szz[1:D, D + 1] .+= fs.E_z[:, t - 1]      # E[x_{t-1}]
@@ -1032,12 +1057,12 @@ function update_A_b!(
             Szz[D + 1, D + 1] += one(T)               # 1
         end
     end
-    
+
     # Solve jointly: [A b] = Sxz / Szz
     AB = Sxz / Szz
     lds.state_model.A = AB[:, 1:D]
     lds.state_model.b = AB[:, D + 1]
-    
+
     return nothing
 end
 
@@ -1052,18 +1077,17 @@ Update the process noise covariance matrix Q of the Linear Dynamical System.
 
 """
 function update_Q!(
-    lds::LinearDynamicalSystem{T,S,O}, 
-    tfs::TrialFilterSmooth{T},
+    lds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     lds.fit_bool[4] || return nothing
-    
+
     ntrials = length(tfs)
     state_dim = lds.latent_dim
     A = lds.state_model.A
     b = lds.state_model.b
-    
+
     Q_new = zeros(T, state_dim, state_dim)
-    
+
     # Pre-allocate working matrices (reuse across all trials and timesteps!)
     temp1 = Matrix{T}(undef, state_dim, state_dim)  # For Σt_cross * A'
     temp2 = Matrix{T}(undef, state_dim, state_dim)  # For A * Σt_cross'
@@ -1072,51 +1096,51 @@ function update_Q!(
     temp5 = Vector{T}(undef, state_dim)             # CHANGE: For A * μtm1 (vector!)
     temp6 = Vector{T}(undef, state_dim)             # CHANGE: For b * μtm1' * A' intermediate
     innovation_cov = Matrix{T}(undef, state_dim, state_dim)
-    
+
     total_time_steps = 0
     for trial in 1:ntrials
         fs = tfs[trial]
         tsteps = size(fs.E_zz, 3)
-        
+
         @views for t in 2:tsteps
             Σt = fs.E_zz[:, :, t]           # E[x_t x_tᵀ]
             Σtm1 = fs.E_zz[:, :, t - 1]     # E[x_{t-1} x_{t-1}ᵀ]
             Σcross = fs.E_zz_prev[:, :, t]  # E[x_t x_{t-1}ᵀ]
             μt = fs.E_z[:, t]
             μtm1 = fs.E_z[:, t - 1]
-            
+
             # Compute using pre-allocated temps
             mul!(temp1, Σcross, A')         # temp1 = Σcross * A'
             mul!(temp2, A, Σcross')         # temp2 = A * Σcross'
             mul!(temp3, A, Σtm1)            # temp3 = A * Σtm1
             mul!(temp4, temp3, A')          # temp4 = (A * Σtm1) * A'
-            
+
             # E[(x_t - A x_{t-1} - b)(x_t - A x_{t-1} - b)ᵀ]
             # innovation_cov = Σt - temp1 - temp2 + temp4
             @. innovation_cov = Σt - temp1 - temp2 + temp4
-            
+
             # Add bias terms (these are cheap rank-1 updates)
             innovation_cov .-= μt * b'       # -E[x_t] * b'
             innovation_cov .-= b * μt'       # -b * E[x_t]'
-            
+
             # A * μtm1 * b' (temp5 = A * μtm1, then outer product)
             mul!(temp5, A, μtm1)             # temp5 is now a vector
             innovation_cov .+= temp5 * b'    # rank-1 update
-            
+
             # b * μtm1' * A' = (A * μtm1 * b')' (just transpose the previous)
             innovation_cov .+= b * temp5'    # reuse temp5!
-            
+
             innovation_cov .+= b * b'        # +b * b'
-            
+
             Q_new .+= innovation_cov
         end
         total_time_steps += (tsteps - 1)
     end
-    
+
     Q_new ./= total_time_steps
     Q_new .= 0.5 .* (Q_new .+ Q_new')  # Symmetrize in-place
     lds.state_model.Q = Q_new
-    
+
     return nothing
 end
 
@@ -1138,53 +1162,53 @@ function update_C_d!(
     w::Union{Nothing,AbstractVector{T}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     lds.fit_bool[5] || return nothing
-    
+
     if w === nothing
         w = ones(T, size(y, 2))
     end
-    
+
     ntrials = length(tfs)
     tsteps = size(y, 2)
     D = lds.latent_dim
     p = lds.obs_dim
-    
+
     # Accumulate statistics for [C d] jointly
     Syz = zeros(T, p, D + 1)
     Szz = zeros(T, D + 1, D + 1)
-    
+
     # Pre-allocate working matrices (reuse across all trials and timesteps!)
     work_yz = Matrix{T}(undef, p, D)      # For y * μ'
     work_outer = Matrix{T}(undef, D, D)   # For weighted Σ
-    
+
     for trial in 1:ntrials
         fs = tfs[trial]
-        
+
         @views for t in 1:tsteps
             wt = w[t]
             μ = fs.E_z[:, t]
             Σ = fs.E_zz[:, :, t]  # E[x_t x_tᵀ]
-            
+
             # Syz accumulates y_t [μ; 1]ᵀ with efficient operations
             mul!(work_yz, y[:, t, trial], μ')  # work_yz = y * μ'
             Syz[:, 1:D] .+= wt .* work_yz       # Weighted accumulation
             Syz[:, D + 1] .+= wt .* y[:, t, trial]  # Bias column
-            
+
             # Szz accumulates E[[x;1][x;1]ᵀ] weighted
             work_outer .= Σ
             work_outer .*= wt
             Szz[1:D, 1:D] .+= work_outer
-            
+
             Szz[1:D, D + 1] .+= wt .* μ
             Szz[D + 1, 1:D] .+= wt .* μ
             Szz[D + 1, D + 1] += wt
         end
     end
-    
+
     # Solve jointly: [C d] = Syz / Szz
     CD = Syz / Szz
     lds.obs_model.C = CD[:, 1:D]
     lds.obs_model.d = CD[:, D + 1]
-    
+
     return nothing
 end
 
@@ -1200,61 +1224,61 @@ Update the observation noise covariance matrix R of the Linear Dynamical System.
 
 """
 function update_R!(
-    lds::LinearDynamicalSystem{T,S,O}, 
-    tfs::TrialFilterSmooth{T}, 
+    lds::LinearDynamicalSystem{T,S,O},
+    tfs::TrialFilterSmooth{T},
     y::AbstractArray{T,3},
-    w::Union{Nothing,AbstractVector{T}}=nothing
+    w::Union{Nothing,AbstractVector{T}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     lds.fit_bool[6] || return nothing
-    
+
     if w === nothing
         w = ones(T, size(y, 2))
     end
-    
+
     obs_dim = lds.obs_dim
     tsteps = size(y, 2)
     ntrials = length(tfs)
-    
+
     R_new = zeros(T, obs_dim, obs_dim)
     C = lds.obs_model.C
     d = lds.obs_model.d
-    
+
     # Pre-allocate all temporary arrays (reuse across all trials and timesteps!)
     innovation = Vector{T}(undef, obs_dim)
     Czt = Vector{T}(undef, obs_dim)
     temp_matrix = Matrix{T}(undef, obs_dim, lds.latent_dim)
     outer_product = Matrix{T}(undef, lds.latent_dim, lds.latent_dim)
     state_uncertainty = Matrix{T}(undef, lds.latent_dim, lds.latent_dim)
-    
+
     for trial in 1:ntrials
         fs = tfs[trial]
-        
+
         @views for t in 1:tsteps
             wt = w[t]
-            
+
             # Compute innovation = y - (C*z_t + d) using pre-allocated arrays
             mul!(Czt, C, fs.E_z[:, t])
             @. innovation = y[:, t, trial] - (Czt + d)
-            
+
             # Add weighted innovation outer product
             mul!(R_new, innovation, innovation', wt, one(T))
-            
+
             # Compute state_uncertainty = E[zz] - E[z]E[z]' efficiently
             mul!(outer_product, fs.E_z[:, t], fs.E_z[:, t]')
             state_uncertainty .= fs.E_zz[:, :, t]
             state_uncertainty .-= outer_product
-            
+
             # Add weighted C * state_uncertainty * C'
             mul!(temp_matrix, C, state_uncertainty)
             mul!(R_new, temp_matrix, C', wt, one(T))
         end
     end
-    
+
     # Normalize by sum(w) * ntrials
     R_new ./= (sum(w) * ntrials)
     R_new .= 0.5 .* (R_new .+ R_new')  # Symmetrize
     lds.obs_model.R = R_new
-    
+
     return nothing
 end
 
@@ -1316,9 +1340,8 @@ function fit!(
     y::AbstractArray{T,3};
     max_iter::Int=100,
     tol::Float64=1e-6,
-    progress=true
+    progress=true,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
-
     if eltype(y) !== T
         error("Observed data must be of type $(T); Got $(eltype(y)))")
     end
@@ -1332,21 +1355,26 @@ function fit!(
 
     sizehint!(elbos, max_iter)  # Pre-allocate for efficiency
     # Create a FilterSmooth object
-    tfs = initialize_FilterSmooth(lds, size(y, 2), size(y,3))
-    
+    tfs = initialize_FilterSmooth(lds, size(y, 2), size(y, 3))
+
     # Initialize progress bar only if progress=true
     prog = if progress
         if O <: GaussianObservationModel
             Progress(max_iter; desc="Fitting LDS via EM...", barlen=50, showspeed=true)
         elseif O <: PoissonObservationModel
-            Progress(max_iter; desc="Fitting Poisson LDS via LaPlaceEM...", barlen=50, showspeed=true)
+            Progress(
+                max_iter;
+                desc="Fitting Poisson LDS via LaPlaceEM...",
+                barlen=50,
+                showspeed=true,
+            )
         else
             error("Unknown LDS model type")
         end
     else
         nothing
     end
-    
+
     # Run EM
     for i in 1:max_iter
         # E-step
@@ -1356,12 +1384,12 @@ function fit!(
         # Update the log-likelihood vector and parameter difference
         push!(elbos, elbo)
         push!(param_diff, Δparams)
-        
+
         # Update the progress bar only if it exists
         if progress && prog !== nothing
             next!(prog)
         end
-        
+
         # Check convergence
         if abs(elbo - prev_elbo) < tol
             if progress && prog !== nothing
@@ -1372,7 +1400,7 @@ function fit!(
 
         prev_elbo = elbo
     end
-    
+
     # Finish the progress bar if max_iter is reached
     if progress && prog !== nothing
         finish!(prog)
@@ -1409,9 +1437,7 @@ single trial.
 )
 """
 function loglikelihood(
-    x::AbstractMatrix{U},
-    plds::LinearDynamicalSystem{T,S,O},
-    y::AbstractMatrix{T},
+    x::AbstractMatrix{U}, plds::LinearDynamicalSystem{T,S,O}, y::AbstractMatrix{T}
 ) where {U<:Real,T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
 
     # Result type and setup
@@ -1424,7 +1450,7 @@ function loglikelihood(
 
     # Pre-compute inverses
     inv_p0 = inv(plds.state_model.P0)
-    inv_Q  = inv(plds.state_model.Q)
+    inv_Q = inv(plds.state_model.Q)
 
     # Get dimensions
     C = plds.obs_model.C
@@ -1454,7 +1480,6 @@ function loglikelihood(
 
     return ll
 end
-
 
 """
     loglikelihood(x::AbstractArray{T,3}, plds::LinearDynamicalSystem{T,S,O}, y::AbstractArray{T,3})
@@ -1514,7 +1539,7 @@ function Gradient(
     exp_term = Vector{T}(undef, obs_dim)       # exp(C * x[:, t] + d)
     innovation = Vector{T}(undef, obs_dim)     # y[:, t] - exp_term
     common_term = Vector{T}(undef, latent_dim) # C' * innovation
-    
+
     # Temporary vectors for state dynamics terms
     Ax_t = Vector{T}(undef, latent_dim)        # A * x[:, t]
     Ax_prev = Vector{T}(undef, latent_dim)     # A * x[:, t-1]
@@ -1529,64 +1554,64 @@ function Gradient(
         for i in 1:obs_dim
             exp_term[i] = exp(Cx_t[i] + d[i])  # exp_term = exp(C * x[:, t] + d)
         end
-        
+
         # common_term = C' * (y[:, t] - temp)
         innovation .= y[:, t] .- exp_term      # innovation = y[:, t] - exp_term
         mul!(common_term, C', innovation)      # common_term = C' * innovation
 
         if t == 1
             # First time step: common_term + A' * inv_Q * (x[:, 2] - A * x[:, t]) - inv_P0 * (x[:, t] - x0)
-            
+
             # Compute A * x[:, t]
             mul!(Ax_t, A, x[:, t])
-            
+
             # Compute x[:, 2] - A * x[:, t]
             state_diff .= x[:, 2] .- Ax_t
-            
+
             # Compute inv_Q * (x[:, 2] - A * x[:, t])
             mul!(temp_grad, inv_Q, state_diff)
-            
+
             # Compute A' * inv_Q * (x[:, 2] - A * x[:, t])
             mul!(grad[:, t], A', temp_grad)
-            
+
             # Add common_term
             grad[:, t] .+= common_term
-            
+
             # Subtract inv_P0 * (x[:, t] - x0)
             state_diff .= x[:, t] .- x0
             mul!(temp_grad, inv_P0, state_diff)
             grad[:, t] .-= temp_grad
-            
+
         elseif t == tsteps
             # Last time step: common_term - inv_Q * (x[:, t] - A * x[:, t-1])
-            
+
             # Compute A * x[:, t-1]
-            mul!(Ax_prev, A, x[:, t-1])
-            
+            mul!(Ax_prev, A, x[:, t - 1])
+
             # Compute x[:, t] - A * x[:, t-1]
             state_diff .= x[:, t] .- Ax_prev
-            
+
             # Compute inv_Q * (x[:, t] - A * x[:, t-1])
             mul!(temp_grad, inv_Q, state_diff)
-            
+
             # grad[:, t] = common_term - inv_Q * (...)
             grad[:, t] .= common_term .- temp_grad
-            
+
         else
             # Intermediate time steps: 
             # common_term + A' * inv_Q * (x[:, t+1] - A * x[:, t]) - inv_Q * (x[:, t] - A * x[:, t-1])
-            
+
             # First part: A' * inv_Q * (x[:, t+1] - A * x[:, t])
             mul!(Ax_t, A, x[:, t])                   # Ax_t = A * x[:, t]
-            state_diff .= x[:, t+1] .- Ax_t          # state_diff = x[:, t+1] - A * x[:, t]
+            state_diff .= x[:, t + 1] .- Ax_t          # state_diff = x[:, t+1] - A * x[:, t]
             mul!(temp_grad, inv_Q, state_diff)       # temp_grad = inv_Q * state_diff
             mul!(grad[:, t], A', temp_grad)          # grad[:, t] = A' * temp_grad
-            
+
             # Add common_term
             grad[:, t] .+= common_term
-            
+
             # Second part: - inv_Q * (x[:, t] - A * x[:, t-1])
-            mul!(Ax_prev, A, x[:, t-1])              # Ax_prev = A * x[:, t-1]
+            mul!(Ax_prev, A, x[:, t - 1])              # Ax_prev = A * x[:, t-1]
             state_diff .= x[:, t] .- Ax_prev         # state_diff = x[:, t] - A * x[:, t-1]
             mul!(temp_grad, inv_Q, state_diff)       # temp_grad = inv_Q * state_diff
             grad[:, t] .-= temp_grad                 # grad[:, t] -= temp_grad
@@ -1630,7 +1655,7 @@ function Hessian(
 
     # Fill the super and sub diagonals
     H_sub = [H_sub_entry for _ in 1:(tsteps - 1)]
-    H_super = [H_super_entry for _ in 1:(tsteps - 1)]   
+    H_super = [H_super_entry for _ in 1:(tsteps - 1)]
 
     λ = zeros(T, size(C, 1))
     z = similar(λ)
@@ -1638,7 +1663,7 @@ function Hessian(
     H_diag = [Matrix{T}(undef, size(x, 1), size(x, 1)) for _ in 1:tsteps]
 
     # minnimal allocation Hessian helper function
-    function calculate_poisson_hess!(out::Matrix{T}, C::Matrix{T}, λ::Vector{T}) where T
+    function calculate_poisson_hess!(out::Matrix{T}, C::Matrix{T}, λ::Vector{T}) where {T}
         n, p = size(C)
         @inbounds for j in 1:p, i in 1:p
             acc = zero(T)
@@ -1789,17 +1814,17 @@ function Q_observation_model(
             mul!(temp_vec, P_t, c_i)  # temp_vec = P_t * c_i
             ρ[i] = T(0.5) * dot(c_i, temp_vec)  # ρ[i] = c_i' * P_t * c_i
         end
-        
+
         # Compute ŷ = exp(h + ρ) in-place, reusing ρ as ŷ
         # This replaces: ŷ = exp.(h .+ ρ)
         for i in 1:obs_dim
             ρ[i] = exp(h[i] + ρ[i])  # ρ now stores ŷ values
         end
-        
+
         # Compute sum(y_t .* h .- ŷ) without temporary arrays
         # This replaces: Q_val += sum(y_t .* h .- ŷ)
         for i in 1:obs_dim
-            Q_val += y_t[i] * h[i] - ρ[i] 
+            Q_val += y_t[i] * h[i] - ρ[i]
         end
     end
 
@@ -1819,14 +1844,12 @@ function Q_observation_model(
 ) where {T<:Real}
     trials = length(tfs.FilterSmooths)
     Q_vals = zeros(T, trials)
-    
+
     @threads for k in 1:trials
         fs = tfs[k]  # Get FilterSmooth for this trial
-        Q_vals[k] = Q_observation_model(
-            C, log_d, fs.E_z, fs.p_smooth, view(y, :, :, k)
-        )
+        Q_vals[k] = Q_observation_model(C, log_d, fs.E_z, fs.p_smooth, view(y,:,:,k))
     end
-    
+
     return sum(Q_vals)
 end
 
@@ -1875,9 +1898,7 @@ Ensure that the dimensions of input arrays match the expected dimensions as desc
 arguments section.
 """
 function calculate_elbo(
-    plds::LinearDynamicalSystem{T,S,O},
-    tfs::TrialFilterSmooth{T},
-    y::AbstractArray{T,3},
+    plds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}, y::AbstractArray{T,3}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     # Set up parameters
     A, b, Q, x0, p0 = plds.state_model.A,
@@ -1895,18 +1916,18 @@ function calculate_elbo(
     @threads for trial in 1:ntrials
         fs = tfs[trial]  # Get the FilterSmooth for this trial
         Q_vals[trial] = Q_function(
-            A, 
+            A,
             b,
-            Q, 
-            C, 
-            log_d, 
-            x0, 
+            Q,
+            C,
+            log_d,
+            x0,
             p0,
-            fs.E_z,                    
-            fs.E_zz,                   
+            fs.E_z,
+            fs.E_zz,
             fs.E_zz_prev,
             fs.p_smooth,
-            view(y, :, :, trial)
+            view(y,:,:,trial),
         )
     end
 
@@ -1929,37 +1950,37 @@ function gradient_observation_model_single_trial!(
     d = exp.(log_d)
     obs_dim, latent_dim = size(C)
     tsteps = size(y, 2)
-    
+
     # Pre-allocate temporary arrays
     h = Vector{T}(undef, obs_dim)
     ρ = Vector{T}(undef, obs_dim)
     λ = Vector{T}(undef, obs_dim)
-    
+
     # Key optimization: pre-compute C * P_smooth_t once per timestep
     CP = Matrix{T}(undef, obs_dim, latent_dim)
-    
+
     @views for t in 1:tsteps
         E_z_t = E_z[:, t]
         P_smooth_t = p_smooth[:, :, t]
         y_t = y[:, t]
-        
+
         # Compute h = C * z_t + d
         mul!(h, C, E_z_t)
         h .+= d
-        
+
         # Pre-compute CP = C * P_smooth_t (this is the expensive operation)
         mul!(CP, C, P_smooth_t)
-        
+
         # Compute ρ efficiently 
         for i in 1:obs_dim
             ρ[i] = T(0.5) * dot(C[i, :], CP[i, :])
         end
-        
+
         # Compute λ = exp(h + ρ)
         for i in 1:obs_dim
             λ[i] = exp(h[i] + ρ[i])
         end
-        
+
         # Gradient computation
         for j in 1:latent_dim
             for i in 1:obs_dim
@@ -1968,7 +1989,7 @@ function gradient_observation_model_single_trial!(
                 grad[idx] += y_t[i] * E_z_t[j] - λ[i] * (E_z_t[j] + CP[i, j])
             end
         end
-        
+
         # Update log_d gradient
         @views grad[(end - obs_dim + 1):end] .+= (y_t .- λ) .* d
     end
@@ -1987,19 +2008,19 @@ function gradient_observation_model!(
     y::AbstractArray{T,3},
 ) where {T<:Real}
     trials = length(tfs.FilterSmooths)
-    
+
     fill!(grad, zero(T))
-    
+
     # Accumulate gradients from all trials
     @threads for k in 1:trials
         fs = tfs[k]  # Get FilterSmooth for this trial
         # Local gradient for this trial
         local_grad = zeros(T, length(grad))
-        
+
         gradient_observation_model_single_trial!(
-            local_grad, C, log_d, fs.E_z, fs.p_smooth, view(y, :, :, k)
+            local_grad, C, log_d, fs.E_z, fs.p_smooth, view(y,:,:,k)
         )
-        
+
         # Thread-safe update of global gradient
         grad .+= local_grad
     end
@@ -2007,16 +2028,13 @@ function gradient_observation_model!(
     return grad .*= -1
 end
 
-
 """
     update_observation_model!(plds, tfs, y)
 
 Update the observation model parameters of a PLDS model.
 """
 function update_observation_model!(
-    plds::LinearDynamicalSystem{T,S,O},
-    tfs::TrialFilterSmooth{T},
-    y::AbstractArray{T,3}
+    plds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}, y::AbstractArray{T,3}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     if plds.fit_bool[5]
         params = vcat(vec(plds.obs_model.C), plds.obs_model.log_d)
@@ -2040,7 +2058,9 @@ function update_observation_model!(
         )
 
         # use CG result as initial guess for LBFGS
-        result = optimize(f, g!, params, LBFGS(;linesearch=LineSearches.HagerZhang()), opts)
+        result = optimize(
+            f, g!, params, LBFGS(; linesearch=LineSearches.HagerZhang()), opts
+        )
 
         # Update the parameters
         C_size = plds.obs_dim * plds.latent_dim
@@ -2067,19 +2087,17 @@ Perform the M-step of the EM algorithm for a Poisson Linear Dynamical System wit
 multi-trial data.
 """
 function mstep!(
-    plds::LinearDynamicalSystem{T,S,O},
-    tfs::TrialFilterSmooth{T},
-    y::AbstractArray{T,3},
+    plds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}, y::AbstractArray{T,3}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     # Get old params using new approach
     old_params = _get_all_params_vec(plds)
-    
+
     # Update state parameters
     update_initial_state_mean!(plds, tfs)
     update_initial_state_covariance!(plds, tfs)
     update_A_b!(plds, tfs)
     update_Q!(plds, tfs)
-    
+
     # Update observation parameters
     update_observation_model!(plds, tfs, y)
 

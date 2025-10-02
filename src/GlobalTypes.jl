@@ -67,7 +67,9 @@ Typically, `α` and `β` are computed by the forward–backward algorithm to fin
 of an observation sequence. `γ` and `ξ` are derived from these calculations to estimate how
 states transition over time.
 """
-mutable struct ForwardBackward{T<:Real, V<:AbstractVector{T}, M<:AbstractMatrix{T}, MM<:AbstractMatrix{T}}
+mutable struct ForwardBackward{
+    T<:Real,V<:AbstractVector{T},M<:AbstractMatrix{T},MM<:AbstractMatrix{T}
+}
     loglikelihoods::M
     α::M
     β::M
@@ -128,11 +130,11 @@ filter = FilterSmooth{Float64}(
 """
 mutable struct FilterSmooth{T<:Real}
     x_smooth::Matrix{T}
-    p_smooth::Array{T, 3}
-    p_smooth_tt1::Array{T, 3}
+    p_smooth::Array{T,3}
+    p_smooth_tt1::Array{T,3}
     E_z::Matrix{T}
-    E_zz::Array{T, 3}
-    E_zz_prev::Array{T, 3}
+    E_zz::Array{T,3}
+    E_zz_prev::Array{T,3}
     entropy::T
 end
 
@@ -165,9 +167,13 @@ function Base.show(io::IO, fs::FilterSmooth; gap="")
 end
 
 struct TrialFilterSmooth{T<:Real}
-  FilterSmooths::Vector{FilterSmooth{T}}
+    FilterSmooths::Vector{FilterSmooth{T}}
 end
 
 Base.getindex(f::TrialFilterSmooth, i::Int) = f.FilterSmooths[i]
-Base.setindex!(f::TrialFilterSmooth, value::FilterSmooth{T}, i::Int) where T<:Real = (f.FilterSmooths[i] = value)
+function Base.setindex!(
+    f::TrialFilterSmooth, value::FilterSmooth{T}, i::Int
+) where {T<:Real}
+    return (f.FilterSmooths[i] = value)
+end
 Base.length(f::TrialFilterSmooth) = length(f.FilterSmooths)

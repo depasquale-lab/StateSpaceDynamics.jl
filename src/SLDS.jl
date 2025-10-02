@@ -16,14 +16,16 @@ y_t | x_t, z_t ~ N(C^{(z_t)} x_t + d^{(z_t)}, R^{(z_t)})
 - `Z₀::ISV`: Initial state distribution for the discrete states (K-dimensional vector)
 - `LDSs::Vector{LinearDynamicalSystem{T,S,O}}`: Vector of K Linear Dynamical Systems, one for each discrete state
 """
-@kwdef struct SLDS{T<:Real,
-                   S<:AbstractStateModel,
-                   O<:AbstractObservationModel,
-                   TM<:AbstractMatrix{T},
-                   ISV<:AbstractVector{T}} 
-    A::TM                                  
-    Z₀::ISV                                 
-    LDSs::Vector{LinearDynamicalSystem{T,S,O}} 
+@kwdef struct SLDS{
+    T<:Real,
+    S<:AbstractStateModel,
+    O<:AbstractObservationModel,
+    TM<:AbstractMatrix{T},
+    ISV<:AbstractVector{T},
+}
+    A::TM
+    Z₀::ISV
+    LDSs::Vector{LinearDynamicalSystem{T,S,O}}
 end
 
 """
@@ -35,96 +37,134 @@ Sample from a Switching Linear Dynamical System (SLDS). Returns a tuple `(z, x, 
 - `y` is a 3D array of observations of size `(obs_dim, tsteps, ntrials)`
 """
 function Random.rand(
-    rng::AbstractRNG, 
-    slds::SLDS{T,S,O}; 
-    tsteps::Int, 
-    ntrials::Int = 1
-) where {T<:Real, S<:AbstractStateModel, O<:AbstractObservationModel}
-    
+    rng::AbstractRNG, slds::SLDS{T,S,O}; tsteps::Int, ntrials::Int=1
+) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
     K = length(slds.LDSs)  # Number of discrete states
     latent_dim = slds.LDSs[1].latent_dim
     obs_dim = slds.LDSs[1].obs_dim
-    
+
     # Pre-allocate outputs
     z = Array{Int,2}(undef, tsteps, ntrials)        # Discrete states
     x = Array{T,3}(undef, latent_dim, tsteps, ntrials)  # Continuous states  
     y = Array{T,3}(undef, obs_dim, tsteps, ntrials)     # Observations
-    
+
     # Pre-extract parameters for all LDS models (avoid repeated extraction)
     state_params = [_extract_state_params(lds.state_model) for lds in slds.LDSs]
     obs_params = [_extract_obs_params(lds.obs_model) for lds in slds.LDSs]
-    
+
     # Sample each trial
     for trial in 1:ntrials
-        _sample_slds_trial!(rng, 
-                           view(z, :, trial), 
-                           view(x, :, :, trial), 
-                           view(y, :, :, trial),
-                           slds.A, slds.Z₀, state_params, obs_params, 
-                           slds.LDSs[1].obs_model)  # Use first for type dispatch
+        _sample_slds_trial!(
+            rng,
+            view(z, :, trial),
+            view(x,:,:,trial),
+            view(y,:,:,trial),
+            slds.A,
+            slds.Z₀,
+            state_params,
+            obs_params,
+            slds.LDSs[1].obs_model,
+        )  # Use first for type dispatch
     end
-    
+
     return z, x, y
 end
 
 # Core SLDS trial sampling logic
-function _sample_slds_trial!(rng, z_trial, x_trial, y_trial, A, Z₀, state_params, obs_params, obs_model_type)
+function _sample_slds_trial!(
+    rng, z_trial, x_trial, y_trial, A, Z₀, state_params, obs_params, obs_model_type
+)
     tsteps = length(z_trial)
     K = size(A, 1)
-    
+
     # Sample discrete state sequence using forward sampling
     z_trial[1] = rand(rng, Categorical(Z₀))
     for t in 2:tsteps
-        z_trial[t] = rand(rng, Categorical(A[z_trial[t-1], :]))
+        z_trial[t] = rand(rng, Categorical(A[z_trial[t - 1], :]))
     end
-    
+
     # Sample continuous states and observations given discrete sequence
-    _sample_continuous_given_discrete!(rng, x_trial, y_trial, z_trial, 
-                                      state_params, obs_params, obs_model_type)
+    return _sample_continuous_given_discrete!(
+        rng, x_trial, y_trial, z_trial, state_params, obs_params, obs_model_type
+    )
 end
 
 # Sample continuous dynamics given discrete state sequence
-function _sample_continuous_given_discrete!(rng, x_trial, y_trial, z_trial, 
-                                           state_params, obs_params, obs_model_type::GaussianObservationModel)
+function _sample_continuous_given_discrete!(
+    rng,
+    x_trial,
+    y_trial,
+    z_trial,
+    state_params,
+    obs_params,
+    obs_model_type::GaussianObservationModel,
+)
     tsteps = length(z_trial)
-    
+
     # Initial state from the selected LDS
     k1 = z_trial[1]
     x_trial[:, 1] = rand(rng, MvNormal(state_params[k1].x0, state_params[k1].P0))
-    y_trial[:, 1] = rand(rng, MvNormal(obs_params[k1].C * x_trial[:, 1] + obs_params[k1].d, 
-                                      obs_params[k1].R))
-    
+    y_trial[:, 1] = rand(
+        rng, MvNormal(obs_params[k1].C * x_trial[:, 1] + obs_params[k1].d, obs_params[k1].R)
+    )
+
     # Subsequent states - switch dynamics based on discrete state
     for t in 2:tsteps
-        k_prev, k_curr = z_trial[t-1], z_trial[t]
-        
+        k_prev, k_curr = z_trial[t - 1], z_trial[t]
+
         # Continuous state follows previous discrete state's dynamics
-        x_trial[:, t] = rand(rng, MvNormal(state_params[k_prev].A * x_trial[:, t-1] + state_params[k_prev].b, 
-                                          state_params[k_prev].Q))
-        
+        x_trial[:, t] = rand(
+            rng,
+            MvNormal(
+                state_params[k_prev].A * x_trial[:, t - 1] + state_params[k_prev].b,
+                state_params[k_prev].Q,
+            ),
+        )
+
         # Observation follows current discrete state's model
-        y_trial[:, t] = rand(rng, MvNormal(obs_params[k_curr].C * x_trial[:, t] + obs_params[k_curr].d, 
-                                          obs_params[k_curr].R))
+        y_trial[:, t] = rand(
+            rng,
+            MvNormal(
+                obs_params[k_curr].C * x_trial[:, t] + obs_params[k_curr].d,
+                obs_params[k_curr].R,
+            ),
+        )
     end
 end
 
-function _sample_continuous_given_discrete!(rng, x_trial, y_trial, z_trial, 
-                                           state_params, obs_params, obs_model_type::PoissonObservationModel)
+function _sample_continuous_given_discrete!(
+    rng,
+    x_trial,
+    y_trial,
+    z_trial,
+    state_params,
+    obs_params,
+    obs_model_type::PoissonObservationModel,
+)
     tsteps = length(z_trial)
-    
+
     # Initial state
     k1 = z_trial[1]
     x_trial[:, 1] = rand(rng, MvNormal(state_params[k1].x0, state_params[k1].P0))
-    y_trial[:, 1] = rand.(rng, Poisson.(exp.(obs_params[k1].C * x_trial[:, 1] + obs_params[k1].d)))
-    
+    y_trial[:, 1] = rand.(
+        rng, Poisson.(exp.(obs_params[k1].C * x_trial[:, 1] + obs_params[k1].d))
+    )
+
     # Subsequent states
     for t in 2:tsteps
-        k_prev, k_curr = z_trial[t-1], z_trial[t]
-        
-        x_trial[:, t] = rand(rng, MvNormal(state_params[k_prev].A * x_trial[:, t-1] + state_params[k_prev].b, 
-                                          state_params[k_prev].Q))
-        
-        y_trial[:, t] = rand.(rng, Poisson.(exp.(obs_params[k_curr].C * x_trial[:, t] + obs_params[k_curr].d)))
+        k_prev, k_curr = z_trial[t - 1], z_trial[t]
+
+        x_trial[:, t] = rand(
+            rng,
+            MvNormal(
+                state_params[k_prev].A * x_trial[:, t - 1] + state_params[k_prev].b,
+                state_params[k_prev].Q,
+            ),
+        )
+
+        y_trial[:, t] = rand.(
+            rng, Poisson.(exp.(obs_params[k_curr].C * x_trial[:, t] + obs_params[k_curr].d))
+        )
     end
 end
 
@@ -141,28 +181,25 @@ function loglikelihood(
     slds::SLDS{T,S,O},
     x::AbstractMatrix{T},
     y::AbstractMatrix{T},
-    w::AbstractMatrix{T}  # (K, tsteps)
-) where {T<:Real, S<:AbstractStateModel, O<:AbstractObservationModel}
-    
+    w::AbstractMatrix{T},  # (K, tsteps)
+) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
     K, tsteps = size(w)
     ll_vec = zeros(T, tsteps)
-    
+
     for k in 1:K
         # Get per-timestep log-likelihoods from LDS k
         ll_k = loglikelihood(x, slds.LDSs[k], y)  # Vector{T}
-        
+
         # Weight by discrete state posterior
         ll_vec .+= w[k, :] .* ll_k
     end
-    
+
     return ll_vec
 end
 
-function Gradient(slds::SLDS,
-    y::AbstractMatrix{T},
-    x::AbstractMatrix{T},
-    w::AbstractMatrix{T}) where {T <: Real}
-
+function Gradient(
+    slds::SLDS, y::AbstractMatrix{T}, x::AbstractMatrix{T}, w::AbstractMatrix{T}
+) where {T<:Real}
     latent_dim, tsteps = size(x)
     grad = zeros(T, latent_dim, tsteps)
     K = length(slds.LDSs)
@@ -182,18 +219,16 @@ function Gradient(slds::SLDS,
     return grad
 end
 
-function Hessian(slds::SLDS,
-   y::AbstractMatrix{T},
-   x::AbstractMatrix{T},
-   w::AbstractMatrix{T}) where {T <: Real}
-
+function Hessian(
+    slds::SLDS, y::AbstractMatrix{T}, x::AbstractMatrix{T}, w::AbstractMatrix{T}
+) where {T<:Real}
     K = length(slds.LDSs)
     latent_dim, tsteps = size(x)
 
     # Initialize block-tridiagonal structure
     H_diag_total = [zeros(T, latent_dim, latent_dim) for _ in 1:tsteps]
-    H_sub_total = [zeros(T, latent_dim, latent_dim) for _ in 1:(tsteps-1)]
-    H_super_total = [zeros(T, latent_dim, latent_dim) for _ in 1:(tsteps-1)]
+    H_sub_total = [zeros(T, latent_dim, latent_dim) for _ in 1:(tsteps - 1)]
+    H_super_total = [zeros(T, latent_dim, latent_dim) for _ in 1:(tsteps - 1)]
 
     for k in 1:K
         lds_k = slds.LDSs[k]
@@ -208,9 +243,9 @@ function Hessian(slds::SLDS,
 
         # Weight off-diagonal blocks by discrete state posterior at time t+1
         # (where the dynamics land)
-        for t in 1:(tsteps-1)
-            H_sub_total[t] .+= w[k, t+1] .* H_sub_k[t]
-            H_super_total[t] .+= w[k, t+1] .* H_super_k[t]
+        for t in 1:(tsteps - 1)
+            H_sub_total[t] .+= w[k, t + 1] .* H_sub_k[t]
+            H_super_total[t] .+= w[k, t + 1] .* H_super_k[t]
         end
     end
 
@@ -218,10 +253,6 @@ function Hessian(slds::SLDS,
     return H, H_diag_total, H_super_total, H_sub_total
 end
 
-function smooth(slds::SLDS,
-                y::AbstractMatrix{T},
-                w::AbstractMatrix{T}) where {T <: Real}
-
-    K = length(slds.LDSs)
-    
+function smooth(slds::SLDS, y::AbstractMatrix{T}, w::AbstractMatrix{T}) where {T<:Real}
+    return K = length(slds.LDSs)
 end

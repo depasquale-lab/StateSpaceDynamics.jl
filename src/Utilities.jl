@@ -109,16 +109,15 @@ function block_tridiagonal_inverse_static(
     A::Vector{<:AbstractMatrix{T}},
     B::Vector{<:AbstractMatrix{T}},
     C::Vector{<:AbstractMatrix{T}},
-    ::Val{N}
-) where {T<:Real, N}
+    ::Val{N},
+) where {T<:Real,N}
     n = length(B)
-    
 
     # Pre-allocate working matrices (reuse these)
     M = MMatrix{N,N,T}(undef)  # Mutable static matrix for intermediate calculations
     temp = MMatrix{N,N,T}(undef)
     identity_static = MMatrix{N,N,T}(I)
-    zero_static = @SMatrix zeros(N,N)
+    zero_static = @SMatrix zeros(N, N)
 
     # Initialize D and E arrays - use mutable static matrices
     D = Vector{SMatrix{N,N,T}}(undef, n + 1)
@@ -136,17 +135,17 @@ function block_tridiagonal_inverse_static(
         if i == 1
             M .= B[1]  # A_extended[1] is zeros
         else
-            mul!(temp, SMatrix{N,N,T}(A[i-1]), D[i])  # Convert only when needed
+            mul!(temp, SMatrix{N,N,T}(A[i - 1]), D[i])  # Convert only when needed
             M .= B[i] .- temp
         end
-        
+
         # D[i + 1] = inv(M) * C_extended[i]
         if i == n
             D[i + 1] = zero_static  # C_extended[n] is zeros
         else
             M_static = SMatrix{N,N,T}(M)
             C_static = SMatrix{N,N,T}(C[i])
-            D[i + 1] = M_static \ C_static 
+            D[i + 1] = M_static \ C_static
         end
     end
 
@@ -159,13 +158,13 @@ function block_tridiagonal_inverse_static(
             mul!(temp, SMatrix{N,N,T}(C[i]), E[i + 1])
             M .= B[i] .- temp
         end
-        
+
         # E[i] = inv(M) * A_extended[i]
         if i == 1
             E[i] = zero_static  # A_extended[1] is zeros
         else
             M_static = SMatrix{N,N,T}(M)
-            A_static = SMatrix{N,N,T}(A[i-1])
+            A_static = SMatrix{N,N,T}(A[i - 1])
             E[i] = M_static \ A_static
         end
     end
@@ -180,10 +179,10 @@ function block_tridiagonal_inverse_static(
         if i == 1
             term2 = SMatrix{N,N,T}(B[1])
         else
-            mul!(temp, SMatrix{N,N,T}(A[i-1]), D[i])
+            mul!(temp, SMatrix{N,N,T}(A[i - 1]), D[i])
             term2 = SMatrix{N,N,T}(B[i]) - SMatrix{N,N,T}(temp)
         end
-        
+
         # S = term2 * term1
         S = term2 * term1
         λii[:, :, i] = Matrix(S \ identity_static)
@@ -191,8 +190,8 @@ function block_tridiagonal_inverse_static(
 
     # Compute λij
     for i in 2:n
-        result = E[i] * SMatrix{N,N,T}(view(λii, :, :, i-1))
-        λij[:, :, i-1] = Matrix(result)
+        result = E[i] * SMatrix{N,N,T}(view(λii,:,:,(i - 1)))
+        λij[:, :, i - 1] = Matrix(result)
     end
 
     return λii, -λij

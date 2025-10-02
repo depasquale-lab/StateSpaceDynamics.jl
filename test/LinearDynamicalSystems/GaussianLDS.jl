@@ -65,7 +65,7 @@ function test_gaussian_obs_constructor_type_preservation()
     @test eltype(gsm_int.Q) === Int
     @test eltype(gsm_int.x0) === Int
     @test eltype(gsm_int.P0) === Int
-    @test eltype(gsm_int.b)  === Int
+    @test eltype(gsm_int.b) === Int
 
     # Float32
     A_f32 = Float32[1 2; 3 4]
@@ -94,7 +94,7 @@ function test_gaussian_obs_constructor_type_preservation()
     @test eltype(gsm_bf.Q) === BigFloat
     @test eltype(gsm_bf.x0) === BigFloat
     @test eltype(gsm_bf.P0) === BigFloat
-    @test eltype(gsm_bf.b)  === BigFloat
+    @test eltype(gsm_bf.b) === BigFloat
 end
 
 function test_gaussian_lds_constructor_type_preservation()
@@ -122,7 +122,7 @@ function test_gaussian_lds_constructor_type_preservation()
     @test eltype(gls_int.state_model.Q) === Int
     @test eltype(gls_int.state_model.x0) === Int
     @test eltype(gls_int.state_model.P0) === Int
-    @test eltype(gls_int.state_model.b)  === Int
+    @test eltype(gls_int.state_model.b) === Int
     @test eltype(gls_int.obs_model.C) === Int
     @test eltype(gls_int.obs_model.R) === Int
     @test eltype(gls_int.obs_model.d) === Int
@@ -153,7 +153,7 @@ function test_gaussian_lds_constructor_type_preservation()
     @test eltype(gls_f32.state_model.Q) === Float32
     @test eltype(gls_f32.state_model.x0) === Float32
     @test eltype(gls_f32.state_model.P0) === Float32
-    @test eltype(gls_f32.state_model.b)  === Float32
+    @test eltype(gls_f32.state_model.b) === Float32
     @test eltype(gls_f32.obs_model.C) === Float32
     @test eltype(gls_f32.obs_model.R) === Float32
     @test eltype(gls_f32.obs_model.d) === Float32
@@ -182,7 +182,7 @@ function test_gaussian_lds_constructor_type_preservation()
     @test eltype(gls_bf.state_model.Q) === BigFloat
     @test eltype(gls_bf.state_model.x0) === BigFloat
     @test eltype(gls_bf.state_model.P0) === BigFloat
-    @test eltype(gls_bf.state_model.b)  === BigFloat
+    @test eltype(gls_bf.state_model.b) === BigFloat
     @test eltype(gls_bf.obs_model.C) === BigFloat
     @test eltype(gls_bf.obs_model.R) === BigFloat
     @test eltype(gls_bf.obs_model.d) === BigFloat
@@ -383,7 +383,7 @@ function test_estep()
     lds, x, y = toy_lds()
 
     # init a filter smooth object
-    tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, size(y, 2), size(y,3))
+    tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, size(y, 2), size(y, 3))
 
     # run the E_Step
     ml_total = StateSpaceDynamics.estep!(lds, tfs, y)
@@ -391,7 +391,9 @@ function test_estep()
     n_trials = size(y, 3)
     n_tsteps = size(y, 2)
 
-    E_z, E_zz, E_zz_prev, x_smooth, p_smooth = tfs[1].E_z, tfs[1].E_zz, tfs[1].E_zz_prev, tfs[1].x_smooth, tfs[1].p_smooth
+    E_z, E_zz, E_zz_prev, x_smooth, p_smooth = tfs[1].E_z,
+    tfs[1].E_zz, tfs[1].E_zz_prev, tfs[1].x_smooth,
+    tfs[1].p_smooth
 
     @test size(E_z) == (lds.latent_dim, n_tsteps)
     @test size(E_zz) == (lds.latent_dim, lds.latent_dim, n_tsteps)
@@ -416,16 +418,7 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
         Q_val = 0.0
         for i in 1:ntrials
             E_z, E_zz, E_zz_prev = tfs[i].E_z, tfs[i].E_zz, tfs[i].E_zz_prev
-            Q_val += StateSpaceDynamics.Q_state(
-                A, 
-                b, 
-                Q, 
-                P0, 
-                x0, 
-                E_z, 
-                E_zz, 
-                E_zz_prev
-            )
+            Q_val += StateSpaceDynamics.Q_state(A, b, Q, P0, x0, E_z, E_zz, E_zz_prev)
         end
         return -Q_val
     end
@@ -467,14 +460,7 @@ function test_state_model_parameter_updates(ntrials::Int=1)
         @views for k in 1:ntrials
             E_z, E_zz, E_zz_prev = tfs[k].E_z, tfs[k].E_zz, tfs[k].E_zz_prev
             val += StateSpaceDynamics.Q_state(
-                A,
-                b,
-                Q,
-                lds.state_model.P0,
-                lds.state_model.x0,
-                E_z,
-                E_zz,
-                E_zz_prev,
+                A, b, Q, lds.state_model.P0, lds.state_model.x0, E_z, E_zz, E_zz_prev
             )
         end
         return -val
@@ -515,18 +501,11 @@ function test_obs_model_parameter_updates(ntrials::Int=1)
 
         @views for k in 1:ntrials
             E_z, E_zz = tfs[k].E_z, tfs[k].E_zz
-            val += StateSpaceDynamics.Q_obs(
-                C, 
-                d, 
-                R, 
-                E_z, 
-                E_zz, 
-                y[:, :, k]
-            )
+            val += StateSpaceDynamics.Q_obs(C, d, R, E_z, E_zz, y[:, :, k])
         end
         return -val
     end
-    
+
     D = lds.latent_dim
     CD0 = hcat(lds.obs_model.C, lds.obs_model.d)
     R_sqrt0 = Matrix(cholesky(lds.obs_model.R).U)

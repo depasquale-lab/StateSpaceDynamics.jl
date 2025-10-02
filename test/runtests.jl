@@ -17,7 +17,6 @@ using Test
 
 const CHECKED_TYPES = [Float32, Float64] #, BigFloat] UMFPACK does not support BigFloat for Sparse Arrays see: https://github.com/JuliaSparse/SparseArrays.jl/blob/main/src/solvers/umfpack.jl
 
-
 """
 Package Wide Tests
 """
@@ -61,7 +60,7 @@ include("LinearDynamicalSystems/SLDS.jl")
         test_SLDS_minimal_dimensions()
         test_valid_SLDS_probability_helper_functions()
     end
-    
+
     @testset "SLDS Gradient and Hessian Tests" begin
         test_SLDS_gradient_numerical()
         test_SLDS_hessian_numerical()

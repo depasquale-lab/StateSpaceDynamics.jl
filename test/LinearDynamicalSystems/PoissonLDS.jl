@@ -360,7 +360,7 @@ function test_parameter_gradient()
     # params
     C, log_d = plds.obs_model.C, plds.obs_model.log_d
     params = vcat(vec(C), log_d)
-    
+
     # get analytical gradient
     grad_analytical = StateSpaceDynamics.gradient_observation_model!(
         zeros(length(params)), C, log_d, tfs, y
@@ -373,11 +373,16 @@ function test_parameter_gradient()
         C_size = plds.obs_dim * plds.latent_dim
         log_d = params[(end - plds.obs_dim + 1):end]
         C = reshape(params[1:C_size], plds.obs_dim, plds.latent_dim)
-        return -StateSpaceDynamics.Q_observation_model(C, log_d, reshape(E_z, size(E_z)..., 1), reshape(P_smooth, size(P_smooth)..., 1), y)
+        return -StateSpaceDynamics.Q_observation_model(
+            C,
+            log_d,
+            reshape(E_z, size(E_z)..., 1),
+            reshape(P_smooth, size(P_smooth)..., 1),
+            y,
+        )
     end
 
     grad = ForwardDiff.gradient(f, params)
-
 
     @test isapprox(grad, grad_analytical, rtol=1e-5, atol=1e-5)
 end
@@ -399,14 +404,7 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
         for i in 1:ntrials
             trial = tfs[i]
             Q_val += StateSpaceDynamics.Q_state(
-                A, 
-                b, 
-                Q, 
-                P0,
-                x0, 
-                trial.E_z, 
-                trial.E_zz, 
-                trial.E_zz_prev
+                A, b, Q, P0, x0, trial.E_z, trial.E_zz, trial.E_zz_prev
             )
         end
         return -Q_val
@@ -431,38 +429,44 @@ end
 
 function test_state_model_parameter_updates(ntrials::Int=1)
     plds, x, y = toy_PoissonLDS(ntrials, [false, false, true, true, false, false])
-    
+
     tfs = StateSpaceDynamics.initialize_FilterSmooth(plds, size(y, 2), size(y, 3))
     ml_total = StateSpaceDynamics.estep!(plds, tfs, y)
-    
+
     D = plds.latent_dim
-    
+
     # Optimize [A b] jointly (matching your implementation)
     function obj_Ab(AB::AbstractMatrix, Q_sqrt::AbstractMatrix, plds)
         A = AB[:, 1:D]
-        b = AB[:, D+1]
+        b = AB[:, D + 1]
         Q = Q_sqrt * Q_sqrt'
         Q_val = 0.0
         for i in 1:ntrials
             trial = tfs[i]
             Q_val += StateSpaceDynamics.Q_state(
-                A, b, Q, plds.state_model.P0, plds.state_model.x0,
-                trial.E_z, trial.E_zz, trial.E_zz_prev
+                A,
+                b,
+                Q,
+                plds.state_model.P0,
+                plds.state_model.x0,
+                trial.E_z,
+                trial.E_zz,
+                trial.E_zz_prev,
             )
         end
         return -Q_val
     end
-    
+
     AB0 = hcat(plds.state_model.A, plds.state_model.b)
     Q_sqrt0 = Matrix(cholesky(plds.state_model.Q).U)
-    
+
     AB_opt = optimize(AB -> obj_Ab(AB, Q_sqrt0, plds), AB0, LBFGS()).minimizer
     Q_opt_sqrt = optimize(Qs -> obj_Ab(AB_opt, Qs, plds), Q_sqrt0, LBFGS()).minimizer
-    
+
     StateSpaceDynamics.mstep!(plds, tfs, y)
-    
+
     @test isapprox(plds.state_model.A, AB_opt[:, 1:D], atol=1e-6, rtol=1e-6)
-    @test isapprox(plds.state_model.b, AB_opt[:, D+1], atol=1e-6, rtol=1e-6)
+    @test isapprox(plds.state_model.b, AB_opt[:, D + 1], atol=1e-6, rtol=1e-6)
     @test isapprox(plds.state_model.Q, Q_opt_sqrt * Q_opt_sqrt', atol=1e-6, rtol=1e-6)
 end
 

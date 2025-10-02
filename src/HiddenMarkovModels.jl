@@ -73,7 +73,7 @@ function initialize_forward_backward(
         zeros(T, num_states, num_obs),
         zeros(T, num_states, num_obs),
         zeros(T, num_states, num_obs),
-        zeros(T, num_states, num_states)
+        zeros(T, num_states, num_states),
     )
 end
 
@@ -88,13 +88,9 @@ end
 Initialize the forward backward storage struct.
 """
 function ForwardBackward(
-    loglikelihoods::Matrix{T},
-    α::Matrix{T},
-    β::Matrix{T},
-    γ::Matrix{T},
-    ξ::Matrix{T}
+    loglikelihoods::Matrix{T}, α::Matrix{T}, β::Matrix{T}, γ::Matrix{T}, ξ::Matrix{T}
 ) where {T<:Real}
-    ForwardBackward{T, Vector{T}, Matrix{T}, Matrix{T}}(loglikelihoods, α, β, γ, ξ)
+    return ForwardBackward{T,Vector{T},Matrix{T},Matrix{T}}(loglikelihoods, α, β, γ, ξ)
 end
 
 """
@@ -113,8 +109,7 @@ function aggregate_forward_backward!(
     aggregated_FB.α .= hcat([fb.α for fb in FB_storages]...)
     aggregated_FB.β .= hcat([fb.β for fb in FB_storages]...)
     aggregated_FB.γ .= hcat([fb.γ for fb in FB_storages]...)
-    aggregated_FB.ξ = hcat([fb.ξ for fb in FB_storages]...)
-    
+    return aggregated_FB.ξ = hcat([fb.ξ for fb in FB_storages]...)
 end
 
 """
@@ -310,7 +305,7 @@ end
 
 # Thin wrapper that computes logs once if needed
 function forward!(model::AbstractHMM, FB::ForwardBackward)
-    forward!(model, FB, log.(model.A), log.(model.πₖ))
+    return forward!(model, FB, log.(model.A), log.(model.πₖ))
 end
 
 """
@@ -318,19 +313,20 @@ end
 
 Compute α in log-space using precomputed `logA = log.(A)` and `logπ = log.(πₖ)`.
 """
-function forward!(model::AbstractHMM, FB::ForwardBackward,
-                  logA::AbstractMatrix, logπ::AbstractVector)
-    @assert size(logA,1) == model.K && size(logA,2) == model.K
+function forward!(
+    model::AbstractHMM, FB::ForwardBackward, logA::AbstractMatrix, logπ::AbstractVector
+)
+    @assert size(logA, 1) == model.K && size(logA, 2) == model.K
     @assert length(logπ) == model.K
 
-    α   = FB.α                  # K×T (log)
-    ll  = FB.loglikelihoods     # K×T (log)
-    K,T = size(α,1), size(α,2)
+    α = FB.α                  # K×T (log)
+    ll = FB.loglikelihoods     # K×T (log)
+    K, T = size(α, 1), size(α, 2)
 
     @inbounds @views begin
         # t = 1
         for k in 1:K
-            α[k,1] = logπ[k] + ll[k,1]
+            α[k, 1] = logπ[k] + ll[k, 1]
         end
 
         # t ≥ 2
@@ -341,18 +337,18 @@ function forward!(model::AbstractHMM, FB::ForwardBackward,
                 # do the max pass
                 m = -Inf
                 for i in 1:K
-                    v = α[i,t-1] + logA[i,k]
+                    v = α[i, t - 1] + logA[i, k]
                     m = ifelse(v > m, v, m)
                 end
                 # sum exp pass
                 s = 0.0
                 if isfinite(m)
                     for i in 1:K
-                        s += exp(α[i,t-1] + logA[i,k] - m)
+                        s += exp(α[i, t - 1] + logA[i, k] - m)
                     end
-                    α[k,t] = (m + log(s)) + ll[k,t]
+                    α[k, t] = (m + log(s)) + ll[k, t]
                 else
-                    α[k,t] = -Inf
+                    α[k, t] = -Inf
                 end
             end
         end
@@ -362,7 +358,7 @@ end
 
 # Thin wrapper that computes logA if needed
 function backward!(model::AbstractHMM, FB::ForwardBackward)
-    backward!(model, FB, log.(model.A))
+    return backward!(model, FB, log.(model.A))
 end
 
 """
@@ -370,35 +366,34 @@ end
 
 Compute β in log-space using precomputed `logA = log.(A)`.
 """
-function backward!(model::AbstractHMM, FB::ForwardBackward,
-                   logA::AbstractMatrix)
-    β   = FB.β
-    ll  = FB.loglikelihoods
-    K,T = size(β,1), size(β,2)
+function backward!(model::AbstractHMM, FB::ForwardBackward, logA::AbstractMatrix)
+    β = FB.β
+    ll = FB.loglikelihoods
+    K, T = size(β, 1), size(β, 2)
 
     @inbounds @views begin
         # β_T = 0 in log-space
         for i in 1:K
-            β[i,T] = 0.0
+            β[i, T] = 0.0
         end
 
-        for t in (T-1):-1:1
+        for t in (T - 1):-1:1
             # for each source state i, do logsumexp over j
             for i in 1:K
                 # compute logsumexp_j (logA[i,j] + ll[j,t+1] + β[j,t+1])
                 m = -Inf
                 for j in 1:K
-                    v = logA[i,j] + ll[j,t+1] + β[j,t+1]
+                    v = logA[i, j] + ll[j, t + 1] + β[j, t + 1]
                     m = ifelse(v > m, v, m)
                 end
                 s = 0.0
                 if isfinite(m)
                     for j in 1:K
-                        s += exp(logA[i,j] + ll[j,t+1] + β[j,t+1] - m)
+                        s += exp(logA[i, j] + ll[j, t + 1] + β[j, t + 1] - m)
                     end
-                    β[i,t] = m + log(s)
+                    β[i, t] = m + log(s)
                 else
-                    β[i,t] = -Inf
+                    β[i, t] = -Inf
                 end
             end
         end
@@ -415,7 +410,7 @@ function calculate_γ!(::AbstractHMM, FB::ForwardBackward)
     γ = FB.γ
     α = FB.α
     β = FB.β
-    K,T = size(γ,1), size(γ,2)
+    K, T = size(γ, 1), size(γ, 2)
 
     @inbounds @views begin
         # γ = α + β
@@ -426,18 +421,18 @@ function calculate_γ!(::AbstractHMM, FB::ForwardBackward)
             # find max
             m = -Inf
             for i in 1:K
-                v = γ[i,t]
+                v = γ[i, t]
                 m = ifelse(v > m, v, m)
             end
             # sum exp
             s = 0.0
             if isfinite(m)
                 for i in 1:K
-                    s += exp(γ[i,t] - m)
+                    s += exp(γ[i, t] - m)
                 end
                 lZ = m + log(s)
                 for i in 1:K
-                    γ[i,t] -= lZ
+                    γ[i, t] -= lZ
                 end
             else
                 # all -Inf: leave as -Inf
@@ -463,31 +458,31 @@ function calculate_ξ!(model::AbstractHMM, FB::ForwardBackward)
     αlog = FB.α                 # K×T (log-space)
     βlog = FB.β                 # K×T (log-space)
     llik = FB.loglikelihoods    # K×T (log-space)
-    A    = model.A              # K×K (linear probs)
+    A = model.A              # K×K (linear probs)
 
     K, T = size(αlog)
     ξacc = FB.ξ                 # K×K accumulator (we'll store linear sums first)
     fill!(ξacc, 0.0)
 
     tmp = similar(ξacc)         # K×K scratch
-    ax  = similar(αlog, K)      # K scratch vector (α in linear space with shift)
-    by  = similar(αlog, K)      # K scratch vector (β*lik in linear space with shift)
+    ax = similar(αlog, K)      # K scratch vector (α in linear space with shift)
+    by = similar(αlog, K)      # K scratch vector (β*lik in linear space with shift)
 
-    for t in 1:(T-1)
+    for t in 1:(T - 1)
         # ax := exp(αlog[:,t] - max)
-        x  = @view αlog[:, t]
+        x = @view αlog[:, t]
         mx = maximum(x)
         @. ax = exp(x - mx)
 
         # by := exp( (βlog[:,t+1] + llik[:,t+1]) - max )
-        v  = @view βlog[:, t+1]
-        w  = @view llik[:, t+1]
+        v = @view βlog[:, t + 1]
+        w = @view llik[:, t + 1]
         # First accumulate v+w in by to avoid a temporary:
         m = -Inf
         for j in 1:K
-            y    = v[j] + w[j]
+            y = v[j] + w[j]
             by[j] = y
-            m     = ifelse(y > m, y, m)
+            m = ifelse(y > m, y, m)
         end
         for j in 1:K
             by[j] = exp(by[j] - m)
@@ -514,7 +509,6 @@ function calculate_ξ!(model::AbstractHMM, FB::ForwardBackward)
     return nothing
 end
 
-    
 """
     estep!(model::HiddenMarkovModel, data, FB_storage)
 
@@ -547,22 +541,22 @@ Calculate the log-likelihood of observed data given the HMM.
 - `ll::Float64`: The total log-likelihood of the data
 """
 function loglikelihood(
-    model::HiddenMarkovModel, 
-    Y::AbstractMatrix{T}, 
-    X::Union{AbstractMatrix{<:Real},Nothing}=nothing
+    model::HiddenMarkovModel,
+    Y::AbstractMatrix{T},
+    X::Union{AbstractMatrix{<:Real},Nothing}=nothing,
 ) where {T<:Real}
     data = X === nothing ? (Y,) : (X, Y)
-    
+
     # Transpose data to match expected dimensions
     transpose_data = Matrix.(transpose.(data))
     num_obs = size(transpose_data[1], 1)
-    
+
     # Initialize forward-backward storage
     FB_storage = initialize_forward_backward(model, num_obs, T)
-    
+
     # Run E-step to compute forward probabilities
     estep!(model, transpose_data, FB_storage)
-    
+
     # The log-likelihood is the log-sum-exp of the final forward probabilities
     return logsumexp(FB_storage.α[:, end])
 end
@@ -592,15 +586,12 @@ end
 
 Update the transition matrix of an HMM.
 """
-function update_transition_matrix!(
-    model::AbstractHMM,
-    FB_storage::ForwardBackward
-)
+function update_transition_matrix!(model::AbstractHMM, FB_storage::ForwardBackward)
     γ = FB_storage.γ
     ξ = FB_storage.ξ  # eventually use this
     for i in 1:model.K
         for j in 1:model.K
-            model.A[i, j] = exp(ξ[i, j] - logsumexp(@view γ[i, 1:end-1]))
+            model.A[i, j] = exp(ξ[i, j] - logsumexp(@view γ[i, 1:(end - 1)]))
         end
     end
 
@@ -608,8 +599,7 @@ function update_transition_matrix!(
 end
 
 function update_transition_matrix!(
-    model::AbstractHMM,
-    FB_storage_vec::Vector{<:ForwardBackward}
+    model::AbstractHMM, FB_storage_vec::Vector{<:ForwardBackward}
 )
     K = model.K
 
@@ -623,7 +613,7 @@ function update_transition_matrix!(
 
         # Accumulate γ sum for denominator (exclude last time step)
         for i in 1:K
-            log_denom[i] = logaddexp(log_denom[i], logsumexp(FB_trial.γ[i, 1:end-1]))
+            log_denom[i] = logaddexp(log_denom[i], logsumexp(FB_trial.γ[i, 1:(end - 1)]))
         end
     end
 
