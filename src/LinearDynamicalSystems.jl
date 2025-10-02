@@ -394,10 +394,9 @@ function loglikelihood(
 
     ll_vec = Vector{eltype(x)}(undef, tsteps)
 
+    # Pre-allocate all temporary arrays
     temp_dx = zeros(eltype(x), size(x, 1))
     temp_dy = zeros(eltype(x), size(y, 1))
-
-    # Pre-allocate solve result vectors (reuse these!)
     temp_solve_Q = zeros(eltype(x), size(x, 1))
     temp_solve_R = zeros(eltype(x), size(y, 1))
 
@@ -414,13 +413,15 @@ function loglikelihood(
         if t > 1
             mul!(temp_dx, A, view(x, :, t-1), -one(eltype(x)), false)
             temp_dx .+= view(x, :, t) .- b
-            ll_t += sum(abs2, Q_chol \ temp_dx)
+            ldiv!(temp_solve_Q, Q_chol, temp_dx)
+            ll_t += sum(abs2, temp_solve_Q)
         end
 
         # Emission contribution
         mul!(temp_dy, C, view(x, :, t), -one(eltype(x)), false)
         temp_dy .+= view(y, :, t) .- d
-        ll_t += sum(abs2, R_chol \ temp_dy)
+        ldiv!(temp_solve_R, R_chol, temp_dy)
+        ll_t += sum(abs2, temp_solve_R)
 
         ll_vec[t] = -eltype(x)(0.5) * ll_t
     end
@@ -438,6 +439,8 @@ function Gradient(
     lds::LinearDynamicalSystem{T,S,O}, y::AbstractMatrix{T}, x::AbstractMatrix{T}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     latent_dim, tsteps = size(x)
+    obs_dim = size(y, 1)
+
     A, Q, x0, P0 = lds.state_model.A,
     lds.state_model.Q, lds.state_model.x0,
     lds.state_model.P0
@@ -452,24 +455,64 @@ function Gradient(
 
     grad = zeros(T, latent_dim, tsteps)
 
+    # Pre-allocate all temporary arrays for efficiency
+    dxt = zeros(T, latent_dim)
+    dxt_next = zeros(T, latent_dim)
+    dyt = zeros(T, obs_dim)
+    tmp1 = zeros(T, latent_dim)  # for C_inv_R * dyt
+    tmp2 = zeros(T, latent_dim)  # for A_inv_Q * dxt_next
+    tmp3 = zeros(T, latent_dim)  # for Q_chol \ dxt
+
     # First time step
-    dx1 = x[:, 1] .- x0
-    dx2 = x[:, 2] .- (A * x[:, 1] .+ b)
-    dy1 = y[:, 1] .- (C * x[:, 1] .+ d)
-    grad[:, 1] .= A_inv_Q * dx2 + C_inv_R * dy1 - (P0_chol \ dx1)
+    dxt .= x[:, 1] .- x0
+    mul!(dxt_next, A, x[:, 1])
+    dxt_next .= x[:, 2] .- dxt_next .- b
+    mul!(dyt, C, x[:, 1])
+    dyt .= y[:, 1] .- dyt .- d
+
+    mul!(tmp1, C_inv_R, dyt)
+    mul!(tmp2, A_inv_Q, dxt_next)
+    ldiv!(tmp3, P0_chol, dxt)
+
+    grad[:, 1] .= tmp1 .+ tmp2 .- tmp3
 
     # Middle steps
     @views for t in 2:(tsteps - 1)
-        grad[:, t] .=
-            C_inv_R * (y[:, t] .- (C * x[:, t] .+ d)) -
-            (Q_chol \ (x[:, t] .- (A * x[:, t - 1] .+ b))) +
-            (A_inv_Q * (x[:, t + 1] .- (A * x[:, t] .+ b)))
+        # dxt = x[:, t] - A * x[:, t-1] - b
+        mul!(dxt, A, x[:, t - 1])
+        dxt .= x[:, t] .- dxt .- b
+
+        # dxt_next = x[:, t+1] - A * x[:, t] - b
+        mul!(dxt_next, A, x[:, t])
+        dxt_next .= x[:, t + 1] .- dxt_next .- b
+
+        # dyt = y[:, t] - C * x[:, t] - d
+        mul!(dyt, C, x[:, t])
+        dyt .= y[:, t] .- dyt .- d
+
+        # tmp1 = C_inv_R * dyt
+        mul!(tmp1, C_inv_R, dyt)
+
+        # tmp2 = A_inv_Q * dxt_next
+        mul!(tmp2, A_inv_Q, dxt_next)
+
+        # tmp3 = Q_chol \ dxt
+        ldiv!(tmp3, Q_chol, dxt)
+
+        # grad[:, t] = tmp1 - tmp3 + tmp2
+        grad[:, t] .= tmp1 .- tmp3 .+ tmp2
     end
 
     # Last time step
-    dxT = x[:, tsteps] .- (A * x[:, tsteps - 1] .+ b)
-    dyT = y[:, tsteps] .- (C * x[:, tsteps] .+ d)
-    grad[:, tsteps] .= (C_inv_R * dyT) - (Q_chol \ dxT)
+    mul!(dxt, A, x[:, tsteps - 1])
+    dxt .= x[:, tsteps] .- dxt .- b
+    mul!(dyt, C, x[:, tsteps])
+    dyt .= y[:, tsteps] .- dyt .- d
+
+    mul!(tmp1, C_inv_R, dyt)
+    ldiv!(tmp3, Q_chol, dxt)
+
+    grad[:, tsteps] .= tmp1 .- tmp3
 
     return grad
 end
