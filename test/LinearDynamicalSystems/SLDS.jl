@@ -458,3 +458,215 @@ function test_SLDS_gradient_weight_normalization()
 
     @test isapprox(grad1, grad2, rtol=1e-10)
 end
+
+function test_SLDS_smooth_basic()
+    # Setup: Simple 2-state SLDS with known structure
+    K = 2
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 20
+
+    # Create two LDS models
+    lds1 = _make_gaussian_lds(latent_dim, obs_dim)
+    lds2 = _make_gaussian_lds(latent_dim, obs_dim)
+
+    slds = SLDS(; A=_rowstochastic(K), Z₀=_probvec(K), LDSs=[lds1, lds2])
+
+    # Generate data
+    z, x, y = rand(slds; tsteps=tsteps, ntrials=1)
+
+    # Create uniform weights (should behave like averaging both LDS)
+    w = ones(Float64, K, tsteps) ./ K
+
+    # Call smooth
+    x_smooth, p_smooth = smooth(slds, y[:, :, 1], w)
+
+    # Basic checks
+    @test size(x_smooth) == (latent_dim, tsteps)
+    @test size(p_smooth) == (latent_dim, latent_dim, tsteps)
+
+    # Covariances should be positive definite
+    for t in 1:tsteps
+        @test isposdef(p_smooth[:, :, t])
+    end
+
+    # Smoothed states should be reasonable (not NaN/Inf)
+    @test all(isfinite, x_smooth)
+    @test all(isfinite, p_smooth)
+end
+
+function test_SLDS_smooth_reduces_to_single_LDS()
+    # When all weight is on one LDS, should match that LDS's smooth
+    K = 3
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 15
+
+    lds = _make_gaussian_lds(latent_dim, obs_dim)
+    slds = SLDS(; A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K))
+
+    z, x, y = rand(slds; tsteps=tsteps, ntrials=1)
+    y_trial = y[:, :, 1]
+
+    # All weight on first LDS
+    w = zeros(Float64, K, tsteps)
+    w[1, :] .= 1.0
+
+    # SLDS smooth with concentrated weights
+    x_slds, p_slds = smooth(slds, y_trial, w)
+
+    # Direct LDS smooth
+    x_lds, p_lds = smooth(lds, y_trial)
+
+    # Should match closely (allowing for numerical tolerance)
+    @test isapprox(x_slds, x_lds, rtol=1e-4)
+    @test isapprox(p_slds, p_lds, rtol=1e-4)
+end
+
+function test_SLDS_smooth_with_realistic_weights()
+    # Test with realistic posterior weights that change over time
+    K = 2
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 25
+
+    lds1 = _make_gaussian_lds(latent_dim, obs_dim)
+    lds2 = _make_gaussian_lds(latent_dim, obs_dim)
+
+    slds = SLDS(; A=_rowstochastic(K), Z₀=_probvec(K), LDSs=[lds1, lds2])
+
+    z, x, y = rand(slds; tsteps=tsteps, ntrials=1)
+    y_trial = y[:, :, 1]
+
+    # Create time-varying weights (simulate discrete state posterior)
+    w = zeros(Float64, K, tsteps)
+    for t in 1:tsteps
+        if t < tsteps ÷ 2
+            w[1, t] = 0.8
+            w[2, t] = 0.2
+        else
+            w[1, t] = 0.3
+            w[2, t] = 0.7
+        end
+    end
+
+    x_smooth, p_smooth = smooth(slds, y_trial, w)
+
+    @test size(x_smooth) == (latent_dim, tsteps)
+    @test all(isfinite, x_smooth)
+    @test all(t -> isposdef(p_smooth[:, :, t]), 1:tsteps)
+end
+
+function test_SLDS_smooth_consistency_with_gradients()
+    # Verify that smooth finds a point where gradient is near zero
+    K = 2
+    latent_dim = 2
+    obs_dim = 2
+    tsteps = 10
+
+    lds1 = _make_gaussian_lds(latent_dim, obs_dim)
+    lds2 = _make_gaussian_lds(latent_dim, obs_dim)
+
+    slds = SLDS(; A=_rowstochastic(K), Z₀=_probvec(K), LDSs=[lds1, lds2])
+
+    z, x, y = rand(slds; tsteps=tsteps, ntrials=1)
+    y_trial = y[:, :, 1]
+
+    w = rand(Float64, K, tsteps)
+    w ./= sum(w; dims=1)  # Normalize
+
+    x_smooth, _ = smooth(slds, y_trial, w)
+
+    # Gradient at optimum should be small
+    grad = StateSpaceDynamics.Gradient(slds, y_trial, x_smooth, w)
+
+    @test norm(grad) < 1e-4  # Should be near zero at optimum
+end
+
+function test_SLDS_smooth_entropy_calculation()
+    # Verify entropy is computed and has reasonable values
+    K = 2
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 15
+
+    lds1 = _make_gaussian_lds(latent_dim, obs_dim)
+    lds2 = _make_gaussian_lds(latent_dim, obs_dim)
+
+    slds = SLDS(; A=_rowstochastic(K), Z₀=_probvec(K), LDSs=[lds1, lds2])
+
+    z, x, y = rand(slds; tsteps=tsteps, ntrials=1)
+
+    w = ones(Float64, K, tsteps) ./ K
+
+    # Call smooth! directly to access FilterSmooth
+    fs = StateSpaceDynamics.initialize_FilterSmooth(slds.LDSs[1], tsteps)
+    StateSpaceDynamics.smooth!(slds, fs, y[:, :, 1], w)
+
+    # Entropy should be positive (for Gaussian)
+    @test fs.entropy > 0
+    @test isfinite(fs.entropy)
+end
+
+function test_SLDS_smooth_covariance_symmetry()
+    # Ensure covariances remain symmetric
+    K = 2
+    latent_dim = 3
+    obs_dim = 2
+    tsteps = 12
+
+    lds1 = _make_gaussian_lds(latent_dim, obs_dim)
+    lds2 = _make_gaussian_lds(latent_dim, obs_dim)
+
+    slds = SLDS(; A=_rowstochastic(K), Z₀=_probvec(K), LDSs=[lds1, lds2])
+
+    z, x, y = rand(slds; tsteps=tsteps, ntrials=1)
+
+    w = rand(Float64, K, tsteps)
+    w ./= sum(w; dims=1)
+
+    _, p_smooth = smooth(slds, y[:, :, 1], w)
+
+    # Check symmetry at each timestep
+    for t in 1:tsteps
+        @test isapprox(p_smooth[:, :, t], p_smooth[:, :, t]', atol=1e-10)
+    end
+end
+
+function test_SLDS_smooth_different_weight_patterns()
+    # Test various weight patterns
+    K = 2
+    latent_dim = 2
+    obs_dim = 2
+    tsteps = 20
+
+    lds1 = _make_gaussian_lds(latent_dim, obs_dim)
+    lds2 = _make_gaussian_lds(latent_dim, obs_dim)
+
+    slds = SLDS(; A=_rowstochastic(K), Z₀=_probvec(K), LDSs=[lds1, lds2])
+
+    z, x, y = rand(slds; tsteps=tsteps, ntrials=1)
+    y_trial = y[:, :, 1]
+
+    # Test 1: Uniform weights
+    w_uniform = ones(Float64, K, tsteps) ./ K
+    x1, p1 = smooth(slds, y_trial, w_uniform)
+    @test all(isfinite, x1)
+
+    # Test 2: One-hot weights (switch halfway)
+    w_onehot = zeros(Float64, K, tsteps)
+    w_onehot[1, 1:(tsteps ÷ 2)] .= 1.0
+    w_onehot[2, (tsteps ÷ 2 + 1):end] .= 1.0
+    x2, p2 = smooth(slds, y_trial, w_onehot)
+    @test all(isfinite, x2)
+
+    # Test 3: Smooth transition
+    w_smooth = zeros(Float64, K, tsteps)
+    for t in 1:tsteps
+        alpha = (t - 1) / (tsteps - 1)
+        w_smooth[1, t] = 1 - alpha
+        w_smooth[2, t] = alpha
+    end
+    x3, p3 = smooth(slds, y_trial, w_smooth)
+    @test all(isfinite, x3)
+end

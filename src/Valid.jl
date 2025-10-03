@@ -224,4 +224,3 @@ function isvalid_SLDS(slds::SLDS)
     end
     return true
 end
-

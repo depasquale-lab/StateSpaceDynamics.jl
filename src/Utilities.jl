@@ -564,4 +564,3 @@ function print_full(io::Union{IO,Base.TTY}, obj)
 end
 
 print_full(obj) = print_full(stdout, obj)
-

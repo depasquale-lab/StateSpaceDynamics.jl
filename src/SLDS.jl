@@ -22,7 +22,7 @@ y_t | x_t, z_t ~ N(C^{(z_t)} x_t + d^{(z_t)}, R^{(z_t)})
     O<:AbstractObservationModel,
     TM<:AbstractMatrix{T},
     ISV<:AbstractVector{T},
-}
+} <: DynamicalSystem
     A::TM
     Z₀::ISV
     LDSs::Vector{LinearDynamicalSystem{T,S,O}}
@@ -253,6 +253,81 @@ function Hessian(
     return H, H_diag_total, H_super_total, H_sub_total
 end
 
+function smooth!(
+    slds::SLDS, fs::FilterSmooth{T}, y::AbstractMatrix{T}, w::AbstractMatrix{T}
+) where {T<:Real}
+    latent_dim = slds.LDSs[1].latent_dim
+    tsteps = size(y, 2)
+
+    # Initial guess from previous iteration or zeros
+    X₀ = Vector{T}(vec(fs.E_z))
+
+    # Define weighted negative log-likelihood
+    function nll(vec_x::AbstractVector{T})
+        x = reshape(vec_x, latent_dim, tsteps)
+        return -sum(loglikelihood(slds, x, y, w))
+    end
+
+    # Weighted gradient
+    function g!(grad::Vector{T}, vec_x::Vector{T})
+        x = reshape(vec_x, latent_dim, tsteps)
+        grad_mat = Gradient(slds, y, x, w)
+        grad .= vec(-grad_mat)
+        return nothing
+    end
+
+    # Weighted Hessian
+    function h!(h::SparseMatrixCSC{T}, vec_x::Vector{T})
+        x = reshape(vec_x, latent_dim, tsteps)
+        H, _, _, _ = Hessian(slds, y, x, w)
+        mul!(h, -1.0, H)
+        return nothing
+    end
+
+    # Setup optimization
+    initial_f = nll(X₀)
+    initial_g = similar(X₀)
+    g!(initial_g, X₀)
+    initial_h = spzeros(T, length(X₀), length(X₀))
+    h!(initial_h, X₀)
+
+    td = TwiceDifferentiable(nll, g!, h!, X₀, initial_f, initial_g, initial_h)
+    opts = Optim.Options(; g_abstol=1e-8, x_abstol=1e-8, f_abstol=1e-8, iterations=100)
+
+    # Optimize
+    res = optimize(td, X₀, Newton(; linesearch=LineSearches.BackTracking()), opts)
+
+    # Store result
+    fs.x_smooth .= reshape(res.minimizer, latent_dim, tsteps)
+
+    # Compute covariances
+    H, main, super, sub = Hessian(slds, y, fs.x_smooth, w)
+
+    if latent_dim > 10
+        p_smooth_result, p_smooth_tt1_result = block_tridiagonal_inverse(
+            -sub, -main, -super
+        )
+    else
+        p_smooth_result, p_smooth_tt1_result = block_tridiagonal_inverse_static(
+            -sub, -main, -super, Val(latent_dim)
+        )
+    end
+
+    fs.p_smooth .= p_smooth_result
+    fs.p_smooth_tt1[:, :, 2:end] .= p_smooth_tt1_result
+    fs.entropy = gaussian_entropy(Symmetric(H))
+
+    # Symmetrize
+    @views for t in 1:tsteps
+        fs.p_smooth[:, :, t] .= 0.5 .* (fs.p_smooth[:, :, t] .+ fs.p_smooth[:, :, t]')
+    end
+
+    return fs
+end
+
+# Public API wrapper
 function smooth(slds::SLDS, y::AbstractMatrix{T}, w::AbstractMatrix{T}) where {T<:Real}
-    return K = length(slds.LDSs)
+    fs = initialize_FilterSmooth(slds.LDSs[1], size(y, 2))
+    smooth!(slds, fs, y, w)
+    return fs.x_smooth, fs.p_smooth
 end
