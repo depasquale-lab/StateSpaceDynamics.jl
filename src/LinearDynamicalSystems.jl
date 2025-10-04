@@ -2130,7 +2130,9 @@ Perform the M-step of the EM algorithm for a Poisson Linear Dynamical System wit
 multi-trial data.
 """
 function mstep!(
-    plds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}, y::AbstractArray{T,3}
+    plds::LinearDynamicalSystem{T,S,O}, 
+    tfs::TrialFilterSmooth{T}, 
+    y::AbstractArray{T,3}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     # Get old params using new approach
     old_params = _get_all_params_vec(plds)

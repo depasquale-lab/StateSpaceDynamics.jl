@@ -22,7 +22,7 @@ y_t | x_t, z_t ~ N(C^{(z_t)} x_t + d^{(z_t)}, R^{(z_t)})
     O<:AbstractObservationModel,
     TM<:AbstractMatrix{T},
     ISV<:AbstractVector{T},
-} <: DynamicalSystem
+} <: AbstractHMM
     A::TM
     Z₀::ISV
     LDSs::Vector{LinearDynamicalSystem{T,S,O}}
@@ -335,12 +335,18 @@ end
 function mstep!(slds::SLDS, 
                 tfs::TrialFilterSmooth, 
                 fb::ForwardBackward, 
-                y::)
-
-    K = length(slds.LDSs)
+                y::AbstractMatrix)
 
     # update hmm parameters
+    update_initial_state_distribution!(slds, fb)
+    update_transmision_matrix!(slds, fb)
     
 
-    return
+    # update LDS paramerers
+    for (k, lds) in enumerate(slds.LDSs)
+        weights = w[k, :]
+        mstep!(lds, tfs, y, weights)
+    end
+
+    return nothing
 end
