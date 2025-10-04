@@ -508,7 +508,7 @@ end
     mstep!(slds::SLDS, tfs::TrialFilterSmooth, fbs::Vector{ForwardBackward}, y::AbstractArray)
 
 M-step for SLDS.
-- Updates discrete HMM parameters (A, πₖ) using aggregated statistics across trials
+- Updates discrete HMM parameters (A, Z₀) using aggregated statistics across trials
 - Updates each LDS using weighted sufficient statistics
 """
 function mstep!(
@@ -527,15 +527,14 @@ function mstep!(
 
     # Update each LDS using weighted data across all trials
     for k in 1:K
-        # Collect weights for state k from all trials
-        weights = zeros(T, tsteps, ntrials)
+        # Collect weights for state k from all trials as a vector of vectors
+        weights = Vector{Vector{T}}(undef, ntrials)
         for trial in 1:ntrials
-            weights[:, trial] = exp.(fbs[trial].γ[k, :])
+            weights[trial] = exp.(fbs[trial].γ[k, :])
         end
 
         # Update LDS k with weighted sufficient statistics
-        # Note: weights should be shaped to match what mstep! expects (T,)
-        mstep!(slds.LDSs[k], tfs, y, vec(weights))
+        mstep!(slds.LDSs[k], tfs, y, weights)
     end
 
     return nothing
