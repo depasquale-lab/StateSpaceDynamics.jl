@@ -599,7 +599,7 @@ function test_SLDS_smooth_entropy_calculation()
 
     w = ones(Float64, K, tsteps) ./ K
 
-    # Call smooth! directly to access FilterSmooth
+    # Call smooth! directly to access StateSpaceDynamics.FilterSmooth
     fs = StateSpaceDynamics.initialize_FilterSmooth(slds.LDSs[1], tsteps)
     StateSpaceDynamics.smooth!(slds, fs, y[:, :, 1], w)
 
@@ -894,4 +894,232 @@ function test_SLDS_estep_elbo_components()
 
     # Entropy should be positive
     # @test tfs[1].entropy > 0
+end
+
+function test_weighted_update_initial_state_mean()
+    """Test weighted update of initial state mean"""
+    K = 2
+    latent_dim = 2
+    obs_dim = 3
+    lds = _make_gaussian_lds(latent_dim, obs_dim)
+    slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
+
+    ntrials = 4
+    tsteps = 10
+    z, x, y = rand(slds; tsteps=tsteps, ntrials=ntrials)
+
+    # Create per-trial, per-timestep weights
+    w = [rand(K, tsteps) for _ in 1:ntrials]
+    for trial in 1:ntrials
+        w[trial] ./= sum(w[trial]; dims=1)
+    end
+
+    # Mock FilterSmooth objects with ALL required fields
+    tfs_array = Vector{StateSpaceDynamics.FilterSmooth{Float64}}(undef, ntrials)
+    for k in 1:ntrials
+        x_smooth = x[:, :, k]
+        p_smooth = zeros(Float64, latent_dim, latent_dim, tsteps)
+        p_smooth_tt1 = zeros(Float64, latent_dim, latent_dim, tsteps)
+        E_z = x[:, :, k]
+        E_zz = zeros(Float64, latent_dim, latent_dim, tsteps)
+        E_zz_prev = zeros(Float64, latent_dim, latent_dim, tsteps)
+
+        for t in 1:tsteps
+            p_smooth[:, :, t] .= 0.1 * I(latent_dim)
+            p_smooth_tt1[:, :, t] .= 0.1 * I(latent_dim)
+            E_zz[:, :, t] .= E_z[:, t] * E_z[:, t]' .+ 0.1 * I(latent_dim)
+            if t > 1
+                E_zz_prev[:, :, t] .= E_z[:, t] * E_z[:, t - 1]'
+            end
+        end
+
+        entropy = 0.0
+        tfs_array[k] = StateSpaceDynamics.FilterSmooth(
+            x_smooth, p_smooth, p_smooth_tt1, E_z, E_zz, E_zz_prev, entropy
+        )
+    end
+    tfs = StateSpaceDynamics.TrialFilterSmooth(tfs_array)
+
+    for active_k in 1:K
+        lds_k = slds.LDSs[active_k]
+        lds_k.fit_bool[1] = true
+
+        # Create weights for this LDS
+        w_k = [w[trial][active_k, :] for trial in 1:ntrials]
+
+        StateSpaceDynamics.update_initial_state_mean!(lds_k, tfs, w_k)
+
+        # Check result is finite
+        @test all(isfinite.(lds_k.state_model.x0))
+    end
+end
+
+function test_weighted_update_A_b()
+    """Test weighted update of A and b matrices"""
+    K = 2
+    latent_dim = 2
+    obs_dim = 3
+    lds = _make_gaussian_lds(latent_dim, obs_dim)
+    slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
+
+    ntrials = 3
+    tsteps = 15
+    z, x, y = rand(slds; tsteps=tsteps, ntrials=ntrials)
+
+    # Create weights
+    w = [rand(K, tsteps) for _ in 1:ntrials]
+    for trial in 1:ntrials
+        w[trial] ./= sum(w[trial]; dims=1)
+    end
+
+    # Create FilterSmooth objects with ALL required fields
+    tfs_array = Vector{StateSpaceDynamics.FilterSmooth{Float64}}(undef, ntrials)
+    for k in 1:ntrials
+        x_smooth = x[:, :, k]
+        p_smooth = zeros(Float64, latent_dim, latent_dim, tsteps)
+        p_smooth_tt1 = zeros(Float64, latent_dim, latent_dim, tsteps)
+        E_z = x[:, :, k]
+        E_zz = zeros(Float64, latent_dim, latent_dim, tsteps)
+        E_zz_prev = zeros(Float64, latent_dim, latent_dim, tsteps)
+
+        for t in 1:tsteps
+            p_smooth[:, :, t] .= 0.1 * I(latent_dim)
+            p_smooth_tt1[:, :, t] .= 0.1 * I(latent_dim)
+            E_zz[:, :, t] .= E_z[:, t] * E_z[:, t]' .+ 0.1 * I(latent_dim)
+            if t > 1
+                E_zz_prev[:, :, t] .= E_z[:, t] * E_z[:, t - 1]'
+            end
+        end
+
+        entropy = 0.0
+        tfs_array[k] = StateSpaceDynamics.FilterSmooth(
+            x_smooth, p_smooth, p_smooth_tt1, E_z, E_zz, E_zz_prev, entropy
+        )
+    end
+    tfs = StateSpaceDynamics.TrialFilterSmooth(tfs_array)
+
+    for active_k in 1:K
+        lds_k = slds.LDSs[active_k]
+        lds_k.fit_bool[3] = true
+
+        # Create weights for this LDS
+        w_k = [w[trial][active_k, :] for trial in 1:ntrials]
+
+        StateSpaceDynamics.update_A_b!(lds_k, tfs, w_k)
+
+        # Check results are finite and correct size
+        @test all(isfinite.(lds_k.state_model.A))
+        @test all(isfinite.(lds_k.state_model.b))
+        @test size(lds_k.state_model.A) == (latent_dim, latent_dim)
+        @test size(lds_k.state_model.b) == (latent_dim,)
+    end
+end
+
+function test_weighted_update_Q()
+    """Test weighted update of Q covariance matrix"""
+    K = 2
+    latent_dim = 2
+    obs_dim = 3
+    lds = _make_gaussian_lds(latent_dim, obs_dim)
+    slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
+
+    ntrials = 3
+    tsteps = 15
+    z, x, y = rand(slds; tsteps=tsteps, ntrials=ntrials)
+
+    # Create weights
+    w = [rand(K, tsteps) for _ in 1:ntrials]
+    for trial in 1:ntrials
+        w[trial] ./= sum(w[trial]; dims=1)
+    end
+
+    # Create FilterSmooth objects with ALL required fields
+    tfs_array = Vector{StateSpaceDynamics.FilterSmooth{Float64}}(undef, ntrials)
+    for k in 1:ntrials
+        x_smooth = x[:, :, k]
+        p_smooth = zeros(Float64, latent_dim, latent_dim, tsteps)
+        p_smooth_tt1 = zeros(Float64, latent_dim, latent_dim, tsteps)
+        E_z = x[:, :, k]
+        E_zz = zeros(Float64, latent_dim, latent_dim, tsteps)
+        E_zz_prev = zeros(Float64, latent_dim, latent_dim, tsteps)
+
+        for t in 1:tsteps
+            p_smooth[:, :, t] .= 0.1 * I(latent_dim)
+            p_smooth_tt1[:, :, t] .= 0.1 * I(latent_dim)
+            E_zz[:, :, t] .= E_z[:, t] * E_z[:, t]' .+ 0.1 * I(latent_dim)
+            if t > 1
+                E_zz_prev[:, :, t] .= E_z[:, t] * E_z[:, t - 1]'
+            end
+        end
+
+        entropy = 0.0
+        tfs_array[k] = StateSpaceDynamics.FilterSmooth(
+            x_smooth, p_smooth, p_smooth_tt1, E_z, E_zz, E_zz_prev, entropy
+        )
+    end
+    tfs = StateSpaceDynamics.TrialFilterSmooth(tfs_array)
+
+    for active_k in 1:K
+        lds_k = slds.LDSs[active_k]
+        lds_k.fit_bool[4] = true
+
+        # Create weights for this LDS
+        w_k = [w[trial][active_k, :] for trial in 1:ntrials]
+
+        StateSpaceDynamics.update_Q!(lds_k, tfs, w_k)
+
+        # Check results are finite, symmetric, and PSD
+        @test all(isfinite.(lds_k.state_model.Q))
+        @test isapprox(lds_k.state_model.Q, lds_k.state_model.Q', atol=1e-10)
+
+        # Check positive semi-definite
+        eigvals_Q = eigvals(lds_k.state_model.Q)
+        @test all(eigvals_Q .>= -1e-10)
+    end
+end
+
+function test_weighted_gradient_linearity()
+    """Test that gradient scales linearly with weights"""
+    K = 2
+    lds = _make_gaussian_lds(2, 3)
+    slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
+
+    z, x, y = rand(slds; tsteps=10, ntrials=1)
+    tsteps = size(y, 2)
+
+    # Create base weights
+    w = rand(K, tsteps)
+    w ./= sum(w; dims=1)
+
+    # Compute gradient with base weights
+    grad1 = StateSpaceDynamics.Gradient(slds, y[:, :, 1], x[:, :, 1], w)
+
+    # Compute gradient with scaled weights (should produce same result after normalization)
+    w_scaled = 2.5 * w
+    w_scaled ./= sum(w_scaled; dims=1)
+    grad2 = StateSpaceDynamics.Gradient(slds, y[:, :, 1], x[:, :, 1], w_scaled)
+
+    # After normalization, gradients should be equal
+    @test isapprox(grad1, grad2, rtol=1e-10)
+end
+
+function test_zero_weights_behavior()
+    """Test that zero weights are handled correctly"""
+    K = 2
+    lds = _make_gaussian_lds(2, 3)
+    slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
+
+    z, x, y = rand(slds; tsteps=10, ntrials=1)
+    tsteps = size(y, 2)
+
+    # Create weights where one state has zero weight everywhere
+    w = zeros(K, tsteps)
+    w[1, :] .= 1.0  # Only state 1 is active
+
+    # This should work without errors
+    grad = StateSpaceDynamics.Gradient(slds, y[:, :, 1], x[:, :, 1], w)
+    @test all(isfinite.(grad))
+
+    H, H_diag, H_super, H_sub = StateSpaceDynamics.Hessian(slds, y[:, :, 1], x[:, :, 1], w)
+    @test all(isfinite.(H))
 end

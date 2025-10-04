@@ -1018,23 +1018,23 @@ Update the initial state mean of the Linear Dynamical System using the average a
 trials.
 """
 function update_initial_state_mean!(
-    lds::LinearDynamicalSystem{T,S,O}, 
+    lds::LinearDynamicalSystem{T,S,O},
     tfs::TrialFilterSmooth{T},
-    w::Union{Nothing,AbstractVector{<:AbstractVector{T}}} = nothing
+    w::Union{Nothing,AbstractVector{<:AbstractVector{T}}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     if lds.fit_bool[1]
         ntrials = length(tfs.FilterSmooths)
         x0_new = zeros(T, lds.latent_dim)
         total_weight = zero(T)
-        
+
         for trial in 1:ntrials
             fs = tfs[trial]
             weight = isnothing(w) ? one(T) : w[trial][1]  # Weight at t=1
-            
+
             x0_new .+= weight .* fs.E_z[:, 1]
             total_weight += weight
         end
-        
+
         lds.state_model.x0 .= x0_new ./ total_weight
     end
 end
@@ -1050,27 +1050,28 @@ Update the initial state covariance of the Linear Dynamical System using the ave
 all trials.
 """
 function update_initial_state_covariance!(
-    lds::LinearDynamicalSystem{T,S,O}, 
+    lds::LinearDynamicalSystem{T,S,O},
     tfs::TrialFilterSmooth{T},
-    w::Union{Nothing,AbstractVector{<:AbstractVector{T}}} = nothing
+    w::Union{Nothing,AbstractVector{<:AbstractVector{T}}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     if lds.fit_bool[2]
         ntrials = length(tfs.FilterSmooths)
         state_dim = lds.latent_dim
         p0_new = zeros(T, state_dim, state_dim)
         total_weight = zero(T)
-        
+
         for trial in 1:ntrials
             fs = tfs[trial]
             weight = isnothing(w) ? one(T) : w[trial][1]  # Weight at t=1
-            
-            p0_new .+= weight .* (fs.E_zz[:, :, 1] - (lds.state_model.x0 * lds.state_model.x0'))
+
+            p0_new .+=
+                weight .* (fs.E_zz[:, :, 1] - (lds.state_model.x0 * lds.state_model.x0'))
             total_weight += weight
         end
-        
+
         p0_new ./= total_weight
         p0_new .= 0.5 * (p0_new + p0_new')
-        
+
         # Set the new P0 matrix
         lds.state_model.P0 = p0_new
     end
@@ -1088,30 +1089,30 @@ Update the transition matrix A of the Linear Dynamical System.
 
 """
 function update_A_b!(
-    lds::LinearDynamicalSystem{T,S,O}, 
+    lds::LinearDynamicalSystem{T,S,O},
     tfs::TrialFilterSmooth{T},
-    w::Union{Nothing,AbstractVector{<:AbstractVector{T}}} = nothing
+    w::Union{Nothing,AbstractVector{<:AbstractVector{T}}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     lds.fit_bool[3] || return nothing
     D = lds.latent_dim
     ntrials = length(tfs)
-    
+
     # Accumulate statistics for [A b] jointly
     Sxz = zeros(T, D, D + 1)
     Szz = zeros(T, D + 1, D + 1)
-    
+
     for trial in 1:ntrials
         fs = tfs[trial]
         tsteps = size(fs.E_z, 2)
         weights = isnothing(w) ? nothing : w[trial]
-        
+
         @views for t in 2:tsteps
             weight = isnothing(weights) ? one(T) : weights[t]
-            
+
             # Sxz accumulation
             Sxz[:, 1:D] .+= weight .* fs.E_zz_prev[:, :, t]
             Sxz[:, D + 1] .+= weight .* fs.E_z[:, t]
-            
+
             # Szz for augmented state z_{t-1} = [x_{t-1}; 1]
             Szz[1:D, 1:D] .+= weight .* fs.E_zz[:, :, t - 1]
             Szz[1:D, D + 1] .+= weight .* fs.E_z[:, t - 1]
@@ -1119,12 +1120,12 @@ function update_A_b!(
             Szz[D + 1, D + 1] += weight
         end
     end
-    
+
     # Solve jointly: [A b] = Sxz / Szz
     AB = Sxz / Szz
     lds.state_model.A = AB[:, 1:D]
     lds.state_model.b = AB[:, D + 1]
-    
+
     return nothing
 end
 
@@ -1139,9 +1140,9 @@ Update the process noise covariance matrix Q of the Linear Dynamical System.
 
 """
 function update_Q!(
-    lds::LinearDynamicalSystem{T,S,O}, 
+    lds::LinearDynamicalSystem{T,S,O},
     tfs::TrialFilterSmooth{T},
-    w::Union{Nothing,AbstractVector{<:AbstractVector{T}}} = nothing
+    w::Union{Nothing,AbstractVector{<:AbstractVector{T}}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     lds.fit_bool[4] || return nothing
     ntrials = length(tfs)
@@ -1149,7 +1150,7 @@ function update_Q!(
     A = lds.state_model.A
     b = lds.state_model.b
     Q_new = zeros(T, state_dim, state_dim)
-    
+
     # Pre-allocate working matrices
     temp1 = Matrix{T}(undef, state_dim, state_dim)
     temp2 = Matrix{T}(undef, state_dim, state_dim)
@@ -1157,31 +1158,31 @@ function update_Q!(
     temp4 = Matrix{T}(undef, state_dim, state_dim)
     temp5 = Vector{T}(undef, state_dim)
     innovation_cov = Matrix{T}(undef, state_dim, state_dim)
-    
+
     total_weight = zero(T)
-    
+
     for trial in 1:ntrials
         fs = tfs[trial]
         tsteps = size(fs.E_zz, 3)
         weights = isnothing(w) ? nothing : w[trial]
-        
+
         @views for t in 2:tsteps
             weight = isnothing(weights) ? one(T) : weights[t]
-            
+
             Σt = fs.E_zz[:, :, t]
             Σtm1 = fs.E_zz[:, :, t - 1]
             Σcross = fs.E_zz_prev[:, :, t]
             μt = fs.E_z[:, t]
             μtm1 = fs.E_z[:, t - 1]
-            
+
             # Compute using pre-allocated temps
             mul!(temp1, Σcross, A')
             mul!(temp2, A, Σcross')
             mul!(temp3, A, Σtm1)
             mul!(temp4, temp3, A')
-            
+
             @. innovation_cov = Σt - temp1 - temp2 + temp4
-            
+
             # Add bias terms
             innovation_cov .-= μt * b'
             innovation_cov .-= b * μt'
@@ -1189,16 +1190,16 @@ function update_Q!(
             innovation_cov .+= temp5 * b'
             innovation_cov .+= b * temp5'
             innovation_cov .+= b * b'
-            
+
             Q_new .+= weight .* innovation_cov
             total_weight += weight
         end
     end
-    
+
     Q_new ./= total_weight
     Q_new .= 0.5 .* (Q_new .+ Q_new')
     lds.state_model.Q = Q_new
-    
+
     return nothing
 end
 
@@ -1999,7 +2000,7 @@ function gradient_observation_model_single_trial!(
     E_z::AbstractMatrix{T},
     p_smooth::AbstractArray{T,3},
     y::AbstractMatrix{T},
-    weights::Union{Nothing,AbstractVector{T}} = nothing,
+    weights::Union{Nothing,AbstractVector{T}}=nothing,
 ) where {T<:Real}
     d = exp.(log_d)
     obs_dim, latent_dim = size(C)
@@ -2013,7 +2014,7 @@ function gradient_observation_model_single_trial!(
 
     @views for t in 1:tsteps
         weight = isnothing(weights) ? one(T) : weights[t]
-        
+
         E_z_t = E_z[:, t]
         P_smooth_t = p_smooth[:, :, t]
         y_t = y[:, t]
@@ -2059,7 +2060,7 @@ function gradient_observation_model!(
     log_d::AbstractVector{T},
     tfs::TrialFilterSmooth{T},
     y::AbstractArray{T,3},
-    w::Union{Nothing,AbstractVector{<:AbstractVector{T}}} = nothing,
+    w::Union{Nothing,AbstractVector{<:AbstractVector{T}}}=nothing,
 ) where {T<:Real}
     trials = length(tfs.FilterSmooths)
 
@@ -2069,7 +2070,7 @@ function gradient_observation_model!(
     @threads for k in 1:trials
         fs = tfs[k]
         weights = isnothing(w) ? nothing : w[k]
-        
+
         # Local gradient for this trial
         local_grad = zeros(T, length(grad))
 
@@ -2090,8 +2091,8 @@ end
 Update the observation model parameters of a PLDS model.
 """
 function update_observation_model!(
-    plds::LinearDynamicalSystem{T,S,O}, 
-    tfs::TrialFilterSmooth{T}, 
+    plds::LinearDynamicalSystem{T,S,O},
+    tfs::TrialFilterSmooth{T},
     y::AbstractArray{T,3},
     w::Union{Nothing,AbstractVector{<:AbstractVector{T}}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
@@ -2131,17 +2132,16 @@ function update_observation_model!(
     return nothing
 end
 
-
 """
     mstep!(plds, tfs, y, w)
 
 Perform the M-step of the EM algorithm for a Poisson Linear Dynamical System with multi-trial data.
 """
 function mstep!(
-    plds::LinearDynamicalSystem{T,S,O}, 
-    tfs::TrialFilterSmooth{T}, 
+    plds::LinearDynamicalSystem{T,S,O},
+    tfs::TrialFilterSmooth{T},
     y::AbstractArray{T,3},
-    w::Union{Nothing,AbstractVector{<:AbstractVector{T}}}=nothing
+    w::Union{Nothing,AbstractVector{<:AbstractVector{T}}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     # Get old params
     old_params = _get_all_params_vec(plds)

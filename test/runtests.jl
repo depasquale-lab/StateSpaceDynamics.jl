@@ -79,6 +79,14 @@ include("LinearDynamicalSystems/SLDS.jl")
         test_SLDS_smooth_different_weight_patterns()
     end
 
+    @testset "SLDS Weighted M-step Tests" begin
+        test_weighted_update_initial_state_mean()
+        test_weighted_update_A_b()
+        test_weighted_update_Q()
+        test_weighted_gradient_linearity()
+        test_zero_weights_behavior()
+    end
+
     @testset "SLDS EM Tests" begin
         test_SLDS_sample_posterior_basic()
         test_SLDS_estep_basic()
