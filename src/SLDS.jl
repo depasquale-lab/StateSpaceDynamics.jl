@@ -331,3 +331,16 @@ function smooth(slds::SLDS, y::AbstractMatrix{T}, w::AbstractMatrix{T}) where {T
     smooth!(slds, fs, y, w)
     return fs.x_smooth, fs.p_smooth
 end
+
+function mstep!(slds::SLDS, 
+                tfs::TrialFilterSmooth, 
+                fb::ForwardBackward, 
+                y::)
+
+    K = length(slds.LDSs)
+
+    # update hmm parameters
+    
+
+    return
+end
