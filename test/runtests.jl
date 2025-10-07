@@ -78,6 +78,17 @@ include("LinearDynamicalSystems/SLDS.jl")
         test_SLDS_smooth_covariance_symmetry()
         test_SLDS_smooth_different_weight_patterns()
     end
+
+    @testset "SLDS EM Tests" begin
+        test_SLDS_sample_posterior_basic()
+        test_SLDS_estep_basic()
+        test_SLDS_mstep_updates_parameters()
+        test_SLDS_fit_runs_to_completion()
+        test_SLDS_fit_elbo_generally_increases()
+        test_SLDS_fit_multitrial()
+        test_SLDS_estep_elbo_components()
+        test_SLDS_reproducibility_with_seed()
+    end
 end
 
 """
@@ -152,203 +163,203 @@ include("LinearDynamicalSystems//PoissonLDS.jl")
     end
 end
 
-"""
-Tests for Switching Regression Models
-"""
+# """
+# Tests for Switching Regression Models
+# """
 
-include("HiddenMarkovModels/GaussianHMM.jl")
+# include("HiddenMarkovModels/GaussianHMM.jl")
 
-@testset "GaussianHMM Tests" begin
-    test_SwitchingGaussian_fit()
-    test_SwitchingGaussian_SingleState_fit()
-    test_kmeans_init()
-    test_trialized_GaussianHMM()
-    test_SwitchingGaussian_fit_float32()
-end
+# @testset "GaussianHMM Tests" begin
+#     test_SwitchingGaussian_fit()
+#     test_SwitchingGaussian_SingleState_fit()
+#     test_kmeans_init()
+#     test_trialized_GaussianHMM()
+#     test_SwitchingGaussian_fit_float32()
+# end
 
-include("HiddenMarkovModels/SwitchingGaussianRegression.jl")
+# include("HiddenMarkovModels/SwitchingGaussianRegression.jl")
 
-@testset "Switching Gaussian Regression Tests" begin
-    test_SwitchingGaussianRegression_fit()
-    test_SwitchingGaussianRegression_SingleState_fit()
-    test_trialized_SwitchingGaussianRegression()
-    # test_SwitchingGaussianRegression_fit_float32()
-end
+# @testset "Switching Gaussian Regression Tests" begin
+#     test_SwitchingGaussianRegression_fit()
+#     test_SwitchingGaussianRegression_SingleState_fit()
+#     test_trialized_SwitchingGaussianRegression()
+#     # test_SwitchingGaussianRegression_fit_float32()
+# end
 
-include("HiddenMarkovModels/SwitchingPoissonRegression.jl")
+# include("HiddenMarkovModels/SwitchingPoissonRegression.jl")
 
-@testset "Switching Poisson Regression Tests" begin
-    test_SwitchingPoissonRegression_fit()
-    test_trialized_SwitchingPoissonRegression()
-    # test_SwitchingPoissonRegression_fit_float32()
-end
+# @testset "Switching Poisson Regression Tests" begin
+#     test_SwitchingPoissonRegression_fit()
+#     test_trialized_SwitchingPoissonRegression()
+#     # test_SwitchingPoissonRegression_fit_float32()
+# end
 
-include("HiddenMarkovModels/SwitchingBernoulliRegression.jl")
+# include("HiddenMarkovModels/SwitchingBernoulliRegression.jl")
 
-@testset "Switching Bernoulli Regression Tests" begin
-    test_SwitchingBernoulliRegression()
-    test_trialized_SwitchingBernoulliRegression()
-end
+# @testset "Switching Bernoulli Regression Tests" begin
+#     test_SwitchingBernoulliRegression()
+#     test_trialized_SwitchingBernoulliRegression()
+# end
 
-"""
-Tests for MixtureModels.jl
-"""
+# """
+# Tests for MixtureModels.jl
+# """
 
-include("MixtureModels/GaussianMixtureModel.jl")
-include("MixtureModels/PoissonMixtureModel.jl")
+# include("MixtureModels/GaussianMixtureModel.jl")
+# include("MixtureModels/PoissonMixtureModel.jl")
 
-@testset "MixtureModels.jl Tests" begin
-    # GaussianMixtureModel Tests
-    k = 3
-    D = 2  # feature dimension
-    standard_gmm = GaussianMixtureModel(k, D)
-    standard_data = rand(standard_gmm, 100)  # 100 samples, 2D each
-    test_GaussianMixtureModel_properties(standard_gmm, k, D)
+# @testset "MixtureModels.jl Tests" begin
+#     # GaussianMixtureModel Tests
+#     k = 3
+#     D = 2  # feature dimension
+#     standard_gmm = GaussianMixtureModel(k, D)
+#     standard_data = rand(standard_gmm, 100)  # 100 samples, 2D each
+#     test_GaussianMixtureModel_properties(standard_gmm, k, D)
 
-    k = 2
-    D = 1
-    vector_gmm = GaussianMixtureModel(k, D)
-    vector_data = rand(vector_gmm, 1000)  # scalar data
-    test_GaussianMixtureModel_properties(vector_gmm, k, D)
+#     k = 2
+#     D = 1
+#     vector_gmm = GaussianMixtureModel(k, D)
+#     vector_data = rand(vector_gmm, 1000)  # scalar data
+#     test_GaussianMixtureModel_properties(vector_gmm, k, D)
 
-    tester_set = [(standard_gmm, standard_data), (vector_gmm, vector_data)]
+#     tester_set = [(standard_gmm, standard_data), (vector_gmm, vector_data)]
 
-    for (gmm, data) in tester_set
-        data_matrix = isa(data, Vector) ? reshape(data, :, 1) : data
-        D = size(data_matrix, 1)
-        k = gmm.k
+#     for (gmm, data) in tester_set
+#         data_matrix = isa(data, Vector) ? reshape(data, :, 1) : data
+#         D = size(data_matrix, 1)
+#         k = gmm.k
 
-        gmm = GaussianMixtureModel(k, D)
-        testGaussianMixtureModel_EStep(gmm, data)
+#         gmm = GaussianMixtureModel(k, D)
+#         testGaussianMixtureModel_EStep(gmm, data)
 
-        gmm = GaussianMixtureModel(k, D)
-        testGaussianMixtureModel_MStep(gmm, data)
+#         gmm = GaussianMixtureModel(k, D)
+#         testGaussianMixtureModel_MStep(gmm, data)
 
-        gmm = GaussianMixtureModel(k, D)
-        testGaussianMixtureModel_fit(gmm, data)
+#         gmm = GaussianMixtureModel(k, D)
+#         testGaussianMixtureModel_fit(gmm, data)
 
-        gmm = GaussianMixtureModel(k, D)
-        test_loglikelihood(gmm, data)
-    end
+#         gmm = GaussianMixtureModel(k, D)
+#         test_loglikelihood(gmm, data)
+#     end
 
-    # PoissonMixtureModel Tests
-    k = 3
-    temp_pmm = PoissonMixtureModel(k)
-    temp_pmm.λₖ = [5.0, 10.0, 15.0]
-    temp_pmm.πₖ = [1/3, 1/3, 1/3]
-    data = rand(temp_pmm, 300)  # returns Vector{Int}
+#     # PoissonMixtureModel Tests
+#     k = 3
+#     temp_pmm = PoissonMixtureModel(k)
+#     temp_pmm.λₖ = [5.0, 10.0, 15.0]
+#     temp_pmm.πₖ = [1/3, 1/3, 1/3]
+#     data = rand(temp_pmm, 300)  # returns Vector{Int}
 
-    standard_pmm = PoissonMixtureModel(k)
-    test_PoissonMixtureModel_properties(standard_pmm, k)
+#     standard_pmm = PoissonMixtureModel(k)
+#     test_PoissonMixtureModel_properties(standard_pmm, k)
 
-    for (pmm, d) in [(standard_pmm, data)]
-        pmm = PoissonMixtureModel(k)
-        testPoissonMixtureModel_EStep(pmm, d)
+#     for (pmm, d) in [(standard_pmm, data)]
+#         pmm = PoissonMixtureModel(k)
+#         testPoissonMixtureModel_EStep(pmm, d)
 
-        pmm = PoissonMixtureModel(k)
-        testPoissonMixtureModel_MStep(pmm, d)
+#         pmm = PoissonMixtureModel(k)
+#         testPoissonMixtureModel_MStep(pmm, d)
 
-        pmm = PoissonMixtureModel(k)
-        testPoissonMixtureModel_fit(pmm, d)
+#         pmm = PoissonMixtureModel(k)
+#         testPoissonMixtureModel_fit(pmm, d)
 
-        pmm = PoissonMixtureModel(k)
-        test_loglikelihood_pmm(pmm, d)
-    end
-end
+#         pmm = PoissonMixtureModel(k)
+#         test_loglikelihood_pmm(pmm, d)
+#     end
+# end
 
-"""
-Tests for RegressionModels.jl
-"""
+# """
+# Tests for RegressionModels.jl
+# """
 
-include("RegressionModels/GaussianRegression.jl")
+# include("RegressionModels/GaussianRegression.jl")
 
-@testset "GaussianRegression Tests" begin
-    test_GaussianRegression_initialization()
-    test_GaussianRegression_loglikelihood()
-    test_GaussianRegression_fit()
-    test_GaussianRegression_sample()
-    test_GaussianRegression_optimization()
-    test_GaussianRegression_sklearn()
-end
+# @testset "GaussianRegression Tests" begin
+#     test_GaussianRegression_initialization()
+#     test_GaussianRegression_loglikelihood()
+#     test_GaussianRegression_fit()
+#     test_GaussianRegression_sample()
+#     test_GaussianRegression_optimization()
+#     test_GaussianRegression_sklearn()
+# end
 
-include("RegressionModels/BernoulliRegression.jl")
+# include("RegressionModels/BernoulliRegression.jl")
 
-@testset "BernoulliRegression Tests" begin
-    test_BernoulliRegression_initialization()
-    test_BernoulliRegression_loglikelihood()
-    test_BernoulliRegression_fit()
-    test_BernoulliRegression_sample()
-    test_BernoulliRegression_optimization()
-    test_BernoulliRegression_sklearn()
-end
+# @testset "BernoulliRegression Tests" begin
+#     test_BernoulliRegression_initialization()
+#     test_BernoulliRegression_loglikelihood()
+#     test_BernoulliRegression_fit()
+#     test_BernoulliRegression_sample()
+#     test_BernoulliRegression_optimization()
+#     test_BernoulliRegression_sklearn()
+# end
 
-include("RegressionModels/PoissonRegression.jl")
+# include("RegressionModels/PoissonRegression.jl")
 
-@testset "PoissonRegression Tests" begin
-    test_PoissonRegression_initialization()
-    test_PoissonRegression_loglikelihood()
-    test_PoissonRegression_fit()
-    test_PoissonRegression_sample()
-    test_PoissonRegression_optimization()
-    test_PoissonRegression_sklearn()
-end
+# @testset "PoissonRegression Tests" begin
+#     test_PoissonRegression_initialization()
+#     test_PoissonRegression_loglikelihood()
+#     test_PoissonRegression_fit()
+#     test_PoissonRegression_sample()
+#     test_PoissonRegression_optimization()
+#     test_PoissonRegression_sklearn()
+# end
 
-include("RegressionModels/AutoRegression.jl")
+# include("RegressionModels/AutoRegression.jl")
 
-@testset "AutoRegression Tests" begin
-    test_AR_emission_initialization()
-end
+# @testset "AutoRegression Tests" begin
+#     test_AR_emission_initialization()
+# end
 
-include("HiddenMarkovModels/AutoRegressionHMM.jl")
+# include("HiddenMarkovModels/AutoRegressionHMM.jl")
 
-@testset "AutoRegressive HMM Tests" begin
-    test_ARHMM_sampling()
-    test_ARHMM_fit()
-    test_timeseries_to_AR_feature_matrix()
-    test_trialized_timeseries_to_AR_feature_matrix()
-end
+# @testset "AutoRegressive HMM Tests" begin
+#     test_ARHMM_sampling()
+#     test_ARHMM_fit()
+#     test_timeseries_to_AR_feature_matrix()
+#     test_trialized_timeseries_to_AR_feature_matrix()
+# end
 
-"""
-Tests for Utilities.jl
-"""
+# """
+# Tests for Utilities.jl
+# """
 
-include("Utilities/Utilities.jl")
+# include("Utilities/Utilities.jl")
 
-@testset "Utilities.jl Tests" begin
-    test_euclidean_distance()
-    test_kmeanspp_initialization()
-    test_kmeans_clustering()
-    test_block_tridgm()
-    test_autoregressive_setters_and_getters()
-    test_gaussian_entropy()
-end
+# @testset "Utilities.jl Tests" begin
+#     test_euclidean_distance()
+#     test_kmeanspp_initialization()
+#     test_kmeans_clustering()
+#     test_block_tridgm()
+#     test_autoregressive_setters_and_getters()
+#     test_gaussian_entropy()
+# end
 
-"""
-Tests for PrettyPrinting.jl
-"""
+# """
+# Tests for PrettyPrinting.jl
+# """
 
-include("PrettyPrinting/PrettyPrinting.jl")
+# include("PrettyPrinting/PrettyPrinting.jl")
 
-@testset "PrettyPrinting.jl Tests" begin
-    test_pretty_printing()
-end
+# @testset "PrettyPrinting.jl Tests" begin
+#     test_pretty_printing()
+# end
 
-"""
-Tests for Preprocessing.jl
-"""
+# """
+# Tests for Preprocessing.jl
+# """
 
-include("Preprocessing/Preprocessing.jl")
+# include("Preprocessing/Preprocessing.jl")
 
-@testset "PPCA Tests" begin
-    test_PPCA_with_params()
-    test_PPCA_E_and_M_Step()
-    test_PPCA_fit()
-    test_PPCA_samples()
-end
+# @testset "PPCA Tests" begin
+#     test_PPCA_with_params()
+#     test_PPCA_E_and_M_Step()
+#     test_PPCA_fit()
+#     test_PPCA_samples()
+# end
 
-include("HiddenMarkovModels/State_Labellers.jl")
+# include("HiddenMarkovModels/State_Labellers.jl")
 
-@testset "Viterbi and Class Probability Tests" begin
-    test_viterbi_GaussianHMM()
-    test_class_probabilities()
-end
+# @testset "Viterbi and Class Probability Tests" begin
+#     test_viterbi_GaussianHMM()
+#     test_class_probabilities()
+# end

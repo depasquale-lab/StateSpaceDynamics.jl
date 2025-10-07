@@ -1897,7 +1897,7 @@ function Q_observation_model(
 end
 
 """
-    Q_function(A, Q, C, log_d, x0, P0, E_z, E_zz, E_zz_prev, y)
+    Q_function(A, b, Q, C, log_d, x0, P0, E_z, E_zz, E_zz_prev, y)
 
 Calculate the Q-function for a single trial of a Poisson Linear Dynamical System.
 """
@@ -2119,10 +2119,7 @@ end
 """
     mstep!(
         plds::LinearDynamicalSystem{T,S,O},
-        E_z::AbstractArray{T,3},
-        E_zz::AbstractArray{T,4},
-        E_zz_Prev{T,4},
-        p_smooth{T,4},
+        tfs::TrialFilterSmooth{T},
         y::AbstractArray{T,3}
     ) where {T<:Real, S<:GaussianStateModel{T}, O<:PoissonObservationModel{T}}
 
@@ -2130,9 +2127,7 @@ Perform the M-step of the EM algorithm for a Poisson Linear Dynamical System wit
 multi-trial data.
 """
 function mstep!(
-    plds::LinearDynamicalSystem{T,S,O}, 
-    tfs::TrialFilterSmooth{T}, 
-    y::AbstractArray{T,3}
+    plds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}, y::AbstractArray{T,3}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     # Get old params using new approach
     old_params = _get_all_params_vec(plds)

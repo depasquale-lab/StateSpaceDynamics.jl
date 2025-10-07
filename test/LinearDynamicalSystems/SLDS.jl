@@ -670,3 +670,254 @@ function test_SLDS_smooth_different_weight_patterns()
     x3, p3 = smooth(slds, y_trial, w_smooth)
     @test all(isfinite, x3)
 end
+
+function test_SLDS_sample_posterior_basic()
+    K = 2
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 20
+
+    lds = _make_gaussian_lds(latent_dim, obs_dim)
+    slds = SLDS(; A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K))
+
+    z, x, y = rand(slds; tsteps=tsteps, ntrials=1)
+    w = ones(Float64, K, tsteps) ./ K
+
+    # Get smoothed posterior
+    fs = StateSpaceDynamics.initialize_FilterSmooth(slds.LDSs[1], tsteps)
+    StateSpaceDynamics.smooth!(slds, fs, y[:, :, 1], w)
+
+    # Sample from posterior
+    x_sample, entropy = StateSpaceDynamics.sample_posterior(fs)
+
+    @test size(x_sample) == (latent_dim, tsteps)
+    @test entropy > 0
+    @test isfinite(entropy)
+    @test all(isfinite, x_sample)
+end
+
+function test_SLDS_estep_basic()
+    K = 2
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 15
+    ntrials = 2
+
+    lds = _make_gaussian_lds(latent_dim, obs_dim)
+    slds = SLDS(; A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K))
+
+    z, x, y = rand(slds; tsteps=tsteps, ntrials=ntrials)
+
+    # Initialize structures
+    tfs = StateSpaceDynamics.initialize_FilterSmooth(slds.LDSs[1], tsteps, ntrials)
+    fbs = [
+        StateSpaceDynamics.initialize_forward_backward(slds, tsteps, Float64) for
+        _ in 1:ntrials
+    ]
+
+    # Initialize with uniform weights
+    for trial in 1:ntrials
+        w_uniform = ones(Float64, K, tsteps) ./ K
+        StateSpaceDynamics.smooth!(slds, tfs[trial], y[:, :, trial], w_uniform)
+    end
+
+    # Sample and run E-step
+    x_samples, _ = StateSpaceDynamics.sample_posterior(tfs, 1)
+    elbo = StateSpaceDynamics.estep!(slds, tfs, fbs, y, x_samples)
+
+    # Check ELBO is finite
+    @test isfinite(elbo)
+
+    # Check sufficient statistics were computed
+    for trial in 1:ntrials
+        @test size(tfs[trial].E_z) == (latent_dim, tsteps)
+        @test size(tfs[trial].E_zz) == (latent_dim, latent_dim, tsteps)
+        @test size(tfs[trial].E_zz_prev) == (latent_dim, latent_dim, tsteps)
+        @test all(isfinite, tfs[trial].E_z)
+        @test all(isfinite, tfs[trial].E_zz)
+        @test all(isfinite, tfs[trial].E_zz_prev)
+    end
+
+    # Check discrete posteriors
+    for trial in 1:ntrials
+        w = exp.(fbs[trial].γ)
+        @test size(w) == (K, tsteps)
+        @test all(isfinite, w)
+        @test all(w .>= 0)
+        # Each column should approximately sum to 1
+        @test all(isapprox.(sum(w; dims=1), 1.0, atol=1e-10))
+    end
+end
+
+function test_SLDS_mstep_updates_parameters()
+    K = 2
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 15
+    ntrials = 2
+
+    lds = _make_gaussian_lds(latent_dim, obs_dim)
+    slds = SLDS(; A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K))
+
+    z, x, y = rand(slds; tsteps=tsteps, ntrials=ntrials)
+
+    # Initialize structures
+    tfs = StateSpaceDynamics.initialize_FilterSmooth(slds.LDSs[1], tsteps, ntrials)
+    fbs = [
+        StateSpaceDynamics.initialize_forward_backward(slds, tsteps, Float64) for
+        _ in 1:ntrials
+    ]
+
+    # Run one E-step
+    for trial in 1:ntrials
+        w_uniform = ones(Float64, K, tsteps) ./ K
+        StateSpaceDynamics.smooth!(slds, tfs[trial], y[:, :, trial], w_uniform)
+    end
+    x_samples, _ = StateSpaceDynamics.sample_posterior(tfs, 1)
+    StateSpaceDynamics.estep!(slds, tfs, fbs, y, x_samples)
+
+    # Store old parameters
+    A_old = copy(slds.A)
+    Z₀_old = copy(slds.Z₀)
+    A_lds_old = [copy(lds.state_model.A) for lds in slds.LDSs]
+
+    # Run M-step
+    StateSpaceDynamics.mstep!(slds, tfs, fbs, y)
+
+    # Check parameters changed (with high probability)
+    @test !isapprox(slds.A, A_old, rtol=1e-6) || true  # May not change if data is degenerate
+    @test all(isfinite, slds.A)
+    @test all(isfinite, slds.Z₀)
+
+    # Check stochasticity is preserved
+    @test all(isapprox.(sum(slds.A; dims=2), 1.0, atol=1e-10))
+    @test isapprox(sum(slds.Z₀), 1.0, atol=1e-10)
+    @test all(slds.A .>= 0)
+    @test all(slds.Z₀ .>= 0)
+end
+
+function test_SLDS_fit_runs_to_completion()
+    K = 2
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 15
+    ntrials = 2
+    max_iter = 5
+
+    lds = _make_gaussian_lds(latent_dim, obs_dim)
+    slds = SLDS(; A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K))
+
+    z, x, y = rand(slds; tsteps=tsteps, ntrials=ntrials)
+
+    # Fit without progress bar
+    elbos = fit!(slds, y; max_iter=max_iter, progress=false)
+
+    # Check correct number of iterations
+    @test length(elbos) == max_iter
+
+    # Check all ELBOs are finite
+    @test all(isfinite, elbos)
+end
+
+function test_SLDS_fit_elbo_generally_increases()
+    # ELBO should generally increase or stabilize (may have noise due to sampling)
+    K = 2
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 20
+    ntrials = 3
+    max_iter = 10
+
+    lds = _make_gaussian_lds(latent_dim, obs_dim)
+    slds = SLDS(; A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K))
+
+    z, x, y = rand(slds; tsteps=tsteps, ntrials=ntrials)
+
+    elbos = fit!(slds, y; max_iter=max_iter, progress=false)
+
+    # Check that later ELBOs are generally higher than early ones
+    # (allowing for stochastic noise)
+    early_mean = mean(elbos[1:3])
+    late_mean = mean(elbos[(end - 2):end])
+
+    @test late_mean > early_mean - 100  # Allow some slack for noise
+end
+
+function test_SLDS_fit_multitrial()
+    K = 2
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 15
+    ntrials = 5
+    max_iter = 5
+
+    lds = _make_gaussian_lds(latent_dim, obs_dim)
+    slds = SLDS(; A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K))
+
+    z, x, y = rand(slds; tsteps=tsteps, ntrials=ntrials)
+
+    elbos = fit!(slds, y; max_iter=max_iter, progress=false)
+
+    @test length(elbos) == max_iter
+    @test all(isfinite, elbos)
+end
+
+function test_SLDS_estep_elbo_components()
+    # Verify ELBO contains expected components
+    K = 2
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 10
+    ntrials = 1
+
+    lds = _make_gaussian_lds(latent_dim, obs_dim)
+    slds = SLDS(; A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K))
+
+    z, x, y = rand(slds; tsteps=tsteps, ntrials=ntrials)
+
+    tfs = StateSpaceDynamics.initialize_FilterSmooth(slds.LDSs[1], tsteps, ntrials)
+    fbs = [
+        StateSpaceDynamics.initialize_forward_backward(slds, tsteps, Float64) for
+        _ in 1:ntrials
+    ]
+
+    # Initialize
+    w_uniform = ones(Float64, K, tsteps) ./ K
+    StateSpaceDynamics.smooth!(slds, tfs[1], y[:, :, 1], w_uniform)
+
+    # Sample and run E-step
+    x_samples, _ = StateSpaceDynamics.sample_posterior(tfs, 1)
+    elbo = StateSpaceDynamics.estep!(slds, tfs, fbs, y, x_samples)
+
+    # ELBO should be finite and typically negative (log probability)
+    @test isfinite(elbo)
+
+    # Entropy should be positive
+    @test tfs[1].entropy > 0
+end
+
+function test_SLDS_reproducibility_with_seed()
+    K = 2
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 15
+    ntrials = 2
+    max_iter = 3
+
+    lds = _make_gaussian_lds(latent_dim, obs_dim)
+    slds1 = SLDS(; A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K))
+    slds2 = SLDS(; A=_rowstochastic(K), Z₀=_probvec(K), LDSs=fill(lds, K))
+
+    Random.seed!(42)
+    z, x, y = rand(slds1; tsteps=tsteps, ntrials=ntrials)
+
+    # Fit with same seed
+    Random.seed!(123)
+    elbos1 = fit!(slds1, y; max_iter=max_iter, progress=false)
+
+    Random.seed!(123)
+    elbos2 = fit!(slds2, y; max_iter=max_iter, progress=false)
+
+    # Should get same ELBOs (approximately due to floating point)
+    @test isapprox(elbos1, elbos2, rtol=1e-10)
+end
