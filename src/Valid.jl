@@ -195,24 +195,24 @@ end
     isvalid_SLDS(slds::SLDS)
 
 Check if SLDS structure is valid under the following criteria:
-    - Dims of A match the length of Z₀ and the number of LDSs
-    - Rows of A and Z₀ sum to 1
+    - Dims of A match the length of πₖ and the number of LDSs
+    - Rows of A and πₖ sum to 1
     - Each LDS has the same state dimension and observation dimension
  """
 function isvalid_SLDS(slds::SLDS)
     k = size(slds.A, 1)
-    D = length(slds.Z₀)
+    D = length(slds.πₖ)
     lds_count = length(slds.LDSs)
 
     # Checks for HMM components
-    @assert k == D "Dimension mismatch: size(A, 1) must equal length(Z₀)"
+    @assert k == D "Dimension mismatch: size(A, 1) must equal length(πₖ)"
     @assert k == lds_count "Dimension mismatch: size(A, 1) must equal number of LDSs"
 
     for i in 1:k
         @assert isprobvec(slds.A[i, :]) "Row $i of A is not a valid probability vector"
     end
 
-    @assert isprobvec(slds.Z₀) "Z₀ is not a valid probability vector"
+    @assert isprobvec(slds.πₖ) "πₖ is not a valid probability vector"
 
     # Checks for LDS models
     latent_dim = slds.LDSs[1].latent_dim

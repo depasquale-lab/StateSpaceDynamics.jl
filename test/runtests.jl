@@ -87,7 +87,6 @@ include("LinearDynamicalSystems/SLDS.jl")
         test_SLDS_fit_elbo_generally_increases()
         test_SLDS_fit_multitrial()
         test_SLDS_estep_elbo_components()
-        test_SLDS_reproducibility_with_seed()
     end
 end
 

@@ -13,10 +13,10 @@ y_t | x_t, z_t ~ N(C^{(z_t)} x_t + d^{(z_t)}, R^{(z_t)})
 
 # Fields
 - `A::TM`: Transition matrix for the discrete states (K x K)
-- `Z₀::ISV`: Initial state distribution for the discrete states (K-dimensional vector)
+- `πₖ::ISV`: Initial state distribution for the discrete states (K-dimensional vector)
 - `LDSs::Vector{LinearDynamicalSystem{T,S,O}}`: Vector of K Linear Dynamical Systems, one for each discrete state
 """
-@kwdef struct SLDS{
+@kwdef mutable struct SLDS{
     T<:Real,
     S<:AbstractStateModel,
     O<:AbstractObservationModel,
@@ -24,7 +24,7 @@ y_t | x_t, z_t ~ N(C^{(z_t)} x_t + d^{(z_t)}, R^{(z_t)})
     ISV<:AbstractVector{T},
 } <: AbstractHMM
     A::TM
-    Z₀::ISV
+    πₖ::ISV
     LDSs::Vector{LinearDynamicalSystem{T,S,O}}
 end
 
@@ -79,7 +79,7 @@ function Random.rand(
             view(x,:,:,trial),
             view(y,:,:,trial),
             slds.A,
-            slds.Z₀,
+            slds.πₖ,
             state_params,
             obs_params,
             slds.LDSs[1].obs_model,
@@ -91,13 +91,13 @@ end
 
 # Core SLDS trial sampling logic
 function _sample_slds_trial!(
-    rng, z_trial, x_trial, y_trial, A, Z₀, state_params, obs_params, obs_model_type
+    rng, z_trial, x_trial, y_trial, A, πₖ, state_params, obs_params, obs_model_type
 )
     tsteps = length(z_trial)
     K = size(A, 1)
 
     # Sample discrete state sequence using forward sampling
-    z_trial[1] = rand(rng, Categorical(Z₀))
+    z_trial[1] = rand(rng, Categorical(πₖ))
     for t in 2:tsteps
         z_trial[t] = rand(rng, Categorical(A[z_trial[t - 1], :]))
     end
@@ -443,16 +443,8 @@ function estep!(
         x_sample = view(x_samples,:,:,trial,1)  # Use first (and only) sample
         fb = fbs[trial]  # Use trial-specific ForwardBackward
 
-        # Compute emission log-likelihoods using sampled continuous states
-        for t in 1:tsteps
-            for k in 1:K
-                # log p(y_t | x_t, z_t=k)
-                fb.loglikelihoods[k, t] = loglikelihood(
-                    reshape(y_trial[:, t], :, 1),
-                    slds.LDSs[k],
-                    reshape(x_sample[:, t], :, 1),
-                )[1]
-            end
+        for k in 1:K
+            fb.loglikelihoods[k, :] .= loglikelihood(x_sample, slds.LDSs[k], y_trial)
         end
 
         # Run forward-backward for discrete states
@@ -491,7 +483,7 @@ function estep!(
 
         # Discrete state prior: log p(z)
         # Initial state
-        trial_elbo += sum(w[k, 1] * log(slds.Z₀[k] + 1e-12) for k in 1:K)
+        trial_elbo += sum(w[k, 1] * log(slds.πₖ[k] + 1e-12) for k in 1:K)
 
         # Transitions
         for i in 1:K, j in 1:K
@@ -516,13 +508,13 @@ end
     mstep!(slds::SLDS, tfs::TrialFilterSmooth, fbs::Vector{ForwardBackward}, y::AbstractArray)
 
 M-step for SLDS.
-- Updates discrete HMM parameters (A, Z₀) using aggregated statistics across trials
+- Updates discrete HMM parameters (A, πₖ) using aggregated statistics across trials
 - Updates each LDS using weighted sufficient statistics
 """
 function mstep!(
     slds::SLDS{T,S,O},
     tfs::TrialFilterSmooth{T},
-    fbs::Vector{ForwardBackward{T}},
+    fbs::AbstractVector{<:ForwardBackward{T}},
     y::AbstractArray{T,3},
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
     K = length(slds.LDSs)

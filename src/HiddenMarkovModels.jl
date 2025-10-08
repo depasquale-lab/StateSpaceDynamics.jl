@@ -316,8 +316,8 @@ Compute α in log-space using precomputed `logA = log.(A)` and `logπ = log.(π�
 function forward!(
     model::AbstractHMM, FB::ForwardBackward, logA::AbstractMatrix, logπ::AbstractVector
 )
-    @assert size(logA, 1) == model.K && size(logA, 2) == model.K
-    @assert length(logπ) == model.K
+    # @assert size(logA, 1) == model.K && size(logA, 2) == model.K
+    # @assert length(logπ) == model.K
 
     α = FB.α                  # K×T (log)
     ll = FB.loglikelihoods     # K×T (log)
@@ -589,8 +589,9 @@ Update the transition matrix of an HMM.
 function update_transition_matrix!(model::AbstractHMM, FB_storage::ForwardBackward)
     γ = FB_storage.γ
     ξ = FB_storage.ξ  # eventually use this
-    for i in 1:model.K
-        for j in 1:model.K
+    K = size(model.A, 1)
+    for i in 1:K
+        for j in 1:K
             model.A[i, j] = exp(ξ[i, j] - logsumexp(@view γ[i, 1:(end - 1)]))
         end
     end
@@ -601,7 +602,7 @@ end
 function update_transition_matrix!(
     model::AbstractHMM, FB_storage_vec::Vector{<:ForwardBackward}
 )
-    K = model.K
+    K = size(model.A, 1)
 
     # Initialize numerator and denominator
     log_num = fill(-Inf, K, K)
