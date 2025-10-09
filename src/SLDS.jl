@@ -33,9 +33,7 @@ end
 
 Initialize the forward backward storage struct.
 """
-function initialize_forward_backward(
-    model::SLDS, num_obs::Int, ::Type{T}
-) where {T<:Real}
+function initialize_forward_backward(model::SLDS, num_obs::Int, ::Type{T}) where {T<:Real}
     num_states = size(model.A, 1)
 
     return ForwardBackward(
@@ -365,16 +363,16 @@ function sample_posterior(rng::AbstractRNG, fs::FilterSmooth{T}) where {T<:Real}
     x_sample = similar(fs.x_smooth)
     entropy = zero(T)
     min_jitter = T(1e-8)
-    
+
     for t in 1:tsteps
         μ = fs.x_smooth[:, t]
         Σ = Symmetric(fs.p_smooth[:, :, t])
-        
+
         # Try Cholesky decomposition with increasing jitter if needed
         chol = nothing
         jitter = zero(T)
         max_attempts = 5
-        
+
         for attempt in 1:max_attempts
             try
                 chol = cholesky(Σ + jitter * I)
@@ -391,17 +389,17 @@ function sample_posterior(rng::AbstractRNG, fs::FilterSmooth{T}) where {T<:Real}
                 end
             end
         end
-        
+
         # Sample using the Cholesky factor
         Σ_chol = chol.L
         x_sample[:, t] = μ + Σ_chol * randn(rng, T, latent_dim)
-        
+
         # Accumulate entropy using log determinant from Cholesky
         # log|Σ| = 2 * sum(log(diag(L))) where Σ = L*L'
         logdet_Σ = 2 * sum(log, diag(Σ_chol))
         entropy += 0.5 * (latent_dim * (1 + log(2π)) + logdet_Σ)
     end
-    
+
     return x_sample, entropy
 end
 

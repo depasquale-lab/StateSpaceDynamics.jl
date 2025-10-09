@@ -601,7 +601,7 @@ function test_SLDS_smooth_entropy_calculation()
 
     # Call smooth! directly to access StateSpaceDynamics.FilterSmooth
     fs = StateSpaceDynamics.initialize_FilterSmooth(slds.LDSs[1], tsteps)
-    StateSpaceDynamics.smooth!(slds, fs, y[:, :, 1], w)
+    return StateSpaceDynamics.smooth!(slds, fs, y[:, :, 1], w)
 
     # Entropy should be positive (for Gaussian)
     # @test fs.entropy > 0
@@ -1226,7 +1226,7 @@ function test_SLDS_hessian_block_structure_poisson()
     @test hess isa AbstractMatrix
     @test all(isfinite, hess)
     @test issymmetric(hess) || isapprox(hess, hess', atol=1e-10)
-    
+
     # Check block diagonal structure
     @test length(H_diag) == tsteps
     @test length(H_super) == tsteps - 1
@@ -1252,10 +1252,11 @@ function test_SLDS_smooth_basic_poisson()
     @test size(p_smooth) == (slds.LDSs[1].latent_dim, slds.LDSs[1].latent_dim, tsteps)
     @test all(isfinite, x_smooth)
     @test all(isfinite, p_smooth)
-    
+
     # Check that covariances are symmetric and positive semi-definite
     for t in 1:tsteps
-        @test issymmetric(p_smooth[:, :, t]) || isapprox(p_smooth[:, :, t], p_smooth[:, :, t]', atol=1e-10)
+        @test issymmetric(p_smooth[:, :, t]) ||
+            isapprox(p_smooth[:, :, t], p_smooth[:, :, t]', atol=1e-10)
         @test all(eigvals(p_smooth[:, :, t]) .>= -1e-10)
     end
 end
@@ -1270,7 +1271,10 @@ function test_SLDS_estep_basic_poisson()
 
     # Initialize structures - use initialize_FilterSmooth with tsteps and ntrials
     tfs = StateSpaceDynamics.initialize_FilterSmooth(slds.LDSs[1], tsteps, ntrials)
-    fbs = [StateSpaceDynamics.initialize_forward_backward(slds, tsteps, Float64) for _ in 1:ntrials]
+    fbs = [
+        StateSpaceDynamics.initialize_forward_backward(slds, tsteps, Float64) for
+        _ in 1:ntrials
+    ]
 
     # Sample posterior
     x_samples, _ = StateSpaceDynamics.sample_posterior(tfs, 1)
@@ -1279,19 +1283,19 @@ function test_SLDS_estep_basic_poisson()
     elbo = StateSpaceDynamics.estep!(slds, tfs, fbs, y, x_samples)
 
     @test isfinite(elbo)
-    
+
     # Check forward-backward results
     for trial in 1:ntrials
         @test all(isfinite, fbs[trial].α)
         @test all(isfinite, fbs[trial].β)
         @test all(isfinite, fbs[trial].γ)
         @test all(isfinite, fbs[trial].ξ)
-        
+
         # Check that γ sums to 1 at each time
         for t in 1:tsteps
             @test isapprox(sum(exp.(fbs[trial].γ[:, t])), 1.0, atol=1e-10)
         end
-        
+
         # Check that γ values are valid probabilities
         @test all(0 .<= exp.(fbs[trial].γ) .<= 1)
     end
@@ -1307,7 +1311,10 @@ function test_SLDS_mstep_updates_parameters_poisson()
 
     # Initialize and run E-step
     tfs = StateSpaceDynamics.initialize_FilterSmooth(slds.LDSs[1], tsteps, ntrials)
-    fbs = [StateSpaceDynamics.initialize_forward_backward(slds, tsteps, Float64) for _ in 1:ntrials]
+    fbs = [
+        StateSpaceDynamics.initialize_forward_backward(slds, tsteps, Float64) for
+        _ in 1:ntrials
+    ]
     x_samples, _ = StateSpaceDynamics.sample_posterior(tfs, 1)
     StateSpaceDynamics.estep!(slds, tfs, fbs, y, x_samples)
 
@@ -1397,7 +1404,7 @@ function test_SLDS_poisson_count_validation()
 
     # All observations should be non-negative
     @test all(y .>= 0)
-    
+
     # All observations should be integers (within floating point precision)
     @test all(abs.(y .- round.(y)) .< 1e-10)
 end
@@ -1407,12 +1414,12 @@ function test_SLDS_poisson_log_d_interpretation()
     K = 1
     latent_dim = 2
     obs_dim = 3
-    
+
     # Create LDS with specific log_d values
     lds = _make_poisson_lds(latent_dim, obs_dim)
     lds.obs_model.log_d .= log.([1.0, 2.0, 3.0])  # This gives d = [1, 2, 3]
     lds.obs_model.C .= 0.0  # No latent influence
-    
+
     slds = SLDS(; A=reshape([1.0], 1, 1), πₖ=[1.0], LDSs=[lds])
 
     tsteps, ntrials = 1000, 1
@@ -1422,9 +1429,9 @@ function test_SLDS_poisson_log_d_interpretation()
     # So expected rates are exp(d) where d = exp(log_d)
     d_values = exp.(lds.obs_model.log_d)  # [1, 2, 3]
     expected_rates = exp.(d_values)        # [e^1, e^2, e^3] ≈ [2.7, 7.4, 20.1]
-    
-    mean_rates = mean(y, dims=2)[:, 1, 1]
-    
+
+    mean_rates = mean(y; dims=2)[:, 1, 1]
+
     for i in 1:obs_dim
         @test isapprox(mean_rates[i], expected_rates[i], rtol=0.3)
     end
@@ -1448,7 +1455,7 @@ function test_SLDS_gradient_weight_normalization_poisson()
     # Gradient with uniform weights should equal unweighted gradient
     w_uniform = ones(K, tsteps) ./ K
     grad_weighted = StateSpaceDynamics.Gradient(slds, y_trial, x_trial, w_uniform)
-    
+
     @test all(isfinite, grad_weighted)
     @test size(grad_weighted) == size(x_trial)
 end

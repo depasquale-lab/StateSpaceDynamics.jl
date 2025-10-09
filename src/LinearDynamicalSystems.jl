@@ -1220,35 +1220,35 @@ function update_C_d!(
     w::Union{Nothing,AbstractVector{<:AbstractVector{T}}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     lds.fit_bool[5] || return nothing
-    
+
     ntrials = length(tfs)
     tsteps = size(y, 2)
     D = lds.latent_dim
     p = lds.obs_dim
-    
+
     # Accumulate statistics for [C d] jointly
     Syz = zeros(T, p, D + 1)
     Szz = zeros(T, D + 1, D + 1)
-    
+
     # Pre-allocate working matrices (reuse across all trials and timesteps!)
     work_yz = Matrix{T}(undef, p, D)  # For y * μ'
     work_outer = Matrix{T}(undef, D, D)  # For weighted Σ
-    
+
     for trial in 1:ntrials
         fs = tfs[trial]
         weights = isnothing(w) ? nothing : w[trial]
-        
+
         @views for t in 1:tsteps
             wt = isnothing(weights) ? one(T) : weights[t]
-            
+
             μ = fs.E_z[:, t]
             Σ = fs.E_zz[:, :, t]  # E[x_t x_tᵀ]
-            
+
             # Syz accumulates y_t [μ; 1]ᵀ with efficient operations
             mul!(work_yz, y[:, t, trial], μ')  # work_yz = y * μ'
             Syz[:, 1:D] .+= wt .* work_yz  # Weighted accumulation
             Syz[:, D + 1] .+= wt .* y[:, t, trial]  # Bias column
-            
+
             # Szz accumulates E[[x;1][x;1]ᵀ] weighted
             work_outer .= Σ
             work_outer .*= wt
@@ -1258,12 +1258,12 @@ function update_C_d!(
             Szz[D + 1, D + 1] += wt
         end
     end
-    
+
     # Solve jointly: [C d] = Syz / Szz
     CD = Syz / Szz
     lds.obs_model.C = CD[:, 1:D]
     lds.obs_model.d = CD[:, D + 1]
-    
+
     return nothing
 end
 
@@ -1292,7 +1292,7 @@ function update_R!(
     R_new = zeros(T, obs_dim, obs_dim)
     C = lds.obs_model.C
     d = lds.obs_model.d
-    
+
     total_weight = zero(T)
 
     # Pre-allocate all temporary arrays (reuse across all trials and timesteps!)
@@ -1324,7 +1324,7 @@ function update_R!(
             # Add weighted C * state_uncertainty * C'
             mul!(temp_matrix, C, state_uncertainty)
             mul!(R_new, temp_matrix, C', wt, one(T))
-            
+
             total_weight += wt
         end
     end
@@ -1336,7 +1336,6 @@ function update_R!(
 
     return nothing
 end
-
 
 """
     mstep!(lds, tfs, y, w)
@@ -1853,7 +1852,7 @@ function Q_observation_model(
 
     @views for t in 1:tsteps
         wt = isnothing(weights) ? one(T) : weights[t]
-        
+
         Ez_t = E_z[:, t]
         P_t = p_smooth[:, :, t]
         y_t = y[:, t]
@@ -1901,7 +1900,9 @@ function Q_observation_model(
     @threads for k in 1:trials
         fs = tfs[k]
         weights = isnothing(w) ? nothing : w[k]
-        Q_vals[k] = Q_observation_model(C, log_d, fs.E_z, fs.p_smooth, view(y,:,:,k), weights)
+        Q_vals[k] = Q_observation_model(
+            C, log_d, fs.E_z, fs.p_smooth, view(y,:,:,k), weights
+        )
     end
 
     return sum(Q_vals)
