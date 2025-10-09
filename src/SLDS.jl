@@ -570,34 +570,29 @@ Fit SLDS using variational Laplace EM algorithm with stochastic ELBO estimates.
 Runs for exactly max_iter iterations (no early stopping due to stochastic estimates).
 """
 function fit!(
-    slds::SLDS{T,S,O}, y::AbstractArray{T,3}; max_iter::Int=25, progress::Bool=true
+    slds::SLDS{T,S,O}, y::AbstractArray{T,3}; max_iter::Int=50, progress::Bool=true
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
     ntrials = size(y, 3)
     tsteps = size(y, 2)
     K = length(slds.LDSs)
-    latent_dim = slds.LDSs[1].latent_dim
 
-    # Pre-allocate
-    elbos = Vector{T}()
-    sizehint!(elbos, max_iter)
-
-    # Initialize structures - one ForwardBackward per trial
+    # Initialize structures
     tfs = initialize_FilterSmooth(slds.LDSs[1], tsteps, ntrials)
     fbs = [initialize_forward_backward(slds, tsteps, T) for _ in 1:ntrials]
 
-    # Buffer for posterior samples (single sample for Monte Carlo estimate)
-    x_samples = Array{T,4}(undef, latent_dim, tsteps, ntrials, 1)
-
     # Initialize progress bar
     prog = if progress
-        Progress(max_iter; desc="Fitting SLDS via vLEM...", barlen=50, showspeed=true)
+        Progress(max_iter; desc="Fitting SLDS via EM...", barlen=50, showspeed=true)
     else
         nothing
     end
 
-    # Initialize: run first smooth to get initial continuous posteriors
+    # Storage for ELBO values
+    elbos = Vector{T}(undef, max_iter)
+
+    # Initialize with uniform weights and smooth once
+    w_uniform = ones(T, K, tsteps) ./ K
     for trial in 1:ntrials
-        w_uniform = ones(T, K, tsteps) ./ K  # Start with uniform weights
         smooth!(slds, tfs[trial], y[:, :, trial], w_uniform)
     end
 
@@ -608,16 +603,21 @@ function fit!(
 
         # E-step: infer discrete states and update continuous states
         elbo = estep!(slds, tfs, fbs, y, x_samples)
-        push!(elbos, elbo)
+        elbos[iter] = elbo
 
         # M-step: update parameters
         mstep!(slds, tfs, fbs, y)
 
         # Update progress
-        progress && next!(prog; showvalues=[(:iteration, iter), (:ELBO, elbo)])
+        if progress && prog !== nothing
+            next!(prog; showvalues=[(:iteration, iter), (:ELBO, elbo)])
+        end
     end
 
-    progress && finish!(prog)
+    # Finish progress bar
+    if progress && prog !== nothing
+        finish!(prog)
+    end
 
     return elbos
 end
