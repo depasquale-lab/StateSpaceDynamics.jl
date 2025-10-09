@@ -96,6 +96,22 @@ include("LinearDynamicalSystems/SLDS.jl")
         test_SLDS_fit_multitrial()
         test_SLDS_estep_elbo_components()
     end
+
+    @testset "Poisson SLDS Tests" begin
+        test_SLDS_sampling_poisson_extended()
+        test_SLDS_gradient_numerical_poisson()
+        test_SLDS_hessian_block_structure_poisson()
+        test_SLDS_smooth_basic_poisson()
+        test_SLDS_estep_basic_poisson()
+        test_SLDS_mstep_updates_parameters_poisson()
+        test_SLDS_fit_runs_to_completion_poisson()
+        test_SLDS_fit_elbo_generally_increases_poisson()
+        test_SLDS_fit_multitrial_poisson()
+        test_SLDS_poisson_count_validation()
+        test_SLDS_poisson_log_d_interpretation()
+        test_SLDS_gradient_weight_normalization_poisson()
+    end
+
 end
 
 """

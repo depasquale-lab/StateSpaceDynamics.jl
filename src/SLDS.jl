@@ -364,19 +364,44 @@ function sample_posterior(rng::AbstractRNG, fs::FilterSmooth{T}) where {T<:Real}
     latent_dim, tsteps = size(fs.x_smooth)
     x_sample = similar(fs.x_smooth)
     entropy = zero(T)
-
+    min_jitter = T(1e-8)
+    
     for t in 1:tsteps
         μ = fs.x_smooth[:, t]
         Σ = Symmetric(fs.p_smooth[:, :, t])
-
-        # Sample
-        x_sample[:, t] = rand(rng, MvNormal(μ, Σ))
-
-        # Accumulate entropy: H[N(μ, Σ)] = 0.5 * (d * (1 + log(2π)) + log|Σ|)
-        logdet_Σ = logdet(Σ)
+        
+        # Try Cholesky decomposition with increasing jitter if needed
+        chol = nothing
+        jitter = zero(T)
+        max_attempts = 5
+        
+        for attempt in 1:max_attempts
+            try
+                chol = cholesky(Σ + jitter * I)
+                break
+            catch e
+                if attempt == max_attempts
+                    # Last resort: use larger jitter
+                    jitter = min_jitter * T(10)^(attempt-1)
+                    @warn "Covariance matrix not positive definite at t=$t, adding jitter=$jitter"
+                    chol = cholesky(Σ + jitter * I)
+                else
+                    # Increase jitter and try again
+                    jitter = min_jitter * T(10)^(attempt-1)
+                end
+            end
+        end
+        
+        # Sample using the Cholesky factor
+        Σ_chol = chol.L
+        x_sample[:, t] = μ + Σ_chol * randn(rng, T, latent_dim)
+        
+        # Accumulate entropy using log determinant from Cholesky
+        # log|Σ| = 2 * sum(log(diag(L))) where Σ = L*L'
+        logdet_Σ = 2 * sum(log, diag(Σ_chol))
         entropy += 0.5 * (latent_dim * (1 + log(2π)) + logdet_Σ)
     end
-
+    
     return x_sample, entropy
 end
 
