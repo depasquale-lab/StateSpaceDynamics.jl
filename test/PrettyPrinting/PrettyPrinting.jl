@@ -148,8 +148,8 @@ function test_pretty_printing()
     @test println(io1, ppca) === nothing
 
     # Switching Linear Dynamical System (SLDS)
-    slds1 = SLDS(rand(5, 5), rand(5), [lds1, lds2, lds1, lds2, lds1])
-    slds2 = SLDS(rand(2, 2), rand(2), [lds1, lds2])
+    slds1 = SLDS(rand(5, 5), rand(5), [lds1, lds1, lds1, lds1, lds1])
+    slds2 = SLDS(rand(2, 2), rand(2), [lds2, lds2])
     push!(objs, slds1, slds2)
 
     @test println(io1, slds1) === nothing
