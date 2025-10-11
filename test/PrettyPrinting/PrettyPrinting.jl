@@ -53,16 +53,25 @@ function test_pretty_printing()
     # Forward Backward object
 
     fb = StateSpaceDynamics.ForwardBackward(
-        rand(2, 2), rand(2, 2), rand(2, 2), rand(2, 2), rand(2, 2, 2)
+        rand(2, 2),
+        rand(2, 2),
+        rand(2, 2),
+        rand(2, 2),
+        rand(2, 2),  # ξ is 2D Matrix, not 3D!
     )
     push!(objs, fb)
 
     @test println(io1, fb) === nothing
 
     # Filter Smooth object
-
     fs = StateSpaceDynamics.FilterSmooth(
-        rand(2, 2), rand(2, 2, 2), rand(2, 2, 2), rand(2, 2, 2, 2), rand(2, 2, 2, 2)
+        rand(2, 2),      # x_smooth (2D)
+        rand(2, 2, 2),   # p_smooth (3D)
+        rand(2, 2, 2),   # p_smooth_tt1 (3D) 
+        rand(2, 2),      # E_z (2D)
+        rand(2, 2, 2),   # E_zz (3D)
+        rand(2, 2, 2),   # E_zz_prev (3D)
+        0.0,              # entropy (scalar)
     )
     push!(objs, fs)
 
@@ -79,8 +88,8 @@ function test_pretty_printing()
 
     # Gaussian State Model 
 
-    gsm1 = GaussianStateModel(rand(5, 5), rand(5, 5), rand(5), rand(5, 5))
-    gsm2 = GaussianStateModel(rand(2, 2), rand(2, 2), rand(2), rand(2, 2))
+    gsm1 = GaussianStateModel(rand(5, 5), rand(5, 5), rand(5), rand(5), rand(5, 5))
+    gsm2 = GaussianStateModel(rand(2, 2), rand(2, 2), rand(2), rand(2), rand(2, 2))
     push!(objs, gsm1, gsm2)
 
     @test println(io1, gsm1) === nothing
@@ -88,8 +97,8 @@ function test_pretty_printing()
 
     # Gaussian Observation Model 
 
-    gom1 = GaussianObservationModel(rand(5, 5), rand(5, 5))
-    gom2 = GaussianObservationModel(rand(3, 3), rand(3, 3))
+    gom1 = GaussianObservationModel(rand(5, 5), rand(5, 5), rand(5))
+    gom2 = GaussianObservationModel(rand(3, 3), rand(3, 3), rand(3))
     push!(objs, gom1, gom2)
 
     @test println(io1, gom1) === nothing
@@ -138,19 +147,15 @@ function test_pretty_printing()
 
     @test println(io1, ppca) === nothing
 
-    # Switching Linear Dynamical System 
-
-    slds1 = SwitchingLinearDynamicalSystem(
-        rand(5, 5), [lds1, lds2, lds1, lds2, lds1], rand(5), 5
-    )
-    slds2 = SwitchingLinearDynamicalSystem(rand(2, 2), [lds1, lds2], rand(2), 2)
+    # Switching Linear Dynamical System (SLDS)
+    slds1 = SLDS(rand(5, 5), rand(5), [lds1, lds2, lds1, lds2, lds1])
+    slds2 = SLDS(rand(2, 2), rand(2), [lds1, lds2])
     push!(objs, slds1, slds2)
 
     @test println(io1, slds1) === nothing
     @test println(io1, slds2) === nothing
 
     # testing `print_full`
-
     io2 = IOBuffer()
 
     for obj in objs
@@ -158,7 +163,6 @@ function test_pretty_printing()
     end
 
     # last tests
-
     seekstart(io1)
     seekstart(io2)
 
