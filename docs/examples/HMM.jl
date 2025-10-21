@@ -30,7 +30,7 @@ rng = StableRNG(1234);
 
 output_dim = 2;  # Each observation is a 2D vector
 
-# Define state transition dynamics: $A_{ij} = P(\text{state}_t = j \mid \text{state}_{t-1} = i)$
+# Define state transition dynamics: $A_{ij} = P(\text{state}_t = j \mid \text{state}_{t-1} = i)$  \\
 # High diagonal values mean states are "sticky" (tend to persist)
 A = [0.99 0.01;    # From state 1: 99% stay, 1% switch to state 2
      0.05 0.95];   # From state 2: 5% switch to state 1, 95% stay
@@ -137,9 +137,7 @@ p2 = plot(lls, xlabel="EM Iteration", ylabel="Log-Likelihood",
           title="EM Algorithm Convergence", legend=false,
           marker=:circle, markersize=3, lw=2, color=:darkblue)
 
-print("Learned parameters:\n")
-print("State 1: μ = $(round.(test_model.B[1].μ, digits=3)), σ² = $(round(test_model.B[1].Σ[1,1], digits=3))\n")
-print("State 2: μ = $(round.(test_model.B[2].μ, digits=3)), σ² = $(round(test_model.B[2].Σ[1,1], digits=3))\n");
+p2
 
 # ## Hidden State Decoding with Viterbi
 

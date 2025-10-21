@@ -136,6 +136,8 @@ for i in 1:k
         markerstrokewidth=2, markerstrokecolor=:black,
         label="")
 end
+
+p1
 ````
 
 ## Fit GMM Using EM Algorithm
@@ -199,6 +201,8 @@ p3 = scatter(X[1, :], X[2, :];
     legend=:topright,
     label="Data points"
 )
+
+p3
 
 colors = [:red, :green, :blue] # Plot probability density contours for each learned component
 for i in 1:fit_gmm.k

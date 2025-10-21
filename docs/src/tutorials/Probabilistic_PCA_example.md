@@ -145,11 +145,7 @@ p3 = scatter(x1, x2;
     title="Data with Learned PPCA Loading Directions",
     label="Data", alpha=0.5, markersize=3, color=:gray
 )
-````
 
-Draw loading vectors in both directions for visibility
-
-````@example Probabilistic_PCA_example
 scale = 2.0  # Scale for better visualization
 quiver!(p3, [μ_fit[1]], [μ_fit[2]];
     quiver=([scale*w1[1]], [scale*w1[2]]),

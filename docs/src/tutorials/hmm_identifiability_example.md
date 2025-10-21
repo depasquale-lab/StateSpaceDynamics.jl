@@ -178,7 +178,7 @@ for row in aligned_means
 end
 ````
 
-## What *Is* Identifiable?
+## What *is* Identifiable?
 - **Transition structure up to permutation.** Eigenvalues of `A` and invariants like the stationary distribution are
   identifiable, but the rows/columns correspond to states whose labels are arbitrary.
 - **Emission parameters up to permutation.** Means/variances (or their analogues) are identifiable modulo label permutations;
