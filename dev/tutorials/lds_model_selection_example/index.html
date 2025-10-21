@@ -18,13 +18,15 @@ true_A = [cos(θ) -sin(θ)  0.0    0.0;
           0.0     0.0     λ      0.0;
           0.0     0.0     0.0    0.85*λ];</code></pre><p>Process noise covariance</p><pre><code class="language-julia hljs">true_Q = 0.05 * Matrix(I(K_true));</code></pre><p>Observation matrix - each latent dimension affects multiple observations</p><pre><code class="language-julia hljs">Random.seed!(rng, 42)
 true_C = randn(rng, D, K_true) * 0.6;</code></pre><p>Observation noise covariance</p><pre><code class="language-julia hljs">true_R = 0.1 * Matrix(I(D));</code></pre><p>Initial state parameters</p><pre><code class="language-julia hljs">true_μ0 = zeros(K_true)
-true_Σ0 = 0.1 * Matrix(I(K_true));</code></pre><p>Create the true LDS</p><pre><code class="language-julia hljs">true_lds = LinearDynamicalSystem(
+true_Σ0 = 0.1 * Matrix(I(K_true));</code></pre><p>Create the true LDS</p><pre><code class="language- hljs">true_lds = LinearDynamicalSystem(
     GaussianStateModel(true_A, true_Q, true_μ0, true_Σ0),
     GaussianObservationModel(true_C, true_R),
     K_true,
     D,
     fill(true, 6)
-);</code></pre><p>Generate ground truth data</p><pre><code class="language-julia hljs">latent_states, observations = rand(rng, true_lds; tsteps=T, ntrials=1);</code></pre><p>Visualize the true latent dynamics and observations</p><pre><code class="language-julia hljs">p1 = plot(layout=(2,2), size=(1000, 600))
+);
+nothing #hide</code></pre><p>Generate ground truth data</p><pre><code class="language- hljs">latent_states, observations = rand(rng, true_lds; tsteps=T, ntrials=1);
+nothing #hide</code></pre><p>Visualize the true latent dynamics and observations</p><pre><code class="language- hljs">p1 = plot(layout=(2,2), size=(1000, 600))
 
 plot!(1:T, latent_states[1, :], label=&quot;Latent 1 (cos)&quot;,
       linewidth=2, subplot=1, title=&quot;Oscillating Modes&quot;)
@@ -45,12 +47,13 @@ plot!(1:T, observations[6, :], label=&quot;Obs 6&quot;, alpha=0.7, subplot=4)
 
 p1
 
-# Prepare Data for Cross-Validation</code></pre><img src="9bb68e90.svg" alt="Example block output"/><p>Reshape observations for multi-trial format (required by your codebase)</p><pre><code class="language-julia hljs">y_data = reshape(observations, D, T, 1)  # (obs_dim, tsteps, ntrials)
+# Prepare Data for Cross-Validation</code></pre><p>Reshape observations for multi-trial format (required by your codebase)</p><pre><code class="language- hljs">y_data = reshape(observations, D, T, 1)  # (obs_dim, tsteps, ntrials)
 
 # Cross-Validation Setup
 K_candidates = 1:8  # Test latent dimensions from 1 to 8
 n_folds = 5         # Number of CV folds
-fold_size = T ÷ n_folds;</code></pre><p>Storage for CV results</p><pre><code class="language-julia hljs">cv_scores = zeros(length(K_candidates), n_folds)
+fold_size = T ÷ n_folds;
+nothing #hide</code></pre><p>Storage for CV results</p><pre><code class="language- hljs">cv_scores = zeros(length(K_candidates), n_folds)
 cv_mean = zeros(length(K_candidates))
 cv_std = zeros(length(K_candidates));
 
@@ -137,7 +140,7 @@ vline!([K_true], linestyle=:dash, color=:green, linewidth=2,
 vline!([best_K], linestyle=:dot, color=:red, linewidth=2,
        annotations=[(best_K, maximum(cv_mean)-30, &quot;Selected K=$best_K&quot;, :red)])
 
-p2</code></pre><img src="20dcd617.svg" alt="Example block output"/><p>Initialize final model</p><pre><code class="language-julia hljs">A_final = 0.9 * Matrix(I(best_K)) + 0.1 * randn(rng, best_K, best_K)
+p2</code></pre><p>Initialize final model</p><pre><code class="language- hljs">A_final = 0.9 * Matrix(I(best_K)) + 0.1 * randn(rng, best_K, best_K)
 Q_final = 0.1 * Matrix(I(best_K))
 C_final = randn(rng, D, best_K) * 0.5
 R_final = 0.2 * Matrix(I(D))
@@ -150,7 +153,7 @@ final_lds = LinearDynamicalSystem(
     best_K,
     D,
     fill(true, 6)
-)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">LinearDynamicalSystem{Float64, GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}, GaussianObservationModel{Float64, Matrix{Float64}}}(GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}([0.9721209965969204 -0.07369733499508338 0.01759594526516492 0.07459410787611968; -0.026238876795846924 0.8549327921700539 0.004707657159430612 -0.1313296590584078; 0.0016458524158626123 0.06737558741354165 0.8482025488639627 0.07865640873752079; 0.08021079223194366 0.06422426455298869 -0.012587965021365347 1.0307060346767003], [0.1 0.0 0.0 0.0; 0.0 0.1 0.0 0.0; 0.0 0.0 0.1 0.0; 0.0 0.0 0.0 0.1], [0.0, 0.0, 0.0, 0.0], [0.1 0.0 0.0 0.0; 0.0 0.1 0.0 0.0; 0.0 0.0 0.1 0.0; 0.0 0.0 0.0 0.1]), GaussianObservationModel{Float64, Matrix{Float64}}([0.29993294502210893 0.45503438613367414 -0.3532141341380007 -0.7532265346573099; 0.004453155498915411 -0.20993845936236974 0.2511425933428312 0.3977848338965103; … ; -0.363590496850232 0.2963423985527106 0.17229419157004192 -0.05067979298380782; -0.17092112215476174 -0.7748666679950031 0.2738011173018173 0.4467062963729554], [0.2 0.0 … 0.0 0.0; 0.0 0.2 … 0.0 0.0; … ; 0.0 0.0 … 0.2 0.0; 0.0 0.0 … 0.0 0.2]), 4, 10, Bool[1, 1, 1, 1, 1, 1])</code></pre><p>Fit on full dataset</p><pre><code class="language-julia hljs">final_lls, _ = fit!(final_lds, y_data; max_iter=500, tol=1e-8)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">([-17544.096389070575, -3798.6113944128574, -3589.9369477466503, -3425.2762178715666, -3312.0207965880572, -3248.4856156301726, -3221.299604796762, -3212.778272471258, -3209.879609517926, -3208.941046540939  …  -3208.2224934708775, -3208.2224850800776, -3208.2224767234793, -3208.2224684010216, -3208.2224601124653, -3208.2224518574394, -3208.222443635924, -3208.2224354476093, -3208.2224272923436, -3208.2224191699897], [6.936995540021001, 1.9133264985624236, 1.0303883069256123, 0.4906103565301128, 0.2288096749993112, 0.12007815074991726, 0.045079704159653254, 0.023172293032245068, 0.013761400305754654, 0.008836602511256834  …  1.1438411136788854e-6, 1.1392012763691279e-6, 1.1345896133513815e-6, 1.1300058966135735e-6, 1.1254499015012647e-6, 1.120921404311185e-6, 1.1164201844579502e-6, 1.111946023394215e-6, 1.107498704595475e-6, 1.1030780135364315e-6])</code></pre><p>Compare Learned vs True Dynamics Use the correct input format for smooth function (needs 3D array)</p><pre><code class="language-julia hljs">x_learned, P_learned = smooth(final_lds, y_data)
+)</code></pre><p>Fit on full dataset</p><pre><code class="language- hljs">final_lls, _ = fit!(final_lds, y_data; max_iter=500, tol=1e-8)</code></pre><p>Compare Learned vs True Dynamics Use the correct input format for smooth function (needs 3D array)</p><pre><code class="language- hljs">x_learned, P_learned = smooth(final_lds, y_data)
 
 p3 = plot(layout=(2,1), size=(1000, 600))
 
@@ -189,9 +192,9 @@ plot!(xlabel=&quot;Time&quot;,
       title=&quot;True vs Learned Latent Dynamics&quot;,
       subplot=2)
 
-p3</code></pre><img src="037cb5f5.svg" alt="Example block output"/><p>Compute reconstruction error <code>x_learned</code> is now <code>(latent_dim, tsteps, 1)</code>, so we need to handle the singleton trial dimension</p><pre><code class="language-julia hljs">x_learned = x_learned[:, :, 1]
+p3</code></pre><p>Compute reconstruction error <code>x_learned</code> is now <code>(latent_dim, tsteps, 1)</code>, so we need to handle the singleton trial dimension</p><pre><code class="language- hljs">x_learned = x_learned[:, :, 1]
 
 y_pred = final_lds.obs_model.C * x_learned
 reconstruction_error = mean((observations - y_pred).^2)
 
-@printf(&quot;Reconstruction MSE: %.6f\n&quot;, reconstruction_error)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Reconstruction MSE: 0.089308</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../poisson_latent_dynamics_example/">« Poisson LDS Example</a><a class="docs-footer-nextpage" href="../lds_identifiability_example/">Non-Identifiability in LDS Models »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Monday 22 September 2025 16:01">Monday 22 September 2025</span>. Using Julia version 1.11.7.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+@printf(&quot;Reconstruction MSE: %.6f\n&quot;, reconstruction_error)</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../poisson_latent_dynamics_example/">« Poisson LDS Example</a><a class="docs-footer-nextpage" href="../lds_identifiability_example/">Non-Identifiability in LDS Models »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Tuesday 21 October 2025 17:53">Tuesday 21 October 2025</span>. Using Julia version 1.12.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
