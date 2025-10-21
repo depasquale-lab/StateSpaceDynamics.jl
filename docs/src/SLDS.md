@@ -14,7 +14,7 @@ An SLDS extends the standard Linear Dynamical System (LDS) by introducing a disc
 - **Hybrid systems** combining discrete and continuous states
 
 ```@docs
-SwitchingLinearDynamicalSystem
+SLDS
 ```
 
 ## Mathematical Formulation
