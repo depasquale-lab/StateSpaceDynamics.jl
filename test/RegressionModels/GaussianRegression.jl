@@ -18,7 +18,14 @@ end
 
 function test_GaussianRegression_initialization()
     # Test with default parameters
-    model = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=true, β=reshape([3.0, 2.0, 2.0, 3.0], :, 1), Σ=[1.0;;], λ=0.0)
+    model = GaussianRegressionEmission(;
+        input_dim=3,
+        output_dim=1,
+        include_intercept=true,
+        β=reshape([3.0, 2.0, 2.0, 3.0], :, 1),
+        Σ=[1.0;;],
+        λ=0.0,
+    )
 
     @test model.input_dim == 3
     @test model.output_dim == 1
@@ -28,14 +35,28 @@ function test_GaussianRegression_initialization()
     @test model.λ == 0.0
 
     # Test without intercept
-    model_no_intercept = GaussianRegressionEmission(input_dim=3, output_dim=1, include_intercept=false, β=reshape([3.0, 2.0, 2.0], :, 1), Σ=[1.0;;], λ=0.0)
+    model_no_intercept = GaussianRegressionEmission(;
+        input_dim=3,
+        output_dim=1,
+        include_intercept=false,
+        β=reshape([3.0, 2.0, 2.0], :, 1),
+        Σ=[1.0;;],
+        λ=0.0,
+    )
     @test size(model_no_intercept.β) == (3, 1)
 end
 
 function test_GaussianRegression_fit()
     X, y, true_β, true_covariance, n = GaussianRegression_simulation()
 
-    model = GaussianRegressionEmission(input_dim=2, output_dim=1, include_intercept=true, β=reshape([3.0, 2.0, 2.0], :, 1), Σ=[1.0;;], λ=0.0)
+    model = GaussianRegressionEmission(;
+        input_dim=2,
+        output_dim=1,
+        include_intercept=true,
+        β=reshape([3.0, 2.0, 2.0], :, 1),
+        Σ=[1.0;;],
+        λ=0.0,
+    )
     fit!(model, X, y)
 
     # Check if the fitted coefficients are close to the true coefficients
@@ -52,7 +73,14 @@ end
 function test_GaussianRegression_loglikelihood()
     X, y, true_β, true_covariance, n = GaussianRegression_simulation()
 
-    model = GaussianRegressionEmission(input_dim=2, output_dim=1, include_intercept=true, β=reshape([3.0, 2.0, 2.0], :, 1), Σ=[1.0;;], λ=0.0)
+    model = GaussianRegressionEmission(;
+        input_dim=2,
+        output_dim=1,
+        include_intercept=true,
+        β=reshape([3.0, 2.0, 2.0], :, 1),
+        Σ=[1.0;;],
+        λ=0.0,
+    )
     fit!(model, X, y)
 
     # Test full dataset loglikelihood
@@ -73,7 +101,14 @@ function test_GaussianRegression_loglikelihood()
 end
 
 function test_GaussianRegression_sample()
-    model = GaussianRegressionEmission(input_dim=2, output_dim=1, include_intercept=true, β=reshape([3.0, 2.0, 2.0], :, 1), Σ=[1.0;;], λ=0.0)
+    model = GaussianRegressionEmission(;
+        input_dim=2,
+        output_dim=1,
+        include_intercept=true,
+        β=reshape([3.0, 2.0, 2.0], :, 1),
+        Σ=[1.0;;],
+        λ=0.0,
+    )
 
     # Test single sample
     X_test = randn(1, 2)
@@ -89,7 +124,14 @@ end
 function test_GaussianRegression_optimization()
     X, y, true_β, true_covariance, n = GaussianRegression_simulation()
 
-    model = GaussianRegressionEmission(input_dim=2, output_dim=1, include_intercept=true, β=reshape([3.0, 2.0, 2.0], :, 1), Σ=[1.0;;], λ=0.1)
+    model = GaussianRegressionEmission(;
+        input_dim=2,
+        output_dim=1,
+        include_intercept=true,
+        β=reshape([3.0, 2.0, 2.0], :, 1),
+        Σ=[1.0;;],
+        λ=0.1,
+    )
 
     # Test optimization problem creation
     opt_problem = StateSpaceDynamics.create_optimization(model, X, y)
@@ -117,25 +159,53 @@ function test_GaussianRegression_sklearn()
     w = [1.0, 1.0, 1.0, 0.1]
 
     # plain model i.e., no weights, no regularization
-    base_model = GaussianRegressionEmission(input_dim=1, output_dim=1, include_intercept=true, β=reshape([3.0, 2.0], :, 1), Σ=[0.01;;], λ=0.0)
+    base_model = GaussianRegressionEmission(;
+        input_dim=1,
+        output_dim=1,
+        include_intercept=true,
+        β=reshape([3.0, 2.0], :, 1),
+        Σ=[0.01;;],
+        λ=0.0,
+    )
     fit!(base_model, X, y)
 
     @test isapprox(base_model.β, [0.2623, 0.2713]; atol=1e-3)
 
     # test with regularization
-    regularized_model = GaussianRegressionEmission(input_dim=1, output_dim=1, include_intercept=true, β=reshape([3.0, 2.0], :, 1), Σ=[0.01;;], λ=1.0)
+    regularized_model = GaussianRegressionEmission(;
+        input_dim=1,
+        output_dim=1,
+        include_intercept=true,
+        β=reshape([3.0, 2.0], :, 1),
+        Σ=[0.01;;],
+        λ=1.0,
+    )
     fit!(regularized_model, X, y)
 
     @test isapprox(regularized_model.β, [0.3709, 0.2283]; atol=1e-3)
 
     # test model with weight but no regularization
-    weighted_model = GaussianRegressionEmission(input_dim=1, output_dim=1, include_intercept=true, β=reshape([3.0, 2.0], :, 1), Σ=[0.01;;], λ=0.0)
+    weighted_model = GaussianRegressionEmission(;
+        input_dim=1,
+        output_dim=1,
+        include_intercept=true,
+        β=reshape([3.0, 2.0], :, 1),
+        Σ=[0.01;;],
+        λ=0.0,
+    )
     fit!(weighted_model, X, y, w)
 
     @test isapprox(weighted_model.β, [0.2941, 0.2524], atol=1e-3)
 
     # test model with weights and regularized_model
-    rw_model = GaussianRegressionEmission(input_dim=1, output_dim=1, include_intercept=true, β=reshape([3.0, 2.0], :, 1), Σ=[0.01;;], λ=1.0)
+    rw_model = GaussianRegressionEmission(;
+        input_dim=1,
+        output_dim=1,
+        include_intercept=true,
+        β=reshape([3.0, 2.0], :, 1),
+        Σ=[0.01;;],
+        λ=1.0,
+    )
     fit!(rw_model, X, y, w)
 
     @test isapprox(rw_model.β, [0.4464, 0.1787], atol=1e-3)

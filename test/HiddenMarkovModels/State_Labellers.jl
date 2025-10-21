@@ -21,7 +21,7 @@ function test_viterbi_GaussianHMM()
 
     A = [0.9 0.1; 0.2 0.8]
     πₖ = [0.7; 0.3]
-    true_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
+    true_model = HiddenMarkovModel(; K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
 
     # Number of trials and samples per trial
     n_trials = 100
@@ -33,7 +33,7 @@ function test_viterbi_GaussianHMM()
 
     # Run 100 sampling trials
     for i in 1:n_trials
-        true_labels, data = rand(true_model, n=n_samples)
+        true_labels, data = rand(true_model; n=n_samples)
         all_true_labels[i] = true_labels
         all_data[i] = data
     end
@@ -41,19 +41,23 @@ function test_viterbi_GaussianHMM()
     # Fit a gaussian hmm to the data
     A = [0.9 0.1; 0.2 0.8]
     πₖ = [0.7; 0.3]
-    test_model = HiddenMarkovModel(K=2, B=[emission_3, emission_4], A=A, πₖ=πₖ)
+    test_model = HiddenMarkovModel(; K=2, B=[emission_3, emission_4], A=A, πₖ=πₖ)
     lls = StateSpaceDynamics.fit!(test_model, all_data)
 
-    @test isapprox(test_model.B[1].μ, true_model.B[1].μ, atol=0.1) || isapprox(test_model.B[1].μ, true_model.B[2].μ, atol=0.1)
-    @test isapprox(test_model.B[2].μ, true_model.B[2].μ, atol=0.1) || isapprox(test_model.B[2].μ, true_model.B[1].μ, atol=0.1)
+    @test isapprox(test_model.B[1].μ, true_model.B[1].μ, atol=0.1) ||
+        isapprox(test_model.B[1].μ, true_model.B[2].μ, atol=0.1)
+    @test isapprox(test_model.B[2].μ, true_model.B[2].μ, atol=0.1) ||
+        isapprox(test_model.B[2].μ, true_model.B[1].μ, atol=0.1)
 
     labels = viterbi(test_model, all_data)
     tolerance_percentage = 1.0
-    error_percentage = (sum(sum.([abs.(labels[i] - all_true_labels[i]) for i in 1:length(labels)])) / (n_trials*n_samples)) * 100
+    error_percentage =
+        (
+            sum(sum.([abs.(labels[i] - all_true_labels[i]) for i in 1:length(labels)])) / (n_trials*n_samples)
+        ) * 100
 
     @test error_percentage <= tolerance_percentage
 end
-
 
 function test_class_probabilities()
     # Create Guassian Emission Models
@@ -78,7 +82,7 @@ function test_class_probabilities()
 
     A = [0.9 0.1; 0.2 0.8]
     πₖ = [0.7; 0.3]
-    true_model = HiddenMarkovModel(K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
+    true_model = HiddenMarkovModel(; K=2, B=[emission_1, emission_2], A=A, πₖ=πₖ)
 
     # Number of trials and samples per trial
     n_trials = 100
@@ -90,7 +94,7 @@ function test_class_probabilities()
 
     # Run 100 sampling trials
     for i in 1:n_trials
-        true_labels, data = rand(true_model, n=n_samples)
+        true_labels, data = rand(true_model; n=n_samples)
         all_true_labels[i] = true_labels
         all_data[i] = data
     end
@@ -98,11 +102,13 @@ function test_class_probabilities()
     # Fit a gaussian hmm to the data
     A = [0.9 0.1; 0.2 0.8]
     πₖ = [0.7; 0.3]
-    test_model = HiddenMarkovModel(K=2, B=[emission_3, emission_4], A=A, πₖ=πₖ)
+    test_model = HiddenMarkovModel(; K=2, B=[emission_3, emission_4], A=A, πₖ=πₖ)
     lls = StateSpaceDynamics.fit!(test_model, all_data)
 
-    @test isapprox(test_model.B[1].μ, true_model.B[1].μ, atol=0.1) || isapprox(test_model.B[1].μ, true_model.B[2].μ, atol=0.1)
-    @test isapprox(test_model.B[2].μ, true_model.B[2].μ, atol=0.1) || isapprox(test_model.B[2].μ, true_model.B[1].μ, atol=0.1)
+    @test isapprox(test_model.B[1].μ, true_model.B[1].μ, atol=0.1) ||
+        isapprox(test_model.B[1].μ, true_model.B[2].μ, atol=0.1)
+    @test isapprox(test_model.B[2].μ, true_model.B[2].μ, atol=0.1) ||
+        isapprox(test_model.B[2].μ, true_model.B[1].μ, atol=0.1)
 
     # Compute class probabilities
     p = class_probabilities(test_model, all_data)

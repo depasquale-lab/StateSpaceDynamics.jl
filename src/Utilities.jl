@@ -1,22 +1,24 @@
-export kmeanspp_initialization,
-    kmeans_clustering, fit!, block_tridgm, block_tridiagonal_inverse, block_tridiagonal_inverse_static
+export kmeanspp_initialization, kmeans_clustering, fit!, block_tridgm
+export block_tridiagonal_inverse, block_tridiagonal_inverse_static
 export row_matrix, stabilize_covariance_matrix, valid_Σ, make_posdef!, gaussian_entropy
 export random_rotation_matrix
+export print_full
+export isprobvec
 
 # Type checking utilities
 """
     check_same_type(args...)
 
-Utility function to check if n arguments share the same types. 
+Utility function to check if n arguments share the same types.
 """
 function check_same_type(args...)
     if length(args) ≤ 1
         return true  # trivial case
     end
-    first_type = typeof(args[1])
-    all(x -> typeof(x) == first_type, args)
-end
 
+    first_type = typeof(args[1])
+    return all(x -> typeof(x) == first_type, args)
+end
 
 # Matrix utilities
 
@@ -35,11 +37,14 @@ end
 Compute the inverse of a block tridiagonal matrix.
 
 # Notes: This implementation is from the paper:
-"An Accelerated Lambda Iteration Method for Multilevel Radiative Transfer” Rybicki, G.B., and Hummer, D.G., Astronomy and Astrophysics, 245, 171–181 (1991), Appendix B.
+"An Accelerated Lambda Iteration Method for Multilevel Radiative Transfer” Rybicki, G.B.,
+and Hummer, D.G., Astronomy and Astrophysics, 245, 171–181 (1991), Appendix B.
 """
-function block_tridiagonal_inverse(A::Vector{<:AbstractMatrix{T}},
-                                   B::Vector{<:AbstractMatrix{T}},
-                                   C::Vector{<:AbstractMatrix{T}}) where {T<:Real}
+function block_tridiagonal_inverse(
+    A::Vector{<:AbstractMatrix{T}},
+    B::Vector{<:AbstractMatrix{T}},
+    C::Vector{<:AbstractMatrix{T}},
+) where {T<:Real}
     n = length(B)
     block_size = size(B[1], 1)
 
@@ -59,9 +64,9 @@ function block_tridiagonal_inverse(A::Vector{<:AbstractMatrix{T}},
     push!(C, zeros(T, block_size, block_size))
 
     # Preallocate LU factorization arrays
-    lu_D = Vector{LU{T, Matrix{T}}}(undef, n)
-    lu_E = Vector{LU{T, Matrix{T}}}(undef, n)
-    lu_S = Vector{LU{T, Matrix{T}}}(undef, n)
+    lu_D = Vector{LU{T,Matrix{T}}}(undef, n)
+    lu_E = Vector{LU{T,Matrix{T}}}(undef, n)
+    lu_S = Vector{LU{T,Matrix{T}}}(undef, n)
 
     # Forward sweep for D
     for i in 1:n
@@ -97,22 +102,22 @@ end
 """
     block_tridiagonal_inverse_static(A, B, C)
 
-Compute the inverse of a block tridiagonal matrix using static matrices. See `block_tridiagonal_inverse` for details.
+Compute the inverse of a block tridiagonal matrix using static matrices. See
+`block_tridiagonal_inverse` for details.
 """
 function block_tridiagonal_inverse_static(
-    A::Vector{<:AbstractMatrix{T}}, 
+    A::Vector{<:AbstractMatrix{T}},
     B::Vector{<:AbstractMatrix{T}},
     C::Vector{<:AbstractMatrix{T}},
-    ::Val{N}
-) where {T<:Real, N}
+    ::Val{N},
+) where {T<:Real,N}
     n = length(B)
-    
 
     # Pre-allocate working matrices (reuse these)
     M = MMatrix{N,N,T}(undef)  # Mutable static matrix for intermediate calculations
     temp = MMatrix{N,N,T}(undef)
     identity_static = MMatrix{N,N,T}(I)
-    zero_static = @SMatrix zeros(N,N)
+    zero_static = @SMatrix zeros(N, N)
 
     # Initialize D and E arrays - use mutable static matrices
     D = Vector{SMatrix{N,N,T}}(undef, n + 1)
@@ -130,17 +135,17 @@ function block_tridiagonal_inverse_static(
         if i == 1
             M .= B[1]  # A_extended[1] is zeros
         else
-            mul!(temp, SMatrix{N,N,T}(A[i-1]), D[i])  # Convert only when needed
+            mul!(temp, SMatrix{N,N,T}(A[i - 1]), D[i])  # Convert only when needed
             M .= B[i] .- temp
         end
-        
+
         # D[i + 1] = inv(M) * C_extended[i]
         if i == n
             D[i + 1] = zero_static  # C_extended[n] is zeros
         else
             M_static = SMatrix{N,N,T}(M)
             C_static = SMatrix{N,N,T}(C[i])
-            D[i + 1] = M_static \ C_static 
+            D[i + 1] = M_static \ C_static
         end
     end
 
@@ -153,13 +158,13 @@ function block_tridiagonal_inverse_static(
             mul!(temp, SMatrix{N,N,T}(C[i]), E[i + 1])
             M .= B[i] .- temp
         end
-        
+
         # E[i] = inv(M) * A_extended[i]
         if i == 1
             E[i] = zero_static  # A_extended[1] is zeros
         else
             M_static = SMatrix{N,N,T}(M)
-            A_static = SMatrix{N,N,T}(A[i-1])
+            A_static = SMatrix{N,N,T}(A[i - 1])
             E[i] = M_static \ A_static
         end
     end
@@ -174,10 +179,10 @@ function block_tridiagonal_inverse_static(
         if i == 1
             term2 = SMatrix{N,N,T}(B[1])
         else
-            mul!(temp, SMatrix{N,N,T}(A[i-1]), D[i])
+            mul!(temp, SMatrix{N,N,T}(A[i - 1]), D[i])
             term2 = SMatrix{N,N,T}(B[i]) - SMatrix{N,N,T}(temp)
         end
-        
+
         # S = term2 * term1
         S = term2 * term1
         λii[:, :, i] = Matrix(S \ identity_static)
@@ -185,20 +190,25 @@ function block_tridiagonal_inverse_static(
 
     # Compute λij
     for i in 2:n
-        result = E[i] * SMatrix{N,N,T}(view(λii, :, :, i-1))
-        λij[:, :, i-1] = Matrix(result)
+        result = E[i] * SMatrix{N,N,T}(view(λii,:,:,(i - 1)))
+        λij[:, :, i - 1] = Matrix(result)
     end
 
     return λii, -λij
 end
 
 """
-    block_tridgm(main_diag::Vector{Matrix{T}}, upper_diag::Vector{Matrix{T}}, lower_diag::Vector{Matrix{T}}) where {T<:Real}
+    block_tridgm(
+        main_diag::Vector{Matrix{T}},
+        upper_diag::Vector{Matrix{T}},
+        lower_diag::Vector{Matrix{T}}
+    ) where {T<:Real}
 
 Construct a block tridiagonal matrix from three vectors of matrices.
 
 # Throws
-- `ErrorException` if the lengths of `upper_diag` and `lower_diag` are not one less than the length of `main_diag`.
+- `ErrorException` if the lengths of `upper_diag` and `lower_diag` are not one less than the
+    length of `main_diag`.
 """
 function block_tridgm(
     main_diag::Vector{<:AbstractMatrix{T}},
@@ -249,15 +259,13 @@ function block_tridgm(
     return sparse(I, J, V, N, N)
 end
 
-
-
 # Initialization utilities
 """
     euclidean_distance(a::AbstractVector{Float64}, b::AbstractVector{Float64})
 
 Calculate the Euclidean distance between two points.
 """
-function euclidean_distance(a::AbstractVector{T1}, b::AbstractVector{T2}) where {T1<:Real, T2<:Real}
+function euclidean_distance(a::AbstractVector, b::AbstractVector)
     return sqrt(sum((a .- b) .^ 2))
 end
 
@@ -271,18 +279,22 @@ function kmeanspp_initialization(data::AbstractMatrix{T}, k_means::Int) where {T
     centroids = zeros(T, D, k_means)
     rand_idx = rand(1:N)
     centroids[:, 1] = data[:, rand_idx]
+
     for k in 2:k_means
         dists = zeros(N)
         for i in 1:N
             dists[i] = minimum([
-                euclidean_distance(@view(data[:, i]), @view(centroids[:, j])) for j in 1:(k - 1)
+                euclidean_distance(@view(data[:, i]), @view(centroids[:, j])) for
+                j in 1:(k - 1)
             ])
         end
+
         probs = dists .^ 2
         probs ./= sum(probs)
         next_idx = StatsBase.sample(1:N, Weights(probs))
         centroids[:, k] = data[:, next_idx]
     end
+
     return centroids
 end
 
@@ -297,7 +309,9 @@ function kmeanspp_initialization(data::AbstractVector{T}, k_means::Int) where {T
 end
 
 """
-    kmeans_clustering(data::AbstractMatrix{T}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6) where {T<:Real}
+    kmeans_clustering(
+        data::AbstractMatrix{T}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6
+    ) where {T<:Real}
 
 Perform K-means clustering on column-major data.
 """
@@ -312,6 +326,7 @@ function kmeans_clustering(
         for i in 1:N
             x_i = @view data[:, i]
             min_k, min_dist = 1, euclidean_distance(x_i, @view centroids[:, 1])
+
             for k in 2:k_means
                 dist = euclidean_distance(x_i, @view centroids[:, k])
                 if dist < min_dist
@@ -319,6 +334,7 @@ function kmeans_clustering(
                     min_k = k
                 end
             end
+
             labels[i] = min_k
         end
 
@@ -327,6 +343,7 @@ function kmeans_clustering(
 
         for k in 1:k_means
             inds = findall(labels .== k)
+
             if isempty(inds)
                 new_centroids[:, k] .= data[:, rand(1:N)]
             else
@@ -338,7 +355,8 @@ function kmeans_clustering(
         centroids .= new_centroids
 
         if all(
-            euclidean_distance(centroids[:, k], old_centroids[:, k]) <= tol for k in 1:k_means
+            euclidean_distance(centroids[:, k], old_centroids[:, k]) <= tol for
+            k in 1:k_means
         )
             break
         end
@@ -348,7 +366,9 @@ function kmeans_clustering(
 end
 
 """
-    kmeans_clustering(data::AbstractVector{T}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6)
+    kmeans_clustering(
+        data::AbstractVector{T}, k_means::Int, max_iters::Int=100, tol::Float64=1e-6
+    )
 
 Perform K-means clustering on vector data.
 """
@@ -369,6 +389,7 @@ function logistic(x::Real)
         return 1 / (1 + exp(-x))
     else
         exp_x = exp(x)
+
         return exp_x / (1 + exp_x)
     end
 end
@@ -415,10 +436,13 @@ function stabilize_covariance_matrix(Σ::AbstractMatrix{T}) where {T<:Real}
     if !ishermitian(Σ)
         Σ = (Σ + Σ') * 0.5
     end
-    # check if matrix is posdef. If not, add a small value to the diagonal (sometimes an emission only models one observation and the covariance matrix is singular)
+
+    # check if matrix is posdef. If not, add a small value to the diagonal (sometimes an
+    # emission only models one observation and the covariance matrix is singular)
     if !isposdef(Σ)
         Σ = Σ + 1e-12 * I
     end
+
     return Σ
 end
 
@@ -450,13 +474,14 @@ end
 """
     gaussian_entropy(H::Symmetric{T}) where {T<:Real}
 
-Calculate the entropy of a Gaussian distribution with Hessian (i.e. negative precision) matrix `H`.
+Entropy (in nats) of a Gaussian whose log-posterior Hessian at the MAP is `H`
+(i.e., `H = ∇² log p` so the precision is `Λ = -H`).
 """
 function gaussian_entropy(H::Symmetric{T}) where {T<:Real}
     n = size(H, 1)
-    F = cholesky(-H)
-    logdet_H = 2 * sum(log.(diag(F)))
-    return 0.5 * (n * log(2π) + logdet_H)
+    F = cholesky(-H)                    # factorize Λ = -H (SPD)
+    logdetΛ = 2 * sum(log, diag(F))     # logdet precision
+    return 0.5 * (n * (1 + log(2π)) - logdetΛ)
 end
 
 """
@@ -464,10 +489,11 @@ end
 
 Specialized method for BigFloat sparse matrices using logdet.
 """
-function gaussian_entropy(H::Symmetric{BigFloat, <:AbstractSparseMatrix})
+function gaussian_entropy(H::Symmetric{BigFloat,<:AbstractSparseMatrix})
     n = size(H, 1)
     logdet_H = logdet(-H)
-    return 0.5 * (n * log(BigFloat(2π)) + logdet_H)
+
+    return 0.5 * (n * (BigFloat(1 + log(BigFloat(2π))) - logdet_H))
 end
 
 """
@@ -478,13 +504,14 @@ Generate a random rotation matrix of size `n x n`.
 function random_rotation_matrix(n::Int, rng::AbstractRNG=Random.default_rng())
     # Generate a random orthogonal matrix using QR decomposition
     Q, _ = qr(randn(rng, n, n))
+
     return Matrix(Q)
 end
 
 """
     getproperty(model::AutoRegressiveEmission, sym::Symbol)
 
-Get various properties of 'innerGaussianRegression`. 
+Get various properties of 'innerGaussianRegression`.
 """
 function Base.getproperty(model::AutoRegressiveEmission, sym::Symbol)
     if sym === :β
@@ -518,3 +545,20 @@ function Base.setproperty!(model::AutoRegressiveEmission, sym::Symbol, value)
         setfield!(model, sym, value)
     end
 end
+
+# Pretty print function that doesn't truncate arrays of model objects
+
+"""
+    print_full([io::Union{IO, Base.TTY}, ] obj)
+
+Prints full description of object `obj`, overriding both `io`-based limits as
+well as the limits set in the default pretty printing of `StateSpaceDynamics`
+objects.
+"""
+function print_full(io::Union{IO,Base.TTY}, obj)
+    println(IOContext(io, :limit => false), obj)
+
+    return nothing
+end
+
+print_full(obj) = print_full(stdout, obj)

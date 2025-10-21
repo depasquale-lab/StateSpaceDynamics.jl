@@ -77,11 +77,13 @@ end
 function test_autoregressive_setters_and_getters()
 
     # Define AR emission
-    AR = AutoRegressionEmission(output_dim=2, order=1, include_intercept=false, β=rand(4,4), Σ=rand(2,2), λ=0.0)
+    AR = AutoRegressionEmission(;
+        output_dim=2, order=1, include_intercept=false, β=rand(4, 4), Σ=rand(2, 2), λ=0.0
+    )
 
     # Define parameters
-    β = rand(4,4)
-    Σ = rand(4,4)
+    β = rand(4, 4)
+    Σ = rand(4, 4)
     λ = 1.0
 
     # Set parameters of inner gaussian regression of AR emission using defined parameters
@@ -98,8 +100,27 @@ function test_autoregressive_setters_and_getters()
     @test AR.innerGaussianRegression.λ == AR.λ
 
     # Test setting innerGaussianRegression directly
-    GR = GaussianRegressionEmission(input_dim=1, output_dim=2, include_intercept=false, β=2*rand(1, 2), Σ=rand(2,2), λ=0.0)
+    GR = GaussianRegressionEmission(;
+        input_dim=1,
+        output_dim=2,
+        include_intercept=false,
+        β=2*rand(1, 2),
+        Σ=rand(2, 2),
+        λ=0.0,
+    )
     AR.innerGaussianRegression = GR
     @test AR.innerGaussianRegression == GR
+end
 
+function test_gaussian_entropy()
+    n = 3
+    A = sprandn(n, n, 0.6)
+    Λ = Symmetric(A' * A) + 1e-8I
+
+    F = cholesky(Λ)
+    Σ = Symmetric(Matrix(F \ Matrix{Float64}(I, n, n)))
+
+    gaus_entropy_dist = entropy(MvNormal(zeros(n), Σ))
+    gauss_entropy_ssd = gaussian_entropy(-Λ)
+    @test isapprox(gaus_entropy_dist, gauss_entropy_ssd; atol=1e-6)
 end

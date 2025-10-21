@@ -5,18 +5,19 @@ A = [cos(0.1) -sin(0.1); sin(0.1) cos(0.1)]
 Q = Matrix(Diagonal([0.1, 0.1]))
 C = [0.6 0.6; 0.6 0.6; 0.6 0.6] .* 2
 log_d = log.([0.1, 0.1, 0.1])
+b = zeros(2)
 
 function toy_PoissonLDS(
     ntrials::Int=1, fit_bool::Vector{Bool}=[true, true, true, true, true, true]
 )
-    gaussian_sm = GaussianStateModel(A=A, Q=Q, x0=x0, P0=P0)
-    poisson_om = PoissonObservationModel(C=C, log_d=log_d)  # Fixed: was poisson_sm
-    poisson_lds = LinearDynamicalSystem(
-        state_model=gaussian_sm, 
-        obs_model=poisson_om,  
-        latent_dim=2, 
-        obs_dim=3, 
-        fit_bool=fill(true, 6)
+    gaussian_sm = GaussianStateModel(; A=A, b=b, Q=Q, x0=x0, P0=P0)
+    poisson_om = PoissonObservationModel(; C=C, log_d=log_d)  # Fixed: was poisson_sm
+    poisson_lds = LinearDynamicalSystem(;
+        state_model=gaussian_sm,
+        obs_model=poisson_om,
+        latent_dim=2,
+        obs_dim=3,
+        fit_bool=fill(true, 6),
     )
 
     # sample data
@@ -47,10 +48,7 @@ function test_pobs_constructor_type_preservation()
     C_int = [1 2; 3 4]
     log_d_int = [5, 6]
 
-    pom_int = PoissonObservationModel(
-        C = C_int,
-        log_d = log_d_int
-    )
+    pom_int = PoissonObservationModel(; C=C_int, log_d=log_d_int)
 
     @test eltype(pom_int.C) === Int
     @test eltype(pom_int.log_d) === Int
@@ -58,13 +56,10 @@ function test_pobs_constructor_type_preservation()
     @test length(pom_int.log_d) == 2
 
     # Float32
-    C_f32     = Float32[1 2; 3 4]
+    C_f32 = Float32[1 2; 3 4]
     log_d_f32 = Float32[0.5, 0.6]
 
-    pom_f32 = PoissonObservationModel(
-        C = C_f32,
-        log_d = log_d_f32
-    )
+    pom_f32 = PoissonObservationModel(; C=C_f32, log_d=log_d_f32)
 
     @test eltype(pom_f32.C) === Float32
     @test eltype(pom_f32.log_d) === Float32
@@ -75,10 +70,7 @@ function test_pobs_constructor_type_preservation()
     C_bf = BigFloat[1 2; 3 4]
     log_d_bf = BigFloat[0.1, 0.2]
 
-    pom_bf = PoissonObservationModel(
-        C = C_bf,
-        log_d = log_d_bf
-    )
+    pom_bf = PoissonObservationModel(; C=C_bf, log_d=log_d_bf)
 
     @test eltype(pom_bf.C) === BigFloat
     @test eltype(pom_bf.log_d) === BigFloat
@@ -94,15 +86,16 @@ function test_plds_constructor_type_preservation()
     log_d_int = [7, 8]
     x0_int = [5, 6]
     P0_int = [4 0; 0 4]
+    b_int = [0, 0]
 
-    gsm_int = GaussianStateModel(A=A_int, Q=Q_int, x0=x0_int, P0=P0_int)
-    pom_int = PoissonObservationModel(C=C_int, log_d=log_d_int)
-    plds_int = LinearDynamicalSystem(
+    gsm_int = GaussianStateModel(; A=A_int, Q=Q_int, x0=x0_int, P0=P0_int, b=b_int)
+    pom_int = PoissonObservationModel(; C=C_int, log_d=log_d_int)
+    plds_int = LinearDynamicalSystem(;
         state_model=gsm_int,
         obs_model=pom_int,
         latent_dim=2,
         obs_dim=2,
-        fit_bool=fill(true, 6)
+        fit_bool=fill(true, 6),
     )
 
     @test eltype(plds_int.state_model.A) === Int
@@ -111,7 +104,7 @@ function test_plds_constructor_type_preservation()
     @test eltype(plds_int.state_model.P0) === Int
     @test eltype(plds_int.obs_model.C) === Int
     @test eltype(plds_int.obs_model.log_d) === Int
-    @test plds_int.latent_dim  == 2
+    @test plds_int.latent_dim == 2
     @test plds_int.obs_dim == 2
 
     # Float32
@@ -121,15 +114,16 @@ function test_plds_constructor_type_preservation()
     log_d_f32 = Float32[0.5, 1.5]
     x0_f32 = Float32[0.7, 0.8]
     P0_f32 = Float32[4 0; 0 4]
+    b_f32 = Float32[0, 0]
 
-    gsm_f32 = GaussianStateModel(A=A_f32, Q=Q_f32, x0=x0_f32, P0=P0_f32)
-    pom_f32 = PoissonObservationModel(C=C_f32, log_d=log_d_f32)
-    plds_f32 = LinearDynamicalSystem(
+    gsm_f32 = GaussianStateModel(; A=A_f32, Q=Q_f32, x0=x0_f32, P0=P0_f32, b=b_f32)
+    pom_f32 = PoissonObservationModel(; C=C_f32, log_d=log_d_f32)
+    plds_f32 = LinearDynamicalSystem(;
         state_model=gsm_f32,
         obs_model=pom_f32,
         latent_dim=2,
         obs_dim=2,
-        fit_bool=fill(true, 6)
+        fit_bool=fill(true, 6),
     )
 
     @test eltype(plds_f32.state_model.A) === Float32
@@ -143,15 +137,16 @@ function test_plds_constructor_type_preservation()
     log_d_bf = BigFloat[0.1, 0.2]
     x0_bf = BigFloat[0.3, 0.4]
     P0_bf = BigFloat[4 0; 0 4]
+    b_bf = BigFloat[0, 0]
 
-    gsm_bf = GaussianStateModel(A=A_bf, Q=Q_bf, x0=x0_bf, P0=P0_bf)
-    pom_bf = PoissonObservationModel(C=C_bf, log_d=log_d_bf)
-    plds_bf = LinearDynamicalSystem(
+    gsm_bf = GaussianStateModel(; A=A_bf, Q=Q_bf, x0=x0_bf, P0=P0_bf, b=b_bf)
+    pom_bf = PoissonObservationModel(; C=C_bf, log_d=log_d_bf)
+    plds_bf = LinearDynamicalSystem(;
         state_model=gsm_bf,
         obs_model=pom_bf,
         latent_dim=2,
         obs_dim=2,
-        fit_bool=fill(true, 6)
+        fit_bool=fill(true, 6),
     )
 
     @test eltype(plds_bf.state_model.A) === BigFloat
@@ -167,15 +162,16 @@ function test_poisson_sample_type_preservation()
     log_d32 = zeros(Float32, 2)
     x0_f32 = fill(one(Float32), 2)
     P0_f32 = Matrix{Float32}(I, 2, 2)
+    b_f32 = zeros(Float32, 2)
 
-    gsm_f32 = GaussianStateModel(A=A_f32, Q=Q_f32, x0=x0_f32, P0=P0_f32)
-    pom_f32 = PoissonObservationModel(C=C_f32, log_d=log_d32)
-    plds_f32 = LinearDynamicalSystem(
+    gsm_f32 = GaussianStateModel(; A=A_f32, Q=Q_f32, x0=x0_f32, P0=P0_f32, b=b_f32)
+    pom_f32 = PoissonObservationModel(; C=C_f32, log_d=log_d32)
+    plds_f32 = LinearDynamicalSystem(;
         state_model=gsm_f32,
         obs_model=pom_f32,
         latent_dim=2,
         obs_dim=2,
-        fit_bool=fill(true, 6)
+        fit_bool=fill(true, 6),
     )
 
     x_f32, y_f32 = rand(plds_f32; tsteps=50, ntrials=3)
@@ -192,15 +188,16 @@ function test_poisson_sample_type_preservation()
     log_bf = zeros(BigFloat, 2)
     x0_bf = fill(one(BigFloat), 2)
     P0_bf = Matrix{BigFloat}(I, 2, 2)
+    b_bf = zeros(BigFloat, 2)
 
-    gsm_bf = GaussianStateModel(A=A_bf, Q=Q_bf, x0=x0_bf, P0=P0_bf)
-    pom_bf = PoissonObservationModel(C=C_bf, log_d=log_bf)
-    plds_bf = LinearDynamicalSystem(
+    gsm_bf = GaussianStateModel(; A=A_bf, Q=Q_bf, x0=x0_bf, P0=P0_bf, b=b_bf)
+    pom_bf = PoissonObservationModel(; C=C_bf, log_d=log_bf)
+    plds_bf = LinearDynamicalSystem(;
         state_model=gsm_bf,
         obs_model=pom_bf,
         latent_dim=2,
         obs_dim=2,
-        fit_bool=fill(true, 6)
+        fit_bool=fill(true, 6),
     )
 
     x_bf, y_bf = rand(plds_bf; tsteps=50, ntrials=3)
@@ -213,57 +210,51 @@ end
 
 function test_poisson_fit_type_preservation()
     for T in CHECKED_TYPES
-        A     = Matrix{T}(I, 2, 2)
-        C     = Matrix{T}(I, 2, 2)
-        Q     = Matrix{T}(I, 2, 2)
+        A = Matrix{T}(I, 2, 2)
+        C = Matrix{T}(I, 2, 2)
+        Q = Matrix{T}(I, 2, 2)
         log_d = zeros(T, 2)
-        x0    = fill(one(T), 2)
-        P0    = Matrix{T}(I, 2, 2)
+        x0 = fill(one(T), 2)
+        P0 = Matrix{T}(I, 2, 2)
+        b = zeros(T, 2)
 
-        gsm = GaussianStateModel(A=A, Q=Q, x0=x0, P0=P0)
-        pom = PoissonObservationModel(C=C, log_d=log_d)
-        lds = LinearDynamicalSystem(
-            state_model=gsm,
-            obs_model=pom,
-            latent_dim=2,
-            obs_dim=2,
-            fit_bool=fill(true, 6)
+        gsm = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0, b=b)
+        pom = PoissonObservationModel(; C=C, log_d=log_d)
+        lds = LinearDynamicalSystem(;
+            state_model=gsm, obs_model=pom, latent_dim=2, obs_dim=2, fit_bool=fill(true, 6)
         )
-        
+
         x, y = rand(lds; tsteps=50, ntrials=3)
 
-        mls, param_diff = fit!(lds, y; max_iter = 10, tol = 1e-6)
+        mls, param_diff = fit!(lds, y; max_iter=10, tol=1e-6)
 
         @test eltype(mls) === T
         @test eltype(param_diff) === T
-    end 
-end 
+    end
+end
 
 function test_poisson_loglikelihood_type_preservation()
     for T in CHECKED_TYPES
-        A     = Matrix{T}(I, 2, 2)
-        C     = Matrix{T}(I, 2, 2)
-        Q     = Matrix{T}(I, 2, 2)
+        A = Matrix{T}(I, 2, 2)
+        C = Matrix{T}(I, 2, 2)
+        Q = Matrix{T}(I, 2, 2)
         log_d = zeros(T, 2)
-        x0    = fill(one(T), 2)
-        P0    = Matrix{T}(I, 2, 2)
+        x0 = fill(one(T), 2)
+        P0 = Matrix{T}(I, 2, 2)
+        b = zeros(T, 2)
 
-        gsm = GaussianStateModel(A=A, Q=Q, x0=x0, P0=P0)
-        pom = PoissonObservationModel(C=C, log_d=log_d)
-        lds = LinearDynamicalSystem(
-            state_model=gsm,
-            obs_model=pom,
-            latent_dim=2,
-            obs_dim=2,
-            fit_bool=fill(true, 6)
+        gsm = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0, b=b)
+        pom = PoissonObservationModel(; C=C, log_d=log_d)
+        lds = LinearDynamicalSystem(;
+            state_model=gsm, obs_model=pom, latent_dim=2, obs_dim=2, fit_bool=fill(true, 6)
         )
 
         x, y = rand(lds; tsteps=50, ntrials=3)
 
-        x_mat = x[:, :, 1]  
-        y_mat = y[:, :, 1]  
+        x_mat = x[:, :, 1]
+        y_mat = y[:, :, 1]
 
-        ll = StateSpaceDynamics.loglikelihood(x_mat, lds, y_mat)
+        ll = sum(StateSpaceDynamics.loglikelihood(x_mat, lds, y_mat))
 
         if ll isa Number
             @test typeof(ll) === T
@@ -271,7 +262,7 @@ function test_poisson_loglikelihood_type_preservation()
             @test eltype(ll) === T
         end
     end
-end 
+end
 
 function test_PoissonLDS_with_params()
     poisson_lds, _, _ = toy_PoissonLDS()
@@ -281,7 +272,7 @@ function test_PoissonLDS_with_params()
     @test poisson_lds.state_model.Q == Q
     @test poisson_lds.obs_model.C == C
     @test poisson_lds.state_model.x0 == x0
-    @test poisson_lds.state_model.P0 == P0  # Fixed: was p0
+    @test poisson_lds.state_model.P0 == P0
     @test poisson_lds.obs_dim == 3
     @test poisson_lds.latent_dim == 2
     @test poisson_lds.fit_bool == [true, true, true, true, true, true]
@@ -293,7 +284,7 @@ function test_Gradient()
     # for each trial check the gradient
     for i in axes(y, 3)
         # numerically calculate the gradient
-        f = latents -> StateSpaceDynamics.loglikelihood(latents, plds, y[:, :, i])
+        f = latents -> sum(StateSpaceDynamics.loglikelihood(latents, plds, y[:, :, i]))
         grad_numerical = ForwardDiff.gradient(f, x[:, :, i])
 
         # calculate the gradient
@@ -308,7 +299,7 @@ function test_Hessian()
 
     # create function that allows that we can pass the latents to the loglikelihood transposed
     function log_likelihood(x::AbstractArray, plds, y::AbstractArray)
-        return StateSpaceDynamics.loglikelihood(x, plds, y)
+        return sum(StateSpaceDynamics.loglikelihood(x, plds, y))
     end
 
     # check hessian for each trial
@@ -348,9 +339,9 @@ function test_smooth()
     @test size(p_smooth_tt1) == (plds.latent_dim, plds.latent_dim, nTsteps)
 
     # test gradient is zero
-    for i in 1:nTrials
-        # may as well test the gradient here too 
-        f = latents -> StateSpaceDynamics.loglikelihood(latents, plds, y[:, :, i])
+    for i in axes(y, 3)
+        # may as well test the gradient here too
+        f = latents -> sum(StateSpaceDynamics.loglikelihood(latents, plds, y[:, :, i]))
         grad_numerical = ForwardDiff.gradient(f, x_smooth[:, :, i])
         grad_analytical = StateSpaceDynamics.Gradient(plds, y[:, :, i], x_smooth[:, :, i])
 
@@ -369,7 +360,7 @@ function test_parameter_gradient()
     # params
     C, log_d = plds.obs_model.C, plds.obs_model.log_d
     params = vcat(vec(C), log_d)
-    
+
     # get analytical gradient
     grad_analytical = StateSpaceDynamics.gradient_observation_model!(
         zeros(length(params)), C, log_d, tfs, y
@@ -382,11 +373,16 @@ function test_parameter_gradient()
         C_size = plds.obs_dim * plds.latent_dim
         log_d = params[(end - plds.obs_dim + 1):end]
         C = reshape(params[1:C_size], plds.obs_dim, plds.latent_dim)
-        return -StateSpaceDynamics.Q_observation_model(C, log_d, reshape(E_z, size(E_z)..., 1), reshape(P_smooth, size(P_smooth)..., 1), y)
+        return -StateSpaceDynamics.Q_observation_model(
+            C,
+            log_d,
+            reshape(E_z, size(E_z)..., 1),
+            reshape(P_smooth, size(P_smooth)..., 1),
+            y,
+        )
     end
 
     grad = ForwardDiff.gradient(f, params)
-
 
     @test isapprox(grad, grad_analytical, rtol=1e-5, atol=1e-5)
 end
@@ -399,15 +395,16 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
     # run estep
     ml_total = StateSpaceDynamics.estep!(plds, tfs, y)
 
-    # optimize the x0 and p0 entries using autograd
     function obj(x0::AbstractVector, P0_sqrt::AbstractMatrix, plds)
-        A, Q = plds.state_model.A, plds.state_model.Q
+        A = plds.state_model.A
+        b = plds.state_model.b
+        Q = plds.state_model.Q
         P0 = P0_sqrt * P0_sqrt'
         Q_val = 0.0
         for i in 1:ntrials
             trial = tfs[i]
             Q_val += StateSpaceDynamics.Q_state(
-                A, Q, P0, x0, trial.E_z, trial.E_zz, trial.E_zz_prev
+                A, b, Q, P0, x0, trial.E_z, trial.E_zz, trial.E_zz_prev
             )
         end
         return -Q_val
@@ -415,13 +412,12 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
 
     P0_sqrt = Matrix(cholesky(plds.state_model.P0).U)
 
-    x0_opt =
-        optimize(
-            x0 -> obj(x0, P0_sqrt, plds),
-            plds.state_model.x0,
-            LBFGS(),
-            Optim.Options(; g_abstol=1e-12),
-        ).minimizer
+    x0_opt = optimize(
+        x0 -> obj(x0, P0_sqrt, plds),
+        plds.state_model.x0,
+        LBFGS(),
+        Optim.Options(; g_abstol=1e-12),
+    ).minimizer
     P0_opt = optimize(P0_ -> obj(x0_opt, P0_, plds), P0_sqrt, LBFGS()).minimizer
 
     # update the initial state and covariance
@@ -435,47 +431,43 @@ function test_state_model_parameter_updates(ntrials::Int=1)
     plds, x, y = toy_PoissonLDS(ntrials, [false, false, true, true, false, false])
 
     tfs = StateSpaceDynamics.initialize_FilterSmooth(plds, size(y, 2), size(y, 3))
-
-    # run estep
     ml_total = StateSpaceDynamics.estep!(plds, tfs, y)
 
-    # optimize the A and Q entries using autograd
-    function obj(A::AbstractMatrix, Q_sqrt::AbstractMatrix, plds)
+    D = plds.latent_dim
+
+    # Optimize [A b] jointly (matching your implementation)
+    function obj_Ab(AB::AbstractMatrix, Q_sqrt::AbstractMatrix, plds)
+        A = AB[:, 1:D]
+        b = AB[:, D + 1]
         Q = Q_sqrt * Q_sqrt'
         Q_val = 0.0
         for i in 1:ntrials
             trial = tfs[i]
-            # calculate the Q value for this trial
             Q_val += StateSpaceDynamics.Q_state(
-                A, Q, plds.state_model.P0, plds.state_model.x0,
-                trial.E_z, trial.E_zz, trial.E_zz_prev
+                A,
+                b,
+                Q,
+                plds.state_model.P0,
+                plds.state_model.x0,
+                trial.E_z,
+                trial.E_zz,
+                trial.E_zz_prev,
             )
         end
         return -Q_val
     end
 
-    Q_sqrt = Matrix(cholesky(plds.state_model.Q).U)
+    AB0 = hcat(plds.state_model.A, plds.state_model.b)
+    Q_sqrt0 = Matrix(cholesky(plds.state_model.Q).U)
 
-    A_opt =
-        optimize(
-            A -> obj(A, Q_sqrt, plds),
-            plds.state_model.A,
-            LBFGS(),
-            Optim.Options(; g_abstol=1e-12),
-        ).minimizer
-    Q_opt =
-        optimize(
-            Q_sqrt -> obj(A_opt, Q_sqrt, plds),
-            Q_sqrt,
-            LBFGS(),
-            Optim.Options(; g_abstol=1e-12),
-        ).minimizer
+    AB_opt = optimize(AB -> obj_Ab(AB, Q_sqrt0, plds), AB0, LBFGS()).minimizer
+    Q_opt_sqrt = optimize(Qs -> obj_Ab(AB_opt, Qs, plds), Q_sqrt0, LBFGS()).minimizer
 
-    # update the state model
     StateSpaceDynamics.mstep!(plds, tfs, y)
 
-    @test isapprox(plds.state_model.A, A_opt, atol=1e-6)
-    @test isapprox(plds.state_model.Q, Q_opt * Q_opt', atol=1e-6)
+    @test isapprox(plds.state_model.A, AB_opt[:, 1:D], atol=1e-6, rtol=1e-6)
+    @test isapprox(plds.state_model.b, AB_opt[:, D + 1], atol=1e-6, rtol=1e-6)
+    @test isapprox(plds.state_model.Q, Q_opt_sqrt * Q_opt_sqrt', atol=1e-6, rtol=1e-6)
 end
 
 function test_EM(n_trials::Int=1)
@@ -483,26 +475,27 @@ function test_EM(n_trials::Int=1)
     plds, x, y = toy_PoissonLDS(n_trials)
 
     # create a new plds model with random parameters
-    A     = Matrix{Float64}(I, 2, 2)
-    C     = Matrix{Float64}(I, 3, 2)  # Fixed dimensions for 3 obs, 2 latent
-    Q     = Matrix{Float64}(I, 2, 2)
+    A = Matrix{Float64}(I, 2, 2)
+    C = Matrix{Float64}(I, 3, 2)  # Fixed dimensions for 3 obs, 2 latent
+    Q = Matrix{Float64}(I, 2, 2)
     log_d = zeros(Float64, 3)  # Fixed: 3 observations
-    x0    = fill(one(Float64), 2)
-    P0    = Matrix{Float64}(I, 2, 2)
+    x0 = fill(one(Float64), 2)
+    P0 = Matrix{Float64}(I, 2, 2)
+    b = zeros(Float64, 2)
 
-    gsm_new = GaussianStateModel(A=A, Q=Q, x0=x0, P0=P0)
-    pom_new = PoissonObservationModel(C=C, log_d=log_d)
-    plds_new = LinearDynamicalSystem(
+    gsm_new = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0, b=b)
+    pom_new = PoissonObservationModel(; C=C, log_d=log_d)
+    plds_new = LinearDynamicalSystem(;
         state_model=gsm_new,
         obs_model=pom_new,
         latent_dim=2,
         obs_dim=3,
-        fit_bool=fill(true, 6)
+        fit_bool=fill(true, 6),
     )
 
     elbo, norm_grad = fit!(plds_new, y; max_iter=100)
 
-    # check that the ELBO increases over the whole algorithm, we cannot use monotonicity as a check as we are using Laplace EM.
+    # check that the ELBO increases over the whole algorithm.
     @test elbo[end] > elbo[1]
 end
 
@@ -516,30 +509,25 @@ function test_EM_matlab()
     # read the matlab objects to compare results
     seq = matread("test_data/seq_matlab_3_trials_plds.mat")
     params = matread("test_data/params_matlab_3_trials_plds.mat")
-    
+
     # create a new plds model using the new constructor pattern
-    gsm = GaussianStateModel(
+    gsm = GaussianStateModel(;
         A=[cos(0.1) -sin(0.1); sin(0.1) cos(0.1)],
         Q=0.00001 * Matrix{Float64}(I(2)),
         x0=[1.0, -1.0],
-        P0=0.00001 * Matrix{Float64}(I(2))
+        P0=0.00001 * Matrix{Float64}(I(2)),
+        b=zeros(2),
     )
-    
-    pom = PoissonObservationModel(
-        C=[1.2 1.2; 1.2 1.2; 1.2 1.2],
-        log_d=log.([0.1, 0.1, 0.1])
+
+    pom = PoissonObservationModel(;
+        C=[1.2 1.2; 1.2 1.2; 1.2 1.2], log_d=log.([0.1, 0.1, 0.1])
     )
-    
-    plds = LinearDynamicalSystem(
-        state_model=gsm,
-        obs_model=pom,
-        latent_dim=2,
-        obs_dim=3,
-        fit_bool=fill(true, 6)
+
+    plds = LinearDynamicalSystem(;
+        state_model=gsm, obs_model=pom, latent_dim=2, obs_dim=3, fit_bool=fill(true, 6)
     )
 
     tfs = StateSpaceDynamics.initialize_FilterSmooth(plds, size(y, 2), size(y, 3))
-
 
     # first smooth results
     ml_total = StateSpaceDynamics.estep!(plds, tfs, y)
