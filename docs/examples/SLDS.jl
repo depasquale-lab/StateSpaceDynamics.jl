@@ -150,16 +150,13 @@ plot!(title="Latent Dynamics with Mode Switching",
 
 # Initialize SLDS with reasonable but imperfect parameters, then use variational EM to learn.
 
-# Initialize HMM transition matrix (moderately sticky)
-A_init = [0.9 0.1; 0.1 0.9]
+A_init = [0.9 0.1; 0.1 0.9] # Initialize HMM transition matrix (moderately sticky)
 A_init ./= sum(A_init, dims=2)  # Ensure row-stochastic
 
-# Random initial state probabilities
-πₖ_init = rand(rng, K)
+πₖ_init = rand(rng, K) # Random initial state probabilities
 πₖ_init ./= sum(πₖ_init)
 
-# Create initial LDS models with random parameters
-Random.seed!(rng, 456)  # Different seed from true model
+Random.seed!(rng, 456)  # Create initial LDS models with random parameters
 lds_init1 = LinearDynamicalSystem(
     GaussianStateModel(
         randn(rng, state_dim, state_dim) * 0.5,  # Random A
@@ -221,16 +218,13 @@ annotate!(p2, length(elbos)*0.7, elbos[end]-abs(elbos[end])*0.05,
 tfs = StateSpaceDynamics.initialize_FilterSmooth(learned_model.LDSs[1], T, 1)
 fbs = [StateSpaceDynamics.initialize_forward_backward(learned_model, T, Float64)]
 
-# Initialize with uniform weights and smooth
-w_uniform = ones(Float64, K, T) ./ K
+w_uniform = ones(Float64, K, T) ./ K # Initialize with uniform weights and smooth
 StateSpaceDynamics.smooth!(learned_model, tfs[1], y_trial, w_uniform)
 
-# Sample and run one E-step to get final discrete state posteriors
-x_samples, _ = StateSpaceDynamics.sample_posterior(tfs, 1)
+x_samples, _ = StateSpaceDynamics.sample_posterior(tfs, 1) # Sample and run one E-step to get final discrete state posteriors
 StateSpaceDynamics.estep!(learned_model, tfs, fbs, y, x_samples)
 
-# Get the final smoothed continuous states
-latents_learned = tfs[1].x_smooth;
+latents_learned = tfs[1].x_smooth; # Get the final smoothed continuous states
 
 # Plot comparison with offset for clarity
 p3 = plot(size=(900, 400))
