@@ -23,43 +23,48 @@ An SLDS with $K$ discrete states is defined by the following generative model:
 
 ```math
 \begin{align*}
-    s_1 &\sim \text{Cat}(\pi_k) \\
-    z_1 &\sim \mathcal{N}(\mu_{0}, P_{0}) \\
-    s_t &\mid s_{t-1} \sim \text{Cat}(A_{s_{t-1}, :}) \\
-    z_t &\mid z_{t-1}, s_t \sim \mathcal{N}(F_{s_t} z_{t-1}, Q_{s_t}) \\
-    y_t &\mid z_t, s_t \sim \mathcal{N}(C_{s_t} z_t, R_{s_t})
+    z_1 &\sim \text{Cat}(\pi_k) \\
+    x_1 &\sim \mathcal{N}(\mu_{0}, P_{0}) \\
+    z_t &\mid z_{t-1} \sim \text{Cat}(A_{z_{t-1}, :}) \\
+    x_t &\mid x_{t-1}, z_t \sim \mathcal{N}(F_{z_t} x_{t-1}, Q_{z_t}) \\
+    y_t &\mid x_t, z_t \sim \mathcal{N}(C_{z_t} x_t, R_{z_t})
 \end{align*}
 ```
 
 Where:
 
-- ``s_t ∈ {1, 2, …, K}`` is the **discrete switching state** at time ``t``
-- ``z_t ∈ ℝᴰ`` is the **continuous latent state** at time ``t``
+- ``z_t ∈ {1, 2, …, K}`` is the **discrete switching state** at time ``t``
+- ``x_t ∈ ℝᴰ`` is the **continuous latent state** at time ``t``
 - ``y_t ∈ ℝᴾ`` is the **observed data** at time ``t``
 - ``π_k`` is the **initial discrete state distribution**
 - ``A`` is the **discrete state transition matrix**
-- ``F_{s_t}`` is the **state-dependent dynamics matrix** for discrete state ``s_t``
-- ``Q_{s_t}`` is the **state-dependent process noise covariance** for discrete state ``s_t``
-- ``C_{s_t}`` is the **state-dependent observation matrix** for discrete state ``s_t``
-- ``R_{s_t}`` is the **state-dependent observation noise covariance** for discrete state ``s_t``
+- ``F_{z_t}`` is the **state-dependent dynamics matrix** for discrete state ``z_t``
+- ``Q_{z_t}`` is the **state-dependent process noise covariance** for discrete state ``z_t``
+- ``C_{z_t}`` is the **state-dependent observation matrix** for discrete state ``z_t``
+- ``R_{z_t}`` is the **state-dependent observation noise covariance** for discrete state ``z_t``
 
 ## Implementation Structure
 
 In `StateSpaceDynamics.jl`, an SLDS is represented as:
 
 ```julia
-mutable struct SwitchingLinearDynamicalSystem <: AbstractHMM
-    A::M     # Transition matrix for mode switching (K × K)
-    B::VL    # Vector of LinearDynamicalSystem models (length K)
-    πₖ::V    # Initial state distribution (length K)
-    K::Int   # Number of modes
+mutable struct SLDS{
+    T<:Real,
+    S<:AbstractStateModel,
+    O<:AbstractObservationModel,
+    TM<:AbstractMatrix{T},
+    ISV<:AbstractVector{T},
+} <: AbstractHMM
+    A::TM # Transition matrix
+    πₖ::ISV # Initial state distribution
+    LDSs::Vector{LinearDynamicalSystem{T,S,O}} # Vector of LDS models
 end
 ```
 
-Each mode in the `B` vector contains its own `LinearDynamicalSystem` with:
+Each mode in the `LDSs` vector contains its own `LinearDynamicalSystem` with:
 
 - **State model**: Defines the continuous latent dynamics $F_k$, $Q_k$
-- **Observation model**: Defines the emission process $C_k$, $R_k$
+- **Observation model**: Defines the emission process. Currently supports Gaussian and Poisson emission models.
 
 ## Sampling from SLDS
 
@@ -77,69 +82,86 @@ The sampling process follows the generative model:
    - Sample continuous state using the dynamics of the current discrete state
    - Generate observation using the observation model of the current discrete state
 
-## Learning in SLDS
+## Learning in SLDS: Variational Laplace EM (vLEM)
 
-`StateSpaceDynamics.jl` implements a **Variational Expectation-Maximization (EM)** algorithm for parameter estimation in SLDS. This approach handles the interaction between discrete and continuous latent variables efficiently.
+`StateSpaceDynamics.jl` implements a **Variational Laplace Expectation-Maximization (vLEM)** algorithm for parameter estimation in SLDS. This approach efficiently handles the challenging interaction between discrete and continuous latent variables through a structured variational approximation.
 
 ```@docs
 fit!(slds::AbstractHMM, y::AbstractMatrix{T}; max_iter::Int=1000, tol::Real=1e-3) where {T<:Real}
 ```
 
-## Variational EM Algorithm
+## The vLEM Algorithm
 
-The variational EM algorithm maximizes the **Evidence Lower Bound (ELBO)** instead of the intractable marginal likelihood. The algorithm alternates between:
-
-### Variational Expectation Step
-
-The E-step iteratively updates the variational distributions until convergence. This involves two coupled updates:
-
-**1. Update continuous state posteriors ($q(z_{1:T})$):**
-For each discrete state $k$, run weighted Kalman smoothing:
+The vLEM algorithm maximizes the **Evidence Lower Bound (ELBO)** instead of the intractable marginal likelihood. The key insight is to use a structured variational approximation that factorizes as:
 
 ```math
-q(z_{1:T} \mid s_{1:T} = k) = \prod_{t=1}^T \mathcal{N}(z_t; \hat{z}_{t|T}^{(k)}, P_{t|T}^{(k)})
+q(z_{1:T}, x_{1:T}) = q(z_{1:T}) \prod_{k=1}^K q(x_{1:T} | z_{1:T} = k)^{\mathbb{I}[z_{1:T} = k]}
 ```
 
-**2. Update discrete state posteriors ($q(s_{1:T})$):**
-Run forward-backward algorithm with observation likelihoods computed from current continuous posteriors:
+This factorization allows efficient inference by alternating between updating discrete and continuous posteriors.
+
+### Variational Laplace Expectation Step
+
+**0. Initialization:**
+Initialize with uniform discrete state posteriors and perform an initial smoothing pass using provided parameter values. This establishes the starting point for iterative refinement.
+
+**1. Update Continuous State Posterior ($q(x_{1:T} | z_{1:T})$):**
+For each discrete state sequence $k$, run Kalman smoothing weighted by the current discrete posterior:
 
 ```math
-q(s_t = k) = \gamma_t(k) = p(s_t = k \mid y_{1:T}, q(z_{1:T}))
+q(x_{1:T} \mid z_{1:T} = k) = \prod_{t=1}^T \mathcal{N}(x_t; \hat{x}_{t|T}^{(k)}, P_{t|T}^{(k)})
 ```
 
-The E-step converges when the ELBO stabilizes, ensuring consistency between discrete and continuous posteriors.
+To handle expectations efficiently, we use a single Monte Carlo sample from this posterior for subsequent computations.
+
+**2. Update Discrete State Posterior ($q(z_{1:T})$):**
+Run forward-backward algorithm with modified observation likelihoods that incorporate the current continuous posterior:
+
+```math
+\tilde{p}(y_t | z_t = k) = \int p(y_t | x_t, z_t = k) q(x_t | z_t = k) dx_t
+```
+
+This yields the discrete posterior marginals:
+```math
+q(z_t = k) = \gamma_t(k) = p(z_t = k \mid y_{1:T}, q(x_{1:T}))
+```
 
 ### Maximization Step
 
-The M-step updates all model parameters using weighted maximum likelihood:
+The M-step updates all parameters using expectations from the E-step:
 
-**Discrete state parameters:**
+**Discrete State Parameters:**
 
-- Initial distribution: $\pi_k^{(new)} = \gamma_1(k)$
-- Transition matrix: $A_{ij}^{(new)} = \frac{\sum_{t=1}^{T-1} \xi_{t,t+1}(i,j)}{\sum_{t=1}^{T-1} \gamma_t(i)}$
+- Initial distribution: $\pi_k^{(\text{new})} = \gamma_1(k)$
+- Transition matrix: $A_{ij}^{(\text{new})} = \frac{\sum_{t=1}^{T-1} \xi_{t,t+1}(i,j)}{\sum_{t=1}^{T-1} \gamma_t(i)}$
 
-**Continuous state parameters for each mode $k$:**
+where $\xi_{t,t+1}(i,j) = p(z_t = i, z_{t+1} = j | y_{1:T})$ are the two-slice marginals.
 
-Using sufficient statistics from weighted Kalman smoothing:
+**Continuous State Parameters for each mode $k$:**
 
-- Dynamics matrix: $F_k^{(new)}$ from weighted regression
-- Process covariance: $Q_k^{(new)}$ from weighted residuals
-- Observation matrix: $C_k^{(new)}$ from weighted regression
-- Initial state parameters: $\mu_0^{(k)}, P_0^{(k)}$
+Using weighted sufficient statistics from the smoothed posteriors:
+
+- Dynamics matrix: $F_k^{(\text{new})}$ from weighted least squares
+- Process covariance: $Q_k^{(\text{new})}$ from weighted innovation covariance
+- Observation matrix: $C_k^{(\text{new})}$ from weighted observation regression
+- Observation covariance: $R_k^{(\text{new})}$ from weighted observation residuals
+- Initial parameters: $\mu_0^{(k)}, P_0^{(k)}$ from weighted initial state statistics
+
+The weights are given by the discrete posterior probabilities $\gamma_t(k)$.
 
 ## Evidence Lower Bound (ELBO)
 
-The ELBO consists of contributions from both discrete and continuous components:
+The ELBO decomposes into discrete and continuous components:
 
 ```math
-\text{ELBO} = \underbrace{\mathbb{E}_{q(s_{1:T})}[\log p(s_{1:T})] - \mathbb{E}_{q(s_{1:T})}[\log q(s_{1:T})]}_{\text{Discrete HMM contribution}} + \sum_{k=1}^K \underbrace{\mathbb{E}_{q(z_{1:T}|s_{1:T}=k)}[\log p(y_{1:T}, z_{1:T} | s_{1:T}=k)] + H[q(z_{1:T}|s_{1:T}=k)]}_{\text{Continuous LDS contribution for mode } k}
+\mathcal{L}(q) = \underbrace{\mathbb{E}_{q(z_{1:T})}[\log p(z_{1:T})] - \mathbb{E}_{q(z_{1:T})}[\log q(z_{1:T})]}_{\text{Discrete HMM entropy}} + \sum_{k=1}^K \gamma_t(k) \underbrace{\left( \mathbb{E}_{q(x_{1:T}|k)}[\log p(y_{1:T}, x_{1:T} | z_{1:T}=k)] + H[q(x_{1:T}|k)] \right)}_{\text{Weighted LDS contribution for mode } k}
 ```
 
-# References
+## References
 
 For theoretical foundations and algorithmic details:
 
-- **"Learning and Inference in Switching Linear Dynamical Systems"** by **Zoubin Ghahramani and Geoffrey Hinton**
-- **"Variational Learning for Switching State-Space Models"** by **Zoubin Ghahramani and Sam Roweis**  
+- **"A general recurrent state space framework for modeling neural dynamics during decision-making"** by **David Zoltowski, Jonathon Pillow, and Scott Linderman** (2020)
+- **"Variational Learning for Switching State-Space Models"** by **Zoubin Ghahramani and Geoffrey Hinton** (1998)
+- **"Probabilistic Machine Learning: Advanced Topics, Chapter 29"** by **Kevin Murphy**
 - **"A Unifying Review of Linear Gaussian Models"** by **Sam Roweis and Zoubin Ghahramani**
-- **"Probabilistic Machine Learning: Advanced Topics, Chapter 8"** by **Kevin Murphy**
