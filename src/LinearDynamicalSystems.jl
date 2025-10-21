@@ -582,7 +582,7 @@ function Hessian(
     end
 
     H_diag[tsteps] = yt_given_xt + xt_given_xt_1
-    H = StateSpaceDynamics.block_tridgm(H_diag, H_super, H_sub)
+    H = block_tridgm(H_diag, H_super, H_sub)
 
     return H, H_diag, H_super, H_sub
 end
@@ -908,6 +908,42 @@ function Q_function(
 end
 
 """
+    calculate_elbo(lds, E_z, E_zz, E_zz_prev, p_smooth, y, total_entropy)
+
+Calculate the Evidence Lower Bound (ELBO) for a Linear Dynamical System.
+"""
+function calculate_elbo(
+    lds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}, y::AbstractArray{T,3}
+) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+    ntrials = size(y, 3)
+    Q_vals = zeros(T, ntrials)
+
+    # Calculate total entropy from individual FilterSmooth objects
+    total_entropy = sum(fs.entropy for fs in tfs.FilterSmooths)
+
+    # Thread over trials
+    @threads for trial in 1:ntrials
+        fs = tfs[trial]  # Get the FilterSmooth for this trial
+        Q_vals[trial] = Q_function(
+            lds.state_model.A,
+            lds.state_model.b,
+            lds.state_model.Q,
+            lds.obs_model.C,
+            lds.obs_model.d,
+            lds.obs_model.R,
+            lds.state_model.P0,
+            lds.state_model.x0,
+            fs.E_z,
+            fs.E_zz,
+            fs.E_zz_prev,
+            view(y,:,:,trial),
+        )
+    end
+
+    return sum(Q_vals) - total_entropy
+end
+
+"""
     sufficient_statistics(x_smooth, p_smooth, p_smooth_t1)
 
 Compute sufficient statistics for the EM algorithm in a Linear Dynamical System.
@@ -953,7 +989,7 @@ function sufficient_statistics!(tfs::TrialFilterSmooth{T}) where {T<:Real}
 end
 
 """
-    estep(lds::LinearDynamicalSystem{T,S,O}, y::AbstractArray{T,3})
+    estep(lds::LinearDynamicalSystem{T,S,O},tfs::TrialFilterSmooth, y::AbstractArray{T,3})
 
 Perform the E-step of the EM algorithm for a Linear Dynamical System, treating all input as
 multi-trial.
@@ -964,47 +1000,13 @@ multi-trial.
 - It treats all input as multi-trial, with single-trial being a special case where
     `ntrials = 1`.
 """
-function estep!(lds, tfs, y)
+function estep!(
+    lds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth, y::AbstractArray{T,3}
+) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     smooth!(lds, tfs, y)
     sufficient_statistics!(tfs)
     elbo = calculate_elbo(lds, tfs, y)
     return elbo
-end
-
-"""
-    calculate_elbo(lds, E_z, E_zz, E_zz_prev, p_smooth, y, total_entropy)
-
-Calculate the Evidence Lower Bound (ELBO) for a Linear Dynamical System.
-"""
-function calculate_elbo(
-    lds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}, y::AbstractArray{T,3}
-) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
-    ntrials = size(y, 3)
-    Q_vals = zeros(T, ntrials)
-
-    # Calculate total entropy from individual FilterSmooth objects
-    total_entropy = sum(fs.entropy for fs in tfs.FilterSmooths)
-
-    # Thread over trials
-    @threads for trial in 1:ntrials
-        fs = tfs[trial]  # Get the FilterSmooth for this trial
-        Q_vals[trial] = Q_function(
-            lds.state_model.A,
-            lds.state_model.b,
-            lds.state_model.Q,
-            lds.obs_model.C,
-            lds.obs_model.d,
-            lds.obs_model.R,
-            lds.state_model.P0,
-            lds.state_model.x0,
-            fs.E_z,
-            fs.E_zz,
-            fs.E_zz_prev,
-            view(y,:,:,trial),
-        )
-    end
-
-    return sum(Q_vals) - total_entropy
 end
 
 """
@@ -1928,7 +1930,7 @@ function Q_function(
     y::AbstractMatrix{T},
 ) where {T<:Real}
     # Calculate the Q-function for the state model
-    Q_state = StateSpaceDynamics.Q_state(A, b, Q, P0, x0, E_z, E_zz, E_zz_prev)
+    Q_state = Q_state(A, b, Q, P0, x0, E_z, E_zz, E_zz_prev)
     # Calculate the Q-function for the observation model
     Q_obs = Q_observation_model(C, log_d, E_z, p_smooth, y)
 
