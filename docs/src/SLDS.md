@@ -26,8 +26,8 @@ An SLDS with $K$ discrete states is defined by the following generative model:
     z_1 &\sim \text{Cat}(\pi_k) \\
     x_1 &\sim \mathcal{N}(\mu_{0}, P_{0}) \\
     z_t &\mid z_{t-1} \sim \text{Cat}(A_{z_{t-1}, :}) \\
-    x_t &\mid x_{t-1}, z_t \sim \mathcal{N}(F_{z_t} x_{t-1}, Q_{z_t}) \\
-    y_t &\mid x_t, z_t \sim \mathcal{N}(C_{z_t} x_t, R_{z_t})
+    x_t &\mid x_{t-1}, z_t \sim \mathcal{N}(F_{z_t} x_{t-1} + b_{z_t}, Q_{z_t}) \\
+    y_t &\mid x_t, z_t \sim \mathcal{N}(C_{z_t} x_t + d_{z_t}, R_{z_t})
 \end{align*}
 ```
 
@@ -42,6 +42,7 @@ Where:
 - ``Q_{z_t}`` is the **state-dependent process noise covariance** for discrete state ``z_t``
 - ``C_{z_t}`` is the **state-dependent observation matrix** for discrete state ``z_t``
 - ``R_{z_t}`` is the **state-dependent observation noise covariance** for discrete state ``z_t``
+- ``b_{z_t}`` and ``d_{z_t}`` is the **state-dependent biases** for discrete state ``z_t``
 
 ## Implementation Structure
 
