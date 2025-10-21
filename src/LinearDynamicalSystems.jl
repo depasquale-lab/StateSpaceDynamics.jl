@@ -1929,12 +1929,9 @@ function Q_function(
     p_smooth::AbstractArray{T,3},
     y::AbstractMatrix{T},
 ) where {T<:Real}
-    # Calculate the Q-function for the state model
-    Q_state = Q_state(A, b, Q, P0, x0, E_z, E_zz, E_zz_prev)
-    # Calculate the Q-function for the observation model
-    Q_obs = Q_observation_model(C, log_d, E_z, p_smooth, y)
-
-    return Q_state + Q_obs
+    state_q = StateSpaceDynamics.Q_state(A, b, Q, P0, x0, E_z, E_zz, E_zz_prev)
+    obs_q = Q_observation_model(C, log_d, E_z, p_smooth, y)
+    return state_q + obs_q
 end
 
 """
