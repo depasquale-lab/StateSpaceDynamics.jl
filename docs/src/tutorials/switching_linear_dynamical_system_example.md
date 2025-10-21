@@ -111,7 +111,7 @@ nothing #hide
 Construct the complete SLDS
 
 ````@example switching_linear_dynamical_system_example
-model = SwitchingLinearDynamicalSystem(
+model = SLDS(
     A_hmm,
     [
         LinearDynamicalSystem(GaussianStateModel(A₁, Q₁, x0, P0), GaussianObservationModel(C₁, R), state_dim, obs_dim, fill(true, 6)),

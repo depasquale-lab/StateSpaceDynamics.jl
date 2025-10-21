@@ -71,7 +71,7 @@ Each mode in the `LDSs` vector contains its own `LinearDynamicalSystem` with:
 You can generate synthetic data from an SLDS to test algorithms or create simulated datasets:
 
 ```@docs
-rand(rng::AbstractRNG, slds::SwitchingLinearDynamicalSystem, T::Int)
+rand(rng::AbstractRNG, slds::SLDS, T::Int)
 ```
 
 The sampling process follows the generative model:
