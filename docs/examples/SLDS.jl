@@ -107,7 +107,7 @@ model = SLDS(
 # ## Simulate data
 
 T = 1000
-z, x, y = rand(rng, model; tsteps=T, ntrials=1)
+z, x, y = rand(rng, model; tsteps=T, ntrials=1);
 
 # The simulation returns:
 # - z: discrete state sequence (T × 1 matrix)
@@ -197,7 +197,7 @@ learned_model = SLDS(
 );
 
 # Fit using variational Laplace EM
-elbos = fit!(learned_model, y; max_iter=25, progress=true);
+elbos = fit!(learned_model, y; max_iter=25, progress=true)
 
 # ## Monitor ELBO Convergence
 
@@ -230,7 +230,7 @@ x_samples, _ = StateSpaceDynamics.sample_posterior(tfs, 1)
 StateSpaceDynamics.estep!(learned_model, tfs, fbs, y, x_samples)
 
 # Get the final smoothed continuous states
-latents_learned = tfs[1].x_smooth
+latents_learned = tfs[1].x_smooth;
 
 # Plot comparison with offset for clarity
 p3 = plot(size=(900, 400))
@@ -258,7 +258,7 @@ plot!(title="True vs. Learned Latent States",
 # Decode discrete modes using posterior responsibilities and assess accuracy.
 
 responsibilities = exp.(fbs[1].γ)  # Convert from log-space (K × T)
-z_decoded = [argmax(responsibilities[:, t]) for t in 1:T]
+z_decoded = [argmax(responsibilities[:, t]) for t in 1:T];
 
 # Handle label permutation by trying both assignments
 function align_labels_2way(z_true::AbstractVector, z_pred::AbstractVector)
