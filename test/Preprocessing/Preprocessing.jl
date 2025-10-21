@@ -1,13 +1,13 @@
 function test_PPCA_with_params()
     # Set parameters
     D = 3
-    k = 2 
+    k = 2
     W = randn(D, k)
     σ² = 0.5
     T = eltype(W)
-   
+
     # create "data"
-    num_obs = 100 
+    num_obs = 100
     X = randn(D, num_obs)
     μ_vector = vec(mean(X; dims=2))
 
@@ -25,12 +25,12 @@ end
 function test_PPCA_E_and_M_Step()
     # create ppca object 
     D = 3
-    k = 2 
+    k = 2
     W = randn(D, k)
     σ² = 0.5
     T = eltype(W)
-   
-    num_obs = 100 
+
+    num_obs = 100
     X = randn(D, num_obs)
     μ_vector = vec(mean(X; dims=2))
 
@@ -54,12 +54,12 @@ end
 function test_PPCA_fit()
     # create ppca object
     D = 3
-    k = 2 
+    k = 2
     W = randn(D, k)
     σ² = 0.5
     T = eltype(W)
-   
-    num_obs = 100 
+
+    num_obs = 100
     X = randn(D, num_obs)
     μ_vector = vec(mean(X; dims=2))
 
@@ -84,12 +84,12 @@ end
 
 function test_PPCA_samples()
     D = 3
-    k = 2 
+    k = 2
     W = randn(D, k)
     T = eltype(W)
 
     σ² = 0.5
-    num_obs = 100 
+    num_obs = 100
     X = randn(D, num_obs)
     μ = randn(3)
 

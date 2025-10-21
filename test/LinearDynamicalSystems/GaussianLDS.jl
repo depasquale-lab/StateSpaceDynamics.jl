@@ -4,51 +4,51 @@ l = 1.0 # length of pendulum
 dt = 0.01 # time step
 
 # Discrete-time dynamics
-A = [1.0 dt; -g / l*dt 1.0]
-Q = Matrix{Float64}(0.00001 * I(2))  # Process noise covariance
+A = [1.0 dt; -g / l * dt 1.0]
+Q = Matrix{Float64}(0.00001 * I(2))               # Process noise covariance
 
 # Initial state/ covariance
 x0 = [0.0; 1.0]
-P0 = Matrix{Float64}(0.1 * I(2))  # Initial state covariance
+P0 = Matrix{Float64}(0.1 * I(2))                  # Initial state covariance
 
-# Observation params 
-C = Matrix{Float64}(I(2))  # Observation matrix (assuming direct observation)
+# Observation params
+C = Matrix{Float64}(I(2))                         # Direct observation
 observation_noise_std = 0.5
-R = Matrix{Float64}((observation_noise_std^2) * I(2))  # Observation noise covariance
+R = Matrix{Float64}((observation_noise_std^2) * I(2))
+b = zeros(Float64, 2)                              # state bias
+d = zeros(Float64, 2)                              # observation bias
 
 function toy_lds(
     ntrials::Int=1, fit_bool::Vector{Bool}=[true, true, true, true, true, true]
 )
-    gaussian_sm = GaussianStateModel(A=A, Q=Q, x0=x0, P0=P0)
-    gaussian_om = GaussianObservationModel(C=C, R=R)
-    lds = LinearDynamicalSystem(
+    gaussian_sm = GaussianStateModel(; A=A, Q=Q, b=b, x0=x0, P0=P0)
+    gaussian_om = GaussianObservationModel(; C=C, d=d, R=R)
+    lds = LinearDynamicalSystem(;
         state_model=gaussian_sm,
         obs_model=gaussian_om,
         latent_dim=2,
         obs_dim=2,
-        fit_bool=fill(true, 6)
+        fit_bool=fill(true, 6),
     )
-
     # sample data
     T = 100
-    x, y = StateSpaceDynamics.rand(lds; tsteps=T, ntrials=ntrials) # 100 timepoints, 1 trials
-
+    x, y = StateSpaceDynamics.rand(lds; tsteps=T, ntrials=ntrials)
     return lds, x, y
 end
 
 function test_lds_properties(lds)
-    # check state and observation model are of correct type
     @test isa(lds.state_model, StateSpaceDynamics.GaussianStateModel)
     @test isa(lds.obs_model, StateSpaceDynamics.GaussianObservationModel)
     @test isa(lds, StateSpaceDynamics.LinearDynamicalSystem)
 
-    # check model param dimensions
     @test size(lds.state_model.A) == (lds.latent_dim, lds.latent_dim)
     @test size(lds.obs_model.C) == (lds.obs_dim, lds.latent_dim)
     @test size(lds.state_model.Q) == (lds.latent_dim, lds.latent_dim)
     @test size(lds.obs_model.R) == (lds.obs_dim, lds.obs_dim)
     @test size(lds.state_model.x0) == (lds.latent_dim,)
     @test size(lds.state_model.P0) == (lds.latent_dim, lds.latent_dim)
+    @test size(lds.state_model.b) == (lds.latent_dim,)
+    @test size(lds.obs_model.d) == (lds.obs_dim,)
 end
 
 function test_gaussian_obs_constructor_type_preservation()
@@ -57,54 +57,44 @@ function test_gaussian_obs_constructor_type_preservation()
     Q_int = [1 0; 0 1]
     x0_int = [5; 6]
     P0_int = [2 0; 0 2]
+    b_int = [0, 0]
 
-    gsm_int = GaussianStateModel(
-        A = A_int,
-        Q = Q_int,
-        x0 = x0_int,
-        P0 = P0_int,
-    )
+    gsm_int = GaussianStateModel(; A=A_int, Q=Q_int, b=b_int, x0=x0_int, P0=P0_int)
 
     @test eltype(gsm_int.A) === Int
     @test eltype(gsm_int.Q) === Int
     @test eltype(gsm_int.x0) === Int
     @test eltype(gsm_int.P0) === Int
+    @test eltype(gsm_int.b) === Int
 
     # Float32
     A_f32 = Float32[1 2; 3 4]
     Q_f32 = Float32[1 0; 0 1]
     x0_f32 = Float32[0.5; 0.6]
     P0_f32 = Float32[0.2 0; 0 0.2]
+    b_f32 = Float32[0.0, 0.0]
 
-    gsm_f32 = GaussianStateModel(
-        A = A_f32,
-        Q = Q_f32,
-        x0 = x0_f32,
-        P0 = P0_f32
-    )
+    gsm_f32 = GaussianStateModel(; A=A_f32, Q=Q_f32, b=b_f32, x0=x0_f32, P0=P0_f32)
 
-    @test eltype(gsm_f32.A)   === Float32
-    @test eltype(gsm_f32.Q)   === Float32
-    @test eltype(gsm_f32.x0)  === Float32
-    @test eltype(gsm_f32.P0)  === Float32
+    @test eltype(gsm_f32.A) === Float32
+    @test eltype(gsm_f32.Q) === Float32
+    @test eltype(gsm_f32.x0) === Float32
+    @test eltype(gsm_f32.P0) === Float32
 
-    # BigFloat
+    # BigFloat (kept to ensure constructor compiles with BigFloat types)
     A_bf = BigFloat[1 2; 3 4]
     Q_bf = BigFloat[1 0; 0 1]
     x0_bf = BigFloat[0.1; 0.2]
     P0_bf = BigFloat[0.3 0; 0 0.3]
+    b_bf = BigFloat[0.0, 0.0]
 
-    gsm_bf = GaussianStateModel(
-        A = A_bf,
-        Q = Q_bf,
-        x0 = x0_bf,
-        P0 = P0_bf
-    )
+    gsm_bf = GaussianStateModel(; A=A_bf, Q=Q_bf, b=b_bf, x0=x0_bf, P0=P0_bf)
 
     @test eltype(gsm_bf.A) === BigFloat
     @test eltype(gsm_bf.Q) === BigFloat
     @test eltype(gsm_bf.x0) === BigFloat
     @test eltype(gsm_bf.P0) === BigFloat
+    @test eltype(gsm_bf.b) === BigFloat
 end
 
 function test_gaussian_lds_constructor_type_preservation()
@@ -115,23 +105,27 @@ function test_gaussian_lds_constructor_type_preservation()
     R_int = [3 0; 0 3]
     x0_int = [5, 6]
     P0_int = [4 0; 0 4]
+    b_int = [0, 0]
+    d_int = [0, 0]
 
-    gsm_int = GaussianStateModel(A=A_int, Q=Q_int, x0=x0_int, P0=P0_int)
-    gom_int = GaussianObservationModel(C=C_int, R=R_int)
-    gls_int = LinearDynamicalSystem(
+    gsm_int = GaussianStateModel(; A=A_int, Q=Q_int, b=b_int, x0=x0_int, P0=P0_int)
+    gom_int = GaussianObservationModel(; C=C_int, R=R_int, d=d_int)
+    gls_int = LinearDynamicalSystem(;
         state_model=gsm_int,
         obs_model=gom_int,
         latent_dim=2,
         obs_dim=2,
-        fit_bool=fill(true, 6)
+        fit_bool=fill(true, 6),
     )
 
     @test eltype(gls_int.state_model.A) === Int
     @test eltype(gls_int.state_model.Q) === Int
     @test eltype(gls_int.state_model.x0) === Int
     @test eltype(gls_int.state_model.P0) === Int
+    @test eltype(gls_int.state_model.b) === Int
     @test eltype(gls_int.obs_model.C) === Int
     @test eltype(gls_int.obs_model.R) === Int
+    @test eltype(gls_int.obs_model.d) === Int
     @test gls_int.latent_dim == 2
     @test gls_int.obs_dim == 2
 
@@ -142,23 +136,27 @@ function test_gaussian_lds_constructor_type_preservation()
     R_f32 = Float32[3 0; 0 3]
     x0_f32 = Float32[0.5, 1.5]
     P0_f32 = Float32[4 0; 0 4]
+    b_f32 = Float32[0.0, 0.0]
+    d_f32 = Float32[0.0, 0.0]
 
-    gsm_f32 = GaussianStateModel(A=A_f32, Q=Q_f32, x0=x0_f32, P0=P0_f32)
-    gom_f32 = GaussianObservationModel(C=C_f32, R=R_f32)
-    gls_f32 = LinearDynamicalSystem(
+    gsm_f32 = GaussianStateModel(; A=A_f32, Q=Q_f32, b=b_f32, x0=x0_f32, P0=P0_f32)
+    gom_f32 = GaussianObservationModel(; C=C_f32, R=R_f32, d=d_f32)
+    gls_f32 = LinearDynamicalSystem(;
         state_model=gsm_f32,
         obs_model=gom_f32,
         latent_dim=2,
         obs_dim=2,
-        fit_bool=fill(true, 6)
+        fit_bool=fill(true, 6),
     )
 
     @test eltype(gls_f32.state_model.A) === Float32
     @test eltype(gls_f32.state_model.Q) === Float32
     @test eltype(gls_f32.state_model.x0) === Float32
     @test eltype(gls_f32.state_model.P0) === Float32
+    @test eltype(gls_f32.state_model.b) === Float32
     @test eltype(gls_f32.obs_model.C) === Float32
     @test eltype(gls_f32.obs_model.R) === Float32
+    @test eltype(gls_f32.obs_model.d) === Float32
 
     # BigFloat
     A_bf = BigFloat[1 2; 3 4]
@@ -167,23 +165,27 @@ function test_gaussian_lds_constructor_type_preservation()
     R_bf = BigFloat[3 0; 0 3]
     x0_bf = BigFloat[0.1, 0.2]
     P0_bf = BigFloat[4 0; 0 4]
+    b_bf = BigFloat[0.0, 0.0]
+    d_bf = BigFloat[0.0, 0.0]
 
-    gsm_bf = GaussianStateModel(A=A_bf, Q=Q_bf, x0=x0_bf, P0=P0_bf)
-    gom_bf = GaussianObservationModel(C=C_bf, R=R_bf)
-    gls_bf = LinearDynamicalSystem(
+    gsm_bf = GaussianStateModel(; A=A_bf, Q=Q_bf, b=b_bf, x0=x0_bf, P0=P0_bf)
+    gom_bf = GaussianObservationModel(; C=C_bf, R=R_bf, d=d_bf)
+    gls_bf = LinearDynamicalSystem(;
         state_model=gsm_bf,
         obs_model=gom_bf,
         latent_dim=2,
         obs_dim=2,
-        fit_bool=fill(true, 6)
+        fit_bool=fill(true, 6),
     )
 
     @test eltype(gls_bf.state_model.A) === BigFloat
     @test eltype(gls_bf.state_model.Q) === BigFloat
     @test eltype(gls_bf.state_model.x0) === BigFloat
     @test eltype(gls_bf.state_model.P0) === BigFloat
+    @test eltype(gls_bf.state_model.b) === BigFloat
     @test eltype(gls_bf.obs_model.C) === BigFloat
     @test eltype(gls_bf.obs_model.R) === BigFloat
+    @test eltype(gls_bf.obs_model.d) === BigFloat
 end
 
 function test_gaussian_sample_type_preservation()
@@ -194,18 +196,20 @@ function test_gaussian_sample_type_preservation()
     R_f32 = Matrix{Float32}(I, 2, 2)
     x0_f32 = fill(one(Float32), 2)
     P0_f32 = Matrix{Float32}(I, 2, 2)
+    b_f32 = fill(zero(Float32), 2)
+    d_f32 = fill(zero(Float32), 2)
 
-    gsm_f32 = GaussianStateModel(A=A_f32, Q=Q_f32, x0=x0_f32, P0=P0_f32)
-    gom_f32 = GaussianObservationModel(C=C_f32, R=R_f32)
-    gls_f32 = LinearDynamicalSystem(
+    gsm_f32 = GaussianStateModel(; A=A_f32, Q=Q_f32, b=b_f32, x0=x0_f32, P0=P0_f32)
+    gom_f32 = GaussianObservationModel(; C=C_f32, R=R_f32, d=d_f32)
+    gls_f32 = LinearDynamicalSystem(;
         state_model=gsm_f32,
         obs_model=gom_f32,
         latent_dim=2,
         obs_dim=2,
-        fit_bool=fill(true, 6)
+        fit_bool=fill(true, 6),
     )
 
-    x_f32, y_f32 = rand(gls_f32; tsteps=50, ntrials=3)
+    x_f32, y_f32 = StateSpaceDynamics.rand(gls_f32; tsteps=50, ntrials=3)
 
     @test eltype(x_f32) === Float32
     @test eltype(y_f32) === Float32
@@ -219,18 +223,20 @@ function test_gaussian_sample_type_preservation()
     R_bf = Matrix{BigFloat}(I, 2, 2)
     x0_bf = fill(one(BigFloat), 2)
     P0_bf = Matrix{BigFloat}(I, 2, 2)
+    b_bf = fill(zero(BigFloat), 2)
+    d_bf = fill(zero(BigFloat), 2)
 
-    gsm_bf = GaussianStateModel(A=A_bf, Q=Q_bf, x0=x0_bf, P0=P0_bf)
-    gom_bf = GaussianObservationModel(C=C_bf, R=R_bf)
-    gls_bf = LinearDynamicalSystem(
+    gsm_bf = GaussianStateModel(; A=A_bf, Q=Q_bf, b=b_bf, x0=x0_bf, P0=P0_bf)
+    gom_bf = GaussianObservationModel(; C=C_bf, R=R_bf, d=d_bf)
+    gls_bf = LinearDynamicalSystem(;
         state_model=gsm_bf,
         obs_model=gom_bf,
         latent_dim=2,
         obs_dim=2,
-        fit_bool=fill(true, 6)
+        fit_bool=fill(true, 6),
     )
 
-    x_bf, y_bf = rand(gls_bf; tsteps=50, ntrials=3)
+    x_bf, y_bf = StateSpaceDynamics.rand(gls_bf; tsteps=50, ntrials=3)
 
     @test eltype(x_bf) === BigFloat
     @test eltype(y_bf) === BigFloat
@@ -239,65 +245,61 @@ function test_gaussian_sample_type_preservation()
 end
 
 function test_gaussian_fit_type_preservation()
-    for T in CHECKED_TYPES 
-        A  = Matrix{T}(I, 2, 2)
-        C  = Matrix{T}(I, 2, 2)
-        Q  = Matrix{T}(I, 2, 2)
-        R  = Matrix{T}(I, 2, 2)
+    for T in CHECKED_TYPES
+        A = Matrix{T}(I, 2, 2)
+        C = Matrix{T}(I, 2, 2)
+        Q = Matrix{T}(I, 2, 2)
+        R = Matrix{T}(I, 2, 2)
         x0 = fill(one(T), 2)
         P0 = Matrix{T}(I, 2, 2)
+        b = fill(zero(T), 2)
+        d = fill(zero(T), 2)
 
-        gsm = GaussianStateModel(A=A, Q=Q, x0=x0, P0=P0)
-        gom = GaussianObservationModel(C=C, R=R)
-        lds = LinearDynamicalSystem(
-            state_model=gsm,
-            obs_model=gom,
-            latent_dim=2,
-            obs_dim=2,
-            fit_bool=fill(true, 6)
+        gsm = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0, b=b)
+        gom = GaussianObservationModel(; C=C, R=R, d=d)
+        lds = LinearDynamicalSystem(;
+            state_model=gsm, obs_model=gom, latent_dim=2, obs_dim=2, fit_bool=fill(true, 6)
         )
-        
+
         x, y = rand(lds; tsteps=50, ntrials=3)
 
-        mls, param_diff = fit!(lds, y; max_iter = 10, tol = 1e-6)
+        mls, param_diff = fit!(lds, y; max_iter=10, tol=1e-6)
 
-        @test eltype(mls) === T
+        @test eltype(sum(mls)) === T
         @test eltype(param_diff) === T
-    end 
+    end
 end
 
 function test_gaussian_loglikelihood_type_preservation()
-    for T in CHECKED_TYPES 
-        A  = Matrix{T}(I, 2, 2)
-        C  = Matrix{T}(I, 2, 2)
-        Q  = Matrix{T}(I, 2, 2)
-        R  = Matrix{T}(I, 2, 2)
+    for T in CHECKED_TYPES
+        A = Matrix{T}(I, 2, 2)
+        C = Matrix{T}(I, 2, 2)
+        Q = Matrix{T}(I, 2, 2)
+        R = Matrix{T}(I, 2, 2)
         x0 = fill(one(T), 2)
         P0 = Matrix{T}(I, 2, 2)
+        b = fill(zero(T), 2)
+        d = fill(zero(T), 2)
 
-        gsm = GaussianStateModel(A=A, Q=Q, x0=x0, P0=P0)
-        gom = GaussianObservationModel(C=C, R=R)
-        lds = LinearDynamicalSystem(
-            state_model=gsm,
-            obs_model=gom,
-            latent_dim=2,
-            obs_dim=2,
-            fit_bool=fill(true, 6)
+        gsm = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0, b=b)
+        gom = GaussianObservationModel(; C=C, R=R, d=d)
+        lds = LinearDynamicalSystem(;
+            state_model=gsm, obs_model=gom, latent_dim=2, obs_dim=2, fit_bool=fill(true, 6)
         )
 
         x, y = rand(lds; tsteps=50, ntrials=3)
-        x_mat = x[:, :, 1] 
-        y_mat = y[:, :, 1]  
+        x_mat = x[:, :, 1]
+        y_mat = y[:, :, 1]
 
         # compute log‐likelihood and check types 
-        ll = StateSpaceDynamics.loglikelihood(x_mat, lds, y_mat)
+        ll = sum(StateSpaceDynamics.loglikelihood(x_mat, lds, y_mat))
 
         if ll isa Number
             @test typeof(ll) === T
         else
             @test eltype(ll) === T
         end
-    end 
+    end
 end
 
 function test_lds_with_params()
@@ -317,14 +319,11 @@ end
 
 function test_Gradient()
     lds, x, y = toy_lds()
-
     # for each trial check the gradient
     for i in axes(y, 3)
         # numerically calculate the gradient
-        f = latents -> StateSpaceDynamics.loglikelihood(latents, lds, y[:, :, i])
+        f = latents -> sum(StateSpaceDynamics.loglikelihood(latents, lds, y[:, :, i]))
         grad_numerical = ForwardDiff.gradient(f, x[:, :, i])
-
-        # analytical gradient
         grad_analytical = StateSpaceDynamics.Gradient(lds, y[:, :, i], x[:, :, i])
         @test norm(grad_numerical - grad_analytical) < 1e-8
     end
@@ -334,10 +333,9 @@ function test_Hessian()
     lds, x, y = toy_lds()
 
     function log_likelihood(x::AbstractArray, lds, y::AbstractArray)
-        return StateSpaceDynamics.loglikelihood(x, lds, y)
+        return sum(StateSpaceDynamics.loglikelihood(x, lds, y))
     end
 
-    # for each trial check the Hessian
     for i in axes(y, 3)
         hess, main, super, sub = StateSpaceDynamics.Hessian(lds, y[:, 1:3, i], x[:, 1:3, i])
         @test size(hess) == (3 * lds.latent_dim, 3 * lds.latent_dim)
@@ -345,10 +343,8 @@ function test_Hessian()
         @test size(super) == (2,)
         @test size(sub) == (2,)
 
-        # calculate the Hessian using autodiff
         obj = latents -> log_likelihood(latents, lds, y[:, 1:3, i])
         hess_numerical = ForwardDiff.hessian(obj, x[:, 1:3, i])
-
         @test norm(hess_numerical - hess) < 1e-8
     end
 end
@@ -372,13 +368,11 @@ function test_smooth()
     @test size(p_smooth) == (lds.latent_dim, lds.latent_dim, n_tsteps)
     @test size(p_smooth_tt1) == (lds.latent_dim, lds.latent_dim, n_tsteps)
 
-    # test gradient is zero
     for i in axes(y, 3)
         # may as well test the gradient here too 
-        f = latents -> StateSpaceDynamics.loglikelihood(latents, lds, y[:, :, i])
+        f = latents -> sum(StateSpaceDynamics.loglikelihood(latents, lds, y[:, :, i]))
         grad_numerical = ForwardDiff.gradient(f, x_smooth[:, :, i])
         grad_analytical = StateSpaceDynamics.Gradient(lds, y[:, :, i], x_smooth[:, :, i])
-
         @test norm(grad_numerical - grad_analytical) < 1e-8
         @test maximum(abs.(grad_analytical)) < 1e-8
         @test norm(grad_analytical) < 1e-8
@@ -389,7 +383,7 @@ function test_estep()
     lds, x, y = toy_lds()
 
     # init a filter smooth object
-    tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, size(y, 2), size(y,3))
+    tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, size(y, 2), size(y, 3))
 
     # run the E_Step
     ml_total = StateSpaceDynamics.estep!(lds, tfs, y)
@@ -397,7 +391,9 @@ function test_estep()
     n_trials = size(y, 3)
     n_tsteps = size(y, 2)
 
-    E_z, E_zz, E_zz_prev, x_smooth, p_smooth = tfs[1].E_z, tfs[1].E_zz, tfs[1].E_zz_prev, tfs[1].x_smooth, tfs[1].p_smooth
+    E_z, E_zz, E_zz_prev, x_smooth, p_smooth = tfs[1].E_z,
+    tfs[1].E_zz, tfs[1].E_zz_prev, tfs[1].x_smooth,
+    tfs[1].p_smooth
 
     @test size(E_z) == (lds.latent_dim, n_tsteps)
     @test size(E_zz) == (lds.latent_dim, lds.latent_dim, n_tsteps)
@@ -416,29 +412,25 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
     # run the E_Step
     ml_total = StateSpaceDynamics.estep!(lds, tfs, y)
 
-    # optimize the x0 and p0 entries using autograd
     function obj(x0::AbstractVector, P0_sqrt::AbstractMatrix, lds)
-        A, Q = lds.state_model.A, lds.state_model.Q
+        A, b, Q = lds.state_model.A, lds.state_model.b, lds.state_model.Q
         P0 = P0_sqrt * P0_sqrt'
         Q_val = 0.0
         for i in 1:ntrials
             E_z, E_zz, E_zz_prev = tfs[i].E_z, tfs[i].E_zz, tfs[i].E_zz_prev
-            Q_val += StateSpaceDynamics.Q_state(
-                A, Q, P0, x0, E_z, E_zz, E_zz_prev
-            )
+            Q_val += StateSpaceDynamics.Q_state(A, b, Q, P0, x0, E_z, E_zz, E_zz_prev)
         end
         return -Q_val
     end
 
     P0_sqrt = Matrix(cholesky(lds.state_model.P0).U)
 
-    x0_opt =
-        optimize(
-            x0 -> obj(x0, P0_sqrt, lds),
-            lds.state_model.x0,
-            LBFGS(),
-            Optim.Options(; g_abstol=1e-12),
-        ).minimizer
+    x0_opt = optimize(
+        x0 -> obj(x0, P0_sqrt, lds),
+        lds.state_model.x0,
+        LBFGS(),
+        Optim.Options(; g_abstol=1e-12),
+    ).minimizer
     P0_opt = optimize(P0_ -> obj(x0_opt, P0_, lds), P0_sqrt, LBFGS()).minimizer
 
     # update the initial state and covariance
@@ -449,58 +441,48 @@ function test_initial_observation_parameter_updates(ntrials::Int=1)
 end
 
 function test_state_model_parameter_updates(ntrials::Int=1)
+    # Fit flags: update A and Q only here (b is bundled with A via AB)
     lds, x, y = toy_lds(ntrials, [false, false, true, true, false, false])
 
     # tfs
     tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, size(y, 2), size(y, 3))
 
-    # run the E_Step
+    # E-step
     ml_total = StateSpaceDynamics.estep!(lds, tfs, y)
 
-    # optimize the A and Q entries using autograd
-    function obj(A::AbstractMatrix, Q_sqrt::AbstractMatrix, lds)
+    # Objective over (A,b,Q)
+    function obj_state(AB::AbstractMatrix, Q_sqrt::AbstractMatrix, lds)
+        D = size(AB, 1)
+        A = AB[:, 1:D]
+        b = AB[:, D + 1]
         Q = Q_sqrt * Q_sqrt'
-        Q_val = 0.0
-        for i in 1:ntrials
-            E_z, E_zz, E_zz_prev = tfs[i].E_z, tfs[i].E_zz, tfs[i].E_zz_prev
-            Q_val += StateSpaceDynamics.Q_state(
-                A,
-                Q,
-                lds.state_model.P0,
-                lds.state_model.x0,
-                E_z,
-                E_zz,
-                E_zz_prev,
+        val = zero(eltype(Q))
+        @views for k in 1:ntrials
+            E_z, E_zz, E_zz_prev = tfs[k].E_z, tfs[k].E_zz, tfs[k].E_zz_prev
+            val += StateSpaceDynamics.Q_state(
+                A, b, Q, lds.state_model.P0, lds.state_model.x0, E_z, E_zz, E_zz_prev
             )
         end
-        return -Q_val
+        return -val
     end
 
-    Q_sqrt = Matrix(cholesky(lds.state_model.Q).U)
+    D = lds.latent_dim
+    AB0 = hcat(lds.state_model.A, lds.state_model.b)
+    Q_sqrt0 = Matrix(cholesky(lds.state_model.Q).U)
 
-    A_opt =
-        optimize(
-            A -> obj(A, Q_sqrt, lds),
-            lds.state_model.A,
-            LBFGS(),
-            Optim.Options(; g_abstol=1e-12),
-        ).minimizer
-    Q_opt =
-        optimize(
-            Q_sqrt -> obj(A_opt, Q_sqrt, lds),
-            Q_sqrt,
-            LBFGS(),
-            Optim.Options(; g_abstol=1e-12),
-        ).minimizer
+    AB_opt = optimize(AB -> obj_state(AB, Q_sqrt0, lds), AB0, LBFGS()).minimizer
+    Q_opt_sqrt = optimize(Qs -> obj_state(AB_opt, Qs, lds), Q_sqrt0, LBFGS()).minimizer
 
-    # update the state model
+    # M-step updates the model
     StateSpaceDynamics.mstep!(lds, tfs, y)
 
-    @test isapprox(lds.state_model.A, A_opt, atol=1e-6)
-    @test isapprox(lds.state_model.Q, Q_opt * Q_opt', atol=1e-6)
+    @test isapprox(lds.state_model.A, AB_opt[:, 1:D], atol=1e-6, rtol=1e-6)
+    @test isapprox(lds.state_model.b, AB_opt[:, D + 1], atol=1e-6, rtol=1e-6)
+    @test isapprox(lds.state_model.Q, Q_opt_sqrt * Q_opt_sqrt', atol=1e-6, rtol=1e-6)
 end
 
-function test_obs_model_params_updates(ntrials::Int=1)
+function test_obs_model_parameter_updates(ntrials::Int=1)
+    # Fit flags: update C and R here (d is bundled with C via CD)
     lds, x, y = toy_lds(ntrials, [false, false, false, false, true, true])
 
     # tfs
@@ -509,68 +491,60 @@ function test_obs_model_params_updates(ntrials::Int=1)
     # run the E_Step
     ml_total = StateSpaceDynamics.estep!(lds, tfs, y)
 
-    # optimize the C and R entries using autograd
-    function obj(C::AbstractMatrix, R_sqrt::AbstractMatrix, lds)
+    # Objective over (C,d,R)
+    function obj_obs(CD::AbstractMatrix, R_sqrt::AbstractMatrix, lds)
+        D = size(CD, 2) - 1
+        C = CD[:, 1:D]
+        d = CD[:, D + 1]
         R = R_sqrt * R_sqrt'
-        Q_val = 0.0
-        for i in 1:ntrials
-            Q_val += StateSpaceDynamics.Q_obs(
-                C, R, tfs[i].E_z, tfs[i].E_zz, y[:, :, i]
-            )
+        val = zero(eltype(R))
+
+        @views for k in 1:ntrials
+            E_z, E_zz = tfs[k].E_z, tfs[k].E_zz
+            val += StateSpaceDynamics.Q_obs(C, d, R, E_z, E_zz, y[:, :, k])
         end
-        return -Q_val
+        return -val
     end
 
-    R_sqrt = Matrix(cholesky(lds.obs_model.R).U)
+    D = lds.latent_dim
+    CD0 = hcat(lds.obs_model.C, lds.obs_model.d)
+    R_sqrt0 = Matrix(cholesky(lds.obs_model.R).U)
 
-    C_opt =
-        optimize(
-            C -> obj(C, R_sqrt, lds),
-            lds.obs_model.C,
-            LBFGS(),
-            Optim.Options(; g_abstol=1e-12),
-        ).minimizer
-    R_opt =
-        optimize(
-            R_sqrt -> obj(C_opt, R_sqrt, lds),
-            R_sqrt,
-            LBFGS(),
-            Optim.Options(; g_abstol=1e-12),
-        ).minimizer
+    CD_opt = optimize(CD -> obj_obs(CD, R_sqrt0, lds), CD0, LBFGS()).minimizer
+    R_opt_sqrt = optimize(Rs -> obj_obs(CD_opt, Rs, lds), R_sqrt0, LBFGS()).minimizer
 
-    # update the observation model
+    # M-step updates the model
     StateSpaceDynamics.mstep!(lds, tfs, y)
 
-    @test isapprox(lds.obs_model.C, C_opt, atol=1e-6)
-    @test isapprox(lds.obs_model.R, R_opt * R_opt', atol=1e-6)
+    @test isapprox(lds.obs_model.C, CD_opt[:, 1:D], atol=1e-6, rtol=1e-6)
+    @test isapprox(lds.obs_model.d, CD_opt[:, D + 1], atol=1e-6, rtol=1e-6)
+    @test isapprox(lds.obs_model.R, R_opt_sqrt * R_opt_sqrt', atol=1e-6, rtol=1e-6)
 end
 
 function test_EM(n_trials::Int=1)
-    # create a toy LDS
     lds, x, y = toy_lds(n_trials)
 
-    # Generate some easy params
+    # Easy params
     A = Matrix{Float64}(I, 2, 2)
     C = Matrix{Float64}(I, 2, 2)
     Q = Matrix{Float64}(I, 2, 2)
     R = Matrix{Float64}(I, 2, 2)
     x0 = fill(one(Float64), 2)
     P0 = Matrix{Float64}(I, 2, 2)
+    b = fill(zero(Float64), 2)
+    d = fill(zero(Float64), 2)
 
     # create models using keyword constructors
-    gsm = GaussianStateModel(A=A, Q=Q, x0=x0, P0=P0)
-    gom = GaussianObservationModel(C=C, R=R)
-    lds_new = LinearDynamicalSystem(
+    gsm = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0, b=b)
+    gom = GaussianObservationModel(; C=C, R=R, d=d)
+    lds_new = LinearDynamicalSystem(;
         state_model=gsm,
         obs_model=gom,
         latent_dim=2,
         obs_dim=2,
-        fit_bool=fill(true, 6)  # all parameters are fit
+        fit_bool=fill(true, 6),  # all parameters are fit
     )
 
-    # run the EM algorithm for many iterations
     ml_total, norm_diff = fit!(lds_new, y; max_iter=100)
-
-    # test that the ml is increasing
     @test all(diff(ml_total) .>= 0)
 end
