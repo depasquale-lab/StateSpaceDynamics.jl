@@ -548,3 +548,125 @@ function test_EM(n_trials::Int=1)
     ml_total, norm_diff = fit!(lds_new, y; max_iter=100)
     @test all(diff(ml_total) .>= 0)
 end
+
+function test_gaussian_iw_priors_shape_map_and_R_sanity(; rng=MersenneTwister(2025))
+    @testset "GaussianLDS: IW priors shape MAP + R update sanity" begin
+        D, P, Tt, N = 3, 4, 60, 4
+
+        A = 0.92I + 0.03 * randn(rng, D, D)
+        Q = Matrix(0.3 * I(D))
+        b = zeros(D)
+        x0 = zeros(D)
+        P0 = Matrix(0.8 * I(D))
+
+        C = randn(rng, P, D)
+        R = Matrix(Symmetric(diagm(0 => 0.25 .+ 0.05 .* rand(rng, P))))
+        d = 0.1 .* randn(rng, P)
+
+        # Strong shrinkage priors (ν > d+1)
+        Qprior = IWPrior(Ψ=diagm(0 => fill(0.01, D)), ν=Float64(D + 3))
+        P0prior = IWPrior(Ψ=diagm(0 => fill(0.01, D)), ν=Float64(D + 3))
+        Rprior = IWPrior(Ψ=diagm(0 => fill(0.01, P)), ν=Float64(P + 3))
+
+        gsm = GaussianStateModel(
+            A=A, Q=Q, b=b, x0=x0, P0=P0, Q_prior=Qprior, P0_prior=P0prior
+        )
+        gom = GaussianObservationModel(C=C, R=R, d=d, R_prior=Rprior)
+        lds = LinearDynamicalSystem(gsm, gom)
+
+        X, Y = rand(rng, lds; tsteps=Tt, ntrials=N)
+
+        elbos, Δ = fit!(lds, Y; max_iter=12, tol=0.0, progress=false)
+        @test all(diff(elbos) .>= -1e-7)
+        @test issymmetric(lds.state_model.Q)
+        @test issymmetric(lds.state_model.P0)
+        @test issymmetric(lds.obs_model.R)
+
+        # Shrinkage sanity checks (loose thresholds)
+        @test maximum(eigvals(lds.state_model.Q)) < 0.5
+        @test maximum(eigvals(lds.state_model.P0)) < 1.0
+        @test maximum(eigvals(lds.obs_model.R)) < 0.4
+    end
+    return nothing
+end
+
+function test_gaussian_update_R_matches_residual_cov(; rng=MersenneTwister(7))
+    @testset "GaussianLDS: update_R! ≈ residual covariance when latents ~ deterministic" begin
+        D, P, Tt, N = 2, 3, 80, 6
+
+        A = 0.0I + 0.01 * randn(rng, D, D)
+        Q = Matrix(I(D) * 1e-7)   # almost deterministic latents
+        b = zeros(D)
+        x0 = zeros(D)
+        P0 = Matrix(I(D) * 1e-7)
+
+        C = randn(rng, P, D)
+        Rtrue = Matrix(Symmetric([
+            0.30 0.05 0.00;
+            0.05 0.22 0.02;
+            0.00 0.02 0.27
+        ]))
+        d = 0.05 .* randn(rng, P)
+
+        gsm = GaussianStateModel(A=A, Q=Q, b=b, x0=x0, P0=P0)
+        gom = GaussianObservationModel(C=C, R=copy(Rtrue), d=d)
+        lds = LinearDynamicalSystem(gsm, gom)
+
+        X, Y = rand(rng, lds; tsteps=Tt, ntrials=N)
+
+        tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, Tt, N)
+        StateSpaceDynamics.estep!(lds, tfs, Y)
+
+        # only update R
+        lds.fit_bool .= [false, false, false, false, false, true]
+        StateSpaceDynamics.update_R!(lds, tfs, Y)
+
+        @test issymmetric(lds.obs_model.R)
+        @test norm(lds.obs_model.R - Rtrue) / norm(Rtrue) < 0.25
+    end
+    return nothing
+end
+
+function test_gaussian_weighting_equiv_to_duplication(; rng=MersenneTwister(9))
+    @testset "GaussianLDS: weighting ≈ duplicating data" begin
+        D, P, Tt, N = 2, 2, 30, 2
+
+        A = Matrix(0.8 * I(D))
+        Q = Matrix(I(D) * 0.1)
+        b = zeros(D)
+        x0 = zeros(D)
+        P0 = Matrix(I(D) * 0.5)
+
+        C = randn(rng, P, D)
+        R = Matrix(I(D) * 0.1)
+        d = zeros(P)
+
+        lds1 = LinearDynamicalSystem(
+            GaussianStateModel(A=A, Q=Q, b=b, x0=x0, P0=P0),
+            GaussianObservationModel(C=C, R=R, d=d),
+        )
+        lds2 = LinearDynamicalSystem(
+            GaussianStateModel(A=A, Q=Q, b=b, x0=x0, P0=P0),
+            GaussianObservationModel(C=C, R=R, d=d),
+        )
+
+        _, Y = rand(rng, lds1; tsteps=Tt, ntrials=N)
+
+        # manual weighted EM
+        tfs = StateSpaceDynamics.initialize_FilterSmooth(lds1, Tt, N)
+        w = [ones(Float64, Tt), 2.0 .* ones(Float64, Tt)]
+        for _ in 1:6
+            StateSpaceDynamics.estep!(lds1, tfs, Y)
+            StateSpaceDynamics.mstep!(lds1, tfs, Y, w)
+        end
+        θw = vec([lds1.state_model.A; lds1.obs_model.C])
+
+        # duplicate trial 2 once ~ same effect
+        Ydup = cat(Y, Y[:, :, 2:2]; dims=3)
+        fit!(lds2, Ydup; max_iter=6, tol=0.0, progress=false)
+        θd = vec([lds2.state_model.A; lds2.obs_model.C])
+
+        @test norm(θw - θd) / max(norm(θd), 1e-12) < 0.12
+    end
+    return nothing
+end

@@ -146,6 +146,9 @@ include("LinearDynamicalSystems//GaussianLDS.jl")
         # test fit method using n=1 and n=3
         test_EM()
         test_EM(3)
+        test_gaussian_iw_priors_shape_map_and_R_sanity()
+        test_gaussian_update_R_matches_residual_cov()
+        test_gaussian_weighting_equiv_to_duplication()
     end
 end
 
@@ -182,6 +185,8 @@ include("LinearDynamicalSystems//PoissonLDS.jl")
         test_EM(3)
         # test resutlts are same as matlab code
         test_EM_matlab()
+        test_poisson_map_step_improves_Q()
+        test_poisson_gradient_shape_and_finiteness()
     end
 end
 

@@ -1,18 +1,57 @@
 export LinearDynamicalSystem
 export GaussianStateModel, GaussianObservationModel, PoissonObservationModel
 export rand, smooth, fit!
+export IWPrior
 
 """
-    GaussianStateModel{T<:Real. M<:AbstractMatrix{T}, V<:AbstractVector{T}}}
+    IWPrior{T<:Real, M<:AbstractMatrix}
+
+Inverse-Wishart prior for a covariance matrix Σ ~ IW(Ψ, ν), with density
+p(Σ) ∝ |Σ|^{-(ν + d + 1)/2} exp(-½ tr(Ψ Σ^{-1})) for d = size(Σ,1).
+
+# Fields
+- `Ψ::M`: Scale matrix (d×d, SPD).
+- `ν::T`: Degrees of freedom (must satisfy `ν > d + 1` for a proper mode).
+
+# Notes
+- The MAP update for a posterior IW(Ψ + S, ν + n) is `(Ψ + S) / (ν + n + d + 1)`.
+"""
+Base.@kwdef struct IWPrior{T<:Real,M<:AbstractMatrix}
+    Ψ::M
+    ν::T
+end
+
+# helpers for new priors on cov matrices
+@inline function iw_map(
+    Ψ::AbstractMatrix{T}, ν::T, S::AbstractMatrix{T}, n::T, d::Int
+) where {T}
+    return (Ψ .+ S) ./ (ν + n + d + one(T))
+end
+
+@inline function iw_logprior_term(Σ::AbstractMatrix{T}, prior::IWPrior{T}) where {T}
+    D = size(Σ, 1)
+    Ψ, ν = prior.Ψ, prior.ν
+    # log|Σ| via Cholesky
+    F = cholesky(Symmetric(Σ))
+    logdetΣ = 2sum(log, diag(F.U))
+    # tr(Ψ Σ^{-1}) via triangular solves
+    X = F \ Ψ                 # solves Σ * X = Ψ
+    return -T(0.5) * ((ν + D + one(T)) * logdetΣ + tr(X))
+end
+
+"""
+    GaussianStateModel{T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector{T}}
 
 Represents the state model of a Linear Dynamical System with Gaussian noise.
 
 # Fields
-- `A::M`: Transition matrix (size `latent_dim×latent_dim`).
-- `Q::M`: Process noise covariance matrix
+- `A::M`: Transition matrix (size `latent_dim × latent_dim`).
+- `Q::M`: Process noise covariance matrix.
 - `b::V`: Bias vector (length `latent_dim`).
-- `x0::V`: Initial state vector (length `latent_dim`).
-- `P0::M`: Initial state covariance matrix (size `latent_dim×latent_dim`).
+- `x0::V`: Initial state mean (length `latent_dim`).
+- `P0::M`: Initial state covariance (size `latent_dim × latent_dim`).
+- `Q_prior::Union{Nothing,IWPrior{T}} = nothing`: Optional Inverse-Wishart prior on `Q`. If set, MAP updates use its mode.
+- `P0_prior::Union{Nothing,IWPrior{T}} = nothing`: Optional Inverse-Wishart prior on `P0`. If set, MAP updates use its mode.
 """
 Base.@kwdef mutable struct GaussianStateModel{
     T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}
@@ -22,6 +61,8 @@ Base.@kwdef mutable struct GaussianStateModel{
     b::V
     x0::V
     P0::M
+    Q_prior::Union{Nothing,IWPrior{T}} = nothing
+    P0_prior::Union{Nothing,IWPrior{T}} = nothing
 end
 
 function Base.show(io::IO, gsm::GaussianStateModel; gap="")
@@ -50,7 +91,7 @@ function Base.show(io::IO, gsm::GaussianStateModel; gap="")
 end
 
 """
-    GaussianObservationModel{T<:Real, M<:AbstractMatrix{T}}
+    GaussianObservationModel{T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector{T}}
 
 Represents the observation model of a Linear Dynamical System with Gaussian noise.
 
@@ -59,6 +100,7 @@ Represents the observation model of a Linear Dynamical System with Gaussian nois
     observation space.
 - `R::M`: Observation noise covariance of size `(obs_dim × obs_dim)`.
 - `d::V`: Bias vector of length `(obs_dim)`.
+- `R_prior::Union{Nothing, IWPrior{T}} = nothing`: Optional Inverse-Wishart prior for `R`.
 """
 Base.@kwdef mutable struct GaussianObservationModel{
     T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}
@@ -66,6 +108,7 @@ Base.@kwdef mutable struct GaussianObservationModel{
     C::M
     R::M
     d::V
+    R_prior::Union{Nothing,IWPrior{T}} = nothing
 end
 
 function Base.show(io::IO, gom::GaussianObservationModel; gap="")
@@ -83,6 +126,21 @@ function Base.show(io::IO, gom::GaussianObservationModel; gap="")
     end
 
     return nothing
+end
+
+# Conveneince cosntructors
+function GaussianStateModel(
+    A::M, Q::M, b::V, x0::V, P0::M
+) where {T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}}
+    return GaussianStateModel{T,M,V}(;
+        A=A, Q=Q, b=b, x0=x0, P0=P0, Q_prior=nothing, P0_prior=nothing
+    )
+end
+
+function GaussianObservationModel(
+    C::M, R::M, d::V
+) where {T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}}
+    return GaussianObservationModel{T,M,V}(; C=C, R=R, d=d, R_prior=nothing)
 end
 
 """
@@ -586,21 +644,19 @@ function Hessian(
 
     return H, H_diag, H_super, H_sub
 end
-"""
-    smooth(lds, y)
 
-This function performs direct smoothing for a linear dynamical system (LDS) given the system
-parameters and the observed data for a single trial
+"""
+    smooth(lds, y::AbstractMatrix)
+
+Direct smoothing for a single trial.
 
 # Arguments
-- `lds::LinearDynamicalSystem{T,S,O}`: The LDS object representing the system parameters.
-- `y::AbstractMatrix{T}`: The observed data matrix.
+- `lds::LinearDynamicalSystem`: The model.
+- `y::AbstractMatrix`: Observations (obs_dim × tsteps).
 
 # Returns
-- `x::AbstractMatrix{T}`: The optimal state estimate.
-- `p_smooth::Array{T, 3}`: The posterior covariance matrix.
-- `inverse_offdiag::Array{T, 3}`: The inverse off-diagonal matrix.
-- `Q_val::T`: The Q-function value.
+- `x_smooth::AbstractMatrix`: Smoothed latent means (latent_dim × tsteps).
+- `p_smooth::Array{T,3}`: Smoothed latent covariances (latent_dim × latent_dim × tsteps).
 """
 function smooth(lds::LinearDynamicalSystem, y::AbstractMatrix{T}) where {T}
     fs = initialize_FilterSmooth(lds, size(y, 2))
@@ -699,22 +755,20 @@ function smooth!(
 end
 
 """
-    smooth(lds, y)
+    smooth!(lds, tfs, y::AbstractArray{T,3})
 
-This function performs direct smoothing for a linear dynamical system (LDS) given the system
-parameters and the observed data for multiple trials.
+Direct smoothing for multiple trials.
 
 # Arguments
-- `lds::LinearDynamicalSystem{T,S,O}`: The LDS object representing the system parameters.
-- `y::AbstractArray{T,3}`: The observed data array with dimensions (obs_dim, tsteps, ntrials).
+- `lds::LinearDynamicalSystem`: The model.
+- `tfs::TrialFilterSmooth`: Preallocated container (one per trial).
+- `y::Array{T,3}`: Observations (obs_dim × tsteps × ntrials).
+
+# Side effects
+- Fills each `FilterSmooth` in `tfs` with `x_smooth`, `p_smooth`, `p_smooth_tt1`, `E_z`, `E_zz`, `E_zz_prev`, `entropy`.
 
 # Returns
-- `x::AbstractArray{T,3}`: The optimal state estimates with dimensions
-    (ntrials, tsteps, latent_dim).
-- `p_smooth::AbstractArray{T,4}`: The posterior covariance matrices with dimensions
-    (latent_dim, latent_dim, tsteps, ntrials).
-- `inverse_offdiag::AbstractArray{T,4}`: The inverse off-diagonal matrices with dimensions
-    (latent_dim, latent_dim, tsteps, ntrials).
+- `tfs`: The same `TrialFilterSmooth`, populated.
 """
 function smooth!(
     lds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}, y::AbstractArray{T,3}
@@ -910,7 +964,9 @@ end
 """
     calculate_elbo(lds, E_z, E_zz, E_zz_prev, p_smooth, y, total_entropy)
 
-Calculate the Evidence Lower Bound (ELBO) for a Linear Dynamical System.
+Calculate the Evidence Lower Bound (ELBO) for a Linear Dynamical System. 
+Adds constant-free IW log-prior terms for `Q` and `P0` when priors are set, 
+so the ELBO tracks the MAP objective.
 """
 function calculate_elbo(
     lds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}, y::AbstractArray{T,3}
@@ -940,7 +996,19 @@ function calculate_elbo(
         )
     end
 
-    return sum(Q_vals) - total_entropy
+    # prior terms (included once)
+    prior_term = zero(T)
+    if lds.state_model.Q_prior !== nothing
+        prior_term += iw_logprior_term(lds.state_model.Q, lds.state_model.Q_prior)
+    end
+    if lds.state_model.P0_prior !== nothing
+        prior_term += iw_logprior_term(lds.state_model.P0, lds.state_model.P0_prior)
+    end
+    if (lds.obs_model isa GaussianObservationModel) && (lds.obs_model.R_prior !== nothing)
+        prior_term += iw_logprior_term(lds.obs_model.R, lds.obs_model.R_prior)
+    end
+
+    return sum(Q_vals) + prior_term - total_entropy
 end
 
 """
@@ -1056,27 +1124,28 @@ function update_initial_state_covariance!(
     tfs::TrialFilterSmooth{T},
     w::Union{Nothing,AbstractVector{<:AbstractVector{T}}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
-    if lds.fit_bool[2]
-        ntrials = length(tfs.FilterSmooths)
-        state_dim = lds.latent_dim
-        p0_new = zeros(T, state_dim, state_dim)
-        total_weight = zero(T)
+    lds.fit_bool[2] || return nothing
 
-        for trial in 1:ntrials
-            fs = tfs[trial]
-            weight = isnothing(w) ? one(T) : w[trial][1]  # Weight at t=1
+    D = lds.latent_dim
+    S0_sum = zeros(T, D, D)
+    total_weight = zero(T)
 
-            p0_new .+=
-                weight .* (fs.E_zz[:, :, 1] - (lds.state_model.x0 * lds.state_model.x0'))
-            total_weight += weight
-        end
-
-        p0_new ./= total_weight
-        p0_new .= 0.5 * (p0_new + p0_new')
-
-        # Set the new P0 matrix
-        lds.state_model.P0 = p0_new
+    for trial in 1:length(tfs.FilterSmooths)
+        fs = tfs[trial]
+        wt = isnothing(w) ? one(T) : w[trial][1]  # weight at t=1
+        S0_sum .+= wt .* (fs.E_zz[:, :, 1] - (lds.state_model.x0 * lds.state_model.x0'))
+        total_weight += wt
     end
+
+    P0_hat = if lds.state_model.P0_prior === nothing
+        S0_sum ./ total_weight
+    else
+        Ψ, ν = lds.state_model.P0_prior.Ψ, lds.state_model.P0_prior.ν
+        iw_map(Ψ, ν, S0_sum, total_weight, D)
+    end
+
+    P0_hat .= 0.5 .* (P0_hat .+ P0_hat')  # symmetrize
+    lds.state_model.P0 = P0_hat
     return nothing
 end
 
@@ -1151,7 +1220,7 @@ function update_Q!(
     state_dim = lds.latent_dim
     A = lds.state_model.A
     b = lds.state_model.b
-    Q_new = zeros(T, state_dim, state_dim)
+    Q_sum = zeros(T, state_dim, state_dim)
 
     # Pre-allocate working matrices
     temp1 = Matrix{T}(undef, state_dim, state_dim)
@@ -1193,15 +1262,20 @@ function update_Q!(
             innovation_cov .+= b * temp5'
             innovation_cov .+= b * b'
 
-            Q_new .+= weight .* innovation_cov
+            Q_sum .+= weight .* innovation_cov
             total_weight += weight
         end
     end
 
-    Q_new ./= total_weight
-    Q_new .= 0.5 .* (Q_new .+ Q_new')
-    lds.state_model.Q = Q_new
+    if lds.state_model.Q_prior === nothing
+        Q_hat = Q_sum ./ total_weight
+    else
+        Ψ, ν = lds.state_model.Q_prior.Ψ, lds.state_model.Q_prior.ν
+        Q_hat = iw_map(Ψ, ν, Q_sum, total_weight, state_dim)
+    end
 
+    Q_hat .= 0.5 .* (Q_hat .+ Q_hat')   # symmetrize
+    lds.state_model.Q = Q_hat
     return nothing
 end
 
@@ -1239,17 +1313,18 @@ function update_C_d!(
     for trial in 1:ntrials
         fs = tfs[trial]
         weights = isnothing(w) ? nothing : w[trial]
-
         @views for t in 1:tsteps
             wt = isnothing(weights) ? one(T) : weights[t]
 
             μ = fs.E_z[:, t]
             Σ = fs.E_zz[:, :, t]  # E[x_t x_tᵀ]
+            yt = y[:, t, trial]
 
-            # Syz accumulates y_t [μ; 1]ᵀ with efficient operations
-            mul!(work_yz, y[:, t, trial], μ')  # work_yz = y * μ'
-            Syz[:, 1:D] .+= wt .* work_yz  # Weighted accumulation
-            Syz[:, D + 1] .+= wt .* y[:, t, trial]  # Bias column
+            # Syz accumulates y_t * μ'  (outer product), weighted
+            fill!(work_yz, zero(T))
+            BLAS.ger!(wt, yt, μ, work_yz)   # work_yz += wt * yt * μ'
+            Syz[:, 1:D] .+= work_yz
+            Syz[:, D + 1] .+= wt .* yt      # bias column
 
             # Szz accumulates E[[x;1][x;1]ᵀ] weighted
             work_outer .= Σ
@@ -1316,7 +1391,7 @@ function update_R!(
             @. innovation = y[:, t, trial] - (Czt + d)
 
             # Add weighted innovation outer product
-            mul!(R_new, innovation, innovation', wt, one(T))
+            BLAS.ger!(wt, innovation, innovation, R_new)
 
             # Compute state_uncertainty = E[zz] - E[z]E[z]' efficiently
             mul!(outer_product, fs.E_z[:, t], fs.E_z[:, t]')
@@ -1331,11 +1406,16 @@ function update_R!(
         end
     end
 
-    # Normalize by total weight
-    R_new ./= total_weight
-    R_new .= 0.5 .* (R_new .+ R_new')  # Symmetrize
-    lds.obs_model.R = R_new
+    # Apply prior and normalize
+    if lds.obs_model.R_prior === nothing
+        R_hat = R_new ./ total_weight
+    else
+        Ψ, ν = lds.obs_model.R_prior.Ψ, lds.obs_model.R_prior.ν
+        R_hat = iw_map(Ψ, ν, R_new, total_weight, obs_dim)
+    end
 
+    R_hat .= 0.5 .* (R_hat .+ R_hat')
+    lds.obs_model.R = R_hat
     return nothing
 end
 
@@ -1945,7 +2025,8 @@ end
         total_entropy::T
     ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
 
-Calculate the Evidence Lower Bound (ELBO) for a Poisson Linear Dynamical System (PLDS).
+Calculate the Evidence Lower Bound (ELBO) for a Poisson Linear Dynamical System (PLDS). Adds constant-free IW log-prior terms 
+for `Q` and `P0` when priors are set, so the ELBO tracks the MAP objective.
 
 # Note
 Ensure that the dimensions of input arrays match the expected dimensions as described in the
@@ -1985,7 +2066,17 @@ function calculate_elbo(
         )
     end
 
-    return sum(Q_vals) - total_entropy
+    # IW priors on state covariances (if present)
+    prior_term = zero(T)
+    if plds.state_model.Q_prior !== nothing
+        prior_term += iw_logprior_term(plds.state_model.Q, plds.state_model.Q_prior)
+    end
+
+    if plds.state_model.P0_prior !== nothing
+        prior_term += iw_logprior_term(plds.state_model.P0, plds.state_model.P0_prior)
+    end
+
+    return sum(Q_vals) + prior_term - total_entropy
 end
 
 """
