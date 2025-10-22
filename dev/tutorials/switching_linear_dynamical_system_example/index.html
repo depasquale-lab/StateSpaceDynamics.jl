@@ -86,7 +86,7 @@ end
 
 plot!(title=&quot;Latent Dynamics with Mode Switching&quot;,
       xlabel=&quot;Time&quot;, ylabel=&quot;State Value&quot;,
-      ylims=(-3, 3), legend=:topright)</code></pre><img src="25f5a4dc.svg" alt="Example block output"/><h2 id="Initialize-and-Fit-SLDS"><a class="docs-heading-anchor" href="#Initialize-and-Fit-SLDS">Initialize and Fit SLDS</a><a id="Initialize-and-Fit-SLDS-1"></a><a class="docs-heading-anchor-permalink" href="#Initialize-and-Fit-SLDS" title="Permalink"></a></h2><p>Initialize SLDS with reasonable but imperfect parameters, then use variational EM to learn.</p><pre><code class="language-julia hljs">A_init = [0.9 0.1; 0.1 0.9] # Initialize HMM transition matrix (moderately sticky)
+      ylims=(-3, 3), legend=:topright)</code></pre><img src="80e0f082.svg" alt="Example block output"/><h2 id="Initialize-and-Fit-SLDS"><a class="docs-heading-anchor" href="#Initialize-and-Fit-SLDS">Initialize and Fit SLDS</a><a id="Initialize-and-Fit-SLDS-1"></a><a class="docs-heading-anchor-permalink" href="#Initialize-and-Fit-SLDS" title="Permalink"></a></h2><p>Initialize SLDS with reasonable but imperfect parameters, then use variational EM to learn.</p><pre><code class="language-julia hljs">A_init = [0.9 0.1; 0.1 0.9] # Initialize HMM transition matrix (moderately sticky)
 A_init ./= sum(A_init, dims=2)  # Ensure row-stochastic
 
 πₖ_init = rand(rng, K) # Random initial state probabilities
@@ -128,32 +128,32 @@ learned_model = SLDS(
     πₖ=πₖ_init,
     LDSs=[lds_init1, lds_init2]
 );</code></pre><p>Fit using variational Laplace EM</p><pre><code class="language-julia hljs">elbos = fit!(learned_model, y; max_iter=25, progress=true)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">25-element Vector{Float64}:
- -29059.16392093624
- -11686.649599358432
- -10092.252049439003
-  -9252.633104863151
-  -9089.380478808258
-  -8993.262269998784
-  -8718.739869274736
-  -8139.13548873249
-  -7730.354015133936
-  -7327.054810480198
+ -29159.724427609715
+ -11292.681461328779
+  -9902.864950924919
+  -8967.132497786497
+  -8733.736603678697
+  -8592.521815039629
+  -8558.265935016723
+  -8448.892223458617
+  -8288.569414783384
+  -8280.198373344161
       ⋮
-  -6265.737072423564
-  -6388.915297001584
-  -6442.869789141761
-  -6519.218018842378
-  -6420.210846693084
-  -6468.831706656464
-  -6448.497381984002
-  -6455.241466916586
-  -6471.487573745226</code></pre><h2 id="Monitor-ELBO-Convergence"><a class="docs-heading-anchor" href="#Monitor-ELBO-Convergence">Monitor ELBO Convergence</a><a id="Monitor-ELBO-Convergence-1"></a><a class="docs-heading-anchor-permalink" href="#Monitor-ELBO-Convergence" title="Permalink"></a></h2><p>Plot the Evidence Lower Bound (ELBO) to verify monotonic improvement. For SLDS, this tracks the variational approximation quality.</p><pre><code class="language-julia hljs">p2 = plot(elbos, xlabel=&quot;Iteration&quot;, ylabel=&quot;ELBO&quot;,
+  -5075.5403199033835
+  -5164.746301783975
+  -5183.925002020231
+  -5191.608496283557
+  -5199.570253572264
+  -5209.276203971813
+  -5220.855574447808
+  -5214.225504443651
+  -5213.45945528554</code></pre><h2 id="Monitor-ELBO-Convergence"><a class="docs-heading-anchor" href="#Monitor-ELBO-Convergence">Monitor ELBO Convergence</a><a id="Monitor-ELBO-Convergence-1"></a><a class="docs-heading-anchor-permalink" href="#Monitor-ELBO-Convergence" title="Permalink"></a></h2><p>Plot the Evidence Lower Bound (ELBO) to verify monotonic improvement. For SLDS, this tracks the variational approximation quality.</p><pre><code class="language-julia hljs">p2 = plot(elbos, xlabel=&quot;Iteration&quot;, ylabel=&quot;ELBO&quot;,
           title=&quot;Variational EM Convergence&quot;,
           marker=:circle, markersize=3, lw=2,
           legend=false, color=:darkgreen)
 
 annotate!(p2, length(elbos)*0.7, elbos[end]-abs(elbos[end])*0.05,
-    text(&quot;Final ELBO: $(round(elbos[end], digits=1))&quot;, 10))</code></pre><img src="4a9ccfe0.svg" alt="Example block output"/><h2 id="Compare-True-vs-Learned-Latent-States"><a class="docs-heading-anchor" href="#Compare-True-vs-Learned-Latent-States">Compare True vs Learned Latent States</a><a id="Compare-True-vs-Learned-Latent-States-1"></a><a class="docs-heading-anchor-permalink" href="#Compare-True-vs-Learned-Latent-States" title="Permalink"></a></h2><p>After fitting, we can extract the smoothed latent states. The learned model stores the most recent smoothed states from the last EM iteration.</p><p>For visualization, we need to run one more smoothing pass to get the final</p><pre><code class="language-julia hljs">tfs = StateSpaceDynamics.initialize_FilterSmooth(learned_model.LDSs[1], T, 1)
+    text(&quot;Final ELBO: $(round(elbos[end], digits=1))&quot;, 10))</code></pre><img src="8e1040b9.svg" alt="Example block output"/><h2 id="Compare-True-vs-Learned-Latent-States"><a class="docs-heading-anchor" href="#Compare-True-vs-Learned-Latent-States">Compare True vs Learned Latent States</a><a id="Compare-True-vs-Learned-Latent-States-1"></a><a class="docs-heading-anchor-permalink" href="#Compare-True-vs-Learned-Latent-States" title="Permalink"></a></h2><p>After fitting, we can extract the smoothed latent states. The learned model stores the most recent smoothed states from the last EM iteration.</p><p>For visualization, we need to run one more smoothing pass to get the final</p><pre><code class="language-julia hljs">tfs = StateSpaceDynamics.initialize_FilterSmooth(learned_model.LDSs[1], T, 1)
 fbs = [StateSpaceDynamics.initialize_forward_backward(learned_model, T, Float64)]
 
 w_uniform = ones(Float64, K, T) ./ K # Initialize with uniform weights and smooth
@@ -180,7 +180,7 @@ hline!([offset, -offset], color=:gray, alpha=0.3, linestyle=:dash, label=&quot;&
 plot!(title=&quot;True vs. Learned Latent States&quot;,
       xlabel=&quot;Time&quot;, ylabel=&quot;&quot;,
       yticks=([-offset, offset], [L&quot;x_2&quot;, L&quot;x_1&quot;]),
-      xlims=(1, T), legend=:topright)</code></pre><img src="e3e61b5d.svg" alt="Example block output"/><h2 id="Mode-Decoding-and-Accuracy-Assessment"><a class="docs-heading-anchor" href="#Mode-Decoding-and-Accuracy-Assessment">Mode Decoding and Accuracy Assessment</a><a id="Mode-Decoding-and-Accuracy-Assessment-1"></a><a class="docs-heading-anchor-permalink" href="#Mode-Decoding-and-Accuracy-Assessment" title="Permalink"></a></h2><p>Decode discrete modes using posterior responsibilities and assess accuracy.</p><pre><code class="language-julia hljs">responsibilities = exp.(fbs[1].γ)  # Convert from log-space (K × T)
+      xlims=(1, T), legend=:topright)</code></pre><img src="a4ef09a7.svg" alt="Example block output"/><h2 id="Mode-Decoding-and-Accuracy-Assessment"><a class="docs-heading-anchor" href="#Mode-Decoding-and-Accuracy-Assessment">Mode Decoding and Accuracy Assessment</a><a id="Mode-Decoding-and-Accuracy-Assessment-1"></a><a class="docs-heading-anchor-permalink" href="#Mode-Decoding-and-Accuracy-Assessment" title="Permalink"></a></h2><p>Decode discrete modes using posterior responsibilities and assess accuracy.</p><pre><code class="language-julia hljs">responsibilities = exp.(fbs[1].γ)  # Convert from log-space (K × T)
 z_decoded = [argmax(responsibilities[:, t]) for t in 1:T];</code></pre><p>Handle label permutation by trying both assignments</p><pre><code class="language-julia hljs">function align_labels_2way(z_true::AbstractVector, z_pred::AbstractVector)
     acc_direct = mean(z_true .== z_pred)
     z_flipped = 3 .- z_pred  # Flip 1↔2
@@ -194,7 +194,7 @@ z_decoded = [argmax(responsibilities[:, t]) for t in 1:T];</code></pre><p>Handle
 end
 
 z_aligned, accuracy = align_labels_2way(z_vec, z_decoded)
-print(&quot;Mode decoding accuracy: $(round(accuracy*100, digits=1))%\n&quot;);</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Mode decoding accuracy: 84.0%</code></pre><p>Visualize mode assignments over time (first 200 time steps for clarity)</p><pre><code class="language-julia hljs">t_subset = 1:200
+print(&quot;Mode decoding accuracy: $(round(accuracy*100, digits=1))%\n&quot;);</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Mode decoding accuracy: 95.6%</code></pre><p>Visualize mode assignments over time (first 200 time steps for clarity)</p><pre><code class="language-julia hljs">t_subset = 1:200
 true_modes = reshape(z_vec[t_subset], 1, :)
 decoded_modes = reshape(z_aligned[t_subset], 1, :);
 
@@ -204,4 +204,4 @@ p4 = plot(
     heatmap(decoded_modes, colormap=:roma, title=&quot;Decoded Mode Sequence&quot;,
            xlabel=&quot;Time Steps (1-200)&quot;, yticks=false, colorbar=false),
     layout=(2, 1), size=(800, 300)
-)</code></pre><img src="79e33ed9.svg" alt="Example block output"/><h2 id="Summary"><a class="docs-heading-anchor" href="#Summary">Summary</a><a id="Summary-1"></a><a class="docs-heading-anchor-permalink" href="#Summary" title="Permalink"></a></h2><p>This tutorial demonstrated the complete Switching Linear Dynamical System workflow:</p><p><strong>Key Concepts:</strong></p><ul><li><strong>Hybrid dynamics</strong>: Discrete mode switching combined with continuous state evolution</li><li><strong>Variational Laplace EM</strong>: Structured approximation handling intractable exact inference</li><li><strong>Mode-specific parameters</strong>: Each discrete state has its own linear dynamics</li><li><strong>Laplace approximation</strong>: Gaussian approximation to the continuous state posterior</li></ul><p><strong>Technical Insights:</strong></p><ul><li>ELBO monitoring ensures proper variational approximation convergence</li><li>Label permutation requires careful accuracy assessment</li><li>The vLEM algorithm alternates between discrete (forward-backward) and continuous (Laplace) inference</li><li>Single sample Monte Carlo estimation of the ELBO</li></ul><p><strong>Modeling Power:</strong></p><ul><li>Captures complex time series with multiple dynamic regimes</li><li>Enables automatic segmentation and regime detection</li><li>Provides probabilistic framework for switching systems</li><li>Extends both HMMs and LDS to richer model class</li></ul><p><strong>Applications:</strong></p><ul><li>Neuroscience: population dynamics across behavioral states</li><li>Finance: regime-switching in market dynamics</li><li>Engineering: fault detection in dynamical systems</li><li>Climate: seasonal transitions and regime changes</li></ul><p>SLDS provides a powerful framework for modeling complex temporal data with multiple underlying dynamics, bridging discrete regime detection with continuous state-space modeling in a principled probabilistic framework.</p><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../Probabilistic_PCA_example/">« Probabilistic PCA Example</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Tuesday 21 October 2025 20:01">Tuesday 21 October 2025</span>. Using Julia version 1.12.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+)</code></pre><img src="22cdd9cc.svg" alt="Example block output"/><h2 id="Summary"><a class="docs-heading-anchor" href="#Summary">Summary</a><a id="Summary-1"></a><a class="docs-heading-anchor-permalink" href="#Summary" title="Permalink"></a></h2><p>This tutorial demonstrated the complete Switching Linear Dynamical System workflow:</p><p><strong>Key Concepts:</strong></p><ul><li><strong>Hybrid dynamics</strong>: Discrete mode switching combined with continuous state evolution</li><li><strong>Variational Laplace EM</strong>: Structured approximation handling intractable exact inference</li><li><strong>Mode-specific parameters</strong>: Each discrete state has its own linear dynamics</li><li><strong>Laplace approximation</strong>: Gaussian approximation to the continuous state posterior</li></ul><p><strong>Technical Insights:</strong></p><ul><li>ELBO monitoring ensures proper variational approximation convergence</li><li>Label permutation requires careful accuracy assessment</li><li>The vLEM algorithm alternates between discrete (forward-backward) and continuous (Laplace) inference</li><li>Single sample Monte Carlo estimation of the ELBO</li></ul><p><strong>Modeling Power:</strong></p><ul><li>Captures complex time series with multiple dynamic regimes</li><li>Enables automatic segmentation and regime detection</li><li>Provides probabilistic framework for switching systems</li><li>Extends both HMMs and LDS to richer model class</li></ul><p><strong>Applications:</strong></p><ul><li>Neuroscience: population dynamics across behavioral states</li><li>Finance: regime-switching in market dynamics</li><li>Engineering: fault detection in dynamical systems</li><li>Climate: seasonal transitions and regime changes</li></ul><p>SLDS provides a powerful framework for modeling complex temporal data with multiple underlying dynamics, bridging discrete regime detection with continuous state-space modeling in a principled probabilistic framework.</p><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../Probabilistic_PCA_example/">« Probabilistic PCA Example</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.15.0 on <span class="colophon-date" title="Wednesday 22 October 2025 19:08">Wednesday 22 October 2025</span>. Using Julia version 1.12.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
