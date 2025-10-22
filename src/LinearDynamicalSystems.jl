@@ -128,6 +128,20 @@ function Base.show(io::IO, gom::GaussianObservationModel; gap="")
     return nothing
 end
 
+# Conveneince cosntructors
+function GaussianStateModel(
+    A::M, Q::M, b::V, x0::V, P0::M
+) where {T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector{T}}
+    return GaussianStateModel{T,M,V}(; A=A, Q=Q, b=b, x0=x0, P0=P0,
+                                      Q_prior=nothing, P0_prior=nothing)
+end
+
+function GaussianObservationModel(
+    C::M, R::M, d::V
+) where {T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector{T}}
+    return GaussianObservationModel{T,M,V}(; C=C, R=R, d=d, R_prior=nothing)
+end
+
 """
     PoissonObservationModel{
         T<:Real,
