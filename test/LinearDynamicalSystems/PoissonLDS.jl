@@ -554,3 +554,84 @@ function test_EM_matlab()
     @test isapprox(plds.state_model.P0, params_obj["Q0"], atol=1e-5)
     @test isapprox(exp.(plds.obs_model.log_d), params_obj["d"], atol=1e-5)
 end
+
+using Random
+using Test
+using LinearAlgebra
+
+# Call from runtests.jl like:
+# @testset "PoissonLDS" begin
+#     test_poisson_map_step_improves_Q()
+#     test_poisson_gradient_shape_and_finiteness()
+# end
+
+function test_poisson_map_step_improves_Q(; rng=MersenneTwister(123))
+    @testset "PoissonLDS: observation MAP step improves Q (LBFGS)" begin
+        D, P, Tt, N = 2, 3, 40, 3
+
+        # concrete matrices (avoid UniformScaling in fields)
+        A = 0.9 .* Matrix(I, D, D)
+        Q = 0.15 .* Matrix(I, D, D)
+        b = zeros(D)
+        x0 = zeros(D)
+        P0 = 0.15 .* Matrix(I, D, D)
+
+        C = 0.3 .* randn(rng, P, D)
+        log_d = log.(0.7 .+ rand(rng, P))
+
+        gsm = GaussianStateModel(A=A, Q=Q, b=b, x0=x0, P0=P0)
+        pom = PoissonObservationModel(C=C, log_d=log_d)
+        plds = LinearDynamicalSystem(gsm, pom)
+
+        _, Y = rand(rng, plds; tsteps=Tt, ntrials=N)
+
+        tfs = StateSpaceDynamics.initialize_FilterSmooth(plds, Tt, N)
+        StateSpaceDynamics.estep!(plds, tfs, Y)
+
+        Q0 = StateSpaceDynamics.Q_observation_model(
+            plds.obs_model.C, plds.obs_model.log_d, tfs, Y
+        )
+        StateSpaceDynamics.update_observation_model!(plds, tfs, Y)  # LBFGS inside
+        Q1 = StateSpaceDynamics.Q_observation_model(
+            plds.obs_model.C, plds.obs_model.log_d, tfs, Y
+        )
+
+        @test Q1 ≥ Q0 - 1e-7
+        @test all(isfinite, plds.obs_model.C)
+        @test all(isfinite, plds.obs_model.log_d)
+    end
+    return nothing
+end
+
+function test_poisson_gradient_shape_and_finiteness()
+    @testset "PoissonLDS: gradient_observation_model! shape & finiteness" begin
+        D, P, Tt, N = 2, 3, 20, 2
+
+        A = 0.9 .* Matrix(I, D, D)
+        Q = 0.15 .* Matrix(I, D, D)
+        b = zeros(D)
+        x0 = zeros(D)
+        P0 = 0.6 .* Matrix(I, D, D)
+
+        C = 0.2 .* randn(P, D)
+        log_d = zeros(P)
+
+        plds = LinearDynamicalSystem(
+            GaussianStateModel(A=A, Q=Q, b=b, x0=x0, P0=P0),
+            PoissonObservationModel(C=C, log_d=log_d),
+        )
+
+        _, Y = rand(plds; tsteps=Tt, ntrials=N)
+        tfs = StateSpaceDynamics.initialize_FilterSmooth(plds, Tt, N)
+        StateSpaceDynamics.estep!(plds, tfs, Y)
+
+        g = zeros(Float64, length(vec(C)) + length(log_d))
+        StateSpaceDynamics.gradient_observation_model!(
+            g, plds.obs_model.C, plds.obs_model.log_d, tfs, Y
+        )
+
+        @test all(isfinite, g)
+        @test length(g) == P * D + P
+    end
+    return nothing
+end
