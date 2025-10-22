@@ -153,7 +153,7 @@ Given the latent structure of state-space models, we must rely on either the Exp
     \end{aligned}
     ```
     yields the **same likelihood**. Practical consequences:
-    
+
     - **Scale/rotation ambiguity:** the latent space can be arbitrarily scaled/rotated.
     - **Sign & permutation flips:** columns of $$C$$ (and corresponding rows/cols of $$A$$) can swap or flip signs with no change in fit.
     
@@ -186,7 +186,7 @@ IWPrior
 
 ### Definition
 
-For a covariance matrix ` \Sigma \in \mathbb{R}^{d\times d} `,
+For a covariance matrix ``\Sigma \in \mathbb{R}^{d\times d}``,
 
 ```math
 \Sigma \sim \text{IW}(\Psi, \nu),
@@ -194,11 +194,11 @@ For a covariance matrix ` \Sigma \in \mathbb{R}^{d\times d} `,
 p(\Sigma)\propto |\Sigma|^{-(\nu+d+1)/2}\exp\!\Big[-\tfrac12\operatorname{tr}(\Psi\,\Sigma^{-1})\Big].
 ```
 
-- ` \Psi ` is the **scale matrix** (positive-definite).  
-- ` \nu ` is the **degrees of freedom**.  
-  A proper mode exists when ` \nu > d+1 `.
+- ``\Psi`` is the **scale matrix** (positive-definite).  
+- ``\nu`` is the **degrees of freedom**.  
+  A proper mode exists when ``\nu > d+1``.
 
-Given `n` effective samples and sample statistic `S`,
+Given ``n`` effective samples and sample statistic ``S``,
 the posterior is
 
 ```math
@@ -251,19 +251,15 @@ fit!(lds, Y; max_iter=20, progress=false)
 
 - When a prior is present, the M-step uses the MAP mode formula above.  
 - The reported **ELBO** includes IW log-prior terms (up to constants), so convergence still tracks the true MAP objective.  
-- With small datasets or high-dimensional states, the priors keep `Q`, `P_0`, and `R` **positive-definite and well-conditioned**.
+- With small datasets or high-dimensional states, the priors keep ``Q``, ``P_0``, and ``R`` **positive-definite and well-conditioned**.
 
-```@docs
-calculate_elbo
-```
-
-### Choosing `\Psi` and `\nu`
+### Choosing ``\Psi`` and ``\nu``
 
 | Goal | Typical choice | Notes |
 |------|----------------|-------|
-| Mild shrinkage | `\Psi = 0.01I`, `\nu = d+3` | Gentle pull toward small covariances |
-| Strong regularization | Larger `\nu` | Acts like adding pseudo-samples |
-| Data-scaled prior | `\Psi` ≈ empirical covariance | Centers shrinkage around realistic scale |
+| Mild shrinkage | ``\Psi = 0.01I``, ``\nu = d+3`` | Gentle pull toward small covariances |
+| Strong regularization | Larger ``\nu`` | Acts like adding pseudo-samples |
+| Data-scaled prior | ``\Psi`` ≈ empirical covariance | Centers shrinkage around realistic scale |
 
 > **Tip:** In Julia, `I` is a `UniformScaling` (not a matrix).  
-> Use `Matrix(I, d, d)` or `diagm(0 => fill(..., d))` to build `Ψ`.
+> Use `Matrix(I, d, d)` or `diagm(0 => fill(..., d))` to build ``Ψ``.
