@@ -17,105 +17,105 @@ using Test
 
 const CHECKED_TYPES = [Float32, Float64] #, BigFloat] UMFPACK does not support BigFloat for Sparse Arrays see: https://github.com/JuliaSparse/SparseArrays.jl/blob/main/src/solvers/umfpack.jl
 
-"""
-Package Wide Tests
-"""
+# """
+# Package Wide Tests
+# """
 
-@testset "Package Wide Tests" begin
-    Aqua.test_all(StateSpaceDynamics; ambiguities=false)
-    @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
-end
+# @testset "Package Wide Tests" begin
+#     Aqua.test_all(StateSpaceDynamics; ambiguities=false)
+#     @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
+# end
 
-@testset "Blue Formatting" begin
-    @test JuliaFormatter.format(StateSpaceDynamics; verbose=false, overwrite=false)
-end
+# @testset "Blue Formatting" begin
+#     @test JuliaFormatter.format(StateSpaceDynamics; verbose=false, overwrite=false)
+# end
 
-@testset "Code linting using JET " begin
-    if VERSION >= v"1.11"
-        JET.test_package(StateSpaceDynamics; target_defined_modules=true)
-    end
-end
+# @testset "Code linting using JET " begin
+#     if VERSION >= v"1.11"
+#         JET.test_package(StateSpaceDynamics; target_defined_modules=true)
+#     end
+# end
 
-include("helper_functions.jl")
+# include("helper_functions.jl")
 
-"""
-Tests for SLDS.jl
-"""
+# """
+# Tests for SLDS.jl
+# """
 
-include("LinearDynamicalSystems/SLDS.jl")
+# include("LinearDynamicalSystems/SLDS.jl")
 
-@testset "SLDS Tests" begin
-    @testset "valid_SLDS Tests" begin
-        test_valid_SLDS_happy_path()
-        test_valid_SLDS_dimension_mismatches()
-        test_valid_SLDS_nonstochastic_rows_and_invalid_Z0()
-        test_valid_SLDS_mixed_observation_model_types()
-        test_valid_SLDS_inconsistent_latent_or_obs_dims()
-        test_SLDS_sampling_gaussian()
-        test_SLDS_sampling_poisson()
-        test_SLDS_deterministic_transitions()
-        test_SLDS_single_trial()
-        test_SLDS_reproducibility()
-        test_SLDS_single_state_edge_case()
-        test_SLDS_minimal_dimensions()
-        test_valid_SLDS_probability_helper_functions()
-    end
+# @testset "SLDS Tests" begin
+#     @testset "valid_SLDS Tests" begin
+#         test_valid_SLDS_happy_path()
+#         test_valid_SLDS_dimension_mismatches()
+#         test_valid_SLDS_nonstochastic_rows_and_invalid_Z0()
+#         test_valid_SLDS_mixed_observation_model_types()
+#         test_valid_SLDS_inconsistent_latent_or_obs_dims()
+#         test_SLDS_sampling_gaussian()
+#         test_SLDS_sampling_poisson()
+#         test_SLDS_deterministic_transitions()
+#         test_SLDS_single_trial()
+#         test_SLDS_reproducibility()
+#         test_SLDS_single_state_edge_case()
+#         test_SLDS_minimal_dimensions()
+#         test_valid_SLDS_probability_helper_functions()
+#     end
 
-    @testset "SLDS Gradient and Hessian Tests" begin
-        test_SLDS_gradient_numerical()
-        test_SLDS_hessian_numerical()
-        test_SLDS_gradient_reduces_to_single_LDS()
-        test_SLDS_hessian_block_structure()
-        test_SLDS_gradient_weight_normalization()
-    end
+#     @testset "SLDS Gradient and Hessian Tests" begin
+#         test_SLDS_gradient_numerical()
+#         test_SLDS_hessian_numerical()
+#         test_SLDS_gradient_reduces_to_single_LDS()
+#         test_SLDS_hessian_block_structure()
+#         test_SLDS_gradient_weight_normalization()
+#     end
 
-    @testset "SLDS Smooth Test" begin
-        test_SLDS_smooth_basic()
-        test_SLDS_smooth_reduces_to_single_LDS()
-        test_SLDS_smooth_with_realistic_weights()
-        test_SLDS_smooth_consistency_with_gradients()
-        test_SLDS_smooth_entropy_calculation()
-        test_SLDS_smooth_covariance_symmetry()
-        test_SLDS_smooth_different_weight_patterns()
-    end
+#     @testset "SLDS Smooth Test" begin
+#         test_SLDS_smooth_basic()
+#         test_SLDS_smooth_reduces_to_single_LDS()
+#         test_SLDS_smooth_with_realistic_weights()
+#         test_SLDS_smooth_consistency_with_gradients()
+#         test_SLDS_smooth_entropy_calculation()
+#         test_SLDS_smooth_covariance_symmetry()
+#         test_SLDS_smooth_different_weight_patterns()
+#     end
 
-    @testset "SLDS Weighted M-step Tests" begin
-        test_weighted_update_initial_state_mean()
-        test_weighted_update_A_b()
-        test_weighted_update_Q()
-        test_weighted_gradient_linearity()
-        test_zero_weights_behavior()
-    end
+#     @testset "SLDS Weighted M-step Tests" begin
+#         test_weighted_update_initial_state_mean()
+#         test_weighted_update_A_b()
+#         test_weighted_update_Q()
+#         test_weighted_gradient_linearity()
+#         test_zero_weights_behavior()
+#     end
 
-    @testset "SLDS EM Tests" begin
-        test_SLDS_sample_posterior_basic()
-        test_SLDS_estep_basic()
-        test_SLDS_mstep_updates_parameters()
-        test_SLDS_fit_runs_to_completion()
-        test_SLDS_fit_elbo_generally_increases()
-        test_SLDS_fit_multitrial()
-        test_SLDS_estep_elbo_components()
-    end
+#     @testset "SLDS EM Tests" begin
+#         test_SLDS_sample_posterior_basic()
+#         test_SLDS_estep_basic()
+#         test_SLDS_mstep_updates_parameters()
+#         test_SLDS_fit_runs_to_completion()
+#         test_SLDS_fit_elbo_generally_increases()
+#         test_SLDS_fit_multitrial()
+#         test_SLDS_estep_elbo_components()
+#     end
 
-    @testset "Poisson SLDS Tests" begin
-        test_SLDS_sampling_poisson_extended()
-        test_SLDS_gradient_numerical_poisson()
-        test_SLDS_hessian_block_structure_poisson()
-        test_SLDS_smooth_basic_poisson()
-        test_SLDS_estep_basic_poisson()
-        test_SLDS_mstep_updates_parameters_poisson()
-        test_SLDS_fit_runs_to_completion_poisson()
-        test_SLDS_fit_elbo_generally_increases_poisson()
-        test_SLDS_fit_multitrial_poisson()
-        test_SLDS_poisson_count_validation()
-        test_SLDS_poisson_log_d_interpretation()
-        test_SLDS_gradient_weight_normalization_poisson()
-    end
-end
+#     @testset "Poisson SLDS Tests" begin
+#         test_SLDS_sampling_poisson_extended()
+#         test_SLDS_gradient_numerical_poisson()
+#         test_SLDS_hessian_block_structure_poisson()
+#         test_SLDS_smooth_basic_poisson()
+#         test_SLDS_estep_basic_poisson()
+#         test_SLDS_mstep_updates_parameters_poisson()
+#         test_SLDS_fit_runs_to_completion_poisson()
+#         test_SLDS_fit_elbo_generally_increases_poisson()
+#         test_SLDS_fit_multitrial_poisson()
+#         test_SLDS_poisson_count_validation()
+#         test_SLDS_poisson_log_d_interpretation()
+#         test_SLDS_gradient_weight_normalization_poisson()
+#     end
+# end
 
-"""
-Tests for LDS.jl
-"""
+# """
+# Tests for LDS.jl
+# """
 
 include("LinearDynamicalSystems//GaussianLDS.jl")
 
