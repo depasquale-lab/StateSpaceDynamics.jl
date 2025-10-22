@@ -36,20 +36,21 @@ Where:
 - ``C`` is the observation matrix
 - ``Q`` is the process noise covariance
 - ``R`` is the observation noise covariance
+- ``b`` and ``d`` are bias terms
 
 This can equivalently be written in equation form:
 
 ```math
 \begin{aligned}
-    x_t &= A x_{t-1} + \epsilon_t \\
-    y_t &= C x_t + \eta_t
+    x_t &= A x_{t-1} + b + \epsilon_t \\
+    y_t &= C x_t + d + \eta_t
 \end{aligned}
 ```
 
 Where:
 
-- ``ε_t ~ N(0, Q)`` is the process noise
-- ``η_t ~ N(0, R)`` is the observation noise
+- ``ε_t \sim N(0, Q)`` is the process noise
+- ``η_t \sim N(0, R)`` is the observation noise
 
 ```@docs
 GaussianStateModel
