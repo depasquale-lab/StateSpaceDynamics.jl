@@ -820,6 +820,7 @@ function loglikelihood(
 
     # calculate log likelihood
     p = logistic.(Φ * model.β)
+    p = clamp.(p, eps(eltype(p)), 1 .- eps(eltype(p)))  # avoid log(0)
 
     obs_wise_loglikelihood = w .* (Y .* log.(p) .+ (1 .- Y) .* log.(1 .- p))
 

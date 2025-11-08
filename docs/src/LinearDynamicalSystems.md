@@ -30,26 +30,27 @@ The generative model is given by:
 
 Where:
 
-- `x_t` is the hidden state at time `t`
-- `y_t` is the observed data at time `t`  
-- `A` is the state transition matrix
-- `C` is the observation matrix
-- `Q` is the process noise covariance
-- `R` is the observation noise covariance
+- ``x_t`` is the hidden state at time ``t``
+- ``y_t`` is the observed data at time ``t``  
+- ``A`` is the state transition matrix
+- ``C`` is the observation matrix
+- ``Q`` is the process noise covariance
+- ``R`` is the observation noise covariance
+- ``b`` and ``d`` are bias terms
 
 This can equivalently be written in equation form:
 
 ```math
 \begin{aligned}
-    x_t &= A x_{t-1} + \epsilon_t \\
-    y_t &= C x_t + \eta_t
+    x_t &= A x_{t-1} + b + \epsilon_t \\
+    y_t &= C x_t + d + \eta_t
 \end{aligned}
 ```
 
 Where:
 
-- `ε_t ~ N(0, Q)` is the process noise
-- `η_t ~ N(0, R)` is the observation noise
+- ``ε_t \sim N(0, Q)`` is the process noise
+- ``η_t \sim N(0, R)`` is the observation noise
 
 ```@docs
 GaussianStateModel
@@ -139,6 +140,126 @@ Despite the requirement of inverting a Hessian of dimension ``(d \times T) \time
 
 Given the latent structure of state-space models, we must rely on either the Expectation-Maximization (EM) or Variational Inference (VI) approaches to learn the parameters of the model. StateSpaceDynamics.jl supports both EM and VI. For LDS models, we can use Laplace EM, where we approximate the posterior of the latent state path using the Laplace approximation as outlined above. Using these approximate posteriors (or exact ones in the Gaussian case), we can apply closed-form updates for the model parameters.
 
+!!! warning "Identifiability caveats in LDS"
+    LDS parameters are **not uniquely identifiable**. For any invertible matrix $$S$$,
+    the reparameterization
+    ```math
+    \begin{aligned}
+    x'_t &= S x_t,\\
+    A' &= S A S^{-1},\\
+    C' &= C S^{-1},\\
+    Q' &= S Q S^\top,\\
+    R' &= R
+    \end{aligned}
+    ```
+    yields the **same likelihood**. Practical consequences:
+
+    - **Scale/rotation ambiguity:** the latent space can be arbitrarily scaled/rotated.
+    - **Sign & permutation flips:** columns of $$C$$ (and corresponding rows/cols of $$A$$) can swap or flip signs with no change in fit.
+    
+    **Common remedies**
+    
+    - Fix a convention for the latent scale, e.g. set $$Q = I$$ or constrain $$\mathrm{diag}(Q)=1$$.
+    - Encourage a canonical orientation, e.g. enforce **orthonormal columns in $$C$$** (up to sign) after each M-step. (Not yet implemented)
+    - When comparing fits across runs, align parameters via a **Procrustes** or **Hungarian** matching step.
+    
+    These issues affect **parameter interpretability** but not **predictive performance**; be cautious when interpreting individual entries of $$A$$, $$C$$, or $$Q$$.
+
 ```@docs
 fit!(lds::LinearDynamicalSystem{T,S,O}, y::AbstractArray{T,3}; max_iter::Int=1000, tol::Float64=1e-12) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
 ```
+
+## Inverse-Wishart Priors on Covariances (MAP)
+
+To encourage well-conditioned covariance estimates, StateSpaceDynamics.jl supports **Inverse-Wishart (IW)** priors on the covariance matrices of a Linear Dynamical System.  
+These can be used to impose **shrinkage** toward a target scale, yielding **maximum a posteriori (MAP)** estimates instead of pure MLEs.
+
+You can attach an IW prior to:
+
+- The **process noise covariance** `Q_prior`
+- The **initial state covariance** `P0_prior`
+- The **observation noise covariance** `R_prior` (Gaussian models only)
+
+```@docs
+IWPrior
+```
+
+### Definition
+
+For a covariance matrix ``\Sigma \in \mathbb{R}^{d\times d}``,
+
+```math
+\Sigma \sim \text{IW}(\Psi, \nu),
+\qquad
+p(\Sigma)\propto |\Sigma|^{-(\nu+d+1)/2}\exp\!\Big[-\tfrac12\operatorname{tr}(\Psi\,\Sigma^{-1})\Big].
+```
+
+- ``\Psi`` is the **scale matrix** (positive-definite).  
+- ``\nu`` is the **degrees of freedom**.  
+  A proper mode exists when ``\nu > d+1``.
+
+Given ``n`` effective samples and sample statistic ``S``,
+the posterior is
+
+```math
+\Sigma\mid\text{data}\sim\text{IW}(\Psi+S,\;\nu+n)
+```
+
+and the **MAP** (mode) update used internally is
+
+```math
+\widehat{\Sigma}_{\text{MAP}}
+=\frac{\Psi+S}{\nu+n+d+1}.
+```
+
+### Example: Adding IW Priors to an LDS
+
+```julia
+using LinearAlgebra, Random, StateSpaceDynamics
+
+rng = MersenneTwister(42)
+D, P = 3, 4
+
+# Proper SPD scale matrices (avoid UniformScaling)
+ΨQ  = diagm(0 => fill(0.01, D))
+ΨP0 = diagm(0 => fill(0.01, D))
+ΨR  = diagm(0 => fill(0.01, P))
+
+Qprior  = IWPrior(Ψ = ΨQ,  ν = D + 3.0)
+P0prior = IWPrior(Ψ = ΨP0, ν = D + 3.0)
+Rprior  = IWPrior(Ψ = ΨR,  ν = P + 3.0)
+
+# Gaussian LDS
+A = 0.9I + 0.05randn(rng, D, D)
+Q = Matrix(I, D, D) .* 0.3
+b = zeros(D); x0 = zeros(D); P0 = Matrix(I, D, D) .* 0.8
+
+C = randn(rng, P, D)
+R = Matrix(I, P, P) .* 0.25
+d = 0.1 .* randn(rng, P)
+
+gsm = GaussianStateModel(A=A, Q=Q, b=b, x0=x0, P0=P0,
+                         Q_prior=Qprior, P0_prior=P0prior)
+gom = GaussianObservationModel(C=C, R=R, d=d, R_prior=Rprior)
+lds = LinearDynamicalSystem(gsm, gom)
+
+X, Y = rand(rng, lds; tsteps=100, ntrials=5)
+fit!(lds, Y; max_iter=20, progress=false)
+```
+
+### Effect on Learning
+
+- When a prior is present, the M-step uses the MAP mode formula above.  
+- The reported **ELBO** includes IW log-prior terms (up to constants), so convergence still tracks the true MAP objective.  
+- With small datasets or high-dimensional states, the priors keep ``Q``, ``P_0``, and ``R`` **positive-definite and well-conditioned**.
+
+### Choosing ``\Psi`` and ``\nu``
+
+| Goal | Typical choice | Notes |
+|------|----------------|-------|
+| Mild shrinkage | ``\Psi = 0.01I``, ``\nu = d+3`` | Gentle pull toward small covariances |
+| Strong regularization | Larger ``\nu`` | Acts like adding pseudo-samples |
+| Data-scaled prior | ``\Psi`` ≈ empirical covariance | Centers shrinkage around realistic scale |
+
+> **Tip:** In Julia, `I` is a `UniformScaling` (not a matrix).  
+> Use `Matrix(I, d, d)` or `diagm(0 => fill(..., d))` to build ``Ψ``.

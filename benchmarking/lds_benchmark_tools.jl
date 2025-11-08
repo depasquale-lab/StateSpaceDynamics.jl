@@ -127,17 +127,20 @@ function run_benchmark(::Dynamax_LDSImplem, model::Tuple, Y::AbstractArray)
     # Run an initial iteration to compile
     dynamax = pyimport("dynamax")
     np = pyimport("numpy")
+    jax = pyimport("jax")
 
     Y = Y[:, :, 1]
     Y_np = np.array(Y).transpose()
 
     (params, props, lds) = model
 
+    fit_em_ = jax.jit(lds.fit_em, static_argnames=("num_iters",))
+
     bench = @benchmark begin
-    $lds.fit_em($params,
-        $props,
-        $Y_np,
-        num_iters=100)
+        $fit_em_($params,
+            $props,
+            $Y_np,
+            num_iters=100)
     end samples=5
     return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
 end

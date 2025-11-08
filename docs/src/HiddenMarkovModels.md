@@ -63,7 +63,7 @@ Where:
 
 - ``x_t`` is the hidden (discrete) state at time $t$
 - ``y_t`` is the observed output at time $t$
-- ``$u_t$`` is the observed input (covariate) at time $t$
+- ``u_t`` is the observed input (covariate) at time $t$
 - ``\theta_{x_t}`` are the parameters of the GLM emission model for state $x_t$
 
 ### Example Emission Models
@@ -102,6 +102,32 @@ Random.rand(rng::AbstractRNG,model::HiddenMarkovModel,X::Union{Matrix{<:Real}, N
 # Learning in an HMM
 
 `StateSpaceDynamics.jl` implements Expectation-Maximization (EM) for parameter learning in both HMMs and GLM-HMMs. EM is an iterative method for finding maximum likelihood estimates of the parameters in graphical models with hidden variables. 
+
+!!! warning "Identifiability caveats in HMMs (and GLM-HMMs)"
+    HMM parameters are **not uniquely identifiable**. For any permutation matrix $$P$$ that
+    relabels the $$K$$ hidden states, the reparameterization
+    ```math
+    \begin{aligned}
+    \pi' &= P\,\pi,\\
+    A' &= P\,A\,P^\top,\\
+    \theta'_k &= \theta_{P^\top k}
+    \end{aligned}
+    ```
+    yields the **same likelihood**. Consequences:
+    
+    - **Label switching:** state indices are arbitrary; EM runs can return permuted states.
+    - **Degenerate solutions:** with Gaussian emissions, likelihood can blow up by shrinking a component’s variance onto a few points; with GLM emissions, **separation** or collinearity can make parameters diverge.
+    - **Non-unique GLM parametrizations:** standard GLM identifiability issues apply (e.g., intercept vs. redundant dummy variables, collinear covariates).
+
+    **Practical remedies**
+    
+    - **Canonicalize state order** after each fit (or each EM iteration) using a criterion such as descending stationary probability, mean emission value, or a chosen scalar summary.
+    - **Post-hoc alignment** across runs: match states with a **Hungarian/Procrustes** step using emission statistics or posterior state occupancies.
+    - **Regularize emissions:**  
+      Gaussian: add priors/penalties, variance floors, tied/diagonal $$\Sigma_k$$;  
+      GLM: $$L_2/L_1$$ penalties, remove/orthogonalize collinear features, use reference coding.
+    - **Stabilize transitions:** Dirichlet priors or pseudocounts on $$\pi$$ and $$A$$; avoid zero rows/columns.
+    - **Report with uncertainty:** prefer state-invariant summaries (likelihood, predictive metrics). When interpreting parameters, note that labels are arbitrary.
 
 ```@docs
 fit!(
