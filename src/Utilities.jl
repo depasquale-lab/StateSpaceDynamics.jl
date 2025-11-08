@@ -1,6 +1,6 @@
 export kmeanspp_initialization, kmeans_clustering, fit!, block_tridgm
 export block_tridiagonal_inverse, block_tridiagonal_inverse_static
-export row_matrix, stabilize_covariance_matrix, valid_Σ, make_posdef!, gaussian_entropy
+export stabilize_covariance_matrix, valid_Σ, make_posdef!, gaussian_entropy
 export random_rotation_matrix
 export print_full
 export isprobvec
@@ -21,16 +21,6 @@ function check_same_type(args...)
 end
 
 # Matrix utilities
-
-"""
-    row_matrix(x::AbstractVector)
-
-Convert a vector to a row matrix.
-"""
-function row_matrix(x::AbstractVector)
-    return reshape(x, 1, length(x))
-end
-
 """
     block_tridiagonal_inverse(A, B, C)
 
