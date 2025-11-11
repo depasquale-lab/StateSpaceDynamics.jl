@@ -1,7 +1,7 @@
 name = "StateSpaceDynamics"
 uuid = "19cf8126-1d00-4ad8-bf17-4e76d7bc0f6d"
-version = "0.2.0"
 authors = ["Ryan Senne rsenne@bu.edu"]
+version = "0.3.0"
 
 [deps]
 ArrayLayouts = "4c555306-a7a7-4459-81d9-ec55ddd5c99a"
