@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>LDS Model Selection Example · StateSpaceDynamics.jl</title><meta name="title" content="LDS Model Selection Example · StateSpaceDynamics.jl"/><meta property="og:title" content="LDS Model Selection Example · StateSpaceDynamics.jl"/><meta property="twitter:title" content="LDS Model Selection Example · StateSpaceDynamics.jl"/><meta name="description" content="Documentation for StateSpaceDynamics.jl."/><meta property="og:description" content="Documentation for StateSpaceDynamics.jl."/><meta property="twitter:description" content="Documentation for StateSpaceDynamics.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="StateSpaceDynamics.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">StateSpaceDynamics.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Models</span><ul><li><a class="tocitem" href="../../LinearDynamicalSystems/">Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../HiddenMarkovModels/">Hidden Markov Models</a></li><li><a class="tocitem" href="../../SLDS/">Switching Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../EmissionModels/">Emission Models</a></li><li><a class="tocitem" href="../../MixtureModels/">Mixture Models</a></li></ul></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../gaussian_latent_dynamics_example/">Gaussian LDS Example</a></li><li><a class="tocitem" href="../poisson_latent_dynamics_example/">Poisson LDS Example</a></li><li class="is-active"><a class="tocitem" href>LDS Model Selection Example</a></li><li><a class="tocitem" href="../lds_identifiability_example/">Non-Identifiability in LDS Models</a></li><li><a class="tocitem" href="../hidden_markov_model_example/">Hidden Markov Model Example</a></li><li><a class="tocitem" href="../hmm_model_selection_example/">HMM Model Selection</a></li><li><a class="tocitem" href="../gaussian_glm_hmm_example/">Gaussian GLM-HMM Example</a></li><li><a class="tocitem" href="../hmm_identifiability_example/">HMM Identifiability</a></li><li><a class="tocitem" href="../gaussian_mixture_model_example/">Gaussian Mixture Model Example</a></li><li><a class="tocitem" href="../poisson_mixture_model_example/">Poisson Mixture Model Example</a></li><li><a class="tocitem" href="../Probabilistic_PCA_example/">Probabilistic PCA Example</a></li><li><a class="tocitem" href="../switching_linear_dynamical_system_example/">Switching Linear Dynamical System Example</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>LDS Model Selection Example</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>LDS Model Selection Example</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/blob/main/docs/examples/LDSModelSelection.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Choosing-Latent-Dimensionality-for-Linear-Dynamical-Systems-(LDS)"><a class="docs-heading-anchor" href="#Choosing-Latent-Dimensionality-for-Linear-Dynamical-Systems-(LDS)">Choosing Latent Dimensionality for Linear Dynamical Systems (LDS)</a><a id="Choosing-Latent-Dimensionality-for-Linear-Dynamical-Systems-(LDS)-1"></a><a class="docs-heading-anchor-permalink" href="#Choosing-Latent-Dimensionality-for-Linear-Dynamical-Systems-(LDS)" title="Permalink"></a></h1><p>One of the most critical decisions when fitting an LDS is selecting the latent dimensionality K. Cross-validation is the universal approach that works for ANY state-space model - Gaussian LDS, Poisson LDS, nonlinear SSMs, etc. This tutorial demonstrates robust CV-based model selection.</p><pre><code class="language-julia hljs"># Load Required Packages
+using StateSpaceDynamics
+using LinearAlgebra
+using Random
+using Plots
+using Statistics
+using StableRNGs
+using Printf</code></pre><p>Fix RNG for reproducible results</p><pre><code class="language-julia hljs">rng = StableRNG(1234);
+
+# Create a True Gaussian LDS System</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">StableRNGs.LehmerRNG(state=0x000000000000000000000000000009a5)</code></pre><p>For demonstration, we&#39;ll create a ground truth LDS with K=4 latent dimensions. This system will exhibit interesting dynamics like oscillations and decay patterns.</p><pre><code class="language-julia hljs">K_true = 4  # True latent dimensionality
+D = 10       # Observation dimensionality
+T = 300;    # Number of time steps</code></pre><p>Create interesting dynamics: oscillating + decaying modes</p><pre><code class="language-julia hljs">θ = π/12  # Oscillation frequency
+λ = 0.92  # Decay rate
+
+true_A = [cos(θ) -sin(θ)  0.0    0.0;
+          sin(θ)  cos(θ)  0.0    0.0;
+          0.0     0.0     λ      0.0;
+          0.0     0.0     0.0    0.85*λ];</code></pre><p>Process noise covariance</p><pre><code class="language-julia hljs">true_Q = 0.05 * Matrix(I(K_true));</code></pre><p>Observation matrix - each latent dimension affects multiple observations</p><pre><code class="language-julia hljs">Random.seed!(rng, 42)
+true_C = randn(rng, D, K_true) * 0.6;</code></pre><p>Observation noise covariance</p><pre><code class="language-julia hljs">true_R = 0.1 * Matrix(I(D));</code></pre><p>Initial state parameters</p><pre><code class="language-julia hljs">true_μ0 = zeros(K_true)
+true_Σ0 = 0.1 * Matrix(I(K_true));</code></pre><p>Create the true LDS</p><pre><code class="language- hljs">true_lds = LinearDynamicalSystem(
+    GaussianStateModel(true_A, true_Q, true_μ0, true_Σ0),
+    GaussianObservationModel(true_C, true_R),
+    K_true,
+    D,
+    fill(true, 6)
+);
+nothing #hide</code></pre><p>Generate ground truth data</p><pre><code class="language- hljs">latent_states, observations = rand(rng, true_lds; tsteps=T, ntrials=1);
+nothing #hide</code></pre><p>Visualize the true latent dynamics and observations</p><pre><code class="language- hljs">p1 = plot(layout=(2,2), size=(1000, 600))
+
+plot!(1:T, latent_states[1, :], label=&quot;Latent 1 (cos)&quot;,
+      linewidth=2, subplot=1, title=&quot;Oscillating Modes&quot;)
+plot!(1:T, latent_states[2, :], label=&quot;Latent 2 (sin)&quot;,
+      linewidth=2, subplot=1)
+
+plot!(1:T, latent_states[3, :], label=&quot;Latent 3 (decay)&quot;,
+      linewidth=2, subplot=2, title=&quot;Decaying Modes&quot;)
+plot!(1:T, latent_states[4, :], label=&quot;Latent 4 (decay)&quot;,
+      linewidth=2, subplot=2)
+
+plot!(1:T, observations[1, :], label=&quot;Obs 1&quot;, alpha=0.7, subplot=3, title=&quot;Observations 1-3&quot;)
+plot!(1:T, observations[2, :], label=&quot;Obs 2&quot;, alpha=0.7, subplot=3)
+plot!(1:T, observations[3, :], label=&quot;Obs 3&quot;, alpha=0.7, subplot=3)
+plot!(1:T, observations[4, :], label=&quot;Obs 4&quot;, alpha=0.7, subplot=4, title=&quot;Observations 4-6&quot;)
+plot!(1:T, observations[5, :], label=&quot;Obs 5&quot;, alpha=0.7, subplot=4)
+plot!(1:T, observations[6, :], label=&quot;Obs 6&quot;, alpha=0.7, subplot=4)
+
+p1
+
+# Prepare Data for Cross-Validation</code></pre><p>Reshape observations for multi-trial format (required by your codebase)</p><pre><code class="language- hljs">y_data = reshape(observations, D, T, 1)  # (obs_dim, tsteps, ntrials)
+
+# Cross-Validation Setup
+K_candidates = 1:8  # Test latent dimensions from 1 to 8
+n_folds = 5         # Number of CV folds
+fold_size = T ÷ n_folds;
+nothing #hide</code></pre><p>Storage for CV results</p><pre><code class="language- hljs">cv_scores = zeros(length(K_candidates), n_folds)
+cv_mean = zeros(length(K_candidates))
+cv_std = zeros(length(K_candidates));
+
+println(&quot;Starting Cross-Validation for Model Selection...&quot;)
+println(&quot;=&quot;^60)
+
+# Perform K-Fold Cross-Validation
+for (k_idx, K) in enumerate(K_candidates)
+    println(&quot;Testing K = $K...&quot;)
+
+    fold_scores = zeros(n_folds)
+
+    for fold in 1:n_folds
+        val_start = (fold - 1) * fold_size + 1
+        val_end = min(fold * fold_size, T)
+
+        train_indices = vcat(1:(val_start-1), (val_end+1):T)
+        val_indices = val_start:val_end
+
+        y_train = y_data[:, train_indices, :]
+        y_val = y_data[:, val_indices, :]
+
+
+        A_init = 0.9 * Matrix(I(K)) + 0.1 * randn(rng, K, K)
+        Q_init = 0.1 * Matrix(I(K))
+        C_init = randn(rng, D, K) * 0.5
+        R_init = 0.2 * Matrix(I(D))
+        μ0_init = zeros(K)
+        Σ0_init = 0.1 * Matrix(I(K))
+
+        lds_candidate = LinearDynamicalSystem(
+            GaussianStateModel(A_init, Q_init, μ0_init, Σ0_init),
+            GaussianObservationModel(C_init, R_init),
+            K,
+            D,
+            fill(true, 6)  # Fit all parameters
+        )
+
+        try
+            lls, _ = fit!(lds_candidate, y_train; max_iter=200, tol=1e-6, progress=false);
+
+            x_val, _ = smooth(lds_candidate, y_val[:, :, 1])
+            val_ll = loglikelihood(x_val, lds_candidate, y_val[:, :, 1])
+
+            fold_scores[fold] = val_ll / length(val_indices)  # Normalize by sequence length
+
+        catch e
+            println(&quot;  Warning: Fold $fold failed for K=$K: $e&quot;)
+            fold_scores[fold] = -Inf
+        end
+    end
+
+    cv_scores[k_idx, :] = fold_scores
+    cv_mean[k_idx] = mean(fold_scores)
+    cv_std[k_idx] = std(fold_scores)
+
+    @printf(&quot;  K=%d: CV Score = %.3f ± %.3f\n&quot;, K, cv_mean[k_idx], cv_std[k_idx])
+end
+
+# Find Optimal K
+best_k_idx = argmax(cv_mean)
+best_K = K_candidates[best_k_idx]
+
+println(&quot;\n&quot; * &quot;=&quot;^60)
+println(&quot;CROSS-VALIDATION RESULTS:&quot;)
+println(&quot;=&quot;^60)
+@printf(&quot;True K: %d\n&quot;, K_true)
+@printf(&quot;Best K: %d (CV Score: %.3f ± %.3f)\n&quot;, best_K, cv_mean[best_k_idx], cv_std[best_k_idx])
+println()
+
+p2 = plot(K_candidates, cv_mean,
+          yerr=cv_std,
+          marker=:circle,
+          markersize=6,
+          linewidth=2,
+          xlabel=&quot;Latent Dimensionality (K)&quot;,
+          ylabel=&quot;Cross-Validation Score&quot;,
+          title=&quot;Model Selection via Cross-Validation&quot;,
+          legend=false,
+          size=(800, 500))
+
+vline!([K_true], linestyle=:dash, color=:green, linewidth=2,
+       annotations=[(K_true, maximum(cv_mean)-20, &quot;True K=$K_true&quot;, :green)])
+vline!([best_K], linestyle=:dot, color=:red, linewidth=2,
+       annotations=[(best_K, maximum(cv_mean)-30, &quot;Selected K=$best_K&quot;, :red)])
+
+p2</code></pre><p>Initialize final model</p><pre><code class="language- hljs">A_final = 0.9 * Matrix(I(best_K)) + 0.1 * randn(rng, best_K, best_K)
+Q_final = 0.1 * Matrix(I(best_K))
+C_final = randn(rng, D, best_K) * 0.5
+R_final = 0.2 * Matrix(I(D))
+μ0_final = zeros(best_K)
+Σ0_final = 0.1 * Matrix(I(best_K))
+
+final_lds = LinearDynamicalSystem(
+    GaussianStateModel(A_final, Q_final, μ0_final, Σ0_final),
+    GaussianObservationModel(C_final, R_final),
+    best_K,
+    D,
+    fill(true, 6)
+)</code></pre><p>Fit on full dataset</p><pre><code class="language- hljs">final_lls, _ = fit!(final_lds, y_data; max_iter=500, tol=1e-8)</code></pre><p>Compare Learned vs True Dynamics Use the correct input format for smooth function (needs 3D array)</p><pre><code class="language- hljs">x_learned, P_learned = smooth(final_lds, y_data)
+
+p3 = plot(layout=(2,1), size=(1000, 600))
+
+plot!(1:length(final_lls), final_lls,
+      linewidth=2,
+      xlabel=&quot;EM Iteration&quot;,
+      ylabel=&quot;Log-Likelihood&quot;,
+      title=&quot;Learning Curve (Final Model)&quot;,
+      subplot=1)
+
+n_plot = min(4, best_K, K_true)
+colors = [:blue, :red, :green, :orange]
+
+for i in 1:n_plot
+    if i &lt;= size(latent_states, 1)
+        plot!(1:T, latent_states[i, :],
+              label=&quot;True Latent $i&quot;,
+              color=colors[i],
+              linestyle=:solid,
+              linewidth=2,
+              subplot=2)
+    end
+
+    if i &lt;= size(x_learned, 1)
+        plot!(1:T, x_learned[i, :],
+              label=&quot;Learned Latent $i&quot;,
+              color=colors[i],
+              linestyle=:dash,
+              linewidth=2,
+              subplot=2)
+    end
+end
+
+plot!(xlabel=&quot;Time&quot;,
+      ylabel=&quot;Latent State Value&quot;,
+      title=&quot;True vs Learned Latent Dynamics&quot;,
+      subplot=2)
+
+p3</code></pre><p>Compute reconstruction error <code>x_learned</code> is now <code>(latent_dim, tsteps, 1)</code>, so we need to handle the singleton trial dimension</p><pre><code class="language- hljs">x_learned = x_learned[:, :, 1]
+
+y_pred = final_lds.obs_model.C * x_learned
+reconstruction_error = mean((observations - y_pred).^2)
+
+@printf(&quot;Reconstruction MSE: %.6f\n&quot;, reconstruction_error)</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../poisson_latent_dynamics_example/">« Poisson LDS Example</a><a class="docs-footer-nextpage" href="../lds_identifiability_example/">Non-Identifiability in LDS Models »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.15.0 on <span class="colophon-date" title="Wednesday 12 November 2025 13:31">Wednesday 12 November 2025</span>. Using Julia version 1.12.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

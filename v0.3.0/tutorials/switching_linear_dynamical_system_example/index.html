@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Switching Linear Dynamical System Example · StateSpaceDynamics.jl</title><meta name="title" content="Switching Linear Dynamical System Example · StateSpaceDynamics.jl"/><meta property="og:title" content="Switching Linear Dynamical System Example · StateSpaceDynamics.jl"/><meta property="twitter:title" content="Switching Linear Dynamical System Example · StateSpaceDynamics.jl"/><meta name="description" content="Documentation for StateSpaceDynamics.jl."/><meta property="og:description" content="Documentation for StateSpaceDynamics.jl."/><meta property="twitter:description" content="Documentation for StateSpaceDynamics.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="StateSpaceDynamics.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">StateSpaceDynamics.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Models</span><ul><li><a class="tocitem" href="../../LinearDynamicalSystems/">Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../HiddenMarkovModels/">Hidden Markov Models</a></li><li><a class="tocitem" href="../../SLDS/">Switching Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../EmissionModels/">Emission Models</a></li><li><a class="tocitem" href="../../MixtureModels/">Mixture Models</a></li></ul></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../gaussian_latent_dynamics_example/">Gaussian LDS Example</a></li><li><a class="tocitem" href="../poisson_latent_dynamics_example/">Poisson LDS Example</a></li><li><a class="tocitem" href="../lds_model_selection_example/">LDS Model Selection Example</a></li><li><a class="tocitem" href="../lds_identifiability_example/">Non-Identifiability in LDS Models</a></li><li><a class="tocitem" href="../hidden_markov_model_example/">Hidden Markov Model Example</a></li><li><a class="tocitem" href="../hmm_model_selection_example/">HMM Model Selection</a></li><li><a class="tocitem" href="../gaussian_glm_hmm_example/">Gaussian GLM-HMM Example</a></li><li><a class="tocitem" href="../hmm_identifiability_example/">HMM Identifiability</a></li><li><a class="tocitem" href="../gaussian_mixture_model_example/">Gaussian Mixture Model Example</a></li><li><a class="tocitem" href="../poisson_mixture_model_example/">Poisson Mixture Model Example</a></li><li><a class="tocitem" href="../Probabilistic_PCA_example/">Probabilistic PCA Example</a></li><li class="is-active"><a class="tocitem" href>Switching Linear Dynamical System Example</a><ul class="internal"><li><a class="tocitem" href="#Model-Overview"><span>Model Overview</span></a></li><li><a class="tocitem" href="#Load-Required-Packages"><span>Load Required Packages</span></a></li><li><a class="tocitem" href="#Create-and-Simulate-SLDS"><span>Create and Simulate SLDS</span></a></li><li><a class="tocitem" href="#Understanding-SLDS-Components"><span>Understanding SLDS Components</span></a></li><li><a class="tocitem" href="#Simulate-data"><span>Simulate data</span></a></li><li><a class="tocitem" href="#Visualize-Latent-Dynamics-with-Mode-Shading"><span>Visualize Latent Dynamics with Mode Shading</span></a></li><li><a class="tocitem" href="#Initialize-and-Fit-SLDS"><span>Initialize and Fit SLDS</span></a></li><li><a class="tocitem" href="#Monitor-ELBO-Convergence"><span>Monitor ELBO Convergence</span></a></li><li><a class="tocitem" href="#Compare-True-vs-Learned-Latent-States"><span>Compare True vs Learned Latent States</span></a></li><li><a class="tocitem" href="#Mode-Decoding-and-Accuracy-Assessment"><span>Mode Decoding and Accuracy Assessment</span></a></li><li><a class="tocitem" href="#Summary"><span>Summary</span></a></li></ul></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Switching Linear Dynamical System Example</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Switching Linear Dynamical System Example</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/blob/main/docs/examples/SLDS.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Simulating-and-Fitting-a-Switching-Linear-Dynamical-System-(SLDS)"><a class="docs-heading-anchor" href="#Simulating-and-Fitting-a-Switching-Linear-Dynamical-System-(SLDS)">Simulating and Fitting a Switching Linear Dynamical System (SLDS)</a><a id="Simulating-and-Fitting-a-Switching-Linear-Dynamical-System-(SLDS)-1"></a><a class="docs-heading-anchor-permalink" href="#Simulating-and-Fitting-a-Switching-Linear-Dynamical-System-(SLDS)" title="Permalink"></a></h1><p>This tutorial demonstrates building, simulating, and fitting a <strong>Switching Linear Dynamical System (SLDS)</strong> with <code>StateSpaceDynamics.jl</code>. SLDS combines a discrete Hidden Markov Model over modes with linear-Gaussian state-space models, capturing time series that switch among distinct linear dynamics (e.g., alternating between slow and fast oscillatory behaviors).</p><h2 id="Model-Overview"><a class="docs-heading-anchor" href="#Model-Overview">Model Overview</a><a id="Model-Overview-1"></a><a class="docs-heading-anchor-permalink" href="#Model-Overview" title="Permalink"></a></h2><p>The SLDS combines discrete and continuous latent structure:</p><ul><li><strong>Discrete mode</strong> <span>$z_t \in \{1,\ldots,K\}$</span> with Markov dynamics: <span>$P(z_t | z_{t-1}) = A[z_{t-1}, z_t]$</span></li><li><strong>Continuous state</strong> <span>$\mathbf{x}_t \in \mathbb{R}^{d_x}$</span> evolving as: <span>$\mathbf{x}_t = \mathbf{A}_{z_t} \mathbf{x}_{t-1} + \mathbf{b}_{z_t} + \boldsymbol{\varepsilon}_t$</span></li><li><strong>Observations</strong> <span>$\mathbf{y}_t \in \mathbb{R}^{d_y}$</span> via: <span>$\mathbf{y}_t = \mathbf{C}_{z_t} \mathbf{x}_t + \mathbf{d}_{z_t} + \boldsymbol{\eta}_t$</span></li><li><strong>Process noise</strong> <span>$\boldsymbol{\varepsilon}_t \sim \mathcal{N}(\mathbf{0}, \mathbf{Q}_{z_t})$</span></li><li><strong>Observation noise</strong> <span>$\boldsymbol{\eta}_t \sim \mathcal{N}(\mathbf{0}, \mathbf{R}_{z_t})$</span></li></ul><p><strong>Inference:</strong> Exact EM is intractable due to exponential mode sequences. The <code>fit!</code> function uses variational Laplace EM (vLEM) combining HMM forward-backward with Laplace approximation for the continuous states.</p><h2 id="Load-Required-Packages"><a class="docs-heading-anchor" href="#Load-Required-Packages">Load Required Packages</a><a id="Load-Required-Packages-1"></a><a class="docs-heading-anchor-permalink" href="#Load-Required-Packages" title="Permalink"></a></h2><pre><code class="language-julia hljs">using StateSpaceDynamics
+using LinearAlgebra
+using Random
+using Plots
+using LaTeXStrings
+using Statistics
+using StableRNGs
+
+rng = StableRNG(1234);</code></pre><h2 id="Create-and-Simulate-SLDS"><a class="docs-heading-anchor" href="#Create-and-Simulate-SLDS">Create and Simulate SLDS</a><a id="Create-and-Simulate-SLDS-1"></a><a class="docs-heading-anchor-permalink" href="#Create-and-Simulate-SLDS" title="Permalink"></a></h2><h2 id="Understanding-SLDS-Components"><a class="docs-heading-anchor" href="#Understanding-SLDS-Components">Understanding SLDS Components</a><a id="Understanding-SLDS-Components-1"></a><a class="docs-heading-anchor-permalink" href="#Understanding-SLDS-Components" title="Permalink"></a></h2><p>An SLDS has several key components we need to specify:</p><p><strong>Discrete State Dynamics:</strong></p><ul><li><code>A</code>: Transition matrix between discrete states (how likely to switch)</li><li><code>πₖ</code>: Initial distribution over discrete states</li></ul><p><strong>Continuous State Dynamics (for each discrete state k):</strong></p><ul><li><code>Aₖ</code>: State transition matrix (how the continuous state evolves)</li><li><code>bₖ</code>: State bias term</li><li><code>Qₖ</code>: Process noise covariance (uncertainty in state evolution)</li><li><code>Cₖ</code>: Observation matrix (how continuous states map to observations)</li><li><code>dₖ</code>: Observation bias term</li><li><code>Rₖ</code>: Observation noise covariance</li></ul><p>For our specific test case, we will create two distinct modes:</p><ul><li><strong>Mode 1:</strong> A slower oscillator with low process noise</li><li><strong>Mode 2:</strong> A faster oscillator with higher process noise</li></ul><p>We will multiply the dynamics matrices by a 0.95 scaling factor to provide stability (eigenvalues &lt; 1). Mode 2 oscillates ~11x faster than Mode 1. The observation matrices C₁ and C₂ are different random projections. This means each discrete state not only has different dynamics, but also different ways of manifesting in the observed data.</p><pre><code class="language-julia hljs">state_dim = 2   # Latent state dimensionality
+obs_dim = 10    # Observation dimensionality
+K = 2           # Number of discrete modes</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">2</code></pre><p>HMM parameters for mode switching</p><pre><code class="language-julia hljs">A_hmm = [0.92 0.08;    # Mode transitions: sticky dynamics
+         0.06 0.94]    # High probability of staying in current mode
+πₖ = [1.0, 0.0]        # Start in mode 1</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">2-element Vector{Float64}:
+ 1.0
+ 0.0</code></pre><p>Mode-specific continuous dynamics (two oscillators with different frequencies)</p><pre><code class="language-julia hljs">A₁ = 0.95 * [cos(0.05) -sin(0.05); sin(0.05) cos(0.05)]  # Slow oscillator
+A₂ = 0.95 * [cos(0.55) -sin(0.55); sin(0.55) cos(0.55)]  # Fast oscillator</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">2×2 Matrix{Float64}:
+ 0.809898  -0.496553
+ 0.496553   0.809898</code></pre><p>Mode-specific process noise (different noise levels)</p><pre><code class="language-julia hljs">Q₁ = [0.001 0.0; 0.0 0.001]  # Low noise for mode 1
+Q₂ = [0.1   0.0; 0.0 0.1]    # Higher noise for mode 2</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">2×2 Matrix{Float64}:
+ 0.1  0.0
+ 0.0  0.1</code></pre><p>Shared initial state distribution</p><pre><code class="language-julia hljs">x0 = [0.0, 0.0]
+P0 = [0.1 0.0; 0.0 0.1]</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">2×2 Matrix{Float64}:
+ 0.1  0.0
+ 0.0  0.1</code></pre><p>State bias terms (zero for this example)</p><pre><code class="language-julia hljs">b = zeros(state_dim)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">2-element Vector{Float64}:
+ 0.0
+ 0.0</code></pre><p>Mode-specific observation models</p><pre><code class="language-julia hljs">C₁ = randn(rng, obs_dim, state_dim)  # Random observation mapping for mode 1
+C₂ = randn(rng, obs_dim, state_dim)  # Different mapping for mode 2
+R = Matrix(0.1 * I(obs_dim))         # Shared observation noise
+d = zeros(obs_dim)                    # Observation bias (zero for this example)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">10-element Vector{Float64}:
+ 0.0
+ 0.0
+ 0.0
+ 0.0
+ 0.0
+ 0.0
+ 0.0
+ 0.0
+ 0.0
+ 0.0</code></pre><p>Construct individual Linear Dynamical Systems for each mode</p><pre><code class="language-julia hljs">lds1 = LinearDynamicalSystem(
+    GaussianStateModel(A₁, Q₁, b, x0, P0),
+    GaussianObservationModel(C₁, R, d)
+)
+
+lds2 = LinearDynamicalSystem(
+    GaussianStateModel(A₂, Q₂, b, x0, P0),
+    GaussianObservationModel(C₂, R, d)
+)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Linear Dynamical System:
+------------------------
+ Gaussian State Model:
+ ---------------------
+  State Parameters:
+   A  = [0.81 -0.497; 0.497 0.81]
+   Q  = [0.1 0.0; 0.0 0.1]
+  Initial State:
+   b  = [0.0, 0.0]
+   x0 = [0.0, 0.0]
+   P0 = [0.1 0.0; 0.0 0.1]
+ Gaussian Observation Model:
+ ---------------------------
+  size(C) = (10, 2)
+  size(R) = (10, 10)
+  size(d) = (10,)
+ Parameters to update:
+ ---------------------
+  x0, P0, A (and b), Q, C, R
+</code></pre><p>Construct the complete SLDS</p><pre><code class="language-julia hljs">model = SLDS(
+    A=A_hmm,
+    πₖ=πₖ,
+    LDSs=[lds1, lds2]
+);</code></pre><h2 id="Simulate-data"><a class="docs-heading-anchor" href="#Simulate-data">Simulate data</a><a id="Simulate-data-1"></a><a class="docs-heading-anchor-permalink" href="#Simulate-data" title="Permalink"></a></h2><pre><code class="language-julia hljs">T = 1000
+z, x, y = rand(rng, model; tsteps=T, ntrials=1);</code></pre><p>The simulation returns:</p><ul><li>z: discrete state sequence (T × 1 matrix)</li><li>x: continuous latent states (state_dim × T × 1 array)</li><li>y: observations (obs_dim × T × 1 array)</li></ul><p>Notice how the discrete states z create &quot;regimes&quot; in the continuous dynamics x.</p><p>Extract single trial data for visualization</p><pre><code class="language-julia hljs">z_vec = vec(z[:, 1])
+x_trial = x[:, :, 1]
+y_trial = y[:, :, 1];</code></pre><h2 id="Visualize-Latent-Dynamics-with-Mode-Shading"><a class="docs-heading-anchor" href="#Visualize-Latent-Dynamics-with-Mode-Shading">Visualize Latent Dynamics with Mode Shading</a><a id="Visualize-Latent-Dynamics-with-Mode-Shading-1"></a><a class="docs-heading-anchor-permalink" href="#Visualize-Latent-Dynamics-with-Mode-Shading" title="Permalink"></a></h2><p>The plot shows the continuous latent dynamics (x₁, x₂) with background shading indicating the active discrete state. Notice:</p><ul><li>Light blue regions: Mode 1 (slow, tight oscillations)</li><li>Light yellow regions: Mode 2 (fast, wide oscillations)</li><li>The system &quot;remembers&quot; where it was when switching between modes</li></ul><pre><code class="language-julia hljs">p1 = plot(1:T, x_trial[1, :], label=L&quot;x_1&quot;, linewidth=1.5, color=:black)
+plot!(1:T, x_trial[2, :], label=L&quot;x_2&quot;, linewidth=1.5, color=:blue)
+
+transition_points = [1; findall(diff(z_vec) .!= 0) .+ 1; T + 1]
+for i in 1:(length(transition_points) - 1)
+    start_idx = transition_points[i]
+    end_idx = transition_points[i + 1] - 1
+    state_val = z_vec[start_idx]
+    bg_color = state_val == 1 ? :lightblue : :lightyellow
+    vspan!([start_idx, end_idx], fillalpha=0.3, color=bg_color,
+           label=(i == 1 &amp;&amp; start_idx &lt; 100 ? &quot;Mode $state_val&quot; : &quot;&quot;))
+end
+
+plot!(title=&quot;Latent Dynamics with Mode Switching&quot;,
+      xlabel=&quot;Time&quot;, ylabel=&quot;State Value&quot;,
+      ylims=(-3, 3), legend=:topright)</code></pre><img src="4a3b6fb5.svg" alt="Example block output"/><h2 id="Initialize-and-Fit-SLDS"><a class="docs-heading-anchor" href="#Initialize-and-Fit-SLDS">Initialize and Fit SLDS</a><a id="Initialize-and-Fit-SLDS-1"></a><a class="docs-heading-anchor-permalink" href="#Initialize-and-Fit-SLDS" title="Permalink"></a></h2><p>Initialize SLDS with reasonable but imperfect parameters, then use variational EM to learn.</p><pre><code class="language-julia hljs">A_init = [0.9 0.1; 0.1 0.9] # Initialize HMM transition matrix (moderately sticky)
+A_init ./= sum(A_init, dims=2)  # Ensure row-stochastic
+
+πₖ_init = rand(rng, K) # Random initial state probabilities
+πₖ_init ./= sum(πₖ_init)
+
+Random.seed!(rng, 456)  # Create initial LDS models with random parameters
+lds_init1 = LinearDynamicalSystem(
+    GaussianStateModel(
+        randn(rng, state_dim, state_dim) * 0.5,  # Random A
+        Matrix(0.1 * I(state_dim)),               # Q
+        zeros(state_dim),                          # b
+        zeros(state_dim),                          # x0
+        Matrix(0.1 * I(state_dim))                # P0
+    ),
+    GaussianObservationModel(
+        randn(rng, obs_dim, state_dim),           # Random C
+        Matrix(0.1 * I(obs_dim)),                 # R
+        zeros(obs_dim)                             # d
+    ),
+)
+
+lds_init2 = LinearDynamicalSystem(
+    GaussianStateModel(
+        randn(rng, state_dim, state_dim) * 0.5,  # Random A
+        Matrix(0.1 * I(state_dim)),               # Q
+        zeros(state_dim),                          # b
+        zeros(state_dim),                          # x0
+        Matrix(0.1 * I(state_dim))                # P0
+    ),
+    GaussianObservationModel(
+        randn(rng, obs_dim, state_dim),           # Random C
+        Matrix(0.1 * I(obs_dim)),                 # R
+        zeros(obs_dim)                             # d
+    ),
+)
+
+learned_model = SLDS(
+    A=A_init,
+    πₖ=πₖ_init,
+    LDSs=[lds_init1, lds_init2]
+);</code></pre><p>Fit using variational Laplace EM</p><pre><code class="language-julia hljs">elbos = fit!(learned_model, y; max_iter=25, progress=true)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">25-element Vector{Float64}:
+ -29061.735329266976
+ -11732.134493989633
+ -10104.200189094256
+  -9144.593268463957
+  -8789.283785727444
+  -8699.096626944633
+  -8697.453426433269
+  -8590.03823879632
+  -8464.042978860065
+  -8348.073524443913
+      ⋮
+  -5182.224327029585
+  -5210.875882453135
+  -5226.676957446894
+  -5226.194901510206
+  -5238.333502168238
+  -5232.932043460682
+  -5234.135420070386
+  -5228.107715077076
+  -5224.160507952918</code></pre><h2 id="Monitor-ELBO-Convergence"><a class="docs-heading-anchor" href="#Monitor-ELBO-Convergence">Monitor ELBO Convergence</a><a id="Monitor-ELBO-Convergence-1"></a><a class="docs-heading-anchor-permalink" href="#Monitor-ELBO-Convergence" title="Permalink"></a></h2><p>Plot the Evidence Lower Bound (ELBO) to verify monotonic improvement. For SLDS, this tracks the variational approximation quality.</p><pre><code class="language-julia hljs">p2 = plot(elbos, xlabel=&quot;Iteration&quot;, ylabel=&quot;ELBO&quot;,
+          title=&quot;Variational EM Convergence&quot;,
+          marker=:circle, markersize=3, lw=2,
+          legend=false, color=:darkgreen)
+
+annotate!(p2, length(elbos)*0.7, elbos[end]-abs(elbos[end])*0.05,
+    text(&quot;Final ELBO: $(round(elbos[end], digits=1))&quot;, 10))</code></pre><img src="d97dcb56.svg" alt="Example block output"/><h2 id="Compare-True-vs-Learned-Latent-States"><a class="docs-heading-anchor" href="#Compare-True-vs-Learned-Latent-States">Compare True vs Learned Latent States</a><a id="Compare-True-vs-Learned-Latent-States-1"></a><a class="docs-heading-anchor-permalink" href="#Compare-True-vs-Learned-Latent-States" title="Permalink"></a></h2><p>After fitting, we can extract the smoothed latent states. The learned model stores the most recent smoothed states from the last EM iteration.</p><p>For visualization, we need to run one more smoothing pass to get the final</p><pre><code class="language-julia hljs">tfs = StateSpaceDynamics.initialize_FilterSmooth(learned_model.LDSs[1], T, 1)
+fbs = [StateSpaceDynamics.initialize_forward_backward(learned_model, T, Float64)]
+
+w_uniform = ones(Float64, K, T) ./ K # Initialize with uniform weights and smooth
+StateSpaceDynamics.smooth!(learned_model, tfs[1], y_trial, w_uniform)
+
+x_samples, _ = StateSpaceDynamics.sample_posterior(tfs, 1) # Sample and run one E-step to get final discrete state posteriors
+StateSpaceDynamics.estep!(learned_model, tfs, fbs, y, x_samples)
+
+latents_learned = tfs[1].x_smooth; # Get the final smoothed continuous states</code></pre><p>Plot comparison with offset for clarity</p><pre><code class="language-julia hljs">p3 = plot(size=(900, 400))
+offset = 2.5
+
+plot!(1:T, x_trial[1, :] .+ offset, label=L&quot;x_1 \text{ (true)}&quot;,
+      linewidth=2, color=:black, alpha=0.8)
+plot!(1:T, x_trial[2, :] .- offset, label=L&quot;x_2 \text{ (true)}&quot;,
+      linewidth=2, color=:black, alpha=0.8)
+
+plot!(1:T, latents_learned[1, :] .+ offset, label=L&quot;x_1 \text{ (learned)}&quot;,
+      linewidth=1.5, color=:red, alpha=0.8)
+plot!(1:T, latents_learned[2, :] .- offset, label=L&quot;x_2 \text{ (learned)}&quot;,
+      linewidth=1.5, color=:blue, alpha=0.8)
+
+hline!([offset, -offset], color=:gray, alpha=0.3, linestyle=:dash, label=&quot;&quot;)
+
+plot!(title=&quot;True vs. Learned Latent States&quot;,
+      xlabel=&quot;Time&quot;, ylabel=&quot;&quot;,
+      yticks=([-offset, offset], [L&quot;x_2&quot;, L&quot;x_1&quot;]),
+      xlims=(1, T), legend=:topright)</code></pre><img src="25bd772d.svg" alt="Example block output"/><h2 id="Mode-Decoding-and-Accuracy-Assessment"><a class="docs-heading-anchor" href="#Mode-Decoding-and-Accuracy-Assessment">Mode Decoding and Accuracy Assessment</a><a id="Mode-Decoding-and-Accuracy-Assessment-1"></a><a class="docs-heading-anchor-permalink" href="#Mode-Decoding-and-Accuracy-Assessment" title="Permalink"></a></h2><p>Decode discrete modes using posterior responsibilities and assess accuracy.</p><pre><code class="language-julia hljs">responsibilities = exp.(fbs[1].γ)  # Convert from log-space (K × T)
+z_decoded = [argmax(responsibilities[:, t]) for t in 1:T];</code></pre><p>Handle label permutation by trying both assignments</p><pre><code class="language-julia hljs">function align_labels_2way(z_true::AbstractVector, z_pred::AbstractVector)
+    acc_direct = mean(z_true .== z_pred)
+    z_flipped = 3 .- z_pred  # Flip 1↔2
+    acc_flipped = mean(z_true .== z_flipped)
+
+    if acc_flipped &gt; acc_direct
+        return z_flipped, acc_flipped
+    else
+        return z_pred, acc_direct
+    end
+end
+
+z_aligned, accuracy = align_labels_2way(z_vec, z_decoded)
+print(&quot;Mode decoding accuracy: $(round(accuracy*100, digits=1))%\n&quot;);</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Mode decoding accuracy: 95.2%</code></pre><p>Visualize mode assignments over time (first 200 time steps for clarity)</p><pre><code class="language-julia hljs">t_subset = 1:200
+true_modes = reshape(z_vec[t_subset], 1, :)
+decoded_modes = reshape(z_aligned[t_subset], 1, :);
+
+p4 = plot(
+    heatmap(true_modes, colormap=:roma, title=&quot;True Mode Sequence&quot;,
+           xticks=false, yticks=false, colorbar=false),
+    heatmap(decoded_modes, colormap=:roma, title=&quot;Decoded Mode Sequence&quot;,
+           xlabel=&quot;Time Steps (1-200)&quot;, yticks=false, colorbar=false),
+    layout=(2, 1), size=(800, 300)
+)</code></pre><img src="94d7f05a.svg" alt="Example block output"/><h2 id="Summary"><a class="docs-heading-anchor" href="#Summary">Summary</a><a id="Summary-1"></a><a class="docs-heading-anchor-permalink" href="#Summary" title="Permalink"></a></h2><p>This tutorial demonstrated the complete Switching Linear Dynamical System workflow:</p><p><strong>Key Concepts:</strong></p><ul><li><strong>Hybrid dynamics</strong>: Discrete mode switching combined with continuous state evolution</li><li><strong>Variational Laplace EM</strong>: Structured approximation handling intractable exact inference</li><li><strong>Mode-specific parameters</strong>: Each discrete state has its own linear dynamics</li><li><strong>Laplace approximation</strong>: Gaussian approximation to the continuous state posterior</li></ul><p><strong>Technical Insights:</strong></p><ul><li>ELBO monitoring ensures proper variational approximation convergence</li><li>Label permutation requires careful accuracy assessment</li><li>The vLEM algorithm alternates between discrete (forward-backward) and continuous (Laplace) inference</li><li>Single sample Monte Carlo estimation of the ELBO</li></ul><p><strong>Modeling Power:</strong></p><ul><li>Captures complex time series with multiple dynamic regimes</li><li>Enables automatic segmentation and regime detection</li><li>Provides probabilistic framework for switching systems</li><li>Extends both HMMs and LDS to richer model class</li></ul><p><strong>Applications:</strong></p><ul><li>Neuroscience: population dynamics across behavioral states</li><li>Finance: regime-switching in market dynamics</li><li>Engineering: fault detection in dynamical systems</li><li>Climate: seasonal transitions and regime changes</li></ul><p>SLDS provides a powerful framework for modeling complex temporal data with multiple underlying dynamics, bridging discrete regime detection with continuous state-space modeling in a principled probabilistic framework.</p><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../Probabilistic_PCA_example/">« Probabilistic PCA Example</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.15.0 on <span class="colophon-date" title="Wednesday 12 November 2025 13:31">Wednesday 12 November 2025</span>. Using Julia version 1.12.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

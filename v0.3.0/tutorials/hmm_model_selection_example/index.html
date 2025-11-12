@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>HMM Model Selection · StateSpaceDynamics.jl</title><meta name="title" content="HMM Model Selection · StateSpaceDynamics.jl"/><meta property="og:title" content="HMM Model Selection · StateSpaceDynamics.jl"/><meta property="twitter:title" content="HMM Model Selection · StateSpaceDynamics.jl"/><meta name="description" content="Documentation for StateSpaceDynamics.jl."/><meta property="og:description" content="Documentation for StateSpaceDynamics.jl."/><meta property="twitter:description" content="Documentation for StateSpaceDynamics.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="StateSpaceDynamics.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">StateSpaceDynamics.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Models</span><ul><li><a class="tocitem" href="../../LinearDynamicalSystems/">Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../HiddenMarkovModels/">Hidden Markov Models</a></li><li><a class="tocitem" href="../../SLDS/">Switching Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../EmissionModels/">Emission Models</a></li><li><a class="tocitem" href="../../MixtureModels/">Mixture Models</a></li></ul></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../gaussian_latent_dynamics_example/">Gaussian LDS Example</a></li><li><a class="tocitem" href="../poisson_latent_dynamics_example/">Poisson LDS Example</a></li><li><a class="tocitem" href="../lds_model_selection_example/">LDS Model Selection Example</a></li><li><a class="tocitem" href="../lds_identifiability_example/">Non-Identifiability in LDS Models</a></li><li><a class="tocitem" href="../hidden_markov_model_example/">Hidden Markov Model Example</a></li><li class="is-active"><a class="tocitem" href>HMM Model Selection</a><ul class="internal"><li><a class="tocitem" href="#Load-Required-Packages"><span>Load Required Packages</span></a></li><li><a class="tocitem" href="#Create-a-True-HMM"><span>Create a True HMM</span></a></li><li><a class="tocitem" href="#Model-Selection-Approaches"><span>Model Selection Approaches</span></a></li><li><a class="tocitem" href="#Helper-Functions-for-Model-Selection"><span>Helper Functions for Model Selection</span></a></li><li><a class="tocitem" href="#Find-optimal-K-for-each-criterion"><span>Find optimal K for each criterion</span></a></li><li><a class="tocitem" href="#Interpreting-Information-Criteria"><span>Interpreting Information Criteria</span></a></li><li><a class="tocitem" href="#Cross-Validation:-The-Gold-Standard"><span>Cross-Validation: The Gold Standard</span></a></li><li><a class="tocitem" href="#Visualization-of-Model-Selection-Results"><span>Visualization of Model Selection Results</span></a></li><li><a class="tocitem" href="#Unified-Model-Selection-Comparison"><span>Unified Model Selection Comparison</span></a></li><li><a class="tocitem" href="#Compare-ALL-Best-Models-Visually-(including-CV)"><span>Compare ALL Best Models Visually (including CV)</span></a></li><li><a class="tocitem" href="#Key-Takeaways"><span>Key Takeaways</span></a></li></ul></li><li><a class="tocitem" href="../gaussian_glm_hmm_example/">Gaussian GLM-HMM Example</a></li><li><a class="tocitem" href="../hmm_identifiability_example/">HMM Identifiability</a></li><li><a class="tocitem" href="../gaussian_mixture_model_example/">Gaussian Mixture Model Example</a></li><li><a class="tocitem" href="../poisson_mixture_model_example/">Poisson Mixture Model Example</a></li><li><a class="tocitem" href="../Probabilistic_PCA_example/">Probabilistic PCA Example</a></li><li><a class="tocitem" href="../switching_linear_dynamical_system_example/">Switching Linear Dynamical System Example</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>HMM Model Selection</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>HMM Model Selection</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/blob/main/docs/examples/HMM_ModelSelection.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Choosing-&quot;K&quot;-for-a-hidden-Markov-model."><a class="docs-heading-anchor" href="#Choosing-&quot;K&quot;-for-a-hidden-Markov-model.">Choosing &quot;K&quot; for a hidden Markov model.</a><a id="Choosing-&quot;K&quot;-for-a-hidden-Markov-model.-1"></a><a class="docs-heading-anchor-permalink" href="#Choosing-&quot;K&quot;-for-a-hidden-Markov-model." title="Permalink"></a></h1><p>In principle, one can fit an HMM with any number of states, but how do we choose? One generally has no ground truth, except for the most rare cases. So it begs the question: How do we select the number of hidden states K? In this tutorial we will demonstrate a few typical approaches for model selection with enhanced cross-validation integration.</p><h2 id="Load-Required-Packages"><a class="docs-heading-anchor" href="#Load-Required-Packages">Load Required Packages</a><a id="Load-Required-Packages-1"></a><a class="docs-heading-anchor-permalink" href="#Load-Required-Packages" title="Permalink"></a></h2><pre><code class="language-julia hljs">using StateSpaceDynamics
+using LinearAlgebra
+using Random
+using Plots
+using Statistics
+using StableRNGs
+using Printf</code></pre><p>Fix RNG for reproducible simulation and k-means seeding</p><pre><code class="language-julia hljs">rng = StableRNG(1234);</code></pre><h2 id="Create-a-True-HMM"><a class="docs-heading-anchor" href="#Create-a-True-HMM">Create a True HMM</a><a id="Create-a-True-HMM-1"></a><a class="docs-heading-anchor-permalink" href="#Create-a-True-HMM" title="Permalink"></a></h2><p>For our example we will create a simple HMM with K=3 states and 2D Gaussian emissions. We will then generate ground truth data from this model for use in the tutorial.</p><pre><code class="language-julia hljs">K = 3  # Number of hidden states
+D = 2  # Dimensionality of observations
+T = 500  # Number of time steps to simulate</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">500</code></pre><p>Define the true transition matrix</p><pre><code class="language-julia hljs">true_A = [0.90 0.05 0.05;
+          0.10 0.80 0.10;
+          0.15 0.15 0.70];</code></pre><p>Define the true emission parameters (means and covariances)</p><pre><code class="language-julia hljs">true_μs = [-1.0 0.0 1.0;
+            0.6 -1.0 0.0]
+
+true_Σs =[[0.1 -0.3; -0.3 1.0],
+          [0.5 0.2; 0.2 0.3],
+          [0.3 0.0; 0.0 0.3]];</code></pre><p>Define the initial state distribution</p><pre><code class="language-julia hljs">true_π = [0.5, 0.3, 0.2];</code></pre><p>Create the true HMM</p><pre><code class="language-julia hljs">true_hmm = HiddenMarkovModel(true_A,
+                            [GaussianEmission(2, true_μs[:, k],
+                            true_Σs[k]) for k in 1:K],
+                            true_π,
+                            K)
+
+states, observations = rand(rng, true_hmm; n=T)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">([2, 2, 1, 1, 1, 1, 1, 1, 1, 1  …  1, 1, 1, 1, 1, 1, 3, 1, 1, 1], [0.6400304387848424 -0.48391946525406376 … -0.6776901408598321 -0.9644589365569469; -1.529942574804359 -1.5154009236856187 … -0.18499429132157164 0.6873701783218319])</code></pre><p>Now plot the data colored by the true states</p><pre><code class="language-julia hljs">p1 = scatter(observations[1, :], observations[2, :],
+    group=states,
+    xlabel=&quot;x1&quot;, ylabel=&quot;x2&quot;,
+    title=&quot;HMM Observations Colored by True State&quot;,
+    legend=:topright, alpha=0.7)</code></pre><img src="e3143501.svg" alt="Example block output"/><h2 id="Model-Selection-Approaches"><a class="docs-heading-anchor" href="#Model-Selection-Approaches">Model Selection Approaches</a><a id="Model-Selection-Approaches-1"></a><a class="docs-heading-anchor-permalink" href="#Model-Selection-Approaches" title="Permalink"></a></h2><p>With real data, we don&#39;t know the true number of states K. We&#39;ll explore several methods to estimate the optimal K by fitting HMMs with different numbers of states and comparing their performance using various criteria.</p><p>Define range of K values to test</p><pre><code class="language-julia hljs">K_range = 1:8</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">1:8</code></pre><p>We&#39;ll compare models using multiple criteria:</p><ol><li>Log-likelihood (higher is better, but tends to overfit)</li><li>AIC (Akaike Information Criterion - penalizes complexity)</li><li>BIC (Bayesian Information Criterion - stronger complexity penalty)</li><li>Cross-validation likelihood</li></ol><pre><code class="language-julia hljs">results = Dict(
+    &quot;K&quot; =&gt; Int[],
+    &quot;log_likelihood&quot; =&gt; Float64[],
+    &quot;AIC&quot; =&gt; Float64[],
+    &quot;BIC&quot; =&gt; Float64[],
+    &quot;n_params&quot; =&gt; Int[],
+    &quot;CV_score&quot; =&gt; Float64[]
+);</code></pre><h2 id="Helper-Functions-for-Model-Selection"><a class="docs-heading-anchor" href="#Helper-Functions-for-Model-Selection">Helper Functions for Model Selection</a><a id="Helper-Functions-for-Model-Selection-1"></a><a class="docs-heading-anchor-permalink" href="#Helper-Functions-for-Model-Selection" title="Permalink"></a></h2><pre><code class="language-julia hljs">function initialize_hmm_kmeans(obs, k, rng)
+    &quot;&quot;&quot;Initialize HMM parameters using k-means clustering&quot;&quot;&quot;
+    if k == 1
+        means = [mean(obs, dims=2)[:, 1]]
+        covs = [cov(obs&#39;)]
+    else
+        Random.seed!(rng, 42)
+        cluster_centers = obs[:, randperm(rng, size(obs, 2))[1:k]]
+        means = [cluster_centers[:, i] for i in 1:k]
+        covs = [Matrix(0.5 * I(size(obs, 1))) for _ in 1:k]
+    end
+
+    A_init = fill(0.1/(k-1), k, k)
+    for i in 1:k
+        A_init[i, i] = 0.9
+    end
+    A_init = A_init ./ sum(A_init, dims=2)  # Normalize rows
+
+    π_init = fill(1/k, k)
+
+    return HiddenMarkovModel(A_init,
+                           [GaussianEmission(2, means[i], covs[i]) for i in 1:k],
+                           π_init,
+                           k)
+end
+
+function count_parameters(hmm)
+    &quot;&quot;&quot;Count the number of free parameters in an HMM&quot;&quot;&quot;
+    K = hmm.K
+    D = length(hmm.B[1].μ)
+
+    transition_params = K * (K - 1)
+    initial_params = K - 1
+    emission_params = K * D + K * D * (D + 1) ÷ 2
+
+    return transition_params + initial_params + emission_params
+end
+
+function cross_validate_hmm(observations, k, n_folds=5)
+    &quot;&quot;&quot;Perform k-fold cross-validation for HMM with k states&quot;&quot;&quot;
+    T = size(observations, 2)
+    fold_size = T ÷ n_folds
+    cv_scores = Float64[]
+
+    for fold in 1:n_folds
+        test_start = (fold - 1) * fold_size + 1
+        test_end = min(fold * fold_size, T)
+
+        train_idx = [1:(test_start-1); (test_end+1):T]
+        test_idx = test_start:test_end
+
+        if length(train_idx) == 0 || length(test_idx) == 0
+            continue
+        end
+
+        train_obs = observations[:, train_idx]
+        test_obs = observations[:, test_idx]
+
+        hmm_cv = initialize_hmm_kmeans(train_obs, k, rng)
+        fit!(hmm_cv, train_obs; max_iters=50, tol=1e-4)
+
+        test_ll = loglikelihood(hmm_cv, test_obs)
+        push!(cv_scores, test_ll / length(test_idx))  # Normalize by sequence length
+    end
+
+    return mean(cv_scores)
+end
+
+for k in K_range
+    println(&quot;Evaluating HMM with K=$k states...&quot;)
+
+    hmm_k = initialize_hmm_kmeans(observations, k, rng)
+    fit!(hmm_k, observations; max_iters=100, tol=1e-6)
+
+    ll = loglikelihood(hmm_k, observations)
+    n_params = count_parameters(hmm_k)
+    aic_val = -2*ll + 2*n_params
+    bic_val = -2*ll + log(T)*n_params
+
+    cv_score = cross_validate_hmm(observations, k, 5)
+
+    push!(results[&quot;K&quot;], k)
+    push!(results[&quot;log_likelihood&quot;], ll)
+    push!(results[&quot;AIC&quot;], aic_val)
+    push!(results[&quot;BIC&quot;], bic_val)
+    push!(results[&quot;n_params&quot;], n_params)
+    push!(results[&quot;CV_score&quot;], cv_score)
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Evaluating HMM with K=1 states...
+Evaluating HMM with K=2 states...
+Evaluating HMM with K=3 states...
+Evaluating HMM with K=4 states...
+Evaluating HMM with K=5 states...
+Evaluating HMM with K=6 states...
+Evaluating HMM with K=7 states...
+Evaluating HMM with K=8 states...</code></pre><h2 id="Find-optimal-K-for-each-criterion"><a class="docs-heading-anchor" href="#Find-optimal-K-for-each-criterion">Find optimal K for each criterion</a><a id="Find-optimal-K-for-each-criterion-1"></a><a class="docs-heading-anchor-permalink" href="#Find-optimal-K-for-each-criterion" title="Permalink"></a></h2><pre><code class="language-julia hljs">aic_min_idx = argmin(results[&quot;AIC&quot;])
+bic_min_idx = argmin(results[&quot;BIC&quot;])
+cv_max_idx = argmax(results[&quot;CV_score&quot;])
+
+best_aic_k = results[&quot;K&quot;][aic_min_idx]
+best_bic_k = results[&quot;K&quot;][bic_min_idx]
+best_cv_k = results[&quot;K&quot;][cv_max_idx]</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">3</code></pre><h2 id="Interpreting-Information-Criteria"><a class="docs-heading-anchor" href="#Interpreting-Information-Criteria">Interpreting Information Criteria</a><a id="Interpreting-Information-Criteria-1"></a><a class="docs-heading-anchor-permalink" href="#Interpreting-Information-Criteria" title="Permalink"></a></h2><p><strong>AIC (Akaike Information Criterion)</strong>:</p><ul><li>Estimates relative model quality for prediction</li><li>Asymptotically equivalent to leave-one-out cross-validation</li><li>Tends to select more complex models (higher K)</li><li>Better for prediction tasks</li></ul><p><strong>BIC (Bayesian Information Criterion)</strong>:</p><ul><li>Estimates probability that model is true among candidates</li><li>Stronger complexity penalty, especially for large datasets</li><li>Tends to select simpler models (lower K)</li><li>Better for identifying &quot;true&quot; model structure</li></ul><p><strong>Key insight</strong>: Lower values are better for both AIC and BIC (they measure &quot;badness&quot; - deviance plus penalty)</p><h2 id="Cross-Validation:-The-Gold-Standard"><a class="docs-heading-anchor" href="#Cross-Validation:-The-Gold-Standard">Cross-Validation: The Gold Standard</a><a id="Cross-Validation:-The-Gold-Standard-1"></a><a class="docs-heading-anchor-permalink" href="#Cross-Validation:-The-Gold-Standard" title="Permalink"></a></h2><p>Cross-validation provides the most honest estimate of generalization performance:</p><ul><li>Trains on subset of data, tests on held-out portion</li><li>Directly measures what we care about: performance on unseen data</li><li>Less dependent on specific penalty terms than AIC/BIC</li><li>More computationally expensive but often worth it</li></ul><p><strong>Challenges for HMMs</strong>:</p><ul><li>Temporal data makes random splits problematic</li><li>Sequential structure should be preserved when possible</li><li>We use contiguous blocks to maintain temporal coherence</li></ul><p><strong>Interpreting CV results</strong>:</p><ul><li>Higher CV likelihood indicates better generalization</li><li>Plateauing suggests additional complexity isn&#39;t helpful</li><li>Large variance across folds may indicate unstable model</li></ul><h2 id="Visualization-of-Model-Selection-Results"><a class="docs-heading-anchor" href="#Visualization-of-Model-Selection-Results">Visualization of Model Selection Results</a><a id="Visualization-of-Model-Selection-Results-1"></a><a class="docs-heading-anchor-permalink" href="#Visualization-of-Model-Selection-Results" title="Permalink"></a></h2><p>In our plots we will plot 1.) the loglikelihood 2.) negative AIC 3.) negative BIC and 4.) the loglikelihood of the test dataset We plot the negative AIC and BIC as those metrics are defined such that a lower score is better, so we invert the statistic, so like regular likelihood, higher indicates better model performance.</p><p>Create comprehensive plot showing all criteria including CV</p><pre><code class="language-julia hljs">p2 = plot(layout=(2, 2), size=(1000, 800))
+
+plot!(results[&quot;K&quot;], results[&quot;log_likelihood&quot;],
+      marker=:circle, linewidth=2, label=&quot;Log-likelihood&quot;,
+      xlabel=&quot;Number of States (K)&quot;, ylabel=&quot;Log-likelihood&quot;,
+      title=&quot;Model Log-likelihood&quot;, subplot=1)
+vline!([K], linestyle=:dash, color=:red, label=&quot;True K=$K&quot;, subplot=1)
+
+plot!(results[&quot;K&quot;], -results[&quot;AIC&quot;],
+      marker=:circle, linewidth=2, label=&quot;AIC&quot;, color=:orange,
+      xlabel=&quot;Number of States (K)&quot;, ylabel=&quot;AIC&quot;,
+      title=&quot;Negative AIC&quot;, subplot=2)
+vline!([best_aic_k], linestyle=:dash, color=:orange,
+       label=&quot;nAIC max (K=$best_aic_k)&quot;, subplot=2)
+vline!([K], linestyle=:dash, color=:red, label=&quot;True K=$K&quot;, subplot=2)
+
+plot!(results[&quot;K&quot;], -results[&quot;BIC&quot;],
+      marker=:circle, linewidth=2, label=&quot;BIC&quot;, color=:green,
+      xlabel=&quot;Number of States (K)&quot;, ylabel=&quot;BIC&quot;,
+      title=&quot;Negative BIC&quot;, subplot=3)
+vline!([best_bic_k], linestyle=:dash, color=:green,
+       label=&quot;nBIC max (K=$best_bic_k)&quot;, subplot=3)
+vline!([K], linestyle=:dash, color=:red, label=&quot;True K=$K&quot;, subplot=3)
+
+plot!(results[&quot;K&quot;], results[&quot;CV_score&quot;],
+      marker=:circle, linewidth=2, label=&quot;CV Score&quot;, color=:blue,
+      xlabel=&quot;Number of States (K)&quot;, ylabel=&quot;CV Log-likelihood&quot;,
+      title=&quot;Cross-Validation Results&quot;, subplot=4)
+vline!([best_cv_k], linestyle=:dash, color=:blue,
+       label=&quot;CV max (K=$best_cv_k)&quot;, subplot=4)
+vline!([K], linestyle=:dash, color=:red, label=&quot;True K=$K&quot;, subplot=4)
+
+p2</code></pre><img src="bf20b647.svg" alt="Example block output"/><h2 id="Unified-Model-Selection-Comparison"><a class="docs-heading-anchor" href="#Unified-Model-Selection-Comparison">Unified Model Selection Comparison</a><a id="Unified-Model-Selection-Comparison-1"></a><a class="docs-heading-anchor-permalink" href="#Unified-Model-Selection-Comparison" title="Permalink"></a></h2><p>Create a single plot showing all criteria on normalized scales for direct comparison</p><pre><code class="language-julia hljs">p3 = plot(size=(800, 500))
+
+norm_aic = (-results[&quot;AIC&quot;] .- maximum(-results[&quot;AIC&quot;])) ./ (maximum(-results[&quot;AIC&quot;]) - minimum(-results[&quot;AIC&quot;])) .+ 1
+norm_bic = (-results[&quot;BIC&quot;] .- maximum(-results[&quot;BIC&quot;])) ./ (maximum(-results[&quot;BIC&quot;]) - minimum(-results[&quot;BIC&quot;])) .+ 1
+norm_cv = (results[&quot;CV_score&quot;] .- maximum(results[&quot;CV_score&quot;])) ./ (maximum(results[&quot;CV_score&quot;]) - minimum(results[&quot;CV_score&quot;])) .+ 1
+
+plot!(results[&quot;K&quot;], norm_aic, marker=:circle, linewidth=2,
+      label=&quot;nAIC (normalized)&quot;, color=:orange)
+plot!(results[&quot;K&quot;], norm_bic, marker=:square, linewidth=2,
+      label=&quot;nBIC (normalized)&quot;, color=:green)
+plot!(results[&quot;K&quot;], norm_cv, marker=:diamond, linewidth=2,
+      label=&quot;CV (normalized)&quot;, color=:blue)
+
+xlabel!(&quot;Number of States (K)&quot;)
+ylabel!(&quot;Normalized Score (lower is better)&quot;)
+title!(&quot;Unified Model Selection Comparison&quot;)
+vline!([K], linestyle=:dash, color=:red, linewidth=2, label=&quot;True K=$K&quot;)
+
+scatter!([best_aic_k], [norm_aic[aic_min_idx]], markersize=8, color=:orange, markershape=:star5, label=&quot;&quot;)
+scatter!([best_bic_k], [norm_bic[bic_min_idx]], markersize=8, color=:green, markershape=:star5, label=&quot;&quot;)
+scatter!([best_cv_k], [norm_cv[cv_max_idx]], markersize=8, color=:blue, markershape=:star5, label=&quot;&quot;);
+
+p3</code></pre><img src="25b9f272.svg" alt="Example block output"/><h2 id="Compare-ALL-Best-Models-Visually-(including-CV)"><a class="docs-heading-anchor" href="#Compare-ALL-Best-Models-Visually-(including-CV)">Compare ALL Best Models Visually (including CV)</a><a id="Compare-ALL-Best-Models-Visually-(including-CV)-1"></a><a class="docs-heading-anchor-permalink" href="#Compare-ALL-Best-Models-Visually-(including-CV)" title="Permalink"></a></h2><p>Fit models with AIC, BIC, and CV selected K values</p><pre><code class="language-julia hljs">hmm_aic = initialize_hmm_kmeans(observations, best_aic_k, rng)
+fit!(hmm_aic, observations; max_iters=100, tol=1e-6)
+
+hmm_bic = initialize_hmm_kmeans(observations, best_bic_k, rng)
+fit!(hmm_bic, observations; max_iters=100, tol=1e-6)
+
+hmm_cv = initialize_hmm_kmeans(observations, best_cv_k, rng)
+fit!(hmm_cv, observations; max_iters=100, tol=1e-6);</code></pre><p>Get most likely state sequences</p><pre><code class="language-julia hljs">states_aic = viterbi(hmm_aic, observations)
+states_bic = viterbi(hmm_bic, observations)
+states_cv = viterbi(hmm_cv, observations);</code></pre><p>Create enhanced comparison plots (2x2 layout)</p><pre><code class="language-julia hljs">p4 = plot(layout=(2, 2), size=(1000, 800))
+
+scatter!(observations[1, :], observations[2, :], group=states,
+         xlabel=&quot;x1&quot;, ylabel=&quot;x2&quot;, title=&quot;True States (K=$K)&quot;,
+         legend=false, alpha=0.7, subplot=1)
+
+scatter!(observations[1, :], observations[2, :], group=states_aic,
+         xlabel=&quot;x1&quot;, ylabel=&quot;x2&quot;, title=&quot;AIC Model (K=$best_aic_k)&quot;,
+         legend=false, alpha=0.7, subplot=2)
+
+scatter!(observations[1, :], observations[2, :], group=states_bic,
+         xlabel=&quot;x1&quot;, ylabel=&quot;x2&quot;, title=&quot;BIC Model (K=$best_bic_k)&quot;,
+         legend=false, alpha=0.7, subplot=3)
+
+scatter!(observations[1, :], observations[2, :], group=states_cv,
+         xlabel=&quot;x1&quot;, ylabel=&quot;x2&quot;, title=&quot;Cross-Validation Model (K=$best_cv_k)&quot;,
+         legend=false, alpha=0.7, subplot=4)
+
+p4</code></pre><img src="a2320729.svg" alt="Example block output"/><h2 id="Key-Takeaways"><a class="docs-heading-anchor" href="#Key-Takeaways">Key Takeaways</a><a id="Key-Takeaways-1"></a><a class="docs-heading-anchor-permalink" href="#Key-Takeaways" title="Permalink"></a></h2><p><strong>Information Criteria</strong>:</p><ul><li><strong>AIC</strong> tends to favor more complex models (higher K)</li><li><strong>BIC</strong> has stronger penalty for complexity, often selects simpler models</li><li>Both can help avoid overfitting compared to raw likelihood</li></ul><p><strong>Cross-Validation</strong>:</p><ul><li>More robust estimate of generalization performance</li><li>Computationally expensive but often provides the most reliable selection</li><li>Less sensitive to the specific penalty terms in AIC/BIC</li><li>Directly measures out-of-sample performance</li></ul><p><strong>Practical Recommendations</strong>:</p><ol><li><strong>Use multiple criteria</strong> - they don&#39;t always agree, and disagreement is informative</li><li><strong>Prioritize cross-validation</strong> when computational resources allow</li><li>Consider the <strong>practical significance</strong> of differences between close K values</li><li><strong>Visualize results</strong> to understand model behavior across different K values</li><li>Remember that model selection depends on your <strong>specific goals and constraints</strong></li><li>When methods disagree, consider <strong>ensemble approaches</strong> or <strong>domain knowledge</strong></li></ol><p><strong>Model Selection Insights from This Example</strong>:</p><ul><li>Raw likelihood always increases with K (overfitting tendency)</li><li>Information criteria balance fit vs. complexity differently</li><li>Cross-validation provides unbiased performance estimates</li><li>Visual inspection can reveal whether selected models make practical sense</li></ul><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../hidden_markov_model_example/">« Hidden Markov Model Example</a><a class="docs-footer-nextpage" href="../gaussian_glm_hmm_example/">Gaussian GLM-HMM Example »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.15.0 on <span class="colophon-date" title="Wednesday 12 November 2025 13:32">Wednesday 12 November 2025</span>. Using Julia version 1.12.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Poisson Mixture Model Example · StateSpaceDynamics.jl</title><meta name="title" content="Poisson Mixture Model Example · StateSpaceDynamics.jl"/><meta property="og:title" content="Poisson Mixture Model Example · StateSpaceDynamics.jl"/><meta property="twitter:title" content="Poisson Mixture Model Example · StateSpaceDynamics.jl"/><meta name="description" content="Documentation for StateSpaceDynamics.jl."/><meta property="og:description" content="Documentation for StateSpaceDynamics.jl."/><meta property="twitter:description" content="Documentation for StateSpaceDynamics.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="StateSpaceDynamics.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">StateSpaceDynamics.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Models</span><ul><li><a class="tocitem" href="../../LinearDynamicalSystems/">Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../HiddenMarkovModels/">Hidden Markov Models</a></li><li><a class="tocitem" href="../../SLDS/">Switching Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../EmissionModels/">Emission Models</a></li><li><a class="tocitem" href="../../MixtureModels/">Mixture Models</a></li></ul></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../gaussian_latent_dynamics_example/">Gaussian LDS Example</a></li><li><a class="tocitem" href="../poisson_latent_dynamics_example/">Poisson LDS Example</a></li><li><a class="tocitem" href="../lds_model_selection_example/">LDS Model Selection Example</a></li><li><a class="tocitem" href="../lds_identifiability_example/">Non-Identifiability in LDS Models</a></li><li><a class="tocitem" href="../hidden_markov_model_example/">Hidden Markov Model Example</a></li><li><a class="tocitem" href="../hmm_model_selection_example/">HMM Model Selection</a></li><li><a class="tocitem" href="../gaussian_glm_hmm_example/">Gaussian GLM-HMM Example</a></li><li><a class="tocitem" href="../hmm_identifiability_example/">HMM Identifiability</a></li><li><a class="tocitem" href="../gaussian_mixture_model_example/">Gaussian Mixture Model Example</a></li><li class="is-active"><a class="tocitem" href>Poisson Mixture Model Example</a><ul class="internal"><li><a class="tocitem" href="#What-is-a-Poisson-Mixture-Model?"><span>What is a Poisson Mixture Model?</span></a></li><li><a class="tocitem" href="#EM-Algorithm-Overview"><span>EM Algorithm Overview</span></a></li><li><a class="tocitem" href="#Load-Required-Packages"><span>Load Required Packages</span></a></li><li><a class="tocitem" href="#Create-True-Poisson-Mixture-Model"><span>Create True Poisson Mixture Model</span></a></li><li><a class="tocitem" href="#Generate-Synthetic-Data"><span>Generate Synthetic Data</span></a></li><li><a class="tocitem" href="#Fit-Poisson-Mixture-Model-with-EM"><span>Fit Poisson Mixture Model with EM</span></a></li><li><a class="tocitem" href="#Monitor-EM-Convergence"><span>Monitor EM Convergence</span></a></li><li><a class="tocitem" href="#Visual-Model-Assessment"><span>Visual Model Assessment</span></a></li><li><a class="tocitem" href="#Posterior-Responsibilities-(Soft-Clustering)"><span>Posterior Responsibilities (Soft Clustering)</span></a></li><li><a class="tocitem" href="#Information-Criteria-for-Model-Selection"><span>Information Criteria for Model Selection</span></a></li><li><a class="tocitem" href="#Parameter-Recovery-Assessment"><span>Parameter Recovery Assessment</span></a></li><li><a class="tocitem" href="#Model-Selection-Example"><span>Model Selection Example</span></a></li><li><a class="tocitem" href="#Summary"><span>Summary</span></a></li></ul></li><li><a class="tocitem" href="../Probabilistic_PCA_example/">Probabilistic PCA Example</a></li><li><a class="tocitem" href="../switching_linear_dynamical_system_example/">Switching Linear Dynamical System Example</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Poisson Mixture Model Example</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Poisson Mixture Model Example</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/blob/main/docs/examples/PoissonMixtureModel.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Simulating-and-Fitting-a-Poisson-Mixture-Model"><a class="docs-heading-anchor" href="#Simulating-and-Fitting-a-Poisson-Mixture-Model">Simulating and Fitting a Poisson Mixture Model</a><a id="Simulating-and-Fitting-a-Poisson-Mixture-Model-1"></a><a class="docs-heading-anchor-permalink" href="#Simulating-and-Fitting-a-Poisson-Mixture-Model" title="Permalink"></a></h1><p>This tutorial demonstrates how to build and fit a <strong>Poisson Mixture Model (PMM)</strong> with <code>StateSpaceDynamics.jl</code> using the Expectation-Maximization (EM) algorithm. We&#39;ll cover simulation, fitting, diagnostics, interpretation, and practical considerations.</p><h2 id="What-is-a-Poisson-Mixture-Model?"><a class="docs-heading-anchor" href="#What-is-a-Poisson-Mixture-Model?">What is a Poisson Mixture Model?</a><a id="What-is-a-Poisson-Mixture-Model?-1"></a><a class="docs-heading-anchor-permalink" href="#What-is-a-Poisson-Mixture-Model?" title="Permalink"></a></h2><p>A PMM assumes each observation <span>$x_i \in \{0,1,2,\ldots\}$</span> is drawn from one of <span>$k$</span> Poisson distributions with rates <span>$\lambda_1,\ldots,\lambda_k$</span>. The component assignment is a latent categorical variable <span>$z_i \in \{1,\ldots,k\}$</span> with mixing weights <span>$\pi_1,\ldots,\pi_k$</span> where <span>$\sum_j \pi_j = 1$</span>.</p><p><strong>Generative process:</strong></p><ol><li>Draw <span>$z_i \sim \text{Categorical}(\boldsymbol{\pi})$</span></li><li>Given <span>$z_i = j$</span>, draw <span>$x_i \sim \text{Poisson}(\lambda_j)$</span></li></ol><p>PMMs are useful for <strong>count data</strong> from heterogeneous sub-populations (e.g., spike counts from different neuron types, customer transaction counts from different segments, or event frequencies across different regimes).</p><h2 id="EM-Algorithm-Overview"><a class="docs-heading-anchor" href="#EM-Algorithm-Overview">EM Algorithm Overview</a><a id="EM-Algorithm-Overview-1"></a><a class="docs-heading-anchor-permalink" href="#EM-Algorithm-Overview" title="Permalink"></a></h2><p>EM maximizes the marginal log-likelihood <span>$\log p(\mathbf{x} | \boldsymbol{\pi}, \boldsymbol{\lambda})$</span> by iterating:</p><ul><li><strong>E-step:</strong> Compute responsibilities <span>$\gamma_{ij} = P(z_i = j | x_i, \boldsymbol{\theta})$</span></li><li><strong>M-step:</strong> Update parameters to maximize expected complete-data log-likelihood</li></ul><p>For Poisson mixtures, the M-step has closed-form updates: <span>$\pi_j \leftarrow \frac{1}{n} \sum_i \gamma_{ij}, \quad \lambda_j \leftarrow \frac{\sum_i \gamma_{ij} x_i}{\sum_i \gamma_{ij}}$</span></p><h2 id="Load-Required-Packages"><a class="docs-heading-anchor" href="#Load-Required-Packages">Load Required Packages</a><a id="Load-Required-Packages-1"></a><a class="docs-heading-anchor-permalink" href="#Load-Required-Packages" title="Permalink"></a></h2><pre><code class="language-julia hljs">using StateSpaceDynamics
+using LinearAlgebra
+using Random
+using Plots
+using StableRNGs
+using StatsPlots
+using Distributions</code></pre><p>Fix RNG for reproducible simulation and k-means seeding</p><pre><code class="language-julia hljs">rng = StableRNG(1234);</code></pre><h2 id="Create-True-Poisson-Mixture-Model"><a class="docs-heading-anchor" href="#Create-True-Poisson-Mixture-Model">Create True Poisson Mixture Model</a><a id="Create-True-Poisson-Mixture-Model-1"></a><a class="docs-heading-anchor-permalink" href="#Create-True-Poisson-Mixture-Model" title="Permalink"></a></h2><p>We&#39;ll simulate from a mixture of <span>$k=3$</span> Poisson components with distinct rates and mixing weights. These parameters create well-separated components that should be recoverable by EM.</p><pre><code class="language-julia hljs">k = 3
+true_λs = [5.0, 10.0, 25.0]   # Poisson rates per component
+true_πs = [0.25, 0.45, 0.30]  # Mixing weights (sum to 1)
+
+true_pmm = PoissonMixtureModel(k, true_λs, true_πs);
+
+print(&quot;True model: k=$k components\n&quot;)
+for i in 1:k
+    print(&quot;Component $i: λ=$(true_λs[i]), π=$(true_πs[i])\n&quot;)
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">True model: k=3 components
+Component 1: λ=5.0, π=0.25
+Component 2: λ=10.0, π=0.45
+Component 3: λ=25.0, π=0.3</code></pre><h2 id="Generate-Synthetic-Data"><a class="docs-heading-anchor" href="#Generate-Synthetic-Data">Generate Synthetic Data</a><a id="Generate-Synthetic-Data-1"></a><a class="docs-heading-anchor-permalink" href="#Generate-Synthetic-Data" title="Permalink"></a></h2><p>Draw <span>$n$</span> independent samples. The <code>labels</code> indicate true component membership for each observation (unknown in practice and must be inferred).</p><pre><code class="language-julia hljs">n = 500
+labels = rand(rng, Categorical(true_πs), n)
+data = [rand(rng, Poisson(true_λs[labels[i]])) for i in 1:n];
+
+print(&quot;Generated $n samples with count range [$(minimum(data)), $(maximum(data))]\n&quot;);</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Generated 500 samples with count range [1, 38]</code></pre><p>Visualize samples by true component membership Components with larger <span>$\lambda$</span> shift mass toward higher counts</p><pre><code class="language-julia hljs">p1 = histogram(data;
+    group=labels,
+    bins=0:1:maximum(data),
+    bar_position=:dodge,
+    xlabel=&quot;Count&quot;, ylabel=&quot;Frequency&quot;,
+    title=&quot;Poisson Mixture Samples by True Component&quot;,
+    alpha=0.7, legend=:topright
+)</code></pre><img src="3f15febc.svg" alt="Example block output"/><h2 id="Fit-Poisson-Mixture-Model-with-EM"><a class="docs-heading-anchor" href="#Fit-Poisson-Mixture-Model-with-EM">Fit Poisson Mixture Model with EM</a><a id="Fit-Poisson-Mixture-Model-with-EM-1"></a><a class="docs-heading-anchor-permalink" href="#Fit-Poisson-Mixture-Model-with-EM" title="Permalink"></a></h2><p>Construct model with <span>$k$</span> components and fit using EM algorithm. Key options:</p><ul><li><code>maxiter</code>: Maximum EM iterations</li><li><code>tol</code>: Convergence tolerance (relative log-likelihood improvement)</li><li><code>initialize_kmeans=true</code>: Use k-means for stable initialization</li></ul><pre><code class="language-julia hljs">fit_pmm = PoissonMixtureModel(k)
+_, lls = fit!(fit_pmm, data; maxiter=100, tol=1e-6, initialize_kmeans=true);
+
+print(&quot;EM converged in $(length(lls)) iterations\n&quot;)
+print(&quot;Log-likelihood improved by $(round(lls[end] - lls[1], digits=1))\n&quot;);</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Iteration 1: Log-likelihood = -1675.2855560047683
+Iteration 2: Log-likelihood = -1672.8617414276803
+Iteration 3: Log-likelihood = -1672.3074358415222
+Iteration 4: Log-likelihood = -1672.164521940615
+Iteration 5: Log-likelihood = -1672.1258016768434
+Iteration 6: Log-likelihood = -1672.1147947830093
+Iteration 7: Log-likelihood = -1672.111371874729
+Iteration 8: Log-likelihood = -1672.1100880678769
+Iteration 9: Log-likelihood = -1672.1094447975577
+Iteration 10: Log-likelihood = -1672.1090217273575
+Iteration 11: Log-likelihood = -1672.108696263604
+Iteration 12: Log-likelihood = -1672.1084290039594
+Iteration 13: Log-likelihood = -1672.1082043790832
+Iteration 14: Log-likelihood = -1672.1080141125772
+Iteration 15: Log-likelihood = -1672.1078525389155
+Iteration 16: Log-likelihood = -1672.1077152192565
+Iteration 17: Log-likelihood = -1672.1075984832678
+Iteration 18: Log-likelihood = -1672.1074992384272
+Iteration 19: Log-likelihood = -1672.107414862758
+Iteration 20: Log-likelihood = -1672.1073431287916
+Iteration 21: Log-likelihood = -1672.107282143003
+Iteration 22: Log-likelihood = -1672.1072302954524
+Iteration 23: Log-likelihood = -1672.1071862172657
+Iteration 24: Log-likelihood = -1672.107148744525
+Iteration 25: Log-likelihood = -1672.1071168876272
+Iteration 26: Log-likelihood = -1672.10708980514
+Iteration 27: Log-likelihood = -1672.1070667816903
+Iteration 28: Log-likelihood = -1672.1070472090382
+Iteration 29: Log-likelihood = -1672.1070305700794
+Iteration 30: Log-likelihood = -1672.1070164251605
+Iteration 31: Log-likelihood = -1672.1070044005103
+Iteration 32: Log-likelihood = -1672.106994178339
+Iteration 33: Log-likelihood = -1672.106985488515
+Iteration 34: Log-likelihood = -1672.1069781013432
+Iteration 35: Log-likelihood = -1672.1069718215851
+Iteration 36: Log-likelihood = -1672.106966483238
+Iteration 37: Log-likelihood = -1672.106961945188
+Iteration 38: Log-likelihood = -1672.1069580874637
+Iteration 39: Log-likelihood = -1672.1069548080945
+Iteration 40: Log-likelihood = -1672.106952020372
+Iteration 41: Log-likelihood = -1672.106949650591
+Iteration 42: Log-likelihood = -1672.1069476360994
+Iteration 43: Log-likelihood = -1672.1069459236369
+Iteration 44: Log-likelihood = -1672.1069444679154
+Iteration 45: Log-likelihood = -1672.106943230453
+Iteration 46: Log-likelihood = -1672.1069421785267
+Iteration 47: Log-likelihood = -1672.1069412843055
+Converged at iteration 47
+EM converged in 47 iterations
+Log-likelihood improved by 3.2</code></pre><p>Display learned parameters</p><pre><code class="language-julia hljs">print(&quot;Learned parameters:\n&quot;)
+for i in 1:k
+    print(&quot;Component $i: λ=$(round(fit_pmm.λₖ[i], digits=2)), π=$(round(fit_pmm.πₖ[i], digits=3))\n&quot;)
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Learned parameters:
+Component 1: λ=5.22, π=0.319
+Component 2: λ=24.87, π=0.295
+Component 3: λ=10.58, π=0.386</code></pre><h2 id="Monitor-EM-Convergence"><a class="docs-heading-anchor" href="#Monitor-EM-Convergence">Monitor EM Convergence</a><a id="Monitor-EM-Convergence-1"></a><a class="docs-heading-anchor-permalink" href="#Monitor-EM-Convergence" title="Permalink"></a></h2><p>EM guarantees non-decreasing log-likelihood. Monotonic ascent indicates proper convergence.</p><pre><code class="language-julia hljs">p2 = plot(lls;
+    xlabel=&quot;Iteration&quot;, ylabel=&quot;Log-Likelihood&quot;,
+    title=&quot;EM Convergence&quot;,
+    marker=:circle, markersize=3, lw=2,
+    legend=false, color=:darkblue
+)
+
+annotate!(p2, length(lls)*0.7, lls[end]*0.98,
+    text(&quot;Final LL: $(round(lls[end], digits=1))&quot;, 10))</code></pre><img src="037e0df2.svg" alt="Example block output"/><h2 id="Visual-Model-Assessment"><a class="docs-heading-anchor" href="#Visual-Model-Assessment">Visual Model Assessment</a><a id="Visual-Model-Assessment-1"></a><a class="docs-heading-anchor-permalink" href="#Visual-Model-Assessment" title="Permalink"></a></h2><p>Overlay fitted component PMFs and overall mixture PMF on normalized histogram. Components should explain major modes and tail behavior in the data.</p><pre><code class="language-julia hljs">p3 = histogram(data;
+    bins=0:1:maximum(data), normalize=true, alpha=0.3,
+    xlabel=&quot;Count&quot;, ylabel=&quot;Probability Density&quot;,
+    title=&quot;Data vs. Fitted Mixture Components&quot;,
+    label=&quot;Data&quot;, color=:gray
+)
+
+x_range = collect(0:maximum(data))
+colors = [:red, :green, :blue]</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">3-element Vector{Symbol}:
+ :red
+ :green
+ :blue</code></pre><p>Plot individual component PMFs</p><pre><code class="language-julia hljs">for i in 1:k
+    λᵢ = fit_pmm.λₖ[i]
+    πᵢ = fit_pmm.πₖ[i]
+    pmf_i = πᵢ .* pdf.(Poisson(λᵢ), x_range)
+    plot!(p3, x_range, pmf_i;
+        lw=2, color=colors[i],
+        label=&quot;Component $i (λ=$(round(λᵢ, digits=1)))&quot;
+    )
+end</code></pre><p>Plot overall mixture PMF</p><pre><code class="language-julia hljs">mixture_pmf = reduce(+, (πᵢ .* pdf.(Poisson(λᵢ), x_range)
+                        for (λᵢ, πᵢ) in zip(fit_pmm.λₖ, fit_pmm.πₖ)))
+plot!(p3, x_range, mixture_pmf;
+    lw=3, linestyle=:dash, color=:black,
+    label=&quot;Mixture PMF&quot;
+)</code></pre><img src="63708773.svg" alt="Example block output"/><h2 id="Posterior-Responsibilities-(Soft-Clustering)"><a class="docs-heading-anchor" href="#Posterior-Responsibilities-(Soft-Clustering)">Posterior Responsibilities (Soft Clustering)</a><a id="Posterior-Responsibilities-(Soft-Clustering)-1"></a><a class="docs-heading-anchor-permalink" href="#Posterior-Responsibilities-(Soft-Clustering)" title="Permalink"></a></h2><p>Responsibilities <span>$\gamma_{ij} = P(z_i = j | x_i, \hat{\boldsymbol{\theta}})$</span> quantify how likely each observation belongs to each component. These provide soft assignments and uncertainty quantification.</p><pre><code class="language-julia hljs">function responsibilities_pmm(λs::AbstractVector, πs::AbstractVector, x::AbstractVector)
+    k, n = length(λs), length(x)
+    Γ = zeros(n, k)
+
+    for i in 1:n
+        for j in 1:k
+            Γ[i, j] = πs[j] * pdf(Poisson(λs[j]), x[i])
+        end
+
+        row_sum = sum(Γ[i, :]) # Normalize to get probabilities
+        if row_sum &gt; 0
+            Γ[i, :] ./= row_sum
+        end
+    end
+    return Γ
+end
+
+Γ = responsibilities_pmm(fit_pmm.λₖ, fit_pmm.πₖ, data);</code></pre><p>Hard assignments (if needed) are argmax over responsibilities</p><pre><code class="language-julia hljs">hard_labels = [argmax(Γ[i, :]) for i in 1:n];</code></pre><p>Calculate assignment accuracy compared to true labels</p><pre><code class="language-julia hljs">accuracy = mean(labels .== hard_labels)
+print(&quot;Component assignment accuracy: $(round(accuracy*100, digits=1))%\n&quot;);</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Component assignment accuracy: 26.4%</code></pre><h2 id="Information-Criteria-for-Model-Selection"><a class="docs-heading-anchor" href="#Information-Criteria-for-Model-Selection">Information Criteria for Model Selection</a><a id="Information-Criteria-for-Model-Selection-1"></a><a class="docs-heading-anchor-permalink" href="#Information-Criteria-for-Model-Selection" title="Permalink"></a></h2><p>When <span>$k$</span> is unknown, compare models using AIC/BIC:</p><ul><li>AIC = <span>$2p - 2\text{LL}$</span></li><li>BIC = <span>$p \log(n) - 2\text{LL}$</span></li></ul><p>where parameter count <span>$p = (k-1) + k = 2k-1$</span> (mixing weights + rates)</p><pre><code class="language-julia hljs">function compute_ic(lls::AbstractVector, n::Int, k::Int)
+    ll = last(lls)
+    p = 2k - 1
+    return (AIC = 2p - 2ll, BIC = p*log(n) - 2ll)
+end
+
+ic = compute_ic(lls, n, k)
+print(&quot;Information criteria: AIC = $(round(ic.AIC, digits=1)), BIC = $(round(ic.BIC, digits=1))\n&quot;);</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Information criteria: AIC = 3354.2, BIC = 3375.3</code></pre><h2 id="Parameter-Recovery-Assessment"><a class="docs-heading-anchor" href="#Parameter-Recovery-Assessment">Parameter Recovery Assessment</a><a id="Parameter-Recovery-Assessment-1"></a><a class="docs-heading-anchor-permalink" href="#Parameter-Recovery-Assessment" title="Permalink"></a></h2><pre><code class="language-julia hljs">print(&quot;\n=== Parameter Recovery Assessment ===\n&quot;)
+
+λ_errors = [abs(true_λs[i] - fit_pmm.λₖ[i]) / true_λs[i] for i in 1:k]
+π_errors = [abs(true_πs[i] - fit_pmm.πₖ[i]) for i in 1:k]
+
+print(&quot;Rate recovery errors (%):\n&quot;)
+for i in 1:k
+    print(&quot;Component $i: $(round(λ_errors[i]*100, digits=1))%\n&quot;)
+end
+
+print(&quot;Mixing weight recovery errors:\n&quot;)
+for i in 1:k
+    print(&quot;Component $i: $(round(π_errors[i], digits=3))\n&quot;)
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">
+=== Parameter Recovery Assessment ===
+Rate recovery errors (%):
+Component 1: 4.4%
+Component 2: 148.7%
+Component 3: 57.7%
+Mixing weight recovery errors:
+Component 1: 0.069
+Component 2: 0.155
+Component 3: 0.086</code></pre><h2 id="Model-Selection-Example"><a class="docs-heading-anchor" href="#Model-Selection-Example">Model Selection Example</a><a id="Model-Selection-Example-1"></a><a class="docs-heading-anchor-permalink" href="#Model-Selection-Example" title="Permalink"></a></h2><p>Demonstrate fitting multiple values of k and comparing via BIC</p><pre><code class="language-julia hljs">print(&quot;\n=== Model Selection Demo ===\n&quot;)
+
+k_range = 1:5
+bic_scores = Float64[]
+aic_scores = Float64[]
+
+for k_test in k_range
+    pmm_test = PoissonMixtureModel(k_test)
+    _, lls_test = fit!(pmm_test, data; maxiter=50, tol=1e-6, initialize_kmeans=true)
+
+    ic_test = compute_ic(lls_test, n, k_test)
+    push!(aic_scores, ic_test.AIC)
+    push!(bic_scores, ic_test.BIC)
+
+    print(&quot;k=$k_test: AIC=$(round(ic_test.AIC, digits=1)), BIC=$(round(ic_test.BIC, digits=1))\n&quot;)
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">
+=== Model Selection Demo ===
+Iteration 1: Log-likelihood = -2446.0120010620803
+Iteration 2: Log-likelihood = -2446.0120010620803
+Converged at iteration 2
+k=1: AIC=4894.0, BIC=4898.2
+Iteration 1: Log-likelihood = -1725.159275168668
+Iteration 2: Log-likelihood = -1710.378241489074
+Iteration 3: Log-likelihood = -1707.7232060184288
+Iteration 4: Log-likelihood = -1707.1363604250537
+Iteration 5: Log-likelihood = -1706.9966164146529
+Iteration 6: Log-likelihood = -1706.9622050675277
+Iteration 7: Log-likelihood = -1706.9535934824933
+Iteration 8: Log-likelihood = -1706.9514211429553
+Iteration 9: Log-likelihood = -1706.950870967497
+Iteration 10: Log-likelihood = -1706.9507313492327
+Iteration 11: Log-likelihood = -1706.9506958826319
+Iteration 12: Log-likelihood = -1706.9506868686449
+Iteration 13: Log-likelihood = -1706.9506845771148
+Iteration 14: Log-likelihood = -1706.950683994491
+Converged at iteration 14
+k=2: AIC=3419.9, BIC=3432.5
+Iteration 1: Log-likelihood = -1704.3195555659797
+Iteration 2: Log-likelihood = -1703.9458362949379
+Iteration 3: Log-likelihood = -1703.685813777206
+Iteration 4: Log-likelihood = -1703.4548339987298
+Iteration 5: Log-likelihood = -1703.22801395101
+Iteration 6: Log-likelihood = -1702.99125277468
+Iteration 7: Log-likelihood = -1702.734046523778
+Iteration 8: Log-likelihood = -1702.4470356075224
+Iteration 9: Log-likelihood = -1702.1206307410766
+Iteration 10: Log-likelihood = -1701.7440444750641
+Iteration 11: Log-likelihood = -1701.3045009861003
+Iteration 12: Log-likelihood = -1700.7865554458565
+Iteration 13: Log-likelihood = -1700.1715808539734
+Iteration 14: Log-likelihood = -1699.4376412036665
+Iteration 15: Log-likelihood = -1698.5601980673152
+Iteration 16: Log-likelihood = -1697.5143712319518
+Iteration 17: Log-likelihood = -1696.2796252279393
+Iteration 18: Log-likelihood = -1694.8473472323265
+Iteration 19: Log-likelihood = -1693.2301850950457
+Iteration 20: Log-likelihood = -1691.4691485771789
+Iteration 21: Log-likelihood = -1689.6322896258673
+Iteration 22: Log-likelihood = -1687.8012392847806
+Iteration 23: Log-likelihood = -1686.0501875578743
+Iteration 24: Log-likelihood = -1684.4290298662092
+Iteration 25: Log-likelihood = -1682.9594009945486
+Iteration 26: Log-likelihood = -1681.6419020754574
+Iteration 27: Log-likelihood = -1680.4665287788532
+Iteration 28: Log-likelihood = -1679.4202795784063
+Iteration 29: Log-likelihood = -1678.4906960585263
+Iteration 30: Log-likelihood = -1677.6667267525277
+Iteration 31: Log-likelihood = -1676.93851372879
+Iteration 32: Log-likelihood = -1676.29701045982
+Iteration 33: Log-likelihood = -1675.7337392608997
+Iteration 34: Log-likelihood = -1675.2407043802618
+Iteration 35: Log-likelihood = -1674.810394909604
+Iteration 36: Log-likelihood = -1674.4358180750003
+Iteration 37: Log-likelihood = -1674.110529465094
+Iteration 38: Log-likelihood = -1673.8286473588853
+Iteration 39: Log-likelihood = -1673.5848495942018
+Iteration 40: Log-likelihood = -1673.374356023739
+Iteration 41: Log-likelihood = -1673.1929006932346
+Iteration 42: Log-likelihood = -1673.0366975083916
+Iteration 43: Log-likelihood = -1672.9024023745687
+Iteration 44: Log-likelihood = -1672.7870740176859
+Iteration 45: Log-likelihood = -1672.6881350550498
+Iteration 46: Log-likelihood = -1672.6033343911613
+Iteration 47: Log-likelihood = -1672.5307116423744
+Iteration 48: Log-likelihood = -1672.4685640184512
+Iteration 49: Log-likelihood = -1672.4154158859096
+Iteration 50: Log-likelihood = -1672.3699910894566
+k=3: AIC=3354.7, BIC=3375.8
+Iteration 1: Log-likelihood = -1687.5997063100372
+Iteration 2: Log-likelihood = -1682.9755525697433
+Iteration 3: Log-likelihood = -1680.6701152086302
+Iteration 4: Log-likelihood = -1679.1779264126162
+Iteration 5: Log-likelihood = -1678.0925511352536
+Iteration 6: Log-likelihood = -1677.2360490179935
+Iteration 7: Log-likelihood = -1676.524644894624
+Iteration 8: Log-likelihood = -1675.9175528261112
+Iteration 9: Log-likelihood = -1675.3932239514377
+Iteration 10: Log-likelihood = -1674.938519100328
+Iteration 11: Log-likelihood = -1674.5440234482487
+Iteration 12: Log-likelihood = -1674.2021279893906
+Iteration 13: Log-likelihood = -1673.906280318686
+Iteration 14: Log-likelihood = -1673.6506961498142
+Iteration 15: Log-likelihood = -1673.430238095617
+Iteration 16: Log-likelihood = -1673.2403490970394
+Iteration 17: Log-likelihood = -1673.0770012850276
+Iteration 18: Log-likelihood = -1672.9366485749838
+Iteration 19: Log-likelihood = -1672.8161805953034
+Iteration 20: Log-likelihood = -1672.7128781918946
+Iteration 21: Log-likelihood = -1672.6243712023809
+Iteration 22: Log-likelihood = -1672.548599048343
+Iteration 23: Log-likelihood = -1672.4837744570677
+Iteration 24: Log-likelihood = -1672.4283504278974
+Iteration 25: Log-likelihood = -1672.3809904190255
+Iteration 26: Log-likelihood = -1672.3405416386001
+Iteration 27: Log-likelihood = -1672.306011266212
+Iteration 28: Log-likelihood = -1672.2765453968887
+Iteration 29: Log-likelihood = -1672.2514104831673
+Iteration 30: Log-likelihood = -1672.2299770458126
+Iteration 31: Log-likelihood = -1672.2117054272253
+Iteration 32: Log-likelihood = -1672.1961333710767
+Iteration 33: Log-likelihood = -1672.1828652241895
+Iteration 34: Log-likelihood = -1672.1715625721565
+Iteration 35: Log-likelihood = -1672.1619361359371
+Iteration 36: Log-likelihood = -1672.1537387732171
+Iteration 37: Log-likelihood = -1672.1467594442347
+Iteration 38: Log-likelihood = -1672.140818017025
+Iteration 39: Log-likelihood = -1672.1357608013006
+Iteration 40: Log-likelihood = -1672.1314567133008
+Iteration 41: Log-likelihood = -1672.127793985931
+Iteration 42: Log-likelihood = -1672.1246773493472
+Iteration 43: Log-likelihood = -1672.1220256166228
+Iteration 44: Log-likelihood = -1672.1197696179124
+Iteration 45: Log-likelihood = -1672.1178504338989
+Iteration 46: Log-likelihood = -1672.116217886124
+Iteration 47: Log-likelihood = -1672.1148292474613
+Iteration 48: Log-likelihood = -1672.1136481411163
+Iteration 49: Log-likelihood = -1672.1126436011173
+Iteration 50: Log-likelihood = -1672.1117892707553
+k=4: AIC=3358.2, BIC=3387.7
+Iteration 1: Log-likelihood = -1680.758984117847
+Iteration 2: Log-likelihood = -1677.0495363952361
+Iteration 3: Log-likelihood = -1675.6898936254063
+Iteration 4: Log-likelihood = -1674.9034547640667
+Iteration 5: Log-likelihood = -1674.369182966404
+Iteration 6: Log-likelihood = -1673.9796850340795
+Iteration 7: Log-likelihood = -1673.6852604734079
+Iteration 8: Log-likelihood = -1673.4576541516078
+Iteration 9: Log-likelihood = -1673.2787097269809
+Iteration 10: Log-likelihood = -1673.1359501009015
+Iteration 11: Log-likelihood = -1673.0204862984735
+Iteration 12: Log-likelihood = -1672.9258536033838
+Iteration 13: Log-likelihood = -1672.8472860515194
+Iteration 14: Log-likelihood = -1672.7812328478365
+Iteration 15: Log-likelihood = -1672.725024117896
+Iteration 16: Log-likelihood = -1672.6766351794518
+Iteration 17: Log-likelihood = -1672.6345181522745
+Iteration 18: Log-likelihood = -1672.5974804778466
+Iteration 19: Log-likelihood = -1672.5645965068131
+Iteration 20: Log-likelihood = -1672.5351426108011
+Iteration 21: Log-likelihood = -1672.5085491696302
+Iteration 22: Log-likelihood = -1672.484364764128
+Iteration 23: Log-likelihood = -1672.4622292693593
+Iteration 24: Log-likelihood = -1672.4418534908457
+Iteration 25: Log-likelihood = -1672.423003648747
+Iteration 26: Log-likelihood = -1672.4054894813567
+Iteration 27: Log-likelihood = -1672.3891550702785
+Iteration 28: Log-likelihood = -1672.3738717261883
+Iteration 29: Log-likelihood = -1672.3595324445862
+Iteration 30: Log-likelihood = -1672.3460475650793
+Iteration 31: Log-likelihood = -1672.3333413581743
+Iteration 32: Log-likelihood = -1672.3213493308087
+Iteration 33: Log-likelihood = -1672.3100160913516
+Iteration 34: Log-likelihood = -1672.299293652206
+Iteration 35: Log-likelihood = -1672.2891400759668
+Iteration 36: Log-likelihood = -1672.279518392472
+Iteration 37: Log-likelihood = -1672.2703957302351
+Iteration 38: Log-likelihood = -1672.2617426178897
+Iteration 39: Log-likelihood = -1672.2535324212374
+Iteration 40: Log-likelihood = -1672.2457408883747
+Iteration 41: Log-likelihood = -1672.238345781472
+Iteration 42: Log-likelihood = -1672.2313265780558
+Iteration 43: Log-likelihood = -1672.224664228118
+Iteration 44: Log-likelihood = -1672.2183409562736
+Iteration 45: Log-likelihood = -1672.2123401002395
+Iteration 46: Log-likelihood = -1672.2066459785617
+Iteration 47: Log-likelihood = -1672.2012437821681
+Iteration 48: Log-likelihood = -1672.1961194849953
+Iteration 49: Log-likelihood = -1672.1912597701623
+Iteration 50: Log-likelihood = -1672.186651968744
+k=5: AIC=3362.4, BIC=3400.3</code></pre><p>Plot information criteria vs number of components</p><pre><code class="language-julia hljs">p4 = plot(k_range, [aic_scores bic_scores];
+    xlabel=&quot;Number of Components (k)&quot;, ylabel=&quot;Information Criterion&quot;,
+    title=&quot;Model Selection via Information Criteria&quot;,
+    label=[&quot;AIC&quot; &quot;BIC&quot;], marker=:circle, lw=2
+)
+
+optimal_k_aic = k_range[argmin(aic_scores)]
+optimal_k_bic = k_range[argmin(bic_scores)]
+
+print(&quot;Optimal k: AIC suggests k=$optimal_k_aic, BIC suggests k=$optimal_k_bic\n&quot;);</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Optimal k: AIC suggests k=3, BIC suggests k=3</code></pre><h2 id="Summary"><a class="docs-heading-anchor" href="#Summary">Summary</a><a id="Summary-1"></a><a class="docs-heading-anchor-permalink" href="#Summary" title="Permalink"></a></h2><p>This tutorial demonstrated the complete Poisson Mixture Model workflow:</p><p><strong>Key Concepts:</strong></p><ul><li><strong>Discrete mixtures</strong>: Model count data as mixture of Poisson distributions</li><li><strong>EM algorithm</strong>: Iterative optimization with closed-form M-step updates</li><li><strong>Soft clustering</strong>: Posterior responsibilities provide probabilistic assignments</li><li><strong>Model selection</strong>: Information criteria help choose appropriate number of components</li></ul><p><strong>Applications:</strong></p><ul><li>Spike count analysis in neuroscience</li><li>Customer transaction modeling in business analytics</li><li>Event frequency analysis in reliability engineering</li><li>Gene expression count clustering in bioinformatics</li></ul><p><strong>Technical Insights:</strong></p><ul><li>Initialization strategy significantly affects final solution quality</li><li>Label switching is a fundamental identifiability issue in mixture models</li><li>Information criteria provide principled approach to model complexity selection</li><li>Component separation quality affects parameter recovery accuracy</li></ul><p><strong>Extensions:</strong></p><ul><li>Zero-inflated Poisson mixtures for excess zero counts</li><li>Negative Binomial mixtures for overdispersed count data</li><li>Bayesian approaches for uncertainty quantification</li><li>Mixture regression models for count data with covariates</li></ul><p>Poisson mixture models provide a flexible framework for modeling heterogeneous count data, enabling both clustering and density estimation while maintaining interpretable probabilistic structure.</p><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../gaussian_mixture_model_example/">« Gaussian Mixture Model Example</a><a class="docs-footer-nextpage" href="../Probabilistic_PCA_example/">Probabilistic PCA Example »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.15.0 on <span class="colophon-date" title="Wednesday 12 November 2025 13:31">Wednesday 12 November 2025</span>. Using Julia version 1.12.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

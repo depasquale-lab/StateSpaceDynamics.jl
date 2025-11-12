@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>HMM Identifiability · StateSpaceDynamics.jl</title><meta name="title" content="HMM Identifiability · StateSpaceDynamics.jl"/><meta property="og:title" content="HMM Identifiability · StateSpaceDynamics.jl"/><meta property="twitter:title" content="HMM Identifiability · StateSpaceDynamics.jl"/><meta name="description" content="Documentation for StateSpaceDynamics.jl."/><meta property="og:description" content="Documentation for StateSpaceDynamics.jl."/><meta property="twitter:description" content="Documentation for StateSpaceDynamics.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="StateSpaceDynamics.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">StateSpaceDynamics.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Models</span><ul><li><a class="tocitem" href="../../LinearDynamicalSystems/">Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../HiddenMarkovModels/">Hidden Markov Models</a></li><li><a class="tocitem" href="../../SLDS/">Switching Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../EmissionModels/">Emission Models</a></li><li><a class="tocitem" href="../../MixtureModels/">Mixture Models</a></li></ul></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../gaussian_latent_dynamics_example/">Gaussian LDS Example</a></li><li><a class="tocitem" href="../poisson_latent_dynamics_example/">Poisson LDS Example</a></li><li><a class="tocitem" href="../lds_model_selection_example/">LDS Model Selection Example</a></li><li><a class="tocitem" href="../lds_identifiability_example/">Non-Identifiability in LDS Models</a></li><li><a class="tocitem" href="../hidden_markov_model_example/">Hidden Markov Model Example</a></li><li><a class="tocitem" href="../hmm_model_selection_example/">HMM Model Selection</a></li><li><a class="tocitem" href="../gaussian_glm_hmm_example/">Gaussian GLM-HMM Example</a></li><li class="is-active"><a class="tocitem" href>HMM Identifiability</a><ul class="internal"><li><a class="tocitem" href="#Load-Required-Packages"><span>Load Required Packages</span></a></li><li><a class="tocitem" href="#Create-a-Reference-(&quot;True&quot;)-Gaussian-Emission-HMM"><span>Create a Reference (&quot;True&quot;) Gaussian-Emission HMM</span></a></li><li><a class="tocitem" href="#Permutation-(Label)-Invariance:-Likelihood-is-Unchanged"><span>Permutation (Label) Invariance: Likelihood is Unchanged</span></a></li><li><a class="tocitem" href="#Multi-Start-EM:-Label-Switching-in-Practice"><span>Multi-Start EM: Label Switching in Practice</span></a></li><li><a class="tocitem" href="#Post-hoc-Alignment:-Best-Permutation-to-a-Reference"><span>Post-hoc Alignment: Best Permutation to a Reference</span></a></li><li><a class="tocitem" href="#What-*is*-Identifiable?"><span>What <em>is</em> Identifiable?</span></a></li><li><a class="tocitem" href="#How-is-this-different-from-non-convexity?"><span>How is this different from non-convexity?</span></a></li><li><a class="tocitem" href="#Diagnostics-and-Practical-Tips"><span>Diagnostics &amp; Practical Tips</span></a></li><li><a class="tocitem" href="#Reproducibility"><span>Reproducibility</span></a></li></ul></li><li><a class="tocitem" href="../gaussian_mixture_model_example/">Gaussian Mixture Model Example</a></li><li><a class="tocitem" href="../poisson_mixture_model_example/">Poisson Mixture Model Example</a></li><li><a class="tocitem" href="../Probabilistic_PCA_example/">Probabilistic PCA Example</a></li><li><a class="tocitem" href="../switching_linear_dynamical_system_example/">Switching Linear Dynamical System Example</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>HMM Identifiability</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>HMM Identifiability</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/blob/main/docs/examples/HMMIdentifiability.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Understanding-Non-Identifiability-in-Hidden-Markov-Models"><a class="docs-heading-anchor" href="#Understanding-Non-Identifiability-in-Hidden-Markov-Models">Understanding Non-Identifiability in Hidden Markov Models</a><a id="Understanding-Non-Identifiability-in-Hidden-Markov-Models-1"></a><a class="docs-heading-anchor-permalink" href="#Understanding-Non-Identifiability-in-Hidden-Markov-Models" title="Permalink"></a></h1><p>This hands-on literate tutorial mirrors the LDS/SSM label-indeterminacy example but for HMMs. We will:</p><ol><li><strong>Build a reference HMM and synthesize data.</strong></li><li><strong>Show permutation invariance of the likelihood</strong> (log-likelihood is unchanged under state relabelings).</li><li><strong>Fit from multiple random initializations</strong> to surface <strong>label switching</strong>.</li><li><strong>Align states post‑hoc</strong> to a reference ordering and outline a simple canonicalization.</li><li><strong>Summarize diagnostics</strong> and clarify what <strong>is</strong> and <strong>is not</strong> identifiable.</li></ol><blockquote><p><strong>Takeaway.</strong> In mixture models and HMMs, state labels are arbitrary. Without constraints or post‑hoc alignment, EM fits from different starts can represent the <em>same</em> model up to a permutation of labels.</p></blockquote><h2 id="Load-Required-Packages"><a class="docs-heading-anchor" href="#Load-Required-Packages">Load Required Packages</a><a id="Load-Required-Packages-1"></a><a class="docs-heading-anchor-permalink" href="#Load-Required-Packages" title="Permalink"></a></h2><p>We’ll use <code>StateSpaceDynamics.jl</code> for HMM construction and EM fitting. <code>StableRNGs</code> gives bit‑reproducibility across runs.</p><pre><code class="language-julia hljs">using StateSpaceDynamics
+using Random
+using LinearAlgebra
+using Statistics
+using StableRNGs
+using Printf
+using Distributions
+
+rng = StableRNG(12345);</code></pre><h2 id="Create-a-Reference-(&quot;True&quot;)-Gaussian-Emission-HMM"><a class="docs-heading-anchor" href="#Create-a-Reference-(&quot;True&quot;)-Gaussian-Emission-HMM">Create a Reference (&quot;True&quot;) Gaussian-Emission HMM</a><a id="Create-a-Reference-(&quot;True&quot;)-Gaussian-Emission-HMM-1"></a><a class="docs-heading-anchor-permalink" href="#Create-a-Reference-(&quot;True&quot;)-Gaussian-Emission-HMM" title="Permalink"></a></h2><p>We define a simple 3‑state, 1D Gaussian‑emission HMM with well‑separated means. The transition matrix is near‑symmetric with strong self‑transition probability, making states persist for stretches—this helps visualize label switching cleanly.</p><pre><code class="language-julia hljs">K = 3
+D = 1
+T = 400
+
+π_true = fill(1/3, K)  # uniform prior
+
+ρ = 0.88                # near-symmetric transitions with strong self-prob
+A_true = fill((1-ρ)/(K-1), K, K)
+for i in 1:K
+    A_true[i,i] = ρ
+end
+
+μ_true  = [-2.5, 0.0, 2.5]
+σ2_true = fill(0.1, K)
+Σ_true  = [fill(σ2_true[k], D, D) for k in 1:K]
+
+emissions = [GaussianEmission(1, [μ_true[k]], Σ_true[k]) for k in 1:K]
+true_hmm = HiddenMarkovModel(A_true, emissions, π_true, K)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Hidden Markov Model:
+--------------------
+ A  = [0.88 0.06 0.06; 0.06 0.88 0.06; 0.06 0.06 0.88]
+ πₖ = [0.333, 0.333, 0.333]
+ Emission Models:
+ ----------------
+  Gaussian Emission model:
+  ------------------------
+   μ = [-2.5]
+   Σ = [0.1;;]
+  ----------------
+  Gaussian Emission model:
+  ------------------------
+   μ = [0.0]
+   Σ = [0.1;;]
+  ----------------
+  Gaussian Emission model:
+  ------------------------
+   μ = [2.5]
+   Σ = [0.1;;]
+</code></pre><p>Generate data</p><pre><code class="language-julia hljs">s_true, x_true = rand(rng, true_hmm; n=T)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">([2, 2, 2, 2, 2, 2, 2, 2, 2, 2  …  1, 1, 2, 2, 2, 2, 2, 2, 2, 2], [0.195715764102019 0.29386439646866946 … 0.09589037219476625 -0.0845709971131515])</code></pre><h2 id="Permutation-(Label)-Invariance:-Likelihood-is-Unchanged"><a class="docs-heading-anchor" href="#Permutation-(Label)-Invariance:-Likelihood-is-Unchanged">Permutation (Label) Invariance: Likelihood is Unchanged</a><a id="Permutation-(Label)-Invariance:-Likelihood-is-Unchanged-1"></a><a class="docs-heading-anchor-permalink" href="#Permutation-(Label)-Invariance:-Likelihood-is-Unchanged" title="Permalink"></a></h2><p>The HMM likelihood is <strong>invariant</strong> to permutation of state labels. If we apply a permutation matrix <code>P</code> to the transition matrix and reorder emissions accordingly, the joint distribution (and hence log-likelihood on data) is identical. We implement a helper <code>permute_states!</code> and verify that the log-likelihood difference is numerically ~0.</p><pre><code class="language-julia hljs">function permute_states!(m::HiddenMarkovModel, perm::Vector{Int})
+    K = length(perm)
+    P = zeros(eltype(m.A), K, K)
+    for (i,j) in enumerate(perm)   # new i  &lt;- old j
+        P[i,j] = 1
+    end
+    m.A  .= P * m.A * P&#39;
+    m.πₖ .= P * m.πₖ
+    m.B   = m.B[perm]
+    return m
+end
+
+mtest = deepcopy(true_hmm)
+ll0   = StateSpaceDynamics.loglikelihood(mtest, x_true)
+perm  = [2,3,1]  # arbitrary relabeling
+permute_states!(mtest, perm)
+ll1   = StateSpaceDynamics.loglikelihood(mtest, x_true)
+
+@printf(&quot;\nPermutation invariance: ΔLL = %.3e (should be ~0)\n&quot;, abs(ll0 - ll1))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">
+Permutation invariance: ΔLL = 0.000e+00 (should be ~0)</code></pre><h2 id="Multi-Start-EM:-Label-Switching-in-Practice"><a class="docs-heading-anchor" href="#Multi-Start-EM:-Label-Switching-in-Practice">Multi-Start EM: Label Switching in Practice</a><a id="Multi-Start-EM:-Label-Switching-in-Practice-1"></a><a class="docs-heading-anchor-permalink" href="#Multi-Start-EM:-Label-Switching-in-Practice" title="Permalink"></a></h2><p>Because the likelihood has multiple symmetric optima (one per permutation of labels), EM can converge to any of these equivalent solutions depending on initialization. Running EM from several random starts reveals this “label switching”.</p><pre><code class="language-julia hljs">function random_init_model(Y::AbstractMatrix; K::Int, D::Int, rng)
+    A0 = zeros(Float64, K, K)
+    for i in 1:K
+        v = rand(rng, Dirichlet(ones(K)))
+        A0[i, :] .= v ./ sum(v)
+    end
+    π0 = rand(rng, Dirichlet(ones(K)))
+    μ0s = rand(mean(Y) .+ (-1.0:0.1:1.0), K)  # spread out over data range
+    Σ0s = [fill(0.5, D, D) for _ in 1:K]
+    B0  = [GaussianEmission(D, [μ0s[k]], Σ0s[k]) for k in 1:K]
+
+    HiddenMarkovModel(A0, B0, π0, K)
+end
+
+M = 5  # number of independent starts
+fits = Vector{HiddenMarkovModel}(undef, M)
+lls  = zeros(Float64, M)
+
+for m in 1:M
+    m0 = random_init_model(x_true; K=K, D=D, rng=StableRNG(10_000 + m))
+    hist = fit!(m0, x_true; max_iters=100, tol=1e-6)
+    fits[m] = m0
+    lls[m]  = last(hist)
+end
+
+fitted_means = [[fits[m].B[k].μ[1] for k in 1:K] for m in 1:M]
+print(&quot;\nFitted emission means per run (unordered):\n&quot;)
+for row in fitted_means
+    @printf(&quot;  %s\n&quot;, string(round.(row, digits=3)))
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">
+Fitted emission means per run (unordered):
+  [2.6, -1.26, 2.398]
+  [2.504, -0.027, -2.478]
+  [-2.478, -0.027, 2.504]
+  [-0.027, -2.478, 2.504]
+  [0.079, 0.081, 0.084]</code></pre><h2 id="Post-hoc-Alignment:-Best-Permutation-to-a-Reference"><a class="docs-heading-anchor" href="#Post-hoc-Alignment:-Best-Permutation-to-a-Reference">Post-hoc Alignment: Best Permutation to a Reference</a><a id="Post-hoc-Alignment:-Best-Permutation-to-a-Reference-1"></a><a class="docs-heading-anchor-permalink" href="#Post-hoc-Alignment:-Best-Permutation-to-a-Reference" title="Permalink"></a></h2><p>To compare runs or build averaged summaries, we need a consistent label convention. A simple approach is to choose a target ordering (e.g., increasing emission mean) and, for each fitted model, find the permutation that best matches that ordering using a cost (e.g., squared error in means). Below we brute‑force all permutations (fine for small <code>K</code>) and permute models.</p><pre><code class="language-julia hljs">function all_permutations(K::Int)
+    K == 1 &amp;&amp; return [[1]]
+    out = Vector{Vector{Int}}()
+    for p in all_permutations(K-1)
+        for i in 0:(K-1)
+            q = copy(p)
+            insert!(q, i+1, K)
+            push!(out, q)
+        end
+    end
+    return out
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">all_permutations (generic function with 1 method)</code></pre><p>Match a model to a target ordering by minimizing squared error of emission means (D=1)</p><pre><code class="language-julia hljs">function best_perm_by_means(model::HiddenMarkovModel, μ_target::Vector{Float64})
+    perms = all_permutations(length(μ_target))
+    best_i, best_cost = 1, Inf
+    for (i, p) in enumerate(perms)
+        s = 0.0
+        for k in 1:length(p)
+            μk = model.B[p[k]].μ[1]
+            s += (μk - μ_target[k])^2
+        end
+        if s &lt; best_cost
+            best_cost = s; best_i = i
+        end
+    end
+    return perms[best_i]
+end
+
+μ_target = sort(μ_true)               # choose an ordering convention (ascending mean)
+aligned  = deepcopy(fits)
+for m in 1:M
+    p = best_perm_by_means(aligned[m], μ_target)
+    permute_states!(aligned[m], p)
+end
+
+aligned_means = [[aligned[m].B[k].μ[1] for k in 1:K] for m in 1:M]
+print(&quot;\nAligned emission means per run (ascending):\n&quot;)
+for row in aligned_means
+    @printf(&quot;  %s\n&quot;, string(round.(row, digits=3)))
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">
+Aligned emission means per run (ascending):
+  [-1.26, 2.398, 2.6]
+  [-2.478, -0.027, 2.504]
+  [-2.478, -0.027, 2.504]
+  [-2.478, -0.027, 2.504]
+  [0.079, 0.081, 0.084]</code></pre><h2 id="What-*is*-Identifiable?"><a class="docs-heading-anchor" href="#What-*is*-Identifiable?">What <em>is</em> Identifiable?</a><a id="What-*is*-Identifiable?-1"></a><a class="docs-heading-anchor-permalink" href="#What-*is*-Identifiable?" title="Permalink"></a></h2><ul><li><strong>Transition structure up to permutation.</strong> Eigenvalues of <code>A</code> and invariants like the stationary distribution are identifiable, but the rows/columns correspond to states whose labels are arbitrary.</li><li><strong>Emission parameters up to permutation.</strong> Means/variances (or their analogues) are identifiable modulo label permutations; if components overlap heavily, practical identifiability degrades.</li><li><strong>State sequence itself is not identifiable</strong> without constraints: we interpret distributions over sequences (e.g., smoothed posteriors), and these too are label‑ambiguous.</li></ul><h2 id="How-is-this-different-from-non-convexity?"><a class="docs-heading-anchor" href="#How-is-this-different-from-non-convexity?">How is this different from non-convexity?</a><a id="How-is-this-different-from-non-convexity?-1"></a><a class="docs-heading-anchor-permalink" href="#How-is-this-different-from-non-convexity?" title="Permalink"></a></h2><p><strong>Label symmetry (non‑identifiability)</strong> and <strong>non‑convexity</strong> can both yield multiple optima, but for different reasons and with different remedies.</p><ul><li><p><strong>Label symmetry (non‑identifiability).</strong> The objective is <em>exactly invariant</em> under a finite group of permutations (K! relabelings). All these optima are <strong>mathematically equivalent</strong>—they represent the same distribution after permuting state labels. You can move between them by explicitly permuting parameters (A, π, emissions).</p><ul><li><strong>Symptoms:</strong> Equal (up to numerical noise) log‑likelihoods; parameters across runs are permutations of each other; posteriors match after relabeling.</li><li><strong>Handling:</strong> Choose a <strong>canonicalization</strong> (e.g., sort states by a statistic) or use <strong>identifying priors/constraints</strong>; always <strong>align models post‑hoc</strong> before comparison.</li></ul></li><li><p><strong>Non‑convexity (true multimodality).</strong> The objective has <em>distinct</em> local maxima not related by symmetry. Fits may differ in likelihood and yield different predictions even <strong>after</strong> optimal alignment.</p><ul><li><strong>Symptoms:</strong> Unequal log‑likelihoods across runs; differences persist after trying all label permutations; predictive metrics (e.g., held‑out log‑lik) differ.</li><li><strong>Handling:</strong> Use <strong>multiple restarts</strong>, better initializations, <strong>continuation/annealing</strong>, <strong>regularization</strong>, longer EM runs or alternative optimizers, and <strong>cross‑validation</strong>.</li></ul></li></ul><p><strong>Both can co‑exist.</strong> You may have several <em>families</em> of solutions: each family contains K! symmetric copies (label switching), and there can be several <strong>distinct</strong> families due to non‑convexity. Our alignment step removes the symmetry so you can then compare <strong>true</strong> local optima.</p><p><strong>Practical checklist</strong></p><ol><li>Align by permutations → do likelihoods/predictions match? If yes, it was <strong>label symmetry</strong>.</li><li>If not, you’re seeing <strong>non‑convexity</strong>; compare held‑out performance and pick the best (or ensemble, if appropriate).</li></ol><h2 id="Diagnostics-and-Practical-Tips"><a class="docs-heading-anchor" href="#Diagnostics-and-Practical-Tips">Diagnostics &amp; Practical Tips</a><a id="Diagnostics-and-Practical-Tips-1"></a><a class="docs-heading-anchor-permalink" href="#Diagnostics-and-Practical-Tips" title="Permalink"></a></h2><ul><li><strong>Check invariance.</strong> Recompute log‑likelihood after permuting fitted models—differences should be ~0.</li><li><strong>Use multiple random starts.</strong> If runs converge to permuted solutions with similar likelihoods, that’s expected; if you see materially different likelihoods, you may have local maxima worth investigating.</li><li><strong>Align before comparing.</strong> Always align models (or posterior state marginals) before averaging, plotting, or computing distances.</li><li><strong>Stability tricks.</strong> Increase <code>T</code>, separate emissions more, or regularize covariances to improve practical identifiability.</li></ul><h2 id="Reproducibility"><a class="docs-heading-anchor" href="#Reproducibility">Reproducibility</a><a id="Reproducibility-1"></a><a class="docs-heading-anchor-permalink" href="#Reproducibility" title="Permalink"></a></h2><p>All random draws are made with fixed seeds via <code>StableRNGs</code>, so your numbers should match the tutorial outputs. If you change <code>K</code>, dimensionality, or the emission family, expect small edits to the alignment cost and canonicalization rules.</p><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../gaussian_glm_hmm_example/">« Gaussian GLM-HMM Example</a><a class="docs-footer-nextpage" href="../gaussian_mixture_model_example/">Gaussian Mixture Model Example »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.15.0 on <span class="colophon-date" title="Wednesday 12 November 2025 13:31">Wednesday 12 November 2025</span>. Using Julia version 1.12.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
