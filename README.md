@@ -104,7 +104,7 @@ Help us maintain a welcoming environment for researchers and developers.
   - [ ] Student's t Mixture Models
 - [x] Hidden Markov Models
   - [x] Gaussian HMMs
-  - [ ] Poisson HMMs
+  - [x] Poisson HMMs
   - [ ] Binomial HMMs
   - [ ] Negative Binomial HMMs
   - [x] Autoregressive HMMs (ARHMM)
@@ -138,6 +138,25 @@ Help us maintain a welcoming environment for researchers and developers.
 
 ## Contributing
 If you would like to contribute, report a bug, request a new feature, or simply give feedback, please feel free to [open an issue](https://github.com/depasquale-lab/StateSpaceDynamics.jl/issues) and we will get back to you in a timely manner.
+
+## Citing
+
+If you use our software in your research please cite our JOSS paper using the following bibtex citation:
+
+```
+@article{Senne_StateSpaceDynamics_jl_A_Julia_2025,
+  author = {Senne, Ryan and Loschinskey, Zachary and Fourie, James and Loughridge, Carson and DePasquale, Brian D.},
+  doi = {10.21105/joss.08077},
+  journal = {Journal of Open Source Software},
+  month = nov,
+  number = {115},
+  pages = {8077},
+  title = {{StateSpaceDynamics.jl: A Julia package for probabilistic state space models (SSMs)}},
+  url = {https://joss.theoj.org/papers/10.21105/joss.08077},
+  volume = {10},
+  year = {2025}
+  }
+```
 
 ## References
 
