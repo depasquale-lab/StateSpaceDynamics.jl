@@ -172,7 +172,7 @@ vline!([K_true], linestyle=:dash, color=:green, linewidth=2,
 vline!([best_K], linestyle=:dot, color=:red, linewidth=2,
        annotations=[(best_K, maximum(cv_mean)-30, "Selected K=$best_K", :red)])
 
-display(p2)
+p2
 
 # Initialize final model
 A_final = 0.9 * Matrix(I(best_K)) + 0.1 * randn(rng, best_K, best_K)
