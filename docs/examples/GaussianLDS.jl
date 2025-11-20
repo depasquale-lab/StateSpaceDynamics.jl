@@ -41,6 +41,7 @@ latent_dim = 2;   # Number of latent state variables
 # combination creates visually appealing dynamics that are easy to interpret.
 
 A = 0.95 * [cos(0.25) -sin(0.25); sin(0.25) cos(0.25)];
+b = zeros(latent_dim) # bias
 
 # Process noise covariance $\mathbf{Q}$ controls how much random variation we add to the
 # latent state transitions. A smaller $\mathbf{Q}$ means more predictable dynamics.
@@ -58,12 +59,13 @@ P0 = Matrix(0.1 * I(2));  # Covariance of initial state
 # observation noise covariance.
 
 C = randn(rng, obs_dim, latent_dim)  # Random linear mapping from 2D latent to 10D observed
+d = zeros(obs_dim)                   # bias
 R = Matrix(0.5 * I(obs_dim));         # Independent noise on each observation dimension
 
 # Construct the state and observation model components
 
-true_gaussian_sm = GaussianStateModel(;A=A, Q=Q, x0=x0, P0=P0)
-true_gaussian_om = GaussianObservationModel(;C=C, R=R);
+true_gaussian_sm = GaussianStateModel(;A=A, b=b, Q=Q, x0=x0, P0=P0)
+true_gaussian_om = GaussianObservationModel(;C=C, d=d, R=R);
 
 # Combine them into a complete Linear Dynamical System
 # The fit_bool parameter indicates which parameters should be learned during fitting
@@ -107,7 +109,6 @@ for i in 1:size(X, 1), j in 1:size(X, 2)
     V[i,j] = v[2] - Y[i,j]  # Change in y
 end
 
-# Normalize arrows for cleaner visualization
 magnitude = @. sqrt(U^2 + V^2)
 U_norm = U ./ magnitude
 V_norm = V ./ magnitude;
@@ -117,6 +118,8 @@ p1 = quiver(X, Y, quiver=(U_norm, V_norm), color=:blue, alpha=0.3,
            linewidth=1, arrow=arrow(:closed, :head, 0.1, 0.1))
 plot!(latents[1, :, 1], latents[2, :, 1], xlabel=L"x_1", ylabel=L"x_2",
       color=:black, linewidth=1.5, title="Latent Dynamics", legend=false)
+
+p1
 
 # ## Plot Latent States and Observations
 
@@ -151,6 +154,8 @@ plot!(subplot=2, yticks=(-lim_emissions .* (obs_dim-1:-1:0), [L"y_{%$n}" for n i
       xlabel="time", xlims=(0, tSteps), title="Simulated Emissions",
       yformatter=y->"", tickfontsize=12, left_margin=10Plots.mm)
 
+p2
+
 # ## The Learning Problem
 #
 # In real applications, we only observe $y_t$ (the emissions) - the latent states $x_t$
@@ -174,8 +179,8 @@ P0_init = Matrix(0.1 * I(latent_dim));      # Same initial uncertainty
 # where we don't know the true system. The quality of initialization can affect
 # convergence speed and which local optimum we find, but EM is generally robust
 # to reasonable starting points.
-gaussian_sm_init = GaussianStateModel(;A=A_init, Q=Q_init, x0=x0_init, P0=P0_init)
-gaussian_om_init = GaussianObservationModel(;C=C_init, R=R_init)
+gaussian_sm_init = GaussianStateModel(;A=A_init, b=b, Q=Q_init, x0=x0_init, P0=P0_init)
+gaussian_om_init = GaussianObservationModel(;C=C_init, d=d, R=R_init)
 
 # Assemble the complete naive system
 naive_ssm = LinearDynamicalSystem(;
@@ -203,6 +208,8 @@ plot!(yticks=(lim_states .* (0:latent_dim-1), [L"x_%$d" for d in 1:latent_dim]),
       xlabel="time", xlims=(0, tSteps), yformatter=y->"", tickfontsize=12,
       title="True vs. Predicted Latent States (Pre-EM)",
       legend=:topright)
+
+p3
 
 # ## Understanding the EM Algorithm
 #
@@ -243,6 +250,8 @@ plot!(yticks=(lim_states .* (0:latent_dim-1), [L"x_%$d" for d in 1:latent_dim]),
       title="True vs. Predicted Latent States (Post-EM)",
       legend=:topright)
 
+p4
+
 # ## Model Convergence Analysis
 
 # The Evidence Lower Bound (ELBO) measures how well our model explains the data.
@@ -253,6 +262,7 @@ p5 = plot(elbo, xlabel="Iteration", ylabel="ELBO",
           title="Model Convergence (ELBO)", legend=false,
           linewidth=2, color=:darkblue)
 
+p5
 # ## Interpreting the Results
 #
 # The dramatic improvement in state estimation shows that EM successfully

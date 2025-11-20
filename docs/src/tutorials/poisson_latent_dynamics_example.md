@@ -62,6 +62,7 @@ Latent states evolve smoothly according to linear dynamics
 
 ````@example poisson_latent_dynamics_example
 A = 0.95 * [cos(0.25) -sin(0.25); sin(0.25) cos(0.25)]  # Rotation with contraction
+b = zeros(latent_dim)               # bias
 Q = Matrix(0.1 * I(latent_dim))     # Process noise covariance
 x0 = zeros(latent_dim)              # Initial state mean
 P0 = Matrix(0.1 * I(latent_dim));   # Initial state covariance
@@ -116,7 +117,7 @@ The baseline parameter $d_i$ sets the minimum firing rate when latent states are
 Construct the model components
 
 ````@example poisson_latent_dynamics_example
-state_model = GaussianStateModel(; A, Q, x0, P0)          # Gaussian latent dynamics
+state_model = GaussianStateModel(; A, Q, b, x0, P0)          # Gaussian latent dynamics
 obs_model = PoissonObservationModel(; C, log_d);           # Poisson observations
 nothing #hide
 ````
@@ -181,6 +182,8 @@ p1 = quiver(X, Y, quiver=(U_norm, V_norm), color=:blue, alpha=0.3,
            linewidth=1, arrow=arrow(:closed, :head, 0.1, 0.1))
 plot!(latents[1, :, 1], latents[2, :, 1], xlabel=L"x_1", ylabel=L"x_2",
       color=:black, linewidth=1.5, title="Latent Dynamics", legend=false)
+
+p1
 ````
 
 ## Visualize Latent States and Spike Observations
@@ -221,6 +224,8 @@ end
 plot!(subplot=2, yticks=(1:obs_dim, [L"y_{%$d}" for d in 1:obs_dim]),
       xlims=(0, tSteps), ylims=(0.5, obs_dim + 0.5), title="Spike Raster Plot",
       xlabel="Time", tickfontsize=12, grid=false)
+
+p2
 ````
 
 ## The Inference Challenge
@@ -258,7 +263,7 @@ nothing #hide
 Construct naive model
 
 ````@example poisson_latent_dynamics_example
-sm_init = GaussianStateModel(; A=A_init, Q=Q_init, x0=x0_init, P0=P0_init)
+sm_init = GaussianStateModel(; A=A_init, Q=Q_init, b=b, x0=x0_init, P0=P0_init)
 om_init = PoissonObservationModel(; C=C_init, log_d=log_d_init)
 
 naive_plds = LinearDynamicalSystem(;
@@ -293,6 +298,8 @@ end
 plot!(yticks=(lim_states .* (0:latent_dim-1), [L"x_%$d" for d in 1:latent_dim]),
       xlabel="Time", xlims=(0, tSteps), title="Pre-EM: True vs. Initial Estimates",
       yformatter=y->"", tickfontsize=12, legend=:topright)
+
+p3
 ````
 
 ## Fit Using Laplace-EM Algorithm
@@ -330,6 +337,8 @@ end
 plot!(yticks=(lim_states .* (0:latent_dim-1), [L"x_%$d" for d in 1:latent_dim]),
       xlabel="Time", xlims=(0, tSteps), title="Post-EM: True vs. Learned Estimates",
       yformatter=y->"", tickfontsize=12, legend=:topright)
+
+p4
 ````
 
 ## Monitor ELBO Convergence
@@ -348,6 +357,8 @@ if length(elbo) > 1
     annotate!(p5, length(elbo)*0.7, elbo[end]*0.95,
         text("Improvement: $(round(improvement, digits=1))", 10)) # Add convergence annotation
 end
+
+p5
 ````
 
 ## Summary
