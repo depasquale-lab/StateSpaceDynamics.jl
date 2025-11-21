@@ -93,8 +93,6 @@ plot!(1:T, observations[4, :], label="Obs 4", alpha=0.7, subplot=4, title="Obser
 plot!(1:T, observations[5, :], label="Obs 5", alpha=0.7, subplot=4)
 plot!(1:T, observations[6, :], label="Obs 6", alpha=0.7, subplot=4)
 
-p1
-
 # Prepare Data for Cross-Validation
 y_data = reshape(observations, D, T, 1)  # (obs_dim, tsteps, ntrials)
 
@@ -134,14 +132,16 @@ for (k_idx, K) in enumerate(K_candidates)
 
         A_init = 0.9 * Matrix(I(K)) + 0.1 * randn(rng, K, K)
         Q_init = 0.1 * Matrix(I(K))
+        b_init = zeros(K)
         C_init = randn(rng, D, K) * 0.5
         R_init = 0.2 * Matrix(I(D))
+        d_init = zeros(D)
         μ0_init = zeros(K)
         Σ0_init = 0.1 * Matrix(I(K))
 
         lds_candidate = LinearDynamicalSystem(
-            GaussianStateModel(A_init, Q_init, true_b, μ0_init, Σ0_init),
-            GaussianObservationModel(C_init, R_init, true_d),
+            GaussianStateModel(A_init, Q_init, b_init, μ0_init, Σ0_init),
+            GaussianObservationModel(C_init, R_init, d_init),
             K,
             D,
             fill(true, 6)  # Fit all parameters
@@ -153,7 +153,7 @@ for (k_idx, K) in enumerate(K_candidates)
             x_val, _ = smooth(lds_candidate, y_val[:, :, 1])
             val_ll = loglikelihood(x_val, lds_candidate, y_val[:, :, 1])
 
-            fold_scores[fold] = val_ll / length(val_indices)  # Normalize by sequence length
+            fold_scores[fold] = sum(val_ll) / length(val_indices)  # Normalize by sequence length
 
         catch e
             println("  Warning: Fold $fold failed for K=$K: $e")
@@ -179,23 +179,27 @@ println("="^60)
 @printf("Best K: %d (CV Score: %.3f ± %.3f)\n", best_K, cv_mean[best_k_idx], cv_std[best_k_idx])
 println()
 
-p2 = plot(K_candidates, cv_mean,
-          yerr=cv_std,
-          marker=:circle,
-          markersize=6,
-          linewidth=2,
-          xlabel="Latent Dimensionality (K)",
-          ylabel="Cross-Validation Score",
-          title="Model Selection via Cross-Validation",
-          legend=false,
-          size=(800, 500))
+p2 = plot(K_candidates, cv_mean;
+    yerror = cv_std,
+    marker = :circle,
+    markersize = 6,
+    linewidth = 2,
+    xlabel = "Latent Dimensionality (K)",
+    ylabel = "Cross-Validation Score",
+    title  = "Model Selection via Cross-Validation",
+    legend = false,
+    size   = (800, 500),
+)
 
-vline!([K_true], linestyle=:dash, color=:green, linewidth=2,
-       annotations=[(K_true, maximum(cv_mean)-20, "True K=$K_true", :green)])
-vline!([best_K], linestyle=:dot, color=:red, linewidth=2,
-       annotations=[(best_K, maximum(cv_mean)-30, "Selected K=$best_K", :red)])
+vline!([K_true];  linestyle=:dash, color=:green, linewidth=2, label="")
+vline!([best_K];  linestyle=:dot,  color=:red,   linewidth=2, label="")
 
-p2
+yr = extrema(cv_mean)
+y1 = yr[2] - 0.05*(yr[2] - yr[1])
+y2 = yr[2] - 0.15*(yr[2] - yr[1])
+
+annotate!( (K_true,  y1, text("True K=$(K_true)",     :green, 10)),
+           (best_K, y2, text("Selected K=$(best_K)", :red,   10)) )
 ````
 
 Initialize final model
@@ -256,7 +260,6 @@ for i in 1:n_plot
 end
 
 p3 = plot(plt1, plt2, layout = @layout([a; b]), size=(1000,600))
-p3
 ````
 
 Compute reconstruction error
