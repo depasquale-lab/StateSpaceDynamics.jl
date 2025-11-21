@@ -5,10 +5,10 @@
 [![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 [![JET](https://img.shields.io/badge/%F0%9F%9B%A9%EF%B8%8F_tested_with-JET.jl-233f9a)](https://github.com/aviatesk/JET.jl)
 [![Code Style: Blue](https://img.shields.io/badge/code%20style-blue-4495d1.svg)](https://github.com/JuliaDiff/BlueStyle)
-[![](https://img.shields.io/badge/docs-dev-blue.svg)](https://depasquale-lab.github.io/StateSpaceDynamics.jl/dev/)
-[![](https://img.shields.io/badge/docs-stable-blue.svg)](https://depasquale-lab.github.io/StateSpaceDynamics.jl/stable)
+[![Docs: Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://depasquale-lab.github.io/StateSpaceDynamics.jl/dev/)
+[![Docs: Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://depasquale-lab.github.io/StateSpaceDynamics.jl/stable)
 [![status](https://joss.theoj.org/papers/0bcb7b5a500055bb4f9fc5aec65c177b/status.svg)](https://joss.theoj.org/papers/0bcb7b5a500055bb4f9fc5aec65c177b)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15668421.svg)](https://doi.org/10.5281/zenodo.15668421)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17583787.svg)](https://doi.org/10.5281/zenodo.17583787)
 
 ## Description
 
@@ -137,13 +137,14 @@ Help us maintain a welcoming environment for researchers and developers.
 - [dynamax](https://github.com/probml/dynamax): A python package built on JAX for state space modelling (supercedes ssm).
 
 ## Contributing
+
 If you would like to contribute, report a bug, request a new feature, or simply give feedback, please feel free to [open an issue](https://github.com/depasquale-lab/StateSpaceDynamics.jl/issues) and we will get back to you in a timely manner.
 
 ## Citing
 
 If you use our software in your research please cite our JOSS paper using the following bibtex citation:
 
-```
+```bibtex
 @article{Senne_StateSpaceDynamics_jl_A_Julia_2025,
   author = {Senne, Ryan and Loschinskey, Zachary and Fourie, James and Loughridge, Carson and DePasquale, Brian D.},
   doi = {10.21105/joss.08077},

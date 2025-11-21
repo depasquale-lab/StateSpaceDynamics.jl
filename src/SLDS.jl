@@ -595,7 +595,8 @@ function mstep!(
 end
 
 """
-    fit!(slds::SLDS, y::AbstractArray; max_iter=25, progress=true)
+    fit!(slds::SLDS{T,S,O}, y::AbstractArray{T,3}; max_iter::Int=50, progress::Bool=true
+        ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
 
 Fit SLDS using variational Laplace EM algorithm with stochastic ELBO estimates.
 Runs for exactly max_iter iterations (no early stopping due to stochastic estimates).

@@ -42,6 +42,8 @@ A_true = [0.9  0.1  0.0;
           -0.1 0.8  0.2;
            0.0 0.0  0.7];
 
+b_true = zeros(K_true)
+
 Q_true = 0.05 * Matrix(I(K_true));
 nothing #hide
 ````
@@ -57,14 +59,15 @@ C_true = [1.0  0.5  0.0;   # Obs 1: mainly latent dim 1
           0.3  0.0  0.8;   # Obs 6: dims 1 & 3
           0.6  0.4  0.2;   # Obs 7: mixture
           0.4  0.6  0.5]   # Obs 8: mixture
+d_true = zeros(D)
 
 R_true  = 0.1 * Matrix(I(D))
 x0_true = zeros(K_true)
 P0_true = 0.2 * Matrix(I(K_true))
 
 true_lds = LinearDynamicalSystem(
-    GaussianStateModel(A_true, Q_true, x0_true, P0_true),
-    GaussianObservationModel(C_true, R_true),
+    GaussianStateModel(A_true, Q_true, b_true, x0_true, P0_true),
+    GaussianObservationModel(C_true, R_true, d_true),
     K_true, D, fill(true, 6)
 );
 nothing #hide
@@ -99,8 +102,8 @@ function rotate_lds(lds, R)
     x0_rot = R * lds.state_model.x0
     P0_rot = R * lds.state_model.P0 * R'
     return LinearDynamicalSystem(
-        GaussianStateModel(A_rot, Q_rot, x0_rot, P0_rot),
-        GaussianObservationModel(C_rot, lds.obs_model.R),
+        GaussianStateModel(A_rot, Q_rot, b_true, x0_rot, P0_rot),
+        GaussianObservationModel(C_rot, lds.obs_model.R, d_true),
         size(A_rot, 1), size(C_rot, 1), fill(true, 6)
     )
 end
@@ -164,14 +167,14 @@ print("ROTATION / SIMILARITY INVARIANCE DEMONSTRATION
 print("="^60 * "
 ")
 @printf("Original model likelihood: %.6f
-", ll_orig)
+", sum(ll_orig))
 
 for (name, R, model) in zip(rot_names, rotations, rotated_models)
     x_s_rot, _ = smooth(model, y_data)
     ll_rot = loglikelihood(x_s_rot[:,:,1], model, y_true[:,:,1])
     @printf("%-24s  LL: %.6f  ΔLL: %.3e  cond(R): %-8.2f  orth? %s
 ",
-            name, ll_rot, abs(ll_rot - ll_orig), cond(R), isorthogonal(R) ? "yes" : "no")
+            name, sum(ll_rot), sum(abs.(ll_rot - ll_orig)), cond(R), isorthogonal(R) ? "yes" : "no")
 end
 ````
 
@@ -322,7 +325,7 @@ diagnostics = RotDiag[]
 for (name, R, model) in zip(rot_names, rotations, rotated_models)
     x_s, _ = smooth(model, y_data)
     ll = loglikelihood(x_s[:,:,1], model, y_true[:,:,1])
-    dLL = abs(ll - ll_orig)
+    dLL = sum(abs.(ll - ll_orig))
     Rhat_i = procrustes_R(x_s[:,:,1], x_smooth_orig[:,:,1])
     relerr = norm(Rhat_i * x_s[:,:,1] - x_smooth_orig[:,:,1]) / max(norm(x_smooth_orig[:,:,1]), eps())
     θ = subspace_angles_deg(C_true, model.obs_model.C)

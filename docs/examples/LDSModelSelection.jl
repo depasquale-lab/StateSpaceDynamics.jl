@@ -32,31 +32,27 @@ true_A = [cos(θ) -sin(θ)  0.0    0.0;
           0.0     0.0     λ      0.0;
           0.0     0.0     0.0    0.85*λ];
 
-# Process noise covariance
-true_Q = 0.05 * Matrix(I(K_true));
+true_Q = 0.05 * Matrix(I(K_true)); # Process noise covariance
+true_b = zeros(K_true)
 
-# Observation matrix - each latent dimension affects multiple observations
-Random.seed!(rng, 42)
+Random.seed!(rng, 42) # Observation matrix - each latent dimension affects multiple observations
 true_C = randn(rng, D, K_true) * 0.6;
+true_d = zeros(D)
 
-# Observation noise covariance
-true_R = 0.1 * Matrix(I(D));
+true_R = 0.1 * Matrix(I(D)); # Observation noise covariance
 
-# Initial state parameters
-true_μ0 = zeros(K_true)
+true_μ0 = zeros(K_true) # Initial state parameters
 true_Σ0 = 0.1 * Matrix(I(K_true));
 
-# Create the true LDS
 true_lds = LinearDynamicalSystem(
-    GaussianStateModel(true_A, true_Q, true_μ0, true_Σ0),
-    GaussianObservationModel(true_C, true_R),
+    GaussianStateModel(true_A, true_Q, true_b, true_μ0, true_Σ0),
+    GaussianObservationModel(true_C, true_R, true_d),
     K_true,
     D,
     fill(true, 6)
 );
 
-# Generate ground truth data
-latent_states, observations = rand(rng, true_lds; tsteps=T, ntrials=1);
+latent_states, observations = rand(rng, true_lds; tsteps=T, ntrials=1); # Generate ground truth data
 
 # Visualize the true latent dynamics and observations
 p1 = plot(layout=(2,2), size=(1000, 600))
@@ -78,10 +74,7 @@ plot!(1:T, observations[4, :], label="Obs 4", alpha=0.7, subplot=4, title="Obser
 plot!(1:T, observations[5, :], label="Obs 5", alpha=0.7, subplot=4)
 plot!(1:T, observations[6, :], label="Obs 6", alpha=0.7, subplot=4)
 
-p1
-
 ## Prepare Data for Cross-Validation
-# Reshape observations for multi-trial format (required by your codebase)
 y_data = reshape(observations, D, T, 1)  # (obs_dim, tsteps, ntrials)
 
 ## Cross-Validation Setup
@@ -116,14 +109,16 @@ for (k_idx, K) in enumerate(K_candidates)
 
         A_init = 0.9 * Matrix(I(K)) + 0.1 * randn(rng, K, K)
         Q_init = 0.1 * Matrix(I(K))
+        b_init = zeros(K)
         C_init = randn(rng, D, K) * 0.5
         R_init = 0.2 * Matrix(I(D))
+        d_init = zeros(D)
         μ0_init = zeros(K)
         Σ0_init = 0.1 * Matrix(I(K))
         
         lds_candidate = LinearDynamicalSystem(
-            GaussianStateModel(A_init, Q_init, μ0_init, Σ0_init),
-            GaussianObservationModel(C_init, R_init),
+            GaussianStateModel(A_init, Q_init, b_init, μ0_init, Σ0_init),
+            GaussianObservationModel(C_init, R_init, d_init),
             K,
             D,
             fill(true, 6)  # Fit all parameters
@@ -135,7 +130,7 @@ for (k_idx, K) in enumerate(K_candidates)
             x_val, _ = smooth(lds_candidate, y_val[:, :, 1])
             val_ll = loglikelihood(x_val, lds_candidate, y_val[:, :, 1])
             
-            fold_scores[fold] = val_ll / length(val_indices)  # Normalize by sequence length
+            fold_scores[fold] = sum(val_ll) / length(val_indices)  # Normalize by sequence length
             
         catch e
             println("  Warning: Fold $fold failed for K=$K: $e")
@@ -161,35 +156,40 @@ println("="^60)
 @printf("Best K: %d (CV Score: %.3f ± %.3f)\n", best_K, cv_mean[best_k_idx], cv_std[best_k_idx])
 println()
 
-p2 = plot(K_candidates, cv_mean, 
-          yerr=cv_std,
-          marker=:circle, 
-          markersize=6,
-          linewidth=2,
-          xlabel="Latent Dimensionality (K)",
-          ylabel="Cross-Validation Score",
-          title="Model Selection via Cross-Validation",
-          legend=false,
-          size=(800, 500))
+p2 = plot(K_candidates, cv_mean;
+    yerror = cv_std,
+    marker = :circle,
+    markersize = 6,
+    linewidth = 2,
+    xlabel = "Latent Dimensionality (K)",
+    ylabel = "Cross-Validation Score",
+    title  = "Model Selection via Cross-Validation",
+    legend = false,
+    size   = (800, 500),
+)
 
-vline!([K_true], linestyle=:dash, color=:green, linewidth=2, 
-       annotations=[(K_true, maximum(cv_mean)-20, "True K=$K_true", :green)])
-vline!([best_K], linestyle=:dot, color=:red, linewidth=2,
-       annotations=[(best_K, maximum(cv_mean)-30, "Selected K=$best_K", :red)])
+vline!([K_true];  linestyle=:dash, color=:green, linewidth=2, label="")
+vline!([best_K];  linestyle=:dot,  color=:red,   linewidth=2, label="")
 
-p2
+yr = extrema(cv_mean)
+y1 = yr[2] - 0.05*(yr[2] - yr[1])
+y2 = yr[2] - 0.15*(yr[2] - yr[1])
+
+annotate!( (K_true,  y1, text("True K=$(K_true)",     :green, 10)),
+           (best_K, y2, text("Selected K=$(best_K)", :red,   10)) )
 
 # Initialize final model
 A_final = 0.9 * Matrix(I(best_K)) + 0.1 * randn(rng, best_K, best_K)
 Q_final = 0.1 * Matrix(I(best_K))
+b_final = zeros(best_K)
 C_final = randn(rng, D, best_K) * 0.5
 R_final = 0.2 * Matrix(I(D))
 μ0_final = zeros(best_K)
 Σ0_final = 0.1 * Matrix(I(best_K))
 
 final_lds = LinearDynamicalSystem(
-    GaussianStateModel(A_final, Q_final, μ0_final, Σ0_final),
-    GaussianObservationModel(C_final, R_final),
+    GaussianStateModel(A_final, Q_final, b_final, μ0_final, Σ0_final),
+    GaussianObservationModel(C_final, R_final, true_d),
     best_K,
     D,
     fill(true, 6)
@@ -202,44 +202,34 @@ final_lls, _ = fit!(final_lds, y_data; max_iter=500, tol=1e-8)
 # Use the correct input format for smooth function (needs 3D array)
 x_learned, P_learned = smooth(final_lds, y_data)
 
-p3 = plot(layout=(2,1), size=(1000, 600))
-
-plot!(1:length(final_lls), final_lls, 
-      linewidth=2, 
-      xlabel="EM Iteration",
-      ylabel="Log-Likelihood",
-      title="Learning Curve (Final Model)",
-      subplot=1)
+plt1 = plot(
+    1:length(final_lls), final_lls,
+    linewidth=2,
+    xlabel="EM Iteration",
+    ylabel="Log-Likelihood",
+    title="Learning Curve (Final Model)"
+)
 
 n_plot = min(4, best_K, K_true)
 colors = [:blue, :red, :green, :orange]
 
+plt2 = plot(title="True vs Learned Latent Dynamics", xlabel="Time", ylabel="Latent State Value")
 for i in 1:n_plot
     if i <= size(latent_states, 1)
-        plot!(1:T, latent_states[i, :], 
-              label="True Latent $i", 
-              color=colors[i], 
-              linestyle=:solid,
-              linewidth=2,
-              subplot=2)
+        plot!(plt2, 1:T, latent_states[i, :],
+              label="True Latent $i", color=colors[i],
+              linestyle=:solid, linewidth=2)
     end
-    
     if i <= size(x_learned, 1)
-        plot!(1:T, x_learned[i, :], 
-              label="Learned Latent $i", 
-              color=colors[i], 
-              linestyle=:dash,
-              linewidth=2,
-              subplot=2)
+        plot!(plt2, 1:T, x_learned[i, :],
+              label="Learned Latent $i", color=colors[i],
+              linestyle=:dash, linewidth=2)
     end
 end
 
-plot!(xlabel="Time", 
-      ylabel="Latent State Value",
-      title="True vs Learned Latent Dynamics",
-      subplot=2)
+p3 = plot(plt1, plt2, layout = @layout([a; b]), size=(1000,600))
 
-p3
+
 
 # Compute reconstruction error
 # `x_learned` is now `(latent_dim, tsteps, 1)`, so we need to handle the singleton trial dimension

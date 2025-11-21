@@ -123,17 +123,19 @@ add StateSpaceDynamics
 
 ## Citing StateSpaceDynamics.jl
 
-Our work is currently under review in the Journal of Open Source Software. For now, if you use StateSpaceDynamics.jl in your research, please use the following bibtex citation:
+If you use this software in your research, please cite our publication in the Journal Of Open Source Software:
 
 ```bibtex
-@software{Senne_Zenodo_SSD,
-  author       = {Ryan Senne and Zachary Loschinskey and James Fourie and Carson Loughridge and Brian DePasquale},
-  title        = {StateSpaceDynamics.jl},
-  month        = jun,
-  year         = 2025,
-  publisher    = {Zenodo},
-  version      = {v1.0.0},
-  doi          = {10.5281/zenodo.15668420},
-  url          = {https://doi.org/10.5281/zenodo.15668420}
-}
+@article{Senne_StateSpaceDynamics_jl_A_Julia_2025,
+  author = {Senne, Ryan and Loschinskey, Zachary and Fourie, James and Loughridge, Carson and DePasquale, Brian D.},
+  doi = {10.21105/joss.08077},
+  journal = {Journal of Open Source Software},
+  month = nov,
+  number = {115},
+  pages = {8077},
+  title = {{StateSpaceDynamics.jl: A Julia package for probabilistic state space models (SSMs)}},
+  url = {https://joss.theoj.org/papers/10.21105/joss.08077},
+  volume = {10},
+  year = {2025}
+  }
 ```
