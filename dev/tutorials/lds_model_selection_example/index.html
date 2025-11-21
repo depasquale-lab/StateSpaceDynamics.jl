@@ -16,17 +16,29 @@ T = 300;    # Number of time steps</code></pre><p>Create interesting dynamics: o
 true_A = [cos(θ) -sin(θ)  0.0    0.0;
           sin(θ)  cos(θ)  0.0    0.0;
           0.0     0.0     λ      0.0;
-          0.0     0.0     0.0    0.85*λ];</code></pre><p>Process noise covariance</p><pre><code class="language-julia hljs">true_Q = 0.05 * Matrix(I(K_true));</code></pre><p>Observation matrix - each latent dimension affects multiple observations</p><pre><code class="language-julia hljs">Random.seed!(rng, 42)
-true_C = randn(rng, D, K_true) * 0.6;</code></pre><p>Observation noise covariance</p><pre><code class="language-julia hljs">true_R = 0.1 * Matrix(I(D));</code></pre><p>Initial state parameters</p><pre><code class="language-julia hljs">true_μ0 = zeros(K_true)
-true_Σ0 = 0.1 * Matrix(I(K_true));</code></pre><p>Create the true LDS</p><pre><code class="language- hljs">true_lds = LinearDynamicalSystem(
-    GaussianStateModel(true_A, true_Q, true_μ0, true_Σ0),
-    GaussianObservationModel(true_C, true_R),
+          0.0     0.0     0.0    0.85*λ];
+
+true_Q = 0.05 * Matrix(I(K_true)); # Process noise covariance
+true_b = zeros(K_true)
+
+Random.seed!(rng, 42) # Observation matrix - each latent dimension affects multiple observations
+true_C = randn(rng, D, K_true) * 0.6;
+true_d = zeros(D)
+
+true_R = 0.1 * Matrix(I(D)); # Observation noise covariance
+
+true_μ0 = zeros(K_true) # Initial state parameters
+true_Σ0 = 0.1 * Matrix(I(K_true));
+
+true_lds = LinearDynamicalSystem(
+    GaussianStateModel(true_A, true_Q, true_b, true_μ0, true_Σ0),
+    GaussianObservationModel(true_C, true_R, true_d),
     K_true,
     D,
     fill(true, 6)
 );
-nothing #hide</code></pre><p>Generate ground truth data</p><pre><code class="language- hljs">latent_states, observations = rand(rng, true_lds; tsteps=T, ntrials=1);
-nothing #hide</code></pre><p>Visualize the true latent dynamics and observations</p><pre><code class="language- hljs">p1 = plot(layout=(2,2), size=(1000, 600))
+
+latent_states, observations = rand(rng, true_lds; tsteps=T, ntrials=1); # Generate ground truth data</code></pre><p>Visualize the true latent dynamics and observations</p><pre><code class="language-julia hljs">p1 = plot(layout=(2,2), size=(1000, 600))
 
 plot!(1:T, latent_states[1, :], label=&quot;Latent 1 (cos)&quot;,
       linewidth=2, subplot=1, title=&quot;Oscillating Modes&quot;)
@@ -45,15 +57,13 @@ plot!(1:T, observations[4, :], label=&quot;Obs 4&quot;, alpha=0.7, subplot=4, ti
 plot!(1:T, observations[5, :], label=&quot;Obs 5&quot;, alpha=0.7, subplot=4)
 plot!(1:T, observations[6, :], label=&quot;Obs 6&quot;, alpha=0.7, subplot=4)
 
-p1
-
-# Prepare Data for Cross-Validation</code></pre><p>Reshape observations for multi-trial format (required by your codebase)</p><pre><code class="language- hljs">y_data = reshape(observations, D, T, 1)  # (obs_dim, tsteps, ntrials)
+# Prepare Data for Cross-Validation
+y_data = reshape(observations, D, T, 1)  # (obs_dim, tsteps, ntrials)
 
 # Cross-Validation Setup
 K_candidates = 1:8  # Test latent dimensions from 1 to 8
 n_folds = 5         # Number of CV folds
-fold_size = T ÷ n_folds;
-nothing #hide</code></pre><p>Storage for CV results</p><pre><code class="language- hljs">cv_scores = zeros(length(K_candidates), n_folds)
+fold_size = T ÷ n_folds;</code></pre><p>Storage for CV results</p><pre><code class="language-julia hljs">cv_scores = zeros(length(K_candidates), n_folds)
 cv_mean = zeros(length(K_candidates))
 cv_std = zeros(length(K_candidates));
 
@@ -79,14 +89,16 @@ for (k_idx, K) in enumerate(K_candidates)
 
         A_init = 0.9 * Matrix(I(K)) + 0.1 * randn(rng, K, K)
         Q_init = 0.1 * Matrix(I(K))
+        b_init = zeros(K)
         C_init = randn(rng, D, K) * 0.5
         R_init = 0.2 * Matrix(I(D))
+        d_init = zeros(D)
         μ0_init = zeros(K)
         Σ0_init = 0.1 * Matrix(I(K))
 
         lds_candidate = LinearDynamicalSystem(
-            GaussianStateModel(A_init, Q_init, μ0_init, Σ0_init),
-            GaussianObservationModel(C_init, R_init),
+            GaussianStateModel(A_init, Q_init, b_init, μ0_init, Σ0_init),
+            GaussianObservationModel(C_init, R_init, d_init),
             K,
             D,
             fill(true, 6)  # Fit all parameters
@@ -98,7 +110,7 @@ for (k_idx, K) in enumerate(K_candidates)
             x_val, _ = smooth(lds_candidate, y_val[:, :, 1])
             val_ll = loglikelihood(x_val, lds_candidate, y_val[:, :, 1])
 
-            fold_scores[fold] = val_ll / length(val_indices)  # Normalize by sequence length
+            fold_scores[fold] = sum(val_ll) / length(val_indices)  # Normalize by sequence length
 
         catch e
             println(&quot;  Warning: Fold $fold failed for K=$K: $e&quot;)
@@ -124,77 +136,89 @@ println(&quot;=&quot;^60)
 @printf(&quot;Best K: %d (CV Score: %.3f ± %.3f)\n&quot;, best_K, cv_mean[best_k_idx], cv_std[best_k_idx])
 println()
 
-p2 = plot(K_candidates, cv_mean,
-          yerr=cv_std,
-          marker=:circle,
-          markersize=6,
-          linewidth=2,
-          xlabel=&quot;Latent Dimensionality (K)&quot;,
-          ylabel=&quot;Cross-Validation Score&quot;,
-          title=&quot;Model Selection via Cross-Validation&quot;,
-          legend=false,
-          size=(800, 500))
+p2 = plot(K_candidates, cv_mean;
+    yerror = cv_std,
+    marker = :circle,
+    markersize = 6,
+    linewidth = 2,
+    xlabel = &quot;Latent Dimensionality (K)&quot;,
+    ylabel = &quot;Cross-Validation Score&quot;,
+    title  = &quot;Model Selection via Cross-Validation&quot;,
+    legend = false,
+    size   = (800, 500),
+)
 
-vline!([K_true], linestyle=:dash, color=:green, linewidth=2,
-       annotations=[(K_true, maximum(cv_mean)-20, &quot;True K=$K_true&quot;, :green)])
-vline!([best_K], linestyle=:dot, color=:red, linewidth=2,
-       annotations=[(best_K, maximum(cv_mean)-30, &quot;Selected K=$best_K&quot;, :red)])
+vline!([K_true];  linestyle=:dash, color=:green, linewidth=2, label=&quot;&quot;)
+vline!([best_K];  linestyle=:dot,  color=:red,   linewidth=2, label=&quot;&quot;)
 
-p2</code></pre><p>Initialize final model</p><pre><code class="language- hljs">A_final = 0.9 * Matrix(I(best_K)) + 0.1 * randn(rng, best_K, best_K)
+yr = extrema(cv_mean)
+y1 = yr[2] - 0.05*(yr[2] - yr[1])
+y2 = yr[2] - 0.15*(yr[2] - yr[1])
+
+annotate!( (K_true,  y1, text(&quot;True K=$(K_true)&quot;,     :green, 10)),
+           (best_K, y2, text(&quot;Selected K=$(best_K)&quot;, :red,   10)) )</code></pre><img src="4390c413.svg" alt="Example block output"/><p>Initialize final model</p><pre><code class="language-julia hljs">A_final = 0.9 * Matrix(I(best_K)) + 0.1 * randn(rng, best_K, best_K)
 Q_final = 0.1 * Matrix(I(best_K))
+b_final = zeros(best_K)
 C_final = randn(rng, D, best_K) * 0.5
 R_final = 0.2 * Matrix(I(D))
 μ0_final = zeros(best_K)
 Σ0_final = 0.1 * Matrix(I(best_K))
 
 final_lds = LinearDynamicalSystem(
-    GaussianStateModel(A_final, Q_final, μ0_final, Σ0_final),
-    GaussianObservationModel(C_final, R_final),
+    GaussianStateModel(A_final, Q_final, b_final, μ0_final, Σ0_final),
+    GaussianObservationModel(C_final, R_final, true_d),
     best_K,
     D,
     fill(true, 6)
-)</code></pre><p>Fit on full dataset</p><pre><code class="language- hljs">final_lls, _ = fit!(final_lds, y_data; max_iter=500, tol=1e-8)</code></pre><p>Compare Learned vs True Dynamics Use the correct input format for smooth function (needs 3D array)</p><pre><code class="language- hljs">x_learned, P_learned = smooth(final_lds, y_data)
+)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Linear Dynamical System:
+------------------------
+ Gaussian State Model:
+ ---------------------
+  State Parameters:
+   A  = [0.972 -0.0737 0.0176 0.0746; -0.0262 0.855 0.00471 -0.131; 0.00165 0.0674 0.848 0.0787; 0.0802 0.0642 -0.0126 1.03]
+   Q  = [0.1 0.0 0.0 0.0; 0.0 0.1 0.0 0.0; 0.0 0.0 0.1 0.0; 0.0 0.0 0.0 0.1]
+  Initial State:
+   b  = [0.0, 0.0, 0.0, 0.0]
+   x0 = [0.0, 0.0, 0.0, 0.0]
+   P0 = [0.1 0.0 0.0 0.0; 0.0 0.1 0.0 0.0; 0.0 0.0 0.1 0.0; 0.0 0.0 0.0 0.1]
+ Gaussian Observation Model:
+ ---------------------------
+  size(C) = (10, 4)
+  size(R) = (10, 10)
+  size(d) = (10,)
+ Parameters to update:
+ ---------------------
+  x0, P0, A (and b), Q, C, R
+</code></pre><p>Fit on full dataset</p><pre><code class="language-julia hljs">final_lls, _ = fit!(final_lds, y_data; max_iter=500, tol=1e-8)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">([-14478.013912490433, -710.4084406897019, -234.16711203090426, 218.95950298139383, 592.8693744817501, 857.4714712581017, 1022.3172910438657, 1119.197521870131, 1175.304009698883, 1207.4056170958127  …  1270.3705665982884, 1270.3787885226172, 1270.3869935811354, 1270.3951818429896, 1270.4033533766842, 1270.4115082503647, 1270.4196465319892, 1270.4277682888792, 1270.4358735879225, 1270.4439624958436], [6.944726245938449, 1.8905295826863686, 1.0138931251240768, 0.483940789539728, 0.229107977955957, 0.12204925095765637, 0.04483528844926021, 0.023358989759428954, 0.01403542885222746, 0.009103687819864021  …  1.0891180314418483e-6, 1.0846977617827071e-6, 1.08030434739712e-6, 1.075937571900227e-6, 1.071597219667823e-6, 1.0672830784161049e-6, 1.0629949373220932e-6, 1.0587325875811274e-6, 1.0544958234797385e-6, 1.0502844398236567e-6])</code></pre><p>Compare Learned vs True Dynamics Use the correct input format for smooth function (needs 3D array)</p><pre><code class="language-julia hljs">x_learned, P_learned = smooth(final_lds, y_data)
 
-p3 = plot(layout=(2,1), size=(1000, 600))
-
-plot!(1:length(final_lls), final_lls,
-      linewidth=2,
-      xlabel=&quot;EM Iteration&quot;,
-      ylabel=&quot;Log-Likelihood&quot;,
-      title=&quot;Learning Curve (Final Model)&quot;,
-      subplot=1)
+plt1 = plot(
+    1:length(final_lls), final_lls,
+    linewidth=2,
+    xlabel=&quot;EM Iteration&quot;,
+    ylabel=&quot;Log-Likelihood&quot;,
+    title=&quot;Learning Curve (Final Model)&quot;
+)
 
 n_plot = min(4, best_K, K_true)
 colors = [:blue, :red, :green, :orange]
 
+plt2 = plot(title=&quot;True vs Learned Latent Dynamics&quot;, xlabel=&quot;Time&quot;, ylabel=&quot;Latent State Value&quot;)
 for i in 1:n_plot
     if i &lt;= size(latent_states, 1)
-        plot!(1:T, latent_states[i, :],
-              label=&quot;True Latent $i&quot;,
-              color=colors[i],
-              linestyle=:solid,
-              linewidth=2,
-              subplot=2)
+        plot!(plt2, 1:T, latent_states[i, :],
+              label=&quot;True Latent $i&quot;, color=colors[i],
+              linestyle=:solid, linewidth=2)
     end
-
     if i &lt;= size(x_learned, 1)
-        plot!(1:T, x_learned[i, :],
-              label=&quot;Learned Latent $i&quot;,
-              color=colors[i],
-              linestyle=:dash,
-              linewidth=2,
-              subplot=2)
+        plot!(plt2, 1:T, x_learned[i, :],
+              label=&quot;Learned Latent $i&quot;, color=colors[i],
+              linestyle=:dash, linewidth=2)
     end
 end
 
-plot!(xlabel=&quot;Time&quot;,
-      ylabel=&quot;Latent State Value&quot;,
-      title=&quot;True vs Learned Latent Dynamics&quot;,
-      subplot=2)
-
-p3</code></pre><p>Compute reconstruction error <code>x_learned</code> is now <code>(latent_dim, tsteps, 1)</code>, so we need to handle the singleton trial dimension</p><pre><code class="language- hljs">x_learned = x_learned[:, :, 1]
+p3 = plot(plt1, plt2, layout = @layout([a; b]), size=(1000,600))</code></pre><img src="37eb7588.svg" alt="Example block output"/><p>Compute reconstruction error <code>x_learned</code> is now <code>(latent_dim, tsteps, 1)</code>, so we need to handle the singleton trial dimension</p><pre><code class="language-julia hljs">x_learned = x_learned[:, :, 1]
 
 y_pred = final_lds.obs_model.C * x_learned
 reconstruction_error = mean((observations - y_pred).^2)
 
-@printf(&quot;Reconstruction MSE: %.6f\n&quot;, reconstruction_error)</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../poisson_latent_dynamics_example/">« Poisson LDS Example</a><a class="docs-footer-nextpage" href="../lds_identifiability_example/">Non-Identifiability in LDS Models »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.15.0 on <span class="colophon-date" title="Wednesday 22 October 2025 19:17">Wednesday 22 October 2025</span>. Using Julia version 1.12.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+@printf(&quot;Reconstruction MSE: %.6f\n&quot;, reconstruction_error)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Reconstruction MSE: 0.102450</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../poisson_latent_dynamics_example/">« Poisson LDS Example</a><a class="docs-footer-nextpage" href="../lds_identifiability_example/">Non-Identifiability in LDS Models »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.0 on <span class="colophon-date" title="Friday 21 November 2025 03:56">Friday 21 November 2025</span>. Using Julia version 1.12.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
