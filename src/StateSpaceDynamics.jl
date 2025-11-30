@@ -18,14 +18,23 @@ using StatsFuns
 using Base.Threads: @threads
 using Base: show
 
-include("GlobalTypes.jl")
-include("Utilities.jl")
-include("LinearDynamicalSystems.jl")
-include("EmissionModels.jl")
-include("HiddenMarkovModels.jl")
-include("SLDS.jl")
-include("MixtureModels.jl")
-include("Preprocessing.jl")
-include("Valid.jl")
+# Core types and utilities
+include("core/GlobalTypes.jl")
+include("core/Utilities.jl")
+
+# Linear Dynamical Systems
+include("models/lds/types.jl")
+include("models/lds/gaussian.jl")
+include("models/lds/poisson.jl")
+
+# Other models
+include("models/EmissionModels.jl")
+include("models/HiddenMarkovModels.jl")
+include("models/SLDS.jl")
+include("models/MixtureModels.jl")
+
+# Algorithms
+include("algorithms/Preprocessing.jl")
+include("algorithms/Valid.jl")
 
 end
