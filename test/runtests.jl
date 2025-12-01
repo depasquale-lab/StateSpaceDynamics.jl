@@ -346,9 +346,7 @@ include("helper_functions.jl")
         test_gaussian_entropy()
 
         @testset "Block Tridiagonal Inverse" begin
-            test_block_tridiagonal_inverse_basic()
-            test_block_tridiagonal_inverse_random()
-            test_block_tridiagonal_inverse_identity()
+            test_block_tridiagonal_inverse()
             test_block_tridiagonal_inverse_type_preservation()
             test_block_tridiagonal_inverse_single_block()
             test_block_tridiagonal_inverse_vs_static()

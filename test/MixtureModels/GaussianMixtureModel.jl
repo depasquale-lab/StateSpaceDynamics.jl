@@ -112,7 +112,7 @@ function test_vector_input_handling()
     # Test that vector inputs are handled correctly
     gmm = GaussianMixtureModel(2, 1)
     data_vec = randn(50)
-    data_mat = reshape(data_vec, :, 1)
+    data_mat = reshape(data_vec, 1, :)
 
     # Test estep
     γ_vec = StateSpaceDynamics.estep(gmm, data_vec)
