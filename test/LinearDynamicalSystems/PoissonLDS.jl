@@ -1,3 +1,6 @@
+# Include common test utilities
+include("CommonLDS.jl")
+
 # define parameters for a PoissonLDS
 x0 = [1.0, -1.0]
 P0 = Matrix(Diagonal([0.1, 0.1]))  # Fixed: was p0, now P0
@@ -280,73 +283,17 @@ end
 
 function test_Gradient()
     plds, x, y = toy_PoissonLDS()
-
-    # for each trial check the gradient
-    for i in axes(y, 3)
-        # numerically calculate the gradient
-        f = latents -> sum(StateSpaceDynamics.loglikelihood(latents, plds, y[:, :, i]))
-        grad_numerical = ForwardDiff.gradient(f, x[:, :, i])
-
-        # calculate the gradient
-        grad = StateSpaceDynamics.Gradient(plds, y[:, :, i], x[:, :, i])
-
-        @test norm(grad - grad_numerical) < 1e-8
-    end
+    return test_gradient_common(plds, x, y)
 end
 
 function test_Hessian()
     plds, x, y = toy_PoissonLDS()
-
-    # create function that allows that we can pass the latents to the loglikelihood transposed
-    function log_likelihood(x::AbstractArray, plds, y::AbstractArray)
-        return sum(StateSpaceDynamics.loglikelihood(x, plds, y))
-    end
-
-    # check hessian for each trial
-    for i in axes(y, 3)
-        hess, main, super, sub = StateSpaceDynamics.Hessian(
-            plds, y[:, 1:3, i], x[:, 1:3, i]
-        )
-        @test size(hess) == (plds.latent_dim * 3, plds.latent_dim * 3)
-        @test size(main) == (3,)
-        @test size(super) == (2,)
-        @test size(sub) == (2,)
-
-        # calculate hess using autodiff now
-        obj = latents -> log_likelihood(latents, plds, y[:, 1:3, i])
-        hess_numerical = ForwardDiff.hessian(obj, x[:, 1:3, i])
-        @test norm(hess_numerical - hess) < 1e-8
-    end
+    return test_hessian_common(plds, x, y)
 end
 
 function test_smooth()
     plds, x, y = toy_PoissonLDS()
-
-    tfs = StateSpaceDynamics.initialize_FilterSmooth(plds, size(y, 2), size(y, 3))
-
-    # smooth data
-    ml_total = StateSpaceDynamics.smooth!(plds, tfs, y)
-
-    nTrials = size(y, 3)
-    nTsteps = size(y, 2)
-
-    x_smooth = tfs[1].x_smooth
-    p_smooth = tfs[1].p_smooth
-    p_smooth_tt1 = tfs[1].p_smooth_tt1
-
-    @test size(x_smooth) == (plds.latent_dim, nTsteps)
-    @test size(p_smooth) == (plds.latent_dim, plds.latent_dim, nTsteps)
-    @test size(p_smooth_tt1) == (plds.latent_dim, plds.latent_dim, nTsteps)
-
-    # test gradient is zero
-    for i in axes(y, 3)
-        # may as well test the gradient here too
-        f = latents -> sum(StateSpaceDynamics.loglikelihood(latents, plds, y[:, :, i]))
-        grad_numerical = ForwardDiff.gradient(f, x_smooth[:, :, i])
-        grad_analytical = StateSpaceDynamics.Gradient(plds, y[:, :, i], x_smooth[:, :, i])
-
-        @test norm(grad_numerical - grad_analytical) < 1e-7
-    end
+    return test_smooth_common(plds, x, y)
 end
 
 function test_parameter_gradient()
@@ -388,115 +335,15 @@ function test_parameter_gradient()
 end
 
 function test_initial_observation_parameter_updates(ntrials::Int=1)
-    plds, x, y = toy_PoissonLDS(ntrials, [true, true, false, false, false, false])
-
-    tfs = StateSpaceDynamics.initialize_FilterSmooth(plds, size(y, 2), size(y, 3))
-
-    # run estep
-    ml_total = StateSpaceDynamics.estep!(plds, tfs, y)
-
-    function obj(x0::AbstractVector, P0_sqrt::AbstractMatrix, plds)
-        A = plds.state_model.A
-        b = plds.state_model.b
-        Q = plds.state_model.Q
-        P0 = P0_sqrt * P0_sqrt'
-        Q_val = 0.0
-        for i in 1:ntrials
-            trial = tfs[i]
-            Q_val += StateSpaceDynamics.Q_state(
-                A, b, Q, P0, x0, trial.E_z, trial.E_zz, trial.E_zz_prev
-            )
-        end
-        return -Q_val
-    end
-
-    P0_sqrt = Matrix(cholesky(plds.state_model.P0).U)
-
-    x0_opt = optimize(
-        x0 -> obj(x0, P0_sqrt, plds),
-        plds.state_model.x0,
-        LBFGS(),
-        Optim.Options(; g_abstol=1e-12),
-    ).minimizer
-    P0_opt = optimize(P0_ -> obj(x0_opt, P0_, plds), P0_sqrt, LBFGS()).minimizer
-
-    # update the initial state and covariance
-    StateSpaceDynamics.mstep!(plds, tfs, y)
-
-    @test isapprox(plds.state_model.x0, x0_opt, atol=1e-6)
-    @test isapprox(plds.state_model.P0, P0_opt * P0_opt', atol=1e-6)
+    return test_initial_state_parameter_updates_common(toy_PoissonLDS, ntrials)
 end
 
 function test_state_model_parameter_updates(ntrials::Int=1)
-    plds, x, y = toy_PoissonLDS(ntrials, [false, false, true, true, false, false])
-
-    tfs = StateSpaceDynamics.initialize_FilterSmooth(plds, size(y, 2), size(y, 3))
-    ml_total = StateSpaceDynamics.estep!(plds, tfs, y)
-
-    D = plds.latent_dim
-
-    # Optimize [A b] jointly (matching your implementation)
-    function obj_Ab(AB::AbstractMatrix, Q_sqrt::AbstractMatrix, plds)
-        A = AB[:, 1:D]
-        b = AB[:, D + 1]
-        Q = Q_sqrt * Q_sqrt'
-        Q_val = 0.0
-        for i in 1:ntrials
-            trial = tfs[i]
-            Q_val += StateSpaceDynamics.Q_state(
-                A,
-                b,
-                Q,
-                plds.state_model.P0,
-                plds.state_model.x0,
-                trial.E_z,
-                trial.E_zz,
-                trial.E_zz_prev,
-            )
-        end
-        return -Q_val
-    end
-
-    AB0 = hcat(plds.state_model.A, plds.state_model.b)
-    Q_sqrt0 = Matrix(cholesky(plds.state_model.Q).U)
-
-    AB_opt = optimize(AB -> obj_Ab(AB, Q_sqrt0, plds), AB0, LBFGS()).minimizer
-    Q_opt_sqrt = optimize(Qs -> obj_Ab(AB_opt, Qs, plds), Q_sqrt0, LBFGS()).minimizer
-
-    StateSpaceDynamics.mstep!(plds, tfs, y)
-
-    @test isapprox(plds.state_model.A, AB_opt[:, 1:D], atol=1e-6, rtol=1e-6)
-    @test isapprox(plds.state_model.b, AB_opt[:, D + 1], atol=1e-6, rtol=1e-6)
-    @test isapprox(plds.state_model.Q, Q_opt_sqrt * Q_opt_sqrt', atol=1e-6, rtol=1e-6)
+    return test_state_model_parameter_updates_common(toy_PoissonLDS, ntrials)
 end
 
 function test_EM(n_trials::Int=1)
-    # generate fake data
-    plds, x, y = toy_PoissonLDS(n_trials)
-
-    # create a new plds model with random parameters
-    A = Matrix{Float64}(I, 2, 2)
-    C = Matrix{Float64}(I, 3, 2)  # Fixed dimensions for 3 obs, 2 latent
-    Q = Matrix{Float64}(I, 2, 2)
-    log_d = zeros(Float64, 3)  # Fixed: 3 observations
-    x0 = fill(one(Float64), 2)
-    P0 = Matrix{Float64}(I, 2, 2)
-    b = zeros(Float64, 2)
-
-    gsm_new = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0, b=b)
-    pom_new = PoissonObservationModel(; C=C, log_d=log_d)
-    plds_new = LinearDynamicalSystem(;
-        state_model=gsm_new,
-        obs_model=pom_new,
-        latent_dim=2,
-        obs_dim=3,
-        fit_bool=fill(true, 6),
-    )
-
-    elbo, norm_grad = fit!(plds_new, y; max_iter=100)
-
-    # check that the ELBO increases over the whole algorithm.
-    @test elbo[end] > elbo[1]
+    return test_em_convergence_common(toy_PoissonLDS, n_trials)
 end
 
 function test_EM_matlab()

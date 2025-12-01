@@ -15,8 +15,6 @@ using StatsFuns
 using SpecialFunctions
 using Test
 
-const CHECKED_TYPES = [Float32, Float64]
-
 # Helper functions
 include("helper_functions.jl")
 
