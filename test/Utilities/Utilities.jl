@@ -124,3 +124,182 @@ function test_gaussian_entropy()
     gauss_entropy_ssd = gaussian_entropy(-Λ)
     @test isapprox(gaus_entropy_dist, gauss_entropy_ssd; atol=1e-6)
 end
+
+function test_block_tridiagonal_inverse_basic()
+    # Test with 2x2 block matrices
+    n = 3  # Number of blocks
+    block_size = 2
+
+    # Create simple block tridiagonal matrix
+    A = [Matrix{Float64}(I, block_size, block_size) for _ in 1:(n - 1)]  # Sub-diagonal
+    B = [2.0 * Matrix{Float64}(I, block_size, block_size) for _ in 1:n]  # Main diagonal
+    C = [0.5 * Matrix{Float64}(I, block_size, block_size) for _ in 1:(n - 1)]  # Super-diagonal
+
+    # Compute inverse using block tridiagonal algorithm
+    λii, λij = StateSpaceDynamics.block_tridiagonal_inverse(A, B, C)
+
+    # Construct full block tridiagonal matrix
+    M = block_tridgm(B, C, A)
+
+    # Compute inverse directly
+    M_inv = inv(Matrix(M))
+
+    # Verify diagonal blocks
+    for i in 1:n
+        block_start = (i - 1) * block_size + 1
+        block_end = i * block_size
+        @test isapprox(
+            λii[:, :, i], M_inv[block_start:block_end, block_start:block_end]; atol=1e-10
+        )
+    end
+
+    # Verify off-diagonal blocks
+    for i in 1:(n - 1)
+        block_start_i = (i - 1) * block_size + 1
+        block_end_i = i * block_size
+        block_start_j = i * block_size + 1
+        block_end_j = (i + 1) * block_size
+        @test isapprox(
+            λij[:, :, i],
+            M_inv[block_start_i:block_end_i, block_start_j:block_end_j];
+            atol=1e-10,
+        )
+    end
+end
+
+function test_block_tridiagonal_inverse_random()
+    # Test with random matrices
+    n = 4
+    block_size = 3
+
+    # Create random symmetric positive definite block tridiagonal matrix
+    A = [randn(block_size, block_size) for _ in 1:(n - 1)]
+    C = [randn(block_size, block_size) for _ in 1:(n - 1)]
+
+    # Make diagonal blocks dominant to ensure invertibility
+    B = [
+        Matrix{Float64}(I, block_size, block_size) * 10.0 +
+        randn(block_size, block_size) * 0.1 for _ in 1:n
+    ]
+
+    # Compute inverse
+    λii, λij = StateSpaceDynamics.block_tridiagonal_inverse(A, B, C)
+
+    # Construct full matrix and verify
+    M = block_tridgm(B, C, A)
+    M_inv = inv(Matrix(M))
+
+    # Check all diagonal blocks
+    for i in 1:n
+        block_start = (i - 1) * block_size + 1
+        block_end = i * block_size
+        @test isapprox(
+            λii[:, :, i], M_inv[block_start:block_end, block_start:block_end]; atol=1e-8
+        )
+    end
+
+    # Check all off-diagonal blocks
+    for i in 1:(n - 1)
+        block_start_i = (i - 1) * block_size + 1
+        block_end_i = i * block_size
+        block_start_j = i * block_size + 1
+        block_end_j = (i + 1) * block_size
+        @test isapprox(
+            λij[:, :, i],
+            M_inv[block_start_i:block_end_i, block_start_j:block_end_j];
+            atol=1e-8,
+        )
+    end
+end
+
+function test_block_tridiagonal_inverse_identity()
+    # Test with identity matrices - inverse should also be identity
+    n = 5
+    block_size = 2
+
+    A = [zeros(Float64, block_size, block_size) for _ in 1:(n - 1)]
+    B = [Matrix{Float64}(I, block_size, block_size) for _ in 1:n]
+    C = [zeros(Float64, block_size, block_size) for _ in 1:(n - 1)]
+
+    λii, λij = StateSpaceDynamics.block_tridiagonal_inverse(A, B, C)
+
+    # Diagonal blocks should be identity
+    for i in 1:n
+        @test isapprox(λii[:, :, i], Matrix{Float64}(I, block_size, block_size); atol=1e-12)
+    end
+
+    # Off-diagonal blocks should be zero
+    for i in 1:(n - 1)
+        @test isapprox(λij[:, :, i], zeros(Float64, block_size, block_size); atol=1e-12)
+    end
+end
+
+function test_block_tridiagonal_inverse_type_preservation()
+    # Test that Float32 is preserved
+    n = 3
+    block_size = 2
+
+    A = [Matrix{Float32}(I, block_size, block_size) for _ in 1:(n - 1)]
+    B = [2.0f0 * Matrix{Float32}(I, block_size, block_size) for _ in 1:n]
+    C = [0.5f0 * Matrix{Float32}(I, block_size, block_size) for _ in 1:(n - 1)]
+
+    λii, λij = StateSpaceDynamics.block_tridiagonal_inverse(A, B, C)
+
+    @test eltype(λii) == Float32
+    @test eltype(λij) == Float32
+
+    # Verify correctness with Float32
+    M = block_tridgm(B, C, A)
+    M_inv = inv(Matrix(M))
+
+    for i in 1:n
+        block_start = (i - 1) * block_size + 1
+        block_end = i * block_size
+        @test isapprox(
+            λii[:, :, i], M_inv[block_start:block_end, block_start:block_end]; atol=1e-5
+        )
+    end
+end
+
+function test_block_tridiagonal_inverse_single_block()
+    # Test with a single block (n=1)
+    block_size = 3
+    A = Vector{Matrix{Float64}}()
+    B = [randn(block_size, block_size)]
+    B[1] = B[1] + 5.0 * I  # Make it well-conditioned
+    C = Vector{Matrix{Float64}}()
+
+    λii, λij = StateSpaceDynamics.block_tridiagonal_inverse(A, B, C)
+
+    # Should just be the inverse of the single block
+    @test isapprox(λii[:, :, 1], inv(B[1]); atol=1e-10)
+    @test size(λij, 3) == 0  # No off-diagonal blocks
+end
+
+function test_block_tridiagonal_inverse_vs_static()
+    # Compare non-static vs static implementation
+    n = 4
+    block_size = 2
+
+    A = [randn(block_size, block_size) for _ in 1:(n - 1)]
+    B = [
+        5.0 * Matrix{Float64}(I, block_size, block_size) + randn(block_size, block_size) for
+        _ in 1:n
+    ]
+    C = [randn(block_size, block_size) for _ in 1:(n - 1)]
+
+    # Non-static version
+    λii_reg, λij_reg = StateSpaceDynamics.block_tridiagonal_inverse(A, B, C)
+
+    # Static version
+    A_static = [SMatrix{block_size,block_size}(a) for a in A]
+    B_static = [SMatrix{block_size,block_size}(b) for b in B]
+    C_static = [SMatrix{block_size,block_size}(c) for c in C]
+    λii_static, λij_static = StateSpaceDynamics.block_tridiagonal_inverse_static(
+        A_static, B_static, C_static, Val(block_size)
+    )
+
+    # Results should be very close
+    @test isapprox(λii_reg, λii_static; atol=1e-10)
+    @test isapprox(λij_reg, λij_static; atol=1e-10)
+end

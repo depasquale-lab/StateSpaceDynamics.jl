@@ -1,3 +1,6 @@
+# Include common test utilities
+include("Common.jl")
+
 function test_PoissonMixtureModel_properties(pmm::PoissonMixtureModel, k::Int)
     @test pmm.k == k
     @test length(pmm.λₖ) == k
@@ -48,3 +51,72 @@ function test_loglikelihood_pmm(
         prev_ll = curr_ll
     end
 end
+
+function test_rand_sampling_pmm()
+    # Test sampling from PMM
+    pmm = PoissonMixtureModel(3)
+    pmm.λₖ = [2.0, 5.0, 10.0]
+    pmm.πₖ = [0.3, 0.5, 0.2]
+
+    test_rand_dimensions_pmm(pmm, 100)
+
+    # Test that samples are non-negative integers
+    samples = rand(pmm, 1000)
+    @test all(>=(0), samples)
+    @test eltype(samples) <: Integer
+end
+
+function test_estep_probabilities_pmm()
+    # Test that E-step produces valid probabilities
+    pmm = PoissonMixtureModel(3)
+    data = rand(0:20, 1, 50)  # Random Poisson-like data
+
+    γ = StateSpaceDynamics.estep(pmm, data)
+    return test_estep_probabilities_common(γ, pmm.k, size(data, 2))
+end
+
+function test_mstep_validity_pmm()
+    # Test that M-step maintains model validity
+    pmm = PoissonMixtureModel(3)
+    data = rand(0:20, 1, 100)
+
+    return test_mstep_maintains_validity_pmm(pmm, data)
+end
+
+function test_fit_with_kmeans_init_pmm()
+    # Test fitting with K-means initialization
+    data = rand(0:20, 1, 100)
+    pmm = PoissonMixtureModel(3)
+
+    γ, lls = fit!(pmm, data; maxiter=20, tol=1e-4, initialize_kmeans=true)
+
+    @test size(γ) == (3, 100)
+    test_fit_convergence_common(lls)
+    return test_PoissonMixtureModel_properties(pmm, 3)
+end
+
+function test_vector_input_handling_pmm()
+    # Test that vector inputs are handled correctly
+    pmm = PoissonMixtureModel(2)
+    data_vec = rand(0:20, 50)
+    data_mat = reshape(data_vec, 1, :)
+
+    # Test estep
+    γ_vec = StateSpaceDynamics.estep(pmm, data_vec)
+    γ_mat = StateSpaceDynamics.estep(pmm, data_mat)
+    @test γ_vec ≈ γ_mat
+
+    # Test loglikelihood
+    ll_vec = StateSpaceDynamics.loglikelihood(pmm, data_vec)
+    ll_mat = StateSpaceDynamics.loglikelihood(pmm, data_mat)
+    @test ll_vec ≈ ll_mat
+
+    # Test mstep
+    pmm1 = PoissonMixtureModel(2)
+    pmm2 = PoissonMixtureModel(2)
+    StateSpaceDynamics.mstep!(pmm1, data_vec, γ_vec)
+    StateSpaceDynamics.mstep!(pmm2, data_mat, γ_mat)
+    @test pmm1.λₖ ≈ pmm2.λₖ
+    @test pmm1.πₖ ≈ pmm2.πₖ
+end
+

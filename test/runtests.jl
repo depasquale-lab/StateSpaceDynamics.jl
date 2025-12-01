@@ -11,6 +11,7 @@ using Optim
 using Random
 using StateSpaceDynamics
 using SparseArrays
+using StaticArrays
 using StatsFuns
 using SpecialFunctions
 using Test
@@ -254,6 +255,13 @@ include("helper_functions.jl")
                 gmm = GaussianMixtureModel(k, D)
                 test_loglikelihood(gmm, data)
             end
+
+            # Additional tests
+            test_rand_sampling()
+            test_estep_probabilities()
+            test_mstep_validity()
+            test_fit_with_kmeans_init()
+            test_vector_input_handling()
         end
 
         @testset "Poisson Mixture Model" begin
@@ -279,6 +287,13 @@ include("helper_functions.jl")
                 pmm = PoissonMixtureModel(k)
                 test_loglikelihood_pmm(pmm, d)
             end
+
+            # Additional tests
+            test_rand_sampling_pmm()
+            test_estep_probabilities_pmm()
+            test_mstep_validity_pmm()
+            test_fit_with_kmeans_init_pmm()
+            test_vector_input_handling_pmm()
         end
     end
 
@@ -329,6 +344,34 @@ include("helper_functions.jl")
         test_block_tridgm()
         test_autoregressive_setters_and_getters()
         test_gaussian_entropy()
+
+        @testset "Block Tridiagonal Inverse" begin
+            test_block_tridiagonal_inverse_basic()
+            test_block_tridiagonal_inverse_random()
+            test_block_tridiagonal_inverse_identity()
+            test_block_tridiagonal_inverse_type_preservation()
+            test_block_tridiagonal_inverse_single_block()
+            test_block_tridiagonal_inverse_vs_static()
+        end
+    end
+
+    # Validation Tests
+    @testset verbose=true "Validation" begin
+        include("Validation/Valid.jl")
+
+        @testset "Probability Vector Validation" begin
+            test_isvalid_probvec()
+        end
+
+        @testset "LDS Validation" begin
+            test_isvalid_LDS_gaussian()
+            test_isvalid_LDS_poisson()
+            test_isvalid_LDS_dimension_mismatch()
+            test_isvalid_LDS_non_positive_definite()
+            test_isvalid_LDS_wrong_fit_bool_length()
+            test_isvalid_LDS_poisson_extreme_log_d()
+            test_isvalid_LDS_asymmetric_covariance()
+        end
     end
 
     # Preprocessing Tests
