@@ -349,6 +349,7 @@ include("helper_functions.jl")
             test_block_tridiagonal_inverse()
             test_block_tridiagonal_inverse_type_preservation()
             test_block_tridiagonal_inverse_single_block()
+            test_block_tridiagonal_inverse_randomized_vs_static()
             test_block_tridiagonal_inverse_vs_static()
         end
     end

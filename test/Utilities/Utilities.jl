@@ -215,3 +215,54 @@ function test_block_tridiagonal_inverse_vs_static()
     @test all(isfinite.(λii_static))
     @test all(isfinite.(λij_static))
 end
+
+function test_block_tridiagonal_inverse_randomized_vs_static()
+    # Randomized stress-test comparing dynamic and static implementations
+    rng = MersenneTwister(42)
+
+    for T in (Float64, Float32)
+        # looser tolerance for Float32
+        atol = T === Float32 ? 1e-5 : 1e-6
+
+        for block_size in (1, 2, 3)
+            for n in (1, 2, 3, 4)
+                for trial in 1:5
+                    # build blocks
+                    A = [randn(rng, T, block_size, block_size) for _ in 1:max(0, n - 1)]
+                    B = [
+                        T(5.0) * Matrix{T}(I, block_size, block_size) +
+                        randn(rng, T, block_size, block_size) for _ in 1:n
+                    ]
+                    C = [randn(rng, T, block_size, block_size) for _ in 1:max(0, n - 1)]
+
+                    # dynamic
+                    λii_reg, λij_reg = StateSpaceDynamics.block_tridiagonal_inverse(A, B, C)
+
+                    # static (only when sizes are small enough to construct SMatrix)
+                    if isempty(A)
+                        A_static = SMatrix{block_size,block_size,T}[]
+                    else
+                        A_static = [SMatrix{block_size,block_size,T}(a) for a in A]
+                    end
+                    B_static = [SMatrix{block_size,block_size,T}(b) for b in B]
+                    if isempty(C)
+                        C_static = SMatrix{block_size,block_size,T}[]
+                    else
+                        C_static = [SMatrix{block_size,block_size,T}(c) for c in C]
+                    end
+                    λii_static, λij_static = StateSpaceDynamics.block_tridiagonal_inverse_static(
+                        A_static, B_static, C_static, Val(block_size)
+                    )
+
+                    @test isapprox(λii_reg, λii_static; atol=atol, rtol=0)
+                    @test isapprox(λij_reg, λij_static; atol=atol, rtol=0)
+
+                    @test all(isfinite.(λii_reg))
+                    @test all(isfinite.(λij_reg))
+                    @test all(isfinite.(λii_static))
+                    @test all(isfinite.(λij_static))
+                end
+            end
+        end
+    end
+end
