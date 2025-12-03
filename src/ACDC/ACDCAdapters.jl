@@ -17,7 +17,15 @@ Requires: ACDCInterface.jl
 # =============================================================================
 
 """
+    _sample_categorical(p::AbstractVector) -> Int
+
 Sample from a categorical distribution with probabilities `p`.
+
+# Arguments
+- `p::AbstractVector`: Probability vector (must sum to 1)
+
+# Returns
+- Index of sampled category
 """
 function _sample_categorical(p::AbstractVector{T}) where {T<:Real}
     u = rand(T)
@@ -32,15 +40,34 @@ function _sample_categorical(p::AbstractVector{T}) where {T<:Real}
 end
 
 """
-Standard normal CDF using Distributions.jl.
+    _normal_cdf(x::Real) -> Real
+
+Standard normal CDF ``\\Phi(x) = P(Z \\leq x)`` where ``Z \\sim \\mathcal{N}(0,1)``.
+
+# Arguments
+- `x::Real`: Input value
+
+# Returns
+- CDF value in ``[0, 1]``
 """
 function _normal_cdf(x::T) where {T<:Real}
     return T(cdf(Normal(), x))
 end
 
 """
-Randomized CDF for Poisson distribution (for discrete PIT).
-Returns `U(F(x-1), F(x))` to ensure exact uniformity.
+    _poisson_cdf_randomized(x::Integer, λ::Real) -> Real
+
+Randomized CDF for Poisson distribution (discrete probability integral transform).
+
+Returns ``U \\sim \\text{Uniform}(F(x-1), F(x))`` to ensure exact uniformity under the 
+true model, where ``F`` is the Poisson CDF with rate ``\\lambda``.
+
+# Arguments
+- `x::Integer`: Observed count
+- `λ::Real`: Poisson rate parameter
+
+# Returns
+- Randomized PIT value in ``[0, 1]``
 """
 function _poisson_cdf_randomized(x::Integer, λ::T) where {T<:Real}
     if λ <= zero(T)
@@ -53,7 +80,19 @@ function _poisson_cdf_randomized(x::Integer, λ::T) where {T<:Real}
 end
 
 """
-Randomized CDF for Bernoulli distribution (for discrete PIT).
+    _bernoulli_cdf_randomized(x::Real, p::Real) -> Real
+
+Randomized CDF for Bernoulli distribution (discrete probability integral transform).
+
+Returns ``U \\sim \\text{Uniform}(F(x-1), F(x))`` to ensure exact uniformity under the
+true model, where ``F`` is the Bernoulli CDF with success probability ``p``.
+
+# Arguments
+- `x::Real`: Observed value (0 or 1)
+- `p::Real`: Success probability
+
+# Returns
+- Randomized PIT value in ``[0, 1]``
 """
 function _bernoulli_cdf_randomized(x::Real, p::T) where {T<:Real}
     p = clamp(p, T(1e-10), T(1 - 1e-10))
@@ -75,22 +114,35 @@ end
 
 Recover stochastic drivers for a Gaussian Mixture Model.
 
+# Model
+
 For GMM, the generative process is:
 
 ```math
-\\begin{aligned}
-    z_n &\\sim \\mathrm{Categorical}(\\pi) \\\\
-    x_n | z_n=k &\\sim N(\\mu_k, \\Sigma_k)
-\\end{aligned}
+z_n \\sim \\text{Categorical}(\\pi)
+```
+```math
+x_n | z_n = k \\sim \\mathcal{N}(\\mu_k, \\Sigma_k)
 ```
 
+# Driver Recovery
 
-We recover `ε` by:
-    1. Sample `z_n` from posterior `P(z_n | x_n)`
-    2. For active component `k=z_n: ε_{d,k,n} = Φ(L_k^{-1}(x_n - μ_k))_d`
-    3. For inactive components: `ε_{d,k,n} ~ U(0,1)`
+We recover ``\\varepsilon`` by:
+1. Sample ``z_n`` from posterior ``P(z_n | x_n)``
+2. For active component ``k = z_n``: ``\\varepsilon_{d,k,n} = \\Phi(L_k^{-1}(x_n - \\mu_k))_d``
+3. For inactive components: ``\\varepsilon_{d,k,n} \\sim U(0,1)``
 
-# Returns D × K × N × S array of drivers.
+where ``L_k`` is the Cholesky factor of ``\\Sigma_k``.
+
+# Arguments
+- `model::GaussianMixtureModel`: Fitted GMM
+- `data::AbstractMatrix`: Observations, D × N matrix
+
+# Keyword Arguments
+- `n_samples::Int=1`: Number of stochastic samples per observation
+
+# Returns
+- `StochasticDriverResult` with D × K × N × S array of drivers
 """
 function stochastic_drivers(
     model::StateSpaceDynamics.GaussianMixtureModel{T},
@@ -148,7 +200,32 @@ end
 
 Recover stochastic drivers for a Poisson Mixture Model.
 
-Uses randomized PIT for discrete Poisson observations.
+# Model
+
+For Poisson MM, the generative process is:
+
+```math
+z_n \\sim \\text{Categorical}(\\pi)
+```
+```math
+x_{n,d} | z_n = k \\sim \\text{Poisson}(\\lambda_{k,d})
+```
+
+# Driver Recovery
+
+Uses randomized probability integral transform (PIT) for discrete observations.
+For active component ``k = z_n``, computes ``\\varepsilon_{d,k,n} \\sim U(F(x-1), F(x))``
+where ``F`` is the Poisson CDF.
+
+# Arguments
+- `model::PoissonMixtureModel`: Fitted Poisson mixture model
+- `data::AbstractMatrix{<:Integer}`: Count observations, D × N matrix
+
+# Keyword Arguments
+- `n_samples::Int=1`: Number of stochastic samples per observation
+
+# Returns
+- `StochasticDriverResult` with D × K × N × S array of drivers
 """
 function stochastic_drivers(
     model::StateSpaceDynamics.PoissonMixtureModel{T},
@@ -199,10 +276,43 @@ end
 
 Recover stochastic drivers for a Hidden Markov Model.
 
-For HMM, we sample states from the forward-backward posterior, then compute
-emission-specific drivers for each state.
+# Model
 
-Note: `X` should be passed in the same format as fit!, i.e., `D_x × T`.
+For HMM, the generative process is:
+
+```math
+z_1 \\sim \\text{Categorical}(\\pi_0)
+```
+```math
+z_t | z_{t-1} \\sim \\text{Categorical}(A_{z_{t-1}, :})
+```
+```math
+x_t | z_t = k \\sim B_k(x_t; \\theta_k)
+```
+
+where ``B_k`` is the emission distribution for state ``k``.
+
+# Driver Recovery
+
+We sample states from the forward-backward posterior, then compute emission-specific 
+drivers for each state. Inactive states receive samples from ``U(0,1)``.
+
+Supported emission types:
+- `GaussianEmission`: Whitened residuals through normal CDF
+- `GaussianRegressionEmission`: Regression residuals through normal CDF
+- `BernoulliRegressionEmission`: Randomized PIT for binary outcomes
+- `PoissonRegressionEmission`: Randomized PIT for count outcomes
+
+# Arguments
+- `model::HiddenMarkovModel`: Fitted HMM
+- `data::AbstractMatrix`: Observations, D × T matrix
+
+# Keyword Arguments
+- `n_samples::Int=1`: Number of stochastic samples per observation
+- `X::Union{AbstractMatrix,Nothing}=nothing`: Covariates for regression emissions, D_x × T matrix
+
+# Returns
+- `StochasticDriverResult` with D × K × T × S array of drivers
 """
 function stochastic_drivers(
     model::StateSpaceDynamics.HiddenMarkovModel{T},
@@ -268,7 +378,18 @@ end
 # =============================================================================
 
 """
+    _emission_to_driver!(ε_out, emission::GaussianEmission, y, x)
+
 Compute stochastic drivers for Gaussian emission.
+
+Computes ``\\varepsilon_d = \\Phi(L^{-1}(y - \\mu))_d`` where ``L`` is the 
+Cholesky factor of ``\\Sigma``.
+
+# Arguments
+- `ε_out::AbstractVector`: Output vector for drivers (modified in-place)
+- `emission::GaussianEmission`: Gaussian emission parameters
+- `y::AbstractVector`: Observation vector
+- `x::Nothing`: Unused (no covariates)
 """
 function _emission_to_driver!(
     ε_out::AbstractVector{T},
@@ -287,7 +408,18 @@ function _emission_to_driver!(
 end
 
 """
+    _emission_to_driver!(ε_out, emission::GaussianRegressionEmission, y, x)
+
 Compute stochastic drivers for Gaussian regression emission.
+
+Computes ``\\varepsilon_d = \\Phi(L^{-1}(y - \\beta^\\top x))_d`` where ``L`` is the 
+Cholesky factor of ``\\Sigma``.
+
+# Arguments
+- `ε_out::AbstractVector`: Output vector for drivers (modified in-place)
+- `emission::GaussianRegressionEmission`: Regression emission parameters
+- `y::AbstractVector`: Observation vector
+- `x::AbstractVector`: Covariate vector
 """
 function _emission_to_driver!(
     ε_out::AbstractVector{T},
@@ -310,7 +442,18 @@ function _emission_to_driver!(
 end
 
 """
+    _emission_to_driver!(ε_out, emission::BernoulliRegressionEmission, y, x)
+
 Compute stochastic drivers for Bernoulli regression emission.
+
+Uses randomized PIT: ``\\varepsilon_d \\sim U(F(y_d - 1), F(y_d))`` where
+``F`` is the Bernoulli CDF with ``p_d = \\sigma(\\beta^\\top x)_d``.
+
+# Arguments
+- `ε_out::AbstractVector`: Output vector for drivers (modified in-place)
+- `emission::BernoulliRegressionEmission`: Regression emission parameters
+- `y::AbstractVector`: Binary observation vector
+- `x::AbstractVector`: Covariate vector
 """
 function _emission_to_driver!(
     ε_out::AbstractVector{T},
@@ -330,7 +473,18 @@ function _emission_to_driver!(
 end
 
 """
+    _emission_to_driver!(ε_out, emission::PoissonRegressionEmission, y, x)
+
 Compute stochastic drivers for Poisson regression emission.
+
+Uses randomized PIT: ``\\varepsilon_d \\sim U(F(y_d - 1), F(y_d))`` where
+``F`` is the Poisson CDF with ``\\lambda_d = \\exp(\\beta^\\top x)_d``.
+
+# Arguments
+- `ε_out::AbstractVector`: Output vector for drivers (modified in-place)
+- `emission::PoissonRegressionEmission`: Regression emission parameters
+- `y::AbstractVector`: Count observation vector
+- `x::AbstractVector`: Covariate vector
 """
 function _emission_to_driver!(
     ε_out::AbstractVector{T},
@@ -362,20 +516,43 @@ end
 
 Recover stochastic drivers for Probabilistic PCA.
 
+# Model
+
 For PPCA, the generative model is:
-    z_n ~ N(0, I_K)
-    x_n = W z_n + μ + ε,   ε ~ N(0, σ²I_D)
 
-We decompose this as x_d = Σ_k y_{dk} + μ_d where y_{dk} ~ N(W_{dk} z_k, σ²_k(n)).
-The per-component noise variance σ²_k(n) is allocated PER-SAMPLE based on the 
+```math
+z_n \\sim \\mathcal{N}(0, I_K)
+```
+```math
+x_n = W z_n + \\mu + \\varepsilon, \\quad \\varepsilon \\sim \\mathcal{N}(0, \\sigma^2 I_D)
+```
+
+# Decomposition
+
+We decompose this as ``x_d = \\sum_k y_{dk} + \\mu_d`` where ``y_{dk} \\sim \\mathcal{N}(W_{dk} z_k, \\sigma^2_k(n))``.
+
+The per-component noise variance ``\\sigma^2_k(n)`` is allocated **per-sample** based on the 
 activation level: components with stronger activation for that sample get more 
-noise budget. This ensures misspecification in component k is localized to 
-samples where k is strongly activated.
+noise budget. This ensures misspecification in component ``k`` is localized to 
+samples where ``k`` is strongly activated.
 
-The per-component contributions y_{dk} are sampled via Gaussian deconvolution,
-then transformed to uniform via ε_{dk} = Φ((y_{dk} - W_{dk} z_k) / σ_k(n)).
+The per-component contributions ``y_{dk}`` are sampled via Gaussian deconvolution,
+then transformed to uniform via:
 
-Returns D × K × N × S array of drivers (dimensions × factors × observations × samples).
+```math
+\\varepsilon_{dk} = \\Phi\\left(\\frac{y_{dk} - W_{dk} z_k}{\\sigma_k(n)}\\right)
+```
+
+# Arguments
+- `model::ProbabilisticPCA`: Fitted PPCA model
+- `data::AbstractMatrix`: Observations, D × N matrix
+
+# Keyword Arguments
+- `n_samples::Int=1`: Number of stochastic samples per observation
+
+# Returns
+- `StochasticDriverResult` with D × K × N × S array of drivers 
+  (dimensions × factors × observations × samples)
 """
 function stochastic_drivers(
     model::StateSpaceDynamics.ProbabilisticPCA{T}, data::AbstractMatrix{T}; n_samples::Int=1
@@ -413,7 +590,6 @@ function stochastic_drivers(
 
             # Allocate σ² proportionally to each component's activation for THIS sample
             σ²_k_n = [σ² * activation_k[k] / total_activation for k in 1:K]
-            # σ²_k_n = [σ² / K for k in 1:K]
 
             # Ensure minimum variance to avoid numerical issues
             σ²_k_n = [max(σ²_k, σ² * eps(T) * K) for σ²_k in σ²_k_n]
@@ -440,17 +616,21 @@ function stochastic_drivers(
 end
 
 """
-    _deconvolve_gaussian_sum(x_sum, μs, σs)
+    _deconvolve_gaussian_sum(x_sum, μs, σs) -> Vector
 
-Sample (y_1, ..., y_K) given that Σ_k y_k = x_sum and y_k ~ N(μ_k, σ_k²) independently.
+Sample ``(y_1, \\ldots, y_K)`` given that ``\\sum_k y_k = x_{sum}`` and 
+``y_k \\sim \\mathcal{N}(\\mu_k, \\sigma_k^2)`` independently.
 
-Uses sequential conditioning: sample y_1 | x_sum, then y_2 | x_sum - y_1, etc.
+Uses sequential conditioning: sample ``y_1 | x_{sum}``, then ``y_2 | x_{sum} - y_1``, etc.
 Following the formulation in Li et al. (Appendix I.1, Gaussian Factor Analysis).
 
 # Arguments
-- `x_sum`: The observed sum to decompose
-- `μs`: Vector of means for each component
-- `σs`: Vector of standard deviations for each component (or scalar for equal variances)
+- `x_sum::Real`: The observed sum to decompose
+- `μs::Vector`: Means for each component
+- `σs::Union{Real,Vector}`: Standard deviations for each component (scalar for equal variances)
+
+# Returns
+- Vector of sampled component values ``y_1, \\ldots, y_K``
 """
 function _deconvolve_gaussian_sum(
     x_sum::T, μs::Vector{T}, σs::Union{T,Vector{T}}
