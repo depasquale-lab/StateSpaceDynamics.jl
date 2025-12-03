@@ -27,5 +27,6 @@ include("SLDS.jl")
 include("MixtureModels.jl")
 include("Preprocessing.jl")
 include("Valid.jl")
+include("ACDC/ACDC.jl")
 
 end
