@@ -4,19 +4,19 @@ ACDCInterface.jl
 Core interface for ACDC (Accumulated Cutoff Discrepancy Criterion) model selection.
 
 The interface is built around the concept of "stochastic drivers" - the uniform noise
-``\\epsilon_{n,k} ~ U(0,1)`` that drives the generative process for each component's contribution
-to each observation.
+``\\varepsilon_{n,k} \\sim U(0,1)`` that drives the generative process for each component's 
+contribution to each observation.
 
-Generative model:
+# Generative Model
 
 ```math
 \\begin{aligned}
     x_n &= \\sum_k y_{n,k} \\\\
-    y_{n,k} &= f(z_{n,k}, \\phi_k, \\epsilon_{n,k})\\qquad \\text{where} \\epsilon_{n,k} \\sim U(0,1)
+    y_{n,k} &= f(z_{n,k}, \\phi_k, \\varepsilon_{n,k}) \\quad \\text{where } \\varepsilon_{n,k} \\sim U(0,1)
 \\end{aligned}
 ```
 
-If the model is correct, the recovered ``\\epsilon_{n,k}`` should be uniformly distributed.
+If the model is correct, the recovered ``\\varepsilon_{n,k}`` should be uniformly distributed.
 """
 
 export ACDCResult, StochasticDriverResult, ComponentDiscrepancy
@@ -46,13 +46,13 @@ abstract type ComponentDiscrepancy end
 Container for stochastic drivers recovered from a fitted model.
 
 # Fields
-- `ε::Array{T,4}` - Stochastic drivers, D × K × N × S array where:
+- `ε::Array{T,4}`: Stochastic drivers, D × K × N × S array where:
   - D = dimension of observations
   - K = number of components
   - N = number of observations
   - S = number of samples per observation
   - All values in ``[0, 1]``; should be ``U(0,1)`` if model is correct
-- `usage::Vector{T}` - Component contribution magnitudes (length K)
+- `usage::Vector{T}`: Component contribution magnitudes (length K)
 """
 struct StochasticDriverResult{T<:Real}
     ε::Array{T,4}
@@ -71,9 +71,9 @@ end
 Container for ACDC analysis results.
 
 # Fields
-- `K::Int` - Number of components
-- `component_discrepancies::Vector{T}` - Per-component discrepancy values D̂ₖ
-- `component_usage::Vector{T}` - Component contribution magnitudes
+- `K::Int`: Number of components
+- `component_discrepancies::Vector{T}`: Per-component discrepancy values ``\\hat{D}_k``
+- `component_usage::Vector{T}`: Component contribution magnitudes
 """
 struct ACDCResult{T<:Real}
     K::Int
@@ -92,49 +92,56 @@ end
 # =============================================================================
 
 """
-    stochastic_drivers(model, data; n_samples::Int=1) -> StochasticDriverResult
+    stochastic_drivers(model, data; n_samples=1) -> StochasticDriverResult
 
-Recover the stochastic drivers ``\\epsilon_{d,n,k}`` for each dimension d, component k, and observation n.
+Recover the stochastic drivers ``\\varepsilon_{d,k,n}`` for each dimension d, component k, 
+and observation n.
+
+# Model
 
 The generative model is:
 
 ```math
 \\begin{aligned}
     x_n &= \\sum_k y_{n,k} \\\\
-    y_{n,k} &= f(z_{n,k}, \\phi_k, \\epsilon_{n,k})\\qquad \\text{where} \\epsilon_{n,k} \\sim U(0,1)
+    y_{n,k} &= f(z_{n,k}, \\phi_k, \\varepsilon_{n,k}) \\quad \\text{where } \\varepsilon_{n,k} \\sim U(0,1)
 \\end{aligned}
 ```
 
-This function inverts the generative process to recover ε_{n,k}. Since the inversion
-involves posterior uncertainty, multiple samples can be drawn.
+This function inverts the generative process to recover ``\\varepsilon_{n,k}``. Since the 
+inversion involves posterior uncertainty, multiple samples can be drawn.
 
 # Arguments
-- `model` - Fitted model
-- `data` - Observed data (D × N matrix)
-- `n_samples::Int=1` - Number of samples to draw from ``p(\\epsilon_{n,k} | x_n, model)``
+- `model`: Fitted model
+- `data`: Observed data (D × N matrix)
+
+# Keyword Arguments
+- `n_samples::Int=1`: Number of samples to draw from ``p(\\varepsilon_{n,k} | x_n, \\text{model})``
 
 # Returns
 - `StochasticDriverResult` containing:
-  - `ε`: D × K × N × S array of drivers in `[0, 1]`
+  - `ε`: D × K × N × S array of drivers in ``[0, 1]``
   - `usage`: K-vector of component contribution magnitudes
 """
 function stochastic_drivers end
 
 """
-    component_discrepancies(model, data, discrepancy; n_samples::Int=1) -> ACDCResult
+    component_discrepancies(model, data, discrepancy; n_samples=1, kwargs...) -> ACDCResult
 
 Compute component-wise discrepancies using the stochastic drivers framework.
 
-For each component `k`, the discrepancy is computed by aggregating across all dimensions.
-Each `(d, k)` pair contributes a KL divergence, and the component discrepancy is the 
+For each component ``k``, the discrepancy is computed by aggregating across all dimensions.
+Each ``(d, k)`` pair contributes a divergence measure, and the component discrepancy is the 
 sum across dimensions.
 
 # Arguments
-- `model` - Fitted model
-- `data` - Observed data
-- `discrepancy::ComponentDiscrepancy` - Discrepancy measure
-- `n_samples::Int=1` - Number of samples per observation for driver estimation
-- `kwargs...` - Custom keyword arguments to pass down to `stochastic_drivers`
+- `model`: Fitted model
+- `data`: Observed data
+- `discrepancy::ComponentDiscrepancy`: Discrepancy measure
+
+# Keyword Arguments
+- `n_samples::Int=1`: Number of samples per observation for driver estimation
+- `kwargs...`: Additional keyword arguments passed to `stochastic_drivers`
 
 # Returns
 - `ACDCResult` containing per-component discrepancies from ``U(0,1)``
@@ -168,14 +175,21 @@ end
 """
     KLDiscrepancy{T<:Real} <: ComponentDiscrepancy
 
-KL divergence ``\\mathcal{D}_KL(P || U([0,1]^D))`` estimated via k-nearest neighbors density estimation.
+KL divergence ``D_{\\text{KL}}(P \\| U([0,1]^D))`` estimated via k-nearest neighbors 
+density estimation.
 
 Measures how much the empirical distribution of stochastic drivers diverges from 
 the uniform distribution on the unit hypercube. Returns 0 when drivers are perfectly
 uniform, positive otherwise.
 
+# Implementation Note
+
+Direct estimation on the bounded hypercube ``[0,1]^D`` suffers from boundary bias.
+We apply the probit transform to map samples to ``\\mathbb{R}^D``, comparing against
+``\\mathcal{N}(0, I)`` instead.
+
 # Fields
-- `k_neighbors::Int` - Number of neighbors for kNN density estimation (default: 5)
+- `k_neighbors::Int`: Number of neighbors for kNN density estimation (default: 5)
 """
 struct KLDiscrepancy{T<:Real} <: ComponentDiscrepancy
     k_neighbors::Int
@@ -193,11 +207,12 @@ KLDiscrepancy(; kwargs...) = KLDiscrepancy{Float64}(; kwargs...)
 
 Kolmogorov-Smirnov statistic for testing uniformity on ``[0,1]^D``.
 
-For D=1: Standard KS test comparing empirical CDF to F(x) = x.
-For D>1: Maximum KS statistic across marginal distributions.
+- For ``D=1``: Standard KS test comparing empirical CDF to ``F(x) = x``
+- For ``D>1``: Maximum KS statistic across marginal distributions
 
-Note: The multivariate version tests marginal uniformity but not independence.
-Use KLDiscrepancy for a joint uniformity test.
+!!! note
+    The multivariate version tests marginal uniformity but not independence.
+    Use `KLDiscrepancy` or `MMDDiscrepancy` for a joint uniformity test.
 """
 struct KSDiscrepancy{T<:Real} <: ComponentDiscrepancy
     function KSDiscrepancy{T}() where {T<:Real}
@@ -212,12 +227,12 @@ KSDiscrepancy() = KSDiscrepancy{Float64}()
 
 Wasserstein-p distance between empirical distribution and ``U([0,1]^D)``.
 
-For `D=1`: Closed-form solution using sorted samples vs uniform quantiles.
-For `D>1`: Sliced Wasserstein approximation (average over random 1D projections).
+- For ``D=1``: Closed-form solution using sorted samples vs uniform quantiles
+- For ``D>1``: Sliced Wasserstein approximation (average over random 1D projections)
 
 # Fields
-- `p::Int` - Order of Wasserstein distance (default: 2)
-- `regularization::T` - Unused, kept for API compatibility (default: 0.1)
+- `p::Int`: Order of Wasserstein distance (default: 2)
+- `regularization::T`: Unused, kept for API compatibility (default: 0.1)
 """
 struct WassersteinDiscrepancy{T<:Real} <: ComponentDiscrepancy
     p::Int
@@ -237,9 +252,9 @@ WassersteinDiscrepancy(; kwargs...) = WassersteinDiscrepancy{Float64}(; kwargs..
 Moment-based discrepancy from ``U([0,1]^D)``.
 
 Tests deviation from expected moments of the uniform distribution:
-- Marginal means: ``\\mathbb{E}[\\epsilon_d] = 0.5``
-- Marginal variances: ``\\mathrm{Var}[\\epsilon_d] = 1/12``
-- Cross-covariances: ``\\mathrm{Cov}[\\epsilon_d, \\epsilon_d'] = 0 for d \\neq d'``
+- Marginal means: ``\\mathbb{E}[\\varepsilon_d] = 0.5``
+- Marginal variances: ``\\text{Var}[\\varepsilon_d] = 1/12``
+- Cross-covariances: ``\\text{Cov}[\\varepsilon_d, \\varepsilon_{d'}] = 0`` for ``d \\neq d'``
 
 Fast to compute but less sensitive than KL or Wasserstein.
 """
@@ -255,19 +270,19 @@ SquaredErrorDiscrepancy() = SquaredErrorDiscrepancy{Float64}()
     MMDDiscrepancy{T<:Real} <: ComponentDiscrepancy
 
 Unbiased Maximum Mean Discrepancy (MMD) using a Gaussian (RBF) kernel.
+
 Measures the distance between the empirical distribution and the reference ``U([0,1]^D)``
 by embedding them into a Reproducing Kernel Hilbert Space (RKHS).
 
-This estimator is:
-- **Unbiased**: Uses the U-statistic formulation (removing diagonal bias).
-- **Dependence-Aware**: The RBF kernel detects dependencies between dimensions.
-- **Scalable**: Uses a block-averaging strategy for large N to maintain performance.
+# Properties
+- **Unbiased**: Uses the U-statistic formulation (removing diagonal bias)
+- **Dependence-Aware**: The RBF kernel detects dependencies between dimensions
+- **Scalable**: Uses block-averaging for large N to maintain ``O(N)`` complexity
 
 # Fields
-- `sigma::T` - Kernel bandwidth (default: 0.5). 
-               Rule of thumb: set to median pairwise distance.
-- `block_size::Int` - max samples per block for computation (default: 5000).
-                      If N > block_size, computes average MMD over blocks.
+- `sigma::T`: Kernel bandwidth (default: 0.5). Rule of thumb: set to median pairwise distance
+- `block_size::Int`: Max samples per block for computation (default: 5000).
+                     If ``N > \\text{block\\_size}``, computes average MMD over blocks
 """
 struct MMDDiscrepancy{T<:Real} <: ComponentDiscrepancy
     sigma::T
@@ -287,28 +302,20 @@ MMDDiscrepancy(; kwargs...) = MMDDiscrepancy{Float64}(; kwargs...)
 # =============================================================================
 
 """
-    compute_discrepancy(d::ComponentDiscrepancy, samples) -> Real
+    compute_discrepancy(d::ComponentDiscrepancy, samples::AbstractMatrix) -> Real
 
 Compute the divergence between the empirical distribution of `samples` and the 
-theoretical Uniform distribution ``U([0,1]^D)``.
+theoretical uniform distribution ``U([0,1]^D)``.
 
 # Arguments
-- `d`: ComponentDiscrepancy configuration.
-- `samples`: ``D \\times N`` matrix of samples in \$[0, 1]\$.
+- `d::ComponentDiscrepancy`: Discrepancy configuration
+- `samples::AbstractMatrix`: D × N matrix of samples in ``[0, 1]``
 
 # Returns
-- The estimated divergence (non-negative).
+- Estimated divergence (non-negative)
 """
 function compute_discrepancy end
 
-"""
-Direct estimation of KL divergence on the bounded hypercube ``[0,1]^D`` suffers from 
-severe boundary bias, particularly in high dimensions, leading to underestimated densities. 
-We apply the Probit transform to map samples to the unbounded space ``\\mathbb{R}^D``,
-transforming the problem into comparing the empirical distribution against a standard Multivariate 
-Normal \$\\mathcal{N}(0, I)\$. This eliminates boundary artifacts, enabling consistent k-NN density 
-estimation without the negative bias associated with the unit cube.
-"""
 function compute_discrepancy(
     d::KLDiscrepancy{T}, samples::AbstractMatrix{T}
 ) where {T<:Real}
@@ -335,13 +342,11 @@ function compute_discrepancy(
     # log(N(x; 0, I)) = -D/2 * log(2π) - 0.5 * ||x||^2
     log_2pi = log(T(2) * T(π))
 
-    # We compute the mean log-likelihood of the REFERENCE distribution at the observed points
-    # sum(x.^2, dims=1) computes squared norm for each sample
+    # Mean log-likelihood of the REFERENCE distribution at the observed points
     mean_sq_norm = mean(sum(samples_normal .^ 2; dims=1))
     mean_log_q = -0.5 * (D * log_2pi + mean_sq_norm)
 
     # KL = E[log p] - E[log q]
-    # (Using max(0, ...) for numerical stability)
     return max(zero(T), mean_log_p - mean_log_q)
 end
 
@@ -363,7 +368,6 @@ function compute_discrepancy(
         return ks_stat
     else
         # Multivariate: use maximum of marginal KS statistics
-        # This is a simple extension; more sophisticated options exist
         max_ks = zero(T)
         for dim in 1:D
             x = sort(vec(samples[dim, :]))
@@ -385,10 +389,6 @@ function compute_discrepancy(
     d::SquaredErrorDiscrepancy{T}, samples::AbstractMatrix{T}
 ) where {T<:Real}
     D, N = size(samples)
-
-    # For U([0,1]^D): 
-    # - Each marginal has mean 0.5, var 1/12
-    # - Covariance between dimensions should be 0
 
     total_err = zero(T)
 
@@ -441,8 +441,7 @@ function compute_discrepancy(
 
             # 1D Wasserstein on projection
             x_sorted = sort(projected)
-            # For projection of U([0,1]^D), reference is more complex
-            # Approximate: use empirical quantiles of uniform samples
+            # For projection of U([0,1]^D), use empirical quantiles of uniform samples
             ref_samples = sort(vec(direction' * rand(T, D, N)))
 
             w_dist = zero(T)
@@ -464,14 +463,12 @@ function compute_discrepancy(
     # If dataset is small enough, compute exact full MMD
     if N <= d.block_size
         # Generate reference noise on the fly
-        # We use the same number of samples N to minimize variance
         reference_uniform = rand(T, D, N)
         return _compute_mmd_quadratic_unbiased(samples, reference_uniform, d.sigma)
     end
 
     # Block MMD Strategy for Large N
-    # Split N into blocks, compute MMD for each, and average.
-    # This maintains O(N) complexity instead of O(N^2).
+    # Split N into blocks, compute MMD for each, and average
     n_blocks = div(N, d.block_size)
     total_mmd = zero(T)
 
@@ -479,16 +476,12 @@ function compute_discrepancy(
         start_idx = (b - 1) * d.block_size + 1
         end_idx = b * d.block_size
 
-        # View into current block
         block_samples = view(samples, :, start_idx:end_idx)
-
-        # Generate fresh uniform noise for this block
         reference = rand(D, d.block_size)
 
         total_mmd += _compute_mmd_quadratic_unbiased(block_samples, reference, d.sigma)
     end
 
-    # Average the result
     return max(zero(T), total_mmd / n_blocks)
 end
 
@@ -499,15 +492,15 @@ end
 """
     acdc_loss(result::ACDCResult, ρ::Real) -> Real
 
-Compute the ACDC loss for a given cutoff threshold ρ.
+Compute the ACDC loss for a given cutoff threshold ``\\rho``.
 
-``
-    R^ρ(K) = Σₖ max(0, D̂ₖ - ρ)
-``
+```math
+R^\\rho(K) = \\sum_k \\max(0, \\hat{D}_k - \\rho)
+```
 
 # Arguments
-- `result::ACDCResult` - Result from component_discrepancies
-- `ρ::Real` - Cutoff threshold for acceptable misspecification
+- `result::ACDCResult`: Result from `component_discrepancies`
+- `ρ::Real`: Cutoff threshold for acceptable misspecification
 
 # Returns
 - Loss value (non-negative)
@@ -519,13 +512,13 @@ end
 """
     acdc_select(results::Vector{ACDCResult}, ρ::Real) -> Int
 
-Select the optimal number of components K for a given ρ.
+Select the optimal number of components K for a given ``\\rho``.
 
 Chooses K with minimum ACDC loss, breaking ties by preferring smaller K.
 
 # Arguments
-- `results::Vector{ACDCResult}` - Results for different K values (must be ordered)
-- `ρ::Real` - Cutoff threshold
+- `results::Vector{ACDCResult}`: Results for different K values (must be ordered)
+- `ρ::Real`: Cutoff threshold
 
 # Returns
 - Optimal K value
@@ -547,16 +540,16 @@ end
 """
     get_critical_rho_values(results::Vector{ACDCResult}) -> Vector
 
-Get all critical ρ values where the ACDC loss function changes slope.
+Get all critical ``\\rho`` values where the ACDC loss function changes slope.
 
 These are exactly the component discrepancy values across all K.
 Useful for efficient evaluation of the loss curve.
 
 # Arguments
-- `results::Vector{ACDCResult}` - Results for different K values
+- `results::Vector{ACDCResult}`: Results for different K values
 
 # Returns
-- Sorted vector of unique critical ρ values
+- Sorted vector of unique critical ``\\rho`` values
 """
 function get_critical_rho_values(results::Vector{ACDCResult{T}}) where {T<:Real}
     all_discs = T[]
@@ -572,39 +565,49 @@ end
 # =============================================================================
 
 """
-    _mean_log_pdf_knn_multivariate(samples, k)
+    _mean_log_pdf_knn_multivariate(samples::AbstractMatrix, k::Int) -> Real
 
-Estimate E_P[log p(x)] using k-NN with KDTree acceleration and bias correction.
-Uses the Kozachenko-Leonenko estimator.
+Estimate ``\\mathbb{E}_P[\\log p(x)]`` using k-NN density estimation with KDTree 
+acceleration and bias correction.
+
+Uses the Kozachenko-Leonenko estimator:
+
+```math
+\\hat{H} = \\psi(k) - \\psi(N) + \\log(c_D) + \\frac{D}{N} \\sum_{i=1}^N \\log \\rho_k(x_i)
+```
+
+where ``\\rho_k(x_i)`` is the distance to the k-th nearest neighbor and ``c_D`` is the 
+volume of the unit ball in ``D`` dimensions.
+
+# Arguments
+- `samples::AbstractMatrix`: D × N matrix of samples
+- `k::Int`: Number of neighbors
+
+# Returns
+- Estimated mean log density
 """
 function _mean_log_pdf_knn_multivariate(samples::AbstractMatrix{T}, k::Int) where {T<:Real}
     D, N = size(samples)
 
     # Build KDTree for O(N log N) search
-    # NearestNeighbors expects input as columns
     tree = KDTree(samples)
 
     # Query k+1 nearest neighbors for all points
     # (k+1 because the 1st neighbor is the point itself)
-    # The 'true' argument sorts the results so we can grab the (k+1)-th
     idxs, dists = knn(tree, samples, k + 1, true)
 
-    # Compute Log Volume Constant for D-dimensional Euclidean ball
-    # log_c_D = (D/2) * log(π) - loggamma(D/2 + 1)
+    # Log volume constant for D-dimensional Euclidean ball
     log_c_D = (D / 2) * log(T(π)) - loggamma(T(D) / 2 + 1)
 
-    # Compute Kozachenko-Leonenko Estimator
     # Bias-corrected term: digamma(k) - digamma(N)
-    # Replaces the naive log(k) - log(N)
     bias_correction = digamma(T(k)) - digamma(T(N))
 
     sum_log_p = zero(T)
 
     for i in 1:N
         # Distance to the k-th neighbor (excluding self)
-        # knn returns self as dists[i][1], so we want dists[i][k+1]
         rho_k = dists[i][k + 1]
-        rho_k = max(rho_k, eps(T)) # Numerical stability
+        rho_k = max(rho_k, eps(T))  # Numerical stability
 
         # log(p(x_i)) ≈ ψ(k) - ψ(N) - log(c_D) - D * log(rho_k)
         sum_log_p += bias_correction - log_c_D - D * log(rho_k)
@@ -614,10 +617,27 @@ function _mean_log_pdf_knn_multivariate(samples::AbstractMatrix{T}, k::Int) wher
 end
 
 """
-    _compute_mmd_quadratic_unbiased(X, Y, sigma)
+    _compute_mmd_quadratic_unbiased(X::AbstractMatrix, Y::AbstractMatrix, sigma::Real) -> Real
 
-Computes the unbiased U-statistic MMD^2 between sample matrices X and Y.
-Cost is O(N^2) where N is the number of columns.
+Compute the unbiased U-statistic ``\\text{MMD}^2`` between sample matrices X and Y 
+using a Gaussian RBF kernel.
+
+```math
+\\text{MMD}^2(P, Q) = \\mathbb{E}[k(X, X')] + \\mathbb{E}[k(Y, Y')] - 2\\mathbb{E}[k(X, Y)]
+```
+
+where ``k(x, y) = \\exp(-\\|x - y\\|^2 / (2\\sigma^2))``.
+
+# Arguments
+- `X::AbstractMatrix`: D × N matrix of samples from distribution P
+- `Y::AbstractMatrix`: D × N matrix of samples from distribution Q
+- `sigma::Real`: Kernel bandwidth
+
+# Returns
+- Unbiased MMD² estimate
+
+# Complexity
+``O(N^2)`` where N is the number of columns.
 """
 function _compute_mmd_quadratic_unbiased(
     X::AbstractMatrix{T}, Y::AbstractMatrix{T}, sigma::T
@@ -648,8 +668,7 @@ function _compute_mmd_quadratic_unbiased(
             sum_yy += exp(-gamma * dist_sq_yy)
         end
 
-        # Cross-group sum (X vs Y)
-        # Must check all pairs
+        # Cross-group sum (X vs Y) - check all pairs
         for j in 1:N
             dist_sq_xy = zero(T)
             for d in 1:D
