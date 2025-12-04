@@ -128,7 +128,8 @@ function estep(gmm::GaussianMixtureModel, data::AbstractMatrix{<:Real})
 end
 
 function estep(gmm::GaussianMixtureModel, data::AbstractVector{<:Real})
-    return estep(gmm, reshape(data, :, 1))
+    # Treat a 1-D array as N observations of a 1-D feature: reshape to (1, N)
+    return estep(gmm, reshape(data, 1, :))
 end
 
 """
@@ -167,7 +168,7 @@ end
 function mstep!(
     gmm::GaussianMixtureModel, data::AbstractVector{<:Real}, γ::AbstractMatrix{<:Real}
 )
-    return mstep!(gmm, reshape(data, :, 1), γ)
+    return mstep!(gmm, reshape(data, 1, :), γ)
 end
 
 """
@@ -199,7 +200,7 @@ function loglikelihood(gmm::GaussianMixtureModel, data::AbstractMatrix{<:Real})
 end
 
 function loglikelihood(gmm::GaussianMixtureModel, data::AbstractVector{<:Real})
-    return loglikelihood(gmm, reshape(data, :, 1))
+    return loglikelihood(gmm, reshape(data, 1, :))
 end
 
 """
@@ -255,7 +256,7 @@ function fit!(
 end
 
 function fit!(gmm::GaussianMixtureModel, data::AbstractVector{<:Real}; kwargs...)
-    return fit!(gmm, reshape(data, :, 1); kwargs...)
+    return fit!(gmm, reshape(data, 1, :); kwargs...)
 end
 
 """
