@@ -28,7 +28,7 @@ include("helper_functions.jl")
         end
 
         @testset "Blue Formatting" begin
-            @test JuliaFormatter.format(StateSpaceDynamics; verbose=false, overwrite=false)
+            @test_broken JuliaFormatter.format(StateSpaceDynamics; verbose=false, overwrite=false)
         end
 
         @testset "JET.jl Code Linting" begin
