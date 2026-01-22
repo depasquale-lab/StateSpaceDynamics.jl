@@ -49,33 +49,39 @@ function block_tridiagonal_inverse(
     λij = Array{T}(undef, block_size, block_size, n - 1)
     identity = Matrix{T}(I, block_size, block_size)
 
-    # Add zero matrices to A and C
-    pushfirst!(A, zeros(T, block_size, block_size))
-    push!(C, zeros(T, block_size, block_size))
+    # Use conditional indexing to avoid mutating caller arrays and reduce
+    # allocations: create a single zero block to reuse whenever an edge
+    # reference is needed instead of allocating extended vectors.
+    zero_block = zeros(T, block_size, block_size)
 
     # Preallocate LU factorization arrays
     lu_D = Vector{LU{T,Matrix{T}}}(undef, n)
     lu_E = Vector{LU{T,Matrix{T}}}(undef, n)
     lu_S = Vector{LU{T,Matrix{T}}}(undef, n)
 
-    # Forward sweep for D
+    # Forward sweep for D (use conditional indexing to avoid allocations)
     for i in 1:n
-        M = B[i] - A[i] * D[i]
+        Ai = i == 1 ? zero_block : A[i - 1]
+        Ci = i <= length(C) ? C[i] : zero_block
+        M = B[i] - Ai * D[i]
         lu_D[i] = lu(M)
-        D[i + 1] = lu_D[i] \ C[i]
+        D[i + 1] = lu_D[i] \ Ci
     end
 
-    # Backward sweep for E
+    # Backward sweep for E (use conditional indexing)
     for i in n:-1:1
-        M = B[i] - C[i] * E[i + 1]
+        Ci = i <= length(C) ? C[i] : zero_block
+        Ai = i == 1 ? zero_block : A[i - 1]
+        M = B[i] - Ci * E[i + 1]
         lu_E[i] = lu(M)
-        E[i] = lu_E[i] \ A[i]
+        E[i] = lu_E[i] \ Ai
     end
 
     # Compute λii
     for i in 1:n
         term1 = identity - D[i + 1] * E[i + 1]
-        term2 = B[i] - A[i] * D[i]
+        Ai = i == 1 ? zero_block : A[i - 1]
+        term2 = B[i] - Ai * D[i]
         S = term2 * term1
         lu_S[i] = lu(S)
         λii[:, :, i] = lu_S[i] \ identity

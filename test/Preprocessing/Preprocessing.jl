@@ -83,6 +83,7 @@ function test_PPCA_fit()
 end
 
 function test_PPCA_samples()
+    Random.seed!(42)
     D = 3
     k = 2
     W = randn(D, k)
@@ -101,8 +102,8 @@ function test_PPCA_samples()
     @test size(z) == (2, 10000)
 
     # Test empirical mean
-    empirical_mean = mean(X; dims=2)
-    @test all(isapprox.(empirical_mean, μ; atol=0.05))
+    empirical_mean = vec(mean(X; dims=2))
+    @test isapprox(empirical_mean, μ; atol=0.05)
 
     # Test noise level
     residuals = X .- (W * z .+ μ)
