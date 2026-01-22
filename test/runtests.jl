@@ -390,3 +390,91 @@ include("HiddenMarkovModels/State_Labellers.jl")
     test_viterbi_GaussianHMM()
     test_class_probabilities()
 end
+
+"""
+Tests for ACDC (Accumulated Cutoff Discrepancy Criterion)
+"""
+
+include("ACDC/Discrepancies.jl")
+include("ACDC/LossAndSelection.jl")
+include("ACDC/Adapters.jl")
+
+@testset "ACDC Tests" begin
+    @testset "Helper Functions" begin
+        test_sample_categorical_deterministic()
+        test_sample_categorical_valid_indices()
+        test_sample_categorical_frequencies()
+        test_normal_cdf_known_values()
+        test_normal_cdf_symmetry()
+        test_normal_cdf_monotonicity()
+        test_normal_cdf_bounds()
+        test_normal_cdf_type_stability()
+        test_poisson_cdf_randomized_bounds()
+        test_poisson_cdf_randomized_zero_rate()
+        test_poisson_cdf_randomized_uniformity()
+        test_bernoulli_cdf_randomized_bounds()
+        test_bernoulli_cdf_randomized_ranges()
+        test_bernoulli_cdf_randomized_uniformity()
+        test_deconvolve_gaussian_sum_constraint()
+        test_deconvolve_gaussian_sum_scalar_sigma()
+        test_deconvolve_gaussian_sum_length()
+    end
+
+    @testset "Discrepancy Measures" begin
+        test_KS_discrepancy_uniform_small()
+        test_KS_discrepancy_1D()
+        test_Wasserstein_discrepancy_uniform_small()
+        test_Wasserstein_discrepancy_1D()
+        test_SquaredError_discrepancy_uniform_small()
+        test_MMD_discrepancy_uniform_small()
+        test_MMD_discrepancy_block_strategy()
+        test_KL_discrepancy_uniform_small()
+        test_discrepancies_nonuniform_larger()
+        test_discrepancy_type_stability()
+        test_discrepancy_single_dimension()
+        test_discrepancy_high_dimension()
+        test_KL_discrepancy_small_sample()
+    end
+
+    @testset "ACDC Loss and Selection" begin
+        test_acdc_loss_basic()
+        test_acdc_loss_nonnegative()
+        test_acdc_loss_single_component()
+        test_acdc_select_high_rho()
+        test_acdc_select_low_rho()
+        test_acdc_select_tie_breaking()
+        test_get_critical_rho_values()
+        test_StochasticDriverResult_construction()
+        test_StochasticDriverResult_invalid_usage()
+        test_ACDCResult_construction()
+        test_ACDCResult_invalid_discrepancy_length()
+        test_ACDCResult_invalid_usage_length()
+        test_driver_uniformity_correct_model()
+        test_driver_nonuniformity_misspecified_model()
+    end
+
+    @testset "GMM Adapter" begin
+        test_GMM_adapter_output_shape()
+        test_GMM_adapter_driver_bounds()
+        test_GMM_adapter_usage_sums_approximately_one()
+        test_GMM_component_discrepancies()
+    end
+
+    @testset "HMM Adapter" begin
+        test_HMM_adapter_output_shape()
+        test_HMM_adapter_driver_bounds()
+        test_HMM_component_discrepancies()
+        test_HMM_regression_emission_adapter()
+    end
+
+    @testset "PPCA Adapter" begin
+        test_PPCA_adapter_output_shape()
+        test_PPCA_adapter_driver_bounds()
+        test_PPCA_component_discrepancies()
+    end
+
+    @testset "ACDC Model Selection" begin
+        test_acdc_model_selection_GMM()
+        test_acdc_detects_misspecification()
+    end
+end

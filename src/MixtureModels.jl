@@ -45,7 +45,7 @@ function Base.show(io::IO, gmm::GaussianMixtureModel; gap="")
         end
         println(io, gap, "  $(gmm.k - 3) more ..., see `print_full()`")
     else
-        for k in 1:gmm.k
+        for k in 1:(gmm.k)
             println(io, gap, " Gaussian $k:")
             println(io, gap, " -----------")
 
@@ -90,7 +90,7 @@ function Random.rand(rng::AbstractRNG, gmm::GaussianMixtureModel, n::Int)
     D = size(gmm.μₖ, 1)
     samples = Matrix{Float64}(undef, D, n)
     idx = 1
-    for k in 1:gmm.k
+    for k in 1:(gmm.k)
         nk = counts[k]
         if nk > 0
             dist = MvNormal(gmm.μₖ[:, k], gmm.Σₖ[k])
@@ -228,6 +228,7 @@ function fit!(
     maxiter=50,
     tol=1e-3,
     initialize_kmeans=false,
+    verbose=false,
 )
     prev_ll = -Inf
     lls = Float64[]
@@ -241,7 +242,11 @@ function fit!(
         mstep!(gmm, data, γ)
         ll = loglikelihood(gmm, data)
         push!(lls, ll)
-        println("Iteration $i: Log-likelihood = $ll")
+
+        if verbose
+            println("Iteration $i: Log-likelihood = $ll")
+        end
+
         if abs(ll - prev_ll) < tol
             println("Converged at iteration $i")
             break
@@ -290,7 +295,7 @@ function Base.show(io::IO, pmm::PoissonMixtureModel; gap="")
         end
         println(io, gap, "  $(pmm.k - 3) more ..., see `print_full()`")
     else
-        for k in 1:pmm.k
+        for k in 1:(pmm.k)
             println(io, gap, " Poisson $k:")
             println(io, gap, " ----------")
             println(io, gap, "  λₖ = $(round(pmm.λₖ[k], sigdigits=3))")
@@ -357,7 +362,7 @@ function mstep!(
     pmm::PoissonMixtureModel, data::AbstractMatrix{<:Integer}, γ::AbstractMatrix{<:Real}
 )
     _, N = size(data)
-    for k in 1:pmm.k
+    for k in 1:(pmm.k)
         Nk = sum(γ[k, :])
         pmm.λₖ[k] = sum(γ[k, :] .* data[1, :]) / Nk
         pmm.πₖ[k] = Nk / N
@@ -382,7 +387,7 @@ function Random.rand(rng::AbstractRNG, pmm::PoissonMixtureModel, n::Int)
     samples = Vector{Int}(undef, n)
     start_idx = 1
 
-    for i in 1:pmm.k
+    for i in 1:(pmm.k)
         num_samples = component_samples[i]
         if num_samples > 0
             λ = pmm.λₖ[i]
@@ -457,6 +462,7 @@ function fit!(
     maxiter=50,
     tol=1e-3,
     initialize_kmeans=false,
+    verbose=false,
 )
     prev_ll = -Inf
     lls = Float64[]
@@ -470,7 +476,11 @@ function fit!(
         mstep!(pmm, data, γ)
         ll = loglikelihood(pmm, data)
         push!(lls, ll)
-        println("Iteration $iter: Log-likelihood = $ll")
+
+        if verbose
+            println("Iteration $iter: Log-likelihood = $ll")
+        end
+
         if abs(ll - prev_ll) < tol
             println("Converged at iteration $iter")
             break

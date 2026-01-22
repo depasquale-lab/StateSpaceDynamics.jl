@@ -7,7 +7,7 @@ This module implements various emission models for state space modeling, includi
 """
 
 # Exports
-export EmissionModel, GaussianEmission
+export EmissionModel, GaussianEmission, WrappedCauchyEmission
 export RegressionEmission, GaussianRegressionEmission, BernoulliRegressionEmission
 export PoissonRegressionEmission, AutoRegressionEmission
 export loglikelihood, fit!
@@ -131,6 +131,158 @@ function fit!(
 
     model.μ = new_mean
     model.Σ = new_covariance
+
+    return model
+end
+
+#=
+Wrapped Cauchy Emission Models
+=#
+
+"""
+    mutable struct WrappedCauchyEmission <: EmissionModel
+
+Wrapped Cauchy emission model with mean direction and concentration.
+"""
+mutable struct WrappedCauchyEmission{T<:Real,V<:AbstractVector{T}} <: EmissionModel
+    output_dim::Int # dimension of the data
+    μ::V  # mean direction(s), radians
+    ρ::V  # concentration(s), 0 <= ρ < 1
+end
+
+function Base.show(io::IO, wce::WrappedCauchyEmission; gap="")
+    println(io, gap, "Wrapped Cauchy Emission model:")
+    println(io, gap, "-------------------------------")
+
+    if wce.output_dim > 4
+        println(io, gap, " size(μ) = ($(length(wce.μ)),)")
+        println(io, gap, " size(ρ) = ($(length(wce.ρ)),)")
+    else
+        println(io, gap, " μ = $(round.(wce.μ, digits=3))")
+        println(io, gap, " ρ = $(round.(wce.ρ, digits=3))")
+    end
+
+    return nothing
+end
+
+"""
+    WrappedCauchyEmission(; output_dim::Int, μ::AbstractVector, ρ::AbstractVector)
+
+Create a WrappedCauchyEmission model.
+"""
+function WrappedCauchyEmission(; output_dim::Int, μ::AbstractVector, ρ::AbstractVector)
+    if length(μ) != output_dim || length(ρ) != output_dim
+        error("μ and ρ must match output_dim.")
+    end
+    if !check_same_type(μ[1], ρ[1])
+        error("μ and ρ must be of the same element type. Got $(eltype(μ)) and $(eltype(ρ))")
+    end
+    if any(ρ .< 0) || any(ρ .>= 1)
+        error("ρ must satisfy 0 <= ρ < 1.")
+    end
+
+    return WrappedCauchyEmission(output_dim, μ, ρ)
+end
+
+"""
+    loglikelihood(model::WrappedCauchyEmission, Y::AbstractMatrix{T}) where {T<:Real}
+
+Calculate the log likelihood of the data `Y` given the wrapped Cauchy emission model.
+"""
+function loglikelihood(model::WrappedCauchyEmission, Y::AbstractMatrix{T}) where {T<:Real}
+    n_obs, d = size(Y)
+    if d != model.output_dim
+        error("Y has $(d) columns, expected $(model.output_dim).")
+    end
+
+    ll = Vector{T}(undef, n_obs)
+    log2pi = log(T(2) * T(pi))
+    eps_T = eps(T)
+
+    @inbounds for i in 1:n_obs
+        acc = zero(T)
+        for j in 1:d
+            rho = clamp(model.ρ[j], zero(T), one(T) - eps_T)
+            denom = one(T) + rho^2 - T(2) * rho * cos(Y[i, j] - model.μ[j])
+            denom = max(denom, eps_T)
+            acc += log(one(T) - rho^2) - log2pi - log(denom)
+        end
+        ll[i] = acc
+    end
+
+    return ll
+end
+
+"""
+     Random.rand(rng::AbstractRNG, model::WrappedCauchyEmission; n::Int=1)
+
+Generate `n` samples from a wrapped Cauchy emission model.
+"""
+function Random.rand(rng::AbstractRNG, model::WrappedCauchyEmission; n::Int=1)
+    d = model.output_dim
+    T = eltype(model.μ)
+    samples = Matrix{T}(undef, n, d)
+    eps_T = eps(T)
+
+    for j in 1:d
+        rho = clamp(model.ρ[j], zero(T), one(T) - eps_T)
+        a = (one(T) + rho) / (one(T) - rho)
+        for i in 1:n
+            u = rand(rng)
+            θ = model.μ[j] + T(2) * atan(a * tan(T(pi) * (u - T(0.5))))
+            # Wrap to (-pi, pi]
+            samples[i, j] = atan(sin(θ), cos(θ))
+        end
+    end
+
+    return samples
+end
+
+"""
+    Random.rand(model::WrappedCauchyEmission; kwargs...)
+
+Generate random samples from a wrapped Cauchy emission model.
+"""
+function Random.rand(model::WrappedCauchyEmission; kwargs...)
+    return rand(Random.default_rng(), model; kwargs...)
+end
+
+"""
+    function fit!(
+        model::WrappedCauchyEmission,
+        Y::AbstractMatrix{T},
+        w::AbstractVector{T}=ones(size(Y, 1))
+    ) where {T<:Real}
+
+Fit a WrappedCauchyEmission model to the data `Y` weighted by weights `w`.
+Uses weighted circular mean and resultant length.
+"""
+function fit!(
+    model::WrappedCauchyEmission,
+    Y::AbstractMatrix{T},
+    w::AbstractVector{T}=ones(size(Y, 1)),
+) where {T<:Real}
+    n_obs, d = size(Y)
+    if d != model.output_dim
+        error("Y has $(d) columns, expected $(model.output_dim).")
+    end
+    if length(w) != n_obs
+        error("w has length $(length(w)), expected $(n_obs).")
+    end
+
+    wsum = sum(w)
+    eps_T = eps(T)
+
+    for j in 1:d
+        s = sum(w .* sin.(@view(Y[:, j])))
+        c = sum(w .* cos.(@view(Y[:, j])))
+        μ = atan(s, c)
+        R = sqrt(s^2 + c^2) / max(wsum, eps_T)
+        ρ = clamp(R, zero(T), one(T) - eps_T)
+
+        model.μ[j] = μ
+        model.ρ[j] = ρ
+    end
 
     return model
 end

@@ -46,22 +46,20 @@ abstract type ComponentDiscrepancy end
 Container for stochastic drivers recovered from a fitted model.
 
 # Fields
-- `ε::Array{T,4}`: Stochastic drivers, D × K × N × S array where:
-  - D = dimension of observations
-  - K = number of components
-  - N = number of observations
-  - S = number of samples per observation
-  - All values in ``[0, 1]``; should be ``U(0,1)`` if model is correct
+- `ε_pools::Vector{Matrix{T}}`: Per-component driver pools, each D × n_k matrix
+  where n_k is the number of samples assigned to component k
 - `usage::Vector{T}`: Component contribution magnitudes (length K)
 """
 struct StochasticDriverResult{T<:Real}
-    ε::Array{T,4}
+    ε_pools::Vector{Matrix{T}}
     usage::Vector{T}
 
-    function StochasticDriverResult(ε::Array{T,4}, usage::Vector{T}) where {T<:Real}
-        K = size(ε, 2)
+    function StochasticDriverResult(
+        ε_pools::Vector{Matrix{T}}, usage::Vector{T}
+    ) where {T<:Real}
+        K = length(ε_pools)
         @assert length(usage) == K "usage must have length K=$(K)"
-        return new{T}(ε, usage)
+        return new{T}(ε_pools, usage)
     end
 end
 
@@ -120,7 +118,8 @@ inversion involves posterior uncertainty, multiple samples can be drawn.
 
 # Returns
 - `StochasticDriverResult` containing:
-  - `ε`: D × K × N × S array of drivers in ``[0, 1]``
+  - `ε_pools::Vector{Matrix{T}}`: Per-component driver pools, each D × n_k matrix
+    where n_k is the number of samples assigned to component k
   - `usage`: K-vector of component contribution magnitudes
 """
 function stochastic_drivers end
@@ -150,18 +149,17 @@ function component_discrepancies(
     model, data, discrepancy::ComponentDiscrepancy; n_samples::Int=1, kwargs...
 )
     result = stochastic_drivers(model, data; n_samples=n_samples, kwargs...)
-    ε = result.ε
     usage = result.usage
-
-    D, K, N, S = size(ε)
-    T = eltype(ε)
+    K = length(usage)
+    T = eltype(result.ε_pools[1])
 
     discs = Vector{T}(undef, K)
 
+    total_samples = sum([size(ε_k)[2] for ε_k in result.ε_pools])
+
     for k in 1:K
-        # Reshape to D × (N * S) matrix for multivariate testing
-        # Each column is a D-dimensional sample that should be U([0,1]^D)
-        ε_k = reshape(ε[:, k, :, :], D, N * S)
+        ε_k = result.ε_pools[k]
+        _, n_k = size(ε_k)
         discs[k] = compute_discrepancy(discrepancy, ε_k)
     end
 

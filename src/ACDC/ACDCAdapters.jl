@@ -105,6 +105,21 @@ function _bernoulli_cdf_randomized(x::Real, p::T) where {T<:Real}
     end
 end
 
+"""
+    _wrapped_cauchy_cdf(θ::Real, μ::Real, ρ::Real) -> Real
+
+Wrapped Cauchy CDF for angle ``θ`` in radians.
+"""
+function _wrapped_cauchy_cdf(θ::T, μ::T, ρ::T) where {T<:Real}
+    eps_T = eps(T)
+    ρ = clamp(ρ, zero(T), one(T) - eps_T)
+
+    # Wrap angle difference to (-pi, pi]
+    δ = atan(sin(θ - μ), cos(θ - μ))
+    scale = (one(T) + ρ) / (one(T) - ρ)
+    return T(0.5) + atan(scale * tan(δ / T(2))) / T(pi)
+end
+
 # =============================================================================
 # Gaussian Mixture Model Adapter
 # =============================================================================
@@ -127,11 +142,11 @@ x_n | z_n = k \\sim \\mathcal{N}(\\mu_k, \\Sigma_k)
 
 # Driver Recovery
 
-We recover ``\\varepsilon`` by:
-1. Sample ``z_n`` from posterior ``P(z_n | x_n)``
-2. For active component ``k = z_n``: ``\\varepsilon_{d,k,n} = \\Phi(L_k^{-1}(x_n - \\mu_k))_d``
-3. For inactive components: ``\\varepsilon_{d,k,n} \\sim U(0,1)``
+Uses probabilistic resampling: for each observation, we sample the component assignment
+from the posterior ``P(z_n = k | x_n)``, then only compute and store the driver for that
+sampled component. This avoids dilution from uniform samples on inactive components.
 
+For active component ``k = z_n``: ``\\varepsilon_{d,k,n} = \\Phi(L_k^{-1}(x_n - \\mu_k))_d``
 where ``L_k`` is the Cholesky factor of ``\\Sigma_k``.
 
 # Arguments
@@ -139,10 +154,10 @@ where ``L_k`` is the Cholesky factor of ``\\Sigma_k``.
 - `data::AbstractMatrix`: Observations, D × N matrix
 
 # Keyword Arguments
-- `n_samples::Int=1`: Number of stochastic samples per observation
+- `n_samples::Int=1`: Number of sampling passes over all observations
 
 # Returns
-- `StochasticDriverResult` with D × K × N × S array of drivers
+- `StochasticDriverResult` with per-component driver pools
 """
 function stochastic_drivers(
     model::StateSpaceDynamics.GaussianMixtureModel{T},
@@ -161,34 +176,34 @@ function stochastic_drivers(
     # Precompute Cholesky factors
     L_inv = [inv(cholesky(Symmetric(model.Σₖ[k])).L) for k in 1:K]
 
-    # Output array: D × K × N × S
-    ε = Array{T,4}(undef, D, K, N, n_samples)
+    # Collect drivers per component (only for active samples)
+    # Using Vector of Vectors for dynamic sizing, will convert to Matrix later
+    ε_lists = [Vector{Vector{T}}() for _ in 1:K]
 
     for s in 1:n_samples
         for n in 1:N
             # Sample which component generated this observation
             z_n = _sample_categorical(γ[:, n])
 
-            for k in 1:K
-                if k == z_n
-                    # Active component: compute driver from observation
-                    # Whitened residual should be N(0, I)
-                    whitened = L_inv[k] * (data[:, n] - model.μₖ[:, k])
-                    # Apply normal CDF to each dimension
-                    for d in 1:D
-                        ε[d, k, n, s] = _normal_cdf(whitened[d])
-                    end
-                else
-                    # Inactive component: sample from prior U(0,1)
-                    for d in 1:D
-                        ε[d, k, n, s] = rand(T)
-                    end
-                end
-            end
+            # Only compute and store driver for the sampled (active) component
+            whitened = L_inv[z_n] * (data[:, n] - model.μₖ[:, z_n])
+            ε_sample = [_normal_cdf(whitened[d]) for d in 1:D]
+            push!(ε_lists[z_n], ε_sample)
         end
     end
 
-    return StochasticDriverResult(ε, usage)
+    # Convert to matrices (D × n_k for each component)
+    ε_pools = Vector{Matrix{T}}(undef, K)
+    for k in 1:K
+        n_k = length(ε_lists[k])
+        if n_k > 0
+            ε_pools[k] = reduce(hcat, ε_lists[k])  # D × n_k
+        else
+            ε_pools[k] = Matrix{T}(undef, D, 0)  # Empty matrix
+        end
+    end
+
+    return StochasticDriverResult(ε_pools, usage)
 end
 
 # =============================================================================
@@ -213,19 +228,20 @@ x_{n,d} | z_n = k \\sim \\text{Poisson}(\\lambda_{k,d})
 
 # Driver Recovery
 
-Uses randomized probability integral transform (PIT) for discrete observations.
-For active component ``k = z_n``, computes ``\\varepsilon_{d,k,n} \\sim U(F(x-1), F(x))``
-where ``F`` is the Poisson CDF.
+Uses probabilistic resampling with randomized probability integral transform (PIT) for 
+discrete observations. For each observation, samples the component assignment from the 
+posterior, then computes ``\\varepsilon_{d,k,n} \\sim U(F(x-1), F(x))`` where ``F`` is 
+the Poisson CDF, only for the sampled component.
 
 # Arguments
 - `model::PoissonMixtureModel`: Fitted Poisson mixture model
 - `data::AbstractMatrix{<:Integer}`: Count observations, D × N matrix
 
 # Keyword Arguments
-- `n_samples::Int=1`: Number of stochastic samples per observation
+- `n_samples::Int=1`: Number of sampling passes over all observations
 
 # Returns
-- `StochasticDriverResult` with D × K × N × S array of drivers
+- `StochasticDriverResult` with per-component driver pools
 """
 function stochastic_drivers(
     model::StateSpaceDynamics.PoissonMixtureModel{T},
@@ -241,30 +257,31 @@ function stochastic_drivers(
     # Usage: expected fraction assigned to each component
     usage = vec(sum(γ; dims=2)) ./ N
 
-    # Output array: D × K × N × S
-    ε = Array{T,4}(undef, D, K, N, n_samples)
+    # Collect drivers per component (only for active samples)
+    ε_lists = [Vector{Vector{T}}() for _ in 1:K]
 
     for s in 1:n_samples
         for n in 1:N
             z_n = _sample_categorical(γ[:, n])
 
-            for k in 1:K
-                if k == z_n
-                    # Active component: use randomized PIT
-                    for d in 1:D
-                        ε[d, k, n, s] = _poisson_cdf_randomized(data[d, n], model.λₖ[k])
-                    end
-                else
-                    # Inactive: sample from prior
-                    for d in 1:D
-                        ε[d, k, n, s] = rand(T)
-                    end
-                end
-            end
+            # Only compute and store driver for the sampled (active) component
+            ε_sample = [_poisson_cdf_randomized(data[d, n], model.λₖ[z_n]) for d in 1:D]
+            push!(ε_lists[z_n], ε_sample)
         end
     end
 
-    return StochasticDriverResult(ε, usage)
+    # Convert to matrices (D × n_k for each component)
+    ε_pools = Vector{Matrix{T}}(undef, K)
+    for k in 1:K
+        n_k = length(ε_lists[k])
+        if n_k > 0
+            ε_pools[k] = reduce(hcat, ε_lists[k])
+        else
+            ε_pools[k] = Matrix{T}(undef, D, 0)
+        end
+    end
+
+    return StochasticDriverResult(ε_pools, usage)
 end
 
 # =============================================================================
@@ -294,25 +311,27 @@ where ``B_k`` is the emission distribution for state ``k``.
 
 # Driver Recovery
 
-We sample states from the forward-backward posterior, then compute emission-specific 
-drivers for each state. Inactive states receive samples from ``U(0,1)``.
+Uses probabilistic resampling: for each time step, we sample the state from the 
+forward-backward posterior, then only compute and store the driver for that sampled 
+state. This avoids dilution from uniform samples on inactive states.
 
 Supported emission types:
 - `GaussianEmission`: Whitened residuals through normal CDF
 - `GaussianRegressionEmission`: Regression residuals through normal CDF
 - `BernoulliRegressionEmission`: Randomized PIT for binary outcomes
 - `PoissonRegressionEmission`: Randomized PIT for count outcomes
+- `WrappedCauchyEmission`: Wrapped Cauchy CDF
 
 # Arguments
 - `model::HiddenMarkovModel`: Fitted HMM
 - `data::AbstractMatrix`: Observations, D × T matrix
 
 # Keyword Arguments
-- `n_samples::Int=1`: Number of stochastic samples per observation
+- `n_samples::Int=1`: Number of sampling passes over all observations
 - `X::Union{AbstractMatrix,Nothing}=nothing`: Covariates for regression emissions, D_x × T matrix
 
 # Returns
-- `StochasticDriverResult` with D × K × T × S array of drivers
+- `StochasticDriverResult` with per-component driver pools
 """
 function stochastic_drivers(
     model::StateSpaceDynamics.HiddenMarkovModel{T},
@@ -343,34 +362,38 @@ function stochastic_drivers(
     # Get output dimension from first emission model
     emission_dim = model.B[1].output_dim
 
-    # Output array: D × K × N × S
-    ε = Array{T,4}(undef, emission_dim, K, N, n_samples)
+    # Collect drivers per state (only for active samples)
+    ε_lists = [Vector{Vector{T}}() for _ in 1:K]
 
     for s in 1:n_samples
         for t in 1:N
             # Sample state from posterior
             z_t = _sample_categorical(γ[:, t])
 
-            for k in 1:K
-                if k == z_t
-                    # Active state: compute emission-specific driver
-                    _emission_to_driver!(
-                        view(ε, :, k, t, s),
-                        model.B[k],
-                        Y[t, :],
-                        X_internal === nothing ? nothing : X_internal[t, :],
-                    )
-                else
-                    # Inactive: sample from prior
-                    for d in 1:emission_dim
-                        ε[d, k, t, s] = rand(T)
-                    end
-                end
-            end
+            # Only compute and store driver for the sampled (active) state
+            ε_sample = Vector{T}(undef, emission_dim)
+            _emission_to_driver!(
+                ε_sample,
+                model.B[z_t],
+                Y[t, :],
+                X_internal === nothing ? nothing : X_internal[t, :],
+            )
+            push!(ε_lists[z_t], ε_sample)
         end
     end
 
-    return StochasticDriverResult(ε, usage)
+    # Convert to matrices (D × n_k for each component)
+    ε_pools = Vector{Matrix{T}}(undef, K)
+    for k in 1:K
+        n_k = length(ε_lists[k])
+        if n_k > 0
+            ε_pools[k] = reduce(hcat, ε_lists[k])
+        else
+            ε_pools[k] = Matrix{T}(undef, emission_dim, 0)
+        end
+    end
+
+    return StochasticDriverResult(ε_pools, usage)
 end
 
 # =============================================================================
@@ -507,6 +530,30 @@ function _emission_to_driver!(
     end
 end
 
+"""
+    _emission_to_driver!(ε_out, emission::WrappedCauchyEmission, y, x)
+
+Compute stochastic drivers for wrapped Cauchy emission.
+
+Uses the wrapped Cauchy CDF: ``\\varepsilon_d = F(\\theta_d)``.
+
+# Arguments
+- `ε_out::AbstractVector`: Output vector for drivers (modified in-place)
+- `emission::WrappedCauchyEmission`: Wrapped Cauchy emission parameters
+- `y::AbstractVector`: Angular observation vector (radians)
+- `x::Nothing`: Unused (no covariates)
+"""
+function _emission_to_driver!(
+    ε_out::AbstractVector{T},
+    emission::StateSpaceDynamics.WrappedCauchyEmission{T},
+    y::AbstractVector{T},
+    x::Nothing,
+) where {T<:Real}
+    for d in eachindex(ε_out)
+        ε_out[d] = _wrapped_cauchy_cdf(y[d], emission.μ[d], emission.ρ[d])
+    end
+end
+
 # =============================================================================
 # Probabilistic PCA Adapter
 # =============================================================================
@@ -518,41 +565,30 @@ Recover stochastic drivers for Probabilistic PCA.
 
 # Model
 
-For PPCA, the generative model is:
+We use a non-standard decomposition where each component has its own noise:
 
 ```math
-z_n \\sim \\mathcal{N}(0, I_K)
-```
-```math
-x_n = W z_n + \\mu + \\varepsilon, \\quad \\varepsilon \\sim \\mathcal{N}(0, \\sigma^2 I_D)
+x = \\sum_k y_k, \\quad y_k = W_k z_k + \\varepsilon_k
 ```
 
-# Decomposition
+where ``\\varepsilon_k \\sim \\mathcal{N}(0, \\sigma_k^2 I_D)`` with component-specific variance.
 
-We decompose this as ``x_d = \\sum_k y_{dk} + \\mu_d`` where ``y_{dk} \\sim \\mathcal{N}(W_{dk} z_k, \\sigma^2_k(n))``.
+# Driver Recovery
 
-The per-component noise variance ``\\sigma^2_k(n)`` is allocated **per-sample** based on the 
-activation level: components with stronger activation for that sample get more 
-noise budget. This ensures misspecification in component ``k`` is localized to 
-samples where ``k`` is strongly activated.
-
-The per-component contributions ``y_{dk}`` are sampled via Gaussian deconvolution,
-then transformed to uniform via:
-
-```math
-\\varepsilon_{dk} = \\Phi\\left(\\frac{y_{dk} - W_{dk} z_k}{\\sigma_k(n)}\\right)
-```
+Uses variance-based weighting: for each component k, observation n is included with 
+probability proportional to ``\\sigma_k^2(n)`` - the variance contribution of component k 
+for that observation. This reflects how much information observation n carries about 
+component k's specification.
 
 # Arguments
 - `model::ProbabilisticPCA`: Fitted PPCA model
 - `data::AbstractMatrix`: Observations, D × N matrix
 
 # Keyword Arguments
-- `n_samples::Int=1`: Number of stochastic samples per observation
+- `n_samples::Int=1`: Number of sampling passes over all observations
 
 # Returns
-- `StochasticDriverResult` with D × K × N × S array of drivers 
-  (dimensions × factors × observations × samples)
+- `StochasticDriverResult` with per-component driver pools
 """
 function stochastic_drivers(
     model::StateSpaceDynamics.ProbabilisticPCA{T}, data::AbstractMatrix{T}; n_samples::Int=1
@@ -565,54 +601,84 @@ function stochastic_drivers(
     σ² = model.σ²
     z = model.z      # K × N (posterior means, computed by fit!)
 
-    # Usage: variance explained by each factor (for reporting)
-    factor_var = [norm(W[:, k])^2 for k in 1:K]
-    total_var = sum(factor_var) + σ² * D
-    usage = factor_var ./ total_var
+    # Compute per-component, per-observation variance: σ²_k(n) ∝ ||W_k||² * z_k(n)²
+    # This represents how much component k contributes to observation n
+    σ²_kn = Matrix{T}(undef, K, N)
+    for k in 1:K
+        W_k_norm² = norm(W[:, k])^2
+        for n in 1:N
+            σ²_kn[k, n] = W_k_norm² * z[k, n]^2
+        end
+    end
 
-    # Output array: D × K × N × S
-    ε = Array{T,4}(undef, D, K, N, n_samples)
+    # Usage: average variance contribution per component (for reporting)
+    usage = vec(mean(σ²_kn; dims=2))
+    total_usage = sum(usage)
+    if total_usage > eps(T)
+        usage = usage ./ total_usage
+    else
+        usage = fill(one(T) / K, K)
+    end
+
+    # For variance-based rejection sampling, compute max variance per component
+    # Accept observation n for component k with prob σ²_k(n) / max_m σ²_k(m)
+    max_var_k = vec(maximum(σ²_kn; dims=2))
+
+    # Collect drivers per component
+    ε_lists = [Vector{Vector{T}}() for _ in 1:K]
 
     for s in 1:n_samples
         for n in 1:N
-            z_n = z[:, n]  # K-vector of latent factors for this sample
+            z_n = z[:, n]
             x_n = data[:, n]
 
-            # Per-sample variance allocation based on activation strength
-            # Component k's contribution to this sample: ||W[:,k] * z_n[k]||²
-            activation_k = [(norm(W[:, k]) * abs(z_n[k]))^2 for k in 1:K]
-            total_activation = sum(activation_k)
+            # Total variance for this observation (for residual allocation)
+            total_var_n = sum(σ²_kn[:, n])
 
-            # Avoid division by zero
-            if total_activation < eps(T)
-                total_activation = one(T)
-            end
-
-            # Allocate σ² proportionally to each component's activation for THIS sample
-            σ²_k_n = [σ² * activation_k[k] / total_activation for k in 1:K]
-
-            # Ensure minimum variance to avoid numerical issues
-            σ²_k_n = [max(σ²_k, σ² * eps(T) * K) for σ²_k in σ²_k_n]
-            σ_k_n = sqrt.(σ²_k_n)
-
-            # For each dimension, deconvolve the sum into per-component contributions
-            for d in 1:D
-                # Means for each component: W_{dk} * z_k
-                μ_dk = [W[d, k] * z_n[k] for k in 1:K]
-
-                # Sample y_{d1}, ..., y_{dK} given they sum to x_d - μ_d
-                # Each y_{dk} ~ N(μ_dk, σ²_k(n)) with per-sample component-specific variance
-                y_d = _deconvolve_gaussian_sum(x_n[d] - μ[d], μ_dk, σ_k_n)
-
-                # Transform to uniform: ε_{dk} = Φ((y_{dk} - μ_{dk}) / σ_k(n))
-                for k in 1:K
-                    ε[d, k, n, s] = _normal_cdf((y_d[k] - μ_dk[k]) / σ_k_n[k])
+            for k in 1:K
+                # Rejection sampling: accept with prob σ²_k(n) / max_m σ²_k(m)
+                if max_var_k[k] < eps(T)
+                    continue  # Component has no variance anywhere
                 end
+
+                accept_prob = σ²_kn[k, n] / max_var_k[k]
+                if rand(T) > accept_prob
+                    continue  # Rejected
+                end
+
+                # Accepted - compute driver for component k
+                # Component k's share of the noise variance
+                if total_var_n < eps(T)
+                    continue
+                end
+                var_share = σ²_kn[k, n] / total_var_n
+                σ_k = sqrt(σ² * var_share)
+                σ_k = max(σ_k, sqrt(σ² * eps(T)))
+
+                ε_sample = Vector{T}(undef, D)
+                for d in 1:D
+                    μ_dk = W[d, k] * z_n[k]
+                    # Attribute residual proportionally to this component's variance share
+                    residual_share = (x_n[d] - μ[d]) * var_share
+                    ε_sample[d] = _normal_cdf((residual_share - μ_dk) / σ_k)
+                end
+                push!(ε_lists[k], ε_sample)
             end
         end
     end
 
-    return StochasticDriverResult(ε, usage)
+    # Convert to matrices
+    ε_pools = Vector{Matrix{T}}(undef, K)
+    for k in 1:K
+        n_k = length(ε_lists[k])
+        if n_k > 0
+            ε_pools[k] = reduce(hcat, ε_lists[k])
+        else
+            ε_pools[k] = Matrix{T}(undef, D, 0)
+        end
+    end
+
+    return StochasticDriverResult(ε_pools, usage)
 end
 
 """
