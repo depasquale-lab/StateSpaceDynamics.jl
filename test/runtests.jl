@@ -191,6 +191,11 @@ include("helper_functions.jl")
             test_SwitchingGaussian_fit_float32()
         end
 
+        include("HiddenMarkovModels/WrappedCauchyHMM.jl")
+        @testset "Wrapped Cauchy HMM" begin
+            test_WrappedCauchyHMM_fit()
+        end
+
         include("HiddenMarkovModels/SwitchingGaussianRegression.jl")
         @testset "Switching Gaussian Regression" begin
             test_SwitchingGaussianRegression_fit()
