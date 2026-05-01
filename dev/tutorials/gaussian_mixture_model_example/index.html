@@ -41,7 +41,7 @@ for i in 1:k
         label=&quot;&quot;)
 end
 
-p1</code></pre><img src="cbe3398d.svg" alt="Example block output"/><h2 id="Fit-GMM-Using-EM-Algorithm"><a class="docs-heading-anchor" href="#Fit-GMM-Using-EM-Algorithm">Fit GMM Using EM Algorithm</a><a id="Fit-GMM-Using-EM-Algorithm-1"></a><a class="docs-heading-anchor-permalink" href="#Fit-GMM-Using-EM-Algorithm" title="Permalink"></a></h2><p>Now we simulate the realistic scenario: observe only data points <span>$\mathbf{X}$</span>, not the true component labels or parameters. Our goal is to recover the underlying mixture structure using EM.</p><p>Initialize a GMM with correct number of components but unknown parameters</p><pre><code class="language-julia hljs">fit_gmm = GaussianMixtureModel(k, D)
+p1</code></pre><img src="573e1ffb.svg" alt="Example block output"/><h2 id="Fit-GMM-Using-EM-Algorithm"><a class="docs-heading-anchor" href="#Fit-GMM-Using-EM-Algorithm">Fit GMM Using EM Algorithm</a><a id="Fit-GMM-Using-EM-Algorithm-1"></a><a class="docs-heading-anchor-permalink" href="#Fit-GMM-Using-EM-Algorithm" title="Permalink"></a></h2><p>Now we simulate the realistic scenario: observe only data points <span>$\mathbf{X}$</span>, not the true component labels or parameters. Our goal is to recover the underlying mixture structure using EM.</p><p>Initialize a GMM with correct number of components but unknown parameters</p><pre><code class="language-julia hljs">fit_gmm = GaussianMixtureModel(k, D)
 
 print(&quot;Running EM algorithm...&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Running EM algorithm...</code></pre><p>Fit the model using EM algorithm</p><pre><code class="language-julia hljs">class_probabilities, lls = fit!(fit_gmm, X;
     maxiter=100,
@@ -50,87 +50,104 @@ print(&quot;Running EM algorithm...&quot;)</code></pre><pre class="documenter-ex
 );
 
 print(&quot;EM converged in $(length(lls)) iterations\n&quot;)
-print(&quot;Log-likelihood improved by $(round(lls[end] - lls[1], digits=1))\n&quot;);</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Iteration 1: Log-likelihood = -1346.8894033258941
-Iteration 2: Log-likelihood = -1330.1585436583282
-Iteration 3: Log-likelihood = -1327.2889183114892
-Iteration 4: Log-likelihood = -1326.2593843817317
-Iteration 5: Log-likelihood = -1325.8606620342885
-Iteration 6: Log-likelihood = -1325.6744639886733
-Iteration 7: Log-likelihood = -1325.568911793918
-Iteration 8: Log-likelihood = -1325.5027476562334
-Iteration 9: Log-likelihood = -1325.4595921000607
-Iteration 10: Log-likelihood = -1325.4309851828955
-Iteration 11: Log-likelihood = -1325.4118464051642
-Iteration 12: Log-likelihood = -1325.3989310544628
-Iteration 13: Log-likelihood = -1325.3901224141366
-Iteration 14: Log-likelihood = -1325.384031192238
-Iteration 15: Log-likelihood = -1325.3797447723948
-Iteration 16: Log-likelihood = -1325.376664033149
-Iteration 17: Log-likelihood = -1325.3743958352725
-Iteration 18: Log-likelihood = -1325.3726820510485
-Iteration 19: Log-likelihood = -1325.3713528130772
-Iteration 20: Log-likelihood = -1325.3702958246106
-Iteration 21: Log-likelihood = -1325.369436289785
-Iteration 22: Log-likelihood = -1325.3687238361506
-Iteration 23: Log-likelihood = -1325.368124020401
-Iteration 24: Log-likelihood = -1325.3676128251113
-Iteration 25: Log-likelihood = -1325.3671730994683
-Iteration 26: Log-likelihood = -1325.3667922589323
-Iteration 27: Log-likelihood = -1325.3664607974754
-Iteration 28: Log-likelihood = -1325.3661713230015
-Iteration 29: Log-likelihood = -1325.3659179288136
-Iteration 30: Log-likelihood = -1325.3656957807982
-Iteration 31: Log-likelihood = -1325.3655008429582
-Iteration 32: Log-likelihood = -1325.3653296919063
-Iteration 33: Log-likelihood = -1325.3651793886686
-Iteration 34: Log-likelihood = -1325.3650473877326
-Iteration 35: Log-likelihood = -1325.3649314704624
-Iteration 36: Log-likelihood = -1325.3648296947533
-Iteration 37: Log-likelihood = -1325.3647403556927
-Iteration 38: Log-likelihood = -1325.3646619538888
-Iteration 39: Log-likelihood = -1325.364593169315
-Iteration 40: Log-likelihood = -1325.3645328392247
-Iteration 41: Log-likelihood = -1325.364479939256
-Iteration 42: Log-likelihood = -1325.364433567015
-Iteration 43: Log-likelihood = -1325.3643929277407
-Iteration 44: Log-likelihood = -1325.3643573216932
-Iteration 45: Log-likelihood = -1325.364326133038
-Iteration 46: Log-likelihood = -1325.364298820003
-Iteration 47: Log-likelihood = -1325.3642749061746
-Iteration 48: Log-likelihood = -1325.364253972807
-Iteration 49: Log-likelihood = -1325.3642356519738
-Iteration 50: Log-likelihood = -1325.3642196205499
-Iteration 51: Log-likelihood = -1325.3642055948505
-Iteration 52: Log-likelihood = -1325.364193325921
-Iteration 53: Log-likelihood = -1325.364182595354
-Iteration 54: Log-likelihood = -1325.3641732116064
-Iteration 55: Log-likelihood = -1325.364165006748
-Iteration 56: Log-likelihood = -1325.3641578335858
-Iteration 57: Log-likelihood = -1325.3641515631539
-Iteration 58: Log-likelihood = -1325.3641460824667
-Iteration 59: Log-likelihood = -1325.3641412925765
-Iteration 60: Log-likelihood = -1325.36413710684
-Iteration 61: Log-likelihood = -1325.3641334494157
-Iteration 62: Log-likelihood = -1325.3641302539106
-Iteration 63: Log-likelihood = -1325.3641274622385
-Iteration 64: Log-likelihood = -1325.3641250235662
-Iteration 65: Log-likelihood = -1325.3641228934323
-Iteration 66: Log-likelihood = -1325.3641210329433
-Iteration 67: Log-likelihood = -1325.3641194080876
-Iteration 68: Log-likelihood = -1325.3641179891267
-Iteration 69: Log-likelihood = -1325.3641167500555
-Iteration 70: Log-likelihood = -1325.3641156681458
-Iteration 71: Log-likelihood = -1325.364114723523
-Converged at iteration 71
-EM converged in 71 iterations
-Log-likelihood improved by 21.5</code></pre><p>Plot EM convergence</p><pre><code class="language-julia hljs">p2 = plot(lls, xlabel=&quot;EM Iteration&quot;, ylabel=&quot;Log-Likelihood&quot;,
+print(&quot;Log-likelihood improved by $(round(lls[end] - lls[1], digits=1))\n&quot;);</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Iteration 1: Log-likelihood = -1345.7693473044374
+Iteration 2: Log-likelihood = -1334.1415983637835
+Iteration 3: Log-likelihood = -1331.3486310717828
+Iteration 4: Log-likelihood = -1329.9579736388114
+Iteration 5: Log-likelihood = -1328.9817810270047
+Iteration 6: Log-likelihood = -1328.2041729412545
+Iteration 7: Log-likelihood = -1327.576851383513
+Iteration 8: Log-likelihood = -1327.0788017593352
+Iteration 9: Log-likelihood = -1326.6911307933235
+Iteration 10: Log-likelihood = -1326.3938695912282
+Iteration 11: Log-likelihood = -1326.1676609948302
+Iteration 12: Log-likelihood = -1325.9956676478246
+Iteration 13: Log-likelihood = -1325.8643787445947
+Iteration 14: Log-likelihood = -1325.7634827488437
+Iteration 15: Log-likelihood = -1325.6853161758074
+Iteration 16: Log-likelihood = -1325.6242447393995
+Iteration 17: Log-likelihood = -1325.5761309727206
+Iteration 18: Log-likelihood = -1325.5379237185814
+Iteration 19: Log-likelihood = -1325.5073570155078
+Iteration 20: Log-likelihood = -1325.48273392374
+Iteration 21: Log-likelihood = -1325.4627723825147
+Iteration 22: Log-likelihood = -1325.4464951938214
+Iteration 23: Log-likelihood = -1325.4331511047303
+Iteration 24: Log-likelihood = -1325.4221577933401
+Iteration 25: Log-likelihood = -1325.4130603433962
+Iteration 26: Log-likelihood = -1325.4055007412787
+Iteration 27: Log-likelihood = -1325.399195276764
+Iteration 28: Log-likelihood = -1325.3939176575725
+Iteration 29: Log-likelihood = -1325.3894862891636
+Iteration 30: Log-likelihood = -1325.3857546161594
+Iteration 31: Log-likelihood = -1325.3826037326694
+Iteration 32: Log-likelihood = -1325.3799366873325
+Iteration 33: Log-likelihood = -1325.377674064011
+Iteration 34: Log-likelihood = -1325.3757505296953
+Iteration 35: Log-likelihood = -1325.37411212106
+Iteration 36: Log-likelihood = -1325.37271409887
+Iteration 37: Log-likelihood = -1325.371519241839
+Iteration 38: Log-likelihood = -1325.3704964826072
+Iteration 39: Log-likelihood = -1325.369619811744
+Iteration 40: Log-likelihood = -1325.3688673928407
+Iteration 41: Log-likelihood = -1325.3682208447694
+Iteration 42: Log-likelihood = -1325.367664657052
+Iteration 43: Log-likelihood = -1325.367185711653
+Iteration 44: Log-likelihood = -1325.366772890387
+Iteration 45: Log-likelihood = -1325.3664167513546
+Iteration 46: Log-likelihood = -1325.3661092614095
+Iteration 47: Log-likelihood = -1325.3658435742195
+Iteration 48: Log-likelihood = -1325.365613845561
+Iteration 49: Log-likelihood = -1325.3654150791906
+Iteration 50: Log-likelihood = -1325.3652429978515
+Iteration 51: Log-likelihood = -1325.3650939350534
+Iteration 52: Log-likelihood = -1325.3649647440518
+Iteration 53: Log-likelihood = -1325.3648527211187
+Iteration 54: Log-likelihood = -1325.3647555407322
+Iteration 55: Log-likelihood = -1325.3646712007055
+Iteration 56: Log-likelihood = -1325.3645979756482
+Iteration 57: Log-likelihood = -1325.3645343774335
+Iteration 58: Log-likelihood = -1325.3644791215488
+Iteration 59: Log-likelihood = -1325.3644310984082
+Iteration 60: Log-likelihood = -1325.3643893488677
+Iteration 61: Log-likelihood = -1325.364353043289
+Iteration 62: Log-likelihood = -1325.3643214636224
+Iteration 63: Log-likelihood = -1325.3642939880433
+Iteration 64: Log-likelihood = -1325.3642700777752
+Iteration 65: Log-likelihood = -1325.364249265775
+Iteration 66: Log-likelihood = -1325.3642311469832
+Iteration 67: Log-likelihood = -1325.3642153699566
+Iteration 68: Log-likelihood = -1325.364201629651
+Iteration 69: Log-likelihood = -1325.3641896611837
+Iteration 70: Log-likelihood = -1325.3641792344872
+Iteration 71: Log-likelihood = -1325.3641701496447
+Iteration 72: Log-likelihood = -1325.3641622328946
+Iteration 73: Log-likelihood = -1325.3641553331786
+Iteration 74: Log-likelihood = -1325.3641493191183
+Iteration 75: Log-likelihood = -1325.3641440764397
+Iteration 76: Log-likelihood = -1325.3641395057118
+Iteration 77: Log-likelihood = -1325.3641355204124
+Iteration 78: Log-likelihood = -1325.3641320452202
+Iteration 79: Log-likelihood = -1325.364129014569
+Iteration 80: Log-likelihood = -1325.364126371363
+Iteration 81: Log-likelihood = -1325.36412406588
+Iteration 82: Log-likelihood = -1325.364122054807
+Iteration 83: Log-likelihood = -1325.3641203004127
+Iteration 84: Log-likelihood = -1325.3641187698288
+Iteration 85: Log-likelihood = -1325.364117434399
+Iteration 86: Log-likelihood = -1325.3641162691733
+Iteration 87: Log-likelihood = -1325.3641152523765
+Iteration 88: Log-likelihood = -1325.3641143650505
+Converged at iteration 88
+EM converged in 88 iterations
+Log-likelihood improved by 20.4</code></pre><p>Plot EM convergence</p><pre><code class="language-julia hljs">p2 = plot(lls, xlabel=&quot;EM Iteration&quot;, ylabel=&quot;Log-Likelihood&quot;,
           title=&quot;EM Algorithm Convergence&quot;, legend=false,
           marker=:circle, markersize=3, lw=2, color=:darkblue)
 
 if length(lls) &lt; 100
     annotate!(p2, length(lls)*0.7, lls[end]*0.95,
         text(&quot;Converged in $(length(lls)) iterations&quot;, 10)) # Add convergence annotation
-end</code></pre><img src="d17e1a6a.svg" alt="Example block output"/><h2 id="Visualize-Fitted-Model"><a class="docs-heading-anchor" href="#Visualize-Fitted-Model">Visualize Fitted Model</a><a id="Visualize-Fitted-Model-1"></a><a class="docs-heading-anchor-permalink" href="#Visualize-Fitted-Model" title="Permalink"></a></h2><p>Create visualization showing both data and fitted GMM with probability contours. Create grid for plotting contours</p><pre><code class="language-julia hljs">x_range = range(extrema(X[1, :])..., length=100)
+end</code></pre><img src="1d327ca6.svg" alt="Example block output"/><h2 id="Visualize-Fitted-Model"><a class="docs-heading-anchor" href="#Visualize-Fitted-Model">Visualize Fitted Model</a><a id="Visualize-Fitted-Model-1"></a><a class="docs-heading-anchor-permalink" href="#Visualize-Fitted-Model" title="Permalink"></a></h2><p>Create visualization showing both data and fitted GMM with probability contours. Create grid for plotting contours</p><pre><code class="language-julia hljs">x_range = range(extrema(X[1, :])..., length=100)
 y_range = range(extrema(X[2, :])..., length=100)
 xs = collect(x_range)
 ys = collect(y_range)
@@ -190,4 +207,4 @@ p_learned = scatter(X[1, :], X[2, :]; group=remapped_predicted, title=&quot;Lear
                    xlabel=L&quot;x_1&quot;, ylabel=L&quot;x_2&quot;, markersize=3, alpha=0.7,
                    palette=:Set1_3, legend=false)
 
-p4 = plot(p_true, p_learned, layout=(1, 2), size=(800, 350))</code></pre><img src="edc4a058.svg" alt="Example block output"/><h2 id="Summary"><a class="docs-heading-anchor" href="#Summary">Summary</a><a id="Summary-1"></a><a class="docs-heading-anchor-permalink" href="#Summary" title="Permalink"></a></h2><p>This tutorial demonstrated the complete Gaussian Mixture Model workflow:</p><p><strong>Key Concepts:</strong></p><ul><li><strong>Mixture modeling</strong>: Complex distributions as weighted combinations of simpler Gaussians</li><li><strong>EM algorithm</strong>: Iterative parameter learning via expectation-maximization</li><li><strong>Soft clustering</strong>: Probabilistic component assignments rather than hard clusters</li><li><strong>Label permutation</strong>: Handling component identifiability issues</li></ul><p><strong>Applications:</strong></p><ul><li>Unsupervised clustering and density estimation</li><li>Anomaly detection via likelihood thresholding</li><li>Dimensionality reduction (when extended to factor analysis)</li><li>Building blocks for more complex probabilistic models</li></ul><p><strong>Technical Insights:</strong></p><ul><li>K-means initialization significantly improves EM convergence</li><li>Log-likelihood monitoring ensures proper algorithm behavior</li><li>Parameter recovery quality depends on component separation and sample size</li></ul><p>GMMs provide a flexible, interpretable framework for modeling heterogeneous data with multiple underlying modes or clusters, forming the foundation for many advanced machine learning techniques.</p><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../hmm_identifiability_example/">« HMM Identifiability</a><a class="docs-footer-nextpage" href="../poisson_mixture_model_example/">Poisson Mixture Model Example »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Tuesday 28 April 2026 16:14">Tuesday 28 April 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+p4 = plot(p_true, p_learned, layout=(1, 2), size=(800, 350))</code></pre><img src="5dde1443.svg" alt="Example block output"/><h2 id="Summary"><a class="docs-heading-anchor" href="#Summary">Summary</a><a id="Summary-1"></a><a class="docs-heading-anchor-permalink" href="#Summary" title="Permalink"></a></h2><p>This tutorial demonstrated the complete Gaussian Mixture Model workflow:</p><p><strong>Key Concepts:</strong></p><ul><li><strong>Mixture modeling</strong>: Complex distributions as weighted combinations of simpler Gaussians</li><li><strong>EM algorithm</strong>: Iterative parameter learning via expectation-maximization</li><li><strong>Soft clustering</strong>: Probabilistic component assignments rather than hard clusters</li><li><strong>Label permutation</strong>: Handling component identifiability issues</li></ul><p><strong>Applications:</strong></p><ul><li>Unsupervised clustering and density estimation</li><li>Anomaly detection via likelihood thresholding</li><li>Dimensionality reduction (when extended to factor analysis)</li><li>Building blocks for more complex probabilistic models</li></ul><p><strong>Technical Insights:</strong></p><ul><li>K-means initialization significantly improves EM convergence</li><li>Log-likelihood monitoring ensures proper algorithm behavior</li><li>Parameter recovery quality depends on component separation and sample size</li></ul><p>GMMs provide a flexible, interpretable framework for modeling heterogeneous data with multiple underlying modes or clusters, forming the foundation for many advanced machine learning techniques.</p><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../hmm_identifiability_example/">« HMM Identifiability</a><a class="docs-footer-nextpage" href="../poisson_mixture_model_example/">Poisson Mixture Model Example »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Friday 1 May 2026 22:29">Friday 1 May 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
