@@ -257,11 +257,7 @@ function Random.rand(
     )
 
     # `MersenneTwister` (and most RNG types) is not thread-safe, so sharing
-    # `rng` across `@threads` races on internal state. Use the same
-    # `@spawn`-with-chunked-tasks pattern as `smooth!` / `calculate_elbo`,
-    # but pre-derive a per-task RNG serially from `rng`. The master RNG
-    # advances deterministically (it's mutated by the seed draws), and each
-    # task gets its own `MersenneTwister` for race-free sampling.
+    # `rng` across `@threads` races on internal state.
     if ntrials == 1
         _sample_trial!(
             rng, x[1], y[1], state_params, obs_params, lds.obs_model, u_seq[1], v_seq[1]
@@ -1182,9 +1178,7 @@ Assumes `_precompute_shared_cov!` has already populated `sws.btd`'s Cholesky
 cache and `sws.batched_data_valid[] == true` (data was stacked at fit entry).
 """
 function _smooth_mean_only_batched!(
-    lds::LinearDynamicalSystem{T,S,O},
-    tfs::TrialFilterSmooth{T},
-    sws::SmoothWorkspace{T},
+    lds::LinearDynamicalSystem{T,S,O}, tfs::TrialFilterSmooth{T}, sws::SmoothWorkspace{T}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     ntrials = length(tfs)
     D = lds.latent_dim
@@ -1195,7 +1189,9 @@ function _smooth_mean_only_batched!(
         sws.batched_x_mat[:, :, trial] .= tfs[trial].E_z
     end
 
-    Gradient_batched!(sws, lds, sws.batched_y, sws.batched_x_mat, sws.batched_u, sws.batched_v)
+    Gradient_batched!(
+        sws, lds, sws.batched_y, sws.batched_x_mat, sws.batched_u, sws.batched_v
+    )
 
     # Pack negated gradient into the (D*T, N) matrix RHS layout.
     n_active = D * tsteps
@@ -2027,11 +2023,6 @@ function _aggregate_td_suff_stats_weighted!(
             dyn_n_acc += wt
         end
 
-        # Mirror the symmetric dyn_xx[D+2:end, 1:D] from dyn_xx[1:D, D+2:end].
-        # (We could do this once after the loop; doing it per-trial keeps the
-        # accumulator strictly symmetric throughout.) We'll mirror at the end
-        # of the trial pass instead.
-
         # Emissions at t = 1..T_n.
         @views for t in 1:T_n
             wt = w[t]
@@ -2079,8 +2070,6 @@ function _aggregate_td_suff_stats_weighted!(
         end
     end
 
-    # Mirror the symmetric u-cross block in dyn_xx (the in-loop mirror was a
-    # placeholder; do the real mirror once here using the upper half).
     if u_dim > 0
         @views dyn_xx[(D + 2):dyn_reg_dim, 1:D] .= transpose(
             dyn_xx[1:D, (D + 2):dyn_reg_dim]
@@ -2149,13 +2138,6 @@ function Q_state!(
     N = suf.init_n
     dyn_n = suf.dyn_n
 
-    # Multivariate-normal constants. The per-step log N(x_t; ., Σ) carries a
-    # `-D/2 · log(2π)` constant in addition to the logdet + trace terms; we
-    # were previously dropping those, which biased the displayed ELBO above
-    # the true marginal log-likelihood by `+½·(N + dyn_n)·D·log(2π)` for a
-    # Gaussian LDS. Including them now means `calculate_elbo` matches
-    # `filter_loglikelihood` exactly at the EM fixed point (cf. the
-    # `benchmarking/elbo_investigation.jl` script).
     log2π = log(T(2π))
     const_init = T(N) * D * log2π
     const_trans = T(dyn_n) * D * log2π
@@ -2307,7 +2289,7 @@ function update_initial_state_mean!(
     lds.fit_bool[1] || return nothing
     inv_n = inv(T(suf.init_n))
     x0 = lds.state_model.x0
-    @inbounds for j in eachindex(x0)
+    for j in eachindex(x0)
         x0[j] = suf.init_xy[1, j] * inv_n
     end
     return nothing
@@ -2326,7 +2308,7 @@ function update_initial_state_covariance!(
 
     # Rank-1 updates inline (BLAS.ger! would need a contiguous μ vector and
     # `view(init_xy, 1, :)` allocates a SubArray header — small but nonzero).
-    @inbounds for j in 1:D
+    for j in 1:D
         μ_j = suf.init_xy[1, j]
         x0_j = x0[j]
         for i in 1:D
@@ -2343,7 +2325,7 @@ function update_initial_state_covariance!(
         Ψ, ν = lds.state_model.P0_prior.Ψ, lds.state_model.P0_prior.ν
         # iw_map inlined: (Ψ + S0) / (ν + N + D + 1)
         denom = ν + T(N) + T(D + 1)
-        @inbounds for i in eachindex(S0)
+        for i in eachindex(S0)
             S0[i] = (Ψ[i] + S0[i]) / denom
         end
     end
@@ -2433,7 +2415,7 @@ function update_Q!(
     # of `WL · WL'` above can give 1-ULP-asymmetric output; mirroring
     # the upper triangle wins back exact symmetry and preserves the
     # mathematically-PSD upper values.)
-    @inbounds for j in 2:D, i in 1:(j - 1)
+    for j in 2:D, i in 1:(j - 1)
         S_res[j, i] = S_res[i, j]
     end
 
@@ -2448,7 +2430,7 @@ function update_Q!(
         # locally to keep the loop type-stable.
         denom = Q_prior.ν + T(suf.dyn_n) + T(D + 1)
         Ψ = Q_prior.Ψ::Matrix{T}
-        @inbounds for i in eachindex(S_res)
+        for i in eachindex(S_res)
             S_res[i] = (Ψ[i] + S_res[i]) / denom
         end
     end
@@ -2528,7 +2510,8 @@ function update_R!(
         Wm = V .- CD_prior.M₀
         S_res .+= Wm * CD_prior.Λ * Wm'
     end
-    @inbounds for j in 2:p, i in 1:(j - 1)
+
+    for j in 2:p, i in 1:(j - 1)
         S_res[j, i] = S_res[i, j]
     end
 
@@ -2688,8 +2671,7 @@ function _fit_tridiag!(
     # smoother aliases them to shared storage on every E-step, so per-trial
     # allocations of `(D, D, T)` are pure waste at large `N`.
     ntrials_total = length(y)
-    cov_alias = ntrials_total > 1 &&
-        all(t -> t == tsteps_per_trial[1], tsteps_per_trial)
+    cov_alias = ntrials_total > 1 && all(t -> t == tsteps_per_trial[1], tsteps_per_trial)
     tfs = initialize_FilterSmooth(
         lds, tsteps_per_trial; cov_alias=cov_alias
     )::TrialFilterSmooth{T}

@@ -817,7 +817,7 @@ function log_post(
 ) where {T<:Real}
     return -0.5*n*v*log(2pi) .+ 0.5*v*logdet(lam0) .+ -0.5*v*logdet(lamN) .+
            0.5*v0*logdet(0.5 .* Sig0) .+ -0.5*vN*logdet(0.5 .* SigN) .+
-           -SpecialFunctions.loggamma(0.5 .* v0) .+ SpecialFunctions.loggamma(0.5 .* vN)
+           -loggamma(0.5 .* v0) .+ loggamma(0.5 .* vN)
 end;
 
 # no beta prior
@@ -832,8 +832,7 @@ function log_post(
     SigN::PDMat{T,Matrix{T}},
 ) where {T<:Real}
     return -0.5*n*v*log(2pi) .+ -0.5*v*logdet(lamN) .+ 0.5*v0*logdet(0.5 .* Sig0) .+
-           -0.5*vN*logdet(0.5 .* SigN) .+ -SpecialFunctions.loggamma(0.5 .* v0) .+
-           SpecialFunctions.loggamma(0.5 .* vN)
+           -0.5*vN*logdet(0.5 .* SigN) .+ -loggamma(0.5 .* v0) .+ loggamma(0.5 .* vN)
 end;
 
 # no cov prior
@@ -846,7 +845,7 @@ function log_post(
     SigN::PDMat{T,Matrix{T}},
 ) where {T<:Real}
     return -0.5*n*v*log(2pi) .+ 0.5*v*logdet(lam0) .+ -0.5*v*logdet(lamN) .+
-           -0.5*vN*logdet(0.5 .* SigN) .+ SpecialFunctions.loggamma(0.5 .* vN)
+           -0.5*vN*logdet(0.5 .* SigN) .+ loggamma(0.5 .* vN)
 end;
 
 # no prior
@@ -859,7 +858,7 @@ function log_post(
     SigN::PDMat{T,Matrix{T}},
 ) where {T<:Real}
     return -0.5*n*v*log(2pi) .+ -0.5*v*logdet(lamN) .+ -0.5*vN*logdet(0.5 .* SigN) .+
-           SpecialFunctions.loggamma(0.5 .* vN)
+           loggamma(0.5 .* vN)
 end;
 
 """

@@ -2,21 +2,17 @@ module StateSpaceDynamics
 
 import HiddenMarkovModels as HMMs
 
-using ArrayLayouts
 using Distributions
-using ForwardDiff
 using LinearAlgebra
-using LineSearches
-using Optim
 using PDMats
-using ProgressMeter
 using Random
 using SparseArrays
-using SpecialFunctions
-using Statistics
+
+using Optim: Optim, optimize, LBFGS, HagerZhang
+using ProgressMeter: Progress, next!, finish!
+using SpecialFunctions: loggamma
+using Statistics: mean
 using StatsAPI: StatsAPI
-using StatsBase
-using StatsFuns
 
 using Base.Threads: @threads, @spawn
 using Base.Iterators: partition

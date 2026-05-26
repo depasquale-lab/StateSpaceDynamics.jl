@@ -566,10 +566,6 @@ function Q_obs!(
         # rho := exp(h + rho)
         @. rho = exp(h + rho)
 
-        # log-factorial normalizer Σ_i log Γ(y_{t,i} + 1). Parameter-free, so
-        # it only shifts the ELBO baseline (it does not affect monotonicity or
-        # M-step updates) — but including it lets the displayed ELBO match
-        # the Laplace marginal log-likelihood we'd report externally.
         log_fact = zero(T)
         for i in 1:obs_dim
             log_fact += loggamma(y_t[i] + one(T))
@@ -700,11 +696,6 @@ function gradient_observation_model!(
                         fs = tfs[k]
                         weights = isnothing(w) ? nothing : w[k]
 
-                        # Pass `x_smooth` directly. `E_z = x_smooth` for a
-                        # Gaussian-state model after `sufficient_statistics!`,
-                        # so this is the same numerical value but avoids the
-                        # dependency on having run `sufficient_statistics!` —
-                        # the suf-based estep! no longer populates `fs.E_z`.
                         gradient_observation_model_single_trial!(
                             tmp,
                             C,
@@ -763,16 +754,11 @@ function update_observation_model!(
     Dp1 = latent_dim + 1
     n_W = obs_dim * Dp1     # total params; identical to vec([C d]) length
 
-    # Param vector layout: vcat(vec(C), d) == vec([C d]) in column-major order,
-    # so existing callers and tests don't see a layout change — only the inner
-    # math is now expressed uniformly over the stacked W = [C d].
+    # Param vector layout: vcat(vec(C), d) == vec([C d]) in column-major order
     params = vcat(vec(plds.obs_model.C), plds.obs_model.d)
 
     # MN-only prior on the stacked emission matrix W = [C d] (Poisson has no IW
     # counterpart since there is no observation-noise covariance):
-    #   log p(W) ∝ -½ tr((W - M₀) Λ (W - M₀)')
-    # Adds `+½ tr(...)` to the LBFGS objective and `+(W - M₀) Λ` to the gradient.
-    # `M₀` is (obs_dim × Dp1), `Λ` is (Dp1 × Dp1).
     CD_prior = plds.obs_model.CD_prior
 
     function f(params::Vector{T})
@@ -815,13 +801,6 @@ function update_observation_model!(
         return grad
     end
 
-    # LBFGS tolerances + iteration cap. The previous `1e-12` everywhere
-    # was inherited from a per-trial loop on `main` and dominated the
-    # wall-clock cost of every Poisson EM iteration (the surrounding EM
-    # converges at `tol=1e-6`, so `1e-12` per inner step is ~10⁴×
-    # overkill). `1e-8` keeps us comfortably tighter than EM while
-    # letting LBFGS exit promptly; the iteration cap is a safety net
-    # for pathological steps where the line search makes slow progress.
     opts = Optim.Options(;
         x_reltol=1e-8,
         x_abstol=1e-8,
@@ -831,7 +810,7 @@ function update_observation_model!(
         iterations=200,
     )
 
-    result = optimize(f, g!, params, LBFGS(; linesearch=LineSearches.HagerZhang()), opts)
+    result = optimize(f, g!, params, LBFGS(; linesearch=HagerZhang()), opts)
 
     # write final params back
     result_W = reshape(result.minimizer[1:n_W], obs_dim, Dp1)
