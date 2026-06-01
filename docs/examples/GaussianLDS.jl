@@ -100,7 +100,7 @@ p_traces = let
     end
     plot!(p; subplot=2, title="Observations", xlabel="time",
         yticks=(-lim_y .* (obs_dim - 1:-1:0), [L"y_{%$n}" for n in 1:obs_dim]),
-        yformatter=y -> "", left_margin=10Plots.mm)
+        yformatter=y -> "", left_margin=10 * Plots.mm)
 end
 
 # ## Smoothing

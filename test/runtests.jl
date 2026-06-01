@@ -174,6 +174,7 @@ include("helper_functions.jl")
                 test_td_mn_priors_shrink()
                 test_td_with_obs_control_seq()
                 test_td_ragged_multi_trial()
+                test_td_weighted_aggregator_matches_unweighted_with_controls()
             end
         end
 
@@ -226,6 +227,15 @@ include("helper_functions.jl")
                 test_poisson_gradient_shape_and_finiteness()
             end
         end
+    end
+
+    # Optimization primitives (line search + Newton)
+    @testset verbose=true "Optimization" begin
+        include("Optimization/Optimization.jl")
+        test_backtracking_min_sense_decreases()
+        test_backtracking_returns_best_on_exhaustion()
+        test_newton_smooth_no_linesearch_converges()
+        test_newton_smooth_returns_false_on_max_iter()
     end
 
     # Utilities Tests

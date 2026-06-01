@@ -127,5 +127,9 @@ function backtracking!(
         end
     end
 
-    return α2, ϕx1
+    # Exhausted max_iters without satisfying Armijo: return the best monotone
+    # step seen, not the last trial (which may be strictly worse).
+    @. x = x - α2*p
+    @. x = x + α_best*p
+    return α_best, ϕ_best
 end

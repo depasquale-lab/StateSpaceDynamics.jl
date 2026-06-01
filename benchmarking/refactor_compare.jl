@@ -7,9 +7,9 @@
 # (post-refactor). Output is CSV — diff the two CSVs side by side.
 #
 # Usage:
-#   julia --project=. benchmarking/refactor_compare.jl > refactor_dev.csv
+#   julia --project=benchmarking benchmarking/refactor_compare.jl > refactor_dev.csv
 #   git checkout main
-#   julia --project=. benchmarking/refactor_compare.jl > refactor_main.csv
+#   julia --project=benchmarking benchmarking/refactor_compare.jl > refactor_main.csv
 
 using StateSpaceDynamics
 using BenchmarkTools

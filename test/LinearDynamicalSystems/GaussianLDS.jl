@@ -764,3 +764,96 @@ function test_gaussian_weighting_equiv_to_duplication(; rng=MersenneTwister(9))
     end
     return nothing
 end
+
+function test_td_weighted_aggregator_matches_unweighted_with_controls(;
+    rng=MersenneTwister(0xC0FFEE)
+)
+
+    @testset "TD weighted aggregator == unweighted (B & D controls)" begin
+        D, p, u_dim, d_dim, Tt = 2, 3, 2, 2, 40
+
+        A = 0.85 * StateSpaceDynamics.random_rotation_matrix(D, rng)
+        Q = 0.05 * Matrix{Float64}(I, D, D)
+        b = randn(rng, D)
+        B = 0.3 * randn(rng, D, u_dim)
+        x0 = zeros(D)
+        P0 = 0.1 * Matrix{Float64}(I, D, D)
+        C = randn(rng, p, D)
+        R = 0.1 * Matrix{Float64}(I, p, p)
+        dvec = randn(rng, p)
+        Dmat = 0.4 * randn(rng, p, d_dim)
+
+        sm = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0, b=b, B=B)
+        om = GaussianObservationModel(; C=C, R=R, d=dvec, D=Dmat)
+        lds = LinearDynamicalSystem(sm, om)
+
+        u = 0.5 * randn(rng, u_dim, Tt)
+        v = 0.5 * randn(rng, d_dim, Tt)
+        _, y1 = rand(rng, lds, Tt; control_seq=u, obs_control_seq=v)
+        y = [y1]
+        u_seq = [u]
+        v_seq = [v]
+
+        tsteps_per_trial = [Tt]
+        tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, tsteps_per_trial)
+        sws_pool = [
+            StateSpaceDynamics.SmoothWorkspace(
+                Float64, D, p, Tt; u_dim=u_dim, d_dim=d_dim, ntrials=1
+            ) for _ in 1:Threads.maxthreadid()
+        ]
+        ws = sws_pool[1]
+
+        # Populate the smoother outputs (x_smooth, p_smooth, p_smooth_tt1) once;
+        # both aggregators read the same tfs.
+        StateSpaceDynamics._td_init_const_blocks!(ws, lds, tsteps_per_trial, y, u_seq, v_seq)
+        StateSpaceDynamics.smooth!(lds, tfs, y, sws_pool, u_seq, v_seq)
+
+        # Reference.
+        suf_u = StateSpaceDynamics._initialize_td_sufficient_statistics(
+            Float64, lds, tsteps_per_trial
+        )
+        StateSpaceDynamics._aggregate_td_suff_stats!(suf_u, tfs, lds, u_seq, v_seq, y, ws)
+        ref = (
+            init_n=suf_u.init_n,
+            dyn_n=suf_u.dyn_n,
+            obs_n=suf_u.obs_n,
+            init_xy=copy(suf_u.init_xy),
+            dyn_xy=copy(suf_u.dyn_xy),
+            obs_xy=copy(suf_u.obs_xy),
+            init_yy=copy(suf_u.init_yy[].mat),
+            dyn_xx=copy(suf_u.dyn_xx[].mat),
+            dyn_yy=copy(suf_u.dyn_yy[].mat),
+            obs_xx=copy(suf_u.obs_xx[].mat),
+            obs_yy=copy(suf_u.obs_yy[].mat),
+        )
+
+        # Weighted aggregator with unit weights must reproduce it exactly.
+        suf_w = StateSpaceDynamics._initialize_td_sufficient_statistics(
+            Float64, lds, tsteps_per_trial
+        )
+        weights = [ones(Float64, Tt)]
+        StateSpaceDynamics._aggregate_td_suff_stats_weighted!(
+            suf_w, tfs, lds, u_seq, v_seq, y, weights, ws
+        )
+
+        @test suf_w.init_n ≈ ref.init_n
+        @test suf_w.dyn_n ≈ ref.dyn_n
+        @test suf_w.obs_n ≈ ref.obs_n
+        @test suf_w.init_xy ≈ ref.init_xy
+        @test suf_w.init_yy[].mat ≈ ref.init_yy
+        # dyn_xx / obs_xx carry the x·u and x·v cross blocks under test; dyn_xy /
+        # obs_xy carry the u·x_next and v·y cross rows.
+        @test suf_w.dyn_xx[].mat ≈ ref.dyn_xx
+        @test suf_w.dyn_xy ≈ ref.dyn_xy
+        @test suf_w.dyn_yy[].mat ≈ ref.dyn_yy
+        @test suf_w.obs_xx[].mat ≈ ref.obs_xx
+        @test suf_w.obs_xy ≈ ref.obs_xy
+        @test suf_w.obs_yy[].mat ≈ ref.obs_yy
+
+        # Sanity: the control cross blocks are actually populated (non-zero), so
+        # the equivalence above is meaningful and not comparing empty regions.
+        @test norm(suf_w.dyn_xx[].mat[1:D, (D + 2):end]) > 0
+        @test norm(suf_w.obs_xx[].mat[1:D, (D + 2):end]) > 0
+    end
+    return nothing
+end

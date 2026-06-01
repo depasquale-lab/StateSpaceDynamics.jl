@@ -46,7 +46,7 @@ true_plds = LinearDynamicalSystem(;
     obs_model=obs_model,
     latent_dim=latent_dim,
     obs_dim=obs_dim,
-    fit_bool=fill(true, 6),
+    fit_bool=fill(true, 5),
 );
 
 # ## Simulation
@@ -100,7 +100,7 @@ naive_plds = LinearDynamicalSystem(;
     ),
     latent_dim=latent_dim,
     obs_dim=obs_dim,
-    fit_bool=fill(true, 6),
+    fit_bool=fill(true, 5),
 );
 
 x_pre, _ = StateSpaceDynamics.smooth(naive_plds, observations);

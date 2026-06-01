@@ -130,7 +130,7 @@ true_plds = LinearDynamicalSystem(;
     obs_model=obs_model,
     latent_dim=latent_dim,
     obs_dim=obs_dim,
-    fit_bool=fill(true, 6)  # Learn all parameters: A, Q, C, d, x0, P0
+    fit_bool=fill(true, 5)  # Learn all parameters: [x0, P0, A&b, Q, C&d]
 );
 nothing #hide
 ````
@@ -360,31 +360,6 @@ end
 
 p5
 ````
-
-## Summary
-
-This tutorial demonstrated fitting a Poisson Linear Dynamical System:
-
-**Key Concepts:**
-- **Hybrid model**: Continuous Gaussian latent dynamics generate discrete Poisson observations
-- **Exponential link**: $\log(\lambda_i) = \mathbf{C}_i^T \mathbf{x}_t + d_i$ connects latent states to count rates
-- **Laplace-EM**: Handles non-conjugate Poisson-Gaussian combination through approximations
-- **Count data modeling**: Extends LDS framework to spike trains and event sequences
-
-**Technical Insights:**
-- More computationally intensive than Gaussian LDS due to required approximations
-- Convergence can be slower and less smooth than conjugate models
-- Parameter recovery quality depends on observation density and latent state separation
-- Laplace approximations become more accurate with higher count rates
-
-**Advantages:**
-- Principled probabilistic framework for count data
-- Maintains interpretable continuous latent dynamics
-- Enables simultaneous state estimation and parameter learning
-- Provides uncertainty quantification for both states and parameters
-
-The Poisson LDS successfully bridges continuous dynamical systems and discrete observation
-models, enabling principled analysis of count data with underlying temporal structure.
 
 ---
 

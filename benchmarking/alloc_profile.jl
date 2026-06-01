@@ -1,7 +1,7 @@
 # Quick per-call allocation profile for the BTD path. Goal: spot any
 # hot-loop functions still allocating, post-PDMats refactor.
 #
-# Usage: julia --project=. benchmarking/alloc_profile.jl
+# Usage: julia --project=benchmarking benchmarking/alloc_profile.jl
 
 using StateSpaceDynamics
 using LinearAlgebra, Random
