@@ -39,6 +39,13 @@ function newton_smooth!(
             ϕ0 = ϕ!()
             dϕ0 = dot(vec(g), vec(p))  # > 0 for ascent; < 0 for descent
             α, ϕ_new = backtracking!(sense, ls, x, p, ϕ!, ϕ0, dϕ0)
+            # α == 0 means the line search found no monotone finite step (e.g. a
+            # non-ascent/descent direction or a NaN/Inf objective region). The
+            # gradient norm is still ≥ tol here (otherwise we'd have returned at
+            # the top of the loop), so this is a stall.
+            if iszero(α)
+                return false
+            end
             if abs(ϕ_new - ϕ_prev) < tol || α*norm(p) < tol
                 return true
             end

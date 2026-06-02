@@ -236,6 +236,7 @@ include("helper_functions.jl")
         test_backtracking_min_sense_decreases()
         test_backtracking_returns_best_on_exhaustion()
         test_newton_smooth_no_linesearch_converges()
+        test_newton_smooth_returns_false_on_linesearch_stall()
         test_newton_smooth_returns_false_on_max_iter()
     end
 

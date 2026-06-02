@@ -82,6 +82,29 @@ function test_newton_smooth_no_linesearch_converges()
     return nothing
 end
 
+function test_newton_smooth_returns_false_on_linesearch_stall()
+    @testset "newton_smooth! returns false when the line search stalls (α = 0)" begin
+        # Feed an *ascent* direction to a minimization: the line search can never
+        # find a monotone (decreasing) step, so `backtracking!` returns α = 0.
+        x = [1.0]
+        ϕ!() = x[1]^2
+        g = [0.0]
+        p = [0.0]
+        compute_grad!(gv, xv) = (gv .= 2 .* xv)         # ∇ϕ = 2s, large at s = 1
+        build_hess!(_xv) = nothing
+        solve_dir!(pv, gv) = (pv .= gv)                  # ascent direction (wrong sign)
+        ls = SSDopt.BackTrackingLS{Float64}()
+
+        converged = SSDopt.newton_smooth!(
+            Val(:min), x, g, p, compute_grad!, build_hess!, solve_dir!, ϕ!, ls;
+            max_iter=10, tol=1e-8,
+        )
+        @test converged == false        # stall is not convergence
+        @test x ≈ [1.0]                 # no step was taken
+    end
+    return nothing
+end
+
 function test_newton_smooth_returns_false_on_max_iter()
     @testset "newton_smooth! returns false when max_iter is exhausted" begin
         # Convergence is only detected at the top of the *next* iteration, so a
