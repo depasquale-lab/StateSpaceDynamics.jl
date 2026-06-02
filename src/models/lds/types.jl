@@ -22,8 +22,10 @@ matrices are only consumed by the Kalman filter path (see
     When supplied, inputs `u` must be passed to `fit!`/`smooth!` via a keyword argument.
 - `Q_prior::Union{Nothing,IWPrior{T}} = nothing`: Optional Inverse-Wishart prior on `Q`. If set, MAP updates use its mode.
 - `P0_prior::Union{Nothing,IWPrior{T}} = nothing`: Optional Inverse-Wishart prior on `P0`. If set, MAP updates use its mode.
-- `AB_prior::Union{Nothing,MNPrior{T,M}} = nothing`: Optional matrix-normal prior on the
-    stacked dynamics matrix `[A B]`. Pair with `Q_prior` for a full MNIW prior on `(AB, Q)`.
+- `AB_prior::Union{Nothing,MNPrior{T,Matrix{T}}} = nothing`: Optional matrix-normal prior on
+    the stacked dynamics matrix `[A B]`. Pair with `Q_prior` for a full MNIW prior on `(AB, Q)`.
+    Prior matrices are stored as plain `Matrix{T}` (decoupled from `A`'s storage type `M`) so
+    they match the internal `KalmanWorkspace` regardless of how `A` is stored.
 """
 Base.@kwdef mutable struct GaussianStateModel{
     T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}
@@ -36,7 +38,7 @@ Base.@kwdef mutable struct GaussianStateModel{
     B::M = zeros(eltype(A), size(A, 1), 0)
     Q_prior::Union{Nothing,IWPrior{T}} = nothing
     P0_prior::Union{Nothing,IWPrior{T}} = nothing
-    AB_prior::Union{Nothing,MNPrior{T,M}} = nothing
+    AB_prior::Union{Nothing,MNPrior{T,Matrix{T}}} = nothing
 end
 
 function Base.show(io::IO, gsm::GaussianStateModel; gap="")
@@ -78,8 +80,10 @@ Represents the observation model of a Linear Dynamical System with Gaussian nois
 - `R::M`: Observation noise covariance of size `(obs_dim × obs_dim)`.
 - `d::V`: Bias vector of length `(obs_dim)`.
 - `R_prior::Union{Nothing, IWPrior{T}} = nothing`: Optional Inverse-Wishart prior for `R`.
-- `CD_prior::Union{Nothing,MNPrior{T,M}} = nothing`: Optional matrix-normal prior on the
-    stacked emission matrix `[C D]`. Pair with `R_prior` for a full MNIW prior on `(CD, R)`.
+- `CD_prior::Union{Nothing,MNPrior{T,Matrix{T}}} = nothing`: Optional matrix-normal prior on
+    the stacked emission matrix `[C D]`. Pair with `R_prior` for a full MNIW prior on `(CD, R)`.
+    Prior matrices are stored as plain `Matrix{T}` (decoupled from `C`'s storage type `M`) so
+    they match the internal `KalmanWorkspace` regardless of how `C` is stored.
 """
 Base.@kwdef mutable struct GaussianObservationModel{
     T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}
@@ -89,7 +93,7 @@ Base.@kwdef mutable struct GaussianObservationModel{
     d::V
     D::M = zeros(eltype(C), size(C, 1), 0)  # eltype-preserving default
     R_prior::Union{Nothing,IWPrior{T}} = nothing
-    CD_prior::Union{Nothing,MNPrior{T,M}} = nothing
+    CD_prior::Union{Nothing,MNPrior{T,Matrix{T}}} = nothing
 end
 
 function Base.show(io::IO, gom::GaussianObservationModel; gap="")
@@ -180,9 +184,10 @@ caused a double-exp bug (`exp(C x + exp(log_d))`); see git log for the fix.
 - `C::AbstractMatrix{T}`: Observation matrix of size `(obs_dim × latent_dim)`. Maps latent
     states into observation space.
 - `d::AbstractVector{T}`: Per-neuron baseline log-rate (length `obs_dim`). Free in ℝ.
-- `CD_prior::Union{Nothing,MNPrior{T,M}} = nothing`: Optional matrix-normal prior on the
-    stacked emission matrix `[C d]` (treated as a single regression of `log λ` on
-    `[x; 1]`). `M₀` and `Λ` have shapes `(obs_dim, latent_dim+1)` and
+- `CD_prior::Union{Nothing,MNPrior{T,Matrix{T}}} = nothing`: Optional matrix-normal prior on
+    the stacked emission matrix `[C d]` (treated as a single regression of `log λ` on
+    `[x; 1]`). Prior matrices are stored as plain `Matrix{T}`, decoupled from `C`'s storage
+    type `M`. `M₀` and `Λ` have shapes `(obs_dim, latent_dim+1)` and
     `(latent_dim+1, latent_dim+1)` respectively. Unlike the Gaussian path there is no IW
     counterpart since Poisson has no observation-noise covariance — this is an MN-only
     prior contributing `½ tr(([C d] - M₀) Λ ([C d] - M₀)')` to the LBFGS objective.
@@ -192,7 +197,7 @@ Base.@kwdef mutable struct PoissonObservationModel{
 } <: AbstractObservationModel{T}
     C::M
     d::V
-    CD_prior::Union{Nothing,MNPrior{T,M}} = nothing
+    CD_prior::Union{Nothing,MNPrior{T,Matrix{T}}} = nothing
 end
 
 function Base.show(io::IO, pom::PoissonObservationModel; gap="")

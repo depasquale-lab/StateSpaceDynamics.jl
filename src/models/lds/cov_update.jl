@@ -116,6 +116,13 @@ function info_update!(
         size(P_dest, 1) == n || throw(DimensionMismatch("P_dest size mismatch"))
     end
 
+    # Steps (3)–(5) below write/read the *upper* factor of `P_dest`. PDMats can
+    # in principle carry a lower factor; refreshing `P_dest.chol` with an upper
+    # Cholesky while its `.uplo` tag said 'L' would leave it inconsistent. All
+    # package-allocated PDMats use 'U' (Julia's default for `cholesky(Matrix)`),
+    # so assert the precondition rather than handle a case no caller produces.
+    @assert P_dest.chol.uplo == 'U' "info_update! requires P_dest to hold an upper Cholesky factor"
+
     M = scratch_M
 
     # (1) M ← inv(P0) via cached Cholesky.

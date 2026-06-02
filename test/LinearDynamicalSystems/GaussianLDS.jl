@@ -765,6 +765,55 @@ function test_gaussian_weighting_equiv_to_duplication(; rng=MersenneTwister(9))
     return nothing
 end
 
+function test_mn_prior_type_decoupled_from_model_matrix()
+    @testset "MN prior type decoupled from model matrix storage" begin
+        D, p = 2, 2
+        Af = [0.9 0.0; 0.0 0.85]
+        Qf = Matrix(0.1 * I(D))
+        P0f = Matrix(0.5 * I(D))
+        Bf = zeros(D, 0)
+        bf = zeros(D)
+        x0f = zeros(D)
+        Cf = Matrix{Float64}(I, p, D)
+        Rf = Matrix(0.2 * I(p))
+        Df = zeros(p, 0)
+        df = zeros(p)
+
+        sm = GaussianStateModel(;
+            A=view(Af, :, :),
+            Q=view(Qf, :, :),
+            b=view(bf, :),
+            x0=view(x0f, :),
+            P0=view(P0f, :, :),
+            B=view(Bf, :, :),
+            AB_prior=StateSpaceDynamics.MNPrior(;
+                M₀=zeros(D, D + 1), Λ=Matrix(1e3 * I(D + 1))
+            ),
+        )
+        om = GaussianObservationModel(;
+            C=view(Cf, :, :),
+            R=view(Rf, :, :),
+            d=view(df, :),
+            D=view(Df, :, :),
+            CD_prior=StateSpaceDynamics.MNPrior(;
+                M₀=zeros(p, D + 1), Λ=Matrix(1e3 * I(D + 1))
+            ),
+        )
+
+        @test sm.A isa SubArray
+        @test sm.AB_prior isa StateSpaceDynamics.MNPrior{Float64,Matrix{Float64}}
+        @test om.CD_prior isa StateSpaceDynamics.MNPrior{Float64,Matrix{Float64}}
+
+        lds = LinearDynamicalSystem(sm, om; kalman_filter=true)
+        kws = StateSpaceDynamics.KalmanWorkspace(lds, 20, 1)
+        @test kws.AB_prior isa StateSpaceDynamics.MNPrior{Float64,Matrix{Float64}}
+        @test kws.CD_prior isa StateSpaceDynamics.MNPrior{Float64,Matrix{Float64}}
+        @test kws.AB_prior === sm.AB_prior   # stored verbatim, no copy/convert
+        @test kws.CD_prior === om.CD_prior
+    end
+    return nothing
+end
+
 function test_td_weighted_aggregator_matches_unweighted_with_controls(;
     rng=MersenneTwister(0xC0FFEE)
 )

@@ -175,6 +175,7 @@ include("helper_functions.jl")
                 test_td_with_obs_control_seq()
                 test_td_ragged_multi_trial()
                 test_td_weighted_aggregator_matches_unweighted_with_controls()
+                test_mn_prior_type_decoupled_from_model_matrix()
             end
         end
 
