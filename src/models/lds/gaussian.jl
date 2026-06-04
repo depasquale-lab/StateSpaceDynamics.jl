@@ -1,6 +1,16 @@
+"""
+Linear Dynamical System (LDS) implementation with Gaussian state and observation models.
+This module defines the `GaussianStateModel` and `GaussianObservationModel` types,
+as well as functions for sampling, computing log-likelihoods, gradients, Hessians,
+and smoothing. The code is optimized for performance, with careful attention to
+memory allocation and multi-threading for multi-trial sampling.
+"""
+
+
 function _extract_state_params(state_model::GaussianStateModel{T}) where {T}
     return (
         A=state_model.A,
+        B=state_model.B,
         Q=state_model.Q,
         b=state_model.b,
         x0=state_model.x0,
@@ -57,7 +67,7 @@ end
                             cov_alias=false)
 
 Initialize a `TrialFilterSmooth` with one `FilterSmooth` per trial. Trial lengths
-may differ.
+may differ (but don't have to).
 
 Set `cov_alias=true` only when the caller knows the cov-cache fast path will
 run (equal-length multi-trial Gaussian via `_fit_tridiag!`) — in that case
@@ -71,6 +81,12 @@ function initialize_FilterSmooth(
     tsteps_per_trial::AbstractVector{<:Integer};
     cov_alias::Bool=false,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+    # if tsteps_per_trial has varying lengths, we can't alias the cov caches to a shared zero-array
+    if cov_alias && length(unique(tsteps_per_trial)) != 1
+        throw(ArgumentError(
+            "cov_alias=true is only valid when all trials have the same number of timesteps; got tsteps_per_trial=$(tsteps_per_trial)"
+        ))
+    end
     filter_smooths = [
         initialize_FilterSmooth(model, Int(t); cov_alias=cov_alias) for
         t in tsteps_per_trial
@@ -83,7 +99,7 @@ function _extract_obs_params(obs_model::GaussianObservationModel{T}) where {T}
 end
 
 function _extract_obs_params(obs_model::PoissonObservationModel{T}) where {T}
-    return (C=obs_model.C, d=obs_model.d)
+    return (C=obs_model.C, d=obs_model.d, D=obs_model.D)
 end
 
 function _get_all_params_vec(
@@ -95,6 +111,7 @@ function _get_all_params_vec(
     # Convert named tuples to vectors and concatenate
     state_vec = vcat(
         vec(state_params.A),
+        vec(state_params.B),
         vec(state_params.Q),
         vec(state_params.b),
         vec(state_params.x0),
@@ -102,9 +119,9 @@ function _get_all_params_vec(
     )
 
     if lds.obs_model isa GaussianObservationModel
-        obs_vec = vcat(vec(obs_params.C), vec(obs_params.R), vec(obs_params.d))
+        obs_vec = vcat(vec(obs_params.C), vec(obs_params.R), vec(obs_params.d), vec(obs_params.D))
     else # PoissonObservationModel
-        obs_vec = vcat(vec(obs_params.C), vec(obs_params.d))
+        obs_vec = vcat(vec(obs_params.C), vec(obs_params.d), vec(obs_params.D))
     end
 
     return vcat(state_vec, obs_vec)
