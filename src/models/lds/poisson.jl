@@ -657,6 +657,7 @@ function gradient_observation_model!(
 ) where {T<:Real}
     trials = length(tfs.FilterSmooths)
     npar = length(grad)
+    @assert length(sws_pool[1].CD) == npar && length(sws_pool[1].Syz) == npar "Poisson gradient accumulator size $(length(sws_pool[1].CD)) ≠ npar=$npar (obs_input_dim must be 0)"
 
     # Cap ntasks at `length(sws_pool)` so each task gets its own
     # pre-allocated workspace slot indexed by its position in the chunk
@@ -673,7 +674,7 @@ function gradient_observation_model!(
             push!(
                 tasks,
                 Threads.@spawn begin
-                    # Each task owns one workspace from the pool — buffers
+                    # Each task owns one workspace from the pool. Buffers
                     # used by `gradient_observation_model_single_trial!`
                     # (h/ρ/λ/CP) come from this workspace's existing
                     # `Q_obs!` scratch fields, and the per-task `acc`/`tmp`
@@ -811,6 +812,13 @@ function update_observation_model!(
     )
 
     result = optimize(f, g!, params, LBFGS(; linesearch=HagerZhang()), opts)
+
+    # surface a non-converged inner solve if applicable
+    Optim.converged(result) || @warn(
+        "Poisson emission M-step (LBFGS) did not converge; using last iterate",
+        iterations = Optim.iterations(result),
+        g_residual = Optim.g_residual(result),
+    )
 
     # write final params back
     result_W = reshape(result.minimizer[1:n_W], obs_dim, Dp1)

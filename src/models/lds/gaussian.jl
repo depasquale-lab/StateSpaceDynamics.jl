@@ -228,7 +228,7 @@ function Random.rand(
     obs_params = _extract_obs_params(lds.obs_model)
     Ti = Int(tsteps)
 
-    u_trial = _check_control(control_seq, lds.state_input_dim, Ti, "control_seq")
+    u_trial = _check_control(control_seq, lds.state_input_dim, Ti, "control_seq", T)
     v_trial = _check_obs_control(obs_control_seq, lds.obs_input_dim, Ti, lds.obs_model)
 
     x = Matrix{T}(undef, lds.latent_dim, Ti)
@@ -318,7 +318,9 @@ end
 # helpers canonicalize on the way in.
 # ============================================================================
 
-function _check_control(cs::Nothing, expected_dim::Int, tsteps::Int, name::AbstractString)
+function _check_control(
+    cs::Nothing, expected_dim::Int, tsteps::Int, name::AbstractString, ::Type{T}
+) where {T}
     expected_dim == 0 || throw(
         ArgumentError(
             "$(name)=nothing is only valid when the corresponding input matrix is " *
@@ -326,11 +328,11 @@ function _check_control(cs::Nothing, expected_dim::Int, tsteps::Int, name::Abstr
             "matrix or shrink the input matrix.",
         ),
     )
-    return zeros(eltype(Float64), 0, tsteps)
+    return zeros(T, 0, tsteps)
 end
 
 function _check_control(
-    cs::AbstractMatrix{T}, expected_dim::Int, tsteps::Int, name::AbstractString
+    cs::AbstractMatrix{T}, expected_dim::Int, tsteps::Int, name::AbstractString, ::Type{T}
 ) where {T<:Real}
     size(cs, 1) == expected_dim || throw(
         DimensionMismatchError(
@@ -343,18 +345,18 @@ function _check_control(
 end
 
 @inline function _check_obs_control(
-    cs, expected_dim::Int, tsteps::Int, ::GaussianObservationModel
-)
-    return _check_control(cs, expected_dim, tsteps, "obs_control_seq")
+    cs, expected_dim::Int, tsteps::Int, ::GaussianObservationModel{T}
+) where {T}
+    return _check_control(cs, expected_dim, tsteps, "obs_control_seq", T)
 end
 
 @inline function _check_obs_control(
-    cs::Nothing, expected_dim::Int, tsteps::Int, ::PoissonObservationModel
-)
+    cs::Nothing, expected_dim::Int, tsteps::Int, ::PoissonObservationModel{T}
+) where {T}
     expected_dim == 0 || error(
         "Poisson observation model does not support obs_control_seq (expected_dim must be 0)",
     )
-    return zeros(Float64, 0, tsteps)
+    return zeros(T, 0, tsteps)
 end
 
 function _normalize_multitrial_control(

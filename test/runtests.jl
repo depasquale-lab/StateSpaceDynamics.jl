@@ -213,6 +213,7 @@ include("helper_functions.jl")
             @testset "Priors - Poisson LDS" begin
                 test_poisson_map_step_improves_Q()
                 test_poisson_gradient_shape_and_finiteness()
+                test_poisson_cd_prior_shrink()
             end
 
             @testset "EM Algorithm" begin
