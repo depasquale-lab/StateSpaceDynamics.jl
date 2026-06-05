@@ -270,6 +270,18 @@ include("helper_functions.jl")
             test_validate_LDS_wrong_fit_bool_length()
             test_validate_LDS_poisson_extreme_d()
             test_validate_LDS_asymmetric_covariance()
+            test_validate_LDS_kalman_poisson_guard()
+            test_validate_LDS_poisson_fit_bool_length()
+        end
+
+        @testset "Model Validators (per-field)" begin
+            test_validate_state_model_fields()
+            test_validate_obs_model_gaussian_fields()
+            test_validate_obs_model_poisson_fields()
+        end
+
+        @testset "Validation Error Messages" begin
+            test_validation_error_messages()
         end
     end
 
