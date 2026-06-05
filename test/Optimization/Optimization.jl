@@ -72,9 +72,17 @@ function test_newton_smooth_no_linesearch_converges()
     @testset "newton_smooth! (ls = nothing) converges via gradient norm" begin
         pr = _newton_quadratic_problem()
         converged = SSDopt.newton_smooth!(
-            Val(:min), pr.x, pr.g, pr.p,
-            pr.compute_grad!, pr.build_hess!, pr.solve_dir!, pr.ϕ!,
-            nothing; max_iter=10, tol=1e-10,
+            Val(:min),
+            pr.x,
+            pr.g,
+            pr.p,
+            pr.compute_grad!,
+            pr.build_hess!,
+            pr.solve_dir!,
+            pr.ϕ!,
+            nothing;
+            max_iter=10,
+            tol=1e-10,
         )
         @test converged                 # gradient hit the tolerance
         @test pr.x ≈ pr.target          # the no-line-search step landed on the optimum
@@ -96,8 +104,17 @@ function test_newton_smooth_returns_false_on_linesearch_stall()
         ls = SSDopt.BackTrackingLS{Float64}()
 
         converged = SSDopt.newton_smooth!(
-            Val(:min), x, g, p, compute_grad!, build_hess!, solve_dir!, ϕ!, ls;
-            max_iter=10, tol=1e-8,
+            Val(:min),
+            x,
+            g,
+            p,
+            compute_grad!,
+            build_hess!,
+            solve_dir!,
+            ϕ!,
+            ls;
+            max_iter=10,
+            tol=1e-8,
         )
         @test converged == false        # stall is not convergence
         @test x ≈ [1.0]                 # no step was taken
@@ -112,9 +129,17 @@ function test_newton_smooth_returns_false_on_max_iter()
         # non-convergence
         pr = _newton_quadratic_problem()
         converged = SSDopt.newton_smooth!(
-            Val(:min), pr.x, pr.g, pr.p,
-            pr.compute_grad!, pr.build_hess!, pr.solve_dir!, pr.ϕ!,
-            nothing; max_iter=1, tol=1e-10,
+            Val(:min),
+            pr.x,
+            pr.g,
+            pr.p,
+            pr.compute_grad!,
+            pr.build_hess!,
+            pr.solve_dir!,
+            pr.ϕ!,
+            nothing;
+            max_iter=1,
+            tol=1e-10,
         )
         @test converged == false        # exhausted max_iter without a top-of-loop check
         @test pr.x ≈ pr.target          # the single step still moved x onto the optimum

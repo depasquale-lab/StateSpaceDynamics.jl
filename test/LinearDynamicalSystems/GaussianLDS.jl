@@ -817,7 +817,6 @@ end
 function test_td_weighted_aggregator_matches_unweighted_with_controls(;
     rng=MersenneTwister(0xC0FFEE)
 )
-
     @testset "TD weighted aggregator == unweighted (B & D controls)" begin
         D, p, u_dim, d_dim, Tt = 2, 3, 2, 2, 40
 
@@ -854,7 +853,9 @@ function test_td_weighted_aggregator_matches_unweighted_with_controls(;
 
         # Populate the smoother outputs (x_smooth, p_smooth, p_smooth_tt1) once;
         # both aggregators read the same tfs.
-        StateSpaceDynamics._td_init_const_blocks!(ws, lds, tsteps_per_trial, y, u_seq, v_seq)
+        StateSpaceDynamics._td_init_const_blocks!(
+            ws, lds, tsteps_per_trial, y, u_seq, v_seq
+        )
         StateSpaceDynamics.smooth!(lds, tfs, y, sws_pool, u_seq, v_seq)
 
         # Reference.

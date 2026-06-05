@@ -6,7 +6,6 @@ and smoothing. The code is optimized for performance, with careful attention to
 memory allocation and multi-threading for multi-trial sampling.
 """
 
-
 function _extract_state_params(state_model::GaussianStateModel{T}) where {T}
     return (
         A=state_model.A,
@@ -15,7 +14,6 @@ function _extract_state_params(state_model::GaussianStateModel{T}) where {T}
         b=state_model.b,
         x0=state_model.x0,
         P0=state_model.P0,
-        B=state_model.B,
     )
 end
 
@@ -28,18 +26,6 @@ function initialize_FilterSmooth(
     model::LinearDynamicalSystem{T,S,O}, tsteps::Int; cov_alias::Bool=false
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     D = model.latent_dim
-    # `cov_alias=true` is the equal-length cov-cache hint from
-    # `_fit_tridiag!`: the new TD aggregator never reads `E_zz` / `E_zz_prev`
-    # (it consumes `x_smooth` / `p_smooth` / `p_smooth_tt1` directly), and
-    # the smoother aliases `p_smooth` / `p_smooth_tt1` to
-    # `sws.p_smooth_shared` on every E-step — so all four `(D, D, tsteps)`
-    # arrays are allocated then either ignored or immediately overwritten.
-    # At `(D=128, T=250, N=500)` that's ≈ 64 GB of pure waste.
-    #
-    # Default (`cov_alias=false`) preserves the original layout: SLDS /
-    # Poisson / ragged / single-trial paths write into the per-trial
-    # `p_smooth` and may invoke the legacy `sufficient_statistics!(fs)`
-    # which populates `E_zz` / `E_zz_prev`.
     if cov_alias
         p_smooth = zeros(T, 0, 0, 0)
         p_smooth_tt1 = zeros(T, 0, 0, 0)
@@ -83,9 +69,11 @@ function initialize_FilterSmooth(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     # if tsteps_per_trial has varying lengths, we can't alias the cov caches to a shared zero-array
     if cov_alias && length(unique(tsteps_per_trial)) != 1
-        throw(ArgumentError(
-            "cov_alias=true is only valid when all trials have the same number of timesteps; got tsteps_per_trial=$(tsteps_per_trial)"
-        ))
+        throw(
+            ArgumentError(
+                "cov_alias=true is only valid when all trials have the same number of timesteps; got tsteps_per_trial=$(tsteps_per_trial)",
+            ),
+        )
     end
     filter_smooths = [
         initialize_FilterSmooth(model, Int(t); cov_alias=cov_alias) for
@@ -99,7 +87,7 @@ function _extract_obs_params(obs_model::GaussianObservationModel{T}) where {T}
 end
 
 function _extract_obs_params(obs_model::PoissonObservationModel{T}) where {T}
-    return (C=obs_model.C, d=obs_model.d, D=obs_model.D)
+    return (C=obs_model.C, d=obs_model.d)
 end
 
 function _get_all_params_vec(
@@ -119,9 +107,11 @@ function _get_all_params_vec(
     )
 
     if lds.obs_model isa GaussianObservationModel
-        obs_vec = vcat(vec(obs_params.C), vec(obs_params.R), vec(obs_params.d), vec(obs_params.D))
+        obs_vec = vcat(
+            vec(obs_params.C), vec(obs_params.R), vec(obs_params.d), vec(obs_params.D)
+        )
     else # PoissonObservationModel
-        obs_vec = vcat(vec(obs_params.C), vec(obs_params.d), vec(obs_params.D))
+        obs_vec = vcat(vec(obs_params.C), vec(obs_params.d))
     end
 
     return vcat(state_vec, obs_vec)
