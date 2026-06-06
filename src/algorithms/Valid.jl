@@ -469,3 +469,102 @@ function validate_probvec(v::AbstractVector{T}; name::String="vector") where {T<
 
     return nothing
 end
+
+# ============================================================================
+# Control-sequence normalization helpers. The public `control_seq`/`obs_control_seq`
+# kwargs accept either `nothing` (no inputs — must match a zero-column `B`/`D`)
+# or per-trial matrices. Internally every sampler/smoother/M-step expects an
+# `AbstractMatrix{T}` of shape `(u_dim, T_i)` (possibly `0 × T_i`), so these
+# helpers validate the supplied sequences and canonicalize on the way in.
+# ============================================================================
+
+function _check_control(
+    cs::Nothing, expected_dim::Int, tsteps::Int, name::AbstractString, ::Type{T}
+) where {T}
+    expected_dim == 0 || throw(
+        ArgumentError(
+            "$(name)=nothing is only valid when the corresponding input matrix is " *
+            "zero-column; got expected_dim=$(expected_dim). Pass a $(expected_dim)×T " *
+            "matrix or shrink the input matrix.",
+        ),
+    )
+    return zeros(T, 0, tsteps)
+end
+
+function _check_control(
+    cs::AbstractMatrix{T}, expected_dim::Int, tsteps::Int, name::AbstractString, ::Type{T}
+) where {T<:Real}
+    size(cs, 1) == expected_dim || throw(
+        DimensionMismatchError(
+            "$(name) rows vs input-matrix cols", expected_dim, size(cs, 1)
+        ),
+    )
+    size(cs, 2) == tsteps ||
+        throw(DimensionMismatchError("$(name) tsteps", tsteps, size(cs, 2)))
+    return cs
+end
+
+@inline function _check_obs_control(
+    cs, expected_dim::Int, tsteps::Int, ::GaussianObservationModel{T}
+) where {T}
+    return _check_control(cs, expected_dim, tsteps, "obs_control_seq", T)
+end
+
+@inline function _check_obs_control(
+    cs::Nothing, expected_dim::Int, tsteps::Int, ::PoissonObservationModel{T}
+) where {T}
+    expected_dim == 0 || error(
+        "Poisson observation model does not support obs_control_seq (expected_dim must be 0)",
+    )
+    return zeros(T, 0, tsteps)
+end
+
+function _normalize_multitrial_control(
+    cs::Nothing, expected_dim::Int, tsteps_per_trial, ::Type{T}, name::AbstractString
+) where {T<:Real}
+    expected_dim == 0 || throw(
+        ArgumentError(
+            "$(name)=nothing is only valid when expected_dim == 0; got $(expected_dim)"
+        ),
+    )
+    return [zeros(T, 0, Int(Ti)) for Ti in tsteps_per_trial]
+end
+
+function _normalize_multitrial_control(
+    cs::AbstractVector{<:AbstractMatrix{T}},
+    expected_dim::Int,
+    tsteps_per_trial,
+    ::Type{T},
+    name::AbstractString,
+) where {T<:Real}
+    length(cs) == length(tsteps_per_trial) || throw(
+        DimensionMismatchError("$(name) ntrials", length(tsteps_per_trial), length(cs))
+    )
+    for (i, ci) in enumerate(cs)
+        size(ci, 1) == expected_dim ||
+            throw(DimensionMismatchError("$(name)[$i] rows", expected_dim, size(ci, 1)))
+        size(ci, 2) == Int(tsteps_per_trial[i]) || throw(
+            DimensionMismatchError(
+                "$(name)[$i] tsteps", Int(tsteps_per_trial[i]), size(ci, 2)
+            ),
+        )
+    end
+    return cs
+end
+
+@inline function _normalize_multitrial_obs_control(
+    cs, expected_dim::Int, tsteps_per_trial, ::Type{T}, ::GaussianObservationModel
+) where {T<:Real}
+    return _normalize_multitrial_control(
+        cs, expected_dim, tsteps_per_trial, T, "obs_control_seq"
+    )
+end
+
+@inline function _normalize_multitrial_obs_control(
+    cs::Nothing, expected_dim::Int, tsteps_per_trial, ::Type{T}, ::PoissonObservationModel
+) where {T<:Real}
+    expected_dim == 0 || error(
+        "Poisson observation model does not support obs_control_seq (expected_dim must be 0)",
+    )
+    return [zeros(T, 0, Int(Ti)) for Ti in tsteps_per_trial]
+end
