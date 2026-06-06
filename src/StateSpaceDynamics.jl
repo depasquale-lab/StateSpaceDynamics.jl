@@ -33,6 +33,7 @@ include("optimization/newton.jl")
 include("models/lds/cov_update.jl")
 include("models/lds/kalman.jl")
 include("models/lds/gaussian.jl")
+include("models/lds/simulate.jl")
 include("models/lds/poisson.jl")
 include("models/lds/SLDS.jl")
 
