@@ -1,11 +1,4 @@
 # Sampling / simulation for Linear Dynamical Systems.
-#
-# This file is model-agnostic: `_sample_trial!` dispatches on the observation
-# model (Gaussian vs Poisson) and `Random.rand` drives single- and multi-trial
-# generation. Both observation paths live here so the dispatch family stays in
-# one place. Generic parameter extraction (`_extract_state_params`,
-# `_extract_obs_params`) and control-sequence validation live in their own
-# files; they are resolved at call time, so include order does not matter.
 
 function _sample_trial!(
     rng,

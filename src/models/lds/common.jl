@@ -1,11 +1,3 @@
-# Model-agnostic Linear Dynamical System core.
-#
-# These helpers are shared across every observation model (Gaussian, Poisson,
-# and the SLDS sub-models): parameter extraction into named tuples, FilterSmooth
-# buffer allocation, and the flat parameter vector. They dispatch on
-# `AbstractObservationModel` (or are otherwise model-neutral), so the
-# Gaussian-, Poisson-, and SLDS-specific files all build on top of them.
-
 function _extract_state_params(state_model::GaussianStateModel{T}) where {T}
     return (
         A=state_model.A,
