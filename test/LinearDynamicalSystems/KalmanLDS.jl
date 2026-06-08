@@ -1,12 +1,16 @@
 """
-Tests for the Kalman/RTS E-step backend for Gaussian LDS.
+Tests for the block-tridiagonal (Newton) Gaussian LDS smoother/fit path and the
+marginal (Kalman-filter) log-likelihood.
 
-The Kalman path is enabled with `kalman_filter=true`. It should:
-- match the block-tridiagonal (Newton) smoother to numerical tolerance
-  when no inputs are present,
-- share covariance storage across trials (reference identity),
-- accept and learn a `B` input matrix via the extended M-step,
-- reject invalid configurations (Poisson obs, missing `u` when `B` is set).
+The Kalman/RTS smoother is no longer a selectable E-step backend for `fit!` — all
+Gaussian fitting goes through the block-tridiagonal MAP path. The Kalman *filter*
+is retained only for the marginal log-likelihood `loglikelihood(lds, y)`.
+
+These tests cover:
+- the TD cov-sharing fast path (shared covariance storage across equal-length trials),
+- learning a `B` dynamics-input matrix via the M-step,
+- sampling equivalence for inputs,
+- the marginal log-likelihood (Gaussian) and its Poisson not-implemented guard.
 """
 
 # Local container for randomly-generated LDS parameters used to seed the test
@@ -44,7 +48,7 @@ function init_params(rng::AbstractRNG, latent_dim::Int, obs_dim::Int)
     return LDSParams(A, Q, x0, P0, C, R, b, d)
 end
 
-function _make_toy_lds(; kalman_filter::Bool, D::Int=3, p::Int=5, seed::Int=7, B=nothing)
+function _make_toy_lds(; D::Int=3, p::Int=5, seed::Int=7, B=nothing)
     params = init_params(MersenneTwister(seed), D, p)
     # `GaussianStateModel.B` is a non-nullable matrix field with a
     # type-preserving default; only override it when the caller supplies
@@ -57,7 +61,7 @@ function _make_toy_lds(; kalman_filter::Bool, D::Int=3, p::Int=5, seed::Int=7, B
         )
     end
     om = GaussianObservationModel(; C=params.C, R=params.R, d=params.d)
-    return LinearDynamicalSystem(sm, om; kalman_filter=kalman_filter)
+    return LinearDynamicalSystem(sm, om)
 end
 
 function _simulate_lds(lds::LinearDynamicalSystem, T::Int, N::Int; seed::Int=42, u=nothing)
@@ -92,54 +96,10 @@ function _simulate_lds(lds::LinearDynamicalSystem, T::Int, N::Int; seed::Int=42,
     return y
 end
 
-function test_kalman_smooth_agrees_with_newton()
-    D, p, T, N = 8, 16, 64, 64
-    lds_kf = _make_toy_lds(; D=D, p=p, kalman_filter=true)
-    lds_bt = _make_toy_lds(; D=D, p=p, kalman_filter=false)
-    y = _simulate_lds(lds_kf, T, N)
-
-    n_obs = p * T * N
-
-    elbos_kf = fit!(lds_kf, y; max_iter=1, progress=false)[1] ./ n_obs
-    elbos_bt = fit!(lds_bt, y; max_iter=1, progress=false)[1] ./ n_obs
-
-    # The KF and BT paths use *different* ELBO formulations (NIW-marginal
-    # log-posterior + entropy for KF vs Q-state/Q-obs for BT), so the
-    # absolute values are not directly comparable — only finiteness is.
-    @printf("ELBOs per-obs: KF = %.8f  BT = %.8f\n", elbos_kf[1], elbos_bt[1])
-    @test isfinite(elbos_kf[1])
-    @test isfinite(elbos_bt[1])
-end
-
-function test_kalman_fit_matches_newton()
-    D, p, T, N = 3, 5, 40, 4
-    lds_kf = _make_toy_lds(; kalman_filter=true)
-    lds_bt = _make_toy_lds(; kalman_filter=false)
-    y = _simulate_lds(lds_kf, T, N)
-
-    elbos_kf = fit!(lds_kf, y; max_iter=20, progress=false)
-    elbos_bt = fit!(lds_bt, y; max_iter=20, progress=false)
-
-    # Both paths must be monotone-ish (small tol_PD slop).
-    @test all(diff(elbos_kf) .>= -1e-4)
-    @test all(diff(elbos_bt) .>= -1e-4)
-    # The two paths use different ELBO formulations (see
-    # `test_kalman_smooth_agrees_with_newton` for explanation) — absolute
-    # values aren't comparable, but the learned parameters should agree to
-    # a loose tolerance after 20 EM iterations. Tolerance is set by the
-    # combination of dataset size (D=3, p=5, T=40, N=4) and tol_PD floor;
-    # tighter convergence requires more iterations or larger N.
-    @test maximum(abs.(lds_kf.state_model.A .- lds_bt.state_model.A)) < 5e-2
-    @test maximum(abs.(lds_kf.obs_model.C .- lds_bt.obs_model.C)) < 5e-2
-end
-
-function test_kalman_covariance_shared_across_trials()
-    # The original Kalman test indexed `kws[1].smooth_cov === kws[2].smooth_cov`,
-    # but the current `KalmanWorkspace` is a single struct shared across all
-    # trials — that property is structurally true and not amenable to a
-    # `===` test. For the TD path (the new cov-sharing fast path), each
-    # `FilterSmooth.p_smooth` is aliased to the shared workspace array after
-    # a multi-trial equal-length fit; we can check that directly.
+function test_td_covariance_shared_across_trials()
+    # For the TD path (the cov-sharing fast path), each `FilterSmooth.p_smooth`
+    # is aliased to the shared workspace array after a multi-trial equal-length
+    # fit; we can check that directly.
     D, p, Tt, N = 3, 4, 20, 5
     rng = MersenneTwister(123)
     sm = GaussianStateModel(;
@@ -152,7 +112,7 @@ function test_kalman_covariance_shared_across_trials()
     om = GaussianObservationModel(;
         C=randn(rng, p, D), R=0.1*Matrix{Float64}(I, p, p), d=zeros(p)
     )
-    lds_td = LinearDynamicalSystem(sm, om; kalman_filter=false)
+    lds_td = LinearDynamicalSystem(sm, om)
     _, y_seq = rand(rng, lds_td, fill(Tt, N))
 
     # Trigger one smooth! (multi-trial, equal-length → fast path).
@@ -199,7 +159,7 @@ function test_td_shared_cov_matches_per_trial_path()
     om = GaussianObservationModel(;
         C=randn(rng, p, D), R=0.1*Matrix{Float64}(I, p, p), d=zeros(p)
     )
-    lds = LinearDynamicalSystem(sm, om; kalman_filter=false)
+    lds = LinearDynamicalSystem(sm, om)
     _, y_seq = rand(rng, lds, fill(Tt, N))
 
     # Fast path (equal-length, multi-trial).
@@ -224,7 +184,7 @@ function test_td_shared_cov_matches_per_trial_path()
     end
 end
 
-function test_kalman_with_B_input_equivalent_to_bias()
+function test_lds_with_B_input_equivalent_to_bias()
     # B·u with u ≡ 1 reduces to an additive constant; setting b = B·1 should
     # produce identical sample paths.
     D, p, T, N = 3, 4, 30, 2
@@ -242,7 +202,7 @@ function test_kalman_with_B_input_equivalent_to_bias()
     om = GaussianObservationModel(;
         C=randn(p, D), R=0.4*Matrix{Float64}(I, p, p), d=zeros(p)
     )
-    lds_B = LinearDynamicalSystem(sm, om; kalman_filter=true)
+    lds_B = LinearDynamicalSystem(sm, om)
 
     u = ones(u_dim, T, N)
     y_B = _simulate_lds(lds_B, T, N; u=u)
@@ -258,7 +218,7 @@ function test_kalman_with_B_input_equivalent_to_bias()
     om_b = GaussianObservationModel(;
         C=lds_B.obs_model.C, R=lds_B.obs_model.R, d=lds_B.obs_model.d
     )
-    lds_b = LinearDynamicalSystem(sm_b, om_b; kalman_filter=true)
+    lds_b = LinearDynamicalSystem(sm_b, om_b)
     y_b = _simulate_lds(lds_b, T, N)
 
     @test y_B ≈ y_b atol=1e-10
@@ -285,7 +245,7 @@ function test_td_fit_with_dynamics_input()
         A=A_true, Q=Q_true, x0=x0_true, P0=P0_true, b=b_true, B=B_true
     )
     om_true = GaussianObservationModel(; C=C_true, R=R_true, d=d_true)
-    lds_true = LinearDynamicalSystem(sm_true, om_true; kalman_filter=false)
+    lds_true = LinearDynamicalSystem(sm_true, om_true)
 
     u_seq = [randn(rng, u_dim, Tt) for _ in 1:N]
     _, y_seq = rand(lds_true, fill(Tt, N); control_seq=u_seq)
@@ -302,7 +262,7 @@ function test_td_fit_with_dynamics_input()
     om_init = GaussianObservationModel(;
         C=randn(rng, p, D), R=Matrix{Float64}(I, p, p), d=zeros(p)
     )
-    lds_fit = LinearDynamicalSystem(sm_init, om_init; kalman_filter=false)
+    lds_fit = LinearDynamicalSystem(sm_init, om_init)
 
     elbos = fit!(lds_fit, y_seq; control_seq=u_seq, max_iter=80, progress=false)
 
@@ -321,7 +281,7 @@ function test_td_fit_with_dynamics_input()
     om_nofit = GaussianObservationModel(;
         C=randn(MersenneTwister(101), p, D), R=Matrix{Float64}(I, p, p), d=zeros(p)
     )
-    lds_nofit = LinearDynamicalSystem(sm_nofit, om_nofit; kalman_filter=false)
+    lds_nofit = LinearDynamicalSystem(sm_nofit, om_nofit)
     elbos_no = fit!(lds_nofit, y_seq; max_iter=80, progress=false)
 
     @test elbos[end] > elbos_no[end] + 1.0  # controls help, by a lot for these data
@@ -343,7 +303,7 @@ function test_td_sampling_zero_input_matches_no_control()
     om = GaussianObservationModel(;
         C=randn(rng, p, D), R=0.1*Matrix{Float64}(I, p, p), d=zeros(p)
     )
-    lds = LinearDynamicalSystem(sm, om; kalman_filter=false)
+    lds = LinearDynamicalSystem(sm, om)
 
     u_zero = zeros(2, Tt)
     rng1 = MersenneTwister(42)
@@ -351,7 +311,7 @@ function test_td_sampling_zero_input_matches_no_control()
 
     # Reset state-model to a 0-column B and call without control_seq.
     sm2 = GaussianStateModel(; A=sm.A, Q=sm.Q, x0=sm.x0, P0=sm.P0, b=sm.b)
-    lds2 = LinearDynamicalSystem(sm2, om; kalman_filter=false)
+    lds2 = LinearDynamicalSystem(sm2, om)
     rng2 = MersenneTwister(42)
     x2, y2 = rand(rng2, lds2, Tt)
 
@@ -359,90 +319,8 @@ function test_td_sampling_zero_input_matches_no_control()
     @test y1 ≈ y2 atol=1e-12
 end
 
-function test_kalman_rejects_poisson_obs()
-    D, p = 2, 3
-    Random.seed!(5)
-    sm = GaussianStateModel(;
-        A=0.7*Matrix{Float64}(I, D, D),
-        Q=0.2*Matrix{Float64}(I, D, D),
-        x0=zeros(D),
-        P0=Matrix{Float64}(I, D, D),
-        b=zeros(D),
-    )
-    om = PoissonObservationModel(; C=randn(p, D), d=zeros(p))
-    @test_throws Exception LinearDynamicalSystem(sm, om; kalman_filter=true)
-end
-
-function test_kalman_fit_bool_freezes_params()
-    # Kalman mstep! must honor fit_bool: when a flag is false, the corresponding
-    # parameter (or parameter group) is left bit-exact unchanged across EM iters.
-    D, p, Tt, N = 3, 4, 30, 4
-    rng = MersenneTwister(202605)
-    A0 = SSD.random_rotation_matrix(D, rng)
-    Q0 = 0.1 * Matrix{Float64}(I, D, D)
-    x0_0 = randn(rng, D)
-    P0_0 = 0.5 * Matrix{Float64}(I, D, D)
-    C0 = randn(rng, p, D)
-    R0 = 0.2 * Matrix{Float64}(I, p, p)
-    b0 = randn(rng, D)
-    d0 = randn(rng, p)
-
-    function make_lds(fit_bool)
-        sm = GaussianStateModel(;
-            A=copy(A0), Q=copy(Q0), x0=copy(x0_0), P0=copy(P0_0), b=copy(b0)
-        )
-        om = GaussianObservationModel(; C=copy(C0), R=copy(R0), d=copy(d0))
-        return LinearDynamicalSystem(sm, om; kalman_filter=true, fit_bool=fit_bool)
-    end
-
-    # Generate data from the fit_bool=all-true baseline.
-    lds_data = make_lds(fill(true, 6))
-    y = _simulate_lds(lds_data, Tt, N)
-
-    # Freeze each parameter individually and verify it is bit-exact unchanged.
-    cases = [
-        (1, :x0, lds -> copy(lds.state_model.x0)),
-        (2, :P0, lds -> copy(lds.state_model.P0)),
-        (3, :A, lds -> (copy(lds.state_model.A), copy(lds.state_model.b))),
-        (4, :Q, lds -> copy(lds.state_model.Q)),
-        (5, :C, lds -> (copy(lds.obs_model.C), copy(lds.obs_model.d))),
-        (6, :R, lds -> copy(lds.obs_model.R)),
-    ]
-    for (idx, _name, getter) in cases
-        flags = fill(true, 6);
-        flags[idx] = false
-        lds = make_lds(flags)
-        snap = getter(lds)
-        fit!(lds, y; max_iter=3, progress=false)
-        @test getter(lds) == snap
-    end
-
-    # All-false: nothing changes.
-    lds_frozen = make_lds(fill(false, 6))
-    snap_all = (
-        copy(lds_frozen.state_model.A),
-        copy(lds_frozen.state_model.b),
-        copy(lds_frozen.state_model.Q),
-        copy(lds_frozen.state_model.x0),
-        copy(lds_frozen.state_model.P0),
-        copy(lds_frozen.obs_model.C),
-        copy(lds_frozen.obs_model.d),
-        copy(lds_frozen.obs_model.R),
-    )
-    fit!(lds_frozen, y; max_iter=3, progress=false)
-    @test snap_all == (
-        copy(lds_frozen.state_model.A),
-        copy(lds_frozen.state_model.b),
-        copy(lds_frozen.state_model.Q),
-        copy(lds_frozen.state_model.x0),
-        copy(lds_frozen.state_model.P0),
-        copy(lds_frozen.obs_model.C),
-        copy(lds_frozen.obs_model.d),
-        copy(lds_frozen.obs_model.R),
-    )
-end
-
-function test_kalman_missing_u_errors()
+function test_td_fit_missing_u_errors()
+    # B is set but the required dynamics inputs are omitted at fit time → error.
     D, p, T, N = 2, 3, 15, 2
     B = Matrix{Float64}(I, D, D)
     Random.seed!(3)
@@ -457,10 +335,38 @@ function test_kalman_missing_u_errors()
     om = GaussianObservationModel(;
         C=randn(p, D), R=0.3*Matrix{Float64}(I, p, p), d=zeros(p)
     )
-    lds = LinearDynamicalSystem(sm, om; kalman_filter=true)
+    lds = LinearDynamicalSystem(sm, om)
     y = randn(p, T, N)
-    # B is set but u is omitted → should error. Use fit! (the public
-    # input-aware entry point); smooth! does not expose `u` as a kwarg.
     y_vec = [y[:, :, n] for n in 1:N]
     @test_throws Exception fit!(lds, y_vec; max_iter=1, progress=false)
+end
+
+function test_marginal_loglikelihood()
+    # `loglikelihood(lds, y)` is the marginal (observed-data) log-likelihood via
+    # the Kalman filter. It should be finite, backend-independent, and agree
+    # between the 3-D-array and vector-of-matrices input forms. Poisson has no
+    # tractable marginal and must throw.
+    D, p, T, N = 3, 5, 40, 6
+    lds = _make_toy_lds(; D=D, p=p)
+    y = _simulate_lds(lds, T, N)
+
+    ll = StateSpaceDynamics.loglikelihood(lds, y)
+    @test ll isa Real
+    @test isfinite(ll)
+
+    # Vector-of-matrices form matches the stacked-array form.
+    y_vec = [y[:, :, n] for n in 1:N]
+    @test StateSpaceDynamics.loglikelihood(lds, y_vec) ≈ ll atol=1e-9
+
+    # Poisson marginal is intractable → not implemented.
+    sm = GaussianStateModel(;
+        A=0.7*Matrix{Float64}(I, 2, 2),
+        Q=0.2*Matrix{Float64}(I, 2, 2),
+        x0=zeros(2),
+        P0=Matrix{Float64}(I, 2, 2),
+        b=zeros(2),
+    )
+    plds = LinearDynamicalSystem(sm, PoissonObservationModel(; C=randn(3, 2), d=zeros(3)))
+    y_pois = randn(3, 10)
+    @test_throws Exception StateSpaceDynamics.loglikelihood(plds, y_pois)
 end

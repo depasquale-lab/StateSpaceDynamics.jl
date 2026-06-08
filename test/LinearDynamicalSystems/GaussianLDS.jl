@@ -804,7 +804,7 @@ function test_mn_prior_type_decoupled_from_model_matrix()
         @test sm.AB_prior isa StateSpaceDynamics.MNPrior{Float64,Matrix{Float64}}
         @test om.CD_prior isa StateSpaceDynamics.MNPrior{Float64,Matrix{Float64}}
 
-        lds = LinearDynamicalSystem(sm, om; kalman_filter=true)
+        lds = LinearDynamicalSystem(sm, om)
         kws = StateSpaceDynamics.KalmanWorkspace(lds, 20, 1)
         @test kws.AB_prior isa StateSpaceDynamics.MNPrior{Float64,Matrix{Float64}}
         @test kws.CD_prior isa StateSpaceDynamics.MNPrior{Float64,Matrix{Float64}}

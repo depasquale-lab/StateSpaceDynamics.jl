@@ -180,17 +180,14 @@ include("helper_functions.jl")
         end
 
         include("LinearDynamicalSystems/KalmanLDS.jl")
-        @testset "Kalman LDS" begin
-            test_kalman_smooth_agrees_with_newton()
-            test_kalman_fit_matches_newton()
-            test_kalman_covariance_shared_across_trials()
-            test_kalman_with_B_input_equivalent_to_bias()
-            test_kalman_rejects_poisson_obs()
-            test_kalman_missing_u_errors()
-            test_kalman_fit_bool_freezes_params()
+        @testset "LDS smoother + marginal LL" begin
+            test_td_covariance_shared_across_trials()
+            test_td_shared_cov_matches_per_trial_path()
+            test_lds_with_B_input_equivalent_to_bias()
             test_td_fit_with_dynamics_input()
             test_td_sampling_zero_input_matches_no_control()
-            test_td_shared_cov_matches_per_trial_path()
+            test_td_fit_missing_u_errors()
+            test_marginal_loglikelihood()
         end
 
         include("LinearDynamicalSystems/PoissonLDS.jl")
@@ -270,7 +267,6 @@ include("helper_functions.jl")
             test_validate_LDS_wrong_fit_bool_length()
             test_validate_LDS_poisson_extreme_d()
             test_validate_LDS_asymmetric_covariance()
-            test_validate_LDS_kalman_poisson_guard()
             test_validate_LDS_poisson_fit_bool_length()
         end
 

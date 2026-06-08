@@ -901,7 +901,8 @@ end
     KalmanWorkspace{T<:Real}
 
 Pre-allocated workspace for the information-form Kalman filter + RTS smoother path
-(ported from StateSpaceAnalysis). Used when `LinearDynamicalSystem.kalman_filter == true`.
+(ported from StateSpaceAnalysis). Retained for the marginal log-likelihood and
+future particle-filter use; no longer used as a `fit!` E-step backend.
 
 The workspace is split into three layers:
 

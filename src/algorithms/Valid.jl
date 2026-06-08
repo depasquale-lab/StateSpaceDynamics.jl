@@ -307,15 +307,6 @@ end
 ```
 """
 function validate_LDS(lds::LinearDynamicalSystem{T,S,O}) where {T,S,O}
-    # The Kalman-path backend only supports Gaussian observations
-    if lds.kalman_filter && lds.obs_model isa PoissonObservationModel
-        throw(
-            ArgumentError(
-                "kalman_filter=true requires a GaussianObservationModel; got $(typeof(lds.obs_model))",
-            ),
-        )
-    end
-
     # Check state model dimensions and properties
     _validate_state_model(lds.state_model, lds.latent_dim)
 

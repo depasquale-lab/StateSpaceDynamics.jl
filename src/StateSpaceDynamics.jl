@@ -33,6 +33,9 @@ include("optimization/linesearch.jl")
 include("optimization/newton.jl")
 
 # Linear Dynamical Systems
+# kalman.jl / cov_update.jl are retained for the Kalman filter + marginal
+# likelihood (and future particle-filter use); the Kalman path is no longer a
+# selectable E-step backend for `fit!`.
 include("models/lds/cov_update.jl")
 include("models/lds/kalman.jl")
 include("models/lds/common.jl")

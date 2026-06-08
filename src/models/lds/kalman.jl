@@ -1,7 +1,10 @@
 # =============================================================================
 # Information-form Kalman filter + RTS smoother for Gaussian LDS.
 #
-# Activated when `lds.kalman_filter == true`. Ported from StateSpaceAnalysis.
+# Retained for the marginal log-likelihood (`loglikelihood(lds, y)`) and future
+# particle-filter use. No longer wired into `fit!` as a selectable E-step
+# backend — all Gaussian fitting goes through the block-tridiagonal path.
+# Ported from StateSpaceAnalysis.
 #
 # Key design choices:
 #
@@ -30,8 +33,9 @@
 """
     _fit_kalman!(lds, y; control_seq, obs_control_seq, max_iter, tol, progress)
 
-Kalman-path EM driver. Called from the main `fit!` in `gaussian.jl` when
-`lds.kalman_filter == true`. `control_seq` carries dynamics inputs (`B*u_t`),
+Kalman-path EM driver. Retained but no longer invoked by `fit!` (the Kalman
+E-step backend was removed); kept for reference / future use. `control_seq`
+carries dynamics inputs (`B*u_t`),
 `obs_control_seq` carries observation inputs (`D*v_t`). Both are 3-D arrays
 `(input_dim, tsteps, ntrials)` or `nothing` for no inputs.
 """

@@ -75,9 +75,6 @@ end
 function Base.show(io::IO, lds::LinearDynamicalSystem; gap="")
     println(io, gap, "Linear Dynamical System:")
     println(io, gap, "------------------------")
-    if lds.kalman_filter
-        println(io, gap, " E-step backend: Kalman filter + RTS smoother")
-    end
     Base.show(io, lds.state_model; gap=gap * " ")
     Base.show(io, lds.obs_model; gap=gap * " ")
     println(io, gap, " Parameters to update:")

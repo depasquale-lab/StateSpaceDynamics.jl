@@ -254,28 +254,6 @@ function test_validate_obs_model_poisson_fields()
     @test StateSpaceDynamics._validate_obs_model(om, p, D) === nothing
 end
 
-function test_validate_LDS_kalman_poisson_guard()
-    # The Kalman/RTS backend only supports Gaussian observations.
-    D, p = 2, 3
-    gsm = GaussianStateModel(;
-        A=Matrix{Float64}(I, D, D),
-        Q=Matrix{Float64}(I, D, D),
-        b=zeros(D),
-        x0=zeros(D),
-        P0=Matrix{Float64}(I, D, D),
-    )
-    pom = PoissonObservationModel(; C=randn(p, D), d=zeros(p))
-    lds = LinearDynamicalSystem(;
-        state_model=gsm,
-        obs_model=pom,
-        latent_dim=D,
-        obs_dim=p,
-        fit_bool=fill(true, 5),
-        kalman_filter=true,
-    )
-    @test_throws ArgumentError validate_LDS(lds)
-end
-
 function test_validate_LDS_poisson_fit_bool_length()
     # Poisson expects a length-5 fit_bool; a length-6 vector must be rejected.
     D, p = 2, 3

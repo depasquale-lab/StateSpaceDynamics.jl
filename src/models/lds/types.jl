@@ -8,9 +8,7 @@ State evolution:
 x_1           ~ N(x_0, P_0)
 x_{t+1} | x_t ~ N(A x_t + b + B u_t, Q)
 ```
-where `B·u_t` is present only when `B` is supplied (i.e., not `nothing`). Input
-matrices are only consumed by the Kalman filter path (see
-`LinearDynamicalSystem.kalman_filter`).
+where `B·u_t` is present only when `B` is supplied (i.e., has nonzero columns).
 
 # Fields
 - `A::M`: Transition matrix (size `latent_dim × latent_dim`).
@@ -190,9 +188,7 @@ Base.@kwdef struct LinearDynamicalSystem{
 end
 
 function LinearDynamicalSystem(
-    state_model::S,
-    obs_model::O;
-    fit_bool::Union{Vector{Bool},Nothing}=nothing,
+    state_model::S, obs_model::O; fit_bool::Union{Vector{Bool},Nothing}=nothing
 ) where {T<:Real,S<:AbstractStateModel{T},O<:AbstractObservationModel{T}}
 
     # Infer dimensions from matrices
@@ -206,15 +202,14 @@ function LinearDynamicalSystem(
     obs_input_dim =
         hasproperty(obs_model, :D) && !isnothing(obs_model.D) ? size(obs_model.D, 2) : 0
 
-    # Set default fit_bool based on observation model type.
-    # Kalman and TD paths share the same length-6 layout because both M-steps
-    # fit [A b B] and [C d D] as joint regressions.
+    # Set default fit_bool based on observation model type. The M-step fits
+    # [A b B] and [C d D] as joint regressions, so the Gaussian layout is length 6.
     if fit_bool === nothing
         if obs_model isa PoissonObservationModel
             # Poisson: [x0, P0, A&b, Q, C&d] (5 parameters)
             fit_bool = [true, true, true, true, true]
         else
-            # Gaussian (BTD and Kalman): [x0, P0, A&b&B, Q, C&d&D, R] (6 parameters)
+            # Gaussian (BTD): [x0, P0, A&b&B, Q, C&d&D, R] (6 parameters)
             fit_bool = [true, true, true, true, true, true]
         end
     end
@@ -228,7 +223,6 @@ function LinearDynamicalSystem(
         state_input_dim,
         obs_input_dim,
         fit_bool,
-        kalman_filter,
     )
 
     # Validate the constructed LDS (throws on error)

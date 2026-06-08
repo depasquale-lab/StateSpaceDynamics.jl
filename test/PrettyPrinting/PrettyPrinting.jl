@@ -52,12 +52,8 @@ function test_pretty_printing()
 
     # Linear Dynamical System
 
-    lds1 = LinearDynamicalSystem(
-        gsm1, gom1; fit_bool=[true, true, true, true, true, true], kalman_filter=false
-    )
-    lds2 = LinearDynamicalSystem(
-        gsm2, gom2; fit_bool=[true, true, true, true, true, true], kalman_filter=false
-    )
+    lds1 = LinearDynamicalSystem(gsm1, gom1; fit_bool=[true, true, true, true, true, true])
+    lds2 = LinearDynamicalSystem(gsm2, gom2; fit_bool=[true, true, true, true, true, true])
 
     push!(objs, lds1, lds2)
 

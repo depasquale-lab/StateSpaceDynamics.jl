@@ -107,9 +107,7 @@ R = Matrix(0.5 * I(obs_dim))
 d = zeros(obs_dim)
 obs_model = GaussianObservationModel(; C=C, R=R, d=d)
 
-# Construct the LDS. The `kalman_filter=true` keyword swaps the E-step backend
-# to the information-form Kalman/RTS smoother; the default `false` uses the
-# block-tridiagonal Newton smoother (TD path).
+# Construct the LDS. Fitting uses the block-tridiagonal (Newton) smoother.
 lds = LinearDynamicalSystem(state_model, obs_model)
 ```
 

@@ -50,6 +50,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   aggregation that is O(1) in trial length `T` and trial count `N`, a shared
   smoothed-covariance cache for equal-length trials, and an allocation-minimal
   block-tridiagonal smoother
+- Clarified the log-likelihood API: the complete-data `log p(x, y)` given a
+  trajectory is now `joint_loglikelihood(x, lds, y)`, while `loglikelihood(lds, y)`
+  is the marginal (observed-data) `log p(y); a method of `StatsAPI.loglikelihood`,
+  consistent with `loglikelihood(ppca, X)`. The marginal throws for Poisson LDS
+  (intractable). Replaces the former `filter_loglikelihood`.
 
 ### Removed
 
@@ -64,6 +69,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `RegressionEmission`, `GaussianRegressionEmission`,
     `BernoulliRegressionEmission`, `PoissonRegressionEmission`,
     `AutoRegressionEmission`
+- The Kalman/RTS smoother as a selectable E-step backend for `fit!` (the
+  `kalman_filter` flag on `LinearDynamicalSystem`). All Gaussian fitting now uses
+  the block-tridiagonal MAP path. The Kalman filter implementation is retained
+  internally for the marginal log-likelihood `loglikelihood(lds, y)`.
 
 ### Fixed
 

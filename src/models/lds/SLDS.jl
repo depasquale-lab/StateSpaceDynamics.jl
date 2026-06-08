@@ -257,7 +257,9 @@ function joint_loglikelihood!(
 
     K = length(slds.LDSs)
     for k in 1:K
-        joint_loglikelihood!(view(ws.ll_tmp, 1:Tsteps), ws, ws.consts[k], slds.LDSs[k], x, y)
+        joint_loglikelihood!(
+            view(ws.ll_tmp, 1:Tsteps), ws, ws.consts[k], slds.LDSs[k], x, y
+        )
         for t in 1:Tsteps
             ws.ll_vec[t] += w[k, t] * ws.ll_tmp[t]
         end

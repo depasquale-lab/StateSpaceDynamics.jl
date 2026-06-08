@@ -1197,60 +1197,6 @@ function fit!(
     v_seq = _normalize_multitrial_obs_control(
         obs_control_seq, lds.obs_input_dim, tsteps_per_trial, T, lds.obs_model
     )
-    return _fit!(lds, y, max_iter, tol, progress, u_seq, v_seq, Val(lds.kalman_filter))
-end
-
-function _fit!(
-    lds::LinearDynamicalSystem{T,S,O},
-    y_vec::AbstractVector{<:AbstractMatrix{T}},
-    max_iter::Int,
-    tol::Float64,
-    progress::Bool,
-    u_seq::AbstractVector{<:AbstractMatrix{T}},
-    v_seq::AbstractVector{<:AbstractMatrix{T}},
-    ::Val{true},
-) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
-    y_combined = zeros(T, size(y_vec[1], 1), size(y_vec[1], 2), length(y_vec))
-    try
-        # combine y vector into matrix
-        y_combined = cat(y_vec...; dims=3)
-    catch
-        throw(
-            ArgumentError(
-                """
-                Failed to combine input vector of matrices into a single matrix.
-                Ensure all matrices have the same number of rows (obs_dim) and that
-                the total number of columns does not exceed memory limits.
-                """
-            ),
-        )
-    end
-
-    # Kalman path consumes 3-D arrays. Stack per-trial controls if any.
-    u_combined = isempty(u_seq) || size(u_seq[1], 1) == 0 ? nothing : cat(u_seq...; dims=3)
-    v_combined = isempty(v_seq) || size(v_seq[1], 1) == 0 ? nothing : cat(v_seq...; dims=3)
-
-    return _fit_kalman!(
-        lds,
-        y_combined;
-        control_seq=u_combined,
-        obs_control_seq=v_combined,
-        max_iter=max_iter,
-        tol=tol,
-        progress=progress,
-    )
-end
-
-function _fit!(
-    lds::LinearDynamicalSystem{T,S,O},
-    y::AbstractVector{<:AbstractMatrix{T}},
-    max_iter::Int,
-    tol::Float64,
-    progress::Bool,
-    u_seq::AbstractVector{<:AbstractMatrix{T}},
-    v_seq::AbstractVector{<:AbstractMatrix{T}},
-    ::Val{false},
-) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     return _fit_tridiag!(
         lds,
         y;
