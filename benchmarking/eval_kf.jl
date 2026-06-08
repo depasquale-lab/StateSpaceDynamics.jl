@@ -155,7 +155,7 @@ bench = @benchmark SSD.fit!(m, $y;
 # Fit once outside the benchmark to get final parameters for evaluation.
 fitted = deepcopy(model)
 SSD.fit!(fitted, y; max_iter=max_iter, tol=1e-8, progress=false)
-test_loglik = SSD.filter_loglikelihood(fitted, y_test)
+test_loglik = SSD.loglikelihood(fitted, y_test)
 
 
 

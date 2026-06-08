@@ -65,7 +65,7 @@ for iter in 1:MAX_EM
     push!(elbos, elbo)
 
     # Marginal log-likelihood via Kalman filter (exact for Gaussian LDS)
-    marg = StateSpaceDynamics.filter_loglikelihood(lds_fit, y)
+    marg = StateSpaceDynamics.loglikelihood(lds_fit, y)
     push!(margs, marg)
 
     # M-step

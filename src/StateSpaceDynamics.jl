@@ -13,6 +13,7 @@ using ProgressMeter: Progress, next!, finish!
 using SpecialFunctions: loggamma
 using Statistics: mean
 using StatsAPI: StatsAPI
+import StatsAPI: loglikelihood
 
 using Base.Threads: @threads, @spawn
 using Base.Iterators: partition
@@ -66,6 +67,6 @@ export print_full
 export info_update!
 
 # Common functions
-export rand, smooth, fit!, loglikelihood, filter_loglikelihood
+export rand, smooth, fit!, loglikelihood, joint_loglikelihood
 
 end

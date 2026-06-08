@@ -238,12 +238,12 @@ function StatsAPI.fit!(
 end
 
 """
-    loglikelihood(slds::SLDS, x, y, w)
+    joint_loglikelihood(slds::SLDS, x, y, w)
 
 Compute weighted complete-data log-likelihood for SLDS.
 Returns vector of per-timestep log-likelihoods.
 """
-function loglikelihood!(
+function joint_loglikelihood!(
     ws::SLDSSmoothWorkspace{T},
     slds::SLDS{T},
     x::AbstractMatrix{T},
@@ -257,7 +257,7 @@ function loglikelihood!(
 
     K = length(slds.LDSs)
     for k in 1:K
-        loglikelihood!(view(ws.ll_tmp, 1:Tsteps), ws, ws.consts[k], slds.LDSs[k], x, y)
+        joint_loglikelihood!(view(ws.ll_tmp, 1:Tsteps), ws, ws.consts[k], slds.LDSs[k], x, y)
         for t in 1:Tsteps
             ws.ll_vec[t] += w[k, t] * ws.ll_tmp[t]
         end
@@ -751,7 +751,7 @@ function smooth!(
     neg_super_v = view(btd.neg_super, 1:(tsteps - 1))
 
     ϕ!() = begin
-        ll = loglikelihood!(ws, slds, x, y, w)
+        ll = joint_loglikelihood!(ws, slds, x, y, w)
         return sum(ll)
     end
 
@@ -982,7 +982,7 @@ function estep!(
         x_sample = x_samples[trial]
         for k in 1:K
             ll_view = view(dl.logL, k, t1:t2)
-            loglikelihood!(
+            joint_loglikelihood!(
                 ll_view, slds_ws, slds_ws.consts[k], slds.LDSs[k], x_sample, y_trial
             )
         end
@@ -1009,7 +1009,7 @@ function estep!(
         # E_q[log p(y, x | z)] weighted by discrete posteriors.
         for k in 1:K
             ll = view(slds_ws.ll_tmp, 1:Tsteps)
-            loglikelihood!(
+            joint_loglikelihood!(
                 ll, slds_ws, slds_ws.consts[k], slds.LDSs[k], x_smooth_trial, y_trial
             )
             for t in 1:Tsteps

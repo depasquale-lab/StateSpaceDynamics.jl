@@ -31,7 +31,7 @@ Test that analytical gradient matches numerical gradient for any LDS type.
 """
 function test_gradient_common(lds, x, y)
     for i in eachindex(y)
-        f = latents -> sum(StateSpaceDynamics.loglikelihood(latents, lds, y[i]))
+        f = latents -> sum(StateSpaceDynamics.joint_loglikelihood(latents, lds, y[i]))
         grad_numerical = ForwardDiff.gradient(f, x[i])
         grad_analytical = StateSpaceDynamics.Gradient(lds, y[i], x[i])
         @test norm(grad_numerical - grad_analytical) < 1e-8
@@ -45,7 +45,7 @@ Test that analytical Hessian matches numerical Hessian for any LDS type.
 """
 function test_hessian_common(lds, x, y)
     function log_likelihood(x::AbstractArray, lds, y::AbstractArray)
-        return sum(StateSpaceDynamics.loglikelihood(x, lds, y))
+        return sum(StateSpaceDynamics.joint_loglikelihood(x, lds, y))
     end
 
     tsteps_test = 3
@@ -96,7 +96,7 @@ function test_smooth_common(lds, x, y)
     @test size(p_smooth_tt1) == (lds.latent_dim, lds.latent_dim, n_tsteps)
 
     for i in eachindex(y)
-        f = latents -> sum(StateSpaceDynamics.loglikelihood(latents, lds, y[i]))
+        f = latents -> sum(StateSpaceDynamics.joint_loglikelihood(latents, lds, y[i]))
         grad_numerical = ForwardDiff.gradient(f, tfs[i].x_smooth)
         grad_analytical = StateSpaceDynamics.Gradient(lds, y[i], tfs[i].x_smooth)
         @test norm(grad_numerical - grad_analytical) < 1e-7

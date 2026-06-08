@@ -274,7 +274,7 @@ function test_poisson_loglikelihood_type_preservation()
         x_mat = x[1]
         y_mat = y[1]
 
-        ll = sum(StateSpaceDynamics.loglikelihood(x_mat, lds, y_mat))
+        ll = sum(StateSpaceDynamics.joint_loglikelihood(x_mat, lds, y_mat))
 
         if ll isa Number
             @test typeof(ll) === T

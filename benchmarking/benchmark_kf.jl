@@ -163,7 +163,7 @@ for latent_dim in kf_config.latent_dims
             # Fit once outside the benchmark to get final parameters for evaluation.
             fitted = deepcopy(model)
             elbo = SSD.fit!(fitted, y; max_iter=max_iter, tol=1e-6, progress=false)
-            ll_per_obs = SSD.filter_loglikelihood(fitted, y_test) / n_obs
+            ll_per_obs = SSD.loglikelihood(fitted, y_test) / n_obs
 
             push!(results, (
                 name, latent_dim, obs_dim,

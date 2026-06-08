@@ -8,12 +8,12 @@ performance, with careful attention to memory allocation and multi-threading.
 """
 
 """
-    loglikelihood!(ws, x, lds, y)
+    joint_loglikelihood!(ws, x, lds, y)
 
-In-place version of `loglikelihood` that uses pre-computed Cholesky factors from
+In-place version of `joint_loglikelihood` that uses pre-computed Cholesky factors from
 `ws::SmoothWorkspace` and writes into `ws.ll_vec`. Returns the sum of log-likelihoods.
 """
-function loglikelihood!(
+function joint_loglikelihood!(
     ws::SmoothWorkspace{T},
     x::AbstractMatrix{T},
     lds::LinearDynamicalSystem{T0,S,O},
@@ -83,7 +83,7 @@ end
 # Backward-compatible 4-arg overload: no inputs. Forwards to the 6-arg form
 # with zero-row u/v matrices, so callers that don't use controls don't have
 # to pass them.
-function loglikelihood!(
+function joint_loglikelihood!(
     ws::SmoothWorkspace{T},
     x::AbstractMatrix{T},
     lds::LinearDynamicalSystem{T0,S,O},
@@ -92,11 +92,11 @@ function loglikelihood!(
     tsteps = size(y, 2)
     u = zeros(T0, 0, tsteps)
     v = zeros(T0, 0, tsteps)
-    return loglikelihood!(ws, x, lds, y, u, v)
+    return joint_loglikelihood!(ws, x, lds, y, u, v)
 end
 
 """
-    loglikelihood!(ws, x, lds, y)
+    joint_loglikelihood!(ws, x, lds, y)
 
 Compute per-timestep complete-data log-likelihood contributions for a Gaussian LDS:
 
@@ -109,7 +109,7 @@ Notes:
 - Normalization terms (logdet + log(2π)) are included. These are constant w.r.t. `x`,
   but **not** constant across SLDS discrete states when `Q`/`R` differ by state.
 """
-function loglikelihood!(
+function joint_loglikelihood!(
     ll::AbstractVector{T},
     ws::SLDSSmoothWorkspace{T},
     cc::LDSConstantCache{T},
@@ -1427,27 +1427,31 @@ function smooth!(
     return smooth!(lds, tfs, y, sws_pool)
 end
 
-function loglikelihood(
+function joint_loglikelihood(
     x::AbstractMatrix{XT}, lds::LinearDynamicalSystem{T,S,O}, y::AbstractMatrix{YT}
 ) where {T<:Real,YT<:Real,XT<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     tsteps = size(y, 2)
     WT = promote_type(T, YT, XT)
     ws = SmoothWorkspace(WT, lds.latent_dim, lds.obs_dim, tsteps)
     compute_smooth_constants!(ws, lds)
-    return loglikelihood!(ws, x, lds, y)
+    return joint_loglikelihood!(ws, x, lds, y)
 end
 
 """
-    filter_loglikelihood(lds, y)
+    loglikelihood(lds, y)
 
-One-step-ahead predictive log-likelihood ∑_{t,n} log p(y_t^n | y_{1:t-1}^n) via
-the Kalman filter.  Valid for any fitted `LinearDynamicalSystem` with a
-`GaussianObservationModel`, regardless of which E-step backend was used to train it.
+Marginal (observed-data) log-likelihood `∑_{t,n} log p(y_t^n | y_{1:t-1}^n)` of a
+Gaussian `LinearDynamicalSystem`, computed by running the Kalman filter and summing
+the one-step-ahead predictive densities (latent states integrated out). Valid for
+any fitted model with a `GaussianObservationModel`.
 
-Returns the **total** log-likelihood.  Divide by `obs_dim * tsteps * ntrials` for a
+This is the `StatsAPI.loglikelihood` method for the LDS; for the complete-data
+log-likelihood `log p(x, y)` given a trajectory `x`, see `joint_loglikelihood`.
+
+Returns the **total** log-likelihood. Divide by `obs_dim * tsteps * ntrials` for a
 per-observation score that is comparable across configurations.
 """
-function filter_loglikelihood(
+function loglikelihood(
     lds::LinearDynamicalSystem{T,SM,OM}, y::AbstractArray{T,3}
 ) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
     A = lds.state_model.A
@@ -1527,9 +1531,9 @@ function filter_loglikelihood(
     return total_ll
 end
 
-function filter_loglikelihood(
+function loglikelihood(
     lds::LinearDynamicalSystem{T,SM,OM}, y::AbstractVector{<:AbstractMatrix{T}}
 ) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
     y_comb = cat(y...; dims=3)
-    return filter_loglikelihood(lds, y_comb)
+    return loglikelihood(lds, y_comb)
 end

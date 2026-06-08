@@ -1,7 +1,7 @@
 # Poisson LDS implementations - exports handled by types.jl and gaussian.jl
 
 """
-    loglikelihood(
+    joint_loglikelihood(
         x::AbstractMatrix{U},
         plds::LinearDynamicalSystem{T,S,O},
         y::AbstractMatrix{T}
@@ -21,13 +21,13 @@ single trial.
 - `ll::Vector{T}`: The log-likelihood value.
 
 # Ref
-- loglikelihood(
+- joint_loglikelihood(
     x::AbstractArray{T,3},
     plds::LinearDynamicalSystem{T,S,O},
     y::AbstractArray{T,3}
 )
 """
-function loglikelihood(
+function joint_loglikelihood(
     x::AbstractMatrix{U}, plds::LinearDynamicalSystem{T,S,O}, y::AbstractMatrix{T}
 ) where {U<:Real,T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
 
@@ -135,7 +135,7 @@ function _loglikelihood_ws(
     return ll
 end
 
-function loglikelihood!(
+function joint_loglikelihood!(
     ll::AbstractVector{T},
     ws::SLDSSmoothWorkspace{T},
     cc::LDSConstantCache{T},
@@ -194,12 +194,12 @@ function loglikelihood!(
 end
 
 """
-    loglikelihood(x, plds, y)
+    joint_loglikelihood(x, plds, y)
 
 Multi-trial complete-data log-likelihood for a Poisson LDS. `x` and `y` are vectors
 of per-trial matrices.
 """
-function loglikelihood(
+function joint_loglikelihood(
     x::AbstractVector{<:AbstractMatrix{<:Real}},
     plds::LinearDynamicalSystem{T,S,O},
     y::AbstractVector{<:AbstractMatrix{T}},
@@ -210,12 +210,32 @@ function loglikelihood(
         Threads.@spawn begin
             acc = zero(T)
             for n in chunk
-                acc += sum(loglikelihood(x[n], plds, y[n]))
+                acc += sum(joint_loglikelihood(x[n], plds, y[n]))
             end
             acc
         end
     end
     return sum(fetch.(tasks))
+end
+
+"""
+    loglikelihood(plds, y)
+
+Marginal (observed-data) log-likelihood for a Poisson LDS — **not implemented**.
+
+The marginal `log p(y) = ∫ p(x, y) dx` is intractable for the Poisson observation
+model (non-conjugate; there is no closed-form Kalman filter as in the Gaussian case).
+Use `joint_loglikelihood(x, plds, y)` for the complete-data log-likelihood given a
+trajectory `x`, or the ELBO returned by `fit!` as a lower bound on `log p(y)`.
+"""
+function loglikelihood(
+    plds::LinearDynamicalSystem{T,S,O}, y
+) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
+    return error(
+        "marginal loglikelihood is not implemented for the Poisson LDS (the marginal " *
+        "log p(y) is intractable). Use joint_loglikelihood(x, plds, y) for the " *
+        "complete-data log-likelihood, or the ELBO from fit! as a lower bound.",
+    )
 end
 
 """
