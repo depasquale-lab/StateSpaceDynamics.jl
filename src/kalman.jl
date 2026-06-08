@@ -989,10 +989,14 @@ to `loglikelihood(lds, y)`; this name exists so internal call sites can disambig
 from the complete-data[`joint_loglikelihood`](@ref). Accepts the same observation 
 forms (3-D array, vector-of-matrices, single matrix).
 =#
-marginal_loglikelihood(lds::LinearDynamicalSystem, y::AbstractArray{<:Real,3}) =
-    loglikelihood(lds, y)
-marginal_loglikelihood(
+function marginal_loglikelihood(lds::LinearDynamicalSystem, y::AbstractArray{<:Real,3})
+    return loglikelihood(lds, y)
+end
+function marginal_loglikelihood(
     lds::LinearDynamicalSystem, y::AbstractVector{<:AbstractMatrix{<:Real}}
-) = loglikelihood(lds, y)
-marginal_loglikelihood(lds::LinearDynamicalSystem, y::AbstractMatrix{<:Real}) =
-    loglikelihood(lds, y)
+)
+    return loglikelihood(lds, y)
+end
+function marginal_loglikelihood(lds::LinearDynamicalSystem, y::AbstractMatrix{<:Real})
+    return loglikelihood(lds, y)
+end
