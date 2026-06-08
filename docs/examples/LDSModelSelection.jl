@@ -75,7 +75,7 @@ for (k_idx, K) in enumerate(K_candidates)
         val_idx = val_start:val_end
 
         y_train = observations[:, train_idx]
-        y_val = observations[:, val_idx]
+        y_val = observations[:, val_idx] 
 
         A_init = 0.9 * Matrix(I(K)) + 0.1 * randn(rng, K, K)
         Q_init = 0.1 * Matrix(I(K))
@@ -96,8 +96,7 @@ for (k_idx, K) in enumerate(K_candidates)
 
         try
             fit!(candidate, y_train; max_iter=200, tol=1e-6, progress=false)
-            x_val, _ = smooth(candidate, y_val)
-            val_ll = StateSpaceDynamics.loglikelihood(x_val, candidate, y_val)
+            val_ll = StateSpaceDynamics.loglikelihood(candidate, y_val)
             fold_scores[fold] = sum(val_ll) / length(val_idx)
         catch err
             @warn "Fold $fold failed for K=$K" exception=err

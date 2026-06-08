@@ -1483,3 +1483,10 @@ function loglikelihood(
     y_comb = cat(y...; dims=3)
     return loglikelihood(lds, y_comb)
 end
+
+function loglikelihood(
+    lds::LinearDynamicalSystem{T,SM,OM}, y::AbstractMatrix{T}
+) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
+    y_comb = y[:,:,:]  # add singleton trial dimension if missing
+    return loglikelihood(lds, y_comb)
+end
