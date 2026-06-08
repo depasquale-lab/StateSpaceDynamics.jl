@@ -1477,6 +1477,8 @@ function loglikelihood(
     return total_ll
 end
 
+# Alternative observation methods
+# vector of matrices (e.g., for ragged multi-trial observation)
 function loglikelihood(
     lds::LinearDynamicalSystem{T,SM,OM}, y::AbstractVector{<:AbstractMatrix{T}}
 ) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
@@ -1484,9 +1486,10 @@ function loglikelihood(
     return loglikelihood(lds, y_comb)
 end
 
+# single-trial observation (Matrix)
 function loglikelihood(
     lds::LinearDynamicalSystem{T,SM,OM}, y::AbstractMatrix{T}
 ) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
-    y_comb = y[:,:,:]  # add singleton trial dimension if missing
+    y_comb = reshape(y, size(y, 1), size(y, 2), 1)  # add singleton trial dimension if missing
     return loglikelihood(lds, y_comb)
 end
