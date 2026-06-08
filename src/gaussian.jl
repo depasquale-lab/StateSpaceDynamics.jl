@@ -1064,7 +1064,7 @@ function update_C_d!(
         # the in-place solve, `sws.Syz` itself holds V = [C d D].
         Syz_T = transpose(sws.Syz)
         copyto!(Syz_T, suf.obs_xy)
-        ldiv!(suf.obs_xx[], Syz_T)
+        ldiv!(suf.obs_xx[].chol, Syz_T)
         V = sws.Syz
     else
         V = mn_map(suf.obs_xx[], suf.obs_xy, CD_prior)

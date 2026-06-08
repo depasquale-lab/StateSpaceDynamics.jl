@@ -273,7 +273,7 @@ function update_A_b!(
         # `transpose(dyn_xx \ dyn_xy)` = the W = [A b B] regression matrix.
         Sxz_T = transpose(sws.Sxz)
         copyto!(Sxz_T, suf.dyn_xy)
-        ldiv!(suf.dyn_xx[], Sxz_T)
+        ldiv!(suf.dyn_xx[].chol, Sxz_T)
         W = sws.Sxz
     else
         # MN-prior MAP path — keep `mn_map` (allocates) for now.

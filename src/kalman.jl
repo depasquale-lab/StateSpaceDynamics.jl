@@ -979,3 +979,20 @@ function marginal_loglikelihood(
 
     return total_ll
 end
+
+#=
+    marginal_loglikelihood(lds, y)
+
+Specific-name companion to [`loglikelihood`](@ref): the marginal (observed-data)
+log-likelihood of `lds` with the latent states integrated out. Identical in value
+to `loglikelihood(lds, y)`; this name exists so internal call sites can disambiguate 
+from the complete-data[`joint_loglikelihood`](@ref). Accepts the same observation 
+forms (3-D array, vector-of-matrices, single matrix).
+=#
+marginal_loglikelihood(lds::LinearDynamicalSystem, y::AbstractArray{<:Real,3}) =
+    loglikelihood(lds, y)
+marginal_loglikelihood(
+    lds::LinearDynamicalSystem, y::AbstractVector{<:AbstractMatrix{<:Real}}
+) = loglikelihood(lds, y)
+marginal_loglikelihood(lds::LinearDynamicalSystem, y::AbstractMatrix{<:Real}) =
+    loglikelihood(lds, y)

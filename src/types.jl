@@ -1,4 +1,23 @@
 """
+Abstract type for Dynamical Systems. I.e. LDS, etc.
+"""
+abstract type AbstractStateModel{T<:Real} end
+abstract type AbstractObservationModel{T<:Real} end
+
+"""
+    Data{T<:Real}
+
+Container for the observed data passed to the Kalman path: observations `y`,
+dynamics inputs `u`, and observation inputs `d`, each `(dim, tsteps, ntrials)`
+(input fields may have zero rows when no controls are supplied).
+"""
+Base.@kwdef struct Data{T<:Real}
+    y::Array{T,3}
+    u::Array{T,3}
+    d::Array{T,3}
+end
+
+"""
     GaussianStateModel{T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector{T}}
 
 Represents the state model of a Linear Dynamical System with Gaussian noise.

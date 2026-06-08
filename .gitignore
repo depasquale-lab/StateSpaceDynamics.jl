@@ -11,6 +11,8 @@ test/*/notebooks
 # Documentation
 docs/build/
 docs/Manifest.toml
+# Literate-generated tutorials.
+docs/src/tutorials/
 test/*/notebooks
 # SSDTest is dev'd in from libs/ at the start of every Pkg.test() run.
 test/Manifest.toml

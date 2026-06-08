@@ -198,20 +198,3 @@ function random_rotation_matrix(n::Int, rng::AbstractRNG=Random.default_rng())
 
     return Matrix(Q)
 end
-
-# Pretty print function that doesn't truncate arrays of model objects
-
-"""
-    print_full([io::Union{IO, Base.TTY}, ] obj)
-
-Prints full description of object `obj`, overriding both `io`-based limits as
-well as the limits set in the default pretty printing of `StateSpaceDynamics`
-objects.
-"""
-function print_full(io::Union{IO,Base.TTY}, obj)
-    println(IOContext(io, :limit => false), obj)
-
-    return nothing
-end
-
-print_full(obj) = print_full(stdout, obj)

@@ -6,6 +6,117 @@
 # `block_tridiagonal_inverse_logdet!`), banded SPD solves, and back-substitution.
 # Extracted from Utilities.jl, which retains only general-purpose helpers.
 
+# Block Tridiagonal Workspace
+"""
+    BlockTridiagonalWorkspace{T<:Real}
+
+Pre-allocated workspace for block tridiagonal operations in LDS smoothing.
+Holds all temporary buffers needed by `Hessian!`, `block_tridgm!`, and
+`block_tridiagonal_inverse!` to avoid repeated allocations during EM iterations.
+"""
+struct BlockTridiagonalWorkspace{T<:Real}
+    block_size::Int
+    n_blocks::Int
+
+    # Hessian block storage
+    H_diag::Vector{Matrix{T}}
+    H_sub::Vector{Matrix{T}}
+    H_super::Vector{Matrix{T}}
+
+    # Sparse matrix with fixed sparsity pattern
+    H_sparse::SparseMatrixCSC{T,Int}
+    # Precomputed map from block (k, i, j) to nzval index for zero-allocation writes
+    nzval_map::Vector{Int}
+
+    # block_tridiagonal_inverse buffers
+    D::Vector{Matrix{T}}
+    E::Vector{Matrix{T}}
+    M::Matrix{T}
+    term1::Matrix{T}
+    term2::Matrix{T}
+    S::Matrix{T}
+    Ibs::Matrix{T}
+    Z::Matrix{T}
+
+    # Negated blocks
+    neg_diag::Vector{Matrix{T}}
+    neg_sub::Vector{Matrix{T}}
+    neg_super::Vector{Matrix{T}}
+    chol_factors::Vector{Matrix{T}}
+
+    # Preallocated ipiv for the per-block LU factorisations inside
+    # `block_tridiagonal_solve!`. `lu!(M)` would otherwise allocate a
+    # fresh `Vector{BlasInt}` of length `block_size` on every call, and
+    # the BT solve runs `n_blocks` LUs per Newton evaluation.
+    lu_ipiv::Vector{LinearAlgebra.BlasInt}
+
+    # Banded-format scratch for the SPD `pbsv`-based fast path used when
+    # `block_size ≤ 8`. Layout: `(2*block_size, block_size * n_blocks)`
+    # — `ldab = 2D` (one row past `kd+1 = 2D-1+1 = 2D`), one column per
+    # global matrix column. `pbsv` overwrites this with the Cholesky
+    # factor on each call, so it gets refilled from the block storage
+    # every BT solve.
+    Hb::Matrix{T}
+end
+
+"""
+    BlockTridiagonalWorkspace(::Type{T}, block_size::Int, n_blocks::Int)
+
+Construct a preallocated workspace for block tridiagonal operations with the
+given block size (latent dimension) and number of blocks (timesteps).
+"""
+function BlockTridiagonalWorkspace(
+    ::Type{T}, block_size::Int, n_blocks::Int
+) where {T<:Real}
+    H_diag = [zeros(T, block_size, block_size) for _ in 1:n_blocks]
+    H_sub = [zeros(T, block_size, block_size) for _ in 1:(n_blocks - 1)]
+    H_super = [zeros(T, block_size, block_size) for _ in 1:(n_blocks - 1)]
+
+    H_sparse = _build_block_tridiag_pattern(T, block_size, n_blocks)
+    nzval_map = _build_nzval_map(H_sparse, block_size, n_blocks)
+
+    D = [zeros(T, block_size, block_size) for _ in 1:(n_blocks + 1)]
+    E = [zeros(T, block_size, block_size) for _ in 1:(n_blocks + 1)]
+    M = zeros(T, block_size, block_size)
+    term1 = zeros(T, block_size, block_size)
+    term2 = zeros(T, block_size, block_size)
+    S = zeros(T, block_size, block_size)
+    Ibs = Matrix{T}(I, block_size, block_size)
+    Z = zeros(T, block_size, block_size)
+
+    neg_diag = [zeros(T, block_size, block_size) for _ in 1:n_blocks]
+    neg_sub = [zeros(T, block_size, block_size) for _ in 1:(n_blocks - 1)]
+    neg_super = [zeros(T, block_size, block_size) for _ in 1:(n_blocks - 1)]
+
+    chol_factors = [zeros(T, block_size, block_size) for _ in 1:n_blocks]
+    lu_ipiv = Vector{LinearAlgebra.BlasInt}(undef, block_size)
+    Hb = zeros(T, 2 * block_size, block_size * n_blocks)
+
+    return BlockTridiagonalWorkspace{T}(
+        block_size,
+        n_blocks,
+        H_diag,
+        H_sub,
+        H_super,
+        H_sparse,
+        nzval_map,
+        D,
+        E,
+        M,
+        term1,
+        term2,
+        S,
+        Ibs,
+        Z,
+        neg_diag,
+        neg_sub,
+        neg_super,
+        chol_factors,
+        lu_ipiv,
+        Hb,
+    )
+end
+
 """
     block_tridgm(
         main_diag::Vector{Matrix{T}},

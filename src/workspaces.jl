@@ -1,112 +1,102 @@
-# Block Tridiagonal Workspace
+# =============================================================================
+# Inference-state containers
+#
+# Per-trial smoothed estimates (`FilterSmooth` / `TrialFilterSmooth`) and the
+# aggregated sufficient statistics (`SufficientStatistics`) that the E/M
+# pipeline reads and writes. Defined here alongside the workspaces that house
+# them. (`BlockTridiagonalWorkspace` lives in numerics/block_tridiagonal.jl,
+# next to the solver that owns it.)
+# =============================================================================
+
 """
-    BlockTridiagonalWorkspace{T<:Real}
+    FilterSmooth{T<:Real}
 
-Pre-allocated workspace for block tridiagonal operations in LDS smoothing.
-Holds all temporary buffers needed by `Hessian!`, `block_tridgm!`, and
-`block_tridiagonal_inverse!` to avoid repeated allocations during EM iterations.
+Per-trial container for smoothed estimates and associated covariance matrices.
+A multi-trial fit holds one of these per trial (see `TrialFilterSmooth`); trial lengths
+may differ.
+
+# Fields
+- `x_smooth::Matrix{T}`: smoothed state estimates `(latent_dim × T_trial)`
+- `p_smooth::Array{T,3}`: smoothed covariances `(latent_dim × latent_dim × T_trial)`
+- `p_smooth_tt1::Array{T,3}`: lag-1 cross covariances `(latent_dim × latent_dim × T_trial)`
+- `E_z::Matrix{T}`: posterior mean `(latent_dim × T_trial)`
+- `E_zz::Array{T,3}`: second moment `E[zₜzₜ']` `(latent_dim × latent_dim × T_trial)`
+- `E_zz_prev::Array{T,3}`: second moment `E[zₜzₜ₋₁']` `(latent_dim × latent_dim × T_trial)`
+- `entropy::T`: posterior entropy `H[q(x)]` for this trial
 """
-struct BlockTridiagonalWorkspace{T<:Real}
-    block_size::Int
-    n_blocks::Int
-
-    # Hessian block storage
-    H_diag::Vector{Matrix{T}}
-    H_sub::Vector{Matrix{T}}
-    H_super::Vector{Matrix{T}}
-
-    # Sparse matrix with fixed sparsity pattern
-    H_sparse::SparseMatrixCSC{T,Int}
-    # Precomputed map from block (k, i, j) to nzval index for zero-allocation writes
-    nzval_map::Vector{Int}
-
-    # block_tridiagonal_inverse buffers
-    D::Vector{Matrix{T}}
-    E::Vector{Matrix{T}}
-    M::Matrix{T}
-    term1::Matrix{T}
-    term2::Matrix{T}
-    S::Matrix{T}
-    Ibs::Matrix{T}
-    Z::Matrix{T}
-
-    # Negated blocks
-    neg_diag::Vector{Matrix{T}}
-    neg_sub::Vector{Matrix{T}}
-    neg_super::Vector{Matrix{T}}
-    chol_factors::Vector{Matrix{T}}
-
-    # Preallocated ipiv for the per-block LU factorisations inside
-    # `block_tridiagonal_solve!`. `lu!(M)` would otherwise allocate a
-    # fresh `Vector{BlasInt}` of length `block_size` on every call, and
-    # the BT solve runs `n_blocks` LUs per Newton evaluation.
-    lu_ipiv::Vector{LinearAlgebra.BlasInt}
-
-    # Banded-format scratch for the SPD `pbsv`-based fast path used when
-    # `block_size ≤ 8`. Layout: `(2*block_size, block_size * n_blocks)`
-    # — `ldab = 2D` (one row past `kd+1 = 2D-1+1 = 2D`), one column per
-    # global matrix column. `pbsv` overwrites this with the Cholesky
-    # factor on each call, so it gets refilled from the block storage
-    # every BT solve.
-    Hb::Matrix{T}
+mutable struct FilterSmooth{T<:Real}
+    x_smooth::Matrix{T}
+    p_smooth::Array{T,3}
+    p_smooth_tt1::Array{T,3}
+    E_z::Matrix{T}
+    E_zz::Array{T,3}
+    E_zz_prev::Array{T,3}
+    entropy::T
 end
 
-"""
-    BlockTridiagonalWorkspace(::Type{T}, block_size::Int, n_blocks::Int)
-
-Construct a preallocated workspace for block tridiagonal operations with the
-given block size (latent dimension) and number of blocks (timesteps).
-"""
-function BlockTridiagonalWorkspace(
-    ::Type{T}, block_size::Int, n_blocks::Int
-) where {T<:Real}
-    H_diag = [zeros(T, block_size, block_size) for _ in 1:n_blocks]
-    H_sub = [zeros(T, block_size, block_size) for _ in 1:(n_blocks - 1)]
-    H_super = [zeros(T, block_size, block_size) for _ in 1:(n_blocks - 1)]
-
-    H_sparse = _build_block_tridiag_pattern(T, block_size, n_blocks)
-    nzval_map = _build_nzval_map(H_sparse, block_size, n_blocks)
-
-    D = [zeros(T, block_size, block_size) for _ in 1:(n_blocks + 1)]
-    E = [zeros(T, block_size, block_size) for _ in 1:(n_blocks + 1)]
-    M = zeros(T, block_size, block_size)
-    term1 = zeros(T, block_size, block_size)
-    term2 = zeros(T, block_size, block_size)
-    S = zeros(T, block_size, block_size)
-    Ibs = Matrix{T}(I, block_size, block_size)
-    Z = zeros(T, block_size, block_size)
-
-    neg_diag = [zeros(T, block_size, block_size) for _ in 1:n_blocks]
-    neg_sub = [zeros(T, block_size, block_size) for _ in 1:(n_blocks - 1)]
-    neg_super = [zeros(T, block_size, block_size) for _ in 1:(n_blocks - 1)]
-
-    chol_factors = [zeros(T, block_size, block_size) for _ in 1:n_blocks]
-    lu_ipiv = Vector{LinearAlgebra.BlasInt}(undef, block_size)
-    Hb = zeros(T, 2 * block_size, block_size * n_blocks)
-
-    return BlockTridiagonalWorkspace{T}(
-        block_size,
-        n_blocks,
-        H_diag,
-        H_sub,
-        H_super,
-        H_sparse,
-        nzval_map,
-        D,
-        E,
-        M,
-        term1,
-        term2,
-        S,
-        Ibs,
-        Z,
-        neg_diag,
-        neg_sub,
-        neg_super,
-        chol_factors,
-        lu_ipiv,
-        Hb,
+function Base.show(io::IO, fs::FilterSmooth; gap="")
+    println(io, gap, "Filter Smooth Object:")
+    println(io, gap, "---------------------")
+    println(io, gap, " size(x_smooth)  = ($(size(fs.x_smooth,1)), $(size(fs.x_smooth,2)))")
+    println(
+        io,
+        gap,
+        " size(p_smooth)  = ($(size(fs.p_smooth,1)), $(size(fs.p_smooth,2)), $(size(fs.p_smooth,3)))",
     )
+    println(
+        io,
+        gap,
+        " size(E_z)       = ($(size(fs.E_z,1)), $(size(fs.E_z,2)), $(size(fs.E_z,3)))",
+    )
+    println(
+        io,
+        gap,
+        " size(E_zz)      = ($(size(fs.E_zz,1)), $(size(fs.E_zz,2)), $(size(fs.E_zz,3)), $(size(fs.E_zz,4)))",
+    )
+    println(
+        io,
+        gap,
+        " size(E_zz_prev) = ($(size(fs.E_zz_prev,1)), $(size(fs.E_zz_prev,2)), $(size(fs.E_zz_prev,3)), $(size(fs.E_zz_prev,4)))",
+    )
+
+    return nothing
+end
+
+struct TrialFilterSmooth{T<:Real}
+    FilterSmooths::Vector{FilterSmooth{T}}
+end
+
+Base.getindex(f::TrialFilterSmooth, i::Int) = f.FilterSmooths[i]
+function Base.setindex!(
+    f::TrialFilterSmooth, value::FilterSmooth{T}, i::Int
+) where {T<:Real}
+    return (f.FilterSmooths[i] = value)
+end
+Base.length(f::TrialFilterSmooth) = length(f.FilterSmooths)
+
+mutable struct SufficientStatistics{T<:Real}
+
+    # initial conditions. `init_n` is the effective sample count (e.g.
+    # `ntrials` for unweighted fits; `Σₙ w[n,1]` for SLDS-style soft
+    # responsibility weights). Stored as `T` rather than `Int` so the
+    # weighted aggregator can flow non-integer counts through the M-step
+    # without truncation.
+    init_n::T
+    init_xx::Base.RefValue{PDMat{T,Matrix{T}}}
+    init_xy::Matrix{T}
+    init_yy::Base.RefValue{PDMat{T,Matrix{T}}}
+
+    # transitions model
+    dyn_n::T
+    dyn_xx::Base.RefValue{PDMat{T,Matrix{T}}}
+    dyn_xy::Matrix{T}
+    dyn_yy::Base.RefValue{PDMat{T,Matrix{T}}}
+
+    # observation model
+    obs_n::T
+    obs_xx::Base.RefValue{PDMat{T,Matrix{T}}}
+    obs_xy::Matrix{T}
+    obs_yy::Base.RefValue{PDMat{T,Matrix{T}}}
 end
 
 """
@@ -1109,4 +1099,120 @@ Allocate a `KalmanWorkspace` sized for the given `lds` and data shape. Requires
         zeros(T, D + 1 + state_input_dim, D + 1 + state_input_dim),  # dyn_xx_buf
         zeros(T, D + 1 + obs_input_dim, D + 1 + obs_input_dim),      # obs_xx_buf
     )
+end
+
+# =============================================================================
+# Model ⇄ workspace glue: FilterSmooth construction and parameter (un)packing.
+# (Absorbed from the former common.jl.)
+# =============================================================================
+
+function _extract_state_params(state_model::GaussianStateModel{T}) where {T}
+    return (
+        A=state_model.A,
+        B=state_model.B,
+        Q=state_model.Q,
+        b=state_model.b,
+        x0=state_model.x0,
+        P0=state_model.P0,
+    )
+end
+
+"""
+    initialize_FilterSmooth(model, tsteps::Int)
+
+Initialize a per-trial `FilterSmooth` buffer sized for `tsteps` timesteps.
+"""
+function initialize_FilterSmooth(
+    model::LinearDynamicalSystem{T,S,O}, tsteps::Int; cov_alias::Bool=false
+) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+    D = model.latent_dim
+    if cov_alias
+        p_smooth = zeros(T, 0, 0, 0)
+        p_smooth_tt1 = zeros(T, 0, 0, 0)
+        E_zz = zeros(T, 0, 0, 0)
+        E_zz_prev = zeros(T, 0, 0, 0)
+    else
+        p_smooth = zeros(T, D, D, tsteps)
+        p_smooth_tt1 = zeros(T, D, D, tsteps)
+        E_zz = zeros(T, D, D, tsteps)
+        E_zz_prev = zeros(T, D, D, tsteps)
+    end
+    return FilterSmooth{T}(
+        zeros(T, D, tsteps),       # x_smooth
+        p_smooth,
+        p_smooth_tt1,
+        zeros(T, D, tsteps),       # E_z
+        E_zz,
+        E_zz_prev,
+        zero(T),                   # entropy
+    )
+end
+
+"""
+    initialize_FilterSmooth(model, tsteps_per_trial::AbstractVector{<:Integer};
+                            cov_alias=false)
+
+Initialize a `TrialFilterSmooth` with one `FilterSmooth` per trial. Trial lengths
+may differ (but don't have to).
+
+Set `cov_alias=true` only when the caller knows the cov-cache fast path will
+run (equal-length multi-trial Gaussian via `_fit_tridiag!`) — in that case
+every per-trial `p_smooth` / `p_smooth_tt1` is allocated as a `(0, 0, 0)` stub
+because `smooth!` aliases them to `sws.p_smooth_shared` on every E-step. The
+SLDS / Poisson / ragged paths invoke the per-trial smoother directly and
+write into `fs.p_smooth`, so they must keep the default `cov_alias=false`.
+"""
+function initialize_FilterSmooth(
+    model::LinearDynamicalSystem{T,S,O},
+    tsteps_per_trial::AbstractVector{<:Integer};
+    cov_alias::Bool=false,
+) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+    # if tsteps_per_trial has varying lengths, we can't alias the cov caches to a shared zero-array
+    if cov_alias && length(unique(tsteps_per_trial)) != 1
+        throw(
+            ArgumentError(
+                "cov_alias=true is only valid when all trials have the same number of timesteps; got tsteps_per_trial=$(tsteps_per_trial)",
+            ),
+        )
+    end
+    filter_smooths = [
+        initialize_FilterSmooth(model, Int(t); cov_alias=cov_alias) for
+        t in tsteps_per_trial
+    ]
+    return TrialFilterSmooth(filter_smooths)
+end
+
+function _extract_obs_params(obs_model::GaussianObservationModel{T}) where {T}
+    return (C=obs_model.C, R=obs_model.R, d=obs_model.d, D=obs_model.D)
+end
+
+function _extract_obs_params(obs_model::PoissonObservationModel{T}) where {T}
+    return (C=obs_model.C, d=obs_model.d)
+end
+
+function _get_all_params_vec(
+    lds::LinearDynamicalSystem{T,S,O}
+) where {T<:Real,S<:AbstractStateModel{T},O<:AbstractObservationModel{T}}
+    state_params = _extract_state_params(lds.state_model)
+    obs_params = _extract_obs_params(lds.obs_model)
+
+    # Convert named tuples to vectors and concatenate
+    state_vec = vcat(
+        vec(state_params.A),
+        vec(state_params.B),
+        vec(state_params.Q),
+        vec(state_params.b),
+        vec(state_params.x0),
+        vec(state_params.P0),
+    )
+
+    if lds.obs_model isa GaussianObservationModel
+        obs_vec = vcat(
+            vec(obs_params.C), vec(obs_params.R), vec(obs_params.d), vec(obs_params.D)
+        )
+    else # PoissonObservationModel
+        obs_vec = vcat(vec(obs_params.C), vec(obs_params.d))
+    end
+
+    return vcat(state_vec, obs_vec)
 end
