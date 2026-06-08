@@ -185,3 +185,76 @@ function test_block_tridiagonal_solve()
 
     @test isapprox(x, expected; atol=1e-8, rtol=0)
 end
+
+function test_block_tridiagonal_solve_spd()
+    # `block_tridiagonal_solve_spd!` routes through the packed LAPACK `pbsv`
+    # fast path when `bs ≤ 8` and BlasFloat, else falls back to the general
+    # block-Thomas solve. Both branches must match a dense `H \ b`.
+    rng = MersenneTwister(2024)
+    for T in (Float64, Float32)
+        atol = T === Float32 ? 1e-3 : 1e-8
+        # bs = 3 → pbsv fast path; bs = 9 → generic fallback branch.
+        for (block_size, n) in ((3, 5), (9, 2))
+            A, B, C, H = _random_spd_block_tridiag(T, block_size, n, rng)
+            b = randn(rng, T, n * block_size)
+            expected = H \ b
+
+            ws = StateSpaceDynamics.BlockTridiagonalWorkspace(T, block_size, n)
+            x = zeros(T, n * block_size)
+            StateSpaceDynamics.block_tridiagonal_solve_spd!(x, A, B, C, b, ws)
+            @test isapprox(x, expected; atol=atol, rtol=0)
+        end
+    end
+end
+
+function test_valid_Σ()
+    # SPD + symmetric → valid.
+    Σ = [2.0 0.5; 0.5 1.0]
+    @test valid_Σ(Σ)
+    @test valid_Σ(Matrix{Float64}(I, 4, 4))
+
+    # Symmetric but indefinite (negative eigenvalue) → invalid.
+    @test !valid_Σ([1.0 2.0; 2.0 1.0])
+
+    # Non-symmetric → invalid even if positive on the diagonal.
+    @test !valid_Σ([2.0 0.3; 0.7 1.0])
+end
+
+function test_info_update()
+    # `info_update!(cache, P0, CiRC)` returns `inv(inv(P0) + CiRC)` as a PDMat,
+    # exploiting P0's cached Cholesky. Check against a dense reference and that
+    # the result is genuinely PD. Also exercise the in-place variant.
+    rng = MersenneTwister(99)
+    for n in (1, 2, 5)
+        G = randn(rng, n, n)
+        P0_mat = Symmetric(G * G' + n * I)
+        H = randn(rng, n, n)
+        CiRC_mat = Symmetric(H * H' + I)
+
+        P0 = PDMat(Matrix(P0_mat))
+        CiRC = PDMat(Matrix(CiRC_mat))
+        expected = inv(inv(Matrix(P0_mat)) + Matrix(CiRC_mat))
+
+        # Allocating-into-cache variant.
+        cache = StateSpaceDynamics.CovUpdateCache(n)
+        P = StateSpaceDynamics.info_update!(cache, P0, CiRC)
+        @test isapprox(Matrix(P), expected; atol=1e-8, rtol=0)
+        @test isposdef(P.mat)
+        # The returned PDMat's own Cholesky must reconstruct its `mat`.
+        @test isapprox(Matrix(P.chol), P.mat; atol=1e-8, rtol=0)
+
+        # In-place variant writing into an existing PDMat (upper Cholesky).
+        P_dest = PDMat(Matrix{Float64}(I, n, n))
+        scratch = Matrix{Float64}(undef, n, n)
+        ret = StateSpaceDynamics.info_update!(P_dest, scratch, P0, CiRC)
+        @test ret === P_dest
+        @test isapprox(Matrix(P_dest), expected; atol=1e-8, rtol=0)
+        @test isposdef(P_dest.mat)
+    end
+
+    # Typed and default-eltype cache constructors size their buffers correctly.
+    c32 = StateSpaceDynamics.CovUpdateCache{Float32}(3)
+    @test size(c32.M) == (3, 3)
+    @test eltype(c32.M) == Float32
+    @test eltype(StateSpaceDynamics.CovUpdateCache(2).M) == Float64
+end

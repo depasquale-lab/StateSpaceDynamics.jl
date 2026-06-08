@@ -7,6 +7,7 @@ using JET
 using LinearAlgebra
 using MAT
 using Optim
+using PDMats
 using Pkg
 using Printf
 using Random
@@ -25,9 +26,6 @@ ENV["GKSwstype"] = "100"
 # tutorials. Pattern lifted from HiddenMarkovModels.jl's `HMMTest`.
 Pkg.develop(; path=joinpath(dirname(@__DIR__), "libs", "SSDTest"))
 using SSDTest
-
-# Helper functions
-include("helper_functions.jl")
 
 @testset verbose=true "StateSpaceDynamics.jl" begin
     # Package-wide quality tests
@@ -62,6 +60,10 @@ include("helper_functions.jl")
                 # fully clear, the workspaces would need to be parametrized
                 # on concrete `Matrix{T}` element type at each call site (a
                 # bigger refactor — JET issue tracked but deferred).
+                #
+                # TODO(#91): un-skip once workspace fields are parametrized on
+                # concrete `Matrix{T}` so JET stops union-splitting the
+                # `@views`-over-`Array{T,3}`/`Vector{PDMat}` accessors.
                 @test_skip JET.test_package(
                     StateSpaceDynamics; target_modules=(StateSpaceDynamics,)
                 )
@@ -243,12 +245,25 @@ include("helper_functions.jl")
         include("Utilities/Utilities.jl")
         test_block_tridgm()
         test_gaussian_entropy()
+        test_valid_Σ()
 
         @testset "Block Tridiagonal Inverse" begin
             test_block_tridiagonal_inverse_mutating()
             test_block_tridiagonal_inverse_logdet()
             test_block_tridiagonal_solve()
+            test_block_tridiagonal_solve_spd()
         end
+
+        @testset "Covariance info-form update" begin
+            test_info_update()
+        end
+    end
+
+    # Conjugate-prior helpers (IW / MN MAP + log-prior terms)
+    @testset verbose=true "Priors" begin
+        include("Priors/Priors.jl")
+        test_iw_prior_helpers()
+        test_mn_prior_helpers()
     end
 
     # Validation Tests
