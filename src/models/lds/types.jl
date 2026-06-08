@@ -173,12 +173,9 @@ Represents a unified Linear Dynamical System with customizable state and observa
 - `latent_dim::Int`: Dimension of the latent state
 - `obs_dim::Int`: Dimension of the observations
 - `fit_bool::Vector{Bool}`: Vector indicating which parameters to fit during optimization.
-    Length 6 for the Gaussian path (`[x0, P0, A&b&B, Q, C&d&D, R]`) — same layout for
-    both the BTD and Kalman backends, since the M-step regression fits each row jointly.
-    Length 5 for the Poisson path (`[x0, P0, A&b, Q, C&d]`).
-- `kalman_filter::Bool`: If `true`, use the information-form Kalman/RTS smoother for the
-    E-step. Only valid with `GaussianObservationModel`. Defaults to `false`, preserving
-    the existing block-tridiagonal MAP path.
+    Length 6 for the Gaussian path (`[x0, P0, A&b&B, Q, C&d&D, R]`); the M-step
+    regression fits each row jointly. Length 5 for the Poisson path
+    (`[x0, P0, A&b, Q, C&d]`).
 """
 Base.@kwdef struct LinearDynamicalSystem{
     T<:Real,S<:AbstractStateModel{T},O<:AbstractObservationModel{T}
@@ -190,14 +187,12 @@ Base.@kwdef struct LinearDynamicalSystem{
     state_input_dim::Int = 0
     obs_input_dim::Int = 0
     fit_bool::Vector{Bool}
-    kalman_filter::Bool = false
 end
 
 function LinearDynamicalSystem(
     state_model::S,
     obs_model::O;
     fit_bool::Union{Vector{Bool},Nothing}=nothing,
-    kalman_filter::Bool=false,
 ) where {T<:Real,S<:AbstractStateModel{T},O<:AbstractObservationModel{T}}
 
     # Infer dimensions from matrices
