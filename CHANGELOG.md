@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.4.0] - 2026-XX-XX
-
 ### Added
 
 - CHANGELOG.md to track version history
@@ -81,7 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Double-exponential bug in the Poisson observation rate (previously
   `exp(C x + exp(log_d))`, now `exp(C x + d)`)
 
-## [0.3.0] - 2025-01-XX
+## [0.3.0] - 2025-11-12
 
 ### Added
 
@@ -102,7 +100,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Block tridiagonal inverse numerical stability
 - Test runner organization
 
-## [0.2.0] - 2024-XX-XX
+## [0.2.0] - 2024-06-18
 
 ### Added
 
@@ -115,13 +113,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated documentation structure
 - Improved badges and metadata
 
-## [0.1.1] - 2024-XX-XX
-
-### Fixed
-
-- Initial bug fixes and improvements
-
-## [0.1.0] - 2024-XX-XX
+## [0.1.0] - 2024-04-10
 
 ### Added
 
