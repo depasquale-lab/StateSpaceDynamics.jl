@@ -628,6 +628,10 @@ function Hessian_blocks!(
         end
     end
 
+    for t in 1:Tsteps
+        Symmetrize!(H_diag[t])
+    end
+
     return nothing
 end
 
