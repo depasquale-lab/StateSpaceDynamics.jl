@@ -5,30 +5,20 @@ Base.string(::SSD_LDSImplem) = "StateSpaceDynamics.jl"
 
 function build_model(::SSD_LDSImplem, instance::LDSInstance, params::LDSParams)
     (; latent_dim, obs_dim, num_trials, seq_length) = instance
-    (; A, Q, x0, P0, C, R, b, d)  = params
+    (; A, Q, x0, P0, C, R, b, d) = params
 
     # Create the model
-    state_model = GaussianStateModel(
-        A = A,
-        Q = Q,
-        x0 = x0,
-        P0 = P0,
-        b = b,
-        )
+    state_model = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0, b=b)
 
-    obs_model = GaussianObservationModel(
-        C = C,
-        R = R,
-        d = d,
-        )
+    obs_model = GaussianObservationModel(; C=C, R=R, d=d)
 
     glds = LinearDynamicalSystem(;
-            state_model=state_model,
-            obs_model=obs_model,
-            latent_dim=latent_dim,
-            obs_dim=obs_dim,
-            fit_bool=fill(true, 6),
-            )
+        state_model=state_model,
+        obs_model=obs_model,
+        latent_dim=latent_dim,
+        obs_dim=obs_dim,
+        fit_bool=fill(true, 6),
+    )
 
     return glds
 end
@@ -47,7 +37,7 @@ function build_model(::pykalman_LDSImplem, instance::LDSInstance, params::LDSPar
     (; latent_dim, obs_dim) = instance
     (; A, Q, x0, P0, C, R) = params
 
-    kf = pykalman.KalmanFilter(
+    kf = pykalman.KalmanFilter(;
         n_dim_state=latent_dim,
         n_dim_obs=obs_dim,
         transition_matrices=numpy.array(A),
@@ -56,7 +46,14 @@ function build_model(::pykalman_LDSImplem, instance::LDSInstance, params::LDSPar
         initial_state_covariance=numpy.array(P0),
         observation_matrices=numpy.array(C),
         observation_covariance=numpy.array(R),
-        em_vars=["transition_matrices", "transition_covariance", "initial_state_mean", "initial_state_covariance", "observation_matrices", "observation_covariance"],
+        em_vars=[
+            "transition_matrices",
+            "transition_covariance",
+            "initial_state_mean",
+            "initial_state_covariance",
+            "observation_matrices",
+            "observation_covariance",
+        ],
     )
 
     return kf
@@ -89,7 +86,7 @@ function build_model(::Dynamax_LDSImplem, instance::LDSInstance, params::LDSPara
     # Create the Dynamax model
     lds = dlds.LinearGaussianSSM(latent_dim, obs_dim)
     key = jr.PRNGKey(0)
-    dyn_params, props = lds.initialize(
+    dyn_params, props = lds.initialize(;
         key=key,
         dynamics_weights=A_np,
         dynamics_covariance=Q_np,
@@ -104,12 +101,12 @@ end
 
 function run_benchmark(::SSD_LDSImplem, model::LinearDynamicalSystem, Y::AbstractArray)
     # Run 1 EM iteration to compile
-    StateSpaceDynamics.fit!(deepcopy(model), Y, max_iter=1, tol=1e-50)
+    StateSpaceDynamics.fit!(deepcopy(model), Y; max_iter=1, tol=1e-50)
 
     # run Benchmark
     bench = @benchmark begin
         StateSpaceDynamics.fit!($model, $Y; max_iter=100, tol=1e-50)
-    end samples=5
+    end samples = 5
     return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
 end
 
@@ -121,8 +118,8 @@ function run_benchmark(::pykalman_LDSImplem, model::Any, Y::AbstractArray)
     np = pyimport("numpy")
     Y_np = np.array(Y).transpose()
     bench = @benchmark begin
-        $model.em($Y_np, n_iter=100)
-    end samples=5
+        $model.em($Y_np; n_iter=100)
+    end samples = 5
     return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
 end
 
@@ -137,13 +134,10 @@ function run_benchmark(::Dynamax_LDSImplem, model::Tuple, Y::AbstractArray)
 
     (params, props, lds) = model
 
-    fit_em_ = jax.jit(lds.fit_em, static_argnames=("num_iters",))
+    fit_em_ = jax.jit(lds.fit_em; static_argnames=("num_iters",))
 
     bench = @benchmark begin
-        $fit_em_($params,
-            $props,
-            $Y_np,
-            num_iters=100)
-    end samples=5
+        $fit_em_($params, $props, $Y_np; num_iters=100)
+    end samples = 5
     return (time=median(bench).time, memory=bench.memory, allocs=bench.allocs, success=true)
 end

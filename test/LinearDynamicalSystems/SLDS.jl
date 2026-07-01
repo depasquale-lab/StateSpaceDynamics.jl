@@ -222,33 +222,27 @@ function _test_hessian_blocks_basic(slds, y_trial, x_trial, w; atol=1e-10)
     return H_diag, H_super, H_sub
 end
 
-function test_valid_SLDS_happy_path(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_valid_SLDS_happy_path(; rng=MersenneTwister(0xC0FFEE))
     K = 3
     lds = _make_gaussian_lds(2, 4)
     s = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
     @test validate_SLDS(s) === nothing  # should not throw
 end
 
-function test_valid_SLDS_dimension_mismatches(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_valid_SLDS_dimension_mismatches(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     lds = _make_gaussian_lds(2, 3)
 
     # size(A,1)=K, but length(πₖ) ≠ K
-    s_badZ0 = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K+1), LDSs=fill(lds, K))
+    s_badZ0 = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K + 1), LDSs=fill(lds, K))
     @test_throws DimensionMismatchError validate_SLDS(s_badZ0)
 
     # size(A,1)=K, but number of LDSs ≠ K
-    s_badLDSs = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K+1))
+    s_badLDSs = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K + 1))
     @test_throws DimensionMismatchError validate_SLDS(s_badLDSs)
 end
 
-function test_valid_SLDS_nonstochastic_rows_and_invalid_Z0(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_valid_SLDS_nonstochastic_rows_and_invalid_Z0(; rng=MersenneTwister(0xC0FFEE))
     K = 3
     lds = _make_gaussian_lds(2, 2)
 
@@ -259,15 +253,13 @@ function test_valid_SLDS_nonstochastic_rows_and_invalid_Z0(;
     @test_throws InvalidProbabilityVectorError validate_SLDS(s_badA)
 
     # Z0 does not sum to 1
-    Z0_bad = _probvec(K);
+    Z0_bad = _probvec(K)
     Z0_bad[1] += 0.1
     s_badZ0 = SLDS(; A=_rowstochastic(K), πₖ=Z0_bad, LDSs=fill(lds, K))
     @test_throws InvalidProbabilityVectorError validate_SLDS(s_badZ0)
 end
 
-function test_valid_SLDS_mixed_observation_model_types(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_valid_SLDS_mixed_observation_model_types(; rng=MersenneTwister(0xC0FFEE))
     # mode 1..K-1 Gaussian obs; last mode Poisson obs → should assert (type mismatch)
     K = 3
     lds_g = _make_gaussian_lds(2, 2)
@@ -277,9 +269,7 @@ function test_valid_SLDS_mixed_observation_model_types(;
     )
 end
 
-function test_valid_SLDS_inconsistent_latent_or_obs_dims(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_valid_SLDS_inconsistent_latent_or_obs_dims(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     lds_a = _make_gaussian_lds(2, 3)
     lds_b_state = _make_gaussian_lds(3, 3) # different latent_dim
@@ -292,9 +282,7 @@ function test_valid_SLDS_inconsistent_latent_or_obs_dims(;
     @test_throws DimensionMismatchError validate_SLDS(s_bad_obs)
 end
 
-function test_SLDS_sampling_gaussian(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_sampling_gaussian(; rng=MersenneTwister(0xC0FFEE))
     K = 3
     lds = _make_gaussian_lds(2, 4)
     s = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
@@ -313,9 +301,7 @@ function test_SLDS_sampling_gaussian(;
     @test all(all(isfinite, yn) for yn in y)
 end
 
-function test_SLDS_sampling_poisson(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_sampling_poisson(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     lds = _make_poisson_lds(2, 3)
     s = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
@@ -332,9 +318,7 @@ function test_SLDS_sampling_poisson(;
     @test all(y[n][i, t] == round(y[n][i, t]) for i in 1:3, t in 1:tsteps, n in 1:ntrials)
 end
 
-function test_SLDS_deterministic_transitions(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_deterministic_transitions(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     lds = _make_gaussian_lds(2, 2)
 
@@ -350,9 +334,7 @@ function test_SLDS_deterministic_transitions(;
     @test all(z[n][t] == 2 for t in 2:tsteps, n in 1:3)
 end
 
-function test_SLDS_single_trial(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_single_trial(; rng=MersenneTwister(0xC0FFEE))
     K = 3
     lds = _make_gaussian_lds(2, 4)
     s = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
@@ -371,20 +353,18 @@ function test_SLDS_reproducibility()
     lds = _make_gaussian_lds(2, 3)
     s = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
 
-    rng=MersenneTwister(42)
-    z1, x1, y1 = rand(rng,s, fill(20, 2))
+    rng = MersenneTwister(42)
+    z1, x1, y1 = rand(rng, s, fill(20, 2))
 
-    rng=MersenneTwister(42)
-    z2, x2, y2 = rand(rng,s, fill(20, 2))
+    rng = MersenneTwister(42)
+    z2, x2, y2 = rand(rng, s, fill(20, 2))
 
     @test z1 == z2
     @test all(x1[n] ≈ x2[n] for n in eachindex(x1))
     @test all(y1[n] ≈ y2[n] for n in eachindex(y1))
 end
 
-function test_SLDS_single_state_edge_case(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_single_state_edge_case(; rng=MersenneTwister(0xC0FFEE))
     K = 1
     lds = _make_gaussian_lds(2, 3)
     s = SLDS(; A=reshape([1.0], 1, 1), πₖ=[1.0], LDSs=[lds])
@@ -395,9 +375,7 @@ function test_SLDS_single_state_edge_case(;
     @test all(all(zn .== 1) for zn in z)
 end
 
-function test_SLDS_minimal_dimensions(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_minimal_dimensions(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     lds = _make_gaussian_lds(1, 1)
     s = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
@@ -410,9 +388,7 @@ function test_SLDS_minimal_dimensions(;
     @test all(all(isfinite, yn) for yn in y)
 end
 
-function test_SLDS_rand_integer_overload(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_rand_integer_overload(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     latent_dim, obs_dim, tsteps = 2, 3, 15
     lds = _make_gaussian_lds(latent_dim, obs_dim)
@@ -436,9 +412,7 @@ function test_SLDS_rand_integer_overload(;
     @test y1 ≈ y2
 end
 
-function test_valid_SLDS_probability_helper_functions(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_valid_SLDS_probability_helper_functions(; rng=MersenneTwister(0xC0FFEE))
     # Test probability vector validation
     @test validate_probvec([0.3, 0.7]) === nothing
     @test validate_probvec([0.25, 0.25, 0.25, 0.25]) === nothing
@@ -454,9 +428,7 @@ function test_valid_SLDS_probability_helper_functions(;
     @test all(A[i, j] ≥ 0 for i in 1:3, j in 1:3)
 end
 
-function test_SLDS_gradient_numerical(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_gradient_numerical(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     lds = _make_gaussian_lds(2, 3)
     slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
@@ -524,16 +496,14 @@ function test_SLDS_gradient_numerical(;
     @test isapprox(grad_analytical, grad_numerical, rtol=1e-5, atol=1e-5)
 end
 
-function test_SLDS_hessian_numerical(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_hessian_numerical(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     lds = _make_gaussian_lds(2, 2)
     slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
 
     _, x, y = rand(rng, slds, fill(5, 1))
     tsteps = size(y[1], 2)
-    w = rand(K, tsteps);
+    w = rand(K, tsteps)
     w ./= sum(w; dims=1)
 
     y_trial = y[1]
@@ -580,9 +550,7 @@ function test_SLDS_hessian_numerical(;
     @test isapprox(Hv_blocks, Hv_num; rtol=1e-5, atol=1e-5)
 end
 
-function test_SLDS_gradient_single_timestep_gaussian(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_gradient_single_timestep_gaussian(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     lds = _make_gaussian_lds_dense(2, 3; seed=11)
     slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
@@ -622,9 +590,7 @@ function test_SLDS_gradient_single_timestep_gaussian(;
     @test isapprox(grad_analytical, grad_numerical, rtol=1e-5, atol=1e-5)
 end
 
-function test_SLDS_gradient_single_timestep_poisson(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_gradient_single_timestep_poisson(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     lds = _make_poisson_lds_dense(2, 3; seed=12)
     slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
@@ -662,9 +628,7 @@ function test_SLDS_gradient_single_timestep_poisson(;
     @test isapprox(grad_analytical, grad_numerical, rtol=1e-5, atol=1e-5)
 end
 
-function test_SLDS_hessian_single_timestep_gaussian(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_hessian_single_timestep_gaussian(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     lds = _make_gaussian_lds_dense(2, 3; seed=13)
     slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
@@ -704,9 +668,7 @@ function test_SLDS_hessian_single_timestep_gaussian(;
     @test isapprox(H_diag[1], Hnum; rtol=1e-5, atol=1e-5)
 end
 
-function test_SLDS_hessian_single_timestep_poisson(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_hessian_single_timestep_poisson(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     lds = _make_poisson_lds_dense(2, 3; seed=14)
     slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
@@ -745,9 +707,7 @@ function test_SLDS_hessian_single_timestep_poisson(;
     @test isapprox(H_diag[1], Hnum; rtol=1e-5, atol=1e-5)
 end
 
-function test_SLDS_gradient_reduces_to_single_LDS(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_gradient_reduces_to_single_LDS(; rng=MersenneTwister(0xC0FFEE))
     K = 3
     lds = _make_gaussian_lds(2, 3)
     slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
@@ -769,24 +729,20 @@ function test_SLDS_gradient_reduces_to_single_LDS(;
     end
 end
 
-function test_SLDS_hessian_block_structure_gaussian(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_hessian_block_structure_gaussian(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     lds = _make_gaussian_lds(2, 3)
     slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
 
     _, x, y = rand(rng, slds, fill(10, 1))
     tsteps = size(y[1], 2)
-    w = rand(K, tsteps);
+    w = rand(K, tsteps)
     w ./= sum(w; dims=1)
 
     return _test_hessian_blocks_basic(slds, y[1], x[1], w)
 end
 
-function test_SLDS_gradient_weight_normalization(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_gradient_weight_normalization(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     lds = _make_gaussian_lds(2, 2)
     slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
@@ -809,9 +765,7 @@ function test_SLDS_gradient_weight_normalization(;
     @test isapprox(grad1, grad2, rtol=1e-10)
 end
 
-function test_SLDS_smooth_basic(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_smooth_basic(; rng=MersenneTwister(0xC0FFEE))
     # Setup: Simple 2-state SLDS with known structure
     K = 2
     latent_dim = 2
@@ -847,9 +801,7 @@ function test_SLDS_smooth_basic(;
     @test all(isfinite, p_smooth)
 end
 
-function test_SLDS_smooth_reduces_to_single_LDS(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_smooth_reduces_to_single_LDS(; rng=MersenneTwister(0xC0FFEE))
     # When all weight is on one LDS, should match that LDS's smooth
     K = 3
     latent_dim = 2
@@ -877,9 +829,7 @@ function test_SLDS_smooth_reduces_to_single_LDS(;
     @test isapprox(p_slds, p_lds, rtol=1e-4)
 end
 
-function test_SLDS_smooth_with_realistic_weights(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_smooth_with_realistic_weights(; rng=MersenneTwister(0xC0FFEE))
     # Test with realistic posterior weights that change over time
     K = 2
     latent_dim = 2
@@ -913,9 +863,7 @@ function test_SLDS_smooth_with_realistic_weights(;
     @test all(t -> isposdef(p_smooth[:, :, t]), 1:tsteps)
 end
 
-function test_SLDS_smooth_consistency_with_gradients(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_smooth_consistency_with_gradients(; rng=MersenneTwister(0xC0FFEE))
     # Verify that smooth finds a point where gradient is near zero
     K = 2
     latent_dim = 2
@@ -941,9 +889,7 @@ function test_SLDS_smooth_consistency_with_gradients(;
     @test norm(grad) < 1e-4  # Should be near zero at optimum
 end
 
-function test_SLDS_smooth_entropy_calculation(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_smooth_entropy_calculation(; rng=MersenneTwister(0xC0FFEE))
     # Verify entropy is computed and has reasonable values
     K = 2
     latent_dim = 2
@@ -968,9 +914,7 @@ function test_SLDS_smooth_entropy_calculation(;
     # @test isfinite(fs.entropy)
 end
 
-function test_SLDS_smooth_covariance_symmetry(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_smooth_covariance_symmetry(; rng=MersenneTwister(0xC0FFEE))
     # Ensure covariances remain symmetric
     K = 2
     latent_dim = 3
@@ -995,9 +939,7 @@ function test_SLDS_smooth_covariance_symmetry(;
     end
 end
 
-function test_SLDS_smooth_different_weight_patterns(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_smooth_different_weight_patterns(; rng=MersenneTwister(0xC0FFEE))
     # Test various weight patterns
     K = 2
     latent_dim = 2
@@ -1035,9 +977,7 @@ function test_SLDS_smooth_different_weight_patterns(;
     @test all(isfinite, x3)
 end
 
-function test_SLDS_sample_posterior_basic(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_sample_posterior_basic(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     latent_dim = 2
     obs_dim = 3
@@ -1062,9 +1002,7 @@ function test_SLDS_sample_posterior_basic(;
     @test all(isfinite, x_sample)
 end
 
-function test_SLDS_estep_basic(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_estep_basic(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     latent_dim = 2
     obs_dim = 3
@@ -1129,9 +1067,7 @@ function test_SLDS_estep_basic(;
     @test all(isapprox.(sum(fb_storage.γ; dims=1), 1.0, atol=1e-10))
 end
 
-function test_SLDS_mstep_updates_parameters(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_mstep_updates_parameters(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     latent_dim = 2
     obs_dim = 3
@@ -1182,7 +1118,7 @@ function test_SLDS_mstep_updates_parameters(;
     )
 
     # Check parameters changed (with high probability)
-    @test !isapprox(slds.A, A_old, rtol=1e-6) || true  # May not change if data is degenerate
+    @test !isapprox(slds.A, A_old; rtol=1e-6) || true  # May not change if data is degenerate
     @test all(isfinite, slds.A)
     @test all(isfinite, slds.πₖ)
 
@@ -1193,9 +1129,7 @@ function test_SLDS_mstep_updates_parameters(;
     @test all(slds.πₖ .>= 0)
 end
 
-function test_SLDS_fit_runs_to_completion(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_fit_runs_to_completion(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     latent_dim = 2
     obs_dim = 3
@@ -1218,9 +1152,7 @@ function test_SLDS_fit_runs_to_completion(;
     @test all(isfinite, elbos)
 end
 
-function test_SLDS_fit_elbo_generally_increases(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_fit_elbo_generally_increases(; rng=MersenneTwister(0xC0FFEE))
     # ELBO should generally increase or stabilize (may have noise due to sampling)
     K = 2
     latent_dim = 2
@@ -1244,9 +1176,7 @@ function test_SLDS_fit_elbo_generally_increases(;
     @test (late_mean > early_mean - 100) # don't fail CI
 end
 
-function test_SLDS_fit_multitrial(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_fit_multitrial(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     latent_dim = 2
     obs_dim = 3
@@ -1265,9 +1195,7 @@ function test_SLDS_fit_multitrial(;
     @test all(isfinite, elbos)
 end
 
-function test_SLDS_estep_elbo_components(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_estep_elbo_components(; rng=MersenneTwister(0xC0FFEE))
     # Verify ELBO contains expected components
     K = 2
     latent_dim = 2
@@ -1318,9 +1246,7 @@ function test_SLDS_estep_elbo_components(;
     # @test tfs[1].entropy > 0
 end
 
-function test_weighted_update_initial_state_mean(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_weighted_update_initial_state_mean(; rng=MersenneTwister(0xC0FFEE))
     """Test weighted update of initial state mean"""
     K = 2
     latent_dim = 2
@@ -1388,9 +1314,7 @@ function test_weighted_update_initial_state_mean(;
     end
 end
 
-function test_weighted_update_A_b(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_weighted_update_A_b(; rng=MersenneTwister(0xC0FFEE))
     """Test weighted update of A and b matrices"""
     K = 2
     latent_dim = 2
@@ -1460,9 +1384,7 @@ function test_weighted_update_A_b(;
     end
 end
 
-function test_weighted_update_Q(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_weighted_update_Q(; rng=MersenneTwister(0xC0FFEE))
     """Test weighted update of Q covariance matrix"""
     K = 2
     latent_dim = 2
@@ -1535,9 +1457,7 @@ function test_weighted_update_Q(;
     end
 end
 
-function test_weighted_gradient_linearity(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_weighted_gradient_linearity(; rng=MersenneTwister(0xC0FFEE))
     """Test that gradient scales linearly with weights"""
     K = 2
     lds = _make_gaussian_lds(2, 3)
@@ -1562,9 +1482,7 @@ function test_weighted_gradient_linearity(;
     @test isapprox(grad1, grad2, rtol=1e-10)
 end
 
-function test_zero_weights_behavior(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_zero_weights_behavior(; rng=MersenneTwister(0xC0FFEE))
     """Test that zero weights are handled correctly"""
     K = 2
     lds = _make_gaussian_lds(2, 3)
@@ -1589,9 +1507,7 @@ end
 
 # Poisson SLDS Tests
 
-function test_SLDS_sampling_poisson_extended(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_sampling_poisson_extended(; rng=MersenneTwister(0xC0FFEE))
     # Extended Poisson sampling test with more trials and edge cases
     K = 3
     lds = _make_poisson_lds(3, 5)
@@ -1605,9 +1521,7 @@ function test_SLDS_sampling_poisson_extended(;
     @test all(all(isfinite, yn) for yn in y)
 end
 
-function test_SLDS_gradient_numerical_poisson(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_gradient_numerical_poisson(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     lds = _make_poisson_lds(2, 3)
     slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
@@ -1674,24 +1588,20 @@ function test_SLDS_gradient_numerical_poisson(;
     @test isapprox(grad_analytical, grad_numerical, rtol=1e-5, atol=1e-5)
 end
 
-function test_SLDS_hessian_block_structure_poisson(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_hessian_block_structure_poisson(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     lds = _make_poisson_lds(2, 3)
     slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
 
     _, x, y = rand(rng, slds, fill(12, 1))
     tsteps = size(y[1], 2)
-    w = rand(K, tsteps);
+    w = rand(K, tsteps)
     w ./= sum(w; dims=1)
 
     return _test_hessian_blocks_basic(slds, y[1], x[1], w)
 end
 
-function test_SLDS_smooth_basic_poisson(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_smooth_basic_poisson(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     lds = _make_poisson_lds(2, 3)
     slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
@@ -1714,14 +1624,12 @@ function test_SLDS_smooth_basic_poisson(;
     # Check that covariances are symmetric and positive semi-definite
     for t in 1:tsteps
         @test issymmetric(p_smooth[:, :, t]) ||
-            isapprox(p_smooth[:, :, t], p_smooth[:, :, t]', atol=1e-10)
+            isapprox(p_smooth[:, :, t], p_smooth[:, :, t]'; atol=1e-10)
         @test all(eigvals(p_smooth[:, :, t]) .>= -1e-10)
     end
 end
 
-function test_SLDS_estep_basic_poisson(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_estep_basic_poisson(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     lds = _make_poisson_lds(2, 3)
     slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
@@ -1770,9 +1678,7 @@ function test_SLDS_estep_basic_poisson(;
     @test all(0 .<= fb_storage.γ .<= 1)
 end
 
-function test_SLDS_mstep_updates_parameters_poisson(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_mstep_updates_parameters_poisson(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     lds = _make_poisson_lds(2, 3)
     slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
@@ -1828,9 +1734,7 @@ function test_SLDS_mstep_updates_parameters_poisson(;
     end
 end
 
-function test_SLDS_fit_runs_to_completion_poisson(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_fit_runs_to_completion_poisson(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     latent_dim = 2
     obs_dim = 3
@@ -1850,9 +1754,7 @@ function test_SLDS_fit_runs_to_completion_poisson(;
     @test all(isfinite, elbos)
 end
 
-function test_SLDS_fit_elbo_generally_increases_poisson(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_fit_elbo_generally_increases_poisson(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     latent_dim = 2
     obs_dim = 3
@@ -1863,7 +1765,7 @@ function test_SLDS_fit_elbo_generally_increases_poisson(;
     lds = _make_poisson_lds(latent_dim, obs_dim)
     slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
 
-    z, x, y = rand(rng,slds, fill(tsteps, ntrials))
+    z, x, y = rand(rng, slds, fill(tsteps, ntrials))
 
     elbos = fit!(slds, y; max_iter=max_iter, progress=false)
 
@@ -1874,9 +1776,7 @@ function test_SLDS_fit_elbo_generally_increases_poisson(;
     @test (late_mean > early_mean - 100) # don't fail CI
 end
 
-function test_SLDS_fit_multitrial_poisson(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_fit_multitrial_poisson(; rng=MersenneTwister(0xC0FFEE))
     K = 2
     latent_dim = 2
     obs_dim = 3
@@ -1895,9 +1795,7 @@ function test_SLDS_fit_multitrial_poisson(;
     @test all(isfinite, elbos)
 end
 
-function test_SLDS_poisson_count_validation(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_poisson_count_validation(; rng=MersenneTwister(0xC0FFEE))
     # Test that Poisson observations are non-negative integers
     K = 2
     lds = _make_poisson_lds(2, 3)
@@ -1910,9 +1808,7 @@ function test_SLDS_poisson_count_validation(;
     @test all(all(abs.(yn .- round.(yn)) .< 1e-10) for yn in y)
 end
 
-function test_SLDS_poisson_d_interpretation(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_poisson_d_interpretation(; rng=MersenneTwister(0xC0FFEE))
     # Verify the canonical Poisson GLM: λ = exp(C x + d). With C ≡ 0, the
     # observed rates should equal exp(d) directly.
     K = 1
@@ -1936,9 +1832,7 @@ function test_SLDS_poisson_d_interpretation(;
     end
 end
 
-function test_SLDS_gradient_weight_normalization_poisson(;
-    rng=MersenneTwister(0xC0FFEE)
-    )
+function test_SLDS_gradient_weight_normalization_poisson(; rng=MersenneTwister(0xC0FFEE))
     # Test that gradients are properly weighted
     K = 2
     lds = _make_poisson_lds(2, 3)

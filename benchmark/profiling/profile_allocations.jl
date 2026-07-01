@@ -79,7 +79,9 @@ sws = sws_pool[1]
 suf = StateSpaceDynamics._initialize_td_sufficient_statistics(T, model, tsteps_per_trial)
 ux_seq = [zeros(T, 0, tsteps)]
 uy_seq = [zeros(T, 0, tsteps)]
-StateSpaceDynamics._td_init_const_blocks!(sws, model, tsteps_per_trial, y_multi, ux_seq, uy_seq)
+StateSpaceDynamics._td_init_const_blocks!(
+    sws, model, tsteps_per_trial, y_multi, ux_seq, uy_seq
+)
 
 # ---- E-step stages ----------------------------------------------------------
 
@@ -147,8 +149,12 @@ btd = sws.btd
 StateSpaceDynamics.Hessian!(sws, model, y, x_mat)
 StateSpaceDynamics._negate_blocks!(btd)
 result_btil = @benchmark StateSpaceDynamics.block_tridiagonal_inverse_logdet!(
-    $(fs.p_smooth), $(fs.p_smooth_tt1),
-    $(btd.neg_sub), $(btd.neg_diag), $(btd.neg_super), $btd
+    $(fs.p_smooth),
+    $(fs.p_smooth_tt1),
+    $(btd.neg_sub),
+    $(btd.neg_diag),
+    $(btd.neg_super),
+    $btd,
 )
 display(result_btil)
 
@@ -170,7 +176,9 @@ result_x0 = @benchmark StateSpaceDynamics.update_initial_state_mean!($model, $su
 display(result_x0)
 
 println("\n[update_initial_state_covariance!]")
-result_p0 = @benchmark StateSpaceDynamics.update_initial_state_covariance!($model, $suf, $sws)
+result_p0 = @benchmark StateSpaceDynamics.update_initial_state_covariance!(
+    $model, $suf, $sws
+)
 display(result_p0)
 
 println("\n[update_A_b!]")
@@ -202,7 +210,10 @@ println("Q_state!:             $(BenchmarkTools.prettymemory(result_qstate.memor
 println("Q_obs!:               $(BenchmarkTools.prettymemory(result_qobs.memory))")
 
 # Estimate per-iteration footprint (one E-step + ELBO + M-step).
-per_iter = result_smooth_multi.memory + result_agg.memory +
-           result_elbo.memory + result_mstep.memory
+per_iter =
+    result_smooth_multi.memory +
+    result_agg.memory +
+    result_elbo.memory +
+    result_mstep.memory
 println("\nEstimated per-iteration:    $(BenchmarkTools.prettymemory(per_iter))")
 println("Estimated for 10 iterations: $(BenchmarkTools.prettymemory(10 * per_iter))")

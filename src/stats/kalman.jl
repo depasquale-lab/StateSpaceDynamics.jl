@@ -120,8 +120,8 @@ end
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     latent_dim = model.latent_dim
     obs_dim = model.obs_dim
-    tsteps = size(data.y, 2);
-    ntrials = size(data.y, 3);
+    tsteps = size(data.y, 2)
+    ntrials = size(data.y, 3)
     ux_dim = model.state_input_dim     # user-supplied input dim (0 when no controls)
     uy_dim = model.obs_input_dim       # user-supplied obs-control dim
 
@@ -129,11 +129,11 @@ end
     dyn_reg_dim = latent_dim + 1 + ux_dim
     obs_reg_dim = latent_dim + 1 + uy_dim
 
-    y_wide = reshape(data.y, size(data.y, 1), size(data.y, 2)*size(data.y, 3));
+    y_wide = reshape(data.y, size(data.y, 1), size(data.y, 2) * size(data.y, 3))
     ux_wide = reshape(
-        data.ux[:, 1:(end - 1), :], ux_dim, (size(data.ux, 2)-1)*size(data.ux, 3)
-    );
-    uy_wide = reshape(data.uy, uy_dim, size(data.uy, 2)*size(data.uy, 3));
+        data.ux[:, 1:(end - 1), :], ux_dim, (size(data.ux, 2) - 1) * size(data.ux, 3)
+    )
+    uy_wide = reshape(data.uy, uy_dim, size(data.uy, 2) * size(data.uy, 3))
 
     # Matrix{T}(I, dim, dim) is fully type-stable; `diagm(ones(T, dim))`
     # leaves JET seeing a `Union{Array{T,3}, Matrix}` from `diagm`'s signature.
@@ -142,7 +142,7 @@ end
     # initial conditions — `x0` is estimated as a per-trial mean.
     # The 1×1 `init_xx` scaffold stores `ntrials` so `regress`/`est_cov` still
     # express the math as a regression of `x_init` on a constant.
-    init_xx = fill(T(ntrials), 1, 1);
+    init_xx = fill(T(ntrials), 1, 1)
 
     # Dynamics Gram matrix layout, columns/rows:
     #   1:D                 — x_prev (filled per E-step)
@@ -161,7 +161,7 @@ end
         kws.dyn_xx_buf[latent_dim + 1, (latent_dim + 2):end] .= vec(sum_ux)
         kws.dyn_xx_buf[(latent_dim + 2):end, latent_dim + 1] .= vec(sum_ux)
         kws.dyn_xx_buf[(latent_dim + 2):end, (latent_dim + 2):end] .=
-            tol_PD(ux_wide*ux_wide').mat
+            tol_PD(ux_wide * ux_wide').mat
     end
 
     # Observation Gram matrix layout (same pattern as dynamics).
@@ -173,7 +173,7 @@ end
         kws.obs_xx_buf[latent_dim + 1, (latent_dim + 2):end] .= vec(sum_d)
         kws.obs_xx_buf[(latent_dim + 2):end, latent_dim + 1] .= vec(sum_d)
         kws.obs_xx_buf[(latent_dim + 2):end, (latent_dim + 2):end] .=
-            tol_PD(uy_wide*uy_wide').mat
+            tol_PD(uy_wide * uy_wide').mat
     end
 
     # obs_xy: regress y on [x; 1; d]. The constant and d rows are observation-
@@ -187,7 +187,7 @@ end
     end
 
     obs_yy = zeros(T, obs_dim, obs_dim)
-    mul!(obs_yy, y_wide, y_wide', one(T), zero(T));
+    mul!(obs_yy, y_wide, y_wide', one(T), zero(T))
 
     # Seed PDMat refs with valid initial values; sufficient_statistics! rewraps
     # them each E-step from the workspace buffers.
@@ -302,7 +302,7 @@ function precompute_kalman_constants!(
     kws.R_PD[] = tol_PD(lds.obs_model.R; tol=tol)
 
     C = lds.obs_model.C
-    copyto!(kws.CiR, C'/kws.R_PD[])
+    copyto!(kws.CiR, C' / kws.R_PD[])
     kws.CiRC[] = tol_PD(Xt_invA_X(kws.R_PD[], C))
 
     # Initial-state mean is `x0` directly (no `B0·u0` term). Broadcast it
@@ -394,7 +394,7 @@ function backwards_cov!(
     A = lds.state_model.A
 
     # init smoothed cov & accumulators
-    smooth_cov[end] = filt_cov[end];
+    smooth_cov[end] = filt_cov[end]
     kws.sum_smooth_cov_all .= smooth_cov[end].mat
     kws.sum_smooth_cov_prev .= zeros(T, kws.latent_dim, kws.latent_dim)
     kws.sum_smooth_cov_next .= smooth_cov[end].mat
@@ -409,8 +409,8 @@ function backwards_cov!(
     @views for tt in eachindex(filt_cov)[(end - 1):-1:1]
 
         # reverse kalman gain G[t] = filt_cov[t] · A' · pred_cov[t+1]^{-1}
-        mul!(G[:, :, tt], filt_cov[tt], A', one(T), zero(T));
-        G[:, :, tt] /= pred_cov[tt + 1];
+        mul!(G[:, :, tt], filt_cov[tt], A', one(T), zero(T))
+        G[:, :, tt] /= pred_cov[tt + 1]
 
         # smoothed covariance — Joseph-style form, algebraically equivalent to
         # the standard RTS update `P_s[t] = P_f[t] + G[t]·(P_s[t+1] - P_p[t+1])·G[t]'`
@@ -432,13 +432,13 @@ function backwards_cov!(
         smooth_cov[tt] = PDMat(kws.cov_tmp2)
 
         # accumulate smoothed covs
-        kws.sum_smooth_cov_all .+= smooth_cov[tt].mat;
-        kws.sum_smooth_cov_prev .+= smooth_cov[tt].mat;
+        kws.sum_smooth_cov_all .+= smooth_cov[tt].mat
+        kws.sum_smooth_cov_prev .+= smooth_cov[tt].mat
         if tt > 1
-            kws.sum_smooth_cov_next .+= smooth_cov[tt].mat;
+            kws.sum_smooth_cov_next .+= smooth_cov[tt].mat
         end
 
-        mul!(kws.sum_smooth_xcov, G[:, :, tt], smooth_cov[tt + 1].mat, one(T), one(T));
+        mul!(kws.sum_smooth_xcov, G[:, :, tt], smooth_cov[tt + 1].mat, one(T), one(T))
 
         # entropy contribution of backward-conditional cov
         ent_logdet += logdet(filt_cov[tt]) .- logdet(pred_cov[tt + 1])
@@ -448,7 +448,7 @@ function backwards_cov!(
         T(0.5) * (
             kws.tsteps * kws.latent_dim * (one(T) + log(T(2π))) +
             ent_logdet +
-            (kws.tsteps-1) * logdet(Q_PD[])
+            (kws.tsteps - 1) * logdet(Q_PD[])
         )
 
     return kws
@@ -483,24 +483,24 @@ function forwards_mean!(
             kws.filt_mean[:, tt - 1, :],
             one(T),
             one(T),
-        );
+        )
 
-        mul!(kws.mean_tmp, kws.pred_icov[tt].mat, kws.pred_mean[:, tt, :], one(T), zero(T));
-        kws.mean_tmp .+= kws.CiRY[:, tt, :];
+        mul!(kws.mean_tmp, kws.pred_icov[tt].mat, kws.pred_mean[:, tt, :], one(T), zero(T))
+        kws.mean_tmp .+= kws.CiRY[:, tt, :]
 
-        mul!(kws.filt_mean[:, tt, :], kws.filt_cov[tt].mat, kws.mean_tmp, one(T), zero(T));
+        mul!(kws.filt_mean[:, tt, :], kws.filt_cov[tt].mat, kws.mean_tmp, one(T), zero(T))
     end
 
     return kws
 end
 
 function backwards_mean!(kws::KalmanWorkspace{T}) where {T<:Real}
-    kws.smooth_mean[:, end, :] .= kws.filt_mean[:, end, :];
+    kws.smooth_mean[:, end, :] .= kws.filt_mean[:, end, :]
 
     @views for tt in eachindex(kws.pred_icov)[(end - 1):-1:1]
-        kws.mean_tmp .= kws.smooth_mean[:, tt + 1, :] .- kws.pred_mean[:, tt + 1, :];
-        mul!(kws.smooth_mean[:, tt, :], kws.G[:, :, tt], kws.mean_tmp, one(T), zero(T));
-        kws.smooth_mean[:, tt, :] .+= kws.filt_mean[:, tt, :];
+        kws.mean_tmp .= kws.smooth_mean[:, tt + 1, :] .- kws.pred_mean[:, tt + 1, :]
+        mul!(kws.smooth_mean[:, tt, :], kws.G[:, :, tt], kws.mean_tmp, one(T), zero(T))
+        kws.smooth_mean[:, tt, :] .+= kws.filt_mean[:, tt, :]
     end
 
     return kws
@@ -520,7 +520,7 @@ end
     smooth_cov::Matrix{T},
     ntrials::Int,
 )::PDMat{T,Matrix{T}} where {T<:Real}
-    xx = smooth_cov*ntrials;
+    xx = smooth_cov * ntrials
     sym_syrk!(xx, smooth_mean)
     # mul!(xx, smooth_mean, smooth_mean', 1.0, 1.0)
 
@@ -551,7 +551,7 @@ end
         suf.init_xy[1, i] += x_init[i, n]
     end
     # init_yy
-    suf.init_yy[] = aggregate_xx(x_init, smooth_cov[1].mat, kws.ntrials);
+    suf.init_yy[] = aggregate_xx(x_init, smooth_cov[1].mat, kws.ntrials)
 
     # transitions -------
     # Regression layout: regress x_next on [x_prev; 1; ux_prev] to fit [A b B].
@@ -601,7 +601,7 @@ end
         mul!(suf.dyn_xy[(D + 2):end, :], ux_prev, x_next', one(T), zero(T))
     end
     # dyn_yy
-    suf.dyn_yy[] = aggregate_xx(x_next, kws.sum_smooth_cov_next, kws.ntrials);
+    suf.dyn_yy[] = aggregate_xx(x_next, kws.sum_smooth_cov_next, kws.ntrials)
 
     # observations -------
     # Same layout: regress y on [x; 1; d] to fit [C d_bias D].
@@ -821,8 +821,8 @@ function log_post(
     Sig0::Matrix{T},
     SigN::PDMat{T,Matrix{T}},
 ) where {T<:Real}
-    return -0.5*n*v*log(2pi) .+ 0.5*v*logdet(lam0) .+ -0.5*v*logdet(lamN) .+
-           0.5*v0*logdet(0.5 .* Sig0) .+ -0.5*vN*logdet(0.5 .* SigN) .+
+    return -0.5 * n * v * log(2pi) .+ 0.5 * v * logdet(lam0) .+ -0.5 * v * logdet(lamN) .+
+           0.5 * v0 * logdet(0.5 .* Sig0) .+ -0.5 * vN * logdet(0.5 .* SigN) .+
            -loggamma(0.5 .* v0) .+ loggamma(0.5 .* vN)
 end;
 
@@ -837,8 +837,9 @@ function log_post(
     Sig0::Matrix{T},
     SigN::PDMat{T,Matrix{T}},
 ) where {T<:Real}
-    return -0.5*n*v*log(2pi) .+ -0.5*v*logdet(lamN) .+ 0.5*v0*logdet(0.5 .* Sig0) .+
-           -0.5*vN*logdet(0.5 .* SigN) .+ -loggamma(0.5 .* v0) .+ loggamma(0.5 .* vN)
+    return -0.5 * n * v * log(2pi) .+ -0.5 * v * logdet(lamN) .+
+           0.5 * v0 * logdet(0.5 .* Sig0) .+ -0.5 * vN * logdet(0.5 .* SigN) .+
+           -loggamma(0.5 .* v0) .+ loggamma(0.5 .* vN)
 end;
 
 # no cov prior
@@ -850,8 +851,8 @@ function log_post(
     lamN::PDMat{T,Matrix{T}},
     SigN::PDMat{T,Matrix{T}},
 ) where {T<:Real}
-    return -0.5*n*v*log(2pi) .+ 0.5*v*logdet(lam0) .+ -0.5*v*logdet(lamN) .+
-           -0.5*vN*logdet(0.5 .* SigN) .+ loggamma(0.5 .* vN)
+    return -0.5 * n * v * log(2pi) .+ 0.5 * v * logdet(lam0) .+ -0.5 * v * logdet(lamN) .+
+           -0.5 * vN * logdet(0.5 .* SigN) .+ loggamma(0.5 .* vN)
 end;
 
 # no prior
@@ -863,8 +864,8 @@ function log_post(
     lamN::PDMat{T,Matrix{T}},
     SigN::PDMat{T,Matrix{T}},
 ) where {T<:Real}
-    return -0.5*n*v*log(2pi) .+ -0.5*v*logdet(lamN) .+ -0.5*vN*logdet(0.5 .* SigN) .+
-           loggamma(0.5 .* vN)
+    return -0.5 * n * v * log(2pi) .+ -0.5 * v * logdet(lamN) .+
+           -0.5 * vN * logdet(0.5 .* SigN) .+ loggamma(0.5 .* vN)
 end;
 
 """
@@ -880,7 +881,7 @@ Returns `nothing` when the prior is absent.
 function compute_elbo(
     lds::LinearDynamicalSystem{T,S,O}, suf::SufficientStatistics{T}, kws::KalmanWorkspace{T}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
-    elbo = 0.0;
+    elbo = 0.0
 
     P0_PD = tol_PD(lds.state_model.P0)
     Q_PD = tol_PD(lds.state_model.Q)
@@ -890,13 +891,13 @@ function compute_elbo(
     # The init "regression" has 1 parameter (x0), so the NIW posterior df
     # correction is `n - 1` rather than `n - u0_dim`.
     n = suf.init_n
-    v = kws.latent_dim;
-    v0 = kws.P0_df;
-    vN = v0 + (n - 1);
+    v = kws.latent_dim
+    v0 = kws.P0_df
+    vN = v0 + (n - 1)
     lam0 = nothing
-    lamN = suf.init_xx[];
+    lamN = suf.init_xx[]
     Sig0 = kws.P0_mu * kws.P0_df
-    SigN = P0_PD * vN;
+    SigN = P0_PD * vN
 
     if v0 > 0
         elbo += log_post(n, v, v0, vN, lam0, lamN, Sig0, SigN)
@@ -912,13 +913,13 @@ function compute_elbo(
     # The dynamics regression has (latent_dim + 1 + state_input_dim) parameters
     # per output dim: A (D), bias `b` (1), and B (state_input_dim, possibly 0).
     n = suf.dyn_n
-    v = kws.latent_dim;
-    v0 = kws.Q_df;
-    vN = v0 + (n - (kws.latent_dim + 1 + kws.state_input_dim));
+    v = kws.latent_dim
+    v0 = kws.Q_df
+    vN = v0 + (n - (kws.latent_dim + 1 + kws.state_input_dim))
     lam0 = _prior_Λ_PD(kws.AB_prior)
-    lamN = lam0 === nothing ? suf.dyn_xx[] : lam0 + suf.dyn_xx[];
+    lamN = lam0 === nothing ? suf.dyn_xx[] : lam0 + suf.dyn_xx[]
     Sig0 = kws.Q_mu * kws.Q_df
-    SigN = Q_PD * vN;
+    SigN = Q_PD * vN
 
     if v0 > 0
         elbo += log_post(n, v, v0, vN, lam0, lamN, Sig0, SigN)
@@ -932,13 +933,13 @@ function compute_elbo(
     # Observations --------------------------------------
     # Same correction as dynamics: regression fits C, obs-bias `d`, and D.
     n = suf.obs_n
-    v = kws.obs_dim;
-    v0 = kws.R_df;
-    vN = v0 + (n - (kws.latent_dim + 1 + kws.obs_input_dim));
+    v = kws.obs_dim
+    v0 = kws.R_df
+    vN = v0 + (n - (kws.latent_dim + 1 + kws.obs_input_dim))
     lam0 = _prior_Λ_PD(kws.CD_prior)
-    lamN = lam0 === nothing ? suf.obs_xx[] : lam0 + suf.obs_xx[];
+    lamN = lam0 === nothing ? suf.obs_xx[] : lam0 + suf.obs_xx[]
     Sig0 = kws.R_mu * kws.R_df
-    SigN = R_PD * vN;
+    SigN = R_PD * vN
 
     if v0 > 0
         elbo += log_post(n, v, v0, vN, lam0, lamN, Sig0, SigN)
@@ -966,7 +967,9 @@ function marginal_loglikelihood(
 
     Cmu = zeros(T, lds.obs_dim, kws.tsteps * kws.ntrials)
     mul!(
-        Cmu, lds.obs_model.C, reshape(kws.pred_mean, kws.latent_dim, kws.tsteps*kws.ntrials)
+        Cmu,
+        lds.obs_model.C,
+        reshape(kws.pred_mean, kws.latent_dim, kws.tsteps * kws.ntrials),
     )
     innovation .= kws.y_minus_d .- reshape(Cmu, kws.obs_dim, kws.tsteps, kws.ntrials)
 
@@ -975,7 +978,7 @@ function marginal_loglikelihood(
         MV = MvNormal(kws.obs_pd_tmp[])
 
         for n in axes(innovation, 3)
-            total_ll += Distributions.logpdf(MV, innovation[:, t, n]);
+            total_ll += Distributions.logpdf(MV, innovation[:, t, n])
         end
     end
 

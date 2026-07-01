@@ -46,8 +46,9 @@ for latent_dim in (2, 4, 8), obs_dim in (5, 10, 20)
 
         _, y = rand(rng, model, T)
 
-        SUITE["GaussianLDS"]["smooth", "latent=$latent_dim", "obs=$obs_dim", "T=$T"] =
-            @benchmarkable smooth($model, $y) samples = 10 seconds = 5
+        SUITE["GaussianLDS"]["smooth", "latent=$latent_dim", "obs=$obs_dim", "T=$T"] = @benchmarkable smooth(
+            $model, $y
+        ) samples = 10 seconds = 5
     end
 end
 
@@ -79,7 +80,8 @@ for latent_dim in (2, 4), obs_dim in (5, 10)
 
         _, y = rand(rng, model, T)
 
-        SUITE["PoissonLDS"]["smooth", "latent=$latent_dim", "obs=$obs_dim", "T=$T"] =
-            @benchmarkable smooth($model, $y) samples = 10 seconds = 5
+        SUITE["PoissonLDS"]["smooth", "latent=$latent_dim", "obs=$obs_dim", "T=$T"] = @benchmarkable smooth(
+            $model, $y
+        ) samples = 10 seconds = 5
     end
 end

@@ -170,9 +170,8 @@ end
 
 tol_PD(A::Matrix; tol::Real=1e-6)::PDMat = tol_PD(hermitianpart(A); tol=tol)
 tol_PD(A::PDMat; tol::Real=1e-6)::PDMat = tol_PD(Hermitian(Matrix(A)); tol=tol)
-id_PD(A::Matrix; tol::Real=1e-6)::PDMat = PDMat(
-    hermitianpart(A + (tol * tr(A) / size(A, 1)) * I)
-)
+id_PD(A::Matrix; tol::Real=1e-6)::PDMat =
+    PDMat(hermitianpart(A + (tol * tr(A) / size(A, 1)) * I))
 
 """
     gaussian_entropy(H::Symmetric{T}) where {T<:Real}

@@ -159,13 +159,15 @@ end
 
 function test_validate_state_model_fields()
     D = 2
-    good() = GaussianStateModel(;
-        A=Matrix{Float64}(I, D, D),
-        Q=Matrix{Float64}(I, D, D),
-        b=zeros(D),
-        x0=zeros(D),
-        P0=Matrix{Float64}(I, D, D),
-    )
+    function good()
+        return GaussianStateModel(;
+            A=Matrix{Float64}(I, D, D),
+            Q=Matrix{Float64}(I, D, D),
+            b=zeros(D),
+            x0=zeros(D),
+            P0=Matrix{Float64}(I, D, D),
+        )
+    end
 
     @test StateSpaceDynamics._validate_state_model(good(), D) === nothing
 
@@ -204,9 +206,11 @@ end
 
 function test_validate_obs_model_gaussian_fields()
     D, p = 2, 3
-    good() = GaussianObservationModel(;
-        C=randn(p, D), R=Matrix{Float64}(I, p, p), d=zeros(p)
-    )
+    function good()
+        return GaussianObservationModel(;
+            C=randn(p, D), R=Matrix{Float64}(I, p, p), d=zeros(p)
+        )
+    end
 
     @test StateSpaceDynamics._validate_obs_model(good(), p, D) === nothing
 

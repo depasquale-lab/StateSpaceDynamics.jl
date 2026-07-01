@@ -12,11 +12,11 @@ const D, p, T, N = 5, 10, 200, 8
 function make_lds(seed=42)
     rng = MersenneTwister(seed)
     A = StateSpaceDynamics.random_rotation_matrix(D, rng)
-    Q = (M = randn(rng, D, D); M*M' + 1e-3 * I)
+    Q = (M = randn(rng, D, D); M * M' + 1e-3 * I)
     x0 = randn(rng, D)
-    P0 = (M = randn(rng, D, D); M*M' + 1e-3 * I)
+    P0 = (M = randn(rng, D, D); M * M' + 1e-3 * I)
     C = randn(rng, p, D)
-    R = (M = randn(rng, p, p); M*M' + 1e-3 * I)
+    R = (M = randn(rng, p, p); M * M' + 1e-3 * I)
     b = randn(rng, D)
     d = randn(rng, p)
     sm = GaussianStateModel(; A=Matrix(A), Q=Matrix(Q), b=b, x0=x0, P0=Matrix(P0))
@@ -38,7 +38,7 @@ println("="^70)
 println("\n[fit! max_iter=20]")
 b_fit = @benchmark StateSpaceDynamics.fit!(
     lds_copy, $y; max_iter=20, tol=0.0, progress=false
-) setup=(lds_copy = $(make_lds)()) samples=5 seconds=15
+) setup = (lds_copy = $(make_lds)()) samples = 5 seconds = 15
 display(b_fit)
 
 # Set up workspace + tfs for component-level benches
@@ -46,13 +46,17 @@ tsteps_per_trial = fill(T, N)
 T_max = maximum(tsteps_per_trial)
 tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, tsteps_per_trial)
 sws_pool = [
-    StateSpaceDynamics.SmoothWorkspace(Float64, D, p, T_max; ux_dim=0, uy_dim=0)
-    for _ in 1:Threads.maxthreadid()
+    StateSpaceDynamics.SmoothWorkspace(Float64, D, p, T_max; ux_dim=0, uy_dim=0) for
+    _ in 1:Threads.maxthreadid()
 ]
-suf = StateSpaceDynamics._initialize_td_sufficient_statistics(Float64, lds, tsteps_per_trial)
+suf = StateSpaceDynamics._initialize_td_sufficient_statistics(
+    Float64, lds, tsteps_per_trial
+)
 ux_seq = [zeros(0, T) for _ in 1:N]
 uy_seq = [zeros(0, T) for _ in 1:N]
-StateSpaceDynamics._td_init_const_blocks!(sws_pool[1], lds, tsteps_per_trial, y, ux_seq, uy_seq)
+StateSpaceDynamics._td_init_const_blocks!(
+    sws_pool[1], lds, tsteps_per_trial, y, ux_seq, uy_seq
+)
 
 println("\n\n[compute_smooth_constants! (1 call)]")
 display(@benchmark StateSpaceDynamics.compute_smooth_constants!($sws_pool[1], $lds))
@@ -62,9 +66,11 @@ display(@benchmark StateSpaceDynamics.smooth!($lds, $tfs, $y, $sws_pool, $ux_seq
 
 println("\n[_aggregate_td_suff_stats! (1 call)]")
 StateSpaceDynamics.smooth!(lds, tfs, y, sws_pool, ux_seq, uy_seq)
-display(@benchmark StateSpaceDynamics._aggregate_td_suff_stats!(
-    $suf, $tfs, $lds, $ux_seq, $uy_seq, $y, $sws_pool[1]
-))
+display(
+    @benchmark StateSpaceDynamics._aggregate_td_suff_stats!(
+        $suf, $tfs, $lds, $ux_seq, $uy_seq, $y, $sws_pool[1]
+    )
+)
 
 println("\n[elbo! (1 call)]")
 total_entropy = sum(fs.entropy for fs in tfs.FilterSmooths)

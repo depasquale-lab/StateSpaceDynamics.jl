@@ -4,6 +4,7 @@ using DataFrames
 using Distributions
 using ForwardDiff
 using JET
+using JuliaFormatter
 using LinearAlgebra
 using MAT
 using Optim
@@ -27,12 +28,16 @@ ENV["GKSwstype"] = "100"
 Pkg.develop(; path=joinpath(dirname(@__DIR__), "libs", "SSDTest"))
 using SSDTest
 
-@testset verbose=true "StateSpaceDynamics.jl" begin
+@testset verbose = true "StateSpaceDynamics.jl" begin
     # Package-wide quality tests
-    @testset verbose=true "Package Quality" begin
+    @testset verbose = true "Package Quality" begin
         @testset "Aqua.jl" begin
             Aqua.test_all(StateSpaceDynamics; ambiguities=false)
             @test isempty(Test.detect_ambiguities(StateSpaceDynamics))
+        end
+
+        @testset "Code Formatting" begin
+            @test JuliaFormatter.format(StateSpaceDynamics; verbose=false, overwrite=false)
         end
 
         @testset "JET.jl Code Linting" begin
@@ -72,7 +77,7 @@ using SSDTest
     end
 
     # Linear Dynamical Systems Tests
-    @testset verbose=true "Linear Dynamical Systems" begin
+    @testset verbose = true "Linear Dynamical Systems" begin
         include("LinearDynamicalSystems/SLDS.jl")
         @testset "SLDS" begin
             @testset "Validation" begin
@@ -245,7 +250,7 @@ using SSDTest
     end
 
     # Optimization primitives (line search + Newton)
-    @testset verbose=true "Optimization" begin
+    @testset verbose = true "Optimization" begin
         include("Optimization/Optimization.jl")
         test_backtracking_min_sense_decreases()
         test_backtracking_returns_best_on_exhaustion()
@@ -255,7 +260,7 @@ using SSDTest
     end
 
     # Utilities Tests
-    @testset verbose=true "Utilities" begin
+    @testset verbose = true "Utilities" begin
         include("Utilities/Utilities.jl")
         test_block_tridgm()
         test_gaussian_entropy()
@@ -274,14 +279,14 @@ using SSDTest
     end
 
     # Conjugate-prior helpers (IW / MN MAP + log-prior terms)
-    @testset verbose=true "Priors" begin
+    @testset verbose = true "Priors" begin
         include("Priors/Priors.jl")
         test_iw_prior_helpers()
         test_mn_prior_helpers()
     end
 
     # Validation Tests
-    @testset verbose=true "Validation" begin
+    @testset verbose = true "Validation" begin
         include("Validation/Valid.jl")
 
         @testset "Probability Vector Validation" begin
@@ -311,9 +316,9 @@ using SSDTest
     end
 
     # Preprocessing Tests
-    @testset verbose=true "Preprocessing" begin
+    @testset verbose = true "Preprocessing" begin
         include("Preprocessing/Preprocessing.jl")
-        @testset verbose=true "PPCA" begin
+        @testset verbose = true "PPCA" begin
             test_PPCA_with_params()
             test_PPCA_E_and_M_Step()
             test_PPCA_fit()
@@ -322,13 +327,13 @@ using SSDTest
     end
 
     # Pretty Printing Tests
-    @testset verbose=true "Pretty Printing" begin
+    @testset verbose = true "Pretty Printing" begin
         include("PrettyPrinting/PrettyPrinting.jl")
         test_pretty_printing()
     end
 
     # Docs/examples tests. Pattern lifted from HiddenMarkovModels.jl.
-    @testset verbose=true "Docs Examples" begin
+    @testset verbose = true "Docs Examples" begin
         examples_src = joinpath(dirname(@__DIR__), "docs", "examples")
         for file in sort(readdir(examples_src))
             endswith(file, ".jl") || continue

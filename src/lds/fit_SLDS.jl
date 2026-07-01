@@ -188,9 +188,8 @@ function _sample_continuous_given_discrete!(
     # Initial state
     k1 = z_trial[1]
     x_trial[:, 1] = rand(rng, MvNormal(state_params[k1].x0, state_params[k1].P0))
-    y_trial[:, 1] = rand.(
-        rng, Poisson.(exp.(obs_params[k1].C * x_trial[:, 1] + obs_params[k1].d))
-    )
+    y_trial[:, 1] =
+        rand.(rng, Poisson.(exp.(obs_params[k1].C * x_trial[:, 1] + obs_params[k1].d)))
 
     # Subsequent states
     for t in 2:tsteps
@@ -204,9 +203,11 @@ function _sample_continuous_given_discrete!(
             ),
         )
 
-        y_trial[:, t] = rand.(
-            rng, Poisson.(exp.(obs_params[k_curr].C * x_trial[:, t] + obs_params[k_curr].d))
-        )
+        y_trial[:, t] =
+            rand.(
+                rng,
+                Poisson.(exp.(obs_params[k_curr].C * x_trial[:, t] + obs_params[k_curr].d)),
+            )
     end
 end
 
@@ -812,12 +813,12 @@ function sample_posterior(rng::AbstractRNG, fs::FilterSmooth{T}) where {T<:Real}
             catch
                 if attempt == max_attempts
                     # Last resort: use larger jitter
-                    jitter = min_jitter * T(10)^(attempt-1)
+                    jitter = min_jitter * T(10)^(attempt - 1)
                     @warn "Covariance matrix not positive definite at t=$t, adding jitter=$jitter"
                     chol = cholesky(Σ + jitter * I)
                 else
                     # Increase jitter and try again
-                    jitter = min_jitter * T(10)^(attempt-1)
+                    jitter = min_jitter * T(10)^(attempt - 1)
                 end
             end
         end

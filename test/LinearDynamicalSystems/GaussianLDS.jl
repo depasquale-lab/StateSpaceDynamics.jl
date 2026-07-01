@@ -7,7 +7,7 @@ l = 1.0 # length of pendulum
 dt = 0.01 # time step
 
 # Discrete-time dynamics
-A = [1.0 dt; -g / l * dt 1.0]
+A = [1.0 dt; -g / l*dt 1.0]
 Q = Matrix{Float64}(0.00001 * I(2))               # Process noise covariance
 
 # Initial state/ covariance
@@ -448,14 +448,14 @@ function test_gaussian_iw_priors_shape_map_and_R_sanity(; rng=MersenneTwister(20
         d = 0.1 .* randn(rng, P)
 
         # Strong shrinkage priors (ν > d+1)
-        Qprior = IWPrior(Ψ=diagm(0 => fill(0.01, D)), ν=Float64(D + 3))
-        P0prior = IWPrior(Ψ=diagm(0 => fill(0.01, D)), ν=Float64(D + 3))
-        Rprior = IWPrior(Ψ=diagm(0 => fill(0.01, P)), ν=Float64(P + 3))
+        Qprior = IWPrior(; Ψ=diagm(0 => fill(0.01, D)), ν=Float64(D + 3))
+        P0prior = IWPrior(; Ψ=diagm(0 => fill(0.01, D)), ν=Float64(D + 3))
+        Rprior = IWPrior(; Ψ=diagm(0 => fill(0.01, P)), ν=Float64(P + 3))
 
-        gsm = GaussianStateModel(
+        gsm = GaussianStateModel(;
             A=A, Q=Q, b=b, x0=x0, P0=P0, Q_prior=Qprior, P0_prior=P0prior
         )
-        gom = GaussianObservationModel(C=C, R=R, d=d, R_prior=Rprior)
+        gom = GaussianObservationModel(; C=C, R=R, d=d, R_prior=Rprior)
         lds = LinearDynamicalSystem(gsm, gom)
 
         X, Y = rand(rng, lds, fill(Tt, N))
@@ -486,14 +486,14 @@ function test_gaussian_update_R_matches_residual_cov(; rng=MersenneTwister(7))
 
         C = randn(rng, P, D)
         Rtrue = Matrix(Symmetric([
-            0.30 0.05 0.00;
-            0.05 0.22 0.02;
+            0.30 0.05 0.00
+            0.05 0.22 0.02
             0.00 0.02 0.27
         ]))
         d = 0.05 .* randn(rng, P)
 
-        gsm = GaussianStateModel(A=A, Q=Q, b=b, x0=x0, P0=P0)
-        gom = GaussianObservationModel(C=C, R=copy(Rtrue), d=d)
+        gsm = GaussianStateModel(; A=A, Q=Q, b=b, x0=x0, P0=P0)
+        gom = GaussianObservationModel(; C=C, R=copy(Rtrue), d=d)
         lds = LinearDynamicalSystem(gsm, gom)
 
         X, Y = rand(rng, lds, fill(Tt, N))
@@ -622,7 +622,7 @@ function test_td_with_obs_inputs(; rng=MersenneTwister(20260520))
 
         # Fit with obs inputs.
         sm_init = GaussianStateModel(;
-            A=0.5*Matrix{Float64}(I, D, D),
+            A=0.5 * Matrix{Float64}(I, D, D),
             Q=Matrix{Float64}(I, D, D),
             x0=zeros(D),
             P0=Matrix{Float64}(I, D, D),
@@ -638,7 +638,7 @@ function test_td_with_obs_inputs(; rng=MersenneTwister(20260520))
 
         # Baseline: fit without obs inputs (0-column D).
         sm_nofit = GaussianStateModel(;
-            A=0.5*Matrix{Float64}(I, D, D),
+            A=0.5 * Matrix{Float64}(I, D, D),
             Q=Matrix{Float64}(I, D, D),
             x0=zeros(D),
             P0=Matrix{Float64}(I, D, D),
@@ -726,12 +726,12 @@ function test_gaussian_weighting_equiv_to_duplication(; rng=MersenneTwister(9))
         d = zeros(P)
 
         lds1 = LinearDynamicalSystem(
-            GaussianStateModel(A=A, Q=Q, b=b, x0=x0, P0=P0),
-            GaussianObservationModel(C=C, R=R, d=d),
+            GaussianStateModel(; A=A, Q=Q, b=b, x0=x0, P0=P0),
+            GaussianObservationModel(; C=C, R=R, d=d),
         )
         lds2 = LinearDynamicalSystem(
-            GaussianStateModel(A=A, Q=Q, b=b, x0=x0, P0=P0),
-            GaussianObservationModel(C=C, R=R, d=d),
+            GaussianStateModel(; A=A, Q=Q, b=b, x0=x0, P0=P0),
+            GaussianObservationModel(; C=C, R=R, d=d),
         )
 
         _, Y = rand(rng, lds1, fill(Tt, N))

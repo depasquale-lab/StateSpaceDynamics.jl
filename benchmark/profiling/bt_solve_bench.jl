@@ -5,8 +5,12 @@ BenchmarkTools.DEFAULT_PARAMETERS.samples = 5
 function make_poisson_lds(D, p; seed=42)
     rng = MersenneTwister(seed)
     A = 0.9 .* StateSpaceDynamics.random_rotation_matrix(D, rng)
-    Q = Matrix(0.1 * I(D)); x0 = zeros(D); P0 = Matrix(0.1 * I(D))
-    C = 0.3 .* randn(rng, p, D); d = log.(0.5 .+ rand(rng, p)); b = zeros(D)
+    Q = Matrix(0.1 * I(D))
+    x0 = zeros(D)
+    P0 = Matrix(0.1 * I(D))
+    C = 0.3 .* randn(rng, p, D)
+    d = log.(0.5 .+ rand(rng, p))
+    b = zeros(D)
     sm = GaussianStateModel(; A=A, Q=Q, b=b, x0=x0, P0=P0)
     om = PoissonObservationModel(; C=C, d=d)
     return LinearDynamicalSystem(sm, om)
@@ -34,7 +38,9 @@ b = @benchmark begin
     StateSpaceDynamics._fill_hessian_blocks_poisson!($sws, $lds, $x0_mat)
     StateSpaceDynamics._negate_blocks!($btd, $T_t)
 end
-println("  t=$(round(median(b).time / 1e6; digits=3)) ms allocs=$(b.allocs) mem=$(b.memory) B")
+println(
+    "  t=$(round(median(b).time / 1e6; digits=3)) ms allocs=$(b.allocs) mem=$(b.memory) B"
+)
 
 # Build Hessian once, then time the BT solve
 StateSpaceDynamics._fill_hessian_blocks_poisson!(sws, lds, x0_mat)
@@ -52,12 +58,16 @@ println("\n=== block_tridiagonal_solve! ===")
 b2 = @benchmark StateSpaceDynamics.block_tridiagonal_solve!(
     $p_vec, $neg_sub_v, $neg_diag_v, $neg_super_v, $g_vec, $btd
 )
-println("  t=$(round(median(b2).time / 1e6; digits=3)) ms allocs=$(b2.allocs) mem=$(b2.memory) B")
+println(
+    "  t=$(round(median(b2).time / 1e6; digits=3)) ms allocs=$(b2.allocs) mem=$(b2.memory) B",
+)
 
 # Time _loglikelihood_ws (the per-eval cost in the line search)
 println("\n=== _loglikelihood_ws (one phi-eval) ===")
 b3 = @benchmark StateSpaceDynamics._loglikelihood_ws($x0_mat, $lds, $y, $sws)
-println("  t=$(round(median(b3).time / 1e6; digits=3)) ms allocs=$(b3.allocs) mem=$(b3.memory) B")
+println(
+    "  t=$(round(median(b3).time / 1e6; digits=3)) ms allocs=$(b3.allocs) mem=$(b3.memory) B",
+)
 
 # Compare to UMFPACK solve on equivalent sparse Hessian
 println("\n=== UMFPACK sparse solve (for comparison) ===")
@@ -65,4 +75,6 @@ hess_ws = StateSpaceDynamics.BlockTridiagonalWorkspace(Float64, D, T_t)
 _H = StateSpaceDynamics.Hessian!(hess_ws, lds, y, x0_mat)
 neg_H = -_H
 b4 = @benchmark $neg_H \ $g_vec
-println("  t=$(round(median(b4).time / 1e6; digits=3)) ms allocs=$(b4.allocs) mem=$(round(b4.memory/1024; digits=1)) KB")
+println(
+    "  t=$(round(median(b4).time / 1e6; digits=3)) ms allocs=$(b4.allocs) mem=$(round(b4.memory/1024; digits=1)) KB",
+)

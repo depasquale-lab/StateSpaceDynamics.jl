@@ -471,8 +471,8 @@ function test_poisson_map_step_improves_Q(; rng=MersenneTwister(123))
         C = 0.3 .* randn(rng, P, D)
         d = log.(0.7 .+ rand(rng, P))
 
-        gsm = GaussianStateModel(A=A, Q=Q, b=b, x0=x0, P0=P0)
-        pom = PoissonObservationModel(C=C, d=d)
+        gsm = GaussianStateModel(; A=A, Q=Q, b=b, x0=x0, P0=P0)
+        pom = PoissonObservationModel(; C=C, d=d)
         plds = LinearDynamicalSystem(gsm, pom)
 
         _, Y = rand(rng, plds, fill(Tt, N))
@@ -587,8 +587,8 @@ function test_poisson_gradient_shape_and_finiteness()
         d = zeros(P)
 
         plds = LinearDynamicalSystem(
-            GaussianStateModel(A=A, Q=Q, b=b, x0=x0, P0=P0),
-            PoissonObservationModel(C=C, d=d),
+            GaussianStateModel(; A=A, Q=Q, b=b, x0=x0, P0=P0),
+            PoissonObservationModel(; C=C, d=d),
         )
 
         _, Y = rand(plds, fill(Tt, N))
@@ -640,8 +640,8 @@ function test_poisson_low_rate_recovery()
         C_true = zeros(P, D)
         d_true = log.(true_rates)               # d = log(rate) since C ≡ 0
 
-        sm_true = GaussianStateModel(A=A_true, Q=Q_true, b=b_true, x0=x0_true, P0=P0_true)
-        om_true = PoissonObservationModel(C=C_true, d=d_true)
+        sm_true = GaussianStateModel(; A=A_true, Q=Q_true, b=b_true, x0=x0_true, P0=P0_true)
+        om_true = PoissonObservationModel(; C=C_true, d=d_true)
         plds_true = LinearDynamicalSystem(sm_true, om_true)
 
         _, Y = rand(rng, plds_true, fill(Tt, N))
@@ -653,14 +653,14 @@ function test_poisson_low_rate_recovery()
         end
 
         # Fit from a different starting point (rate ≈ 1 spikes/bin baseline).
-        sm_fit = GaussianStateModel(
+        sm_fit = GaussianStateModel(;
             A=copy(A_true),
             Q=copy(Q_true),
             b=copy(b_true),
             x0=copy(x0_true),
             P0=copy(P0_true),
         )
-        om_fit = PoissonObservationModel(C=zeros(P, D), d=zeros(P))
+        om_fit = PoissonObservationModel(; C=zeros(P, D), d=zeros(P))
         plds_fit = LinearDynamicalSystem(sm_fit, om_fit)
 
         fit!(plds_fit, Y; max_iter=20, progress=false)
@@ -681,4 +681,3 @@ function test_poisson_low_rate_recovery()
     end
     return nothing
 end
-

@@ -1100,10 +1100,10 @@ Allocate a `KalmanWorkspace` sized for the given `lds` and data shape. Requires
         zeros(T, D, tsteps, ntrials),   # CiRY
         zeros(T, p, tsteps, ntrials),   # y_minus_d
         zeros(T, p, tsteps, ntrials),   # innovations
-        zeros(T, D, (tsteps-1)*ntrials),# x_prev
-        zeros(T, D, (tsteps-1)*ntrials),# x_next
+        zeros(T, D, (tsteps - 1) * ntrials),# x_prev
+        zeros(T, D, (tsteps - 1) * ntrials),# x_next
         zeros(T, D, ntrials),           # x_init
-        zeros(T, D, tsteps*ntrials),    # x_cur
+        zeros(T, D, tsteps * ntrials),    # x_cur
         zeros(T, D + 1 + state_input_dim, D + 1 + state_input_dim),  # dyn_xx_buf
         zeros(T, D + 1 + obs_input_dim, D + 1 + obs_input_dim),      # obs_xx_buf
     )

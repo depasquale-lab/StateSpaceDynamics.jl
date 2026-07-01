@@ -1,7 +1,7 @@
 using StateSpaceDynamics
 export init_params, build_data, LDSParams
 
-@kwdef struct LDSParams{T<:Real, V<:AbstractVector{T}, M<:AbstractMatrix{T}}
+@kwdef struct LDSParams{T<:Real,V<:AbstractVector{T},M<:AbstractMatrix{T}}
     A::M
     Q::M
     x0::V
@@ -23,16 +23,16 @@ function init_params(rng::AbstractRNG, instance::LDSInstance)
 
     x0 = randn(rng, latent_dim)
     P0 = randn(rng, latent_dim, latent_dim)
-    P0 = P0 * P0'  .+ 1e-3
+    P0 = P0 * P0' .+ 1e-3
 
     C = randn(rng, obs_dim, latent_dim)
     R = randn(rng, obs_dim, obs_dim)
-    R = R * R'  .+ 1e-3
+    R = R * R' .+ 1e-3
 
     b = randn(rng, latent_dim)
     d = randn(rng, obs_dim)
 
-    return LDSParams(;A=A, Q=Q, x0=x0, P0=P0, C=C, R=R, b=b, d=d)
+    return LDSParams(; A=A, Q=Q, x0=x0, P0=P0, C=C, R=R, b=b, d=d)
 end
 
 function build_data(rng::AbstractRNG, model::LinearDynamicalSystem, instance::LDSInstance)

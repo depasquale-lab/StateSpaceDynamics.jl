@@ -75,9 +75,8 @@ function _sample_trial!(
                 state_params.Q,
             ),
         )
-        y_trial[:, t] = rand.(
-            rng, Poisson.(exp.(obs_params.C * x_trial[:, t] + obs_params.d))
-        )
+        y_trial[:, t] =
+            rand.(rng, Poisson.(exp.(obs_params.C * x_trial[:, t] + obs_params.d)))
     end
 end
 
@@ -111,7 +110,9 @@ function Random.rand(
     obs_params = _extract_obs_params(lds.obs_model)
     Ti = Int(tsteps)
 
-    ux_trial = _check_latent_inputs(latent_inputs, lds.state_input_dim, Ti, "latent_inputs", T)
+    ux_trial = _check_latent_inputs(
+        latent_inputs, lds.state_input_dim, Ti, "latent_inputs", T
+    )
     uy_trial = _check_obs_inputs(obs_inputs, lds.obs_input_dim, Ti, lds.obs_model)
 
     x = Matrix{T}(undef, lds.latent_dim, Ti)

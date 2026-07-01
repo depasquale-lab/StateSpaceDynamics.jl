@@ -11,10 +11,10 @@ end
 
 # Armijo check, written so we can handle max/min with Val
 @inline function armijo_ok(::Val{:max}, ϕ, ϕ0, α, dϕ0, c1)
-    return ϕ >= ϕ0 + c1*α*dϕ0
+    return ϕ >= ϕ0 + c1 * α * dϕ0
 end
 @inline function armijo_ok(::Val{:min}, ϕ, ϕ0, α, dϕ0, c1)
-    return ϕ <= ϕ0 + c1*α*dϕ0
+    return ϕ <= ϕ0 + c1 * α * dϕ0
 end
 
 # Strict-improvement check in the sense direction. Phase 1 halves until
@@ -52,7 +52,7 @@ function backtracking!(
     α1 = one(T)
     α2 = one(T)
 
-    @. x = x + α2*p
+    @. x = x + α2 * p
     ϕx0 = ϕ0
     ϕx1 = ϕ!()
 
@@ -60,16 +60,16 @@ function backtracking!(
     h = 0
     while h < ls.max_halvings && !_improves(sense, ϕx1, ϕ0)
         h += 1
-        @. x = x - α2*p
+        @. x = x - α2 * p
         α1 = α2
         α2 *= T(0.5)
-        @. x = x + α2*p
+        @. x = x + α2 * p
         ϕx1 = ϕ!()
     end
 
     # No monotone finite step found — revert to x_start, no progress.
     if !_improves(sense, ϕx1, ϕ0)
-        @. x = x - α2*p
+        @. x = x - α2 * p
         return zero(T), ϕ0
     end
 
@@ -78,46 +78,46 @@ function backtracking!(
     ϕ_best = ϕx1
 
     # Phase 2: cubic / quadratic interpolation.
-    for k in 1:ls.max_iters
+    for k in 1:(ls.max_iters)
         if armijo_ok(sense, ϕx1, ϕ0, α2, dϕ0, ls.c1)
             return α2, ϕx1
         end
 
         αtmp = α2
         if ls.order == 2 || k == 1
-            denom = (ϕx1 - ϕ0 - dϕ0*α2)
-            αtmp = -(dϕ0 * α2 * α2) / (2*denom)
+            denom = (ϕx1 - ϕ0 - dϕ0 * α2)
+            αtmp = -(dϕ0 * α2 * α2) / (2 * denom)
         else
             div = one(T) / (α1 * α1 * α2 * α2 * (α2 - α1))
-            a = (α1*α1*(ϕx1 - ϕ0 - dϕ0*α2) - α2*α2*(ϕx0 - ϕ0 - dϕ0*α1)) * div
-            b = (-α1^3*(ϕx1 - ϕ0 - dϕ0*α2) + α2^3*(ϕx0 - ϕ0 - dϕ0*α1)) * div
+            a = (α1 * α1 * (ϕx1 - ϕ0 - dϕ0 * α2) - α2 * α2 * (ϕx0 - ϕ0 - dϕ0 * α1)) * div
+            b = (-α1^3 * (ϕx1 - ϕ0 - dϕ0 * α2) + α2^3 * (ϕx0 - ϕ0 - dϕ0 * α1)) * div
             if abs(a) < eps(T)
-                αtmp = -dϕ0 / (2*b)
+                αtmp = -dϕ0 / (2 * b)
             else
-                disc = max(b*b - 3*a*dϕ0, zero(T))
-                αtmp = (-b + sqrt(disc)) / (3*a)
+                disc = max(b * b - 3 * a * dϕ0, zero(T))
+                αtmp = (-b + sqrt(disc)) / (3 * a)
             end
         end
 
-        αtmp = min(αtmp, α2*ls.ρ_hi)
-        αtmp = max(αtmp, α2*ls.ρ_lo)
+        αtmp = min(αtmp, α2 * ls.ρ_hi)
+        αtmp = max(αtmp, α2 * ls.ρ_lo)
 
         if !isfinite(αtmp)
-            @. x = x - α2*p
-            @. x = x + α_best*p
+            @. x = x - α2 * p
+            @. x = x + α_best * p
             return α_best, ϕ_best
         end
 
-        @. x = x - α2*p
+        @. x = x - α2 * p
         α1 = α2
         α2 = αtmp
-        @. x = x + α2*p
+        @. x = x + α2 * p
 
         ϕx0, ϕx1 = ϕx1, ϕ!()
 
         if !isfinite(ϕx1)
-            @. x = x - α2*p
-            @. x = x + α_best*p
+            @. x = x - α2 * p
+            @. x = x + α_best * p
             return α_best, ϕ_best
         end
 
@@ -129,8 +129,8 @@ function backtracking!(
 
     # Exhausted max_iters without satisfying Armijo: return the best monotone
     # step seen, not the last trial (which may be strictly worse).
-    @. x = x - α2*p
-    @. x = x + α_best*p
+    @. x = x - α2 * p
+    @. x = x + α_best * p
     return α_best, ϕ_best
 end
 
@@ -182,7 +182,7 @@ function newton_smooth!(
             if iszero(α)
                 return false
             end
-            if abs(ϕ_new - ϕ_prev) < tol || α*norm(p) < tol
+            if abs(ϕ_new - ϕ_prev) < tol || α * norm(p) < tol
                 return true
             end
             ϕ_prev = ϕ_new

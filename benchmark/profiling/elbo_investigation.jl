@@ -11,11 +11,11 @@ const MAX_EM = 50
 
 function make_lds(rng)
     A = StateSpaceDynamics.random_rotation_matrix(D, rng)
-    Q = (M = randn(rng, D, D); M*M' + 1e-3 * I)
+    Q = (M = randn(rng, D, D); M * M' + 1e-3 * I)
     x0 = randn(rng, D)
-    P0 = (M = randn(rng, D, D); M*M' + 1e-3 * I)
+    P0 = (M = randn(rng, D, D); M * M' + 1e-3 * I)
     C = randn(rng, p, D)
-    R = (M = randn(rng, p, p); M*M' + 1e-3 * I)
+    R = (M = randn(rng, p, p); M * M' + 1e-3 * I)
     b = randn(rng, D)
     d = randn(rng, p)
     sm = GaussianStateModel(; A=Matrix(A), Q=Matrix(Q), b=b, x0=x0, P0=Matrix(P0))
@@ -40,8 +40,8 @@ tsteps_per_trial = fill(T_steps, N)
 tfs = StateSpaceDynamics.initialize_FilterSmooth(lds_fit, tsteps_per_trial)
 T_max = T_steps
 sws_pool = [
-    StateSpaceDynamics.SmoothWorkspace(Float64, D, p, T_max; ux_dim=0, uy_dim=0)
-    for _ in 1:Threads.maxthreadid()
+    StateSpaceDynamics.SmoothWorkspace(Float64, D, p, T_max; ux_dim=0, uy_dim=0) for
+    _ in 1:Threads.maxthreadid()
 ]
 suf = StateSpaceDynamics._initialize_td_sufficient_statistics(
     Float64, lds_fit, tsteps_per_trial
@@ -76,19 +76,27 @@ println("\nELBO and marginal log-likelihood trajectory")
 println("(They should be identical for a Gaussian LDS at the exact posterior,")
 println(" up to a constant. ELBO trajectory drives EM; marginal LL is the")
 println(" `true` likelihood we'd report.)\n")
-println(rpad("iter", 6), rpad("ELBO", 22), rpad("marg_LL", 22),
-        rpad("ΔELBO", 22), rpad("Δmarg_LL", 22),
-        rpad("ELBO - marg_LL", 22))
+println(
+    rpad("iter", 6),
+    rpad("ELBO", 22),
+    rpad("marg_LL", 22),
+    rpad("ΔELBO", 22),
+    rpad("Δmarg_LL", 22),
+    rpad("ELBO - marg_LL", 22),
+)
 for k in eachindex(elbos)
-    e = elbos[k]; m = margs[k]
-    de = k == 1 ? NaN : e - elbos[k-1]
-    dm = k == 1 ? NaN : m - margs[k-1]
-    println(rpad(k, 6),
-            rpad(string(round(e; digits=8)), 22),
-            rpad(string(round(m; digits=8)), 22),
-            rpad(string(round(de; digits=10)), 22),
-            rpad(string(round(dm; digits=10)), 22),
-            rpad(string(round(e - m; digits=6)), 22))
+    e = elbos[k]
+    m = margs[k]
+    de = k == 1 ? NaN : e - elbos[k - 1]
+    dm = k == 1 ? NaN : m - margs[k - 1]
+    println(
+        rpad(k, 6),
+        rpad(string(round(e; digits=8)), 22),
+        rpad(string(round(m; digits=8)), 22),
+        rpad(string(round(de; digits=10)), 22),
+        rpad(string(round(dm; digits=10)), 22),
+        rpad(string(round(e - m; digits=6)), 22),
+    )
 end
 
 # Diagnostic — what's the expected offset?
@@ -106,6 +114,8 @@ entropy_2pi_extra = 0.5 * n_active * log(2π)
 println("\nDiagnostic constants (per Gaussian-LDS ELBO assembly):")
 println("  -0.5*(N+dyn_n)*D*log(2π)  (missing from Q_state) = ", state_2pi_missing)
 println("  +0.5*n_active*log(2π)     (entropy normalizer)   = ", entropy_2pi_extra)
-println("  Sum of the two terms                              = ",
-        state_2pi_missing + entropy_2pi_extra)
+println(
+    "  Sum of the two terms                              = ",
+    state_2pi_missing + entropy_2pi_extra,
+)
 println("  Observed (ELBO - marg_LL) at last iter            = ", elbos[end] - margs[end])

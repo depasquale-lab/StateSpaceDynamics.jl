@@ -197,9 +197,10 @@ function test_initial_state_parameter_updates_common(toy_fn, ntrials=1)
 
     P0_sqrt = Matrix(cholesky(P0_orig).U)
 
-    x0_opt = optimize(
-        x0 -> obj(x0, P0_sqrt), copy(x0_orig), LBFGS(), Optim.Options(; g_abstol=1e-12)
-    ).minimizer
+    x0_opt =
+        optimize(
+            x0 -> obj(x0, P0_sqrt), copy(x0_orig), LBFGS(), Optim.Options(; g_abstol=1e-12)
+        ).minimizer
     P0_opt = optimize(P0_ -> obj(x0_opt, P0_), P0_sqrt, LBFGS()).minimizer
 
     lds.state_model.x0 .= x0_orig

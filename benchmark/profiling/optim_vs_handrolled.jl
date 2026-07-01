@@ -60,7 +60,9 @@ g!(initial_g, X₀)
 # Build the sparse pattern by calling Hessian once and copying its
 # structure (zeros), then h! overwrites the values.
 _H = StateSpaceDynamics.Hessian!(hess_ws, lds, y, reshape(X₀, D, T_t))
-initial_h = SparseMatrixCSC{Float64,Int}(_H.m, _H.n, _H.colptr, _H.rowval, zeros(length(_H.nzval)))
+initial_h = SparseMatrixCSC{Float64,Int}(
+    _H.m, _H.n, _H.colptr, _H.rowval, zeros(length(_H.nzval))
+)
 h!(initial_h, X₀)
 
 td = TwiceDifferentiable(nll, g!, h!, X₀, initial_f, initial_g, initial_h)
@@ -73,9 +75,13 @@ println("  f_calls    = $(res.f_calls)")
 println("  g_calls    = $(res.g_calls)")
 println("  h_calls    = $(res.h_calls)")
 
-b_optim = @benchmark optimize($td, copy($X₀), Newton(; linesearch=LineSearches.BackTracking()), $opts)
+b_optim = @benchmark optimize(
+    $td, copy($X₀), Newton(; linesearch=LineSearches.BackTracking()), $opts
+)
 println("  time       = $(round(median(b_optim).time / 1e6; digits=2)) ms")
-println("  mem        = $(round(b_optim.memory / 1024; digits=1)) KB / $(b_optim.allocs) allocs")
+println(
+    "  mem        = $(round(b_optim.memory / 1024; digits=1)) KB / $(b_optim.allocs) allocs"
+)
 
 # Hand-rolled benchmark
 tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, [T_t])
@@ -87,4 +93,6 @@ end
 b_ours = @benchmark StateSpaceDynamics.smooth!($lds, $(tfs[1]), $y, $sws)
 println("\nHand-rolled newton_smooth! (current dev_ryan_):")
 println("  time       = $(round(median(b_ours).time / 1e6; digits=2)) ms")
-println("  mem        = $(round(b_ours.memory / 1024; digits=2)) KB / $(b_ours.allocs) allocs")
+println(
+    "  mem        = $(round(b_ours.memory / 1024; digits=2)) KB / $(b_ours.allocs) allocs"
+)

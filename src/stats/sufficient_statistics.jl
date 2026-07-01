@@ -446,21 +446,21 @@ function _aggregate_td_suff_stats_weighted!(
     # Clear the accumulators we'll write into. Each field is hoisted with a
     # concrete `Matrix{T}` annotation so the BLAS.ger!/syrk! callsites below
     # stay in JET's typed union branch (cf. `backwards_cov!`).
-    init_xy = sws.td_init_xy::Matrix{T};
+    init_xy = sws.td_init_xy::Matrix{T}
     fill!(init_xy, zero(T))
-    init_yy = sws.S0_sum::Matrix{T};
+    init_yy = sws.S0_sum::Matrix{T}
     fill!(init_yy, zero(T))
-    dyn_xx = sws.Szz_Ab::Matrix{T};
+    dyn_xx = sws.Szz_Ab::Matrix{T}
     fill!(dyn_xx, zero(T))
-    dyn_xy = sws.td_dyn_xy::Matrix{T};
+    dyn_xy = sws.td_dyn_xy::Matrix{T}
     fill!(dyn_xy, zero(T))
-    dyn_yy = sws.Q_sum::Matrix{T};
+    dyn_yy = sws.Q_sum::Matrix{T}
     fill!(dyn_yy, zero(T))
-    obs_xx = sws.Szz_Cd::Matrix{T};
+    obs_xx = sws.Szz_Cd::Matrix{T}
     fill!(obs_xx, zero(T))
-    obs_xy = sws.td_obs_xy::Matrix{T};
+    obs_xy = sws.td_obs_xy::Matrix{T}
     fill!(obs_xy, zero(T))
-    obs_yy = sws.R_sum::Matrix{T};
+    obs_yy = sws.R_sum::Matrix{T}
     fill!(obs_yy, zero(T))
 
     init_n_acc = zero(T)

@@ -105,14 +105,14 @@ function test_td_covariance_shared_across_trials()
     D, p, Tt, N = 3, 4, 20, 5
     rng = MersenneTwister(123)
     sm = GaussianStateModel(;
-        A=0.6*Matrix{Float64}(I, D, D),
-        Q=0.2*Matrix{Float64}(I, D, D),
+        A=0.6 * Matrix{Float64}(I, D, D),
+        Q=0.2 * Matrix{Float64}(I, D, D),
         x0=zeros(D),
         P0=Matrix{Float64}(I, D, D),
         b=zeros(D),
     )
     om = GaussianObservationModel(;
-        C=randn(rng, p, D), R=0.1*Matrix{Float64}(I, p, p), d=zeros(p)
+        C=randn(rng, p, D), R=0.1 * Matrix{Float64}(I, p, p), d=zeros(p)
     )
     lds_td = LinearDynamicalSystem(sm, om)
     _, y_seq = rand(rng, lds_td, fill(Tt, N))
@@ -152,14 +152,14 @@ function test_td_shared_cov_matches_per_trial_path()
     D, p, Tt, N = 3, 4, 25, 4
     rng = MersenneTwister(321)
     sm = GaussianStateModel(;
-        A=0.7*Matrix{Float64}(I, D, D),
-        Q=0.15*Matrix{Float64}(I, D, D),
+        A=0.7 * Matrix{Float64}(I, D, D),
+        Q=0.15 * Matrix{Float64}(I, D, D),
         x0=zeros(D),
         P0=Matrix{Float64}(I, D, D),
-        b=0.1*ones(D),
+        b=0.1 * ones(D),
     )
     om = GaussianObservationModel(;
-        C=randn(rng, p, D), R=0.1*Matrix{Float64}(I, p, p), d=zeros(p)
+        C=randn(rng, p, D), R=0.1 * Matrix{Float64}(I, p, p), d=zeros(p)
     )
     lds = LinearDynamicalSystem(sm, om)
     _, y_seq = rand(rng, lds, fill(Tt, N))
@@ -181,8 +181,8 @@ function test_td_shared_cov_matches_per_trial_path()
     end
 
     for trial in 1:N
-        @test tfs_fast[trial].x_smooth ≈ refs_x[trial] atol=1e-9
-        @test tfs_fast[trial].p_smooth ≈ refs_p[trial] atol=1e-9
+        @test tfs_fast[trial].x_smooth ≈ refs_x[trial] atol = 1e-9
+        @test tfs_fast[trial].p_smooth ≈ refs_p[trial] atol = 1e-9
     end
 end
 
@@ -194,15 +194,15 @@ function test_lds_with_B_input_equivalent_to_bias()
     B = Matrix{Float64}(I, D, ux_dim)
     Random.seed!(11)
     sm = GaussianStateModel(;
-        A=0.7*Matrix{Float64}(I, D, D),
-        Q=0.3*Matrix{Float64}(I, D, D),
+        A=0.7 * Matrix{Float64}(I, D, D),
+        Q=0.3 * Matrix{Float64}(I, D, D),
         x0=zeros(D),
         P0=Matrix{Float64}(I, D, D),
         b=zeros(D),
         B=B,
     )
     om = GaussianObservationModel(;
-        C=randn(p, D), R=0.4*Matrix{Float64}(I, p, p), d=zeros(p)
+        C=randn(p, D), R=0.4 * Matrix{Float64}(I, p, p), d=zeros(p)
     )
     lds_B = LinearDynamicalSystem(sm, om)
 
@@ -223,7 +223,7 @@ function test_lds_with_B_input_equivalent_to_bias()
     lds_b = LinearDynamicalSystem(sm_b, om_b)
     y_b = _simulate_lds(lds_b, T, N)
 
-    @test y_B ≈ y_b atol=1e-10
+    @test y_B ≈ y_b atol = 1e-10
 end
 
 function test_td_fit_with_latent_input()
@@ -254,7 +254,7 @@ function test_td_fit_with_latent_input()
 
     # Fit from a perturbed init.
     sm_init = GaussianStateModel(;
-        A=0.5*Matrix{Float64}(I, D, D),
+        A=0.5 * Matrix{Float64}(I, D, D),
         Q=Matrix{Float64}(I, D, D),
         x0=zeros(D),
         P0=Matrix{Float64}(I, D, D),
@@ -274,7 +274,7 @@ function test_td_fit_with_latent_input()
     # variance, so fitting *with* controls should beat fitting *without* on the
     # same data. The "without" baseline uses a 0-column B (proper no-input model).
     sm_nofit = GaussianStateModel(;
-        A=0.5*Matrix{Float64}(I, D, D),
+        A=0.5 * Matrix{Float64}(I, D, D),
         Q=Matrix{Float64}(I, D, D),
         x0=zeros(D),
         P0=Matrix{Float64}(I, D, D),
@@ -295,15 +295,15 @@ function test_td_sampling_zero_input_matches_no_input()
     D, p, Tt = 3, 4, 25
     rng = MersenneTwister(7)
     sm = GaussianStateModel(;
-        A=0.6*Matrix{Float64}(I, D, D),
-        Q=0.2*Matrix{Float64}(I, D, D),
+        A=0.6 * Matrix{Float64}(I, D, D),
+        Q=0.2 * Matrix{Float64}(I, D, D),
         x0=randn(rng, D),
         P0=Matrix{Float64}(I, D, D),
         b=randn(rng, D),
         B=zeros(D, 2),
     )
     om = GaussianObservationModel(;
-        C=randn(rng, p, D), R=0.1*Matrix{Float64}(I, p, p), d=zeros(p)
+        C=randn(rng, p, D), R=0.1 * Matrix{Float64}(I, p, p), d=zeros(p)
     )
     lds = LinearDynamicalSystem(sm, om)
 
@@ -317,8 +317,8 @@ function test_td_sampling_zero_input_matches_no_input()
     rng2 = MersenneTwister(42)
     x2, y2 = rand(rng2, lds2, Tt)
 
-    @test x1 ≈ x2 atol=1e-12
-    @test y1 ≈ y2 atol=1e-12
+    @test x1 ≈ x2 atol = 1e-12
+    @test y1 ≈ y2 atol = 1e-12
 end
 
 function test_td_fit_missing_u_errors()
@@ -327,15 +327,15 @@ function test_td_fit_missing_u_errors()
     B = Matrix{Float64}(I, D, D)
     Random.seed!(3)
     sm = GaussianStateModel(;
-        A=0.6*Matrix{Float64}(I, D, D),
-        Q=0.2*Matrix{Float64}(I, D, D),
+        A=0.6 * Matrix{Float64}(I, D, D),
+        Q=0.2 * Matrix{Float64}(I, D, D),
         x0=zeros(D),
         P0=Matrix{Float64}(I, D, D),
         b=zeros(D),
         B=B,
     )
     om = GaussianObservationModel(;
-        C=randn(p, D), R=0.3*Matrix{Float64}(I, p, p), d=zeros(p)
+        C=randn(p, D), R=0.3 * Matrix{Float64}(I, p, p), d=zeros(p)
     )
     lds = LinearDynamicalSystem(sm, om)
     y = randn(p, T, N)
@@ -358,12 +358,12 @@ function test_marginal_loglikelihood()
 
     # Vector-of-matrices form matches the stacked-array form.
     y_vec = [y[:, :, n] for n in 1:N]
-    @test StateSpaceDynamics.loglikelihood(lds, y_vec) ≈ ll atol=1e-9
+    @test StateSpaceDynamics.loglikelihood(lds, y_vec) ≈ ll atol = 1e-9
 
     # Poisson marginal is intractable → not implemented.
     sm = GaussianStateModel(;
-        A=0.7*Matrix{Float64}(I, 2, 2),
-        Q=0.2*Matrix{Float64}(I, 2, 2),
+        A=0.7 * Matrix{Float64}(I, 2, 2),
+        Q=0.2 * Matrix{Float64}(I, 2, 2),
         x0=zeros(2),
         P0=Matrix{Float64}(I, 2, 2),
         b=zeros(2),
@@ -463,18 +463,20 @@ function test_kalman_fit_basic()
     lds_true = LinearDynamicalSystem(sm_true, om_true)
     y = _simulate_lds(lds_true, Tt, N; seed=32)
 
-    _make_init() = LinearDynamicalSystem(
-        GaussianStateModel(;
-            A=0.5 * Matrix{Float64}(I, D, D),
-            Q=Matrix{Float64}(I, D, D),
-            x0=zeros(D),
-            P0=Matrix{Float64}(I, D, D),
-            b=zeros(D),
-        ),
-        GaussianObservationModel(;
-            C=randn(MersenneTwister(33), p, D), R=Matrix{Float64}(I, p, p), d=zeros(p)
-        ),
-    )
+    function _make_init()
+        return LinearDynamicalSystem(
+            GaussianStateModel(;
+                A=0.5 * Matrix{Float64}(I, D, D),
+                Q=Matrix{Float64}(I, D, D),
+                x0=zeros(D),
+                P0=Matrix{Float64}(I, D, D),
+                b=zeros(D),
+            ),
+            GaussianObservationModel(;
+                C=randn(MersenneTwister(33), p, D), R=Matrix{Float64}(I, p, p), d=zeros(p)
+            ),
+        )
+    end
 
     lds = _make_init()
     ll_init = SSD.loglikelihood(lds, y)
@@ -716,7 +718,7 @@ function test_kalman_marginal_loglikelihood_internals()
     ll_ref = SSD.loglikelihood(lds, y)
     # rtol allows for the `tol_PD` eigen-flooring of Q/R/P0 that the
     # workspace path applies and the buffer-based filter does not
-    @test ll_kf ≈ ll_ref rtol=1e-4
+    @test ll_kf ≈ ll_ref rtol = 1e-4
 
     elbo = SSD.compute_elbo(lds, suf, kws)
     @test isfinite(elbo)

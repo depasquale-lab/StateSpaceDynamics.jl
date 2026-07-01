@@ -593,8 +593,8 @@ function _precompute_shared_cov!(
     neg_sub_v = view(btd.neg_sub, 1:(tsteps - 1))
     neg_super_v = view(btd.neg_super, 1:(tsteps - 1))
 
-    p_smooth_v = view(p_smooth_shared,:,:,(1:tsteps))
-    p_smooth_tt1_v = view((sws.p_smooth_tt1_shared::Array{T,3}),:,:,(1:tsteps))
+    p_smooth_v = view(p_smooth_shared, :, :, (1:tsteps))
+    p_smooth_tt1_v = view((sws.p_smooth_tt1_shared::Array{T,3}), :, :, (1:tsteps))
 
     logdet_precision = block_tridiagonal_inverse_logdet!(
         p_smooth_v, p_smooth_tt1_v, neg_sub_v, neg_diag_v, neg_super_v, btd
@@ -1121,7 +1121,7 @@ function fit!(
     # reshape y from [obs_dim, tsteps, trials] to vector of matrices if needed
     if ndims(y) == 3
         obs_dim, tsteps, ntrials = size(y)
-        y_vec = [view(y,:,:,i) for i in 1:ntrials]
+        y_vec = [view(y, :, :, i) for i in 1:ntrials]
         return fit!(lds, y_vec; kwargs...)
     elseif ndims(y) == 2
         # single trial case, wrap in vector
