@@ -11,7 +11,7 @@ Gaussian Observations
     Q_obs!(ws, lds, E_z, E_zz, y, uy)
 
 Full observation Q-term for Gaussian LDS over all time steps with affine
-observation `y_t ~ N(C x_t + d + D uy_t, R)`. `uy` is the per-trial obs-control
+observation `y_t ~ N(C x_t + d + D uy_t, R)`. `uy` is the per-trial obs-input
 matrix `(uy_dim, T_i)`; pass a `0×T_i` matrix when no obs inputs.
 """
 function Q_obs!(

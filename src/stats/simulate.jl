@@ -93,7 +93,7 @@ Sample from a Linear Dynamical System.
 - With a vector of per-trial lengths, returns
   `(x::Vector{Matrix}, y::Vector{Matrix})`. Lengths may differ across trials.
 
-Optional control sequences:
+Optional input sequences:
 - `latent_inputs`: dynamics-input sequence consumed by `B`. Single-trial form
   is an `(ux_dim, tsteps)` matrix; multi-trial is a `Vector{<:AbstractMatrix}`
   of per-trial matrices. Required when `size(state_model.B, 2) > 0`.
@@ -111,8 +111,8 @@ function Random.rand(
     obs_params = _extract_obs_params(lds.obs_model)
     Ti = Int(tsteps)
 
-    ux_trial = _check_control(latent_inputs, lds.state_input_dim, Ti, "latent_inputs", T)
-    uy_trial = _check_obs_control(obs_inputs, lds.obs_input_dim, Ti, lds.obs_model)
+    ux_trial = _check_latent_inputs(latent_inputs, lds.state_input_dim, Ti, "latent_inputs", T)
+    uy_trial = _check_obs_inputs(obs_inputs, lds.obs_input_dim, Ti, lds.obs_model)
 
     x = Matrix{T}(undef, lds.latent_dim, Ti)
     y = Matrix{T}(undef, lds.obs_dim, Ti)
@@ -139,10 +139,10 @@ function Random.rand(
         y[i] = Matrix{T}(undef, lds.obs_dim, Ti)
     end
 
-    ux_seq = _normalize_multitrial_control(
+    ux_seq = _normalize_multitrial_latent_inputs(
         latent_inputs, lds.state_input_dim, tsteps_per_trial, T, "latent_inputs"
     )
-    uy_seq = _normalize_multitrial_obs_control(
+    uy_seq = _normalize_multitrial_obs_inputs(
         obs_inputs, lds.obs_input_dim, tsteps_per_trial, T, lds.obs_model
     )
 

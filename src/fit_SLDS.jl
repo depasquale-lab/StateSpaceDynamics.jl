@@ -996,7 +996,7 @@ function mstep!(
     # Discrete-layer M-step (slds.A, slds.πₖ are updated in place via dl).
     StatsAPI.fit!(dl, fb_storage, obs_inputs; seq_ends=seq_ends)
 
-    # SLDS doesn't currently expose user controls; pass zero-column ux/uy.
+    # SLDS doesn't currently expose user inputs; pass zero-column ux/uy.
     ux_seq = [zeros(T, 0, size(yt, 2)) for yt in y]
     uy_seq = [zeros(T, 0, size(yt, 2)) for yt in y]
     tsteps_per_trial = [size(yt, 2) for yt in y]

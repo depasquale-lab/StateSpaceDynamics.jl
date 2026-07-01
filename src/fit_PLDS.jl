@@ -1012,7 +1012,7 @@ function fit!(
     sws_pool = [SmoothWorkspace(T, latent_dim, obs_dim, T_max) for _ in 1:npool]
 
     # Suf-based state-side M-step (mirrors the Gaussian TD fit path). Poisson
-    # has no controls, so `latent_inputs` / `obs_inputs` are zero-row matrices. The const
+    # has no inputs, so `latent_inputs` / `obs_inputs` are zero-row matrices. The const
     # blocks (bias-row entries, obs_yy_const, …) are precomputed once; the
     # `obs_*` blocks are written by the aggregator but unread by the Poisson
     # M-step (emission stays LBFGS), which is a tiny constant overhead.

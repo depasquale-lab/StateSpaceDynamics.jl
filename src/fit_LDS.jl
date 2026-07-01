@@ -102,7 +102,7 @@ function joint_loglikelihood!(
 end
 
 # Backward-compatible 4-arg overload: no inputs. Forwards to the 6-arg form
-# with zero-row ux/uy matrices, so callers that don't use controls don't have
+# with zero-row ux/uy matrices, so callers that don't use inputs don't have
 # to pass them.
 function joint_loglikelihood!(
     ws::SmoothWorkspace{T},
@@ -1014,10 +1014,10 @@ function fit!(
     obs_inputs::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     tsteps_per_trial = [size(yt, 2) for yt in y]
-    latent_inputs = _normalize_multitrial_control(
+    latent_inputs = _normalize_multitrial_latent_inputs(
         latent_inputs, lds.state_input_dim, tsteps_per_trial, T, "latent_inputs"
     )
-    obs_inputs = _normalize_multitrial_obs_control(
+    obs_inputs = _normalize_multitrial_obs_inputs(
         obs_inputs, lds.obs_input_dim, tsteps_per_trial, T, lds.obs_model
     )
     return _fit_tridiag!(

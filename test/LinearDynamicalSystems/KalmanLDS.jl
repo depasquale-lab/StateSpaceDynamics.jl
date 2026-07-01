@@ -226,7 +226,7 @@ function test_lds_with_B_input_equivalent_to_bias()
     @test y_B ≈ y_b atol=1e-10
 end
 
-function test_td_fit_with_dynamics_input()
+function test_td_fit_with_latent_input()
     # TD path: simulate from `x_{t+1} = A x_t + b + B u_t`, fit, recover B
     # (and b) to coarse tolerance.
     D, p, Tt, N = 3, 5, 60, 8
@@ -289,7 +289,7 @@ function test_td_fit_with_dynamics_input()
     @test elbos[end] > elbos_no[end] + 1.0  # controls help, by a lot for these data
 end
 
-function test_td_sampling_zero_input_matches_no_control()
+function test_td_sampling_zero_input_matches_no_input()
     # With latent_inputs present but u ≡ 0 and B = 0, sampling should match
     # the no-control case (same RNG seed).
     D, p, Tt = 3, 4, 25

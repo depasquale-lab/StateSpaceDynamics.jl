@@ -181,7 +181,7 @@ using SSDTest
                 test_td_mn_priors_shrink()
                 test_td_with_obs_inputs()
                 test_td_ragged_multi_trial()
-                test_td_weighted_aggregator_matches_unweighted_with_controls()
+                test_td_weighted_aggregator_matches_unweighted_with_inputs()
                 test_mn_prior_type_decoupled_from_model_matrix()
             end
         end
@@ -191,8 +191,8 @@ using SSDTest
             test_td_covariance_shared_across_trials()
             test_td_shared_cov_matches_per_trial_path()
             test_lds_with_B_input_equivalent_to_bias()
-            test_td_fit_with_dynamics_input()
-            test_td_sampling_zero_input_matches_no_control()
+            test_td_fit_with_latent_input()
+            test_td_sampling_zero_input_matches_no_input()
             test_td_fit_missing_u_errors()
             test_marginal_loglikelihood()
         end

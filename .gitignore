@@ -43,3 +43,4 @@ CLAUDE.md
 
 # Local profiling sandbox (never committed)
 /dev/
+**.cov

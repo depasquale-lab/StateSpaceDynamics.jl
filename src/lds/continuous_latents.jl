@@ -15,7 +15,7 @@ Continuous (Linear Gaussian) latents
 State Q-term for an LDS with affine dynamics `x_t ~ N(A x_{t-1} + b + B u_{t-1}, Q)`.
 In-place version of `Q_state` that uses pre-allocated buffers from `SmoothWorkspace`.
 Uses cached Cholesky factors from `compute_smooth_constants!`. `ux` is the per-trial
-dynamics-control matrix `(ux_dim, T_i)`; pass a `0×T_i` matrix when no inputs.
+latent-input matrix `(ux_dim, T_i)`; pass a `0×T_i` matrix when no inputs.
 """
 function Q_state!(
     ws::SmoothWorkspace{T},

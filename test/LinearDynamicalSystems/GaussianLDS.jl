@@ -620,7 +620,7 @@ function test_td_with_obs_inputs(; rng=MersenneTwister(20260520))
         uy_seq = [randn(rng, uy_dim, Tt) for _ in 1:N]
         _, y_seq = rand(rng, lds_true, fill(Tt, N); obs_inputs=uy_seq)
 
-        # Fit with obs controls.
+        # Fit with obs inputs.
         sm_init = GaussianStateModel(;
             A=0.5*Matrix{Float64}(I, D, D),
             Q=Matrix{Float64}(I, D, D),
@@ -636,7 +636,7 @@ function test_td_with_obs_inputs(; rng=MersenneTwister(20260520))
         elbos = fit!(lds_fit, y_seq; obs_inputs=uy_seq, max_iter=60, progress=false)
         @test all(diff(elbos) .>= -1e-4)
 
-        # Baseline: fit without obs controls (0-column D).
+        # Baseline: fit without obs inputs (0-column D).
         sm_nofit = GaussianStateModel(;
             A=0.5*Matrix{Float64}(I, D, D),
             Q=Matrix{Float64}(I, D, D),
@@ -650,7 +650,7 @@ function test_td_with_obs_inputs(; rng=MersenneTwister(20260520))
         lds_nofit = LinearDynamicalSystem(sm_nofit, om_nofit)
         elbos_no = fit!(lds_nofit, y_seq; max_iter=60, progress=false)
 
-        # Obs controls must explain real variance: ELBO with D should beat ELBO without.
+        # Obs inputs must explain real variance: ELBO with D should beat ELBO without.
         @test elbos[end] > elbos_no[end] + 1.0
     end
     return nothing
@@ -818,10 +818,10 @@ function test_mn_prior_type_decoupled_from_model_matrix()
     return nothing
 end
 
-function test_td_weighted_aggregator_matches_unweighted_with_controls(;
+function test_td_weighted_aggregator_matches_unweighted_with_inputs(;
     rng=MersenneTwister(0xC0FFEE)
 )
-    @testset "TD weighted aggregator == unweighted (B & D controls)" begin
+    @testset "TD weighted aggregator == unweighted (B & D inputs)" begin
         D, p, ux_dim, uy_dim, Tt = 2, 3, 2, 2, 40
 
         A = 0.85 * StateSpaceDynamics.random_rotation_matrix(D, rng)
@@ -904,7 +904,7 @@ function test_td_weighted_aggregator_matches_unweighted_with_controls(;
         @test suf_w.obs_xy ≈ ref.obs_xy
         @test suf_w.obs_yy[].mat ≈ ref.obs_yy
 
-        # Sanity: the control cross blocks are actually populated (non-zero), so
+        # Sanity: the inputs cross blocks are actually populated (non-zero), so
         # the equivalence above is meaningful and not comparing empty regions.
         @test norm(suf_w.dyn_xx[].mat[1:D, (D + 2):end]) > 0
         @test norm(suf_w.obs_xx[].mat[1:D, (D + 2):end]) > 0
