@@ -51,9 +51,9 @@ include("lds/gaussian_observations.jl")
 include("lds/poisson_observations.jl")
 
 # Fitting Functions
-include("fit_LDS.jl")
-include("fit_PLDS.jl")
-include("fit_SLDS.jl")
+include("lds/fit_LDS.jl")
+include("lds/fit_PLDS.jl")
+include("lds/fit_SLDS.jl")
 
 # Errors/Exceptions/Validations
 export validate_SLDS, validate_LDS, validate_probvec

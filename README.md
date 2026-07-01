@@ -13,9 +13,9 @@
 
 ## Description
 
-StateSpaceDynamics.jl is a fast, self-contained Julia package for linear dynamical systems (LDS) and related latent state-space models. It covers Gaussian and Poisson LDS, Switching LDS (SLDS), and Probabilistic PCA, taking inspiration from [SSM](https://github.com/lindermanlab/ssm) (Linderman Lab) and [Dynamax](https://probml.github.io/dynamax/). It leverages Julia's speed and expressiveness to give researchers and data scientists a powerful, efficient toolkit for latent state-space modeling.
+StateSpaceDynamics.jl is a fast, self-contained Julia package for linear dynamical systems (LDS) and related latent state-space models. It covers Gaussian and Poisson LDS, Switching LDS (SLDS), and Probabilistic PCA, taking inspiration from [ssm](https://github.com/lindermanlab/ssm) (Linderman Lab) and [Dynamax](https://probml.github.io/dynamax/). It leverages Julia's speed and expressiveness to give researchers and data scientists a powerful, efficient toolkit for latent state-space modeling.
 
-This package is geared towards applications in neuroscience, so the models incorporate a certain neuroscience flavor (e.g., many of our models are trialized as common in experimental paradigms). However, the models are general enough to be used in other fields such as finance, robotics, and many other domains involving sequential data analysis.
+This package is geared towards applications in neuroscience, so the models incorporate a certain neuroscience flavor (e.g., many of our models are trialized, as is common in experimental paradigms). However, the models are general enough to be used in other fields such as finance, robotics, and many other domains involving sequential data analysis.
 
 We are continuously working to expand our model offerings. If you have suggestions for additional models or features, please open an issue on our GitHub repository.
 
@@ -108,16 +108,19 @@ Help us maintain a welcoming environment for researchers and developers.
   - [ ] PFLDS
   - [x] Switching Linear Dynamical Systems (SLDS)
   - [ ] Recurrent Switching Linear Dynamical Systems (rSLDS)
+- [x] Probabilistic PCA (PPCA)
 
 ## Related Packages
 
 - [HiddenMarkovModels.jl](https://github.com/maxmouchet/HiddenMarkovModels.jl): A Julia package for Hidden Markov Models. We recommend this package if you need HMMs; StateSpaceDynamics.jl uses it internally for SLDS forward-backward.
 
-- [StateSpaceLearning.jl](https://github.com/LAMPSPUC/StateSpaceLearning.jl) : A Julia package for time series analysis using state space models.
+- [StateSpaceLearning.jl](https://github.com/LAMPSPUC/StateSpaceLearning.jl): A Julia package for time series analysis using state space models.
 
-- [ssm](https://github.com/lindermanlab/ssm) : A python package for state space models.
+- [ssm](https://github.com/lindermanlab/ssm): A python package for state space models.
 
-- [dynamax](https://github.com/probml/dynamax): A python package built on JAX for state space modelling (supercedes ssm).
+- [dynamax](https://github.com/probml/dynamax): A python package built on JAX for state space modelling (supersedes ssm).
+
+- [StateSpaceAnalysis.jl](https://github.com/harrisonritz/StateSpaceAnalysis.jl): A highly performant Julia package for fitting Gaussian LDS models. Currently being absorbed into this package.
 
 ## Contributing
 
