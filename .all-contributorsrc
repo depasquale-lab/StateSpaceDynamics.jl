@@ -13,5 +13,20 @@
   "contributorsPerLine": 7,
   "contributorsSortAlphabetically": false,
   "badgeTemplate": "",
-  "contributors": []
+  "contributors": [
+    {
+      "login": "harrisonritz",
+      "name": "Harrison Ritz",
+      "avatar_url": "https://avatars.githubusercontent.com/u/17258911?v=4",
+      "profile": "https://harrisonritz.github.io/",
+      "contributions": [
+        "code",
+        "maintenance",
+        "test",
+        "ideas",
+        "review",
+        "doc"
+      ]
+    }
+  ]
 }
