@@ -4,8 +4,8 @@
 Abstract supertype for time-varying input bases. A concrete subtype
 `B <: AbstractInputBasis` describes a set of basis functions
 `{φ_1, …, φ_K}` over the time domain `1:tsteps`, and is used to construct
-the `(P*K, tsteps, ntrials)` input array stored in `data.u` (dynamics) or
-`data.d` (observation).
+the `(P*K, tsteps, ntrials)` input array stored in `data.ux` (dynamics) or
+`data.uy` (observation).
 
 # Required interface
 
@@ -40,44 +40,44 @@ must implement this method.
 function evaluate_basis end
 
 """
-    apply!(data::Data{T}, basis::AbstractInputBasis; target::Symbol=:u) where {T<:Real}
+    apply!(data::Data{T}, basis::AbstractInputBasis; target::Symbol=:ux) where {T<:Real}
 
 Construct the time-varying input array
-`kron(data.trial_pred[n, :], B')` per trial, where `B` is the
+`kron(data.epoch_pred[n, :], B')` per trial, where `B` is the
 `(tsteps × n_bases(basis))` basis matrix obtained by evaluating `basis` at
-the integer timesteps `1:tsteps`, and write it in place into `data.u`
-(when `target=:u`) or `data.d` (when `target=:d`) via `copyto!`.
+the integer timesteps `1:tsteps`, and write it in place into `data.ux`
+(when `target=:ux`) or `data.uy` (when `target=:uy`) via `copyto!`.
 
-When `data.trial_pred` is empty, a single all-ones predictor is used so
+When `data.epoch_pred` is empty, a single all-ones predictor is used so
 the per-trial input is just `B'`.
 
 The caller must pre-allocate `data.<target>` with shape
-`(P*K, tsteps, ntrials)` where `P = size(data.trial_pred, 2)` (or `1` when
+`(P*K, tsteps, ntrials)` where `P = size(data.epoch_pred, 2)` (or `1` when
 empty) and `K = n_bases(basis)`. A `DimensionMismatch` is thrown otherwise.
 
 Returns `nothing`.
 """
 function apply!(
-    data::Data{T}, basis::AbstractInputBasis; target::Symbol=:u
+    data::Data{T}, basis::AbstractInputBasis; target::Symbol=:ux
 ) where {T<:Real}
-    target in (:u, :d) ||
-        throw(ArgumentError("target must be :u or :d, got $(repr(target))."))
+    target in (:ux, :uy) ||
+        throw(ArgumentError("target must be :ux or :uy, got $(repr(target))."))
 
     tsteps = size(data.y, 2)
     ntrials = size(data.y, 3)
 
-    trial_pred = if isempty(data.trial_pred)
+    epoch_pred = if isempty(data.epoch_pred)
         ones(T, ntrials, 1)
     else
-        size(data.trial_pred, 1) == ntrials || throw(
+        size(data.epoch_pred, 1) == ntrials || throw(
             DimensionMismatch(
-                "data.trial_pred has $(size(data.trial_pred, 1)) rows but data.y " *
-                "has $ntrials trials. trial_pred must be shape (ntrials, npredictors).",
+                "data.epoch_pred has $(size(data.epoch_pred, 1)) rows but data.y " *
+                "has $ntrials trials. epoch_pred must be shape (ntrials, npredictors).",
             ),
         )
-        data.trial_pred
+        data.epoch_pred
     end
-    P = size(trial_pred, 2)
+    P = size(epoch_pred, 2)
     K = n_bases(basis)
 
     target_arr = getfield(data, target)
@@ -97,7 +97,7 @@ function apply!(
         for p in 1:P
             row_start = (p - 1) * K + 1
             row_end = p * K
-            coeff = trial_pred[n, p]
+            coeff = epoch_pred[n, p]
             @views target_arr[row_start:row_end, :, n] .= coeff .* Bt
         end
     end
@@ -145,7 +145,7 @@ end
     get_penalty(data::Data{T}, basis::AbstractInputBasis; kwargs...) where {T} -> Matrix{T}
 
 Convenience overload that reads `tsteps` from `data.y`, `P` from
-`data.trial_pred` (or `1` when empty), and `eltype` from `T`. All keyword
+`data.epoch_pred` (or `1` when empty), and `eltype` from `T`. All keyword
 arguments are forwarded to the underlying `get_penalty(basis, tsteps; …)`
 method, so basis-specific keywords (e.g. `use_analytic=true` for
 [`Fourier`](@ref)) work transparently.
@@ -154,7 +154,7 @@ function get_penalty(
     data::Data{T}, basis::AbstractInputBasis; kwargs...
 ) where {T<:Real}
     tsteps = size(data.y, 2)
-    P = isempty(data.trial_pred) ? 1 : size(data.trial_pred, 2)
+    P = isempty(data.epoch_pred) ? 1 : size(data.epoch_pred, 2)
     return get_penalty(basis, tsteps; P=P, eltype=T, kwargs...)
 end
 

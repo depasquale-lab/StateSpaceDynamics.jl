@@ -14,11 +14,11 @@ high `num_bases`.
 """
 struct Polynomial <: AbstractInputBasis
     num_bases::Int
-end
 
-function Polynomial(num_bases::Integer)
-    num_bases >= 1 || throw(ArgumentError("num_bases ($num_bases) must be >= 1."))
-    return Polynomial(Int(num_bases))
+    function Polynomial(num_bases::Int)
+        num_bases >= 1 || throw(ArgumentError("num_bases ($num_bases) must be >= 1."))
+        new(num_bases)
+    end
 end
 
 n_bases(b::Polynomial) = b.num_bases

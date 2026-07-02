@@ -14,27 +14,27 @@ function _example_bases(K::Int)
     ]
 end
 
-# Build a Data struct with pre-allocated `u` (or `d`) sized for P predictors
+# Build a Data struct with pre-allocated `ux` (or `uy`) sized for P predictors
 # × K basis functions × tsteps × ntrials. Pass `P=0` for an empty
-# `trial_pred` (apply! then uses the default single all-ones predictor, so
+# `epoch_pred` (apply! then uses the default single all-ones predictor, so
 # the target field is sized as if `P=1`).
 function _make_data(
-    ::Type{T}, K::Int, tsteps::Int, ntrials::Int, P::Int; field::Symbol=:u
+    ::Type{T}, K::Int, tsteps::Int, ntrials::Int, P::Int; field::Symbol=:ux
 ) where {T<:Real}
     P_eff = max(P, 1)
     y = randn(MersenneTwister(0), T, 1, tsteps, ntrials)
-    u = if field == :u
+    ux = if field == :ux
         zeros(T, P_eff * K, tsteps, ntrials)
     else
         zeros(T, 1, tsteps, ntrials)
     end
-    d = if field == :d
+    uy = if field == :uy
         zeros(T, P_eff * K, tsteps, ntrials)
     else
         zeros(T, 1, tsteps, ntrials)
     end
-    trial_pred = P == 0 ? Matrix{T}(undef, 0, 0) : ones(T, ntrials, P)
-    return Data(; y=y, u=u, d=d, trial_pred=trial_pred)
+    epoch_pred = P == 0 ? Matrix{T}(undef, 0, 0) : ones(T, ntrials, P)
+    return Data(; y=y, ux=ux, uy=uy, epoch_pred=epoch_pred)
 end
 
 # ---------------------------------------------------------------------------
@@ -45,25 +45,25 @@ function test_apply_shape_and_kron_structure()
     T = Float64
     tsteps, ntrials, K, P = 30, 4, 6, 3
     rng = MersenneTwister(123)
-    trial_pred = randn(rng, T, ntrials, P)
+    epoch_pred = randn(rng, T, ntrials, P)
 
     for basis in _example_bases(K)
         y = randn(rng, T, 2, tsteps, ntrials)
-        u = zeros(T, P * K, tsteps, ntrials)
-        d = zeros(T, 1, tsteps, ntrials)
-        data = Data(; y=y, u=u, d=d, trial_pred=trial_pred)
+        ux = zeros(T, P * K, tsteps, ntrials)
+        uy = zeros(T, 1, tsteps, ntrials)
+        data = Data(; y=y, ux=ux, uy=uy, epoch_pred=epoch_pred)
 
-        apply!(data, basis; target=:u)
-        @test size(data.u) == (P * K, tsteps, ntrials)
-        @test eltype(data.u) === T
+        apply!(data, basis; target=:ux)
+        @test size(data.ux) == (P * K, tsteps, ntrials)
+        @test eltype(data.ux) === T
 
-        # Per-predictor block within a single trial = trial_pred[n,p] × B'.
-        coeff_ref = trial_pred[1, 1]
+        # Per-predictor block within a single trial = epoch_pred[n,p] × B'.
+        coeff_ref = epoch_pred[1, 1]
         @assert abs(coeff_ref) > 1e-6
-        Bt_recovered = data.u[1:K, :, 1] ./ coeff_ref
+        Bt_recovered = data.ux[1:K, :, 1] ./ coeff_ref
         for n in 1:ntrials, p in 1:P
             rows = ((p - 1) * K + 1):(p * K)
-            @test data.u[rows, :, n] ≈ trial_pred[n, p] .* Bt_recovered atol = 1e-10
+            @test data.ux[rows, :, n] ≈ epoch_pred[n, p] .* Bt_recovered atol = 1e-10
         end
     end
 end
@@ -72,10 +72,10 @@ function test_apply_default_trial_pred_broadcasts_across_trials()
     T = Float64
     tsteps, ntrials, K = 25, 5, 5
     for basis in _example_bases(K)
-        data = _make_data(T, K, tsteps, ntrials, 0)  # empty trial_pred
+        data = _make_data(T, K, tsteps, ntrials, 0)  # empty epoch_pred
         apply!(data, basis)
         for n in 2:ntrials
-            @test data.u[:, :, n] ≈ data.u[:, :, 1] atol = 1e-14
+            @test data.ux[:, :, n] ≈ data.ux[:, :, 1] atol = 1e-14
         end
     end
 end
@@ -84,11 +84,11 @@ function test_apply_target_d()
     T = Float64
     tsteps, ntrials, K, P = 20, 3, 4, 2
     basis = Fourier(K)
-    data = _make_data(T, K, tsteps, ntrials, P; field=:d)
-    @test size(data.d) == (P * K, tsteps, ntrials)
-    apply!(data, basis; target=:d)
-    @test !all(iszero, data.d)
-    @test all(iszero, data.u)  # u was 1-row, untouched
+    data = _make_data(T, K, tsteps, ntrials, P; field=:uy)
+    @test size(data.uy) == (P * K, tsteps, ntrials)
+    apply!(data, basis; target=:uy)
+    @test !all(iszero, data.uy)
+    @test all(iszero, data.ux)  # ux was 1-row, untouched
 end
 
 function test_apply_size_mismatch_throws()
@@ -97,9 +97,9 @@ function test_apply_size_mismatch_throws()
     basis = BSpline(K)
     y = randn(T, 1, tsteps, ntrials)
     # P*K = 8, but allocate 5 rows.
-    u = zeros(T, 5, tsteps, ntrials)
-    d = zeros(T, 1, tsteps, ntrials)
-    data = Data(; y=y, u=u, d=d, trial_pred=ones(T, ntrials, P))
+    ux = zeros(T, 5, tsteps, ntrials)
+    uy = zeros(T, 1, tsteps, ntrials)
+    data = Data(; y=y, ux=ux, uy=uy, epoch_pred=ones(T, ntrials, P))
     @test_throws DimensionMismatch apply!(data, basis)
 end
 
@@ -108,9 +108,9 @@ function test_apply_trial_pred_row_mismatch_throws()
     tsteps, ntrials, K = 20, 4, 4
     basis = BSpline(K)
     y = randn(T, 1, tsteps, ntrials)
-    u = zeros(T, K, tsteps, ntrials)
-    d = zeros(T, 1, tsteps, ntrials)
-    data = Data(; y=y, u=u, d=d, trial_pred=ones(T, 3, 1))  # 3 ≠ 4
+    ux = zeros(T, K, tsteps, ntrials)
+    uy = zeros(T, 1, tsteps, ntrials)
+    data = Data(; y=y, ux=ux, uy=uy, epoch_pred=ones(T, 3, 1))  # 3 ≠ 4
     @test_throws DimensionMismatch apply!(data, basis)
 end
 
@@ -376,15 +376,15 @@ end
 function test_float32_type_preservation_all_bases()
     T = Float32
     tsteps, ntrials, K, P = 25, 2, 4, 2
-    trial_pred = randn(MersenneTwister(7), T, ntrials, P)
+    epoch_pred = randn(MersenneTwister(7), T, ntrials, P)
     for basis in _example_bases(K)
         y = randn(MersenneTwister(8), T, 1, tsteps, ntrials)
-        u = zeros(T, P * K, tsteps, ntrials)
-        d = zeros(T, 1, tsteps, ntrials)
-        data = Data(; y=y, u=u, d=d, trial_pred=trial_pred)
+        ux = zeros(T, P * K, tsteps, ntrials)
+        uy = zeros(T, 1, tsteps, ntrials)
+        data = Data(; y=y, ux=ux, uy=uy, epoch_pred=epoch_pred)
         apply!(data, basis)
         Ω = get_penalty(data, basis)
-        @test eltype(data.u) === T
+        @test eltype(data.ux) === T
         @test eltype(Ω) === T
     end
 end

@@ -13,9 +13,21 @@ dynamics (latent) inputs `ux`, and observation inputs `uy`, each `(dim, tsteps, 
 """
 Base.@kwdef struct Data{T<:Real}
     y::Array{T,3}
-    ux::Array{T,3}
-    uy::Array{T,3}
+    ux::Array{T,3} = zeros(T, 0, size(y, 2), size(y, 3))
+    uy::Array{T,3} = zeros(T, 0, size(y, 2), size(y, 3))
+    epoch_pred::Matrix{T} = Matrix{Float64}(undef, 0, 0)
 end
+
+# ensure that epoch_pred type matches input types
+function Data(
+    y::Array{T,3}, 
+    ux::Array{T,3}=zeros(T, 0, size(y, 2), size(y, 3)), 
+    uy::Array{T,3}=zeros(T, 0, size(y, 2), size(y, 3)), 
+    epoch_pred::Matrix{Any}=Matrix{T}(undef, 0, 0)) where {T<:Real}
+    return Data{T}(y, ux, uy, convert(Matrix{T}, epoch_pred))
+end
+
+
 
 """
     GaussianStateModel{T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector{T}}
