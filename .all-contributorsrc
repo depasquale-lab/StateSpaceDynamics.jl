@@ -27,6 +27,18 @@
         "review",
         "doc"
       ]
+    },
+    {
+      "login": "ZachLoschin",
+      "name": "Zachary Loschinskey",
+      "avatar_url": "https://avatars.githubusercontent.com/u/102312738?v=4",
+      "profile": "https://github.com/ZachLoschin",
+      "contributions": [
+        "code",
+        "test",
+        "ideas",
+        "doc"
+      ]
     }
   ]
 }
