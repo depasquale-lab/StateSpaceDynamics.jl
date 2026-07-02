@@ -15,6 +15,20 @@
   "badgeTemplate": "",
   "contributors": [
     {
+      "login": "rsenne",
+      "name": "Ryan Senne",
+      "avatar_url": "https://avatars.githubusercontent.com/u/50930199?v=4",
+      "profile": "https://github.com/rsenne",
+      "contributions": [
+        "code",
+        "maintenance",
+        "test",
+        "ideas",
+        "review",
+        "doc"
+      ]
+    },
+    {
       "login": "harrisonritz",
       "name": "Harrison Ritz",
       "avatar_url": "https://avatars.githubusercontent.com/u/17258911?v=4",
