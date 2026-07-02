@@ -153,6 +153,14 @@ Thanks go to these wonderful people ([emoji key](https://allcontributors.org/doc
 <!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
 <!-- prettier-ignore-start -->
 <!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/rsenne"><img src="https://avatars.githubusercontent.com/u/50930199?v=4?s=100" width="100px;" alt="Ryan Senne"/><br /><sub><b>Ryan Senne</b></sub></a><br /><a href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/commits?author=rsenne" title="Code">💻</a> <a href="#maintenance-rsenne" title="Maintenance">🚧</a> <a href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/commits?author=rsenne" title="Tests">⚠️</a> <a href="#ideas-rsenne" title="Ideas, Planning, & Feedback">🤔</a> <a href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/pulls?q=is%3Apr+reviewed-by%3Arsenne" title="Reviewed Pull Requests">👀</a> <a href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/commits?author=rsenne" title="Documentation">📖</a></td>
+    </tr>
+  </tbody>
+</table>
+
 <!-- markdownlint-restore -->
 <!-- prettier-ignore-end -->
 
