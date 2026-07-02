@@ -13,5 +13,20 @@
   "contributorsPerLine": 7,
   "contributorsSortAlphabetically": false,
   "badgeTemplate": "",
-  "contributors": []
+  "contributors": [
+    {
+      "login": "rsenne",
+      "name": "Ryan Senne",
+      "avatar_url": "https://avatars.githubusercontent.com/u/50930199?v=4",
+      "profile": "https://github.com/rsenne",
+      "contributions": [
+        "code",
+        "maintenance",
+        "test",
+        "ideas",
+        "review",
+        "doc"
+      ]
+    }
+  ]
 }
