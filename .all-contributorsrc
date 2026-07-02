@@ -13,5 +13,17 @@
   "contributorsPerLine": 7,
   "contributorsSortAlphabetically": false,
   "badgeTemplate": "",
-  "contributors": []
+  "contributors": [
+    {
+      "login": "carsonkui",
+      "name": "carsonkui",
+      "avatar_url": "https://avatars.githubusercontent.com/u/22718834?v=4",
+      "profile": "https://github.com/carsonkui",
+      "contributions": [
+        "code",
+        "test",
+        "doc"
+      ]
+    }
+  ]
 }
