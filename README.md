@@ -10,6 +10,7 @@
 [![Docs: Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://depasquale-lab.github.io/StateSpaceDynamics.jl/stable)
 [![status](https://joss.theoj.org/papers/0bcb7b5a500055bb4f9fc5aec65c177b/status.svg)](https://joss.theoj.org/papers/0bcb7b5a500055bb4f9fc5aec65c177b)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17583787.svg)](https://doi.org/10.5281/zenodo.17583787)
+[![All Contributors](https://img.shields.io/github/all-contributors/depasquale-lab/StateSpaceDynamics.jl?color=ee8449&style=flat-square)](#contributors)
 
 ## Description
 
@@ -144,6 +145,20 @@ If you use our software in your research please cite our JOSS paper using the fo
   year = {2025}
   }
 ```
+
+## Contributors
+
+Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/docs/en/emoji-key)):
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->
+
+This project follows the [all-contributors](https://github.com/all-contributors/all-contributors) specification. Contributions of any kind welcome!
 
 ## References
 

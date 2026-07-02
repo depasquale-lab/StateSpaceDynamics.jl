@@ -1,0 +1,17 @@
+{
+  "projectName": "StateSpaceDynamics.jl",
+  "projectOwner": "depasquale-lab",
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "files": [
+    "README.md"
+  ],
+  "imageSize": 100,
+  "commit": true,
+  "commitConvention": "angular",
+  "commitType": "docs",
+  "contributorsPerLine": 7,
+  "contributorsSortAlphabetically": false,
+  "badgeTemplate": "",
+  "contributors": []
+}
