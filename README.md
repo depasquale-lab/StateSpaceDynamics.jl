@@ -153,6 +153,14 @@ Thanks go to these wonderful people ([emoji key](https://allcontributors.org/doc
 <!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
 <!-- prettier-ignore-start -->
 <!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://harrisonritz.github.io/"><img src="https://avatars.githubusercontent.com/u/17258911?v=4?s=100" width="100px;" alt="Harrison Ritz"/><br /><sub><b>Harrison Ritz</b></sub></a><br /><a href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/commits?author=harrisonritz" title="Code">💻</a> <a href="#maintenance-harrisonritz" title="Maintenance">🚧</a> <a href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/commits?author=harrisonritz" title="Tests">⚠️</a> <a href="#ideas-harrisonritz" title="Ideas, Planning, & Feedback">🤔</a> <a href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/pulls?q=is%3Apr+reviewed-by%3Aharrisonritz" title="Reviewed Pull Requests">👀</a> <a href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/commits?author=harrisonritz" title="Documentation">📖</a></td>
+    </tr>
+  </tbody>
+</table>
+
 <!-- markdownlint-restore -->
 <!-- prettier-ignore-end -->
 
