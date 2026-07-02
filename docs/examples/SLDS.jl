@@ -15,11 +15,18 @@ using StableRNGs
 
 rng = StableRNG(1234);
 
+ssd_palette = ["#2a78d6", "#1baf7a", "#eda100", "#4a3aa7", "#e34948", "#e87ba4"] # hide
+default(; # hide
+    palette=ssd_palette, framestyle=:box, grid=true, gridalpha=0.12, # hide
+    linewidth=2, size=(760, 420), titlefontsize=12, guidefontsize=10, # hide
+    legendfontsize=9, foreground_color_legend=nothing, # hide
+) # hide
+
 # ## Model
 #
-# Discrete mode $z_t \in \{1, \dots, K\}$ has Markov transitions $A_{z_{t-1}, z_t}$.
+# Discrete mode ``z_t \in \{1, \dots, K\}`` has Markov transitions ``A_{z_{t-1}, z_t}``.
 # Conditioned on the mode, the continuous state and observations follow an LDS
-# with mode-specific parameters $(A_{z_t}, b_{z_t}, Q_{z_t}, C_{z_t}, d_{z_t}, R_{z_t})$.
+# with mode-specific parameters ``(A_{z_t}, b_{z_t}, Q_{z_t}, C_{z_t}, d_{z_t}, R_{z_t})``.
 # Mode 1 here is a slow oscillator, mode 2 is a fast one.
 
 state_dim = 2
@@ -68,12 +75,12 @@ z, x, y = rand(rng, model, T);
 
 p_modes = let
     p = plot(1:T, x[1, :]; label=L"x_1", linewidth=1.5, color=:black)
-    plot!(p, 1:T, x[2, :]; label=L"x_2", linewidth=1.5, color=:blue)
+    plot!(p, 1:T, x[2, :]; label=L"x_2", linewidth=1.5, color="#2a78d6")
     transition_points = [1; findall(diff(z) .!= 0) .+ 1; T + 1]
     for i in 1:(length(transition_points) - 1)
         a, b = transition_points[i], transition_points[i + 1] - 1
-        col = z[a] == 1 ? :lightblue : :lightyellow
-        vspan!(p, [a, b]; fillalpha=0.3, color=col, label="")
+        col = z[a] == 1 ? "#e1e0d9" : "#eda100"
+        vspan!(p, [a, b]; fillalpha=0.25, color=col, label="")
     end
     plot!(p; title="Latents with mode shading", xlabel="time", ylims=(-3, 3))
 end
@@ -117,16 +124,15 @@ lds_init2 = LinearDynamicalSystem(
 )
 
 learned_model = SLDS(; A=A_init, πₖ=πₖ_init, LDSs=[lds_init1, lds_init2])
-elbos = fit!(learned_model, y; max_iter=25, progress=true);
+elbos = fit!(learned_model, y; max_iter=20, progress=true);
 
 p_elbo = plot(elbos; xlabel="iteration", ylabel="ELBO",
-    title="Variational EM convergence", marker=:circle,
-    markersize=3, lw=2, legend=false, color=:darkgreen)
+    title="Variational EM convergence", lw=2, legend=false, color="#2a78d6")
 
 # ## Decoding the mode sequence
 #
 # After fitting, one more E-step gives us both the smoothed continuous states
-# and the per-timestep mode posterior $\gamma_{k,t} = P(z_t = k \mid y_{1:T})$.
+# and the per-timestep mode posterior ``\gamma_{k,t} = P(z_t = k \mid y_{1:T})``.
 
 ld = learned_model.LDSs[1]
 seq_ends = [T]

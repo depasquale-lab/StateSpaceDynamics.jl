@@ -1,8 +1,8 @@
 # # Non-identifiability of LDS coordinates
 #
 # An LDS's latent coordinates are identifiable only up to an invertible
-# change of basis. For any invertible $R$, the transformed model
-# $(A', Q', C', x_0', P_0') = (R A R^{-1},\, R Q R^\top,\, C R^{-1},\, R x_0,\, R P_0 R^\top)$
+# change of basis. For any invertible ``R``, the transformed model
+# ``(A', Q', C', x_0', P_0') = (R A R^{-1},\, R Q R^\top,\, C R^{-1},\, R x_0,\, R P_0 R^\top)``
 # is observationally equivalent: same likelihood, same predictions. Here we
 # demonstrate the equivalence numerically and show how Procrustes alignment
 # lets us compare fits "apples-to-apples".
@@ -15,7 +15,14 @@ using Statistics
 using StableRNGs
 using Printf
 
-rng = StableRNG(12345);
+rng = StableRNG(1234);
+
+ssd_palette = ["#2a78d6", "#1baf7a", "#eda100", "#4a3aa7", "#e34948", "#e87ba4"] # hide
+default(; # hide
+    palette=ssd_palette, framestyle=:box, grid=true, gridalpha=0.12, # hide
+    linewidth=2, size=(760, 420), titlefontsize=12, guidefontsize=10, # hide
+    legendfontsize=9, foreground_color_legend=nothing, # hide
+) # hide
 
 # ## Reference model
 
@@ -88,14 +95,14 @@ rot_names = [
 
 rotated_models = [rotate_lds(true_lds, R) for R in rotations]
 
-# The invariant under any invertible $R$ is the *marginal* log-likelihood
-# $\log p(y)$ (the latents are integrated out, so the volume Jacobian
+# The invariant under any invertible ``R`` is the *marginal* log-likelihood
+# ``\log p(y)`` (the latents are integrated out, so the volume Jacobian
 # cancels). For a Gaussian LDS this equals the ELBO at the smoothed
 # posterior — the same quantity [`fit!`](@ref) reports — so we assemble
 # `calculate_elbo` directly. The function `loglikelihood(x_smooth, lds, y)`
 # evaluates the *joint* `log p(x, y)` at the smoothed mean and is gauge-
-# invariant only for orthogonal $R$; the diagonal scaling in `rotations`
-# would shift it by $T \log |\det R|$.
+# invariant only for orthogonal ``R``; the diagonal scaling in `rotations`
+# would shift it by ``T \log |\det R|``.
 
 function marginal_loglik(lds, y)
     tsteps_per_trial = [size(y, 2)]
@@ -133,8 +140,8 @@ end
 # ## Procrustes alignment
 #
 # To compare two equivalent fits visually we solve
-# $\hat R = \arg\min_R \lVert R X_\text{rot} - X_\text{orig} \rVert_F$
-# via SVD of $X_\text{orig} X_\text{rot}^\top$.
+# ``\hat R = \arg\min_R \lVert R X_\text{rot} - X_\text{orig} \rVert_F``
+# via SVD of ``X_\text{orig} X_\text{rot}^\top``.
 
 function procrustes_R(X, Y)
     S = svd(Y * X')
@@ -156,17 +163,24 @@ C_aligned = m_rot.obs_model.C * Rhat'
 @printf("Procrustes residual: %.3e\n", state_align_relerr)
 @printf("After alignment: ‖ΔA‖ = %.3e, ‖ΔC‖ = %.3e\n", ΔA, ΔC)
 
+lim_A = max(maximum(abs, A_true), maximum(abs, A_aligned))
+lim_C = max(maximum(abs, C_true), maximum(abs, C_aligned))
+
 p_align = plot(layout=(2, 2), size=(900, 700))
-heatmap!(p_align, A_true; title="A (true)", subplot=1, color=:RdBu, aspect_ratio=:equal)
-heatmap!(p_align, A_aligned; title="A (aligned)", subplot=2, color=:RdBu, aspect_ratio=:equal)
-heatmap!(p_align, C_true; title="C (true)", subplot=3, color=:RdBu, aspect_ratio=:equal)
-heatmap!(p_align, C_aligned; title="C (aligned)", subplot=4, color=:RdBu, aspect_ratio=:equal)
+heatmap!(p_align, A_true; title="A (true)", subplot=1, color=:RdBu,
+    clims=(-lim_A, lim_A), aspect_ratio=:equal)
+heatmap!(p_align, A_aligned; title="A (aligned)", subplot=2, color=:RdBu,
+    clims=(-lim_A, lim_A), aspect_ratio=:equal)
+heatmap!(p_align, C_true; title="C (true)", subplot=3, color=:RdBu,
+    clims=(-lim_C, lim_C), aspect_ratio=:equal)
+heatmap!(p_align, C_aligned; title="C (aligned)", subplot=4, color=:RdBu,
+    clims=(-lim_C, lim_C), aspect_ratio=:equal)
 
 # ## What *is* identifiable
 #
 # Even though individual coordinates are gauge-dependent, three things are
-# invariant under similarity transforms: eigenvalues of $A$ (and therefore
-# modal timescales), the column space of $C$ (up to subspace angles), and
+# invariant under similarity transforms: eigenvalues of ``A`` (and therefore
+# modal timescales), the column space of ``C`` (up to subspace angles), and
 # all predictive metrics.
 
 function subspace_angles_deg(C1, C2)

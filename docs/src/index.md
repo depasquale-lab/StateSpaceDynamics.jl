@@ -73,13 +73,10 @@ StateSpaceDynamics.jl implements several types of state space models:
    * Gaussian LDS
    * Poisson LDS
 
-2. **Hidden Markov Models (HMM)**
-   * Gaussian emissions
-   * Regression-based emissions
-      * Gaussian regression
-      * Bernoulli regression
-      * Poisson regression
-      * Autoregressive emissions
+2. **Switching Linear Dynamical Systems (SLDS)**
+   * Gaussian and Poisson emissions
+
+3. **Probabilistic PCA (PPCA)**
 
 ## Quick Start
 
@@ -120,12 +117,12 @@ Please include or update **tests** for any user-facing change. Tests live in the
 ```julia
 julia --project -e 'using Pkg; Pkg.test()'
 # or from the Pkg REPL by typing "]":
-add StateSpaceDynamics
+test StateSpaceDynamics
 ```
 
 ## Citing StateSpaceDynamics.jl
 
-If you use this software in your research, please cite our publication in the Journal Of Open Source Software:
+If you use this software in your research, please cite our publication in the Journal of Open Source Software:
 
 ```bibtex
 @article{Senne_StateSpaceDynamics_jl_A_Julia_2025,

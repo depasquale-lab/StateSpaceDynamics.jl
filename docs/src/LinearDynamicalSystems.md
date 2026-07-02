@@ -23,8 +23,8 @@ The generative model is given by:
 
 ```math
 \begin{aligned}
-    x_t &\sim \mathcal{N}(A x_{t-1}, Q) \\
-    y_t &\sim \mathcal{N}(C x_t, R)
+    x_t &\sim \mathcal{N}(A x_{t-1} + b, Q) \\
+    y_t &\sim \mathcal{N}(C x_t + d, R)
 \end{aligned}
 ```
 
@@ -49,8 +49,8 @@ This can equivalently be written in equation form:
 
 Where:
 
-- ``ε_t \sim N(0, Q)`` is the process noise
-- ``η_t \sim N(0, R)`` is the observation noise
+- ``\epsilon_t \sim \mathcal{N}(0, Q)`` is the process noise
+- ``\eta_t \sim \mathcal{N}(0, R)`` is the observation noise
 
 ```@docs
 GaussianStateModel
@@ -65,12 +65,12 @@ The generative model is given by:
 
 ```math
 \begin{aligned}
-    x_t &\sim \mathcal{N}(A x_{t-1}, Q) \\
-    y_t &\sim \text{Poisson}(\exp(Cx_t + b))
+    x_t &\sim \mathcal{N}(A x_{t-1} + b, Q) \\
+    y_t &\sim \text{Poisson}(\exp(C x_t + d))
 \end{aligned}
 ```
 
-Where `b` is a bias term.
+Where ``d`` is a bias term.
 
 ```@docs
 PoissonObservationModel
@@ -83,7 +83,7 @@ You can generate synthetic data from fitted LDS models. Pass a scalar
 to sample a multi-trial dataset (trial lengths may differ):
 
 ```@docs
-Random.rand(rng::AbstractRNG, lds::LinearDynamicalSystem, tsteps::Integer; latent_inputs, obs_inputs)
+Random.rand(rng::AbstractRNG, lds::LinearDynamicalSystem{T,S,O}, tsteps::Integer) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
 ```
 
 ## Inference in Linear Dynamical Systems
@@ -143,7 +143,7 @@ Despite the requirement of inverting a Hessian of dimension ``(d \times T) \time
 Given the latent structure of state-space models, we must rely on either the Expectation-Maximization (EM) or Variational Inference (VI) approaches to learn the parameters of the model. StateSpaceDynamics.jl supports both EM and VI. For LDS models, we can use Laplace EM, where we approximate the posterior of the latent state path using the Laplace approximation as outlined above. Using these approximate posteriors (or exact ones in the Gaussian case), we can apply closed-form updates for the model parameters.
 
 !!! warning "Identifiability caveats in LDS"
-    LDS parameters are **not uniquely identifiable**. For any invertible matrix $$S$$,
+    LDS parameters are **not uniquely identifiable**. For any invertible matrix ``S``,
     the reparameterization
     ```math
     \begin{aligned}
@@ -157,15 +157,15 @@ Given the latent structure of state-space models, we must rely on either the Exp
     yields the **same likelihood**. Practical consequences:
 
     - **Scale/rotation ambiguity:** the latent space can be arbitrarily scaled/rotated.
-    - **Sign & permutation flips:** columns of $$C$$ (and corresponding rows/cols of $$A$$) can swap or flip signs with no change in fit.
+    - **Sign & permutation flips:** columns of ``C`` (and corresponding rows/cols of ``A``) can swap or flip signs with no change in fit.
     
     **Common remedies**
     
-    - Fix a convention for the latent scale, e.g. set $$Q = I$$ or constrain $$\mathrm{diag}(Q)=1$$.
-    - Encourage a canonical orientation, e.g. enforce **orthonormal columns in $$C$$** (up to sign) after each M-step. (Not yet implemented)
+    - Fix a convention for the latent scale, e.g. set ``Q = I`` or constrain ``\mathrm{diag}(Q)=1``.
+    - Encourage a canonical orientation, e.g. enforce **orthonormal columns in ``C``** (up to sign) after each M-step. (Not yet implemented)
     - When comparing fits across runs, align parameters via a **Procrustes** or **Hungarian** matching step.
     
-    These issues affect **parameter interpretability** but not **predictive performance**; be cautious when interpreting individual entries of $$A$$, $$C$$, or $$Q$$.
+    These issues affect **parameter interpretability** but not **predictive performance**; be cautious when interpreting individual entries of ``A``, ``C``, or ``Q``.
 
 ```@docs
 fit!(lds::LinearDynamicalSystem{T,S,O}, y::AbstractVector{<:AbstractMatrix{T}}; max_iter::Int=100, tol::Float64=1e-6, progress::Bool=true) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}

@@ -104,9 +104,9 @@ end
 function fit!(
     ppca::ProbabilisticPCA, X::AbstractMatrix{T}, max_iters::Int=100, tol::Float64=1e-6
 ) where {T<:Real}
-    if all(iszero, ppca.μ)
-        ppca.μ .= vec(mean(X; dims=2))
-    end
+    # The ML estimate of μ for PPCA is exactly the sample mean, independent of
+    # W/σ² and of the EM iterations, so set it directly (mstep! never updates μ).
+    ppca.μ .= vec(mean(X; dims=2))
 
     lls = Float64[]
     prev_ll = -Inf

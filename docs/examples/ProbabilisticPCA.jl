@@ -1,8 +1,8 @@
 # # Probabilistic PCA
 #
 # Probabilistic PCA is the latent-variable generative version of classical PCA:
-# observations $x \in \mathbb{R}^D$ are an isotropic-noise projection of a
-# $k$-dimensional latent factor $z$. As $\sigma^2 \to 0$ it reduces to standard
+# observations ``x \in \mathbb{R}^D`` are an isotropic-noise projection of a
+# ``k``-dimensional latent factor ``z``. As ``\sigma^2 \to 0`` it reduces to standard
 # PCA.
 
 using StateSpaceDynamics
@@ -15,7 +15,14 @@ using Distributions
 using LaTeXStrings
 using Statistics
 
-rng = StableRNG(1234);
+rng = StableRNG(12345);
+
+ssd_palette = ["#2a78d6", "#1baf7a", "#eda100", "#4a3aa7", "#e34948", "#e87ba4"] # hide
+default(; # hide
+    palette=ssd_palette, framestyle=:box, grid=true, gridalpha=0.12, # hide
+    linewidth=2, size=(760, 420), titlefontsize=12, guidefontsize=10, # hide
+    legendfontsize=9, foreground_color_legend=nothing, # hide
+) # hide
 
 # ## Model
 #
@@ -23,8 +30,8 @@ rng = StableRNG(1234);
 # z \sim \mathcal{N}(0, I_k), \qquad x \mid z \sim \mathcal{N}(\mu + W z, \sigma^2 I_D).
 # ```
 #
-# Marginally $x \sim \mathcal{N}(\mu, WW^\top + \sigma^2 I)$. The loading
-# matrix $W \in \mathbb{R}^{D \times k}$ is identifiable only up to an
+# Marginally ``x \sim \mathcal{N}(\mu, WW^\top + \sigma^2 I)``. The loading
+# matrix ``W \in \mathbb{R}^{D \times k}`` is identifiable only up to an
 # orthogonal rotation of the columns.
 
 D = 2
@@ -48,7 +55,7 @@ p_data = let
         group=labels, xlabel=L"X_1", ylabel=L"X_2",
         title="Simulated data (coloured by dominant factor)",
         markersize=4, alpha=0.7,
-        palette=[:dodgerblue, :crimson], legend=:topright)
+        palette=["#2a78d6", "#1baf7a"], legend=:topright)
 end
 
 # ## Learning
@@ -66,12 +73,12 @@ lls = fit!(fit_ppca, X);
 p_ll = plot(lls;
     xlabel="iteration", ylabel="log-likelihood",
     title="EM convergence", marker=:circle, markersize=3,
-    lw=2, legend=false, color=:darkblue)
+    lw=2, legend=false, color="#2a78d6")
 
 # ## Posterior and reconstruction
 #
-# The posterior $p(z \mid x)$ is Gaussian with precision
-# $M = I_k + W^\top W / \sigma^2$.
+# The posterior ``p(z \mid x)`` is Gaussian with precision
+# ``M = I_k + W^\top W / \sigma^2``.
 
 function ppca_posterior_means(W, σ², μ, X)
     k = size(W, 2)
@@ -88,18 +95,18 @@ p_loadings = let
     w1, w2 = fit_ppca.W[:, 1], fit_ppca.W[:, 2]
     p = scatter(X[1, :], X[2, :];
         xlabel=L"X_1", ylabel=L"X_2", label="data",
-        alpha=0.5, markersize=3, color=:gray,
+        alpha=0.5, markersize=3, color="#898781",
         title="Data + learned loading directions")
     scale = 2.0
     quiver!(p, [fit_ppca.μ[1]], [fit_ppca.μ[2]];
         quiver=([scale * w1[1]], [scale * w1[2]]),
-        arrow=:arrow, lw=3, color=:red, label=L"W_1")
+        arrow=:arrow, lw=3, color="#2a78d6", label=L"W_1")
     quiver!(p, [fit_ppca.μ[1]], [fit_ppca.μ[2]];
         quiver=([scale * w2[1]], [scale * w2[2]]),
-        arrow=:arrow, lw=3, color=:green, label=L"W_2")
+        arrow=:arrow, lw=3, color="#1baf7a", label=L"W_2")
 end
 
-# ## Choosing $k$
+# ## Choosing the latent dimension
 #
 # For each candidate latent dimensionality, refit and compare via AIC / BIC.
 # The minimum-BIC choice is what we'd typically report.
@@ -142,3 +149,4 @@ test_em_monotone(lls)  #src
 @test size(fit_ppca.W) == (D, k)  #src
 @test recon_mse >= 0  #src
 @test optimal_k in k_range  #src
+@test isapprox(fit_ppca.μ, μ_true; atol=0.2)  #src
