@@ -155,8 +155,13 @@ The weights are given by the discrete posterior probabilities ``\gamma_t(k)``.
 The ELBO decomposes into discrete and continuous components:
 
 ```math
-\mathcal{L}(q) = \underbrace{\mathbb{E}_{q(z_{1:T})}[\log p(z_{1:T})] - \mathbb{E}_{q(z_{1:T})}[\log q(z_{1:T})]}_{\text{Discrete HMM entropy}} + \sum_{k=1}^K \gamma_t(k) \underbrace{\left( \mathbb{E}_{q(x_{1:T}|k)}[\log p(y_{1:T}, x_{1:T} | z_{1:T}=k)] + H[q(x_{1:T}|k)] \right)}_{\text{Weighted LDS contribution for mode } k}
+\mathcal{L}(q) =
+\underbrace{\mathbb{E}_{q(z_{1:T})}[\log p(z_{1:T})] + H[q(z_{1:T})]}_{\text{discrete HMM terms}}
++ \underbrace{\sum_{t=1}^T \sum_{k=1}^K \gamma_t(k)\, \mathbb{E}_{q(x_{1:T})}\!\left[\log p(y_t, x_t \mid x_{t-1}, z_t = k)\right] + H[q(x_{1:T})]}_{\text{weighted LDS contribution}}
 ```
+
+where ``H[\cdot]`` denotes entropy and the per-timestep joint terms are weighted by the
+discrete posterior marginals ``\gamma_t(k)``.
 
 ## References
 

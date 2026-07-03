@@ -1,7 +1,20 @@
 """
-Abstract type for Dynamical Systems. I.e. LDS, etc.
+    AbstractStateModel{T<:Real}
+
+Abstract supertype for latent-state models of a [`LinearDynamicalSystem`](@ref)
+(e.g. [`GaussianStateModel`](@ref)). A state model defines how the latent state
+evolves from one timestep to the next.
 """
 abstract type AbstractStateModel{T<:Real} end
+
+"""
+    AbstractObservationModel{T<:Real}
+
+Abstract supertype for observation (emission) models of a
+[`LinearDynamicalSystem`](@ref) (e.g. [`GaussianObservationModel`](@ref) or
+[`PoissonObservationModel`](@ref)). An observation model defines how observed
+data are generated from the latent state.
+"""
 abstract type AbstractObservationModel{T<:Real} end
 
 """
@@ -35,7 +48,7 @@ where `B·ux_t` is present only when `B` is supplied (i.e., has nonzero columns)
 - `b::V`: Bias vector (length `latent_dim`).
 - `x0::V`: Initial state mean (length `latent_dim`).
 - `P0::M`: Initial state covariance (size `latent_dim × latent_dim`).
-- `B::M: Optional dynamics input matrix (`latent_dim × ux_dim`).
+- `B::M`: Optional dynamics input matrix (`latent_dim × ux_dim`).
     When supplied, inputs `ux` must be passed to `fit!`/`smooth!` via a keyword argument.
 - `Q_prior::Union{Nothing,IWPrior{T}} = nothing`: Optional Inverse-Wishart prior on `Q`. If set, MAP updates use its mode.
 - `P0_prior::Union{Nothing,IWPrior{T}} = nothing`: Optional Inverse-Wishart prior on `P0`. If set, MAP updates use its mode.
@@ -146,9 +159,8 @@ with canonical log-link:
 λ_t = exp(C x_t + d)
 ```
 
-`d` is the standard Poisson-GLM intercept — unconstrained in ℝ; positivity of the rate
-`λ` is provided by the `exp`. The previously-named `log_d` field was a misnomer that
-caused a double-exp bug (`exp(C x + exp(log_d))`); see git log for the fix.
+`d` is the standard Poisson-GLM intercept — the per-channel baseline log-rate,
+unconstrained in ℝ; positivity of the rate `λ` is provided by the `exp`.
 
 # Fields
 - `C::AbstractMatrix{T}`: Observation matrix of size `(obs_dim × latent_dim)`. Maps latent

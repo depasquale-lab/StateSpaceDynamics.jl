@@ -1,8 +1,8 @@
 # # Non-identifiability of LDS coordinates
 #
 # An LDS's latent coordinates are identifiable only up to an invertible
-# change of basis. For any invertible ``R``, the transformed model
-# ``(A', Q', C', x_0', P_0') = (R A R^{-1},\, R Q R^\top,\, C R^{-1},\, R x_0,\, R P_0 R^\top)``
+# change of basis. For any invertible ``S``, the transformed model
+# ``(A', Q', C', x_0', P_0') = (S A S^{-1},\, S Q S^\top,\, C S^{-1},\, S x_0,\, S P_0 S^\top)``
 # is observationally equivalent: same likelihood, same predictions. Here we
 # demonstrate the equivalence numerically and show how Procrustes alignment
 # lets us compare fits "apples-to-apples".
@@ -65,12 +65,12 @@ x_true, y_true = rand(rng, true_lds, T);
 # permutation, and a non-orthogonal scaling. All produce models with the
 # same likelihood as the reference.
 
-function rotate_lds(lds, R)
-    A_rot = R * lds.state_model.A * inv(R)
-    Q_rot = R * lds.state_model.Q * R'
-    C_rot = lds.obs_model.C * inv(R)
-    x0_rot = R * lds.state_model.x0
-    P0_rot = R * lds.state_model.P0 * R'
+function transform_lds(lds, S)
+    A_rot = S * lds.state_model.A * inv(S)
+    Q_rot = S * lds.state_model.Q * S'
+    C_rot = lds.obs_model.C * inv(S)
+    x0_rot = S * lds.state_model.x0
+    P0_rot = S * lds.state_model.P0 * S'
     return LinearDynamicalSystem(;
         state_model=GaussianStateModel(A_rot, Q_rot, b_true, x0_rot, P0_rot),
         obs_model=GaussianObservationModel(C_rot, lds.obs_model.R, d_true),
@@ -80,7 +80,7 @@ function rotate_lds(lds, R)
     )
 end
 
-rotations = [
+transforms = [
     [cos(π/4) -sin(π/4) 0.0;  sin(π/4) cos(π/4) 0.0;  0.0 0.0 1.0],
     [1.0 0.0 0.0; 0.0 cos(π/2) -sin(π/2); 0.0 sin(π/2) cos(π/2)],
     Matrix(qr(randn(rng, K_true, K_true)).Q),
@@ -88,75 +88,50 @@ rotations = [
     Matrix(Diagonal([2.0, 0.5, -1.2])),
     [0.0 1.0 0.0; 1.0 0.0 0.0; 0.0 0.0 1.0],
 ]
-rot_names = [
+transform_names = [
     "rot(1,2, 45°)", "rot(2,3, 90°)", "random orthogonal",
     "axis swap (1↔3)", "scaling + sign", "permutation (1↔2)",
 ]
 
-rotated_models = [rotate_lds(true_lds, R) for R in rotations]
+transformed_models = [transform_lds(true_lds, S) for S in transforms]
 
-# The invariant under any invertible ``R`` is the *marginal* log-likelihood
+# The invariant under any invertible ``S`` is the *marginal* log-likelihood
 # ``\log p(y)`` (the latents are integrated out, so the volume Jacobian
-# cancels). For a Gaussian LDS this equals the ELBO at the smoothed
-# posterior — the same quantity [`fit!`](@ref) reports — so we assemble
-# `calculate_elbo` directly. The function `loglikelihood(x_smooth, lds, y)`
-# evaluates the *joint* `log p(x, y)` at the smoothed mean and is gauge-
-# invariant only for orthogonal ``R``; the diagonal scaling in `rotations`
-# would shift it by ``T \log |\det R|``.
+# cancels). [`loglikelihood`](@ref) computes it exactly for a Gaussian LDS by
+# running the Kalman filter and summing the one-step-ahead predictive
+# densities. Note that the *joint* `log p(x, y)` at the smoothed mean (see
+# `joint_loglikelihood`) is gauge-invariant only for orthogonal ``S``; the
+# diagonal scaling in `transforms` would shift it by ``T \log |\det S|``.
 
-function marginal_loglik(lds, y)
-    tsteps_per_trial = [size(y, 2)]
-    tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, tsteps_per_trial)
-    sws_pool = [
-        StateSpaceDynamics.SmoothWorkspace(
-            Float64, lds.latent_dim, lds.obs_dim, size(y, 2); ux_dim=0, uy_dim=0,
-        ) for _ in 1:Threads.maxthreadid()
-    ]
-    suf = StateSpaceDynamics._initialize_td_sufficient_statistics(
-        Float64, lds, tsteps_per_trial,
-    )
-    ux_seq = [zeros(0, size(y, 2))]
-    uy_seq = [zeros(0, size(y, 2))]
-    StateSpaceDynamics._td_init_const_blocks!(
-        sws_pool[1], lds, tsteps_per_trial, [y], ux_seq, uy_seq,
-    )
-    StateSpaceDynamics.smooth!(lds, tfs, [y], sws_pool, ux_seq, uy_seq)
-    StateSpaceDynamics._aggregate_td_suff_stats!(
-        suf, tfs, lds, ux_seq, uy_seq, [y], sws_pool[1],
-    )
-    total_entropy = sum(fs.entropy for fs in tfs.FilterSmooths)
-    return StateSpaceDynamics.elbo!(lds, suf, sws_pool[1], total_entropy)
-end
-
-ll_orig = marginal_loglik(true_lds, y_true)
+ll_orig = loglikelihood(true_lds, y_true)
 
 @printf("reference log p(y): %.6f\n", ll_orig)
-for (name, R, model) in zip(rot_names, rotations, rotated_models)
-    ll = marginal_loglik(model, y_true)
-    @printf("%-22s  ΔLL = %.3e  cond(R) = %.2f\n",
-        name, abs(ll - ll_orig), cond(R))
+for (name, S, model) in zip(transform_names, transforms, transformed_models)
+    ll = loglikelihood(model, y_true)
+    @printf("%-22s  ΔLL = %.3e  cond(S) = %.2f\n",
+        name, abs(ll - ll_orig), cond(S))
 end
 
 # ## Procrustes alignment
 #
 # To compare two equivalent fits visually we solve
-# ``\hat R = \arg\min_R \lVert R X_\text{rot} - X_\text{orig} \rVert_F``
-# via SVD of ``X_\text{orig} X_\text{rot}^\top``.
+# ``\hat S = \arg\min_S \lVert S X_\text{rot} - X_\text{orig} \rVert_F``
+# over orthogonal ``S``, via SVD of ``X_\text{orig} X_\text{rot}^\top``.
 
-function procrustes_R(X, Y)
-    S = svd(Y * X')
-    return S.U * S.Vt
+function procrustes_rotation(X, Y)
+    F = svd(Y * X')
+    return F.U * F.Vt
 end
 
-R_idx = 3
-m_rot = rotated_models[R_idx]
+S_idx = 3
+m_rot = transformed_models[S_idx]
 x_orig, _ = smooth(true_lds, y_true)
 x_rot, _ = smooth(m_rot, y_true)
-Rhat = procrustes_R(x_rot, x_orig)
+Shat = procrustes_rotation(x_rot, x_orig)
 
-state_align_relerr = norm(Rhat * x_rot - x_orig) / norm(x_orig)
-A_aligned = Rhat * m_rot.state_model.A * Rhat'
-C_aligned = m_rot.obs_model.C * Rhat'
+state_align_relerr = norm(Shat * x_rot - x_orig) / norm(x_orig)
+A_aligned = Shat * m_rot.state_model.A * Shat'
+C_aligned = m_rot.obs_model.C * Shat'
 ΔA = norm(A_true - A_aligned)
 ΔC = norm(C_true - C_aligned)
 
@@ -191,7 +166,7 @@ function subspace_angles_deg(C1, C2)
 end
 
 λ_true = sort(abs.(eigvals(true_lds.state_model.A)))
-for (name, model) in zip(rot_names, rotated_models)
+for (name, model) in zip(transform_names, transformed_models)
     λ = sort(abs.(eigvals(model.state_model.A)))
     θ = subspace_angles_deg(C_true, model.obs_model.C)
     @printf("%-22s  max|Δ|λ|| = %.2e  max angle(C) = %.3f°\n",
@@ -203,16 +178,16 @@ end
 using SSDTest  #src
 using Test  #src
 
-# All rotated models must have the same marginal log-likelihood.  #src
-for model in rotated_models  #src
-    @test isapprox(marginal_loglik(model, y_true), ll_orig; atol=1e-6)  #src
+# All transformed models must have the same marginal log-likelihood.  #src
+for model in transformed_models  #src
+    @test isapprox(loglikelihood(model, y_true), ll_orig; rtol=1e-8)  #src
 end  #src
 
 # Procrustes residual must be essentially zero for orthogonal transforms.  #src
 @test state_align_relerr < 1e-6  #src
 
 # Eigenvalues of A are similarity-invariant.  #src
-for model in rotated_models  #src
+for model in transformed_models  #src
     λ = sort(abs.(eigvals(model.state_model.A)))  #src
     @test maximum(abs.(λ - λ_true)) < 1e-8  #src
 end  #src

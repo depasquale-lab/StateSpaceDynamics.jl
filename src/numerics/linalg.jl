@@ -131,6 +131,12 @@ function Symmetrize!(A::AbstractMatrix{T}) where {T<:Real}
     return A
 end
 
+"""
+    valid_Σ(Σ) -> Bool
+
+Check whether `Σ` is a valid covariance matrix, i.e. Hermitian and positive
+definite.
+"""
 function valid_Σ(Σ::AbstractMatrix{T}) where {T<:Real}
     return ishermitian(Σ) && isposdef(Σ)
 end

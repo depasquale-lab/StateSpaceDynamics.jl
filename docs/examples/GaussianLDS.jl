@@ -47,8 +47,9 @@ R = Matrix(0.5 * I(obs_dim))
 d = zeros(obs_dim);
 
 # Bundle the state and observation models into a [`LinearDynamicalSystem`](@ref).
-# `fit_bool` selects which of the six parameter blocks (`A`, `Q`, `C`, `R`,
-# `x0`, `P0`) are updated by EM.
+# `fit_bool` selects which parameter blocks are updated by EM. For a Gaussian
+# LDS the six blocks are `[x0, P0, A, Q, C, R]`, where the biases are folded
+# into their regressions: `b` is fit jointly with `A`, and `d` jointly with `C`.
 
 state_model = GaussianStateModel(; A=A, b=b, Q=Q, x0=x0, P0=P0)
 obs_model = GaussianObservationModel(; C=C, d=d, R=R)
@@ -135,7 +136,7 @@ naive_lds = LinearDynamicalSystem(;
     fit_bool=fill(true, 6),
 );
 
-x_pre, _ = StateSpaceDynamics.smooth(naive_lds, observations);
+x_pre, _ = smooth(naive_lds, observations);
 
 # ## Learning
 #
@@ -144,14 +145,18 @@ x_pre, _ = StateSpaceDynamics.smooth(naive_lds, observations);
 
 elbos = fit!(naive_lds, observations; max_iter=100, tol=1e-6);
 
-x_post, _ = StateSpaceDynamics.smooth(naive_lds, observations);
+x_post, _ = smooth(naive_lds, observations);
 
-# The post-EM smoothed states track the true latents only up to an
-# invertible change of basis (see the identifiability tutorial), so we undo
-# the basis with the least-squares linear map before overlaying them.
+# The smoothed states track the true latents only up to an invertible change
+# of basis (see the identifiability tutorial), so we undo the basis with the
+# least-squares linear map before overlaying them. Applying the same
+# alignment to the pre-EM estimate shows how much learning improves the
+# recovery.
 
-W_align = (latents * x_post') / (x_post * x_post')
-x_aligned = W_align * x_post;
+align_to_truth(x) = ((latents * x') / (x * x')) * x
+
+x_pre_aligned = align_to_truth(x_pre)
+x_aligned = align_to_truth(x_post);
 
 p_compare = let
     lim_x = maximum(abs, latents)
@@ -160,6 +165,9 @@ p_compare = let
         plot!(p, 1:tsteps, latents[d, :] .+ lim_x * (d - 1);
             color=:black, linewidth=2,
             label=(d == 1 ? "true" : ""), alpha=0.8)
+        plot!(p, 1:tsteps, x_pre_aligned[d, :] .+ lim_x * (d - 1);
+            color="#eda100", linewidth=1.5,
+            label=(d == 1 ? "pre-EM (aligned)" : ""), alpha=0.6)
         plot!(p, 1:tsteps, x_aligned[d, :] .+ lim_x * (d - 1);
             color="#2a78d6", linewidth=2,
             label=(d == 1 ? "post-EM (aligned)" : ""), alpha=0.8)

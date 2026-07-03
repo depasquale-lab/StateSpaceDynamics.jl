@@ -49,6 +49,10 @@ P0 = Matrix(0.05 * I(latent_dim))
 C = 0.6 * randn(rng, obs_dim, latent_dim)
 d = log.(fill(1.0, obs_dim))
 
+# A Poisson LDS has five `fit_bool` blocks — `[x0, P0, A, Q, C]`, with `b`
+# fit jointly with `A` and `d` jointly with `C` — since there is no
+# observation covariance `R`.
+
 state_model = GaussianStateModel(; A=A, b=b, Q=Q, x0=x0, P0=P0)
 obs_model = PoissonObservationModel(; C=C, d=d)
 true_plds = LinearDynamicalSystem(;
@@ -140,7 +144,7 @@ naive_plds = LinearDynamicalSystem(;
     fit_bool=fill(true, 5),
 );
 
-x_pre, _ = StateSpaceDynamics.smooth(naive_plds, observations);
+x_pre, _ = smooth(naive_plds, observations);
 
 # ## Learning
 #
@@ -151,17 +155,20 @@ x_pre, _ = StateSpaceDynamics.smooth(naive_plds, observations);
 
 elbos = fit!(naive_plds, observations; max_iter=100, tol=1e-4);
 
-x_post, _ = StateSpaceDynamics.smooth(naive_plds, observations);
+x_post, _ = smooth(naive_plds, observations);
 
 # The recovered latents match the true ones only up to an invertible change
 # of basis (see the identifiability tutorial), so overlaying raw coordinates
-# is misleading — we first undo the basis with the least-squares linear map.
+# is misleading — we first undo the basis with the least-squares linear map,
+# applying the same alignment to the pre-EM estimate for comparison.
 # Even after alignment the match is imperfect: with about one spike per bin
 # per channel, part of the latent fluctuation is simply not visible in the
 # counts. Smoothing with the *true* parameters leaves a similar residual.
 
-W_align = (latents * x_post') / (x_post * x_post')
-x_aligned = W_align * x_post;
+align_to_truth(x) = ((latents * x') / (x * x')) * x
+
+x_pre_aligned = align_to_truth(x_pre)
+x_aligned = align_to_truth(x_post);
 
 p_compare = let
     lim_x = maximum(abs, latents)
@@ -170,6 +177,9 @@ p_compare = let
         plot!(p, 1:tsteps, latents[d, :] .+ lim_x * (d - 1);
             color=:black, linewidth=2,
             label=(d == 1 ? "true" : ""), alpha=0.8)
+        plot!(p, 1:tsteps, x_pre_aligned[d, :] .+ lim_x * (d - 1);
+            color="#eda100", linewidth=1.5,
+            label=(d == 1 ? "pre-EM (aligned)" : ""), alpha=0.6)
         plot!(p, 1:tsteps, x_aligned[d, :] .+ lim_x * (d - 1);
             color="#2a78d6", linewidth=2,
             label=(d == 1 ? "post-EM (aligned)" : ""), alpha=0.8)

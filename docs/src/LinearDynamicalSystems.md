@@ -88,10 +88,10 @@ Random.rand(rng::AbstractRNG, lds::LinearDynamicalSystem{T,S,O}, tsteps::Integer
 
 ## Inference in Linear Dynamical Systems
 
-In StateSpaceDynamics.jl, we directly maximize the complete-data log-likelihood function with respect to the latent states given the data and the parameters of the model. In other words, the **maximum a priori** (MAP) estimate of the latent state path is:
+In StateSpaceDynamics.jl, we directly maximize the complete-data log-likelihood function with respect to the latent states given the data and the parameters of the model. In other words, the **maximum a posteriori** (MAP) estimate of the latent state path is:
 
 ```math
-\underset{x}{\text{argmax}}  \left[ \log p(x_0) + \sum_{t=2}^T \log p(x_t \mid x_{t-1}) + \sum_{t=1}^T \log p(y_t \mid x_t) \right]
+\underset{x}{\text{argmax}}  \left[ \log p(x_1) + \sum_{t=2}^T \log p(x_t \mid x_{t-1}) + \sum_{t=1}^T \log p(y_t \mid x_t) \right]
 ```
 
 This MAP estimation approach has the same computational complexity as traditional Kalman filtering and smoothing — ``\mathcal{O}(T)`` — but is significantly more flexible. Notably, it can handle **nonlinear observations** and **non-Gaussian noise** while still yielding **exact MAP estimates**, unlike approximate techniques such as the Extended Kalman Filter (EKF) or Unscented Kalman Filter (UKF).
@@ -109,7 +109,7 @@ Where:
 - ``\mathcal{L}(x)`` is the complete-data log-likelihood:
 
 ```math
-\mathcal{L}(x) = \log p(x_0) + \sum_{t=2}^T \log p(x_t \mid x_{t-1}) + \sum_{t=1}^T \log p(y_t \mid x_t)
+\mathcal{L}(x) = \log p(x_1) + \sum_{t=2}^T \log p(x_t \mid x_{t-1}) + \sum_{t=1}^T \log p(y_t \mid x_t)
 ```
 
 - ``\nabla \mathcal{L}(x)`` is the gradient of the full log-likelihood with respect to all latent states
@@ -265,3 +265,35 @@ fit!(lds, Y; max_iter=20, progress=false)
 
 > **Tip:** In Julia, `I` is a `UniformScaling` (not a matrix).  
 > Use `Matrix(I, d, d)` or `diagm(0 => fill(..., d))` to build ``Ψ``.
+
+## Matrix-Normal Priors on Regression Coefficients (MAP)
+
+The M-step updates for the dynamics and emission parameters are (multivariate) linear
+regressions: the dynamics update fits the stacked coefficient matrix ``[A\; b]`` and the
+emission update fits ``[C\; d]``. StateSpaceDynamics.jl supports a **matrix-normal (MN)**
+prior on these coefficient matrices, turning each regression into a MAP (ridge-style)
+update:
+
+```math
+W_{\text{MAP}} = (XY^\top + M_0 \Lambda)(XX + \Lambda)^{-1}
+```
+
+where ``M_0`` is the prior mean and ``\Lambda`` the column precision. Setting
+``M_0 = 0`` recovers ordinary ridge regression; ``\Lambda = 0`` recovers the unpenalized
+least-squares update.
+
+You can attach an MN prior to:
+
+- The stacked dynamics matrix via `AB_prior` on a [`GaussianStateModel`](@ref)
+- The stacked emission matrix via `CD_prior` on a [`GaussianObservationModel`](@ref) or
+  [`PoissonObservationModel`](@ref)
+
+The MN prior is kept separate from the covariance priors on purpose: pairing an
+`AB_prior`/`CD_prior` with the matching `Q_prior`/`R_prior` ([`IWPrior`](@ref)) recovers a
+full matrix-normal-inverse-Wishart (MNIW) prior, but each half can also be used on its
+own — e.g. the Poisson observation model has no noise covariance, so only the MN half
+applies there.
+
+```@docs; canonical = false
+MNPrior
+```

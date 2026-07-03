@@ -49,10 +49,10 @@ A fundamental example is the Linear Dynamical System (LDS), which combines linea
 
 where:
 
-* ``\mathbf{A}`` is the state transition matrix
-* ``\mathbf{C}`` is the observation matrix  
-* ``\mathbf{b}`` and ``\mathbf{d}`` are bias terms
-* ``\boldsymbol{\epsilon}_t`` and ``\boldsymbol{\delta}_t`` are Gaussian noise terms with covariances ``\mathbf{Q}`` and ``\mathbf{R}`` respectively
+* ``A`` is the state transition matrix
+* ``C`` is the observation matrix  
+* ``b`` and ``d`` are bias terms
+* ``\epsilon_t`` and ``\delta_t`` are Gaussian noise terms with covariances ``Q`` and ``R`` respectively
 
 2. Distributional form:
 
@@ -63,7 +63,7 @@ where:
 \end{align*}
 ```
 
-where ``\mathbf{Q}`` and ``\mathbf{R}`` are the state and observation noise covariance matrices, respectively.
+where ``Q`` and ``R`` are the state and observation noise covariance matrices, respectively.
 
 ## Models Implemented
 

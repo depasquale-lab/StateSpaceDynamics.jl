@@ -26,8 +26,10 @@ default(; # hide
 #
 # Discrete mode ``z_t \in \{1, \dots, K\}`` has Markov transitions ``A_{z_{t-1}, z_t}``.
 # Conditioned on the mode, the continuous state and observations follow an LDS
-# with mode-specific parameters ``(A_{z_t}, b_{z_t}, Q_{z_t}, C_{z_t}, d_{z_t}, R_{z_t})``.
-# Mode 1 here is a slow oscillator, mode 2 is a fast one.
+# with mode-specific parameters ``(F_{z_t}, b_{z_t}, Q_{z_t}, C_{z_t}, d_{z_t}, R_{z_t})``,
+# where ``F_k`` is the dynamics matrix of mode ``k`` (`A` is reserved for the
+# discrete transition matrix, matching the SLDS model page). Mode 1 here is a
+# slow oscillator, mode 2 is a fast one.
 
 state_dim = 2
 obs_dim = 10
@@ -37,8 +39,8 @@ A_hmm = [0.92 0.08;
          0.06 0.94]
 πₖ = [1.0, 0.0]
 
-A₁ = 0.95 * [cos(0.05) -sin(0.05); sin(0.05) cos(0.05)]
-A₂ = 0.95 * [cos(0.55) -sin(0.55); sin(0.55) cos(0.55)]
+F₁ = 0.95 * [cos(0.05) -sin(0.05); sin(0.05) cos(0.05)]
+F₂ = 0.95 * [cos(0.55) -sin(0.55); sin(0.55) cos(0.55)]
 
 Q₁ = [0.001 0.0; 0.0 0.001]
 Q₂ = [0.1   0.0; 0.0 0.1]
@@ -53,11 +55,11 @@ R  = Matrix(0.1 * I(obs_dim))
 d  = zeros(obs_dim)
 
 lds1 = LinearDynamicalSystem(
-    GaussianStateModel(A₁, Q₁, b, x0, P0),
+    GaussianStateModel(F₁, Q₁, b, x0, P0),
     GaussianObservationModel(C₁, R, d),
 )
 lds2 = LinearDynamicalSystem(
-    GaussianStateModel(A₂, Q₂, b, x0, P0),
+    GaussianStateModel(F₂, Q₂, b, x0, P0),
     GaussianObservationModel(C₂, R, d),
 )
 
@@ -133,6 +135,15 @@ p_elbo = plot(elbos; xlabel="iteration", ylabel="ELBO",
 #
 # After fitting, one more E-step gives us both the smoothed continuous states
 # and the per-timestep mode posterior ``\gamma_{k,t} = P(z_t = k \mid y_{1:T})``.
+#
+# !!! warning
+#     This section reaches into non-exported internals (`initialize_FilterSmooth`,
+#     `SLDSDiscreteLayer`, `estep!`, and friends) because the package does not
+#     yet expose a public posterior-decoding API for SLDS. These names may
+#     change between releases. The `obs_inputs`/`latent_inputs` values below
+#     are HiddenMarkovModels.jl plumbing: the "observation" fed to the discrete
+#     layer is just the timestep index used to look up pre-computed
+#     log-likelihoods, and there are no control inputs.
 
 ld = learned_model.LDSs[1]
 seq_ends = [T]
@@ -151,7 +162,7 @@ StateSpaceDynamics.smooth!(learned_model, tfs[1], y, w_uniform; ws=slds_ws)
 
 x_samples = [Matrix{Float64}(undef, ld.latent_dim, T)]
 randn_buf = Vector{Float64}(undef, ld.latent_dim)
-StateSpaceDynamics.sample_posterior!(x_samples, Random.default_rng(), tfs, randn_buf)
+StateSpaceDynamics.sample_posterior!(x_samples, rng, tfs, randn_buf)
 StateSpaceDynamics.estep!(
     learned_model, tfs, fb_storage, dl, [y], x_samples, slds_ws;
     obs_inputs=obs_inputs, latent_inputs=latent_inputs, seq_ends=seq_ends,

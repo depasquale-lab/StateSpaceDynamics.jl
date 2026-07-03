@@ -1,9 +1,9 @@
 # # Choosing latent dimensionality
 #
-# Selecting the latent dimension ``K`` is the most important hyperparameter of
-# an LDS. Cross-validation works for any state-space model — Gaussian,
-# Poisson, nonlinear, switching — so we demonstrate it here with ``K``-fold CV
-# over candidate dimensions.
+# The latent dimension ``K`` is the most important hyperparameter of an LDS.
+# Cross-validation works for any state-space model — Gaussian, Poisson,
+# nonlinear, switching — so we demonstrate it here with ``K``-fold CV over
+# candidate dimensions.
 
 using StateSpaceDynamics
 using LinearAlgebra
@@ -103,8 +103,8 @@ for (k_idx, K) in enumerate(K_candidates)
 
         try
             fit!(candidate, y_train; max_iter=200, tol=1e-6, progress=false)
-            val_ll = StateSpaceDynamics.loglikelihood(candidate, y_val)
-            fold_scores[fold] = sum(val_ll) / length(val_idx)
+            val_ll = loglikelihood(candidate, y_val)
+            fold_scores[fold] = val_ll / length(val_idx)
         catch err
             @warn "Fold $fold failed for K=$K" exception=err
             fold_scores[fold] = -Inf
@@ -139,12 +139,13 @@ Q_final = 0.1 * Matrix(I(best_K))
 b_final = zeros(best_K)
 C_final = randn(rng, D, best_K) * 0.5
 R_final = 0.2 * Matrix(I(D))
+d_final = zeros(D)
 μ0_final = zeros(best_K)
 Σ0_final = 0.1 * Matrix(I(best_K))
 
 final_lds = LinearDynamicalSystem(;
     state_model=GaussianStateModel(A_final, Q_final, b_final, μ0_final, Σ0_final),
-    obs_model=GaussianObservationModel(C_final, R_final, d_true),
+    obs_model=GaussianObservationModel(C_final, R_final, d_final),
     latent_dim=best_K,
     obs_dim=D,
     fit_bool=fill(true, 6),
@@ -153,7 +154,7 @@ final_lds = LinearDynamicalSystem(;
 final_lls = fit!(final_lds, observations; max_iter=500, tol=1e-8);
 x_learned, _ = smooth(final_lds, observations)
 
-y_pred = final_lds.obs_model.C * x_learned
+y_pred = final_lds.obs_model.C * x_learned .+ final_lds.obs_model.d
 reconstruction_error = mean(abs2, observations - y_pred)
 @printf("Reconstruction MSE: %.6f\n", reconstruction_error)
 
