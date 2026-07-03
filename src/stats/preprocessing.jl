@@ -57,7 +57,7 @@ function Base.show(io::IO, ppca::ProbabilisticPCA; gap="")
     return nothing
 end
 
-function estep(ppca::ProbabilisticPCA, X::Matrix{T}) where {T<:Real}
+function estep(ppca::ProbabilisticPCA, X::AbstractMatrix{T}) where {T<:Real}
     D, N = size(X)
     E_z = zeros(T, ppca.k, N)
     E_zz = zeros(T, ppca.k, ppca.k, N)
@@ -73,7 +73,7 @@ function estep(ppca::ProbabilisticPCA, X::Matrix{T}) where {T<:Real}
 end
 
 function mstep!(
-    ppca::ProbabilisticPCA, X::Matrix{T}, E_z::Matrix{T}, E_zz::Array{T,3}
+    ppca::ProbabilisticPCA, X::AbstractMatrix{T}, E_z::Matrix{T}, E_zz::Array{T,3}
 ) where {T<:Real}
     D, N = size(X)
     W_new = zeros(T, D, ppca.k)
