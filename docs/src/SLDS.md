@@ -55,7 +55,7 @@ mutable struct SLDS{
     O<:AbstractObservationModel,
     TM<:AbstractMatrix{T},
     ISV<:AbstractVector{T},
-} <: AbstractHMM
+}
     A::TM # Transition matrix
     πₖ::ISV # Initial state distribution
     LDSs::Vector{LinearDynamicalSystem{T,S,O}} # Vector of LDS models
@@ -72,7 +72,7 @@ Each mode in the `LDSs` vector contains its own `LinearDynamicalSystem` with:
 You can generate synthetic data from an SLDS to test algorithms or create simulated datasets:
 
 ```@docs
-rand(rng::AbstractRNG, slds::SLDS; tsteps::Int, ntrials::Int=1) 
+Random.rand(rng::AbstractRNG, slds::SLDS{T,S,O}, tsteps::Integer) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
 ```
 
 The sampling process follows the generative model:
@@ -88,7 +88,7 @@ The sampling process follows the generative model:
 `StateSpaceDynamics.jl` implements a **Variational Laplace Expectation-Maximization (vLEM)** algorithm for parameter estimation in SLDS. This approach efficiently handles the challenging interaction between discrete and continuous latent variables through a structured variational approximation.
 
 ```@docs
-fit!(slds::SLDS{T,S,O}, y::AbstractArray{T,3}; max_iter::Int=50, progress::Bool=true) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
+fit!(slds::SLDS{T,S,O}, y::AbstractVector{<:AbstractMatrix{T}}; max_iter::Int=50, progress::Bool=true) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
 ```
 
 ## The vLEM Algorithm

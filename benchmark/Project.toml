@@ -1,0 +1,9 @@
+[deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+StableRNGs = "860ef19b-820b-49d6-a774-d7a799459cd3"
+StateSpaceDynamics = "19cf8126-1d00-4ad8-bf17-4e76d7bc0f6d"
+
+[compat]
+BenchmarkTools = "1"
+StableRNGs = "1"

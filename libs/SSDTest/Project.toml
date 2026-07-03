@@ -1,0 +1,10 @@
+name = "SSDTest"
+uuid = "8a6b4d2f-3a7e-4d1c-9c5e-7a8b3f4d6c12"
+authors = ["StateSpaceDynamics.jl contributors"]
+version = "0.1.0"
+
+[deps]
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+StateSpaceDynamics = "19cf8126-1d00-4ad8-bf17-4e76d7bc0f6d"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"

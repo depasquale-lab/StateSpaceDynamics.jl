@@ -1,0 +1,119 @@
+{
+  "projectName": "StateSpaceDynamics.jl",
+  "projectOwner": "depasquale-lab",
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "files": [
+    "README.md"
+  ],
+  "imageSize": 100,
+  "commit": true,
+  "commitConvention": "angular",
+  "commitType": "docs",
+  "contributorsPerLine": 7,
+  "contributorsSortAlphabetically": false,
+  "badgeTemplate": "",
+  "contributors": [
+    {
+      "login": "rsenne",
+      "name": "Ryan Senne",
+      "avatar_url": "https://avatars.githubusercontent.com/u/50930199?v=4",
+      "profile": "https://github.com/rsenne",
+      "contributions": [
+        "code",
+        "maintenance",
+        "test",
+        "ideas",
+        "review",
+        "doc"
+      ]
+    },
+    {
+      "login": "harrisonritz",
+      "name": "Harrison Ritz",
+      "avatar_url": "https://avatars.githubusercontent.com/u/17258911?v=4",
+      "profile": "https://harrisonritz.github.io/",
+      "contributions": [
+        "code",
+        "maintenance",
+        "test",
+        "ideas",
+        "review",
+        "doc"
+      ]
+    },
+    {
+      "login": "ZachLoschin",
+      "name": "Zachary Loschinskey",
+      "avatar_url": "https://avatars.githubusercontent.com/u/102312738?v=4",
+      "profile": "https://github.com/ZachLoschin",
+      "contributions": [
+        "code",
+        "test",
+        "ideas",
+        "doc"
+      ]
+    },
+    {
+      "login": "briandepasquale",
+      "name": "Brian DePasquale",
+      "avatar_url": "https://avatars.githubusercontent.com/u/21131199?v=4",
+      "profile": "https://briandepasquale.github.io/",
+      "contributions": [
+        "code",
+        "ideas"
+      ]
+    },
+    {
+      "login": "carsonkui",
+      "name": "carsonkui",
+      "avatar_url": "https://avatars.githubusercontent.com/u/22718834?v=4",
+      "profile": "https://github.com/carsonkui",
+      "contributions": [
+        "code",
+        "test",
+        "doc"
+      ]
+    },
+    {
+      "login": "jfour1e",
+      "name": "James Fourie",
+      "avatar_url": "https://avatars.githubusercontent.com/u/146684478?v=4",
+      "profile": "https://github.com/jfour1e",
+      "contributions": [
+        "code",
+        "doc",
+        "test"
+      ]
+    },
+    {
+      "login": "tomdstone",
+      "name": "Tom A.D. Stone",
+      "avatar_url": "https://avatars.githubusercontent.com/u/77251489?v=4",
+      "profile": "https://github.com/tomdstone",
+      "contributions": [
+        "code",
+        "test"
+      ]
+    },
+    {
+      "login": "gdalle",
+      "name": "Guillaume Dalle",
+      "avatar_url": "https://avatars.githubusercontent.com/u/22795598?v=4",
+      "profile": "https://gdalle.github.io/",
+      "contributions": [
+        "review",
+        "ideas"
+      ]
+    },
+    {
+      "login": "GrantMcConachie",
+      "name": "Grant McConachie",
+      "avatar_url": "https://avatars.githubusercontent.com/u/39445771?v=4",
+      "profile": "https://grantmcconachie.github.io/",
+      "contributions": [
+        "code"
+      ]
+    }
+  ]
+}

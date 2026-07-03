@@ -1,0 +1,9 @@
+/* Enlarge the sidebar logo (Documenter's theme caps it at max-height: 6rem). */
+#documenter .docs-sidebar .docs-logo {
+    margin-top: 1rem;
+}
+
+#documenter .docs-sidebar .docs-logo > img {
+    max-height: 14rem !important;
+    max-width: 100% !important;
+}

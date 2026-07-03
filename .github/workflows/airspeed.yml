@@ -1,0 +1,42 @@
+name: Benchmark PR (AirspeedVelocity)
+
+# On PRs into main: benchmark the PR head against its base in the same environment
+# and post a comparison table as a PR comment. Uses `pull_request_target` so the
+# comment can be posted; the AirspeedVelocity action freezes the benchmark script
+# at the base revision, so PR code cannot rewrite what is measured.
+#
+# Manual runs (workflow_dispatch): there is no PR to derive revisions from or to
+# comment on, so we pass an explicit `rev` list and write the table to the run's
+# job summary instead of a PR comment.
+
+on:
+  pull_request_target:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      rev:
+        description: "Revisions to compare (comma-separated git refs/SHAs, e.g. 'main,my-branch')"
+        required: true
+        default: "main,HEAD"
+
+permissions:
+  pull-requests: write
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: MilesCranmer/AirspeedVelocity.jl@action-v1
+        with:
+          julia-version: "1"
+          # PR events: `inputs.rev` is empty, so the action compares base vs PR head
+          # and posts a PR comment. Manual runs: use the provided revs and write the
+          # results to the job summary (there is no PR to comment on).
+          rev: ${{ inputs.rev }}
+          job-summary: ${{ github.event_name == 'workflow_dispatch' }}

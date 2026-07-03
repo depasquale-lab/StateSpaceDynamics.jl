@@ -1,37 +1,52 @@
-name: SSM-CI
+name: SSD-CI
 
-on: [push, pull_request]
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
+
     strategy:
+      fail-fast: false
       matrix:
-        julia-version: ['1']  # '1' always points to the latest stable release
+        julia-version: ['lts', '1', 'pre']
+
+    continue-on-error: ${{ matrix.julia-version == 'pre' }}
+
     steps:
-    - name: Check out code
-      uses: actions/checkout@v2
-    
-    - name: Setup Julia
-      uses: julia-actions/setup-julia@v1
-      with:
-        version: ${{ matrix.julia-version }}
-        
-    - name: Install dependencies
-      run: |
-        julia --project -e 'using Pkg; Pkg.instantiate()'
+      - uses: actions/checkout@v4
 
-    - name: Run tests with coverage
-      run: |
-        julia --project="$GITHUB_WORKSPACE" -e 'using Pkg; Pkg.test("StateSpaceDynamics", coverage=true)'
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.julia-version }}
 
-    - name: Process coverage
-      if: matrix.julia-version == '1'
-      uses: julia-actions/julia-processcoverage@v1
+      - uses: julia-actions/cache@v1
 
-    - name: Upload coverage reports to Codecov
-      if: matrix.julia-version == '1'
-      uses: codecov/codecov-action@v3
-      env:
-        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      - name: Install dependencies
+        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
 
+      - name: Run tests
+        run: |
+          if [[ "${{ matrix.julia-version }}" == "1" ]]; then
+            julia --project=. -e 'using Pkg; Pkg.test(; coverage=true)'
+          else
+            julia --project=. -e 'using Pkg; Pkg.test()'
+          fi
+
+      - name: Process coverage
+        if: matrix.julia-version == '1'
+        uses: julia-actions/julia-processcoverage@v1
+
+      - name: Upload coverage to Codecov
+        if: matrix.julia-version == '1'
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}

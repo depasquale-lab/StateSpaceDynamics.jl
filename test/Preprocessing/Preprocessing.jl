@@ -83,19 +83,23 @@ function test_PPCA_fit()
 end
 
 function test_PPCA_samples()
+    # Seeded so the empirical-mean / noise-level tolerances aren't RNG-flaky
+    # across test orderings (10k Gaussian draws can occasionally drift past
+    # atol=0.05 even when the underlying sampler is correct).
+    rng = StableRNG(20260516)
     D = 3
     k = 2
-    W = randn(D, k)
+    W = randn(rng, D, k)
     T = eltype(W)
 
     σ² = 0.5
     num_obs = 100
-    X = randn(D, num_obs)
-    μ = randn(3)
+    X = randn(rng, D, num_obs)
+    μ = randn(rng, 3)
 
     ppca = ProbabilisticPCA(W, σ², μ)
 
-    X, z = rand(ppca, 10000)
+    X, z = rand(rng, ppca, 10000)
 
     @test size(X) == (3, 10000)
     @test size(z) == (2, 10000)

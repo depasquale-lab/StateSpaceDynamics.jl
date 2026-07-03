@@ -78,10 +78,12 @@ PoissonObservationModel
 
 ## Sampling from Linear Dynamical Systems
 
-You can generate synthetic data from fitted LDS models:
+You can generate synthetic data from fitted LDS models. Pass a scalar
+`tsteps::Integer` for a single trial, or a vector of per-trial lengths
+to sample a multi-trial dataset (trial lengths may differ):
 
 ```@docs
-Random.rand(lds::LinearDynamicalSystem; tsteps::Int, ntrials::Int)
+Random.rand(rng::AbstractRNG, lds::LinearDynamicalSystem, tsteps::Integer; latent_inputs, obs_inputs)
 ```
 
 ## Inference in Linear Dynamical Systems
@@ -166,7 +168,7 @@ Given the latent structure of state-space models, we must rely on either the Exp
     These issues affect **parameter interpretability** but not **predictive performance**; be cautious when interpreting individual entries of $$A$$, $$C$$, or $$Q$$.
 
 ```@docs
-fit!(lds::LinearDynamicalSystem{T,S,O}, y::AbstractArray{T,3}; max_iter::Int=1000, tol::Float64=1e-12) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+fit!(lds::LinearDynamicalSystem{T,S,O}, y::AbstractVector{<:AbstractMatrix{T}}; max_iter::Int=100, tol::Float64=1e-6, progress::Bool=true) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
 ```
 
 ## Inverse-Wishart Priors on Covariances (MAP)
@@ -243,7 +245,7 @@ gsm = GaussianStateModel(A=A, Q=Q, b=b, x0=x0, P0=P0,
 gom = GaussianObservationModel(C=C, R=R, d=d, R_prior=Rprior)
 lds = LinearDynamicalSystem(gsm, gom)
 
-X, Y = rand(rng, lds; tsteps=100, ntrials=5)
+X, Y = rand(rng, lds, fill(100, 5))   # 5 trials of 100 timesteps each
 fit!(lds, Y; max_iter=20, progress=false)
 ```
 
