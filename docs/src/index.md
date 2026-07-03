@@ -42,8 +42,8 @@ A fundamental example is the Linear Dynamical System (LDS), which combines linea
 
 ```math
 \begin{align*}
-    x_{t+1} &= A x_t + b + \epsilon_t \\
-    y_t &= C x_t + d + \delta_t
+    x_{t+1} &= A x_t + B u_t + b + \epsilon_t \\
+    y_t &= C x_t + D v_t + d + \delta_t
 \end{align*}
 ```
 
@@ -52,14 +52,15 @@ where:
 * ``A`` is the state transition matrix
 * ``C`` is the observation matrix  
 * ``b`` and ``d`` are bias terms
+* ``B`` and ``D`` are input matrices that scale their respective inputs ``u_t`` and ``v_t``
 * ``\epsilon_t`` and ``\delta_t`` are Gaussian noise terms with covariances ``Q`` and ``R`` respectively
 
 2. Distributional form:
 
 ```math
 \begin{align*}
-    x_{t+1} &\sim \mathcal{N}(A x_t + b, Q) \\
-    y_t &\sim \mathcal{N}(C x_t + d, R)
+    x_{t+1} &\sim \mathcal{N}(A x_t + B u_t + b, Q) \\
+    y_t &\sim \mathcal{N}(C x_t + D v_t + d, R)
 \end{align*}
 ```
 

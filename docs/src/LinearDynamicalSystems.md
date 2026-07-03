@@ -23,19 +23,22 @@ The generative model is given by:
 
 ```math
 \begin{aligned}
-    x_t &\sim \mathcal{N}(A x_{t-1} + b, Q) \\
-    y_t &\sim \mathcal{N}(C x_t + d, R)
+    x_t &\sim \mathcal{N}(A x_{t-1} + B u_t + b, Q) \\
+    y_t &\sim \mathcal{N}(C x_t + D v_t + d, R)
 \end{aligned}
 ```
 
 Where:
 
 - ``x_t`` is the hidden state at time ``t``
-- ``y_t`` is the observed data at time ``t``  
+- ``y_t`` is the observed data at time ``t`` 
+- ``u_t`` is the dynamics input at time ``t``
+- ``v_t`` is the observation input at time ``t``
 - ``A`` is the state transition matrix
 - ``C`` is the observation matrix
 - ``Q`` is the process noise covariance
 - ``R`` is the observation noise covariance
+- ``B`` and ``D`` are input matrices
 - ``b`` and ``d`` are bias terms
 
 This can equivalently be written in equation form:

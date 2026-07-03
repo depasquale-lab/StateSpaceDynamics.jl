@@ -127,11 +127,11 @@ S_idx = 3
 m_rot = transformed_models[S_idx]
 x_orig, _ = smooth(true_lds, y_true)
 x_rot, _ = smooth(m_rot, y_true)
-Shat = procrustes_rotation(x_rot, x_orig)
+S_hat = procrustes_rotation(x_rot, x_orig)
 
-state_align_relerr = norm(Shat * x_rot - x_orig) / norm(x_orig)
-A_aligned = Shat * m_rot.state_model.A * Shat'
-C_aligned = m_rot.obs_model.C * Shat'
+state_align_relerr = norm(S_hat * x_rot - x_orig) / norm(x_orig)
+A_aligned = S_hat * m_rot.state_model.A * S_hat'
+C_aligned = m_rot.obs_model.C * S_hat'
 ΔA = norm(A_true - A_aligned)
 ΔC = norm(C_true - C_aligned)
 

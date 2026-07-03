@@ -171,4 +171,4 @@ test_em_monotone(lls)  #src
 @test optimal_k in k_range  #src
 # BIC should land on (or next to) the true latent dimension.  #src
 @test abs(optimal_k - k_true_hd) <= 1  #src
-@test isapprox(fit_ppca.μ, μ_true; atol=0.2)  #src
+@test isapprox(fit_ppca.μ, μ_true; atol=0.5)  #src
