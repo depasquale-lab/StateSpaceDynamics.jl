@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Non-Identifiability in LDS Models · StateSpaceDynamics.jl</title><meta name="title" content="Non-Identifiability in LDS Models · StateSpaceDynamics.jl"/><meta property="og:title" content="Non-Identifiability in LDS Models · StateSpaceDynamics.jl"/><meta property="twitter:title" content="Non-Identifiability in LDS Models · StateSpaceDynamics.jl"/><meta name="description" content="Documentation for StateSpaceDynamics.jl."/><meta property="og:description" content="Documentation for StateSpaceDynamics.jl."/><meta property="twitter:description" content="Documentation for StateSpaceDynamics.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script><link href="../../assets/custom.css" rel="stylesheet" type="text/css"/></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="StateSpaceDynamics.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">StateSpaceDynamics.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Models</span><ul><li><a class="tocitem" href="../../LinearDynamicalSystems/">Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../SLDS/">Switching Linear Dynamical Systems</a></li></ul></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../quick_start_example/">Quick Start</a></li><li><a class="tocitem" href="../gaussian_latent_dynamics_example/">Gaussian LDS Example</a></li><li><a class="tocitem" href="../poisson_latent_dynamics_example/">Poisson LDS Example</a></li><li><a class="tocitem" href="../lds_model_selection_example/">LDS Model Selection Example</a></li><li class="is-active"><a class="tocitem" href>Non-Identifiability in LDS Models</a><ul class="internal"><li><a class="tocitem" href="#Reference-model"><span>Reference model</span></a></li><li><a class="tocitem" href="#Equivalent-transformed-copies"><span>Equivalent transformed copies</span></a></li><li><a class="tocitem" href="#Procrustes-alignment"><span>Procrustes alignment</span></a></li><li><a class="tocitem" href="#What-*is*-identifiable"><span>What <em>is</em> identifiable</span></a></li></ul></li><li><a class="tocitem" href="../Probabilistic_PCA_example/">Probabilistic PCA Example</a></li><li><a class="tocitem" href="../switching_linear_dynamical_system_example/">Switching Linear Dynamical System Example</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Non-Identifiability in LDS Models</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Non-Identifiability in LDS Models</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/blob/main/docs/examples/LDSIdentifiability.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Non-identifiability-of-LDS-coordinates"><a class="docs-heading-anchor" href="#Non-identifiability-of-LDS-coordinates">Non-identifiability of LDS coordinates</a><a id="Non-identifiability-of-LDS-coordinates-1"></a><a class="docs-heading-anchor-permalink" href="#Non-identifiability-of-LDS-coordinates" title="Permalink"></a></h1><p>An LDS&#39;s latent coordinates are identifiable only up to an invertible change of basis. For any invertible <span>$R$</span>, the transformed model <span>$(A&#39;, Q&#39;, C&#39;, x_0&#39;, P_0&#39;) = (R A R^{-1},\, R Q R^\top,\, C R^{-1},\, R x_0,\, R P_0 R^\top)$</span> is observationally equivalent: same likelihood, same predictions. Here we demonstrate the equivalence numerically and show how Procrustes alignment lets us compare fits &quot;apples-to-apples&quot;.</p><pre><code class="language-julia hljs">using StateSpaceDynamics
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Non-Identifiability in LDS Models · StateSpaceDynamics.jl</title><meta name="title" content="Non-Identifiability in LDS Models · StateSpaceDynamics.jl"/><meta property="og:title" content="Non-Identifiability in LDS Models · StateSpaceDynamics.jl"/><meta property="twitter:title" content="Non-Identifiability in LDS Models · StateSpaceDynamics.jl"/><meta name="description" content="Documentation for StateSpaceDynamics.jl."/><meta property="og:description" content="Documentation for StateSpaceDynamics.jl."/><meta property="twitter:description" content="Documentation for StateSpaceDynamics.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script><link href="../../assets/custom.css" rel="stylesheet" type="text/css"/></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="StateSpaceDynamics.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">StateSpaceDynamics.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Models</span><ul><li><a class="tocitem" href="../../LinearDynamicalSystems/">Linear Dynamical Systems</a></li><li><a class="tocitem" href="../../SLDS/">Switching Linear Dynamical Systems</a></li></ul></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../gaussian_latent_dynamics_example/">Gaussian LDS Example</a></li><li><a class="tocitem" href="../poisson_latent_dynamics_example/">Poisson LDS Example</a></li><li><a class="tocitem" href="../lds_model_selection_example/">LDS Model Selection Example</a></li><li class="is-active"><a class="tocitem" href>Non-Identifiability in LDS Models</a><ul class="internal"><li><a class="tocitem" href="#Reference-model"><span>Reference model</span></a></li><li><a class="tocitem" href="#Equivalent-transformed-copies"><span>Equivalent transformed copies</span></a></li><li><a class="tocitem" href="#Procrustes-alignment"><span>Procrustes alignment</span></a></li><li><a class="tocitem" href="#What-*is*-identifiable"><span>What <em>is</em> identifiable</span></a></li></ul></li><li><a class="tocitem" href="../Probabilistic_PCA_example/">Probabilistic PCA Example</a></li><li><a class="tocitem" href="../switching_linear_dynamical_system_example/">Switching Linear Dynamical System Example</a></li></ul></li><li><a class="tocitem" href="../../api/">API Reference</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Non-Identifiability in LDS Models</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Non-Identifiability in LDS Models</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/depasquale-lab/StateSpaceDynamics.jl/blob/main/docs/examples/LDSIdentifiability.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Non-identifiability-of-LDS-coordinates"><a class="docs-heading-anchor" href="#Non-identifiability-of-LDS-coordinates">Non-identifiability of LDS coordinates</a><a id="Non-identifiability-of-LDS-coordinates-1"></a><a class="docs-heading-anchor-permalink" href="#Non-identifiability-of-LDS-coordinates" title="Permalink"></a></h1><p>An LDS&#39;s latent coordinates are identifiable only up to an invertible change of basis. For any invertible <span>$S$</span>, the transformed model <span>$(A&#39;, Q&#39;, C&#39;, x_0&#39;, P_0&#39;) = (S A S^{-1},\, S Q S^\top,\, C S^{-1},\, S x_0,\, S P_0 S^\top)$</span> is observationally equivalent: same likelihood, same predictions. Here we demonstrate the equivalence numerically and show how Procrustes alignment lets us compare fits &quot;apples-to-apples&quot;.</p><pre><code class="language-julia hljs">using StateSpaceDynamics
 using LinearAlgebra
 using Random
 using Plots
@@ -7,7 +7,7 @@ using Statistics
 using StableRNGs
 using Printf
 
-rng = StableRNG(12345);</code></pre><h2 id="Reference-model"><a class="docs-heading-anchor" href="#Reference-model">Reference model</a><a id="Reference-model-1"></a><a class="docs-heading-anchor-permalink" href="#Reference-model" title="Permalink"></a></h2><pre><code class="language-julia hljs">K_true = 3
+rng = StableRNG(1234);</code></pre><h2 id="Reference-model"><a class="docs-heading-anchor" href="#Reference-model">Reference model</a><a id="Reference-model-1"></a><a class="docs-heading-anchor-permalink" href="#Reference-model" title="Permalink"></a></h2><pre><code class="language-julia hljs">K_true = 3
 D = 8
 T = 200
 
@@ -38,12 +38,12 @@ true_lds = LinearDynamicalSystem(;
     fit_bool=fill(true, 6),
 );
 
-x_true, y_true = rand(rng, true_lds, T);</code></pre><h2 id="Equivalent-transformed-copies"><a class="docs-heading-anchor" href="#Equivalent-transformed-copies">Equivalent transformed copies</a><a id="Equivalent-transformed-copies-1"></a><a class="docs-heading-anchor-permalink" href="#Equivalent-transformed-copies" title="Permalink"></a></h2><p>A handful of similarity transforms: orthogonal rotations, an axis swap, a permutation, and a non-orthogonal scaling. All produce models with the same likelihood as the reference.</p><pre><code class="language-julia hljs">function rotate_lds(lds, R)
-    A_rot = R * lds.state_model.A * inv(R)
-    Q_rot = R * lds.state_model.Q * R&#39;
-    C_rot = lds.obs_model.C * inv(R)
-    x0_rot = R * lds.state_model.x0
-    P0_rot = R * lds.state_model.P0 * R&#39;
+x_true, y_true = rand(rng, true_lds, T);</code></pre><h2 id="Equivalent-transformed-copies"><a class="docs-heading-anchor" href="#Equivalent-transformed-copies">Equivalent transformed copies</a><a id="Equivalent-transformed-copies-1"></a><a class="docs-heading-anchor-permalink" href="#Equivalent-transformed-copies" title="Permalink"></a></h2><p>A handful of similarity transforms: orthogonal rotations, an axis swap, a permutation, and a non-orthogonal scaling. All produce models with the same likelihood as the reference.</p><pre><code class="language-julia hljs">function transform_lds(lds, S)
+    A_rot = S * lds.state_model.A * inv(S)
+    Q_rot = S * lds.state_model.Q * S&#39;
+    C_rot = lds.obs_model.C * inv(S)
+    x0_rot = S * lds.state_model.x0
+    P0_rot = S * lds.state_model.P0 * S&#39;
     return LinearDynamicalSystem(;
         state_model=GaussianStateModel(A_rot, Q_rot, b_true, x0_rot, P0_rot),
         obs_model=GaussianObservationModel(C_rot, lds.obs_model.R, d_true),
@@ -53,7 +53,7 @@ x_true, y_true = rand(rng, true_lds, T);</code></pre><h2 id="Equivalent-transfor
     )
 end
 
-rotations = [
+transforms = [
     [cos(π/4) -sin(π/4) 0.0;  sin(π/4) cos(π/4) 0.0;  0.0 0.0 1.0],
     [1.0 0.0 0.0; 0.0 cos(π/2) -sin(π/2); 0.0 sin(π/2) cos(π/2)],
     Matrix(qr(randn(rng, K_true, K_true)).Q),
@@ -61,12 +61,12 @@ rotations = [
     Matrix(Diagonal([2.0, 0.5, -1.2])),
     [0.0 1.0 0.0; 1.0 0.0 0.0; 0.0 0.0 1.0],
 ]
-rot_names = [
+transform_names = [
     &quot;rot(1,2, 45°)&quot;, &quot;rot(2,3, 90°)&quot;, &quot;random orthogonal&quot;,
     &quot;axis swap (1↔3)&quot;, &quot;scaling + sign&quot;, &quot;permutation (1↔2)&quot;,
 ]
 
-rotated_models = [rotate_lds(true_lds, R) for R in rotations]</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">6-element Vector{LinearDynamicalSystem{Float64, GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}, GaussianObservationModel{Float64, Matrix{Float64}, Vector{Float64}}}}:
+transformed_models = [transform_lds(true_lds, S) for S in transforms]</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">6-element Vector{LinearDynamicalSystem{Float64, GaussianStateModel{Float64, Matrix{Float64}, Vector{Float64}}, GaussianObservationModel{Float64, Matrix{Float64}, Vector{Float64}}}}:
  Linear Dynamical System:
 ------------------------
  Gaussian State Model:
@@ -118,12 +118,12 @@ rotated_models = [rotate_lds(true_lds, R) for R in rotations]</code></pre><pre c
  Gaussian State Model:
  ---------------------
   State Parameters:
-   A  = [0.863 0.0598 -0.108; -0.145 0.65 0.0443; 0.0858 0.0186 0.887]
-   Q  = [0.05 -1.04e-17 9.54e-18; -1.04e-17 0.05 -3.47e-18; 1.13e-17 -6.07e-18 0.05]
+   A  = [0.815 -0.0331 -0.0561; -0.106 0.791 0.179; 0.176 0.0346 0.794]
+   Q  = [0.05 -1.39e-17 -1.73e-18; -1.39e-17 0.05 3.12e-17; 0.0 3.47e-17 0.05]
   Initial State:
    b  = [0.0, 0.0, 0.0]
    x0 = [0.0, 0.0, 0.0]
-   P0 = [0.2 -4.16e-17 3.82e-17; -4.16e-17 0.2 -1.39e-17; 4.51e-17 -2.43e-17 0.2]
+   P0 = [0.2 -5.55e-17 -6.94e-18; -5.55e-17 0.2 1.25e-16; 0.0 1.39e-16 0.2]
   Dynamics input:
    size(B)  = (3, 0)
  Gaussian Observation Model:
@@ -204,68 +204,51 @@ rotated_models = [rotate_lds(true_lds, R) for R in rotations]</code></pre><pre c
  Parameters to update:
  ---------------------
   x0, P0, A (and b, B), Q, C (and d, D), R
-</code></pre><p>The invariant under any invertible <span>$R$</span> is the <em>marginal</em> log-likelihood <span>$\log p(y)$</span> (the latents are integrated out, so the volume Jacobian cancels). For a Gaussian LDS this equals the ELBO at the smoothed posterior — the same quantity <a href="../../LinearDynamicalSystems/#StatsAPI.fit!-Union{Tuple{O}, Tuple{S}, Tuple{T}, Tuple{LinearDynamicalSystem{T, S, O}, AbstractVector{&lt;:AbstractMatrix{T}}}} where {T&lt;:Real, S&lt;:(GaussianStateModel{T, M, V} where {M&lt;:AbstractMatrix{T}, V&lt;:AbstractVector{T}}), O&lt;:(GaussianObservationModel{T, M, V} where {M&lt;:AbstractMatrix{T}, V&lt;:AbstractVector{T}})}"><code>fit!</code></a> reports — so we assemble <code>calculate_elbo</code> directly. The function <code>loglikelihood(x_smooth, lds, y)</code> evaluates the <em>joint</em> <code>log p(x, y)</code> at the smoothed mean and is gauge- invariant only for orthogonal <span>$R$</span>; the diagonal scaling in <code>rotations</code> would shift it by <span>$T \log |\det R|$</span>.</p><pre><code class="language-julia hljs">function marginal_loglik(lds, y)
-    tsteps_per_trial = [size(y, 2)]
-    tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, tsteps_per_trial)
-    sws_pool = [
-        StateSpaceDynamics.SmoothWorkspace(
-            Float64, lds.latent_dim, lds.obs_dim, size(y, 2); ux_dim=0, uy_dim=0,
-        ) for _ in 1:Threads.maxthreadid()
-    ]
-    suf = StateSpaceDynamics._initialize_td_sufficient_statistics(
-        Float64, lds, tsteps_per_trial,
-    )
-    ux_seq = [zeros(0, size(y, 2))]
-    uy_seq = [zeros(0, size(y, 2))]
-    StateSpaceDynamics._td_init_const_blocks!(
-        sws_pool[1], lds, tsteps_per_trial, [y], ux_seq, uy_seq,
-    )
-    StateSpaceDynamics.smooth!(lds, tfs, [y], sws_pool, ux_seq, uy_seq)
-    StateSpaceDynamics._aggregate_td_suff_stats!(
-        suf, tfs, lds, ux_seq, uy_seq, [y], sws_pool[1],
-    )
-    total_entropy = sum(fs.entropy for fs in tfs.FilterSmooths)
-    return StateSpaceDynamics.elbo!(lds, suf, sws_pool[1], total_entropy)
-end
-
-ll_orig = marginal_loglik(true_lds, y_true)
+</code></pre><p>The invariant under any invertible <span>$S$</span> is the <em>marginal</em> log-likelihood <span>$\log p(y)$</span> (the latents are integrated out, so the volume Jacobian cancels). <a href="../../api/#StatsAPI.loglikelihood-Union{Tuple{OM}, Tuple{SM}, Tuple{T}, Tuple{LinearDynamicalSystem{T, SM, OM}, AbstractArray{T, 3}}} where {T&lt;:Real, SM&lt;:(GaussianStateModel{T, M, V} where {M&lt;:AbstractMatrix{T}, V&lt;:AbstractVector{T}}), OM&lt;:(GaussianObservationModel{T, M, V} where {M&lt;:AbstractMatrix{T}, V&lt;:AbstractVector{T}})}"><code>loglikelihood</code></a> computes it exactly for a Gaussian LDS by running the Kalman filter and summing the one-step-ahead predictive densities. Note that the <em>joint</em> <code>log p(x, y)</code> at the smoothed mean (see <code>joint_loglikelihood</code>) is gauge-invariant only for orthogonal <span>$S$</span>; the diagonal scaling in <code>transforms</code> would shift it by <span>$T \log |\det S|$</span>.</p><pre><code class="language-julia hljs">ll_orig = loglikelihood(true_lds, y_true)
 
 @printf(&quot;reference log p(y): %.6f\n&quot;, ll_orig)
-for (name, R, model) in zip(rot_names, rotations, rotated_models)
-    ll = marginal_loglik(model, y_true)
-    @printf(&quot;%-22s  ΔLL = %.3e  cond(R) = %.2f\n&quot;,
-        name, abs(ll - ll_orig), cond(R))
-end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">reference log p(y): -709.394137
-rot(1,2, 45°)           ΔLL = 4.547e-13  cond(R) = 1.00
-rot(2,3, 90°)           ΔLL = 4.547e-13  cond(R) = 1.00
-random orthogonal       ΔLL = 1.592e-12  cond(R) = 1.00
-axis swap (1↔3)         ΔLL = 1.091e-11  cond(R) = 1.00
-scaling + sign          ΔLL = 3.638e-12  cond(R) = 4.00
-permutation (1↔2)       ΔLL = 2.274e-13  cond(R) = 1.00</code></pre><h2 id="Procrustes-alignment"><a class="docs-heading-anchor" href="#Procrustes-alignment">Procrustes alignment</a><a id="Procrustes-alignment-1"></a><a class="docs-heading-anchor-permalink" href="#Procrustes-alignment" title="Permalink"></a></h2><p>To compare two equivalent fits visually we solve <span>$\hat R = \arg\min_R \lVert R X_\text{rot} - X_\text{orig} \rVert_F$</span> via SVD of <span>$X_\text{orig} X_\text{rot}^\top$</span>.</p><pre><code class="language-julia hljs">function procrustes_R(X, Y)
-    S = svd(Y * X&#39;)
-    return S.U * S.Vt
+for (name, S, model) in zip(transform_names, transforms, transformed_models)
+    ll = loglikelihood(model, y_true)
+    @printf(&quot;%-22s  ΔLL = %.3e  cond(S) = %.2f\n&quot;,
+        name, abs(ll - ll_orig), cond(S))
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">reference log p(y): -725.349854
+rot(1,2, 45°)           ΔLL = 0.000e+00  cond(S) = 1.00
+rot(2,3, 90°)           ΔLL = 0.000e+00  cond(S) = 1.00
+random orthogonal       ΔLL = 0.000e+00  cond(S) = 1.00
+axis swap (1↔3)         ΔLL = 0.000e+00  cond(S) = 1.00
+scaling + sign          ΔLL = 0.000e+00  cond(S) = 4.00
+permutation (1↔2)       ΔLL = 0.000e+00  cond(S) = 1.00</code></pre><h2 id="Procrustes-alignment"><a class="docs-heading-anchor" href="#Procrustes-alignment">Procrustes alignment</a><a id="Procrustes-alignment-1"></a><a class="docs-heading-anchor-permalink" href="#Procrustes-alignment" title="Permalink"></a></h2><p>To compare two equivalent fits visually we solve <span>$\hat S = \arg\min_S \lVert S X_\text{rot} - X_\text{orig} \rVert_F$</span> over orthogonal <span>$S$</span>, via SVD of <span>$X_\text{orig} X_\text{rot}^\top$</span>.</p><pre><code class="language-julia hljs">function procrustes_rotation(X, Y)
+    F = svd(Y * X&#39;)
+    return F.U * F.Vt
 end
 
-R_idx = 3
-m_rot = rotated_models[R_idx]
+S_idx = 3
+m_rot = transformed_models[S_idx]
 x_orig, _ = smooth(true_lds, y_true)
 x_rot, _ = smooth(m_rot, y_true)
-Rhat = procrustes_R(x_rot, x_orig)
+S_hat = procrustes_rotation(x_rot, x_orig)
 
-state_align_relerr = norm(Rhat * x_rot - x_orig) / norm(x_orig)
-A_aligned = Rhat * m_rot.state_model.A * Rhat&#39;
-C_aligned = m_rot.obs_model.C * Rhat&#39;
+state_align_relerr = norm(S_hat * x_rot - x_orig) / norm(x_orig)
+A_aligned = S_hat * m_rot.state_model.A * S_hat&#39;
+C_aligned = m_rot.obs_model.C * S_hat&#39;
 ΔA = norm(A_true - A_aligned)
 ΔC = norm(C_true - C_aligned)
 
 @printf(&quot;Procrustes residual: %.3e\n&quot;, state_align_relerr)
 @printf(&quot;After alignment: ‖ΔA‖ = %.3e, ‖ΔC‖ = %.3e\n&quot;, ΔA, ΔC)
 
+lim_A = max(maximum(abs, A_true), maximum(abs, A_aligned))
+lim_C = max(maximum(abs, C_true), maximum(abs, C_aligned))
+
 p_align = plot(layout=(2, 2), size=(900, 700))
-heatmap!(p_align, A_true; title=&quot;A (true)&quot;, subplot=1, color=:RdBu, aspect_ratio=:equal)
-heatmap!(p_align, A_aligned; title=&quot;A (aligned)&quot;, subplot=2, color=:RdBu, aspect_ratio=:equal)
-heatmap!(p_align, C_true; title=&quot;C (true)&quot;, subplot=3, color=:RdBu, aspect_ratio=:equal)
-heatmap!(p_align, C_aligned; title=&quot;C (aligned)&quot;, subplot=4, color=:RdBu, aspect_ratio=:equal)</code></pre><img src="d8e0a9ab.svg" alt="Example block output"/><h2 id="What-*is*-identifiable"><a class="docs-heading-anchor" href="#What-*is*-identifiable">What <em>is</em> identifiable</a><a id="What-*is*-identifiable-1"></a><a class="docs-heading-anchor-permalink" href="#What-*is*-identifiable" title="Permalink"></a></h2><p>Even though individual coordinates are gauge-dependent, three things are invariant under similarity transforms: eigenvalues of <span>$A$</span> (and therefore modal timescales), the column space of <span>$C$</span> (up to subspace angles), and all predictive metrics.</p><pre><code class="language-julia hljs">function subspace_angles_deg(C1, C2)
+heatmap!(p_align, A_true; title=&quot;A (true)&quot;, subplot=1, color=:RdBu,
+    clims=(-lim_A, lim_A), aspect_ratio=:equal)
+heatmap!(p_align, A_aligned; title=&quot;A (aligned)&quot;, subplot=2, color=:RdBu,
+    clims=(-lim_A, lim_A), aspect_ratio=:equal)
+heatmap!(p_align, C_true; title=&quot;C (true)&quot;, subplot=3, color=:RdBu,
+    clims=(-lim_C, lim_C), aspect_ratio=:equal)
+heatmap!(p_align, C_aligned; title=&quot;C (aligned)&quot;, subplot=4, color=:RdBu,
+    clims=(-lim_C, lim_C), aspect_ratio=:equal)</code></pre><img src="433b6004.svg" alt="Example block output"/><h2 id="What-*is*-identifiable"><a class="docs-heading-anchor" href="#What-*is*-identifiable">What <em>is</em> identifiable</a><a id="What-*is*-identifiable-1"></a><a class="docs-heading-anchor-permalink" href="#What-*is*-identifiable" title="Permalink"></a></h2><p>Even though individual coordinates are gauge-dependent, three things are invariant under similarity transforms: eigenvalues of <span>$A$</span> (and therefore modal timescales), the column space of <span>$C$</span> (up to subspace angles), and all predictive metrics.</p><pre><code class="language-julia hljs">function subspace_angles_deg(C1, C2)
     Q1 = qr(C1).Q[:, axes(C1, 2)]
     Q2 = qr(C2).Q[:, axes(C2, 2)]
     σ = clamp.(svdvals(Q1&#39; * Q2), -1.0, 1.0)
@@ -273,14 +256,14 @@ heatmap!(p_align, C_aligned; title=&quot;C (aligned)&quot;, subplot=4, color=:Rd
 end
 
 λ_true = sort(abs.(eigvals(true_lds.state_model.A)))
-for (name, model) in zip(rot_names, rotated_models)
+for (name, model) in zip(transform_names, transformed_models)
     λ = sort(abs.(eigvals(model.state_model.A)))
     θ = subspace_angles_deg(C_true, model.obs_model.C)
     @printf(&quot;%-22s  max|Δ|λ|| = %.2e  max angle(C) = %.3f°\n&quot;,
         name, maximum(abs.(λ_true - λ)), maximum(θ))
 end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">rot(1,2, 45°)           max|Δ|λ|| = 0.00e+00  max angle(C) = 0.000°
 rot(2,3, 90°)           max|Δ|λ|| = 0.00e+00  max angle(C) = 0.000°
-random orthogonal       max|Δ|λ|| = 7.77e-16  max angle(C) = 0.000°
+random orthogonal       max|Δ|λ|| = 2.22e-16  max angle(C) = 0.000°
 axis swap (1↔3)         max|Δ|λ|| = 0.00e+00  max angle(C) = 0.000°
 scaling + sign          max|Δ|λ|| = 0.00e+00  max angle(C) = 0.000°
-permutation (1↔2)       max|Δ|λ|| = 0.00e+00  max angle(C) = 0.000°</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../lds_model_selection_example/">« LDS Model Selection Example</a><a class="docs-footer-nextpage" href="../Probabilistic_PCA_example/">Probabilistic PCA Example »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Thursday 2 July 2026 03:25">Thursday 2 July 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+permutation (1↔2)       max|Δ|λ|| = 0.00e+00  max angle(C) = 0.000°</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../lds_model_selection_example/">« LDS Model Selection Example</a><a class="docs-footer-nextpage" href="../Probabilistic_PCA_example/">Probabilistic PCA Example »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Friday 3 July 2026 11:16">Friday 3 July 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
