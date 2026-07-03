@@ -93,20 +93,22 @@ using LinearAlgebra
 latent_dim = 3
 obs_dim = 10
 
-# Define state model parameters
-A = 0.95 * I(latent_dim)
-Q = 0.01 * I(latent_dim)
+# Define state model parameters (b = dynamics bias, x0 / P0 = initial mean / cov)
+A = Matrix(0.95 * I(latent_dim))
+Q = Matrix(0.01 * I(latent_dim))
+b = zeros(latent_dim)
 x0 = zeros(latent_dim)
-P0 = 0.1 * I(latent_dim)
-state_model = GaussianStateModel(A, Q, x0, P0)
+P0 = Matrix(0.1 * I(latent_dim))
+state_model = GaussianStateModel(; A=A, Q=Q, b=b, x0=x0, P0=P0)
 
-# Define observation model parameters
+# Define observation model parameters (d = emission bias)
 C = ones(obs_dim, latent_dim)
 R = Matrix(0.5 * I(obs_dim))
-obs_model = GaussianObservationModel(C, R)
+d = zeros(obs_dim)
+obs_model = GaussianObservationModel(; C=C, R=R, d=d)
 
-# Construct the LDS
-lds = LinearDynamicalSystem(state_model, obs_model, latent_dim, obs_dim, fill(true, 6))
+# Construct the LDS. Fitting uses the block-tridiagonal (Newton) smoother.
+lds = LinearDynamicalSystem(state_model, obs_model)
 ```
 
 ## Contributing

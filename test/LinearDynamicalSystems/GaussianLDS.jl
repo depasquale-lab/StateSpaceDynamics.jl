@@ -7,7 +7,7 @@ l = 1.0 # length of pendulum
 dt = 0.01 # time step
 
 # Discrete-time dynamics
-A = [1.0 dt; -g / l * dt 1.0]
+A = [1.0 dt; -g / l*dt 1.0]
 Q = Matrix{Float64}(0.00001 * I(2))               # Process noise covariance
 
 # Initial state/ covariance
@@ -35,7 +35,7 @@ function toy_lds(
     )
     # sample data
     T = 100
-    x, y = StateSpaceDynamics.rand(lds; tsteps=T, ntrials=ntrials)
+    x, y = StateSpaceDynamics.rand(lds, fill(T, ntrials))
     return lds, x, y
 end
 
@@ -212,12 +212,14 @@ function test_gaussian_sample_type_preservation()
         fit_bool=fill(true, 6),
     )
 
-    x_f32, y_f32 = StateSpaceDynamics.rand(gls_f32; tsteps=50, ntrials=3)
+    x_f32, y_f32 = StateSpaceDynamics.rand(gls_f32, fill(50, 3))
 
-    @test eltype(x_f32) === Float32
-    @test eltype(y_f32) === Float32
-    @test size(x_f32) == (2, 50, 3)
-    @test size(y_f32) == (2, 50, 3)
+    @test eltype(x_f32[1]) === Float32
+    @test eltype(y_f32[1]) === Float32
+    @test length(x_f32) == 3
+    @test length(y_f32) == 3
+    @test size(x_f32[1]) == (2, 50)
+    @test size(y_f32[1]) == (2, 50)
 
     # BigFloat
     A_bf = Matrix{BigFloat}(I, 2, 2)
@@ -239,12 +241,14 @@ function test_gaussian_sample_type_preservation()
         fit_bool=fill(true, 6),
     )
 
-    x_bf, y_bf = StateSpaceDynamics.rand(gls_bf; tsteps=50, ntrials=3)
+    x_bf, y_bf = StateSpaceDynamics.rand(gls_bf, fill(50, 3))
 
-    @test eltype(x_bf) === BigFloat
-    @test eltype(y_bf) === BigFloat
-    @test size(x_bf) == (2, 50, 3)
-    @test size(y_bf) == (2, 50, 3)
+    @test eltype(x_bf[1]) === BigFloat
+    @test eltype(y_bf[1]) === BigFloat
+    @test length(x_bf) == 3
+    @test length(y_bf) == 3
+    @test size(x_bf[1]) == (2, 50)
+    @test size(y_bf[1]) == (2, 50)
 end
 
 function test_gaussian_fit_type_preservation()
@@ -264,12 +268,11 @@ function test_gaussian_fit_type_preservation()
             state_model=gsm, obs_model=gom, latent_dim=2, obs_dim=2, fit_bool=fill(true, 6)
         )
 
-        x, y = rand(lds; tsteps=50, ntrials=3)
+        x, y = rand(lds, fill(50, 3))
 
-        mls, param_diff = fit!(lds, y; max_iter=10, tol=1e-6)
+        elbos = fit!(lds, y; max_iter=10, tol=1e-6)
 
-        @test eltype(sum(mls)) === T
-        @test eltype(param_diff) === T
+        @test eltype(elbos) === T
     end
 end
 
@@ -290,12 +293,12 @@ function test_gaussian_loglikelihood_type_preservation()
             state_model=gsm, obs_model=gom, latent_dim=2, obs_dim=2, fit_bool=fill(true, 6)
         )
 
-        x, y = rand(lds; tsteps=50, ntrials=3)
-        x_mat = x[:, :, 1]
-        y_mat = y[:, :, 1]
+        x, y = rand(lds, fill(50, 3))
+        x_mat = x[1]
+        y_mat = y[1]
 
         # compute log‐likelihood and check types 
-        ll = sum(StateSpaceDynamics.loglikelihood(x_mat, lds, y_mat))
+        ll = sum(StateSpaceDynamics.joint_loglikelihood(x_mat, lds, y_mat))
 
         if ll isa Number
             @test typeof(ll) === T
@@ -334,11 +337,15 @@ function test_smooth()
     lds, x, y = toy_lds()
     test_smooth_common(lds, x, y)
     # Additional Gaussian-specific checks
-    tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, size(y, 2), size(y, 3))
+    tsteps_per_trial = [size(yt, 2) for yt in y]
+    tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, tsteps_per_trial)
     StateSpaceDynamics.smooth!(lds, tfs, y)
-    x_smooth = tfs[1].x_smooth
-    for i in axes(y, 3)
-        grad_analytical = StateSpaceDynamics.Gradient(lds, y[:, :, i], x_smooth[:, :, i])
+    for i in eachindex(y)
+        ws = StateSpaceDynamics.SmoothWorkspace(
+            Float64, lds.latent_dim, lds.obs_dim, size(y[i], 2)
+        )
+        StateSpaceDynamics.compute_smooth_constants!(ws, lds)
+        grad_analytical = copy(StateSpaceDynamics.Gradient!(ws, lds, y[i], tfs[i].x_smooth))
         @test maximum(abs.(grad_analytical)) < 1e-8
         @test norm(grad_analytical) < 1e-8
     end
@@ -361,23 +368,33 @@ function test_obs_model_parameter_updates(ntrials::Int=1)
     # Fit flags: update C and R here (d is bundled with C via CD)
     lds, x, y = toy_lds(ntrials, [false, false, false, false, true, true])
 
-    # tfs
-    tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, size(y, 2), size(y, 3))
+    tsteps_per_trial = [size(yt, 2) for yt in y]
+    tsteps = tsteps_per_trial[1]
+    tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, tsteps_per_trial)
 
-    # run the E_Step
-    ml_total = StateSpaceDynamics.estep!(lds, tfs, y)
+    ws = StateSpaceDynamics.SmoothWorkspace(Float64, lds.latent_dim, lds.obs_dim, tsteps)
+    sws_pool = [
+        StateSpaceDynamics.SmoothWorkspace(Float64, lds.latent_dim, lds.obs_dim, tsteps) for
+        _ in 1:Threads.maxthreadid()
+    ]
+    StateSpaceDynamics.smooth!(lds, tfs, y, sws_pool)
+    StateSpaceDynamics.sufficient_statistics!(tfs)
 
-    # Objective over (C,d,R)
+    C_orig = copy(lds.obs_model.C)
+    d_orig = copy(lds.obs_model.d)
+    R_orig = copy(lds.obs_model.R)
+
     function obj_obs(CD::AbstractMatrix, R_sqrt::AbstractMatrix, lds)
         D = size(CD, 2) - 1
-        C = CD[:, 1:D]
-        d = CD[:, D + 1]
-        R = R_sqrt * R_sqrt'
-        val = zero(eltype(R))
+        lds.obs_model.C .= CD[:, 1:D]
+        lds.obs_model.d .= CD[:, D + 1]
+        lds.obs_model.R .= R_sqrt * R_sqrt'
+        StateSpaceDynamics.compute_smooth_constants!(ws, lds)
+        val = zero(eltype(R_sqrt))
 
-        @views for k in 1:ntrials
+        for k in 1:ntrials
             E_z, E_zz = tfs[k].E_z, tfs[k].E_zz
-            val += StateSpaceDynamics.Q_obs(C, d, R, E_z, E_zz, y[:, :, k])
+            val += StateSpaceDynamics.Q_obs!(ws, lds, E_z, E_zz, y[k])
         end
         return -val
     end
@@ -389,8 +406,19 @@ function test_obs_model_parameter_updates(ntrials::Int=1)
     CD_opt = optimize(CD -> obj_obs(CD, R_sqrt0, lds), CD0, LBFGS()).minimizer
     R_opt_sqrt = optimize(Rs -> obj_obs(CD_opt, Rs, lds), R_sqrt0, LBFGS()).minimizer
 
-    # M-step updates the model
-    StateSpaceDynamics.mstep!(lds, tfs, y)
+    lds.obs_model.C .= C_orig
+    lds.obs_model.d .= d_orig
+    lds.obs_model.R .= R_orig
+
+    # M-step via the suf-based path: aggregate, then mstep!(lds, suf, ws).
+    suf = StateSpaceDynamics._initialize_td_sufficient_statistics(
+        Float64, lds, tsteps_per_trial
+    )
+    ux_seq = [zeros(Float64, 0, size(yt, 2)) for yt in y]
+    uy_seq = [zeros(Float64, 0, size(yt, 2)) for yt in y]
+    StateSpaceDynamics._td_init_const_blocks!(ws, lds, tsteps_per_trial, y, ux_seq, uy_seq)
+    StateSpaceDynamics._aggregate_td_suff_stats!(suf, tfs, lds, ux_seq, uy_seq, y, ws)
+    StateSpaceDynamics.mstep!(lds, suf, ws)
 
     @test isapprox(lds.obs_model.C, CD_opt[:, 1:D], atol=1e-6, rtol=1e-6)
     @test isapprox(lds.obs_model.d, CD_opt[:, D + 1], atol=1e-6, rtol=1e-6)
@@ -401,7 +429,7 @@ function test_EM(n_trials::Int=1)
     test_em_convergence_common(toy_lds, n_trials)
     # Additional check for monotonic increase
     lds, x, y = toy_lds(n_trials)
-    ml_total, norm_diff = fit!(lds, y; max_iter=100)
+    ml_total = fit!(lds, y; max_iter=100)
     @test all(diff(ml_total) .>= 0)
 end
 
@@ -420,19 +448,19 @@ function test_gaussian_iw_priors_shape_map_and_R_sanity(; rng=MersenneTwister(20
         d = 0.1 .* randn(rng, P)
 
         # Strong shrinkage priors (ν > d+1)
-        Qprior = IWPrior(Ψ=diagm(0 => fill(0.01, D)), ν=Float64(D + 3))
-        P0prior = IWPrior(Ψ=diagm(0 => fill(0.01, D)), ν=Float64(D + 3))
-        Rprior = IWPrior(Ψ=diagm(0 => fill(0.01, P)), ν=Float64(P + 3))
+        Qprior = IWPrior(; Ψ=diagm(0 => fill(0.01, D)), ν=Float64(D + 3))
+        P0prior = IWPrior(; Ψ=diagm(0 => fill(0.01, D)), ν=Float64(D + 3))
+        Rprior = IWPrior(; Ψ=diagm(0 => fill(0.01, P)), ν=Float64(P + 3))
 
-        gsm = GaussianStateModel(
+        gsm = GaussianStateModel(;
             A=A, Q=Q, b=b, x0=x0, P0=P0, Q_prior=Qprior, P0_prior=P0prior
         )
-        gom = GaussianObservationModel(C=C, R=R, d=d, R_prior=Rprior)
+        gom = GaussianObservationModel(; C=C, R=R, d=d, R_prior=Rprior)
         lds = LinearDynamicalSystem(gsm, gom)
 
-        X, Y = rand(rng, lds; tsteps=Tt, ntrials=N)
+        X, Y = rand(rng, lds, fill(Tt, N))
 
-        elbos, Δ = fit!(lds, Y; max_iter=12, tol=0.0, progress=false)
+        elbos = fit!(lds, Y; max_iter=12, tol=0.0, progress=false)
         @test all(diff(elbos) .>= -1e-7)
         @test issymmetric(lds.state_model.Q)
         @test issymmetric(lds.state_model.P0)
@@ -458,27 +486,227 @@ function test_gaussian_update_R_matches_residual_cov(; rng=MersenneTwister(7))
 
         C = randn(rng, P, D)
         Rtrue = Matrix(Symmetric([
-            0.30 0.05 0.00;
-            0.05 0.22 0.02;
+            0.30 0.05 0.00
+            0.05 0.22 0.02
             0.00 0.02 0.27
         ]))
         d = 0.05 .* randn(rng, P)
 
-        gsm = GaussianStateModel(A=A, Q=Q, b=b, x0=x0, P0=P0)
-        gom = GaussianObservationModel(C=C, R=copy(Rtrue), d=d)
+        gsm = GaussianStateModel(; A=A, Q=Q, b=b, x0=x0, P0=P0)
+        gom = GaussianObservationModel(; C=C, R=copy(Rtrue), d=d)
         lds = LinearDynamicalSystem(gsm, gom)
 
-        X, Y = rand(rng, lds; tsteps=Tt, ntrials=N)
+        X, Y = rand(rng, lds, fill(Tt, N))
 
-        tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, Tt, N)
-        StateSpaceDynamics.estep!(lds, tfs, Y)
+        tsteps_per_trial = fill(Tt, N)
+        tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, tsteps_per_trial)
+        ws = StateSpaceDynamics.SmoothWorkspace(Float64, D, P, Tt)
+        sws_pool = [
+            StateSpaceDynamics.SmoothWorkspace(Float64, D, P, Tt) for
+            _ in 1:Threads.maxthreadid()
+        ]
+        StateSpaceDynamics.smooth!(lds, tfs, Y, sws_pool)
 
         # only update R
         lds.fit_bool .= [false, false, false, false, false, true]
-        StateSpaceDynamics.update_R!(lds, tfs, Y)
+        suf = StateSpaceDynamics._initialize_td_sufficient_statistics(
+            Float64, lds, tsteps_per_trial
+        )
+        ux_seq = [zeros(Float64, 0, Tt) for _ in 1:N]
+        uy_seq = [zeros(Float64, 0, Tt) for _ in 1:N]
+        StateSpaceDynamics._td_init_const_blocks!(
+            ws, lds, tsteps_per_trial, Y, ux_seq, uy_seq
+        )
+        StateSpaceDynamics._aggregate_td_suff_stats!(suf, tfs, lds, ux_seq, uy_seq, Y, ws)
+        StateSpaceDynamics.update_R!(lds, suf, ws)
 
         @test issymmetric(lds.obs_model.R)
         @test norm(lds.obs_model.R - Rtrue) / norm(Rtrue) < 0.25
+    end
+    return nothing
+end
+
+function test_td_mn_priors_shrink(; rng=MersenneTwister(20260519))
+    # MN-prior shrinkage on [A b B] and [C d D] in the TD fit. With a strong
+    # prior centered at M₀ = 0 and Λ ≫ data, the MAP regression should pull
+    # the fitted coefficients toward 0.
+    @testset "TD: MN priors shrink coefficients toward M₀" begin
+        D, p, Tt, N = 3, 4, 60, 4
+
+        A = 0.7 * StateSpaceDynamics.random_rotation_matrix(D, rng)
+        Q = Matrix(0.2 * I(D))
+        b = randn(rng, D)
+        x0 = zeros(D)
+        P0 = Matrix(0.5 * I(D))
+        C = randn(rng, p, D)
+        R = Matrix(0.2 * I(p))
+        d = 0.1 * randn(rng, p)
+
+        # Reference fit: no priors.
+        sm_ref = GaussianStateModel(;
+            A=copy(A), Q=copy(Q), b=copy(b), x0=copy(x0), P0=copy(P0)
+        )
+        om_ref = GaussianObservationModel(; C=copy(C), R=copy(R), d=copy(d))
+        lds_ref = LinearDynamicalSystem(sm_ref, om_ref)
+        _, y = rand(rng, lds_ref, fill(Tt, N))
+
+        elbos_ref = fit!(lds_ref, y; max_iter=20, progress=false)
+        @test all(diff(elbos_ref) .>= -1e-7)
+
+        # Same data, very strong MN-priors centered at zero.
+        # AB lives in (D × D+1) (A and bias); CD lives in (p × D+1).
+        AB_M0 = zeros(D, D + 1)
+        AB_Λ = 1e6 * Matrix{Float64}(I, D + 1, D + 1)
+        CD_M0 = zeros(p, D + 1)
+        CD_Λ = 1e6 * Matrix{Float64}(I, D + 1, D + 1)
+
+        sm_p = GaussianStateModel(;
+            A=copy(A),
+            Q=copy(Q),
+            b=copy(b),
+            x0=copy(x0),
+            P0=copy(P0),
+            AB_prior=StateSpaceDynamics.MNPrior(; M₀=AB_M0, Λ=AB_Λ),
+        )
+        om_p = GaussianObservationModel(;
+            C=copy(C),
+            R=copy(R),
+            d=copy(d),
+            CD_prior=StateSpaceDynamics.MNPrior(; M₀=CD_M0, Λ=CD_Λ),
+        )
+        lds_p = LinearDynamicalSystem(sm_p, om_p)
+        # ELBO must be monotone under MN priors — the TD `calculate_elbo` now
+        # includes the MN log-prior trace term `-½ tr(Σ⁻¹ (W-M₀) Λ (W-M₀)')`
+        # for both [A b B] and [C d D]. Without it, the displayed ELBO drops
+        # the MN contribution and can appear non-monotone even though the
+        # underlying MAP objective is increasing.
+        elbos_p = fit!(lds_p, y; max_iter=20, progress=false)
+        @test all(diff(elbos_p) .>= -1e-6)
+
+        # Strong shrinkage check: fitted norms should be smaller than reference.
+        @test norm(lds_p.state_model.A) < norm(lds_ref.state_model.A)
+        @test norm(lds_p.obs_model.C) < norm(lds_ref.obs_model.C)
+        # Near-zero with this much shrinkage.
+        @test norm(lds_p.state_model.A) < 0.1
+        @test norm(lds_p.obs_model.C) < 0.1
+    end
+    return nothing
+end
+
+function test_td_with_obs_inputs(; rng=MersenneTwister(20260520))
+    # TD path with a non-trivial D matrix: simulate from y = C x + d + D v + ε,
+    # fit, and verify that fitting *with* obs_inputs beats fitting *without*.
+    @testset "TD: obs_inputs (D matrix) is learned" begin
+        D, p, Tt, N = 3, 5, 50, 6
+        uy_dim = 2
+
+        A_true = 0.85 * StateSpaceDynamics.random_rotation_matrix(D, rng)
+        Q_true = 0.05 * Matrix{Float64}(I, D, D)
+        b_true = randn(rng, D)
+        B_true = zeros(D, 0)
+        x0_true = zeros(D)
+        P0_true = 0.1 * Matrix{Float64}(I, D, D)
+        C_true = randn(rng, p, D)
+        R_true = 0.1 * Matrix{Float64}(I, p, p)
+        d_true = zeros(p)
+        D_true = randn(rng, p, uy_dim)
+
+        sm_true = GaussianStateModel(;
+            A=A_true, Q=Q_true, x0=x0_true, P0=P0_true, b=b_true, B=B_true
+        )
+        om_true = GaussianObservationModel(; C=C_true, R=R_true, d=d_true, D=D_true)
+        lds_true = LinearDynamicalSystem(sm_true, om_true)
+
+        uy_seq = [randn(rng, uy_dim, Tt) for _ in 1:N]
+        _, y_seq = rand(rng, lds_true, fill(Tt, N); obs_inputs=uy_seq)
+
+        # Fit with obs inputs.
+        sm_init = GaussianStateModel(;
+            A=0.5 * Matrix{Float64}(I, D, D),
+            Q=Matrix{Float64}(I, D, D),
+            x0=zeros(D),
+            P0=Matrix{Float64}(I, D, D),
+            b=zeros(D),
+        )
+        om_init = GaussianObservationModel(;
+            C=randn(rng, p, D), R=Matrix{Float64}(I, p, p), d=zeros(p), D=zeros(p, uy_dim)
+        )
+        lds_fit = LinearDynamicalSystem(sm_init, om_init)
+
+        elbos = fit!(lds_fit, y_seq; obs_inputs=uy_seq, max_iter=60, progress=false)
+        @test all(diff(elbos) .>= -1e-4)
+
+        # Baseline: fit without obs inputs (0-column D).
+        sm_nofit = GaussianStateModel(;
+            A=0.5 * Matrix{Float64}(I, D, D),
+            Q=Matrix{Float64}(I, D, D),
+            x0=zeros(D),
+            P0=Matrix{Float64}(I, D, D),
+            b=zeros(D),
+        )
+        om_nofit = GaussianObservationModel(;
+            C=randn(MersenneTwister(20260520), p, D), R=Matrix{Float64}(I, p, p), d=zeros(p)
+        )
+        lds_nofit = LinearDynamicalSystem(sm_nofit, om_nofit)
+        elbos_no = fit!(lds_nofit, y_seq; max_iter=60, progress=false)
+
+        # Obs inputs must explain real variance: ELBO with D should beat ELBO without.
+        @test elbos[end] > elbos_no[end] + 1.0
+    end
+    return nothing
+end
+
+function test_td_ragged_multi_trial(; rng=MersenneTwister(20260521))
+    # Ragged-length multi-trial: exercises the variable-length fallback branch
+    # in smooth!/fit!. Should produce monotone ELBO and match a per-trial fit
+    # of the longest sub-batch.
+    @testset "TD: ragged-length multi-trial fit" begin
+        D, p = 3, 4
+        Ts = [20, 30, 25, 40]   # ragged
+        N = length(Ts)
+
+        A = 0.8 * StateSpaceDynamics.random_rotation_matrix(D, rng)
+        Q = Matrix(0.1 * I(D))
+        b = zeros(D)
+        x0 = zeros(D)
+        P0 = Matrix(0.4 * I(D))
+        C = randn(rng, p, D)
+        R = Matrix(0.2 * I(p))
+        d = zeros(p)
+
+        sm = GaussianStateModel(; A=A, Q=Q, b=b, x0=x0, P0=P0)
+        om = GaussianObservationModel(; C=C, R=R, d=d)
+        lds_data = LinearDynamicalSystem(sm, om)
+        _, y = rand(rng, lds_data, Ts)
+
+        # Trial lengths sanity check.
+        @test [size(yt, 2) for yt in y] == Ts
+
+        # Smoke: smooth! must run on the ragged fallback path.
+        tfs = StateSpaceDynamics.initialize_FilterSmooth(lds_data, Ts)
+        T_max = maximum(Ts)
+        sws_pool = [
+            StateSpaceDynamics.SmoothWorkspace(Float64, D, p, T_max) for
+            _ in 1:Threads.maxthreadid()
+        ]
+        StateSpaceDynamics.smooth!(lds_data, tfs, y, sws_pool)
+        for trial in 1:N
+            @test size(tfs[trial].x_smooth) == (D, Ts[trial])
+            @test size(tfs[trial].p_smooth) == (D, D, Ts[trial])
+            # The ragged path does NOT alias p_smooth across trials.
+            if trial > 1
+                @test tfs[trial].p_smooth !== tfs[1].p_smooth
+            end
+        end
+
+        # Fit converges monotonically.
+        sm2 = GaussianStateModel(;
+            A=copy(A), Q=copy(Q), b=copy(b), x0=copy(x0), P0=copy(P0)
+        )
+        om2 = GaussianObservationModel(; C=copy(C), R=copy(R), d=copy(d))
+        lds_fit = LinearDynamicalSystem(sm2, om2)
+        elbos = fit!(lds_fit, y; max_iter=20, progress=false)
+        @test all(diff(elbos) .>= -1e-6)
     end
     return nothing
 end
@@ -498,31 +726,188 @@ function test_gaussian_weighting_equiv_to_duplication(; rng=MersenneTwister(9))
         d = zeros(P)
 
         lds1 = LinearDynamicalSystem(
-            GaussianStateModel(A=A, Q=Q, b=b, x0=x0, P0=P0),
-            GaussianObservationModel(C=C, R=R, d=d),
+            GaussianStateModel(; A=A, Q=Q, b=b, x0=x0, P0=P0),
+            GaussianObservationModel(; C=C, R=R, d=d),
         )
         lds2 = LinearDynamicalSystem(
-            GaussianStateModel(A=A, Q=Q, b=b, x0=x0, P0=P0),
-            GaussianObservationModel(C=C, R=R, d=d),
+            GaussianStateModel(; A=A, Q=Q, b=b, x0=x0, P0=P0),
+            GaussianObservationModel(; C=C, R=R, d=d),
         )
 
-        _, Y = rand(rng, lds1; tsteps=Tt, ntrials=N)
+        _, Y = rand(rng, lds1, fill(Tt, N))
 
-        # manual weighted EM
-        tfs = StateSpaceDynamics.initialize_FilterSmooth(lds1, Tt, N)
+        # Manual weighted EM via the suf-based weighted aggregator.
+        tsteps_per_trial = fill(Tt, N)
+        tfs = StateSpaceDynamics.initialize_FilterSmooth(lds1, tsteps_per_trial)
+        ws = StateSpaceDynamics.SmoothWorkspace(Float64, D, P, Tt)
+        sws_pool = [
+            StateSpaceDynamics.SmoothWorkspace(Float64, D, P, Tt) for
+            _ in 1:Threads.maxthreadid()
+        ]
+        suf = StateSpaceDynamics._initialize_td_sufficient_statistics(
+            Float64, lds1, tsteps_per_trial
+        )
+        ux_seq = [zeros(Float64, 0, Tt) for _ in 1:N]
+        uy_seq = [zeros(Float64, 0, Tt) for _ in 1:N]
         w = [ones(Float64, Tt), 2.0 .* ones(Float64, Tt)]
         for _ in 1:6
-            StateSpaceDynamics.estep!(lds1, tfs, Y)
-            StateSpaceDynamics.mstep!(lds1, tfs, Y, w)
+            StateSpaceDynamics.smooth!(lds1, tfs, Y, sws_pool)
+            StateSpaceDynamics._aggregate_td_suff_stats_weighted!(
+                suf, tfs, lds1, ux_seq, uy_seq, Y, w, ws
+            )
+            StateSpaceDynamics.mstep!(lds1, suf, ws)
         end
         θw = vec([lds1.state_model.A; lds1.obs_model.C])
 
         # duplicate trial 2 once ~ same effect
-        Ydup = cat(Y, Y[:, :, 2:2]; dims=3)
+        Ydup = vcat(Y, [copy(Y[2])])
         fit!(lds2, Ydup; max_iter=6, tol=0.0, progress=false)
         θd = vec([lds2.state_model.A; lds2.obs_model.C])
 
         @test norm(θw - θd) / max(norm(θd), 1e-12) < 0.12
+    end
+    return nothing
+end
+
+function test_mn_prior_type_decoupled_from_model_matrix()
+    @testset "MN prior type decoupled from model matrix storage" begin
+        D, p = 2, 2
+        Af = [0.9 0.0; 0.0 0.85]
+        Qf = Matrix(0.1 * I(D))
+        P0f = Matrix(0.5 * I(D))
+        Bf = zeros(D, 0)
+        bf = zeros(D)
+        x0f = zeros(D)
+        Cf = Matrix{Float64}(I, p, D)
+        Rf = Matrix(0.2 * I(p))
+        Df = zeros(p, 0)
+        df = zeros(p)
+
+        sm = GaussianStateModel(;
+            A=view(Af, :, :),
+            Q=view(Qf, :, :),
+            b=view(bf, :),
+            x0=view(x0f, :),
+            P0=view(P0f, :, :),
+            B=view(Bf, :, :),
+            AB_prior=StateSpaceDynamics.MNPrior(;
+                M₀=zeros(D, D + 1), Λ=Matrix(1e3 * I(D + 1))
+            ),
+        )
+        om = GaussianObservationModel(;
+            C=view(Cf, :, :),
+            R=view(Rf, :, :),
+            d=view(df, :),
+            D=view(Df, :, :),
+            CD_prior=StateSpaceDynamics.MNPrior(;
+                M₀=zeros(p, D + 1), Λ=Matrix(1e3 * I(D + 1))
+            ),
+        )
+
+        @test sm.A isa SubArray
+        @test sm.AB_prior isa StateSpaceDynamics.MNPrior{Float64,Matrix{Float64}}
+        @test om.CD_prior isa StateSpaceDynamics.MNPrior{Float64,Matrix{Float64}}
+
+        lds = LinearDynamicalSystem(sm, om)
+        kws = StateSpaceDynamics.KalmanWorkspace(lds, 20, 1)
+        @test kws.AB_prior isa StateSpaceDynamics.MNPrior{Float64,Matrix{Float64}}
+        @test kws.CD_prior isa StateSpaceDynamics.MNPrior{Float64,Matrix{Float64}}
+        @test kws.AB_prior === sm.AB_prior   # stored verbatim, no copy/convert
+        @test kws.CD_prior === om.CD_prior
+    end
+    return nothing
+end
+
+function test_td_weighted_aggregator_matches_unweighted_with_inputs(;
+    rng=MersenneTwister(0xC0FFEE)
+)
+    @testset "TD weighted aggregator == unweighted (B & D inputs)" begin
+        D, p, ux_dim, uy_dim, Tt = 2, 3, 2, 2, 40
+
+        A = 0.85 * StateSpaceDynamics.random_rotation_matrix(D, rng)
+        Q = 0.05 * Matrix{Float64}(I, D, D)
+        b = randn(rng, D)
+        B = 0.3 * randn(rng, D, ux_dim)
+        x0 = zeros(D)
+        P0 = 0.1 * Matrix{Float64}(I, D, D)
+        C = randn(rng, p, D)
+        R = 0.1 * Matrix{Float64}(I, p, p)
+        dvec = randn(rng, p)
+        Dmat = 0.4 * randn(rng, p, uy_dim)
+
+        sm = GaussianStateModel(; A=A, Q=Q, x0=x0, P0=P0, b=b, B=B)
+        om = GaussianObservationModel(; C=C, R=R, d=dvec, D=Dmat)
+        lds = LinearDynamicalSystem(sm, om)
+
+        u = 0.5 * randn(rng, ux_dim, Tt)
+        v = 0.5 * randn(rng, uy_dim, Tt)
+        _, y1 = rand(rng, lds, Tt; latent_inputs=u, obs_inputs=v)
+        y = [y1]
+        ux_seq = [u]
+        uy_seq = [v]
+
+        tsteps_per_trial = [Tt]
+        tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, tsteps_per_trial)
+        sws_pool = [
+            StateSpaceDynamics.SmoothWorkspace(
+                Float64, D, p, Tt; ux_dim=ux_dim, uy_dim=uy_dim, ntrials=1
+            ) for _ in 1:Threads.maxthreadid()
+        ]
+        ws = sws_pool[1]
+
+        # Populate the smoother outputs (x_smooth, p_smooth, p_smooth_tt1) once;
+        # both aggregators read the same tfs.
+        StateSpaceDynamics._td_init_const_blocks!(
+            ws, lds, tsteps_per_trial, y, ux_seq, uy_seq
+        )
+        StateSpaceDynamics.smooth!(lds, tfs, y, sws_pool, ux_seq, uy_seq)
+
+        # Reference.
+        suf_u = StateSpaceDynamics._initialize_td_sufficient_statistics(
+            Float64, lds, tsteps_per_trial
+        )
+        StateSpaceDynamics._aggregate_td_suff_stats!(suf_u, tfs, lds, ux_seq, uy_seq, y, ws)
+        ref = (
+            init_n=suf_u.init_n,
+            dyn_n=suf_u.dyn_n,
+            obs_n=suf_u.obs_n,
+            init_xy=copy(suf_u.init_xy),
+            dyn_xy=copy(suf_u.dyn_xy),
+            obs_xy=copy(suf_u.obs_xy),
+            init_yy=copy(suf_u.init_yy[].mat),
+            dyn_xx=copy(suf_u.dyn_xx[].mat),
+            dyn_yy=copy(suf_u.dyn_yy[].mat),
+            obs_xx=copy(suf_u.obs_xx[].mat),
+            obs_yy=copy(suf_u.obs_yy[].mat),
+        )
+
+        # Weighted aggregator with unit weights must reproduce it exactly.
+        suf_w = StateSpaceDynamics._initialize_td_sufficient_statistics(
+            Float64, lds, tsteps_per_trial
+        )
+        weights = [ones(Float64, Tt)]
+        StateSpaceDynamics._aggregate_td_suff_stats_weighted!(
+            suf_w, tfs, lds, ux_seq, uy_seq, y, weights, ws
+        )
+
+        @test suf_w.init_n ≈ ref.init_n
+        @test suf_w.dyn_n ≈ ref.dyn_n
+        @test suf_w.obs_n ≈ ref.obs_n
+        @test suf_w.init_xy ≈ ref.init_xy
+        @test suf_w.init_yy[].mat ≈ ref.init_yy
+        # dyn_xx / obs_xx carry the x·u and x·v cross blocks under test; dyn_xy /
+        # obs_xy carry the u·x_next and v·y cross rows.
+        @test suf_w.dyn_xx[].mat ≈ ref.dyn_xx
+        @test suf_w.dyn_xy ≈ ref.dyn_xy
+        @test suf_w.dyn_yy[].mat ≈ ref.dyn_yy
+        @test suf_w.obs_xx[].mat ≈ ref.obs_xx
+        @test suf_w.obs_xy ≈ ref.obs_xy
+        @test suf_w.obs_yy[].mat ≈ ref.obs_yy
+
+        # Sanity: the inputs cross blocks are actually populated (non-zero), so
+        # the equivalence above is meaningful and not comparing empty regions.
+        @test norm(suf_w.dyn_xx[].mat[1:D, (D + 2):end]) > 0
+        @test norm(suf_w.obs_xx[].mat[1:D, (D + 2):end]) > 0
     end
     return nothing
 end

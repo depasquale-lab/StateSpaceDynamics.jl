@@ -8,17 +8,12 @@ DocMeta.setdocmeta!(StateSpaceDynamics, :DocTestSetup, :(using StateSpaceDynamic
 
 # Define tutorial configurations
 tutorials = [
+    ("QuickStart.jl", "quick_start_example"),
     ("GaussianLDS.jl", "gaussian_latent_dynamics_example"),
     ("PoissonLDS.jl", "poisson_latent_dynamics_example"),
     ("LDSModelSelection.jl", "lds_model_selection_example"),
     ("LDSIdentifiability.jl", "lds_identifiability_example"),
     ("SLDS.jl", "switching_linear_dynamical_system_example"),
-    ("HMM.jl", "hidden_markov_model_example"),
-    ("HMM_ModelSelection.jl", "hmm_model_selection_example"),
-    ("HMMIdentifiability.jl", "hmm_identifiability_example"),
-    ("Gaussian_GLM_HMM.jl", "gaussian_glm_hmm_example"),
-    ("GaussianMixtureModel.jl", "gaussian_mixture_model_example"),
-    ("PoissonMixtureModel.jl", "poisson_mixture_model_example"),
     ("ProbabilisticPCA.jl", "Probabilistic_PCA_example"),
 ]
 
@@ -43,40 +38,33 @@ makedocs(;
     format = Documenter.HTML(
         prettyurls = get(ENV, "CI", "false") == "true",
         repolink = "https://github.com/depasquale-lab/StateSpaceDynamics.jl",
+        assets = ["assets/custom.css"],
     ),
     pages=[
         "Home" => "index.md",
         "Models" => [
             "Linear Dynamical Systems" => "LinearDynamicalSystems.md",
-            "Hidden Markov Models" => "HiddenMarkovModels.md",
             "Switching Linear Dynamical Systems" => "SLDS.md",
-            "Emission Models" => "EmissionModels.md",
-            "Mixture Models" => "MixtureModels.md"
         ],
         "Tutorials" => [
+            "Quick Start" => "tutorials/quick_start_example.md",
             "Gaussian LDS Example" => "tutorials/gaussian_latent_dynamics_example.md",
             "Poisson LDS Example" => "tutorials/poisson_latent_dynamics_example.md",
             "LDS Model Selection Example" => "tutorials/lds_model_selection_example.md",
             "Non-Identifiability in LDS Models" => "tutorials/lds_identifiability_example.md",
-            "Hidden Markov Model Example" => "tutorials/hidden_markov_model_example.md",
-            "HMM Model Selection" => "tutorials/hmm_model_selection_example.md",
-            "Gaussian GLM-HMM Example" => "tutorials/gaussian_glm_hmm_example.md",
-            "HMM Identifiability" => "tutorials/hmm_identifiability_example.md",
-            "Gaussian Mixture Model Example" => "tutorials/gaussian_mixture_model_example.md",
-            "Poisson Mixture Model Example" => "tutorials/poisson_mixture_model_example.md",
             "Probabilistic PCA Example" => "tutorials/Probabilistic_PCA_example.md",
             "Switching Linear Dynamical System Example" => "tutorials/switching_linear_dynamical_system_example.md",
         ]
     ],
     checkdocs = :exports,
     doctest=true,
-    doctestfilters = [r"docs/src/tutorials/.*\.md"],    
+    doctestfilters = [r"docs/src/tutorials/.*\.md"],
     warnonly = true
 )
 
 # Deploy the documentation
 println("Deploying documentation...")
-deploydocs(; 
-    repo="github.com/depasquale-lab/StateSpaceDynamics.jl", 
-    devbranch="docs_dev_"
+deploydocs(;
+    repo="github.com/depasquale-lab/StateSpaceDynamics.jl",
+    devbranch="main"
 )

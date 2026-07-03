@@ -1,0 +1,174 @@
+#=============================================================================
+Poisson Observations
+
+    E-Step: Q_obs!(sws, lds, suf)
+
+    M-Step: update_observation_model!(plds, tfs, y, sws_pool, w)
+=============================================================================#
+
+"""
+    Q_obs!(sws, lds, E_z, p_smooth, y; weights=nothing)
+
+Allocation-free Poisson observation-model Q for a *single trial* (full
+expected complete log-likelihood, including the `-log(y!)` normalizer):
+
+```
+Q = Σ_t w_t [ y_t' h_t  -  1' exp(h_t + ρ_t)  -  Σ_i log Γ(y_{t,i} + 1) ]
+```
+
+where `h_t = C · E[x_t] + d` and `ρ_{i,t} = ½ c_i' P_t c_i`, and `d` is the
+canonical log-link Poisson intercept (free in ℝ). Including the factorial
+term means `calculate_elbo` matches the Laplace-approximation marginal
+log-likelihood at the EM fixed point, instead of being off by a fixed
+data-only constant.
+"""
+function Q_obs!(
+    sws::SmoothWorkspace{T},                      # must provide cc.C and cc.d
+    plds::LinearDynamicalSystem{T,S,O},            # for obs_model.C and obs_model.d
+    E_z::AbstractMatrix{T},                       # state_dim × T
+    p_smooth::AbstractArray{T,3},                 # state_dim × state_dim × T
+    y::AbstractMatrix{T};                         # obs_dim × T
+    weights::Union{Nothing,AbstractVector{T}}=nothing,
+) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
+    d = plds.obs_model.d
+    C = plds.obs_model.C
+
+    obs_dim, _ = size(C)
+    tsteps = size(y, 2)
+
+    # workspace buffers
+    h = sws.h_obs::Vector{T}            # obs_dim
+    rho = sws.rho_obs::Vector{T}            # obs_dim
+    CP = sws.CP_obs::Matrix{T}            # obs_dim × state_dim
+    CEz = sws.CEz_obs::Vector{T}            # obs_dim
+
+    Q_val = zero(T)
+
+    @views for t in 1:tsteps
+        wt = isnothing(weights) ? one(T) : weights[t]
+
+        Ez_t = E_z[:, t]                 # state_dim
+        P_t = p_smooth[:, :, t]         # state_dim × state_dim
+        y_t = y[:, t]                   # obs_dim
+
+        # CEz = C * Ez_t
+        mul!(CEz, C, Ez_t)
+
+        # h = CEz + d
+        @. h = CEz + d
+
+        # CP = C * P_t
+        mul!(CP, C, P_t)
+
+        # rho[i] = 0.5 * dot(CP[i,:], C[i,:])
+        for i in 1:obs_dim
+            rho[i] = T(0.5) * dot(view(CP, i, :), view(C, i, :))
+        end
+
+        # rho := exp(h + rho)
+        @. rho = exp(h + rho)
+
+        log_fact = zero(T)
+        for i in 1:obs_dim
+            log_fact += loggamma(y_t[i] + one(T))
+        end
+
+        # Q += wt * (dot(y_t, h) - sum(rho) - log_fact)
+        Q_val += wt * (dot(y_t, h) - sum(rho) - log_fact)
+    end
+
+    return Q_val
+end
+
+"""
+    update_observation_model!(plds, tfs, y, w)
+
+Update the observation model parameters of a PLDS model.
+"""
+function update_observation_model!(
+    plds::LinearDynamicalSystem{T,S,O},
+    tfs::TrialFilterSmooth{T},
+    y::AbstractVector{<:AbstractMatrix{T}},
+    sws_pool::Vector{SmoothWorkspace{T}},
+    w::Union{Nothing,AbstractVector{<:AbstractVector{T}}}=nothing,
+) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
+    plds.fit_bool[5] || return nothing
+
+    sws = sws_pool[1]       # f(params) is sequential; one workspace suffices
+    obs_dim = plds.obs_dim
+    latent_dim = plds.latent_dim
+    Dp1 = latent_dim + 1
+    n_W = obs_dim * Dp1     # total params; identical to vec([C d]) length
+
+    # Param vector layout: vcat(vec(C), d) == vec([C d]) in column-major order
+    params = vcat(vec(plds.obs_model.C), plds.obs_model.d)
+
+    # MN-only prior on the stacked emission matrix W = [C d] (Poisson has no IW
+    # counterpart since there is no observation-noise covariance):
+    CD_prior = plds.obs_model.CD_prior
+
+    function f(params::Vector{T})
+        Cd_view = reshape(view(params, 1:n_W), obs_dim, Dp1)
+        @views C_view = Cd_view[:, 1:latent_dim]
+        @views d_view = Cd_view[:, Dp1]
+
+        copyto!(plds.obs_model.C, C_view)
+        copyto!(plds.obs_model.d, d_view)
+
+        acc = zero(T)
+        ntrials = length(tfs)
+
+        for trial in 1:ntrials
+            fs = tfs[trial]
+            weights = isnothing(w) ? nothing : w[trial]
+            # `x_smooth` is the same value as `E_z` for a Gaussian state model
+            # — see `gradient_observation_model!` for context.
+            acc += Q_obs!(sws, plds, fs.x_smooth, fs.p_smooth, y[trial]; weights=weights)
+        end
+
+        f_prior = zero(T)
+        if CD_prior !== nothing
+            Wm = Cd_view .- CD_prior.M₀
+            f_prior = T(0.5) * sum(Wm .* (Wm * CD_prior.Λ))
+        end
+
+        return -acc + f_prior
+    end
+
+    function g!(grad::Vector{T}, params::Vector{T})
+        Cd_view = reshape(view(params, 1:n_W), obs_dim, Dp1)
+        @views C_view = Cd_view[:, 1:latent_dim]
+        @views d_view = Cd_view[:, Dp1]
+        gradient_observation_model!(grad, C_view, d_view, tfs, y, sws_pool, w)
+        if CD_prior !== nothing
+            grad_W_view = reshape(view(grad, 1:n_W), obs_dim, Dp1)
+            grad_W_view .+= (Cd_view .- CD_prior.M₀) * CD_prior.Λ
+        end
+        return grad
+    end
+
+    opts = Optim.Options(;
+        x_reltol=1e-8,
+        x_abstol=1e-8,
+        g_abstol=1e-8,
+        f_reltol=1e-8,
+        f_abstol=1e-8,
+        iterations=200,
+    )
+
+    result = optimize(f, g!, params, LBFGS(; linesearch=HagerZhang()), opts)
+
+    # surface a non-converged inner solve if applicable
+    Optim.converged(result) || @warn(
+        "Poisson emission M-step (LBFGS) did not converge; using last iterate",
+        iterations = Optim.iterations(result),
+        g_residual = Optim.g_residual(result),
+    )
+
+    # write final params back
+    result_W = reshape(result.minimizer[1:n_W], obs_dim, Dp1)
+    @views plds.obs_model.C .= result_W[:, 1:latent_dim]
+    @views plds.obs_model.d .= result_W[:, Dp1]
+
+    return nothing
+end
