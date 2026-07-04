@@ -51,9 +51,11 @@ end
 
 # ----- Intercept-only model ------------------------------------------------
 
-function test_null_intercept_matches_mvnormal_loglik()
+function test_null_intercept_matches_mvnormal_loglik(
+    rng=MersenneTwister(0xC0FFEE)
+    )
+    
     obs_dim, tsteps, ntrials = 3, 20, 5
-    rng = StableRNG(0xC0FFEE)
     data = _null_make_data(rng, obs_dim, tsteps, ntrials)
 
     res = test_null(data)
@@ -75,9 +77,12 @@ end
 
 # ----- Plug-in test LL identity --------------------------------------------
 
-function test_null_test_ll_matches_plugin_gaussian()
+function test_null_test_ll_matches_plugin_gaussian(
+    rng=MersenneTwister(0xC0FFEE)
+    )
+
     obs_dim, tsteps, ntrials = 2, 15, 4
-    rng = StableRNG(7)
+    rng=MersenneTwister(0xC0FFEE)
     train = _null_make_data(rng, obs_dim, tsteps, ntrials)
     test = _null_make_data(rng, obs_dim, 12, 3)
 
@@ -90,8 +95,9 @@ function test_null_test_ll_matches_plugin_gaussian()
     @test res.intercept.test_ll ≈ ref atol = 1e-8 rtol = 1e-8
 end
 
-function test_null_test_ll_nothing_when_no_test_data()
-    rng = StableRNG(701)
+function test_null_test_ll_nothing_when_no_test_data(
+    rng=MersenneTwister(0xC0FFEE)
+    )
     data = _null_make_data(rng, 2, 10, 3)
     res = test_null(data)
     @test res.intercept.test_ll === nothing
@@ -102,9 +108,10 @@ end
 
 # ----- Collapse identities --------------------------------------------------
 
-function test_null_inputs_collapses_to_intercept_when_no_inputs()
+function test_null_inputs_collapses_to_intercept_when_no_inputs(
+    rng=MersenneTwister(0xC0FFEE)
+    )
     obs_dim, tsteps, ntrials = 3, 10, 6
-    rng = StableRNG(42)
     data = _null_make_data(rng, obs_dim, tsteps, ntrials; v_dim=0)
 
     res = test_null(data)
@@ -117,11 +124,12 @@ end
 
 # ----- Signal recovery + LL ordering ---------------------------------------
 
-function test_null_inputs_helps_when_signal_present()
+function test_null_inputs_helps_when_signal_present(
+    rng=MersenneTwister(0xC0FFEE)
+    )
     T = Float64
     obs_dim, tsteps, ntrials = 4, 40, 10
     v_dim = 2
-    rng = StableRNG(1234)
 
     D_true = randn(rng, T, obs_dim, v_dim)
     d_true = randn(rng, T, obs_dim)
@@ -151,10 +159,11 @@ end
 
 # ----- VAR(1) parameter recovery -------------------------------------------
 
-function test_null_var_recovers_true_F_on_var_data()
+function test_null_var_recovers_true_F_on_var_data(
+    rng=MersenneTwister(0xC0FFEE)
+    )
     T = Float64
-    obs_dim, tsteps, ntrials = 3, 200, 8
-    rng = StableRNG(2025)
+    obs_dim, tsteps, ntrials = 3, 1000, 100
 
     F_true =
         T(0.7) * Matrix{T}(I, obs_dim, obs_dim) .+
@@ -183,10 +192,11 @@ end
 
 # ----- IW-prior LL shift identity ------------------------------------------
 
-function test_null_R_prior_shifts_LL_by_iw_logprior_term()
+function test_null_R_prior_shifts_LL_by_iw_logprior_term(
+    rng=MersenneTwister(0xC0FFEE)
+    )
     T = Float64
     obs_dim, tsteps, ntrials = 3, 20, 5
-    rng = StableRNG(11)
     data = _null_make_data(rng, obs_dim, tsteps, ntrials)
 
     res_no = test_null(data)
@@ -215,11 +225,12 @@ end
 
 # ----- MN-prior contribution -----------------------------------------------
 
-function test_null_mn_prior_shifts_LL_by_mn_logprior_term()
+function test_null_mn_prior_shifts_LL_by_mn_logprior_term(
+    rng=MersenneTwister(0xC0FFEE)
+    )
     T = Float64
     obs_dim, tsteps, ntrials = 3, 25, 4
     v_dim = 2
-    rng = StableRNG(0xB00B5)
     data = _null_make_data(rng, obs_dim, tsteps, ntrials; v_dim=v_dim)
 
     # Shrink [d D] toward zero — the identity: train_ll(with MN prior) - data_ll
@@ -257,11 +268,12 @@ end
 
 # ----- Input override + validation -----------------------------------------
 
-function test_null_inputs_override_uses_supplied_array()
+function test_null_inputs_override_uses_supplied_array(
+    rng=MersenneTwister(0xC0FFEE)
+    )
     T = Float64
     obs_dim, tsteps, ntrials = 2, 12, 5
     v_dim = 3
-    rng = StableRNG(55)
 
     data = _null_make_data(rng, obs_dim, tsteps, ntrials; v_dim=v_dim)
     # `train_data.ux` has v_dim = 3; supply a 1-column override.
@@ -283,10 +295,11 @@ function test_null_inputs_override_uses_supplied_array()
         isfinite(res.var_inputs.test_ll)
 end
 
-function test_null_test_inputs_default_from_test_data()
+function test_null_test_inputs_default_from_test_data(
+    rng=MersenneTwister(0xC0FFEE)
+    )
     # When test_inputs is not supplied, defaults to test_data.ux — differs
     # from what happens if we explicitly pass zeros.
-    rng = StableRNG(65)
     train = _null_make_data(rng, 2, 12, 4; v_dim=1)
     test = _null_make_data(rng, 2, 10, 3; v_dim=1)
     res = test_null(train; test_data=test)
@@ -297,16 +310,18 @@ end
 
 # ----- Error paths ---------------------------------------------------------
 
-function test_null_var_requires_tsteps_ge_2()
-    rng = StableRNG(99)
+function test_null_var_requires_tsteps_ge_2(
+    rng=MersenneTwister(0xC0FFEE)
+    )
     data = _null_make_data(rng, 2, 1, 4)
     @test_throws ArgumentError test_null(data)
 end
 
-function test_null_input_shape_mismatch_throws()
+function test_null_input_shape_mismatch_throws(
+    rng=MersenneTwister(0xC0FFEE)
+    )
     T = Float64
     obs_dim, tsteps, ntrials = 2, 8, 3
-    rng = StableRNG(123)
     data = _null_make_data(rng, obs_dim, tsteps, ntrials)
     bad_inputs = randn(rng, T, 2, tsteps + 1, ntrials)  # wrong tsteps
     @test_throws SSD.DimensionMismatchError test_null(
@@ -314,9 +329,10 @@ function test_null_input_shape_mismatch_throws()
     )
 end
 
-function test_null_test_inputs_shape_mismatch_throws()
+function test_null_test_inputs_shape_mismatch_throws(
+    rng=MersenneTwister(0xC0FFEE)
+    )
     T = Float64
-    rng = StableRNG(124)
     train = _null_make_data(rng, 2, 10, 3)
     test = _null_make_data(rng, 2, 10, 3)
     bad = randn(rng, T, 1, 10, 4)  # ntrials mismatch
@@ -325,8 +341,9 @@ function test_null_test_inputs_shape_mismatch_throws()
     )
 end
 
-function test_null_test_data_obs_dim_mismatch_throws()
-    rng = StableRNG(321)
+function test_null_test_data_obs_dim_mismatch_throws(
+    rng=MersenneTwister(0xC0FFEE)
+    )
     train = _null_make_data(rng, 3, 10, 4)
     test = _null_make_data(rng, 2, 10, 4)
     @test_throws SSD.DimensionMismatchError test_null(train; test_data=test)
@@ -334,10 +351,11 @@ end
 
 # ----- Capacity ordering ---------------------------------------------------
 
-function test_null_capacity_ordering_on_var_data()
+function test_null_capacity_ordering_on_var_data(
+    rng=MersenneTwister(0xC0FFEE)
+    )
     T = Float64
     obs_dim, tsteps, ntrials = 3, 100, 6
-    rng = StableRNG(9)
 
     F_true = T(0.6) * Matrix{T}(I, obs_dim, obs_dim)
     d_true = T(0.5) * ones(T, obs_dim)
@@ -360,14 +378,15 @@ end
 
 # ----- All-priors path finite ---------------------------------------------
 
-function test_null_all_priors_active_returns_finite_lls()
+function test_null_all_priors_active_returns_finite_lls(
+    rng=MersenneTwister(0xC0FFEE)
+    )
     # Exercise the branch where every prior kwarg is set (covers each
     # `mn_logprior_term`/`iw_logprior_term` addition path in `_null_train_ll`
     # and the MN residual contribution in `_null_fit_regression`).
     T = Float64
     obs_dim, tsteps, ntrials = 3, 20, 5
     v_dim = 2
-    rng = StableRNG(0xA5A5)
     train = _null_make_data(rng, obs_dim, tsteps, ntrials; v_dim=v_dim)
     test = _null_make_data(rng, obs_dim, 10, 3; v_dim=v_dim)
 
