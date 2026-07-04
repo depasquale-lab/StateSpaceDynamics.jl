@@ -600,8 +600,11 @@ function _precompute_shared_cov!(
         p_smooth_v, p_smooth_tt1_v, neg_sub_v, neg_diag_v, neg_super_v, btd
     )
 
-    @views for i in 1:tsteps
-        Symmetrize!(p_smooth_shared[:, :, i])
+    # `::SubArray{T}` narrows JET's `view`-eltype union over the `Array{T,3}`
+    # workspace field so `Symmetrize!`'s typed signature matches (cf. the NOTE
+    # in kalman.jl / sufficient_statistics.jl).
+    for i in 1:tsteps
+        Symmetrize!(view(p_smooth_shared, :, :, i)::SubArray{T})
     end
 
     return gaussian_entropy_from_logdet(logdet_precision, D * tsteps)
@@ -829,7 +832,9 @@ function _smooth_mean_only_batched!(
     x_flat = reshape(sws.batched_x_mat, n_active, ntrials)
     @. grad_flat = -grad_flat
 
-    neg_sub_v = view(sws.btd.neg_sub, 1:(tsteps - 1))
+    # `::SubArray{Matrix{T}}` narrows JET's `view`-eltype union over the
+    # `Vector{Matrix{T}}` field so `block_tridiagonal_backsubst!` matches.
+    neg_sub_v = view(sws.btd.neg_sub, 1:(tsteps - 1))::SubArray{Matrix{T}}
     block_tridiagonal_backsubst!(x_flat, neg_sub_v, grad_flat, sws.btd, tsteps)
 
     # x_flat now holds the Newton step. Update each tfs[trial].x_smooth.
@@ -869,26 +874,6 @@ function estep!(
     y::AbstractVector{<:AbstractMatrix{T}},
     latent_inputs::AbstractVector{<:AbstractMatrix{T}},
     obs_inputs::AbstractVector{<:AbstractMatrix{T}},
-    sws_pool::Vector{SmoothWorkspace{T}},
-) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
-
-    # smooth each trial
-    smooth!(lds, tfs, y, sws_pool, latent_inputs, obs_inputs)
-
-    # compute the sufficient statistics
-    return _aggregate_td_suff_stats!(
-        suf, tfs, lds, latent_inputs, obs_inputs, y, sws_pool[1]
-    )
-end
-
-# y/ux/uy as Matrices
-function estep!(
-    lds::LinearDynamicalSystem{T,S,O},
-    suf::SufficientStatistics{T},
-    tfs::TrialFilterSmooth{T},
-    y::AbstractMatrix{T},
-    latent_inputs::AbstractMatrix{T},
-    obs_inputs::AbstractMatrix{T},
     sws_pool::Vector{SmoothWorkspace{T}},
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
 
