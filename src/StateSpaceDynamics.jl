@@ -42,6 +42,7 @@ include("stats/preprocessing.jl")           # PPCA (standalone model)
 include("stats/kalman.jl")
 include("stats/sufficient_statistics.jl")
 include("stats/simulate.jl")
+include("stats/null_models.jl")             # latent-free baseline log-likelihoods
 
 # latents models (LDS, PLDS, SLDS) + inference machinery (E-step).
 include("lds/continuous_latents.jl")                # state-model Q-term + state M-step
@@ -76,5 +77,8 @@ export info_update!
 
 # Common functions
 export rand, smooth, fit!, loglikelihood, elbo!
+
+# Baseline / null model log-likelihoods
+export test_null
 
 end

@@ -285,6 +285,27 @@ using SSDTest
         test_mn_prior_helpers()
     end
 
+    # Latent-free baseline / null-model log-likelihoods
+    @testset verbose = true "Null Models" begin
+        include("NullModels/NullModels.jl")
+        test_null_intercept_matches_mvnormal_loglik()
+        test_null_test_ll_matches_plugin_gaussian()
+        test_null_test_ll_nothing_when_no_test_data()
+        test_null_inputs_collapses_to_intercept_when_no_inputs()
+        test_null_inputs_helps_when_signal_present()
+        test_null_var_recovers_true_F_on_var_data()
+        test_null_R_prior_shifts_LL_by_iw_logprior_term()
+        test_null_mn_prior_shifts_LL_by_mn_logprior_term()
+        test_null_inputs_override_uses_supplied_array()
+        test_null_test_inputs_default_from_test_data()
+        test_null_var_requires_tsteps_ge_2()
+        test_null_input_shape_mismatch_throws()
+        test_null_test_inputs_shape_mismatch_throws()
+        test_null_test_data_obs_dim_mismatch_throws()
+        test_null_capacity_ordering_on_var_data()
+        test_null_all_priors_active_returns_finite_lls()
+    end
+
     # Validation Tests
     @testset verbose = true "Validation" begin
         include("Validation/Valid.jl")
