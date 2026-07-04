@@ -79,6 +79,6 @@ export info_update!
 export rand, smooth, fit!, loglikelihood, elbo!
 
 # Baseline / null model log-likelihoods
-export test_null
+export test_null, compute_R2
 
 end

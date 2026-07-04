@@ -304,6 +304,14 @@ using SSDTest
         test_null_test_data_obs_dim_mismatch_throws()
         test_null_capacity_ordering_on_var_data()
         test_null_all_priors_active_returns_finite_lls()
+        test_compute_R2_marginal_matches_loglikelihood_no_inputs()
+        test_compute_R2_marginal_accounts_for_obs_inputs()
+        test_compute_R2_formula_and_fields()
+        test_compute_R2_ground_truth_beats_null_heldout()
+        test_compute_R2_single_matches_split_train()
+        test_compute_R2_null_inputs_ux_vs_uy()
+        test_compute_R2_forwards_R_prior()
+        test_compute_R2_rejects_plds_and_slds()
     end
 
     # Validation Tests
