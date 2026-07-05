@@ -249,6 +249,45 @@ using SSDTest
         end
     end
 
+    @testset "SSID" begin
+        include("LinearDynamicalSystems/SSID.jl")
+        @testset "Mechanics" begin
+            test_ssid_shapes_and_mutation()
+            test_ssid_fve_and_singular_values()
+            test_ssid_pd_covariances_and_validation()
+            test_ssid_stability_enforced()
+            test_ssid_weightings_run()
+            test_ssid_ridge_vs_backslash()
+            test_ssid_reproducibility()
+        end
+        @testset "Recovery" begin
+            test_ssid_eigenvalue_recovery()
+            test_ssid_markov_recovery_with_input()
+            test_ssid_input_BD_shapes()
+            test_ssid_bias_reconstructs_mean()
+            test_ssid_cross_trial_paths()
+            test_ssid_new_init_placeholder()
+            test_ssid_init_then_EM_improves()
+        end
+        @testset "Internal kernels" begin
+            test_ssid_dlyap_identity_and_fallback()
+            test_ssid_dlyap_large_n()
+            test_ssid_reflectd_stabilizes()
+            test_ssid_ltisim_matches_recursion()
+            test_ssid_ltisim_batch_matches_percolumn()
+            test_ssid_findBD_recovers_known_system()
+            test_ssid_findBD_recovers_D_feedthrough()
+            test_ssid_ridge_normal_equations()
+        end
+        @testset "Errors & dispatch" begin
+            test_ssid_errors_wrong_model_type()
+            test_ssid_errors_bad_inputs()
+            test_ssid_2d_3d_overloads()
+            test_ssid_fit_bool_respected()
+            test_ssid_type_preservation()
+        end
+    end
+
     # Optimization primitives (line search + Newton)
     @testset verbose = true "Optimization" begin
         include("Optimization/Optimization.jl")
