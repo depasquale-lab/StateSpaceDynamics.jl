@@ -19,7 +19,7 @@ using Base.Threads: @threads, @spawn
 using Base.Iterators: partition
 using Base: show
 
-import BSplines
+using BSplines: BSplines
 
 # Model-agnostic numerical kernels (no package types — reusable primitives).
 include("numerics/linalg.jl")

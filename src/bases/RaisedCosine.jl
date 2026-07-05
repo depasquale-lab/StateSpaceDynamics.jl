@@ -19,11 +19,9 @@ struct RaisedCosineLinear <: AbstractRaisedCosineBasis
 end
 
 function RaisedCosineLinear(num_bases::Integer; width_factor::Real=2.0)
-    num_bases >= 2 || throw(
-        ArgumentError("RaisedCosineLinear requires num_bases >= 2, got $num_bases.")
-    )
-    width_factor > 0 ||
-        throw(ArgumentError("width_factor must be > 0, got $width_factor."))
+    num_bases >= 2 ||
+        throw(ArgumentError("RaisedCosineLinear requires num_bases >= 2, got $num_bases."))
+    width_factor > 0 || throw(ArgumentError("width_factor must be > 0, got $width_factor."))
     return RaisedCosineLinear(Int(num_bases), Float64(width_factor))
 end
 
@@ -43,13 +41,10 @@ struct RaisedCosineLog <: AbstractRaisedCosineBasis
     offset::Float64
 end
 
-function RaisedCosineLog(
-    num_bases::Integer; width_factor::Real=2.0, offset::Real=1.0
-)
+function RaisedCosineLog(num_bases::Integer; width_factor::Real=2.0, offset::Real=1.0)
     num_bases >= 2 ||
         throw(ArgumentError("RaisedCosineLog requires num_bases >= 2, got $num_bases."))
-    width_factor > 0 ||
-        throw(ArgumentError("width_factor must be > 0, got $width_factor."))
+    width_factor > 0 || throw(ArgumentError("width_factor must be > 0, got $width_factor."))
     offset > 0 || throw(ArgumentError("offset must be > 0, got $offset."))
     return RaisedCosineLog(Int(num_bases), Float64(width_factor), Float64(offset))
 end
@@ -61,9 +56,7 @@ function _rc_transform(b::RaisedCosineLog, ts::AbstractVector{T}) where {T<:Real
     return log.(T.(ts) .+ T(b.offset))
 end
 
-function evaluate_basis(
-    b::AbstractRaisedCosineBasis, ts::AbstractVector{T}
-) where {T<:Real}
+function evaluate_basis(b::AbstractRaisedCosineBasis, ts::AbstractVector{T}) where {T<:Real}
     K = b.num_bases
     M = length(ts)
     gt = _rc_transform(b, ts)

@@ -150,9 +150,7 @@ arguments are forwarded to the underlying `get_penalty(basis, tsteps; …)`
 method, so basis-specific keywords (e.g. `use_analytic=true` for
 [`Fourier`](@ref)) work transparently.
 """
-function get_penalty(
-    data::Data{T}, basis::AbstractInputBasis; kwargs...
-) where {T<:Real}
+function get_penalty(data::Data{T}, basis::AbstractInputBasis; kwargs...) where {T<:Real}
     tsteps = size(data.y, 2)
     P = isempty(data.epoch_pred) ? 1 : size(data.epoch_pred, 2)
     return get_penalty(basis, tsteps; P=P, eltype=T, kwargs...)
@@ -163,6 +161,10 @@ function _generic_curvature_penalty(
 ) where {T<:Real}
     n_grid >= 3 ||
         throw(ArgumentError("n_grid ($n_grid) must be >= 3 for a 2nd difference."))
+    if tsteps == 1
+        # return a zero penalty matrix
+        return zeros(T, P * n_bases(basis), P * n_bases(basis))
+    end
     τ = collect(range(T(1), T(tsteps); length=n_grid))
     Δτ = (T(tsteps) - one(T)) / T(n_grid - 1)
     Φ_raw = evaluate_basis(basis, τ)

@@ -278,10 +278,8 @@ using SSDTest
         end
     end
 
-
-
     # Input Basis Tests
-    @testset verbose=true "Input Bases" begin
+    @testset verbose = true "Input Bases" begin
         include("Bases/Bases.jl")
 
         @testset "Generic apply!/get_penalty" begin
@@ -321,8 +319,6 @@ using SSDTest
             test_float32_type_preservation_all_bases()
         end
     end
-
-
 
     # Conjugate-prior helpers (IW / MN MAP + log-prior terms)
     @testset verbose = true "Priors" begin

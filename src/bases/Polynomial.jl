@@ -17,7 +17,7 @@ struct Polynomial <: AbstractInputBasis
 
     function Polynomial(num_bases::Int)
         num_bases >= 1 || throw(ArgumentError("num_bases ($num_bases) must be >= 1."))
-        new(num_bases)
+        return new(num_bases)
     end
 end
 

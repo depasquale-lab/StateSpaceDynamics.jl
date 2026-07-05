@@ -21,9 +21,7 @@ struct BSpline{K} <: AbstractInputBasis
 end
 
 function BSpline(
-    num_bases::Integer;
-    order::Integer=4,
-    knots::Union{Symbol,AbstractVector{<:Real}}=:auto,
+    num_bases::Integer; order::Integer=4, knots::Union{Symbol,AbstractVector{<:Real}}=:auto
 )
     num_bases >= order ||
         throw(ArgumentError("num_bases ($num_bases) must be >= order ($order)."))
@@ -33,11 +31,7 @@ function BSpline(
     elseif knots === :auto
         :auto
     else
-        throw(
-            ArgumentError(
-                "knots must be :auto or an AbstractVector, got $(typeof(knots)).",
-            ),
-        )
+        throw(ArgumentError("knots must be :auto or an AbstractVector, got $(typeof(knots))."))
     end
     return BSpline{typeof(knots_resolved)}(Int(num_bases), Int(order), knots_resolved)
 end
