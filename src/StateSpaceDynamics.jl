@@ -8,6 +8,7 @@ using PDMats
 using Random
 using SparseArrays
 
+using MatrixEquations: lyapd
 using Optim: Optim, optimize, LBFGS, HagerZhang
 using ProgressMeter: Progress, next!, finish!
 using SpecialFunctions: loggamma

@@ -12,11 +12,12 @@
 # `GaussianStateModel` + `GaussianObservationModel`; other model types hit a 
 # fallback method that throws.
 #
-# Dependency-free port of ControlSystemsIdentification.jl: the reference 
-# uses ControlSystems (`lsim`/`ss`) and MatrixEquations (`ared`). 
-# Here those are replaced with pure-Julia kernels — `_ltisim` (discrete-time 
-# LTI simulation) and `_dlyap` (discrete Lyapunov solve for the stationary 
-# state covariance used as `P0`).
+# Near dependency-free port of ControlSystemsIdentification.jl: the reference
+# uses ControlSystems (`lsim`/`ss`) and MatrixEquations (`ared`). The LTI
+# simulation is replaced with the pure-Julia kernel `_ltisim` (discrete-time
+# LTI simulation); the stationary state covariance used as `P0` is solved with
+# `MatrixEquations.lyapd` (Bartels–Stewart, O(n³)), which scales to the large
+# latent dimensions (n up to ~192) this initializer targets.
 # =============================================================================
 
 """
@@ -98,14 +99,29 @@ function _colstd(X::AbstractMatrix{T}) where {T}
     return max(sqrt.(vec(sum(abs2, X .- μ; dims=1)) ./ denom), eps(T(1.0)))
 end
 
-# Ridge / Tikhonov least squares: argmin ||x*β - y||² + λ||β||².
-function _ridge(x::AbstractMatrix{T}, y::AbstractVector{T}, λ::T) where {T}
+# Ridge / Tikhonov least squares: argmin ||x*β - y||² + λ||β||², whose normal
+# equations are (XᵀX + λI) β = Xᵀy. For the tall time-series regressors here
+# (rows N ≫ columns k) forming the k×k Gram matrix and taking a Cholesky factor
+# is far cheaper in both time and memory than a QR of the (N+k)×k augmented
+# system. The Gram matrix is positive-definite for λ>0, so Cholesky succeeds; we
+# keep the augmented-QR path only as a numerical safety net.
+function _ridge(x::AbstractMatrix{T}, y::AbstractVecOrMat{T}, λ::T) where {T}
+    G = Symmetric(x' * x + λ * I)
+    rhs = x' * y
+    C = cholesky(G; check=false)
+    issuccess(C) && return C \ rhs
+    return _ridge_qr(x, y, λ)
+end
+
+# Augmented-system fallback (numerically robust QR) for the rare case where the
+# regularized Gram matrix is not numerically positive-definite.
+function _ridge_qr(x::AbstractMatrix{T}, y::AbstractVector{T}, λ::T) where {T}
     k = size(x, 2)
     xr = vcat(x, sqrt(λ) * Matrix{T}(I, k, k))
     yr = vcat(y, zeros(T, k))
     return xr \ yr
 end
-function _ridge(x::AbstractMatrix{T}, y::AbstractMatrix{T}, λ::T) where {T}
+function _ridge_qr(x::AbstractMatrix{T}, y::AbstractMatrix{T}, λ::T) where {T}
     k = size(x, 2)
     xr = vcat(x, sqrt(λ) * Matrix{T}(I, k, k))
     yr = vcat(y, zeros(T, k, size(y, 2)))
@@ -131,11 +147,12 @@ function _reflectd(A::AbstractMatrix)
 end
 
 # Symmetrize and project a matrix to be symmetric positive-definite. The
-# returned matrix satisfies `issymmetric` exactly (via the (M+M')/2 idiom, which
-# is exactly symmetric in IEEE arithmetic) and `isposdef` (eigenvalue floor).
+# `Symmetric` wrapper reads a single triangle, so it implicitly symmetrizes `M`
+# with no extra allocation. The returned matrix satisfies `issymmetric` exactly
+# (via the final (P+P')/2 idiom, which is exactly symmetric in IEEE arithmetic)
+# and `isposdef` (eigenvalue floor).
 function _make_pd(M::AbstractMatrix, ::Type{T}; jitter) where {T}
-    Ms = (M .+ M') ./ 2
-    E = eigen(Symmetric(Matrix(Ms)))
+    E = eigen(Symmetric(M))
     λmax = isempty(E.values) ? one(real(T)) : maximum(E.values)
     floorλ = max(T(jitter), T(jitter) * (λmax > 0 ? λmax : one(real(T))))
     vals = max.(E.values, floorλ)
@@ -162,36 +179,82 @@ function _ltisim(
     xn = Vector{T}(undef, n)
     has_input = size(E, 2) > 0
     @inbounds for t in 1:N
-        mul!(view(Y, :, t), C, x)
+        mul!(view(Y, :, t)::SubArray{T}, C, x)
         mul!(xn, A, x)
         if has_input
-            mul!(xn, E, view(u, :, t), one(T), one(T))
+            mul!(xn, E, view(u, :, t)::SubArray{T}, one(T), one(T))
         end
         x, xn = xn, x
     end
     return Y
 end
 
+# Batched deterministic LTI responses for the `_find_BD_ssid` regressor. In a
+# single time sweep this simulates *every* column of the B/x0 design block at
+# once by stacking their states into one n × (m*n + n) matrix `Z`:
+#   - B columns  (m*n): response of (A, C) to a unit input on dynamics channel k
+#     entering state j — state IC 0, driven by `U[k, :]`. Column (k, j) sits at
+#     index (k-1)*n + j, matching the per-column loop it replaces.
+#   - x0 columns (n): free decay of (A, C) from each canonical initial state e_j.
+# The state is propagated with a BLAS-3 `mul!(Znext, A, Z)` (one dense gemm per
+# step) plus a cheap diagonal input injection, rather than m*n + n independent
+# matrix-vector simulations; the vectorized outputs are written straight into
+# the first m*n + n columns of `Φ` (layout `Φ[(t-1)*p+1:t*p, col] = C Z_t`).
+# Mathematically identical to calling `_ltisim` once per column, but far faster
+# and far lighter on allocations at the large latent dimensions this targets.
+function _ltisim_batch!(
+    Φ::AbstractMatrix{T},
+    A::AbstractMatrix{T},
+    C::AbstractMatrix{T},
+    U::AbstractMatrix{T},
+    n::Int,
+    p::Int,
+    m::Int,
+    N::Int,
+) where {T}
+    ncolB = m * n
+    ncol = ncolB + n
+    Z = zeros(T, n, ncol)
+    @inbounds for j in 1:n
+        Z[j, ncolB + j] = one(T)              # x0 initial conditions e_j
+    end
+    Znext = Matrix{T}(undef, n, ncol)
+    @inbounds for t in 1:N
+        mul!(view(Φ, ((t - 1) * p + 1):(t * p), 1:ncol)::SubArray{T}, C, Z)   # y_t = C Z_t
+        if t < N
+            mul!(Znext, A, Z)                                    # Z_{t+1} = A Z_t + inj
+            for k in 1:m
+                uk = U[k, t]
+                base = (k - 1) * n
+                for j in 1:n
+                    Znext[j, base + j] += uk
+                end
+            end
+            Z, Znext = Znext, Z
+        end
+    end
+    return Φ
+end
+
 # Discrete Lyapunov solve A P A' + Q = P for the stationary state covariance,
-# used as P0. Replaces the `ared`-based P in HallM `find_PK_hr`. Falls back to Q
-# when A is not (numerically) stable. Always returned symmetric positive-definite.
+# used as P0. Replaces the `ared`-based P in HallM `find_PK_hr`. Uses
+# `MatrixEquations.lyapd` (Bartels–Stewart via Schur decomposition, O(n³)),
+# which scales to the large latent dimensions (n up to ~192) this initializer
+# targets — a Kronecker `(I - A⊗A) \ vec(Q)` solve would be O(n⁶) in time and
+# O(n⁴) in memory. Falls back to Q if the solve fails (e.g. A not stable, so no
+# unique/finite solution). Always returned symmetric positive-definite.
 function _dlyap(A::AbstractMatrix{T}, Q::AbstractMatrix{T}; jitter, stable::Bool) where {T}
-    n = size(A, 1)
     P = copy(Q)
-    if stable && n * n <= 4096
-        M = Matrix{T}(I, n * n, n * n) - kron(A, A)
-        local Pv
+    if stable
+        local Pc
         solved = true
         try
-            Pv = M \ vec(Q)
+            Pc = lyapd(A, Q)
         catch
             solved = false
         end
-        if solved
-            Pc = reshape(Pv, n, n)
-            if all(isfinite, Pc)
-                P = Pc
-            end
+        if solved && all(isfinite, Pc)
+            P = Pc
         end
     end
     return _make_pd(P, T; jitter=jitter)
@@ -201,19 +264,26 @@ end
 # SSID subspace machinery (block-Hankel construction + weighting + recovery)
 # -----------------------------------------------------------------------------
 
-# Forward block-Hankel matrix (r*d × N) from time-major data (t × d).
+# Forward block-Hankel matrix (r*d × N) from time-major data (t × d). Every
+# element is written, so `undef` avoids a wasted zero-fill. The column index Ni
+# is the outer loop and the row-block ri the inner one, so writes march down each
+# contiguous column (column-major) instead of striding across columns.
 function _ssid_hankel(data::AbstractMatrix{T}, t0::Int, r::Int, N::Int) where {T}
     d = size(data, 2)
-    H = zeros(T, r * d, N)
-    @inbounds for ri in 1:r, Ni in 1:N
-        H[((ri - 1) * d + 1):(ri * d), Ni] = @view data[t0 + ri + Ni - 2, :]
+    H = Matrix{T}(undef, r * d, N)
+    @inbounds for Ni in 1:N, ri in 1:r
+        H[((ri - 1) * d + 1):(ri * d), Ni] .= view(data, t0 + ri + Ni - 2, :)::SubArray{T}
     end
     return H
 end
 
 # Past regressor Φ (s × N), s = s1*p + s2*m. Block layout [past-outputs;
 # past-inputs], each block column-major over (lag, channel) to match the
-# reference `vec(y[t-1:-1:t-s1, :])`.
+# reference `vec(y[t-1:-1:t-s1, :])`: within a channel column c the lags run
+# t-1, t-2, …, t-s1, then the next channel follows. Filling element-by-element
+# keeps the writes marching down Φ's contiguous columns and avoids the
+# temporary that `vec(@view y[(t-1):-1:(t-s1), :])` allocates from a
+# reversed (negative-stride) SubArray.
 function _ssid_phi(
     y::AbstractMatrix{T},
     u::AbstractMatrix{T},
@@ -225,11 +295,16 @@ function _ssid_phi(
     m::Int,
 ) where {T}
     s = s1 * p + s2 * m
-    Φ = zeros(T, s, N)
+    Φ = Matrix{T}(undef, s, N)
     @inbounds for (idx, t) in enumerate(t0:(t0 + N - 1))
-        Φ[1:(s1 * p), idx] = vec(@view y[(t - 1):-1:(t - s1), :])
+        for c in 1:p, ℓ in 1:s1
+            Φ[(c - 1) * s1 + ℓ, idx] = y[t - ℓ, c]
+        end
         if m > 0 && s2 > 0
-            Φ[(s1 * p + 1):(s1 * p + s2 * m), idx] = vec(@view u[(t - 1):-1:(t - s2), :])
+            off = s1 * p
+            for c in 1:m, ℓ in 1:s2
+                Φ[off + (c - 1) * s2 + ℓ, idx] = u[t - ℓ, c]
+            end
         end
     end
     return Φ
@@ -372,35 +447,23 @@ function _find_BD_ssid(
     ncol = ncolB + n + ncolD
     Φ = Matrix{T}(undef, p * N, ncol)
 
-    zx = zeros(T, n)
-    Ej = zeros(T, n, 1)
-    emptyE = zeros(T, n, 0)
-    emptyu = zeros(T, 0, N)
-    col = 0
-    # B blocks: response to a unit input on channel k entering state j.
-    @inbounds for k in 1:m, j in 1:n
-        fill!(Ej, zero(T))
-        Ej[j, 1] = one(T)
-        uf = _ltisim(A, Ej, C, reshape(view(U, k, :), 1, N), zx)
-        col += 1
-        Φ[:, col] = vec(uf)
-    end
-    # x0 blocks: free decay from each canonical initial state.
-    x0b = zeros(T, n)
-    @inbounds for j in 1:n
-        fill!(x0b, zero(T))
-        x0b[j] = one(T)
-        uf = _ltisim(A, emptyE, C, emptyu, x0b)
-        col += 1
-        Φ[:, col] = vec(uf)
-    end
+    # B blocks (response to a unit input on channel k entering state j) and x0
+    # blocks (free decay from each canonical initial state) are simulated in a
+    # single batched LTI sweep filling the first ncolB + n columns of Φ.
+    _ltisim_batch!(Φ, A, C, U, n, p, m, N)
+
     # D blocks: static feed-through of obs-input channel k into output row j.
+    # `vec(block)` places V[k, t] at row (t-1)*p + j, so the only nonzero rows of
+    # this column are the strided rows j, j+p, …, j+(N-1)*p (everything else 0).
     if !zeroD
+        col = ncolB + n
         @inbounds for k in 1:mD, j in 1:p
-            block = zeros(T, p, N)
-            block[j, :] = @view V[k, :]
             col += 1
-            Φ[:, col] = vec(block)
+            colv = view(Φ, :, col)
+            fill!(colv, zero(T))
+            for t in 1:N
+                colv[(t - 1) * p + j] = V[k, t]
+            end
         end
     end
 
@@ -599,7 +662,9 @@ function fit!(
     lds::LinearDynamicalSystem{T,S,O}, y::AbstractArray{T}, alg::SSID; kwargs...
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     if ndims(y) == 3
-        return fit!(lds, [view(y,:,:,i) for i in 1:size(y, 3)], alg; kwargs...)
+        return fit!(
+            lds, [view(y, :, :, i)::SubArray{T} for i in 1:size(y, 3)], alg; kwargs...
+        )
     elseif ndims(y) == 2
         return fit!(lds, [y], alg; kwargs...)
     else

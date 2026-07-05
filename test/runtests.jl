@@ -271,9 +271,13 @@ using SSDTest
         end
         @testset "Internal kernels" begin
             test_ssid_dlyap_identity_and_fallback()
+            test_ssid_dlyap_large_n()
             test_ssid_reflectd_stabilizes()
             test_ssid_ltisim_matches_recursion()
+            test_ssid_ltisim_batch_matches_percolumn()
             test_ssid_findBD_recovers_known_system()
+            test_ssid_findBD_recovers_D_feedthrough()
+            test_ssid_ridge_normal_equations()
         end
         @testset "Errors & dispatch" begin
             test_ssid_errors_wrong_model_type()

@@ -47,7 +47,7 @@ function _fit_kalman!(
     max_iter::Int=100,
     tol::Float64=1e-6,
     progress::Bool=true,
-    monotonicity_check::Bool=true,
+    monotonicity_check::Bool=false,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     eltype(y) === T || error("Observed data must be of type $(T); got $(eltype(y))")
 

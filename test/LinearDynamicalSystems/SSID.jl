@@ -437,3 +437,130 @@ function test_ssid_type_preservation()
         @test diag.fve isa T
     end
 end
+
+# ---------------------------------------------------------------------------
+# Batched LTI kernel, ridge, and dlyap (added optimizations)
+# ---------------------------------------------------------------------------
+
+# Reference B/x0 design block, built one `_ltisim` per column (pre-batching path).
+function ssid_ref_Bx0(::Type{T}, A, C, U, n, p, m, N) where {T}
+    ncolB = m * n
+    Φ = zeros(T, p * N, ncolB + n)
+    col = 0
+    for k in 1:m, j in 1:n
+        Ej = zeros(T, n, 1)
+        Ej[j, 1] = one(T)
+        uf = StateSpaceDynamics._ltisim(A, Ej, C, reshape(U[k, :], 1, N), zeros(T, n))
+        col += 1
+        Φ[:, col] = vec(uf)
+    end
+    for j in 1:n
+        x0b = zeros(T, n)
+        x0b[j] = one(T)
+        uf = StateSpaceDynamics._ltisim(A, zeros(T, n, 0), C, zeros(T, 0, N), x0b)
+        col += 1
+        Φ[:, col] = vec(uf)
+    end
+    return Φ
+end
+
+# The batched `_ltisim_batch!` must reproduce the per-column construction across
+# a range of shapes, including edge cases (no inputs m=0, single step N=1) and
+# Float32; the two differ only by BLAS summation order.
+function test_ssid_ltisim_batch_matches_percolumn()
+    for (n, p, m, N) in ((5, 3, 2, 60), (4, 2, 0, 40), (6, 4, 3, 1), (3, 5, 1, 30))
+        rng = StableRNG(400 + n + 7m + N)
+        Vr = randn(rng, n, n)
+        A = real(Vr * Diagonal(range(0.9, 0.2; length=n)) * inv(Vr))
+        C = randn(rng, p, n)
+        U = m > 0 ? randn(rng, m, N) : zeros(Float64, 0, N)
+        Φref = ssid_ref_Bx0(Float64, A, C, U, n, p, m, N)
+        Φb = Matrix{Float64}(undef, p * N, m * n + n)
+        StateSpaceDynamics._ltisim_batch!(Φb, A, C, U, n, p, m, N)
+        @test size(Φb) == size(Φref)
+        @test isapprox(Φb, Φref; atol=1e-10, rtol=1e-10)
+    end
+    # Float32: element type preserved, values match at single precision.
+    n, p, m, N = 6, 4, 2, 50
+    rng = StableRNG(999)
+    Vr = randn(rng, Float32, n, n)
+    A = Float32.(real(Vr * Diagonal(range(0.9f0, 0.2f0; length=n)) * inv(Vr)))
+    C = randn(rng, Float32, p, n)
+    U = randn(rng, Float32, m, N)
+    Φref = ssid_ref_Bx0(Float32, A, C, U, n, p, m, N)
+    Φb = Matrix{Float32}(undef, p * N, m * n + n)
+    StateSpaceDynamics._ltisim_batch!(Φb, A, C, U, n, p, m, N)
+    @test eltype(Φb) === Float32
+    @test isapprox(Φb, Φref; atol=1.0f-3, rtol=1.0f-3)
+end
+
+# End-to-end `_find_BD_ssid` with a nonzero observation feed-through: B, D, x0 of
+# a noiseless system must be recovered exactly, exercising the D-block filling.
+function test_ssid_findBD_recovers_D_feedthrough()
+    rng = StableRNG(444)
+    n, p, m, mD, N = 3, 4, 2, 2, 800
+    A = randn(rng, n, n)
+    A .*= 0.7 / maximum(abs.(eigvals(A)))
+    C = randn(rng, p, n)
+    Btrue = randn(rng, n, m)
+    Dtrue = randn(rng, p, mD)
+    x0true = randn(rng, n)
+    U = randn(rng, m, N)
+    V = randn(rng, mD, N)
+    Y = StateSpaceDynamics._ltisim(A, Btrue, C, U, x0true) .+ Dtrue * V
+    ols = (x, yy) -> x \ yy
+    B, D, x0 = StateSpaceDynamics._find_BD_ssid(A, C, U, V, Y, false, ols, Float64)
+    @test size(B) == (n, m)
+    @test size(D) == (p, mD)
+    @test isapprox(D, Dtrue; atol=1e-6)
+    Yhat = StateSpaceDynamics._ltisim(A, B, C, U, x0) .+ D * V
+    @test isapprox(Yhat, Y; atol=1e-6)
+end
+
+# `_ridge` (Cholesky normal equations) must match the closed-form Tikhonov
+# solution and the augmented-QR fallback `_ridge_qr`, for vector and matrix RHS.
+function test_ssid_ridge_normal_equations()
+    rng = StableRNG(455)
+    N, k = 500, 8
+    X = randn(rng, N, k)
+    yv = randn(rng, N)
+    Ym = randn(rng, N, 3)
+    for λ in (1e-3, 1e-1, 1.0)
+        βcf = (X'X + λ * I) \ (X'yv)
+        @test isapprox(StateSpaceDynamics._ridge(X, yv, λ), βcf; atol=1e-8, rtol=1e-8)
+        @test isapprox(
+            StateSpaceDynamics._ridge(X, yv, λ),
+            StateSpaceDynamics._ridge_qr(X, yv, λ);
+            atol=1e-6,
+            rtol=1e-6,
+        )
+        Bcf = (X'X + λ * I) \ (X'Ym)
+        @test isapprox(StateSpaceDynamics._ridge(X, Ym, λ), Bcf; atol=1e-8, rtol=1e-8)
+        @test isapprox(
+            StateSpaceDynamics._ridge(X, Ym, λ),
+            StateSpaceDynamics._ridge_qr(X, Ym, λ);
+            atol=1e-6,
+            rtol=1e-6,
+        )
+    end
+    # Float32 element type is preserved.
+    Xf = randn(rng, Float32, 200, 5)
+    yf = randn(rng, Float32, 200)
+    @test eltype(StateSpaceDynamics._ridge(Xf, yf, 1.0f-2)) === Float32
+end
+
+# `_dlyap` (now `MatrixEquations.lyapd`) must satisfy the discrete Lyapunov
+# equation and stay SPD at a larger latent dimension than the small case above.
+function test_ssid_dlyap_large_n()
+    rng = StableRNG(466)
+    n = 60
+    Vr = randn(rng, n, n)
+    A = real(Vr * Diagonal(range(0.95, 0.1; length=n)) * inv(Vr))
+    Q = let M = randn(rng, n, n)
+        Matrix(Symmetric(M * M' / n)) + I
+    end
+    P = StateSpaceDynamics._dlyap(A, Q; jitter=1e-8, stable=true)
+    @test issymmetric(P)
+    @test isposdef(P)
+    @test isapprox(A * P * A' + Q, P; atol=1e-6, rtol=1e-6)
+end
