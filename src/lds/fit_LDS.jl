@@ -1298,8 +1298,8 @@ function loglikelihood(
         throw(DimensionMismatchError("data.ux rows vs B cols", ux_dim, size(ux, 1)))
     size(uy, 1) == uy_dim ||
         throw(DimensionMismatchError("data.uy rows vs D cols", uy_dim, size(uy, 1)))
-    _null_check_inputs(ux, tsteps, ntrials, "data.ux")
-    _null_check_inputs(uy, tsteps, ntrials, "data.uy")
+    _check_inputs(ux, tsteps, ntrials, "data.ux")
+    _check_inputs(uy, tsteps, ntrials, "data.uy")
 
     total_ll = zero(T)
     log2πp = T(obs_dim) * log(T(2π))
@@ -1371,4 +1371,19 @@ function loglikelihood(
     end
 
     return total_ll
+end
+
+function _check_inputs(
+    v::AbstractArray{T,3}, tsteps::Int, ntrials::Int, name::String
+) where {T<:Real}
+    if size(v, 1) > 0 && (size(v, 2) != tsteps || size(v, 3) != ntrials)
+        throw(
+            DimensionMismatchError(
+                "$name shape (input_dim, T, ntrials)",
+                (size(v, 1), tsteps, ntrials),
+                size(v),
+            ),
+        )
+    end
+    return nothing
 end

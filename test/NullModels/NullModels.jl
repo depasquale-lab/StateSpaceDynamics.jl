@@ -68,7 +68,6 @@ end
 
 function test_null_test_ll_matches_plugin_gaussian(rng=MersenneTwister(0xC0FFEE))
     obs_dim, tsteps, ntrials = 2, 15, 4
-    rng = MersenneTwister(0xC0FFEE)
     train = _null_make_data(rng, obs_dim, tsteps, ntrials)
     test = _null_make_data(rng, obs_dim, 12, 3)
 
@@ -401,8 +400,8 @@ function _r2_sim_data(rng::AbstractRNG, lds, tsteps::Int, ntrials::Int)
     return Data(; y=y, ux=zeros(T, 0, tsteps, ntrials), uy=zeros(T, 0, tsteps, ntrials))
 end
 
-_r2_rowstochastic(K) = (M=rand(K, K); M ./ sum(M; dims=2))
-_r2_probvec(K) = (v=rand(K); v ./ sum(v))
+_r2_rowstochastic(K) = (M = rand(K, K); M ./ sum(M; dims=2))
+_r2_probvec(K) = (v = rand(K); v ./ sum(v))
 
 # The inputs-aware marginal LL must reduce to `loglikelihood(lds, y)` when the
 # model carries no inputs.

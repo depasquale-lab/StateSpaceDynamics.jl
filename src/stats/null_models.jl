@@ -43,8 +43,7 @@ its EM fixed point.
   same `obs_dim`.
 - `train_inputs::Union{Nothing,AbstractArray{T,3}} = nothing`: per-timestep
   inputs `v_t` for the input-bearing models (variants 2 and 4) on training.
-  Defaults to `train_data.ux`; pass a zero-row array (e.g. `zeros(T, 0, T, N)`)
-  to disable inputs on those two variants.
+  Defaults to `train_data.ux`; pass a zero-row array (e.g. `zeros(T, 0, tsteps, ntrials)`) to disable inputs.
 - `test_inputs::Union{Nothing,AbstractArray{T,3}} = nothing`: per-timestep
   inputs on test; defaults to `test_data.ux`.
 - `intercept_W_prior, inputs_W_prior, var_W_prior, var_inputs_W_prior::Union{Nothing,MNPrior{T}} = nothing`:
@@ -509,6 +508,88 @@ function _null_plugin_lls(
     )
 end
 
+# Fit the four null baselines once on `train_data`, then return their plug-in
+# Gaussian data log-densities on BOTH `train_data` and `test_data` as
+# `(train_lls, test_lls)`.  A single `test_null` call handles the fitting and
+# scores `test_data` as a by-product; train plug-in LLs are then computed by
+# re-evaluating `train_data` against the already-fitted parameters.
+function _null_plugin_lls_both(
+    train_data::Data{T},
+    test_data::Data{T},
+    null_inputs::AbstractString,
+    R_prior::Union{Nothing,IWPrior{T}},
+) where {T<:Real}
+    v_train, v_test = if null_inputs == "ux"
+        train_data.ux, test_data.ux
+    elseif null_inputs == "uy"
+        train_data.uy, test_data.uy
+    else
+        throw(ArgumentError("null_inputs must be \"ux\" or \"uy\"; got \"$null_inputs\""))
+    end
+
+    # Single fit; test_null also scores test_data as a by-product.
+    res = test_null(
+        train_data;
+        test_data=test_data,
+        train_inputs=v_train,
+        test_inputs=v_test,
+        R_prior=R_prior,
+    )
+
+    # Plug-in LLs on test (computed during the test_null call above).
+    test_lls = (
+        intercept=res.intercept.test_ll,
+        inputs=res.inputs.test_ll,
+        var=res.var.test_ll,
+        var_inputs=res.var_inputs.test_ll,
+    )
+
+    # Plug-in LLs on train by scoring train_data against the fitted parameters.
+    obs_dim, tsteps, ntrials = size(train_data.y)
+    Y_tr = _stack_y_all(train_data.y)
+    n_tr = size(Y_tr, 2)
+
+    # intercept: y_t ~ N(d, R)
+    p_ic = res.intercept.params
+    intercept_tr = _null_test_ll(
+        Y_tr, _bias_row(T, n_tr), reshape(p_ic.d, obs_dim, 1), p_ic.R
+    )
+
+    # inputs: y_t ~ N(d + D v_t, R)
+    p_in = res.inputs.params
+    W_in = hcat(reshape(p_in.d, obs_dim, 1), p_in.D)
+    X_in_tr = vcat(_bias_row(T, n_tr), _stack_inputs_all(v_train))
+    inputs_tr = _null_test_ll(Y_tr, X_in_tr, W_in, p_in.R)
+
+    # var: y_1 ~ N(μ_0, R_0);  y_t ~ N(F y_{t-1} + d, R)  for t ≥ 2
+    p_v = res.var.params
+    Y_init_tr = _stack_y_init(train_data.y)
+    n_init_tr = size(Y_init_tr, 2)
+    W_init_v = reshape(p_v.μ_0, obs_dim, 1)
+    init_v_tr = _null_test_ll(Y_init_tr, _bias_row(T, n_init_tr), W_init_v, p_v.R_0)
+    Y_next_tr = _stack_y_next(train_data.y)
+    n_var_tr = size(Y_next_tr, 2)
+    W_var = hcat(p_v.F, reshape(p_v.d, obs_dim, 1))
+    X_var_tr = vcat(_stack_y_prev(train_data.y), _bias_row(T, n_var_tr))
+    var_tr = init_v_tr + _null_test_ll(Y_next_tr, X_var_tr, W_var, p_v.R)
+
+    # var_inputs: y_1 ~ N(μ_0, R_0);  y_t ~ N(F y_{t-1} + d + D v_t, R)  for t ≥ 2
+    p_vi = res.var_inputs.params
+    W_init_vi = reshape(p_vi.μ_0, obs_dim, 1)
+    init_vi_tr = _null_test_ll(Y_init_tr, _bias_row(T, n_init_tr), W_init_vi, p_vi.R_0)
+    W_var_vi = hcat(p_vi.F, reshape(p_vi.d, obs_dim, 1), p_vi.D)
+    X_var_vi_tr = vcat(
+        _stack_y_prev(train_data.y), _bias_row(T, n_var_tr), _stack_inputs_next(v_train)
+    )
+    var_inputs_tr = init_vi_tr + _null_test_ll(Y_next_tr, X_var_vi_tr, W_var_vi, p_vi.R)
+
+    train_lls = (
+        intercept=intercept_tr, inputs=inputs_tr, var=var_tr, var_inputs=var_inputs_tr
+    )
+
+    return train_lls, test_lls
+end
+
 """
     compute_R2(lds, data; null_inputs="ux", R_prior=lds.obs_model.R_prior) -> NamedTuple
     compute_R2(lds, train_data, test_data; kwargs...) -> NamedTuple
@@ -587,8 +668,9 @@ function compute_R2(
     lds_train_ll = loglikelihood(lds, train_data)
     lds_test_ll = loglikelihood(lds, test_data)
 
-    null_train_ll = _null_plugin_lls(train_data, train_data, null_inputs, R_prior)
-    null_test_ll = _null_plugin_lls(train_data, test_data, null_inputs, R_prior)
+    null_train_ll, null_test_ll = _null_plugin_lls_both(
+        train_data, test_data, null_inputs, R_prior
+    )
 
     names = (:intercept, :inputs, :var, :var_inputs)
     entries = map(names) do name
