@@ -250,7 +250,6 @@ using SSDTest
     end
 
     @testset "SSID" begin
-
         include("LinearDynamicalSystems/SSID.jl")
         @testset "Mechanics" begin
             test_ssid_shapes_and_mutation()
@@ -284,7 +283,6 @@ using SSDTest
             test_ssid_type_preservation()
         end
     end
-
 
     # Optimization primitives (line search + Newton)
     @testset verbose = true "Optimization" begin

@@ -180,11 +180,11 @@ function test_ssid_markov_recovery_with_input()
     lds = ssid_make_lds(; eigs=[0.85, 0.5], obs=6, q=1e-7, r=1e-5, uin=2)
     rng = StableRNG(10)
     u = [randn(rng, Float64, 2, 4000)]
-    _, y = StateSpaceDynamics.rand(rng, lds, [4000];latent_inputs=u)
+    _, y = StateSpaceDynamics.rand(rng, lds, [4000]; latent_inputs=u)
     A0, B0, C0 = lds.state_model.A, lds.state_model.B, lds.obs_model.C
     M_true = ssid_markov(A0, B0, C0, 4)
 
-    fit!(lds, y, SSID(; r=15, zeroD=true);latent_inputs=u)
+    fit!(lds, y, SSID(; r=15, zeroD=true); latent_inputs=u)
     M_est = ssid_markov(lds.state_model.A, lds.state_model.B, lds.obs_model.C, 4)
 
     # Low noise + 4000 samples: the leading Markov parameters should recover.
@@ -198,8 +198,8 @@ function test_ssid_input_BD_shapes()
     lds = ssid_make_lds(; eigs=[0.8, 0.5], uin=2)
     rng = StableRNG(12)
     u = [randn(rng, Float64, 2, 3000)]
-    _, y = StateSpaceDynamics.rand(rng, lds, [3000];latent_inputs=u)
-    fit!(lds, y, SSID(; r=12, zeroD=true);latent_inputs=u)
+    _, y = StateSpaceDynamics.rand(rng, lds, [3000]; latent_inputs=u)
+    fit!(lds, y, SSID(; r=12, zeroD=true); latent_inputs=u)
     @test size(lds.state_model.B) == (lds.latent_dim, 2)
     @test size(lds.obs_model.D) == (lds.obs_dim, 0)
 
@@ -208,8 +208,8 @@ function test_ssid_input_BD_shapes()
     rng2 = StableRNG(13)
     u2 = [randn(rng2, Float64, 2, 3000)]
     v2 = [randn(rng2, Float64, 1, 3000)]
-    _, y2 = StateSpaceDynamics.rand(rng2, lds2, [3000];latent_inputs=u2, obs_inputs=v2)
-    fit!(lds2, y2, SSID(; r=12, zeroD=false);latent_inputs=u2, obs_inputs=v2)
+    _, y2 = StateSpaceDynamics.rand(rng2, lds2, [3000]; latent_inputs=u2, obs_inputs=v2)
+    fit!(lds2, y2, SSID(; r=12, zeroD=false); latent_inputs=u2, obs_inputs=v2)
     @test size(lds2.state_model.B) == (lds2.latent_dim, 2)
     @test size(lds2.obs_model.D) == (lds2.obs_dim, 1)
 end
@@ -238,8 +238,8 @@ function test_ssid_new_init_placeholder()
     lds = ssid_make_lds(; eigs=[0.85, 0.5], uin=2)
     rng = StableRNG(16)
     u = [randn(rng, Float64, 2, 2500)]
-    _, y = StateSpaceDynamics.rand(rng, lds, [2500];latent_inputs=u)
-    fit!(lds, y, SSID(; r=12, new_init=true);latent_inputs=u)
+    _, y = StateSpaceDynamics.rand(rng, lds, [2500]; latent_inputs=u)
+    fit!(lds, y, SSID(; r=12, new_init=true); latent_inputs=u)
     # placeholder x0 = ones(n)/n
     @test isapprox(lds.state_model.x0, fill(1 / lds.latent_dim, lds.latent_dim); atol=1e-10)
     @test validate_LDS(lds) === nothing
@@ -265,7 +265,7 @@ function test_ssid_dlyap_identity_and_fallback()
     rng = StableRNG(18)
     A = randn(rng, 4, 4)
     A .*= 0.8 / maximum(abs.(eigvals(A)))
-    Q = let M = randn(rng, 4, 4);
+    Q = let M = randn(rng, 4, 4)
         Matrix(M * M' + I)
     end
     P0 = StateSpaceDynamics._dlyap(A, Q; jitter=1e-8, stable=true)
@@ -309,7 +309,7 @@ end
 function test_ssid_findBD_recovers_known_system()
     rng = StableRNG(21)
     n, p, m, N = 3, 4, 2, 600
-    A = randn(rng, n, n);
+    A = randn(rng, n, n)
     A .*= 0.7 / maximum(abs.(eigvals(A)))
     C = randn(rng, p, n)
     Btrue = randn(rng, n, m)
@@ -360,10 +360,10 @@ function test_ssid_errors_bad_inputs()
         ssid_make_lds(; eigs=[0.8, 0.5]), y, SSID(; r=12, W=:BOGUS)
     )
 
-    # input-dim mismatch (model has no input, butlatent_inputs supplied).
+    # input-dim mismatch (model has no input, but latent_inputs supplied).
     badu = [randn(StableRNG(24), 2, size(y, 2))]
     @test_throws Exception fit!(
-        ssid_make_lds(; eigs=[0.8, 0.5]), y, SSID(; r=12);latent_inputs=badu
+        ssid_make_lds(; eigs=[0.8, 0.5]), y, SSID(; r=12); latent_inputs=badu
     )
 
     # order must equal latent_dim.

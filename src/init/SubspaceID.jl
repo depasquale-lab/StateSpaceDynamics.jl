@@ -95,7 +95,7 @@ function _colstd(X::AbstractMatrix{T}) where {T}
     μ = mean(X; dims=1)
     nrow = size(X, 1)
     denom = max(nrow - 1, 1)
-    return sqrt.(vec(sum(abs2, X .- μ; dims=1)) ./ denom)
+    return max(sqrt.(vec(sum(abs2, X .- μ; dims=1)) ./ denom), eps(T(1.0)))
 end
 
 # Ridge / Tikhonov least squares: argmin ||x*β - y||² + λ||β||².
@@ -157,7 +157,7 @@ function _ltisim(
     p = size(C, 1)
     N = size(u, 2)
     Y = Matrix{T}(undef, p, N)
-    x = Vector{T}(undef, n);
+    x = Vector{T}(undef, n)
     copyto!(x, x0)
     xn = Vector{T}(undef, n)
     has_input = size(E, 2) > 0
@@ -178,7 +178,7 @@ end
 function _dlyap(A::AbstractMatrix{T}, Q::AbstractMatrix{T}; jitter, stable::Bool) where {T}
     n = size(A, 1)
     P = copy(Q)
-    if stable && n * n <= 10_000
+    if stable && n * n <= 4096
         M = Matrix{T}(I, n * n, n * n) - kron(A, A)
         local Pv
         solved = true
@@ -379,7 +379,7 @@ function _find_BD_ssid(
     col = 0
     # B blocks: response to a unit input on channel k entering state j.
     @inbounds for k in 1:m, j in 1:n
-        fill!(Ej, zero(T));
+        fill!(Ej, zero(T))
         Ej[j, 1] = one(T)
         uf = _ltisim(A, Ej, C, reshape(view(U, k, :), 1, N), zx)
         col += 1
@@ -388,7 +388,7 @@ function _find_BD_ssid(
     # x0 blocks: free decay from each canonical initial state.
     x0b = zeros(T, n)
     @inbounds for j in 1:n
-        fill!(x0b, zero(T));
+        fill!(x0b, zero(T))
         x0b[j] = one(T)
         uf = _ltisim(A, emptyE, C, emptyu, x0b)
         col += 1
@@ -558,7 +558,7 @@ function _ssid_fit!(
     if alg.set_all || fb[5]
         om.C .= C
         om.d .= d
-        (!zeroD && mD > 0) && (om.D .= D)
+        (!zeroD && mD > 0) ? (om.D .= D) : (om.D .= zeros(T, p, mD))
     end
     (alg.set_all || fb[6]) && (om.R .= R)
 
@@ -576,7 +576,7 @@ end
 Initialize a Gaussian LTI `LinearDynamicalSystem` in place via Canonical Variate
 Analysis subspace identification. `y` may be a vector of per-trial
 `(obs_dim, Tᵢ)` matrices, a single `(obs_dim, T)` matrix, or an
-`(obs_dim, T, ntrials)` array. Returns `(; S, fve)`. See [`SubspaceID`](@ref).
+`(obs_dim, T, ntrials)` array. Returns `(; S, fve)`.
 """
 function fit!(
     lds::LinearDynamicalSystem{T,S,O},
