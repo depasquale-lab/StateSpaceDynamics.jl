@@ -760,7 +760,7 @@ function compute_slds_constants!(
 
     # Observation terms only if Gaussian
     if lds.obs_model isa GaussianObservationModel{T}
-        cc.R_PD[] = PDMat(Symmetric(lds.obs_model.R))
+        cc.R_PD[] = PDMat(Symmetric(Symmetrize!(lds.obs_model.R)))
         Rchol = cc.R_PD[].chol
 
         # tmp_RC = R^{-1}C, C_inv_R = (R^{-1}C)'
