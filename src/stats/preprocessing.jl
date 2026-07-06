@@ -1,3 +1,28 @@
+"""
+    ProbabilisticPCA{T<:Real, M<:AbstractMatrix{T}, V<:AbstractVector{T}}
+
+Probabilistic Principal Component Analysis (PPCA) model. Observations
+`x ∈ ℝ^D` are generated from a `k`-dimensional latent factor `z` with
+isotropic Gaussian noise:
+
+```math
+z ∼ N(0, I_k), \\qquad x \\mid z ∼ N(μ + W z, σ² I_D)
+```
+
+so that marginally `x ∼ N(μ, W Wᵀ + σ² I)`. As `σ² → 0`, PPCA recovers
+classical PCA. Construct with `ProbabilisticPCA(W, σ², μ)`; `k` and `D` are
+inferred from the size of `W`.
+
+# Fields
+- `W::M`: Loading matrix (`D × k`). Identifiable only up to an orthogonal
+    rotation of its columns.
+- `σ²::T`: Isotropic observation noise variance.
+- `μ::V`: Observation mean (length `D`).
+- `k::Int`: Latent dimension.
+- `D::Int`: Observation dimension.
+- `z::M`: Posterior means of the latent factors from the most recent E-step
+    (`k × N`; empty until [`fit!`](@ref) is called).
+"""
 mutable struct ProbabilisticPCA{T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}}
     W::M
     σ²::T
@@ -32,7 +57,7 @@ function Base.show(io::IO, ppca::ProbabilisticPCA; gap="")
     return nothing
 end
 
-function estep(ppca::ProbabilisticPCA, X::Matrix{T}) where {T<:Real}
+function estep(ppca::ProbabilisticPCA, X::AbstractMatrix{T}) where {T<:Real}
     D, N = size(X)
     E_z = zeros(T, ppca.k, N)
     E_zz = zeros(T, ppca.k, ppca.k, N)
@@ -48,7 +73,7 @@ function estep(ppca::ProbabilisticPCA, X::Matrix{T}) where {T<:Real}
 end
 
 function mstep!(
-    ppca::ProbabilisticPCA, X::Matrix{T}, E_z::Matrix{T}, E_zz::Array{T,3}
+    ppca::ProbabilisticPCA, X::AbstractMatrix{T}, E_z::Matrix{T}, E_zz::Array{T,3}
 ) where {T<:Real}
     D, N = size(X)
     W_new = zeros(T, D, ppca.k)
@@ -70,6 +95,13 @@ function mstep!(
     return nothing
 end
 
+"""
+    loglikelihood(ppca::ProbabilisticPCA, X::AbstractMatrix)
+
+Marginal log-likelihood `∑_n log p(x_n)` of the data `X` (`D × N`, one
+observation per column) under the PPCA model, using the closed-form marginal
+`x ∼ N(μ, W Wᵀ + σ² I)`.
+"""
 function loglikelihood(ppca::ProbabilisticPCA, X::AbstractMatrix{T}) where {T<:Real}
     D, N = size(X)
     @assert D == ppca.D "Dimension mismatch: X has $D features, model expects $(ppca.D)"
@@ -89,6 +121,13 @@ function loglikelihood(ppca::ProbabilisticPCA, X::AbstractMatrix{T}) where {T<:R
     end
 end
 
+"""
+    Random.rand([rng::AbstractRNG,] ppca::ProbabilisticPCA, n::Int)
+
+Sample `n` observations from the PPCA generative model. Returns a tuple
+`(X, z)` where `X` is `D × n` and `z` holds the sampled latent factors
+(`k × n`).
+"""
 function Random.rand(rng::AbstractRNG, ppca::ProbabilisticPCA, n::Int)
     z = rand(rng, MvNormal(zeros(ppca.k), I), n)  # k × n
     ε = rand(rng, MvNormal(zeros(ppca.D), Diagonal(fill(ppca.σ², ppca.D))), n)  # D × n
@@ -101,12 +140,23 @@ function Random.rand(ppca::ProbabilisticPCA, n::Int)
     return rand(Random.default_rng(), ppca, n)
 end
 
+"""
+    fit!(ppca::ProbabilisticPCA, X::AbstractMatrix, max_iters::Int=100, tol::Float64=1e-6)
+
+Fit the PPCA model to data `X` (`D × N`, one observation per column) with EM.
+`μ` is set directly to the sample mean (its exact ML estimate); `W` and `σ²`
+are then updated iteratively until the log-likelihood improves by less than
+`tol` or `max_iters` is reached.
+
+Returns the vector of marginal log-likelihood values, one per iteration
+(non-decreasing).
+"""
 function fit!(
     ppca::ProbabilisticPCA, X::AbstractMatrix{T}, max_iters::Int=100, tol::Float64=1e-6
 ) where {T<:Real}
-    if all(iszero, ppca.μ)
-        ppca.μ .= vec(mean(X; dims=2))
-    end
+    # The ML estimate of μ for PPCA is exactly the sample mean, independent of
+    # W/σ² and of the EM iterations, so set it directly (mstep! never updates μ).
+    ppca.μ .= vec(mean(X; dims=2))
 
     lls = Float64[]
     prev_ll = -Inf

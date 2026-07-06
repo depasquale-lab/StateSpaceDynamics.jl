@@ -23,19 +23,22 @@ The generative model is given by:
 
 ```math
 \begin{aligned}
-    x_t &\sim \mathcal{N}(A x_{t-1}, Q) \\
-    y_t &\sim \mathcal{N}(C x_t, R)
+    x_t &\sim \mathcal{N}(A x_{t-1} + B u_t + b, Q) \\
+    y_t &\sim \mathcal{N}(C x_t + D v_t + d, R)
 \end{aligned}
 ```
 
 Where:
 
 - ``x_t`` is the hidden state at time ``t``
-- ``y_t`` is the observed data at time ``t``  
+- ``y_t`` is the observed data at time ``t`` 
+- ``u_t`` is the dynamics input at time ``t``
+- ``v_t`` is the observation input at time ``t``
 - ``A`` is the state transition matrix
 - ``C`` is the observation matrix
 - ``Q`` is the process noise covariance
 - ``R`` is the observation noise covariance
+- ``B`` and ``D`` are input matrices
 - ``b`` and ``d`` are bias terms
 
 This can equivalently be written in equation form:
@@ -49,8 +52,8 @@ This can equivalently be written in equation form:
 
 Where:
 
-- ``ε_t \sim N(0, Q)`` is the process noise
-- ``η_t \sim N(0, R)`` is the observation noise
+- ``\epsilon_t \sim \mathcal{N}(0, Q)`` is the process noise
+- ``\eta_t \sim \mathcal{N}(0, R)`` is the observation noise
 
 ```@docs
 GaussianStateModel
@@ -65,12 +68,12 @@ The generative model is given by:
 
 ```math
 \begin{aligned}
-    x_t &\sim \mathcal{N}(A x_{t-1}, Q) \\
-    y_t &\sim \text{Poisson}(\exp(Cx_t + b))
+    x_t &\sim \mathcal{N}(A x_{t-1} + b, Q) \\
+    y_t &\sim \text{Poisson}(\exp(C x_t + d))
 \end{aligned}
 ```
 
-Where `b` is a bias term.
+Where ``d`` is a bias term.
 
 ```@docs
 PoissonObservationModel
@@ -83,15 +86,15 @@ You can generate synthetic data from fitted LDS models. Pass a scalar
 to sample a multi-trial dataset (trial lengths may differ):
 
 ```@docs
-Random.rand(rng::AbstractRNG, lds::LinearDynamicalSystem, tsteps::Integer; latent_inputs, obs_inputs)
+Random.rand(rng::AbstractRNG, lds::LinearDynamicalSystem{T,S,O}, tsteps::Integer) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
 ```
 
 ## Inference in Linear Dynamical Systems
 
-In StateSpaceDynamics.jl, we directly maximize the complete-data log-likelihood function with respect to the latent states given the data and the parameters of the model. In other words, the **maximum a priori** (MAP) estimate of the latent state path is:
+In StateSpaceDynamics.jl, we directly maximize the complete-data log-likelihood function with respect to the latent states given the data and the parameters of the model. In other words, the **maximum a posteriori** (MAP) estimate of the latent state path is:
 
 ```math
-\underset{x}{\text{argmax}}  \left[ \log p(x_0) + \sum_{t=2}^T \log p(x_t \mid x_{t-1}) + \sum_{t=1}^T \log p(y_t \mid x_t) \right]
+\underset{x}{\text{argmax}}  \left[ \log p(x_1) + \sum_{t=2}^T \log p(x_t \mid x_{t-1}) + \sum_{t=1}^T \log p(y_t \mid x_t) \right]
 ```
 
 This MAP estimation approach has the same computational complexity as traditional Kalman filtering and smoothing — ``\mathcal{O}(T)`` — but is significantly more flexible. Notably, it can handle **nonlinear observations** and **non-Gaussian noise** while still yielding **exact MAP estimates**, unlike approximate techniques such as the Extended Kalman Filter (EKF) or Unscented Kalman Filter (UKF).
@@ -109,7 +112,7 @@ Where:
 - ``\mathcal{L}(x)`` is the complete-data log-likelihood:
 
 ```math
-\mathcal{L}(x) = \log p(x_0) + \sum_{t=2}^T \log p(x_t \mid x_{t-1}) + \sum_{t=1}^T \log p(y_t \mid x_t)
+\mathcal{L}(x) = \log p(x_1) + \sum_{t=2}^T \log p(x_t \mid x_{t-1}) + \sum_{t=1}^T \log p(y_t \mid x_t)
 ```
 
 - ``\nabla \mathcal{L}(x)`` is the gradient of the full log-likelihood with respect to all latent states
@@ -143,7 +146,7 @@ Despite the requirement of inverting a Hessian of dimension ``(d \times T) \time
 Given the latent structure of state-space models, we must rely on either the Expectation-Maximization (EM) or Variational Inference (VI) approaches to learn the parameters of the model. StateSpaceDynamics.jl supports both EM and VI. For LDS models, we can use Laplace EM, where we approximate the posterior of the latent state path using the Laplace approximation as outlined above. Using these approximate posteriors (or exact ones in the Gaussian case), we can apply closed-form updates for the model parameters.
 
 !!! warning "Identifiability caveats in LDS"
-    LDS parameters are **not uniquely identifiable**. For any invertible matrix $$S$$,
+    LDS parameters are **not uniquely identifiable**. For any invertible matrix ``S``,
     the reparameterization
     ```math
     \begin{aligned}
@@ -157,15 +160,15 @@ Given the latent structure of state-space models, we must rely on either the Exp
     yields the **same likelihood**. Practical consequences:
 
     - **Scale/rotation ambiguity:** the latent space can be arbitrarily scaled/rotated.
-    - **Sign & permutation flips:** columns of $$C$$ (and corresponding rows/cols of $$A$$) can swap or flip signs with no change in fit.
+    - **Sign & permutation flips:** columns of ``C`` (and corresponding rows/cols of ``A``) can swap or flip signs with no change in fit.
     
     **Common remedies**
     
-    - Fix a convention for the latent scale, e.g. set $$Q = I$$ or constrain $$\mathrm{diag}(Q)=1$$.
-    - Encourage a canonical orientation, e.g. enforce **orthonormal columns in $$C$$** (up to sign) after each M-step. (Not yet implemented)
+    - Fix a convention for the latent scale, e.g. set ``Q = I`` or constrain ``\mathrm{diag}(Q)=1``.
+    - Encourage a canonical orientation, e.g. enforce **orthonormal columns in ``C``** (up to sign) after each M-step. (Not yet implemented)
     - When comparing fits across runs, align parameters via a **Procrustes** or **Hungarian** matching step.
     
-    These issues affect **parameter interpretability** but not **predictive performance**; be cautious when interpreting individual entries of $$A$$, $$C$$, or $$Q$$.
+    These issues affect **parameter interpretability** but not **predictive performance**; be cautious when interpreting individual entries of ``A``, ``C``, or ``Q``.
 
 ```@docs
 fit!(lds::LinearDynamicalSystem{T,S,O}, y::AbstractVector{<:AbstractMatrix{T}}; max_iter::Int=100, tol::Float64=1e-6, progress::Bool=true) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
@@ -265,3 +268,35 @@ fit!(lds, Y; max_iter=20, progress=false)
 
 > **Tip:** In Julia, `I` is a `UniformScaling` (not a matrix).  
 > Use `Matrix(I, d, d)` or `diagm(0 => fill(..., d))` to build ``Ψ``.
+
+## Matrix-Normal Priors on Regression Coefficients (MAP)
+
+The M-step updates for the dynamics and emission parameters are (multivariate) linear
+regressions: the dynamics update fits the stacked coefficient matrix ``[A\; b]`` and the
+emission update fits ``[C\; d]``. StateSpaceDynamics.jl supports a **matrix-normal (MN)**
+prior on these coefficient matrices, turning each regression into a MAP (ridge-style)
+update:
+
+```math
+W_{\text{MAP}} = (XY^\top + M_0 \Lambda)(XX + \Lambda)^{-1}
+```
+
+where ``M_0`` is the prior mean and ``\Lambda`` the column precision. Setting
+``M_0 = 0`` recovers ordinary ridge regression; ``\Lambda = 0`` recovers the unpenalized
+least-squares update.
+
+You can attach an MN prior to:
+
+- The stacked dynamics matrix via `AB_prior` on a [`GaussianStateModel`](@ref)
+- The stacked emission matrix via `CD_prior` on a [`GaussianObservationModel`](@ref) or
+  [`PoissonObservationModel`](@ref)
+
+The MN prior is kept separate from the covariance priors on purpose: pairing an
+`AB_prior`/`CD_prior` with the matching `Q_prior`/`R_prior` ([`IWPrior`](@ref)) recovers a
+full matrix-normal-inverse-Wishart (MNIW) prior, but each half can also be used on its
+own — e.g. the Poisson observation model has no noise covariance, so only the MN half
+applies there.
+
+```@docs; canonical = false
+MNPrior
+```

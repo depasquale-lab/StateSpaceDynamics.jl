@@ -12,10 +12,17 @@ using StableRNGs
 
 rng = StableRNG(123);
 
+ssd_palette = ["#2a78d6", "#1baf7a", "#eda100", "#4a3aa7", "#e34948", "#e87ba4"] # hide
+default(; # hide
+    palette=ssd_palette, framestyle=:box, grid=true, gridalpha=0.12, # hide
+    linewidth=2, size=(760, 420), titlefontsize=12, guidefontsize=10, # hide
+    legendfontsize=9, foreground_color_legend=nothing, # hide
+) # hide
+
 # ## Model
 #
-# A Gaussian LDS evolves a latent state $x_t \in \mathbb{R}^D$ and emits an
-# observation $y_t \in \mathbb{R}^p$ through
+# A Gaussian LDS evolves a latent state ``x_t \in \mathbb{R}^D`` and emits an
+# observation ``y_t \in \mathbb{R}^p`` through
 #
 # ```math
 # \begin{aligned}
@@ -24,7 +31,7 @@ rng = StableRNG(123);
 # \end{aligned}
 # ```
 #
-# We pick $A$ as a contracting rotation so trajectories spiral inward.
+# We pick ``A`` as a contracting rotation so trajectories spiral inward.
 
 obs_dim = 10
 latent_dim = 2
@@ -40,8 +47,9 @@ R = Matrix(0.5 * I(obs_dim))
 d = zeros(obs_dim);
 
 # Bundle the state and observation models into a [`LinearDynamicalSystem`](@ref).
-# `fit_bool` selects which of the six parameter blocks (`A`, `Q`, `C`, `R`,
-# `x0`, `P0`) are updated by EM.
+# `fit_bool` selects which parameter blocks are updated by EM. For a Gaussian
+# LDS the six blocks are `[x0, P0, A, Q, C, R]`, where the biases are folded
+# into their regressions: `b` is fit jointly with `A`, and `d` jointly with `C`.
 
 state_model = GaussianStateModel(; A=A, b=b, Q=Q, x0=x0, P0=P0)
 obs_model = GaussianObservationModel(; C=C, d=d, R=R)
@@ -75,7 +83,7 @@ p_field = let
         V[i, j] = v[2] - Y[i, j]
     end
     mag = @. sqrt(U^2 + V^2)
-    quiver(X, Y; quiver=(U ./ mag, V ./ mag), color=:blue, alpha=0.3)
+    quiver(X, Y; quiver=(U ./ mag, V ./ mag), color="#898781", alpha=0.6)
     plot!(latents[1, :], latents[2, :];
         color=:black, linewidth=1.5, xlabel=L"x_1", ylabel=L"x_2",
         title="Latent dynamics", legend=false)
@@ -128,7 +136,7 @@ naive_lds = LinearDynamicalSystem(;
     fit_bool=fill(true, 6),
 );
 
-x_pre, _ = StateSpaceDynamics.smooth(naive_lds, observations);
+x_pre, _ = smooth(naive_lds, observations);
 
 # ## Learning
 #
@@ -137,11 +145,18 @@ x_pre, _ = StateSpaceDynamics.smooth(naive_lds, observations);
 
 elbos = fit!(naive_lds, observations; max_iter=100, tol=1e-6);
 
-x_post, _ = StateSpaceDynamics.smooth(naive_lds, observations);
+x_post, _ = smooth(naive_lds, observations);
 
-# The post-EM smoothed states should track the true latents up to a rotation
-# (LDS parameters are identifiable only up to invertible change-of-basis in
-# the latent space).
+# The smoothed states track the true latents only up to an invertible change
+# of basis (see the identifiability tutorial), so we undo the basis with the
+# least-squares linear map before overlaying them. Applying the same
+# alignment to the pre-EM estimate shows how much learning improves the
+# recovery.
+
+align_to_truth(x) = ((latents * x') / (x * x')) * x
+
+x_pre_aligned = align_to_truth(x_pre)
+x_aligned = align_to_truth(x_post);
 
 p_compare = let
     lim_x = maximum(abs, latents)
@@ -150,9 +165,12 @@ p_compare = let
         plot!(p, 1:tsteps, latents[d, :] .+ lim_x * (d - 1);
             color=:black, linewidth=2,
             label=(d == 1 ? "true" : ""), alpha=0.8)
-        plot!(p, 1:tsteps, x_post[d, :] .+ lim_x * (d - 1);
-            color=:firebrick, linewidth=2,
-            label=(d == 1 ? "post-EM" : ""), alpha=0.8)
+        plot!(p, 1:tsteps, x_pre_aligned[d, :] .+ lim_x * (d - 1);
+            color="#eda100", linewidth=1.5,
+            label=(d == 1 ? "pre-EM (aligned)" : ""), alpha=0.6)
+        plot!(p, 1:tsteps, x_aligned[d, :] .+ lim_x * (d - 1);
+            color="#2a78d6", linewidth=2,
+            label=(d == 1 ? "post-EM (aligned)" : ""), alpha=0.8)
     end
     plot!(p; title="True vs. recovered latents",
         yticks=(lim_x .* (0:latent_dim - 1), [L"x_%$d" for d in 1:latent_dim]),
@@ -162,7 +180,7 @@ end
 # ELBO is guaranteed non-decreasing across EM iterations.
 
 p_elbo = plot(elbos; xlabel="iteration", ylabel="ELBO",
-    legend=false, linewidth=2, color=:darkblue, title="EM convergence")
+    legend=false, linewidth=2, color="#2a78d6", title="EM convergence")
 
 # ## Tests  #src
 

@@ -8,7 +8,6 @@ DocMeta.setdocmeta!(StateSpaceDynamics, :DocTestSetup, :(using StateSpaceDynamic
 
 # Define tutorial configurations
 tutorials = [
-    ("QuickStart.jl", "quick_start_example"),
     ("GaussianLDS.jl", "gaussian_latent_dynamics_example"),
     ("PoissonLDS.jl", "poisson_latent_dynamics_example"),
     ("LDSModelSelection.jl", "lds_model_selection_example"),
@@ -47,19 +46,17 @@ makedocs(;
             "Switching Linear Dynamical Systems" => "SLDS.md",
         ],
         "Tutorials" => [
-            "Quick Start" => "tutorials/quick_start_example.md",
             "Gaussian LDS Example" => "tutorials/gaussian_latent_dynamics_example.md",
             "Poisson LDS Example" => "tutorials/poisson_latent_dynamics_example.md",
             "LDS Model Selection Example" => "tutorials/lds_model_selection_example.md",
             "Non-Identifiability in LDS Models" => "tutorials/lds_identifiability_example.md",
             "Probabilistic PCA Example" => "tutorials/Probabilistic_PCA_example.md",
             "Switching Linear Dynamical System Example" => "tutorials/switching_linear_dynamical_system_example.md",
-        ]
+        ],
+        "API Reference" => "api.md",
     ],
     checkdocs = :exports,
     doctest=true,
-    doctestfilters = [r"docs/src/tutorials/.*\.md"],
-    warnonly = true
 )
 
 # Deploy the documentation

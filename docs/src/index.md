@@ -42,28 +42,29 @@ A fundamental example is the Linear Dynamical System (LDS), which combines linea
 
 ```math
 \begin{align*}
-    x_{t+1} &= A x_t + b + \epsilon_t \\
-    y_t &= C x_t + d + \delta_t
+    x_{t+1} &= A x_t + B u_t + b + \epsilon_t \\
+    y_t &= C x_t + D v_t + d + \delta_t
 \end{align*}
 ```
 
 where:
 
-* ``\mathbf{A}`` is the state transition matrix
-* ``\mathbf{C}`` is the observation matrix  
-* ``\mathbf{b}`` and ``\mathbf{d}`` are bias terms
-* ``\boldsymbol{\epsilon}_t`` and ``\boldsymbol{\delta}_t`` are Gaussian noise terms with covariances ``\mathbf{Q}`` and ``\mathbf{R}`` respectively
+* ``A`` is the state transition matrix
+* ``C`` is the observation matrix  
+* ``b`` and ``d`` are bias terms
+* ``B`` and ``D`` are input matrices that scale their respective inputs ``u_t`` and ``v_t``
+* ``\epsilon_t`` and ``\delta_t`` are Gaussian noise terms with covariances ``Q`` and ``R`` respectively
 
 2. Distributional form:
 
 ```math
 \begin{align*}
-    x_{t+1} &\sim \mathcal{N}(A x_t + b, Q) \\
-    y_t &\sim \mathcal{N}(C x_t + d, R)
+    x_{t+1} &\sim \mathcal{N}(A x_t + B u_t + b, Q) \\
+    y_t &\sim \mathcal{N}(C x_t + D v_t + d, R)
 \end{align*}
 ```
 
-where ``\mathbf{Q}`` and ``\mathbf{R}`` are the state and observation noise covariance matrices, respectively.
+where ``Q`` and ``R`` are the state and observation noise covariance matrices, respectively.
 
 ## Models Implemented
 
@@ -73,13 +74,10 @@ StateSpaceDynamics.jl implements several types of state space models:
    * Gaussian LDS
    * Poisson LDS
 
-2. **Hidden Markov Models (HMM)**
-   * Gaussian emissions
-   * Regression-based emissions
-      * Gaussian regression
-      * Bernoulli regression
-      * Poisson regression
-      * Autoregressive emissions
+2. **Switching Linear Dynamical Systems (SLDS)**
+   * Gaussian and Poisson emissions
+
+3. **Probabilistic PCA (PPCA)**
 
 ## Quick Start
 
@@ -120,12 +118,12 @@ Please include or update **tests** for any user-facing change. Tests live in the
 ```julia
 julia --project -e 'using Pkg; Pkg.test()'
 # or from the Pkg REPL by typing "]":
-add StateSpaceDynamics
+test StateSpaceDynamics
 ```
 
 ## Citing StateSpaceDynamics.jl
 
-If you use this software in your research, please cite our publication in the Journal Of Open Source Software:
+If you use this software in your research, please cite our publication in the Journal of Open Source Software:
 
 ```bibtex
 @article{Senne_StateSpaceDynamics_jl_A_Julia_2025,
