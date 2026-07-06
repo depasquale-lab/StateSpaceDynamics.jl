@@ -732,8 +732,8 @@ function compute_slds_constants!(
     # Wrap state-side covariances as PDMats. Observation R is wrapped further
     # below only on the Gaussian branch — Poisson leaves cc.R_PD on its
     # identity placeholder and `cc.cR` zero.
-    cc.Q_PD[] = PDMat(Symmetric(Q))
-    cc.P0_PD[] = PDMat(Symmetric(P0))
+    cc.Q_PD[] = PDMat(Symmetric(Symmetrize!(Q)))
+    cc.P0_PD[] = PDMat(Symmetric(Symmetrize!(P0)))
     Qchol = cc.Q_PD[].chol
     P0chol = cc.P0_PD[].chol
 
