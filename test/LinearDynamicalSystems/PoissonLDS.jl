@@ -448,13 +448,17 @@ function test_EM_matlab()
     params_obj = params["params"]["model"]
     @test isapprox(plds.state_model.A, params_obj["A"], atol=1e-5)
     @test isapprox(plds.state_model.Q, params_obj["Q"], atol=1e-5)
-    @test isapprox(plds.obs_model.C, params_obj["C"], atol=1e-5)
+    #= C, d come from the LBFGS+HagerZhang M-step (`poisson_observations.jl`);
+    Optim v2 differs from the MATLAB reference by a bit more than atol=1e-5 (max
+    diff ~1.3e-5).
+    =#
+    @test isapprox(plds.obs_model.C, params_obj["C"], atol=5e-5)
     @test isapprox(plds.state_model.x0, params_obj["x0"], atol=1e-5)
     @test isapprox(plds.state_model.P0, params_obj["Q0"], atol=1e-5)
     # MATLAB stored `d` as the effective offset (= natural firing rate, since
     # the buggy model's exp(log_d) IS the offset). Under the canonical model
     # that's just `d` directly — no exp wrapping.
-    @test isapprox(plds.obs_model.d, params_obj["d"], atol=1e-5)
+    @test isapprox(plds.obs_model.d, params_obj["d"], atol=5e-5)
 end
 
 function test_poisson_map_step_improves_Q(; rng=MersenneTwister(123))

@@ -725,7 +725,7 @@ function smooth!(
     )
 
     @views for t in 1:tsteps
-        fs.p_smooth[:, :, t] .= 0.5 .* (fs.p_smooth[:, :, t] .+ fs.p_smooth[:, :, t]')
+        fs.p_smooth[:, :, t] .= Symmetrize!(fs.p_smooth[:, :, t])
     end
 
     return fs

@@ -25,6 +25,6 @@ StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [compat]
-Optim = "1"
-StatsFuns = "1"
 JuliaFormatter = "1.0.62"
+Optim = "2"
+StatsFuns = "1"

@@ -108,12 +108,12 @@ end
 
 # Matrix utilities
 """
-    Symmetrize!(A::AbstractMatrix{T}) where {T<:Real}
+    Symmetrize!(A::AbstractMatrix{T})::Symmetric{T} where {T<:Real}
 
 In-place symmetrization of a square matrix `A` via averaging with its transpose:
 A <- 0.5*(A + A').
 """
-function Symmetrize!(A::AbstractMatrix{T}) where {T<:Real}
+function Symmetrize!(A::AbstractMatrix{T})::Symmetric{T} where {T<:Real}
     n, m = size(A)
     @boundscheck n == m || throw(
         DimensionMismatch("Matrix must be square for symmetrization, got $(n)×$(m)")
@@ -128,7 +128,7 @@ function Symmetrize!(A::AbstractMatrix{T}) where {T<:Real}
         end
     end
 
-    return A
+    return Symmetric(A)
 end
 
 """
