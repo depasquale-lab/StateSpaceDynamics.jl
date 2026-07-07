@@ -687,7 +687,7 @@ function test_poisson_low_rate_recovery()
 end
 
 function test_joint_loglikelihood_matches_distributions()
-    
+
     #=
     Regression companion to `test_joint_loglikelihood_matches_mvnormal`
     =#
