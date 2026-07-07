@@ -19,7 +19,7 @@ SLDS
 
 ## Mathematical Formulation
 
-An SLDS with $K$ discrete states is defined by the following generative model:
+An SLDS with ``K`` discrete states is defined by the following generative model:
 
 ```math
 \begin{align*}
@@ -33,16 +33,16 @@ An SLDS with $K$ discrete states is defined by the following generative model:
 
 Where:
 
-- ``z_t ∈ {1, 2, …, K}`` is the **discrete switching state** at time ``t``
-- ``x_t ∈ ℝᴰ`` is the **continuous latent state** at time ``t``
-- ``y_t ∈ ℝᴾ`` is the **observed data** at time ``t``
-- ``π_k`` is the **initial discrete state distribution**
+- ``z_t \in \{1, 2, \dots, K\}`` is the **discrete switching state** at time ``t``
+- ``x_t \in \mathbb{R}^D`` is the **continuous latent state** at time ``t``
+- ``y_t \in \mathbb{R}^P`` is the **observed data** at time ``t``
+- ``\pi_k`` is the **initial discrete state distribution**
 - ``A`` is the **discrete state transition matrix**
 - ``F_{z_t}`` is the **state-dependent dynamics matrix** for discrete state ``z_t``
 - ``Q_{z_t}`` is the **state-dependent process noise covariance** for discrete state ``z_t``
 - ``C_{z_t}`` is the **state-dependent observation matrix** for discrete state ``z_t``
 - ``R_{z_t}`` is the **state-dependent observation noise covariance** for discrete state ``z_t``
-- ``b_{z_t}`` and ``d_{z_t}`` is the **state-dependent biases** for discrete state ``z_t``
+- ``b_{z_t}`` and ``d_{z_t}`` are the **state-dependent biases** for discrete state ``z_t``
 
 ## Implementation Structure
 
@@ -64,7 +64,7 @@ end
 
 Each mode in the `LDSs` vector contains its own `LinearDynamicalSystem` with:
 
-- **State model**: Defines the continuous latent dynamics $F_k$, $Q_k$
+- **State model**: Defines the continuous latent dynamics ``F_k``, ``Q_k``
 - **Observation model**: Defines the emission process. Currently supports Gaussian and Poisson emission models.
 
 ## Sampling from SLDS
@@ -77,9 +77,9 @@ Random.rand(rng::AbstractRNG, slds::SLDS{T,S,O}, tsteps::Integer) where {T<:Real
 
 The sampling process follows the generative model:
 
-1. **Initialize**: Sample initial discrete state from $\pi_k$ and initial continuous state
+1. **Initialize**: Sample initial discrete state from ``\pi_k`` and initial continuous state
 2. **For each time step**:
-   - Sample next discrete state based on current state and transition matrix $A$
+   - Sample next discrete state based on current state and transition matrix ``A``
    - Sample continuous state using the dynamics of the current discrete state
    - Generate observation using the observation model of the current discrete state
 
@@ -106,8 +106,8 @@ This factorization allows efficient inference by alternating between updating di
 **0. Initialization:**
 Initialize with uniform discrete state posteriors and perform an initial smoothing pass using provided parameter values. This establishes the starting point for iterative refinement.
 
-**1. Update Continuous State Posterior ($q(x_{1:T} | z_{1:T})$):**
-For each discrete state sequence $k$, run Kalman smoothing weighted by the current discrete posterior:
+**1. Update Continuous State Posterior (``q(x_{1:T} | z_{1:T})``):**
+For each discrete state sequence ``k``, run Kalman smoothing weighted by the current discrete posterior:
 
 ```math
 q(x_{1:T} \mid z_{1:T} = k) = \prod_{t=1}^T \mathcal{N}(x_t; \hat{x}_{t|T}^{(k)}, P_{t|T}^{(k)})
@@ -115,7 +115,7 @@ q(x_{1:T} \mid z_{1:T} = k) = \prod_{t=1}^T \mathcal{N}(x_t; \hat{x}_{t|T}^{(k)}
 
 To handle expectations efficiently, we use a single Monte Carlo sample from this posterior for subsequent computations.
 
-**2. Update Discrete State Posterior ($q(z_{1:T})$):**
+**2. Update Discrete State Posterior (``q(z_{1:T})``):**
 Run forward-backward algorithm with modified observation likelihoods that incorporate the current continuous posterior:
 
 ```math
@@ -133,30 +133,35 @@ The M-step updates all parameters using expectations from the E-step:
 
 **Discrete State Parameters:**
 
-- Initial distribution: $\pi_k^{(\text{new})} = \gamma_1(k)$
-- Transition matrix: $A_{ij}^{(\text{new})} = \frac{\sum_{t=1}^{T-1} \xi_{t,t+1}(i,j)}{\sum_{t=1}^{T-1} \gamma_t(i)}$
+- Initial distribution: ``\pi_k^{(\text{new})} = \gamma_1(k)``
+- Transition matrix: ``A_{ij}^{(\text{new})} = \frac{\sum_{t=1}^{T-1} \xi_{t,t+1}(i,j)}{\sum_{t=1}^{T-1} \gamma_t(i)}``
 
-where $\xi_{t,t+1}(i,j) = p(z_t = i, z_{t+1} = j | y_{1:T})$ are the two-slice marginals.
+where ``\xi_{t,t+1}(i,j) = p(z_t = i, z_{t+1} = j | y_{1:T})`` are the two-slice marginals.
 
-**Continuous State Parameters for each mode $k$:**
+**Continuous State Parameters for each mode ``k``:**
 
 Using weighted sufficient statistics from the smoothed posteriors:
 
-- Dynamics matrix: $F_k^{(\text{new})}$ from weighted least squares
-- Process covariance: $Q_k^{(\text{new})}$ from weighted innovation covariance
-- Observation matrix: $C_k^{(\text{new})}$ from weighted observation regression
-- Observation covariance: $R_k^{(\text{new})}$ from weighted observation residuals
-- Initial parameters: $\mu_0^{(k)}, P_0^{(k)}$ from weighted initial state statistics
+- Dynamics matrix: ``F_k^{(\text{new})}`` from weighted least squares
+- Process covariance: ``Q_k^{(\text{new})}`` from weighted innovation covariance
+- Observation matrix: ``C_k^{(\text{new})}`` from weighted observation regression
+- Observation covariance: ``R_k^{(\text{new})}`` from weighted observation residuals
+- Initial parameters: ``\mu_0^{(k)}, P_0^{(k)}`` from weighted initial state statistics
 
-The weights are given by the discrete posterior probabilities $\gamma_t(k)$.
+The weights are given by the discrete posterior probabilities ``\gamma_t(k)``.
 
 ## Evidence Lower Bound (ELBO)
 
 The ELBO decomposes into discrete and continuous components:
 
 ```math
-\mathcal{L}(q) = \underbrace{\mathbb{E}_{q(z_{1:T})}[\log p(z_{1:T})] - \mathbb{E}_{q(z_{1:T})}[\log q(z_{1:T})]}_{\text{Discrete HMM entropy}} + \sum_{k=1}^K \gamma_t(k) \underbrace{\left( \mathbb{E}_{q(x_{1:T}|k)}[\log p(y_{1:T}, x_{1:T} | z_{1:T}=k)] + H[q(x_{1:T}|k)] \right)}_{\text{Weighted LDS contribution for mode } k}
+\mathcal{L}(q) =
+\underbrace{\mathbb{E}_{q(z_{1:T})}[\log p(z_{1:T})] + H[q(z_{1:T})]}_{\text{discrete HMM terms}}
++ \underbrace{\sum_{t=1}^T \sum_{k=1}^K \gamma_t(k)\, \mathbb{E}_{q(x_{1:T})}\!\left[\log p(y_t, x_t \mid x_{t-1}, z_t = k)\right] + H[q(x_{1:T})]}_{\text{weighted LDS contribution}}
 ```
+
+where ``H[\cdot]`` denotes entropy and the per-timestep joint terms are weighted by the
+discrete posterior marginals ``\gamma_t(k)``.
 
 ## References
 

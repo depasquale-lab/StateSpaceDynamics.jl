@@ -77,7 +77,7 @@ P0_init = Matrix(0.1 * I(2))
 x0_init = zeros(2)
 b_init = zeros(2)
 
-C_init = rand(3, 2)
+C_init = rand(rng, 3, 2)
 d_init = zeros(3)
 
 plds_naive = LinearDynamicalSystem(;state_model=GaussianStateModel(;A=A_init, Q=Q_init, b=b_init, P0=P0_init, x0=x0_init), obs_model=PoissonObservationModel(;C=C_init, d=d_init), latent_dim=2, obs_dim=3, fit_bool=fill(true, 5))

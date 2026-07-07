@@ -1,6 +1,11 @@
+function _stable_A(rng, n::Int; radius::Float64=0.99)
+    A = rand(rng, n, n)
+    return A .* (radius / maximum(abs.(eigvals(A))))
+end
+
 # Build a Gaussian LDS with given dims
-function _make_gaussian_lds(latent_dim::Int, obs_dim::Int)
-    A = rand(latent_dim, latent_dim)
+function _make_gaussian_lds(latent_dim::Int, obs_dim::Int; rng=Random.default_rng())
+    A = _stable_A(rng, latent_dim)
     Q = Matrix(0.1 * I(latent_dim))
     b = zeros(latent_dim)
     x0 = zeros(latent_dim)
@@ -22,8 +27,8 @@ function _make_gaussian_lds(latent_dim::Int, obs_dim::Int)
 end
 
 # Build a Poisson-observation LDS (Gaussian state model)
-function _make_poisson_lds(latent_dim::Int, obs_dim::Int)
-    A = rand(latent_dim, latent_dim)
+function _make_poisson_lds(latent_dim::Int, obs_dim::Int; rng=Random.default_rng())
+    A = _stable_A(rng, latent_dim)
     Q = Matrix(0.1 * I(latent_dim))
     b = zeros(latent_dim)
     x0 = zeros(latent_dim)

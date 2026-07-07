@@ -732,8 +732,8 @@ function compute_slds_constants!(
     # Wrap state-side covariances as PDMats. Observation R is wrapped further
     # below only on the Gaussian branch — Poisson leaves cc.R_PD on its
     # identity placeholder and `cc.cR` zero.
-    cc.Q_PD[] = PDMat(Symmetric(Q))
-    cc.P0_PD[] = PDMat(Symmetric(P0))
+    cc.Q_PD[] = PDMat(Symmetrize!(Q))
+    cc.P0_PD[] = PDMat(Symmetrize!(P0))
     Qchol = cc.Q_PD[].chol
     P0chol = cc.P0_PD[].chol
 
@@ -760,7 +760,7 @@ function compute_slds_constants!(
 
     # Observation terms only if Gaussian
     if lds.obs_model isa GaussianObservationModel{T}
-        cc.R_PD[] = PDMat(Symmetric(lds.obs_model.R))
+        cc.R_PD[] = PDMat(Symmetrize!(lds.obs_model.R))
         Rchol = cc.R_PD[].chol
 
         # tmp_RC = R^{-1}C, C_inv_R = (R^{-1}C)'
