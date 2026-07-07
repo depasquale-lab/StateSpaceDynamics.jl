@@ -8,7 +8,8 @@ using PDMats
 using Random
 using SparseArrays
 
-using Optim: Optim, optimize, LBFGS, HagerZhang
+using Optim: Optim, optimize, LBFGS
+using LineSearches: HagerZhang
 using ProgressMeter: Progress, next!, finish!
 using SpecialFunctions: loggamma
 using Statistics: mean
