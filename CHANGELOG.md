@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## UNRELEASED
+
+## Added
+- LineSearches added as a new dep, since `Optim` no longer re-exposes `HagerZhang` (#89)
+
+## Changed
+- Tests and code now use `Optim` v2 API (#89)
+- Updates `Optim` lower bound `2` (#89)
+- `Optim` v2's `LBFGS`+`HagerZhang` line search converges to marginally different values for the Poisson observation M-step (~1e-5 magnitude) than v1 did (#89)
+- `Symmetrize!` now returns a `Symmetric` matrix (#130)
+
+## Fixed
+- Fixes lower bound of Julia to 1.10 (was 1.11) (#89)
+- Enforced a stable A matrix in the SLDS tests to fix flakyness in CI testing. (#130)
+- Enforces symmetry in certain SLDS statistics causing a non-PD issue. (#130)
+
 ## [0.4.0] - 2026-07-03
 
 ### Added
