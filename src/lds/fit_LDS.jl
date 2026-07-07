@@ -108,111 +108,29 @@ function observationloglikelihood!(
 end
 
 """
-    Gradient!(ws, lds, y, x)
+    observationgradient!(out, cc, buf, x, y, t, lds[, uy])
 
-In-place version of `Gradient` that uses pre-computed Cholesky-derived terms from
-`ws::SmoothWorkspace` and writes the result into `ws.grad_buf`.
-Returns `ws.grad_buf`.
+Gaussian emission gradient: `out = C'R⁻¹ (y_t - Cx_t - d - D uy_t)`, using the
+cached `C_inv_R = C'R⁻¹` from `cc`. Method of the generic
+`observationgradient!` dispatch point (see `continuous_latents.jl`); `buf` is
+the `obs_dim` residual scratch.
 """
-function Gradient!(
-    ws::SmoothWorkspace{T},
-    lds::LinearDynamicalSystem{T,S,O},
-    y::AbstractMatrix{T},
+function observationgradient!(
+    out::AbstractVector{T},
+    cc::LDSLikelihoodCache{T},
+    buf::AbstractVector{T},
     x::AbstractMatrix{T},
-    ux::AbstractMatrix{T},
-    uy::AbstractMatrix{T},
-) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
-    latent_dim, tsteps = size(x)
-    A = lds.state_model.A
-    b = lds.state_model.b
-    B = lds.state_model.B
-    x0 = lds.state_model.x0
-    C = lds.obs_model.C
-    d_obs = lds.obs_model.d
-    D_obs = lds.obs_model.D
-
-    C_inv_R = ws.C_inv_R
-    A_inv_Q = ws.A_inv_Q
-    # ws.x_t = -P0^{-1}, ws.xt_given_xt_1 = -Q^{-1}
-    neg_P0_inv = ws.x_t         # = -P0^{-1}
-    neg_Q_inv = ws.xt_given_xt_1  # = -Q^{-1}
-
-    grad = ws.grad_buf
-    dxt = ws.dxt
-    dxt_next = ws.dxt_next
-    dyt = ws.dyt
-    tmp1 = ws.tmp1
-    tmp2 = ws.tmp2
-    tmp3 = ws.tmp3
-
-    # Helper macros (inlined): residual `x_t - A x_{t-1} - b - B u_{t-1}` and
-    # `y_t - C x_t - d - D uy_t`. The `B*ux` / `D*uy` updates are no-ops when
-    # `ux` / `uy` have zero rows.
-
-    # First time step
-    @views dxt .= x[:, 1] .- x0
-    @views mul!(dxt_next, A, x[:, 1])
-    @views mul!(dxt_next, B, ux[:, 1], one(T), one(T))
-    @views dxt_next .= x[:, 2] .- dxt_next .- b
-    @views mul!(dyt, C, x[:, 1])
-    @views mul!(dyt, D_obs, uy[:, 1], one(T), one(T))
-    @views dyt .= y[:, 1] .- dyt .- d_obs
-
-    mul!(tmp1, C_inv_R, dyt)
-    mul!(tmp2, A_inv_Q, dxt_next)
-    mul!(tmp3, neg_P0_inv, dxt)
-    grad[:, 1] .= tmp1 .+ tmp2 .+ tmp3
-
-    # Middle steps
-    @views for t in 2:(tsteps - 1)
-        mul!(dxt, A, x[:, t - 1])
-        mul!(dxt, B, ux[:, t - 1], one(T), one(T))
-        dxt .= x[:, t] .- dxt .- b
-
-        mul!(dxt_next, A, x[:, t])
-        mul!(dxt_next, B, ux[:, t], one(T), one(T))
-        dxt_next .= x[:, t + 1] .- dxt_next .- b
-
-        mul!(dyt, C, x[:, t])
-        mul!(dyt, D_obs, uy[:, t], one(T), one(T))
-        dyt .= y[:, t] .- dyt .- d_obs
-
-        mul!(tmp1, C_inv_R, dyt)
-        mul!(tmp2, A_inv_Q, dxt_next)
-        mul!(tmp3, neg_Q_inv, dxt)
-
-        grad[:, t] .= tmp1 .+ tmp3 .+ tmp2
+    y::AbstractMatrix{T0},
+    t::Int,
+    lds::LinearDynamicalSystem{T0,S,O},
+    uy::Union{Nothing,AbstractMatrix}=nothing,
+) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:GaussianObservationModel{T0}}
+    @views mul!(buf, lds.obs_model.C, x[:, t])
+    if uy !== nothing
+        @views mul!(buf, lds.obs_model.D, uy[:, t], one(T), one(T))
     end
-
-    # Last time step
-    @views begin
-        mul!(dxt, A, x[:, tsteps - 1])
-        mul!(dxt, B, ux[:, tsteps - 1], one(T), one(T))
-        dxt .= x[:, tsteps] .- dxt .- b
-        mul!(dyt, C, x[:, tsteps])
-        mul!(dyt, D_obs, uy[:, tsteps], one(T), one(T))
-        dyt .= y[:, tsteps] .- dyt .- d_obs
-
-        mul!(tmp1, C_inv_R, dyt)
-        mul!(tmp3, neg_Q_inv, dxt)
-
-        grad[:, tsteps] .= tmp1 .+ tmp3
-    end
-
-    return grad
-end
-
-# Backward-compatible no-input overload.
-function Gradient!(
-    ws::SmoothWorkspace{T},
-    lds::LinearDynamicalSystem{T,S,O},
-    y::AbstractMatrix{T},
-    x::AbstractMatrix{T},
-) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
-    tsteps = size(x, 2)
-    ux = zeros(T, 0, tsteps)
-    uy = zeros(T, 0, tsteps)
-    return Gradient!(ws, lds, y, x, ux, uy)
+    @views buf .= y[:, t] .- buf .- lds.obs_model.d
+    return mul!(out, cc.C_inv_R, buf)
 end
 
 """

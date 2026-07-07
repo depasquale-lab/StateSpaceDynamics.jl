@@ -181,22 +181,29 @@ function loglikelihood(
 end
 
 """
-    Gradient!(ws, lds, y, x)
+    observationgradient!(out, cc, buf, x, y, t, lds[, uy])
 
-In-place gradient of the Poisson LDS complete-data log-likelihood for a single
-trial. Mirrors the Gaussian `Gradient!`: assumes `compute_smooth_constants!(ws, lds)`
-has already populated `ws`, writes into `ws.grad_buf`, and returns the active view.
+Poisson emission gradient: `out = C'(y_t - λ_t)` with `λ_t = exp(Cx_t + d)`.
+Method of the generic `observationgradient!` dispatch point (see
+`continuous_latents.jl`); `buf` is the `obs_dim` scratch for `y - λ`. The cache
+and `uy` arguments are unused (no covariance term; Poisson observation inputs
+are not supported).
 """
-function Gradient!(
-    ws::SmoothWorkspace{T},
-    lds::LinearDynamicalSystem{T,S,O},
-    y::AbstractMatrix{T},
+function observationgradient!(
+    out::AbstractVector{T},
+    ::LDSLikelihoodCache{T},
+    buf::AbstractVector{T},
     x::AbstractMatrix{T},
-) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    tsteps = size(y, 2)
-    grad = view(ws.grad_buf, :, 1:tsteps)
-    _compute_gradient_poisson!(grad, ws, lds, y, x)
-    return grad
+    y::AbstractMatrix{T0},
+    t::Int,
+    lds::LinearDynamicalSystem{T0,S,O},
+    ::Union{Nothing,AbstractMatrix}=nothing,
+) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:PoissonObservationModel{T0}}
+    C = lds.obs_model.C
+    d = lds.obs_model.d
+    @views mul!(buf, C, x[:, t])
+    @views buf .= y[:, t] .- exp.(buf .+ d)
+    return mul!(out, C', buf)
 end
 
 """
@@ -606,102 +613,6 @@ function _fill_hessian_blocks_poisson!(
 end
 
 """
-    _compute_gradient_poisson!(grad, ws, lds, y, x)
-
-Compute the gradient of the log-likelihood for Poisson LDS.
-Fills `grad` (latent_dim × tsteps) matrix with gradient values.
-"""
-function _compute_gradient_poisson!(
-    grad::AbstractMatrix{T},
-    ws::SmoothWorkspace{T},
-    lds::LinearDynamicalSystem{T,S,O},
-    y::AbstractMatrix{T},
-    x::AbstractMatrix{T},
-) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    A = lds.state_model.A
-    b = lds.state_model.b
-    C = lds.obs_model.C
-    d = lds.obs_model.d
-    x0 = lds.state_model.x0
-
-    tsteps = size(y, 2)
-    latent_dim, obs_dim = lds.latent_dim, lds.obs_dim
-
-    # Cholesky factors from cached PDMats (upper triangular factor)
-    Q_chol_U = ws.Q_PD[].chol.U
-    P0_chol_U = ws.P0_PD[].chol.U
-
-    # Reuse workspace temp vectors
-    Cx_t = ws.dyt           # obs_dim
-    exp_term = ws.temp_dy   # obs_dim
-    state_diff = ws.dxt     # latent_dim
-    temp_grad = ws.tmp1     # latent_dim
-    common_term = ws.tmp2   # latent_dim
-
-    @views for t in 1:tsteps
-        # Observation term: C' * (y - exp(C*x + d))
-        mul!(Cx_t, C, x[:, t])
-        @. exp_term = exp(Cx_t + d)
-        exp_term .= y[:, t] .- exp_term
-        mul!(common_term, C', exp_term)
-
-        if t == 1
-            # First timestep: common_term + A' * Q⁻¹ * (x₂ - A*x₁ - b) - P0⁻¹ * (x₁ - x0)
-            mul!(state_diff, A, x[:, t])
-            state_diff .= x[:, 2] .- state_diff .- b
-
-            # Q⁻¹ * state_diff via Cholesky: solve Q_chol_U' * Q_chol_U * z = state_diff
-            copyto!(temp_grad, state_diff)
-            ldiv!(Q_chol_U', temp_grad)
-            ldiv!(Q_chol_U, temp_grad)
-
-            mul!(grad[:, t], A', temp_grad)
-            grad[:, t] .+= common_term
-
-            # Subtract P0⁻¹ * (x₁ - x0)
-            state_diff .= x[:, t] .- x0
-            copyto!(temp_grad, state_diff)
-            ldiv!(P0_chol_U', temp_grad)
-            ldiv!(P0_chol_U, temp_grad)
-            grad[:, t] .-= temp_grad
-
-        elseif t == tsteps
-            # Last timestep: common_term - Q⁻¹ * (xₜ - A*xₜ₋₁ - b)
-            mul!(state_diff, A, x[:, t - 1])
-            state_diff .= x[:, t] .- state_diff .- b
-
-            copyto!(temp_grad, state_diff)
-            ldiv!(Q_chol_U', temp_grad)
-            ldiv!(Q_chol_U, temp_grad)
-
-            grad[:, t] .= common_term .- temp_grad
-        else
-            # Middle timesteps
-            # common_term + A' * Q⁻¹ * (xₜ₊₁ - A*xₜ - b) - Q⁻¹ * (xₜ - A*xₜ₋₁ - b)
-
-            # Forward term: A' * Q⁻¹ * (xₜ₊₁ - A*xₜ - b)
-            mul!(state_diff, A, x[:, t])
-            state_diff .= x[:, t + 1] .- state_diff .- b
-            copyto!(temp_grad, state_diff)
-            ldiv!(Q_chol_U', temp_grad)
-            ldiv!(Q_chol_U, temp_grad)
-            mul!(grad[:, t], A', temp_grad)
-            grad[:, t] .+= common_term
-
-            # Backward term: -Q⁻¹ * (xₜ - A*xₜ₋₁ - b)
-            mul!(state_diff, A, x[:, t - 1])
-            state_diff .= x[:, t] .- state_diff .- b
-            copyto!(temp_grad, state_diff)
-            ldiv!(Q_chol_U', temp_grad)
-            ldiv!(Q_chol_U, temp_grad)
-            grad[:, t] .-= temp_grad
-        end
-    end
-
-    return grad
-end
-
-"""
     smooth!(lds, fs, y, sws; max_iter=20, tol=1e-6)
 
 Poisson LDS smoothing using iterative Newton with block tridiagonal solve.
@@ -753,7 +664,7 @@ function smooth!(
     ϕ!() = sum(joint_loglikelihood!(sws, x, lds, y, lognorm_t))
 
     compute_grad! = (gcur, xcur) -> begin
-        _compute_gradient_poisson!(gcur, sws, lds, y, xcur)
+        Gradient!(gcur, sws, lds, y, xcur)
         return nothing
     end
 

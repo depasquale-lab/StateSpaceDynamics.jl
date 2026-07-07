@@ -752,3 +752,45 @@ function test_newton_objective_is_joint_loglikelihood()
         1e-12
     return nothing
 end
+
+function test_poisson_gradient_nondiag()
+    # Gradient companion to `test_joint_loglikelihood_matches_distributions`:
+    # non-diagonal Q/P0 checked against ForwardDiff through the allocating
+    # joint_loglikelihood.
+    rng = StableRNG(4321)
+    D_lat, p_obs, T_steps = 2, 3, 30
+
+    A_nd = [0.9 0.1; -0.05 0.85]
+    Q_nd = [0.5 0.2; 0.2 0.4]
+    b_nd = [0.1, -0.1]
+    x0_nd = [0.5, -0.5]
+    P0_nd = [1.0 0.3; 0.3 0.8]
+    C_nd = 0.5 .* randn(rng, p_obs, D_lat)
+    d_nd = [0.1, 0.2, -0.1]
+
+    sm = GaussianStateModel(; A=A_nd, Q=Q_nd, b=b_nd, x0=x0_nd, P0=P0_nd)
+    om = PoissonObservationModel(; C=C_nd, d=d_nd)
+    plds = LinearDynamicalSystem(;
+        state_model=sm,
+        obs_model=om,
+        latent_dim=D_lat,
+        obs_dim=p_obs,
+        fit_bool=fill(true, 6),
+    )
+
+    x = randn(rng, D_lat, T_steps)
+    y = Float64.(rand.(Ref(rng), Poisson.(exp.(C_nd * x .+ d_nd))))
+
+    ws = StateSpaceDynamics.SmoothWorkspace(Float64, D_lat, p_obs, T_steps)
+    StateSpaceDynamics.compute_smooth_constants!(ws, plds)
+    g = copy(StateSpaceDynamics.Gradient!(ws, plds, y, x))
+
+    f =
+        xv -> sum(
+            StateSpaceDynamics.joint_loglikelihood(reshape(xv, D_lat, T_steps), plds, y)
+        )
+    g_num = reshape(ForwardDiff.gradient(f, vec(x)), D_lat, T_steps)
+
+    @test norm(g - g_num) < 1e-8
+    return nothing
+end

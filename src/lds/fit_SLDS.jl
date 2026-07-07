@@ -314,179 +314,55 @@ function Gradient!(
 
     dxt = ws.dxt
     dxt_next = ws.dxt_next
-    dyt = ws.dyt
+    obs_buf = ws.z
     tmp1 = ws.tmp1
     tmp2 = ws.tmp2
     tmp3 = ws.tmp3
-
-    z = ws.z
-    λ = ws.λ
 
     @views for k in 1:K
         lds_k = slds.LDSs[k]
         cc = ws.consts[k]
 
-        A = lds_k.state_model.A
-        b = lds_k.state_model.b
         x0 = lds_k.state_model.x0
 
-        A_inv_Q = cc.A_inv_Q        # A'Q^{-1}
+        A_inv_Q = cc.A_inv_Q          # A'Q^{-1}
         neg_Q_inv = cc.xt_given_xt_1  # -Q^{-1}
-        neg_P0_inv = cc.x_t            # -P0^{-1}
+        neg_P0_inv = cc.x_t           # -P0^{-1}
 
-        if lds_k.obs_model isa GaussianObservationModel{T}
-            C = cc.C
-            d = lds_k.obs_model.d
-            C_inv_R = cc.C_inv_R        # C'R^{-1}
+        # t = 1: emission + prior, both weighted by w[k,1]
+        observationgradient!(tmp1, cc, obs_buf, x, y, 1, lds_k)
+        @. dxt = x[:, 1] - x0
+        mul!(tmp3, neg_P0_inv, dxt)
+        α = w[k, 1]
+        @. grad[:, 1] += α * (tmp1 + tmp3)
 
-            if Tsteps == 1
-                # emission at t=1
-                mul!(dyt, C, x[:, 1])
-                @. dyt = y[:, 1] - dyt - d
-                mul!(tmp1, C_inv_R, dyt)
+        Tsteps == 1 && continue
 
-                # prior at t=1
-                @. dxt = x[:, 1] - x0
-                mul!(tmp3, neg_P0_inv, dxt)
+        # Outgoing dynamics term comes from the factor at time 2, weighted by w[k,2]
+        _transition_residual!(dxt_next, x, 2, lds_k)
+        mul!(tmp2, A_inv_Q, dxt_next)
+        @. grad[:, 1] += w[k, 2] * tmp2
 
-                α = w[k, 1]
-                @. grad[:, 1] += α * (tmp1 + tmp3)
-                continue
-            end
-
-            # t = 1 
-            # emission (weighted by w[k,1])
-            mul!(dyt, C, x[:, 1])
-            @. dyt = y[:, 1] - dyt - d
-            mul!(tmp1, C_inv_R, dyt)
-            α = w[k, 1]
-            @. grad[:, 1] += α * tmp1
-
-            # prior (weighted by w[k,1])
-            @. dxt = x[:, 1] - x0
-            mul!(tmp3, neg_P0_inv, dxt)
-            @. grad[:, 1] += α * tmp3
-
-            # outgoing dynamics term comes from factor at time 2, weighted by w[k,2]
-            mul!(dxt_next, A, x[:, 1])
-            @. dxt_next = x[:, 2] - dxt_next - b
-            mul!(tmp2, A_inv_Q, dxt_next)
-            β = w[k, 2]
-            @. grad[:, 1] += β * tmp2
-
-            # 2 .. T-1
-            for t in 2:(Tsteps - 1)
-                # emission at t, weighted by w[k,t]
-                mul!(dyt, C, x[:, t])
-                @. dyt = y[:, t] - dyt - d
-                mul!(tmp1, C_inv_R, dyt)
-                α = w[k, t]
-                @. grad[:, t] += α * tmp1
-
-                # incoming dynamics factor at time t, weighted by w[k,t]
-                mul!(dxt, A, x[:, t - 1])
-                @. dxt = x[:, t] - dxt - b
-                mul!(tmp3, neg_Q_inv, dxt)
-                @. grad[:, t] += α * tmp3
-
-                # outgoing dynamics factor at time t+1, weighted by w[k,t+1]
-                mul!(dxt_next, A, x[:, t])
-                @. dxt_next = x[:, t + 1] - dxt_next - b
-                mul!(tmp2, A_inv_Q, dxt_next)
-                β = w[k, t + 1]
-                @. grad[:, t] += β * tmp2
-            end
-
-            # t = T
-            # emission at T, weighted by w[k,T]
-            mul!(dyt, C, x[:, Tsteps])
-            @. dyt = y[:, Tsteps] - dyt - d
-            mul!(tmp1, C_inv_R, dyt)
-            α = w[k, Tsteps]
-            @. grad[:, Tsteps] += α * tmp1
-
-            # incoming dynamics factor at time T, weighted by w[k,T]
-            mul!(dxt, A, x[:, Tsteps - 1])
-            @. dxt = x[:, Tsteps] - dxt - b
+        # 2 .. T-1: emission + incoming factor at t (w[k,t]),
+        # outgoing factor at t+1 (w[k,t+1])
+        for t in 2:(Tsteps - 1)
+            observationgradient!(tmp1, cc, obs_buf, x, y, t, lds_k)
+            _transition_residual!(dxt, x, t, lds_k)
             mul!(tmp3, neg_Q_inv, dxt)
-            @. grad[:, Tsteps] += α * tmp3
+            α = w[k, t]
+            @. grad[:, t] += α * (tmp1 + tmp3)
 
-        elseif lds_k.obs_model isa PoissonObservationModel{T}
-            C = cc.C
-            d = cc.d  # cached Poisson log-link intercept
-
-            if Tsteps == 1
-                # emission: C'*(y - λ)
-                mul!(z, C, x[:, 1])
-                @. λ = exp(z + d)
-                @. z = y[:, 1] - λ
-                mul!(tmp1, C', z)
-
-                # prior
-                @. dxt = x[:, 1] - x0
-                mul!(tmp3, neg_P0_inv, dxt)
-
-                α = w[k, 1]
-                @. grad[:, 1] += α * (tmp1 + tmp3)
-                continue
-            end
-
-            # t = 1
-            mul!(z, C, x[:, 1])
-            @. λ = exp(z + d)
-            @. z = y[:, 1] - λ
-            mul!(tmp1, C', z)
-            α = w[k, 1]
-            @. grad[:, 1] += α * tmp1
-
-            @. dxt = x[:, 1] - x0
-            mul!(tmp3, neg_P0_inv, dxt)
-            @. grad[:, 1] += α * tmp3
-
-            # outgoing dynamics factor at time 2 weighted by w[k,2]
-            mul!(dxt_next, A, x[:, 1])
-            @. dxt_next = x[:, 2] - dxt_next - b
+            _transition_residual!(dxt_next, x, t + 1, lds_k)
             mul!(tmp2, A_inv_Q, dxt_next)
-            β = w[k, 2]
-            @. grad[:, 1] += β * tmp2
-
-            # 2 .. T-1
-            for t in 2:(Tsteps - 1)
-                mul!(z, C, x[:, t])
-                @. λ = exp(z + d)
-                @. z = y[:, t] - λ
-                mul!(tmp1, C', z)
-                α = w[k, t]
-                @. grad[:, t] += α * tmp1
-
-                mul!(dxt, A, x[:, t - 1])
-                @. dxt = x[:, t] - dxt - b
-                mul!(tmp3, neg_Q_inv, dxt)
-                @. grad[:, t] += α * tmp3
-
-                mul!(dxt_next, A, x[:, t])
-                @. dxt_next = x[:, t + 1] - dxt_next - b
-                mul!(tmp2, A_inv_Q, dxt_next)
-                β = w[k, t + 1]
-                @. grad[:, t] += β * tmp2
-            end
-
-            # t = T
-            mul!(z, C, x[:, Tsteps])
-            @. λ = exp(z + d)
-            @. z = y[:, Tsteps] - λ
-            mul!(tmp1, C', z)
-            α = w[k, Tsteps]
-            @. grad[:, Tsteps] += α * tmp1
-
-            mul!(dxt, A, x[:, Tsteps - 1])
-            @. dxt = x[:, Tsteps] - dxt - b
-            mul!(tmp3, neg_Q_inv, dxt)
-            @. grad[:, Tsteps] += α * tmp3
-
-        else
-            throw(ArgumentError("Unsupported observation model $(typeof(lds_k.obs_model))"))
+            @. grad[:, t] += w[k, t + 1] * tmp2
         end
+
+        # t = T: emission + incoming factor at T, weighted by w[k,T]
+        observationgradient!(tmp1, cc, obs_buf, x, y, Tsteps, lds_k)
+        _transition_residual!(dxt, x, Tsteps, lds_k)
+        mul!(tmp3, neg_Q_inv, dxt)
+        α = w[k, Tsteps]
+        @. grad[:, Tsteps] += α * (tmp1 + tmp3)
     end
 
     return grad
