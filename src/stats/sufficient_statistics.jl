@@ -494,8 +494,8 @@ function _aggregate_td_suff_stats_weighted!(
         # Dynamics factors at t = 2..T_n.
         @views for t in 2:T_n
             wt = w[t]
-            x_prev = x_smooth[:, t - 1]
-            x_next = x_smooth[:, t]
+            x_prev = tview(x_smooth, :, t - 1)
+            x_next = tview(x_smooth, :, t)
 
             # dyn_xx[1:D, 1:D] += wt * (x_prev x_prev' + P_smooth[t-1])
             BLAS.ger!(wt, x_prev, x_prev, tview(dyn_xx, 1:D, 1:D))
@@ -548,8 +548,8 @@ function _aggregate_td_suff_stats_weighted!(
         # Emissions at t = 1..T_n.
         @views for t in 1:T_n
             wt = w[t]
-            x_t = x_smooth[:, t]
-            y_t = y_trial[:, t]
+            x_t = tview(x_smooth, :, t)
+            y_t = tview(y_trial, :, t)
 
             # obs_xx[1:D, 1:D] += wt * (x_t x_t' + P_smooth[t])
             BLAS.ger!(wt, x_t, x_t, tview(obs_xx, 1:D, 1:D))
