@@ -142,6 +142,10 @@ using SSDTest
                 test_smooth()
             end
 
+            @testset "Log-likelihood" begin
+                test_joint_loglikelihood_matches_mvnormal()
+            end
+
             @testset "EM Algorithm" begin
                 test_estep()
                 test_initial_observation_parameter_updates()
@@ -198,6 +202,10 @@ using SSDTest
                 test_Gradient()
                 test_Hessian()
                 test_smooth()
+            end
+
+            @testset "Log-likelihood" begin
+                test_joint_loglikelihood_matches_distributions()
             end
 
             @testset "Priors - Poisson LDS" begin

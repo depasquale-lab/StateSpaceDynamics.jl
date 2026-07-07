@@ -1,6 +1,10 @@
 #=============================================================================
 Continuous (Linear Gaussian) latents
 
+    Log-Likelihood kernels: stateloglikelihood!(cc, dxt, tmp, x, t, lds[, ux])
+                            observationloglikelihood!(cc, b1, b2, x, y, t, lds[, uy])
+                            joint_loglikelihood!(ll, ws, cc, lds, x, y)
+
     E-Step: Q_state!(sws, lds, suf)
 
     M-Step: update_initial_state_mean!(lds, suf)
@@ -8,6 +12,132 @@ Continuous (Linear Gaussian) latents
             update_A_b!(lds, suf, sws)
             update_Q!(lds, suf, sws)
 =============================================================================#
+
+"""
+    LDSLikelihoodCache{T}
+
+Any container of Cholesky-wrapped covariances (`Q_PD` / `P0_PD` / `R_PD`) and
+cached log-likelihood normalizers (`cP0` / `cQ` / `cR`) that the likelihood
+kernels can consume: a per-trial `SmoothWorkspace` (filled by
+`compute_smooth_constants!`) or a per-SLDS-component `LDSConstantCache`
+(filled by `compute_slds_constants!`).
+"""
+const LDSLikelihoodCache{T} = Union{LDSConstantCache{T},SmoothWorkspace{T}}
+
+# Normalizer accessors — `LDSConstantCache` stores plain scalars (mutable
+# struct), `SmoothWorkspace` stores RefValues (immutable struct).
+_cP0(cc::LDSConstantCache) = cc.cP0
+_cQ(cc::LDSConstantCache) = cc.cQ
+_cR(cc::LDSConstantCache) = cc.cR
+_cP0(ws::SmoothWorkspace) = ws.cP0[]
+_cQ(ws::SmoothWorkspace) = ws.cQ[]
+_cR(ws::SmoothWorkspace) = ws.cR[]
+
+"""
+    stateloglikelihood!(cc, dxt, tmp, x, t, lds[, ux])
+
+State-model (prior/transition) contribution to the complete-data log-likelihood
+at timestep `t`:
+
+- `t == 1`: `cP0 - 0.5‖P0^{-1/2}(x_1 - x_0)‖²`
+- `t ≥ 2`:  `cQ - 0.5‖Q^{-1/2}(x_t - A x_{t-1} - b - B u_{t-1})‖²`
+
+This term is identical for every observation model (Gaussian, Poisson, ...);
+only the emission term differs, so `joint_loglikelihood!` implementations share
+this helper instead of duplicating the prior/transition math.
+
+`cc` is an [`LDSLikelihoodCache`](@ref) holding the Cholesky factors and
+normalizers; `dxt` and `tmp` are `latent_dim` scratch vectors (overwritten).
+Pass `ux` (state inputs, `t`-indexed like `x`) to include the `B u_{t-1}`
+term; `nothing` (default) or a zero-row matrix skips it.
+"""
+function stateloglikelihood!(
+    cc::LDSLikelihoodCache{T},
+    dxt::AbstractVector{T},
+    tmp::AbstractVector{T},
+    x::AbstractMatrix{T},
+    t::Int,
+    lds::LinearDynamicalSystem{T0,S,O},
+    ux::Union{Nothing,AbstractMatrix}=nothing,
+) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:AbstractObservationModel{T0}}
+    A = lds.state_model.A
+    b = lds.state_model.b
+    x0 = lds.state_model.x0
+
+    if t == 1
+        @views dxt .= x[:, 1] .- x0
+        ldiv!(cc.P0_PD[].chol.U', dxt)
+        return _cP0(cc) - T(0.5) * sum(abs2, dxt)
+    else
+        @views mul!(tmp, A, x[:, t - 1])
+        if ux !== nothing
+            @views mul!(tmp, lds.state_model.B, ux[:, t - 1], one(T), one(T))
+        end
+        @views tmp .= x[:, t] .- tmp .- b
+        ldiv!(cc.Q_PD[].chol.U', tmp)
+        return _cQ(cc) - T(0.5) * sum(abs2, tmp)
+    end
+end
+
+"""
+    observationloglikelihood!(cc, buf1, buf2, x, y, t, lds[, uy])
+
+Emission-model contribution `log p(y_t | x_t)` to the complete-data
+log-likelihood at timestep `t`. Dispatches on the observation model type `O`
+(via `lds::LinearDynamicalSystem{T,S,O}`) — a custom observation model plugs
+into `joint_loglikelihood!` by adding a method here, without having to
+reimplement (or duplicate) the shared `stateloglikelihood!` term.
+
+Uniform interface for all observation models:
+- `cc`: an [`LDSLikelihoodCache`](@ref) with Cholesky factors / normalizers
+  (unused by models whose emission term needs no covariance, e.g. Poisson).
+- `buf1`, `buf2`: two `obs_dim` scratch vectors (overwritten); each model uses
+  what it needs (Gaussian: residual; Poisson: linear predictor + rate).
+- `uy` (optional): observation inputs, `t`-indexed like `y`; `nothing` or a
+  zero-row matrix skips the `D u_t` term.
+
+See the `GaussianObservationModel` / `PoissonObservationModel` methods in
+`fit_LDS.jl` / `fit_PLDS.jl` for the pattern to follow.
+"""
+function observationloglikelihood! end
+
+"""
+    joint_loglikelihood!(ll, ws, cc, lds, x, y)
+
+Per-timestep complete-data log-likelihood for a single SLDS component:
+`ll[t] = log p(y_t | x_t) + log p(x_t | x_{t-1})` (or `+ log p(x_1)` at
+`t == 1`). Generic over the observation model — the emission term comes from
+`observationloglikelihood!`, so supporting a new observation model here only
+requires a new `observationloglikelihood!` method, not a new
+`joint_loglikelihood!` method.
+
+Notes:
+- Normalization terms (logdet + log(2π)) are included. These are constant w.r.t.
+  `x`, but **not** constant across SLDS discrete states when `Q`/`R` differ by
+  state.
+"""
+function joint_loglikelihood!(
+    ll::AbstractVector{T},
+    ws::SLDSSmoothWorkspace{T},
+    cc::LDSConstantCache{T},
+    lds::LinearDynamicalSystem{T,S,O},
+    x::AbstractMatrix{T},
+    y::AbstractMatrix{T},
+) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+    tsteps = size(y, 2)
+    @assert length(ll) == tsteps
+
+    dxt = ws.dxt
+    tmp = ws.tmp1
+
+    for t in 1:tsteps
+        ll_t = observationloglikelihood!(cc, ws.z, ws.λ, x, y, t, lds)
+        ll_t += stateloglikelihood!(cc, dxt, tmp, x, t, lds)
+        ll[t] = ll_t
+    end
+
+    return ll
+end
 
 """
     Q_state!(ws, lds, E_z, E_zz, E_zz_prev, ux)

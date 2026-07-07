@@ -685,3 +685,47 @@ function test_poisson_low_rate_recovery()
     end
     return nothing
 end
+
+function test_joint_loglikelihood_matches_distributions()
+    
+    #=
+    Regression companion to `test_joint_loglikelihood_matches_mvnormal`
+    =#
+    rng = StableRNG(1234)
+    D_lat, p_obs, T_steps = 2, 3, 25
+
+    A_nd = [0.9 0.1; -0.05 0.85]
+    Q_nd = [0.5 0.2; 0.2 0.4]
+    b_nd = [0.1, -0.1]
+    x0_nd = [0.5, -0.5]
+    P0_nd = [1.0 0.3; 0.3 0.8]
+    C_nd = 0.5 .* randn(rng, p_obs, D_lat)
+    d_nd = [0.1, 0.2, -0.1]
+
+    sm = GaussianStateModel(; A=A_nd, Q=Q_nd, b=b_nd, x0=x0_nd, P0=P0_nd)
+    om = PoissonObservationModel(; C=C_nd, d=d_nd)
+    plds = LinearDynamicalSystem(;
+        state_model=sm,
+        obs_model=om,
+        latent_dim=D_lat,
+        obs_dim=p_obs,
+        fit_bool=fill(true, 6),
+    )
+
+    x = randn(rng, D_lat, T_steps)
+    λ = exp.(C_nd * x .+ d_nd)
+    y = Float64.(rand.(Ref(rng), Poisson.(λ)))
+
+    ll = sum(StateSpaceDynamics.joint_loglikelihood(x, plds, y))
+
+    ref = logpdf(MvNormal(x0_nd, Symmetric(P0_nd)), x[:, 1])
+    for t in 2:T_steps
+        ref += logpdf(MvNormal(A_nd * x[:, t - 1] .+ b_nd, Symmetric(Q_nd)), x[:, t])
+    end
+    for t in 1:T_steps, i in 1:p_obs
+        ref += logpdf(Poisson(λ[i, t]), y[i, t])
+    end
+
+    @test ll ≈ ref rtol = 1e-10
+    return nothing
+end

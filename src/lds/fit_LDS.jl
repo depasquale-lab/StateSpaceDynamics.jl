@@ -29,158 +29,67 @@ performance, with careful attention to memory allocation and multi-threading.
 """
 
 """
-    joint_loglikelihood!(ws, x, lds, y)
+    joint_loglikelihood!(ws, x, lds, y[, ux, uy])
 
-In-place version of `joint_loglikelihood` that uses pre-computed Cholesky factors from
-`ws::SmoothWorkspace` and writes into `ws.ll_vec`. Returns the sum of log-likelihoods.
+Per-timestep complete-data log-likelihood of a Gaussian LDS, written into
+`ws.ll_vec` (returned):
+
+- `ll[1]` includes: log p(x₁) + log p(y₁ | x₁)
+- `ll[t]` for t≥2 includes: log p(x_t | x_{t-1}, u_{t-1}) + log p(y_t | x_t, uy_t)
+
+Built from the shared `stateloglikelihood!` / `observationloglikelihood!`
+kernels; requires `compute_smooth_constants!(ws, lds)` to have been called.
+`ux` / `uy` are optional control inputs (`nothing` or zero-row matrices skip
+the `B u` / `D uy` terms).
 """
 function joint_loglikelihood!(
     ws::SmoothWorkspace{T},
     x::AbstractMatrix{T},
     lds::LinearDynamicalSystem{T0,S,O},
     y::AbstractMatrix{T0},
-    ux::AbstractMatrix{T0},
-    uy::AbstractMatrix{T0},
+    ux::Union{Nothing,AbstractMatrix{T0}}=nothing,
+    uy::Union{Nothing,AbstractMatrix{T0}}=nothing,
 ) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:GaussianObservationModel{T0}}
     tsteps = size(y, 2)
-
-    A = lds.state_model.A
-    b = lds.state_model.b
-    B = lds.state_model.B
-    x0 = lds.state_model.x0
-    d = lds.obs_model.d
-    D_obs = lds.obs_model.D
-
-    R_U = ws.R_PD[].chol.U
-    Q_U = ws.Q_PD[].chol.U
-    P0_U = ws.P0_PD[].chol.U
-
     ll_vec = ws.ll_vec
-    temp_dx = ws.temp_dx
-    temp_dy = ws.temp_dy
-    temp_solve_Q = ws.temp_solve_Q
-    temp_solve_R = ws.temp_solve_R
-
-    latent_dim = lds.latent_dim
-    obs_dim = lds.obs_dim
-
-    cP0 = -T(0.5) * (T(latent_dim) * log(T(2π)) + logdet(ws.P0_PD[]))
-    cQ = -T(0.5) * (T(latent_dim) * log(T(2π)) + logdet(ws.Q_PD[]))
-    cR = -T(0.5) * (T(obs_dim) * log(T(2π)) + logdet(ws.R_PD[]))
 
     for t in 1:tsteps
-        ll_t = zero(T)
-
-        # Initial state (t=1): log p(x1)
-        if t == 1
-            @views temp_dx .= x[:, 1] .- x0
-            ldiv!(temp_solve_Q, P0_U, temp_dx)
-            ll_t += cP0 - T(0.5) * sum(abs2, temp_solve_Q)
-        end
-
-        # Dynamics (t>1): log p(x_t | x_{t-1}, u_{t-1}) where mean = A x_{t-1} + b + B u_{t-1}.
-        # `B*ux` is a no-op when `ux` has zero rows (size(B,2) == size(ux,1) == 0).
-        if t > 1
-            @views mul!(temp_dx, A, x[:, t - 1])
-            @views mul!(temp_dx, B, ux[:, t - 1], one(T0), one(T0))
-            @views temp_dx .= x[:, t] .- temp_dx .- b
-            ldiv!(temp_solve_Q, Q_U, temp_dx)
-            ll_t += cQ - T(0.5) * sum(abs2, temp_solve_Q)
-        end
-
-        # Emission: log p(y_t | x_t, uy_t) where mean = C x_t + d + D uy_t.
-        @views mul!(temp_dy, lds.obs_model.C, x[:, t])
-        @views mul!(temp_dy, D_obs, uy[:, t], one(T0), one(T0))
-        @views temp_dy .= y[:, t] .- temp_dy .- d
-        ldiv!(temp_solve_R, R_U, temp_dy)
-        ll_t += cR - T(0.5) * sum(abs2, temp_solve_R)
-
+        ll_t = observationloglikelihood!(ws, ws.temp_dy, ws.temp_solve_R, x, y, t, lds, uy)
+        ll_t += stateloglikelihood!(ws, ws.temp_dx, ws.temp_solve_Q, x, t, lds, ux)
         ll_vec[t] = ll_t
     end
 
     return ll_vec
 end
 
-# Backward-compatible 4-arg overload: no inputs. Forwards to the 6-arg form
-# with zero-row ux/uy matrices, so callers that don't use inputs don't have
-# to pass them.
-function joint_loglikelihood!(
-    ws::SmoothWorkspace{T},
+"""
+    observationloglikelihood!(cc, dyt, _, x, y, t, lds[, uy])
+
+Gaussian emission term: `cR - 0.5*||R^{-1/2}(y_t - Cx_t - d - D uy_t)||^2`.
+Method of the generic `observationloglikelihood!` dispatch point (see
+`continuous_latents.jl`); `dyt` is the `obs_dim` residual scratch, the second
+buffer is unused.
+"""
+function observationloglikelihood!(
+    cc::LDSLikelihoodCache{T},
+    dyt::AbstractVector{T},
+    ::AbstractVector{T},
     x::AbstractMatrix{T},
-    lds::LinearDynamicalSystem{T0,S,O},
     y::AbstractMatrix{T0},
+    t::Int,
+    lds::LinearDynamicalSystem{T0,S,O},
+    uy::Union{Nothing,AbstractMatrix}=nothing,
 ) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:GaussianObservationModel{T0}}
-    tsteps = size(y, 2)
-    ux = zeros(T0, 0, tsteps)
-    uy = zeros(T0, 0, tsteps)
-    return joint_loglikelihood!(ws, x, lds, y, ux, uy)
-end
-
-"""
-    joint_loglikelihood!(ws, x, lds, y)
-
-Compute per-timestep complete-data log-likelihood contributions for a Gaussian LDS:
-
-- `ll[1]` includes: log p(x₁) + log p(y₁ | x₁)
-- `ll[t]` for t≥2 includes: log p(x_t | x_{t-1}) + log p(y_t | x_t)
-
-Writes into `ws.ll_vec` and returns it.
-
-Notes:
-- Normalization terms (logdet + log(2π)) are included. These are constant w.r.t. `x`,
-  but **not** constant across SLDS discrete states when `Q`/`R` differ by state.
-"""
-function joint_loglikelihood!(
-    ll::AbstractVector{T},
-    ws::SLDSSmoothWorkspace{T},
-    cc::LDSConstantCache{T},
-    lds::LinearDynamicalSystem{T,S,O},
-    x::AbstractMatrix{T},
-    y::AbstractMatrix{T},
-) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
-    tsteps = size(y, 2)
-    @assert length(ll) == tsteps
-
-    A = lds.state_model.A
-    b = lds.state_model.b
-    x0 = lds.state_model.x0
     C = lds.obs_model.C
     d = lds.obs_model.d
 
-    Q_U = cc.Q_PD[].chol.U
-    P0_U = cc.P0_PD[].chol.U
-    R_U = cc.R_PD[].chol.U
-
-    dxt = ws.dxt
-    dyt = ws.dyt
-    tmp = ws.tmp1  # latent_dim work vector (used as transition residual)
-
-    for t in 1:tsteps
-        ll_t = zero(T)
-
-        # emission: cR - 0.5*||R^{-1/2}(y_t - Cx_t - d)||^2
-        @views mul!(dyt, C, x[:, t])
-        @views dyt .= y[:, t] .- dyt .- d
-        ldiv!(dyt, R_U, dyt)
-        ll_t += cc.cR - T(0.5) * sum(abs2, dyt)
-
-        if t == 1
-            # prior: cP0 - 0.5*||P0^{-1/2}(x1 - x0)||^2
-            @views dxt .= x[:, 1] .- x0
-            ldiv!(dxt, P0_U, dxt)
-            ll_t += cc.cP0 - T(0.5) * sum(abs2, dxt)
-        else
-            # transition: cQ - 0.5*||Q^{-1/2}(x_t - A x_{t-1} - b)||^2
-            @views mul!(tmp, A, x[:, t - 1])
-            @views tmp .= x[:, t] .- tmp .- b
-            ldiv!(tmp, Q_U, tmp)
-            ll_t += cc.cQ - T(0.5) * sum(abs2, tmp)
-        end
-
-        ll[t] = ll_t
+    @views mul!(dyt, C, x[:, t])
+    if uy !== nothing
+        @views mul!(dyt, lds.obs_model.D, uy[:, t], one(T), one(T))
     end
-
-    return ll
+    @views dyt .= y[:, t] .- dyt .- d
+    ldiv!(cc.R_PD[].chol.U', dyt)
+    return _cR(cc) - T(0.5) * sum(abs2, dyt)
 end
 
 """

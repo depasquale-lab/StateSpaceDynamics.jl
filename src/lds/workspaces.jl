@@ -127,6 +127,11 @@ struct SmoothWorkspace{T<:Real}
     Q_PD::Base.RefValue{PDMat{T,Matrix{T}}}      # (latent_dim × latent_dim)
     P0_PD::Base.RefValue{PDMat{T,Matrix{T}}}     # (latent_dim × latent_dim)
 
+    # Cached log-likelihood normalizers -0.5*(dim*log(2π) + logdet(Σ))
+    cP0::Base.RefValue{T}
+    cQ::Base.RefValue{T}
+    cR::Base.RefValue{T}
+
     # Solve Outputs
     tmp_RC::Matrix{T}    # obs_dim × latent_dim   (R^{-1} C)
     tmp_QA::Matrix{T}    # latent_dim × latent_dim (Q^{-1} A)
@@ -293,6 +298,9 @@ function SmoothWorkspace(
     R_PD = _pd_ref(PDMat(Matrix{T}(I, obs_dim, obs_dim)))
     Q_PD = _pd_ref(PDMat(Matrix{T}(I, latent_dim, latent_dim)))
     P0_PD = _pd_ref(PDMat(Matrix{T}(I, latent_dim, latent_dim)))
+    cP0 = Ref(zero(T))
+    cQ = Ref(zero(T))
+    cR = Ref(zero(T))
 
     tmp_RC = zeros(T, obs_dim, latent_dim)
     tmp_QA = zeros(T, latent_dim, latent_dim)
@@ -409,6 +417,9 @@ function SmoothWorkspace(
         R_PD,
         Q_PD,
         P0_PD,
+        cP0,
+        cQ,
+        cR,
         tmp_RC,
         tmp_QA,
         C_inv_R,
@@ -561,6 +572,13 @@ function compute_smooth_constants!(
     ldiv!(P0chol, ws.x_t)
     ws.x_t .*= -one(T)
 
+    # Log-likelihood normalizers (consumed by the likelihood kernels)
+    latent_dim = lds.latent_dim
+    obs_dim = lds.obs_dim
+    ws.cP0[] = -WT(0.5) * (WT(latent_dim) * log(WT(2π)) + logdet(ws.P0_PD[]))
+    ws.cQ[] = -WT(0.5) * (WT(latent_dim) * log(WT(2π)) + logdet(ws.Q_PD[]))
+    ws.cR[] = -WT(0.5) * (WT(obs_dim) * log(WT(2π)) + logdet(ws.R_PD[]))
+
     return nothing
 end
 
@@ -584,6 +602,9 @@ function _copy_smooth_constants!(
     dst.R_PD[] = src.R_PD[]
     dst.Q_PD[] = src.Q_PD[]
     dst.P0_PD[] = src.P0_PD[]
+    dst.cP0[] = src.cP0[]
+    dst.cQ[] = src.cQ[]
+    dst.cR[] = src.cR[]
     copyto!(dst.tmp_RC, src.tmp_RC)
     copyto!(dst.tmp_QA, src.tmp_QA)
     copyto!(dst.C_inv_R, src.C_inv_R)
@@ -636,6 +657,12 @@ function compute_smooth_constants!(
     copyto!(ws.x_t, ws.I_mat)
     ldiv!(P0_chol, ws.x_t)
     ws.x_t .*= -one(T)
+
+    # Log-likelihood normalizers. No R term for Poisson observations.
+    latent_dim = lds.latent_dim
+    ws.cP0[] = -WT(0.5) * (WT(latent_dim) * log(WT(2π)) + logdet(ws.P0_PD[]))
+    ws.cQ[] = -WT(0.5) * (WT(latent_dim) * log(WT(2π)) + logdet(ws.Q_PD[]))
+    ws.cR[] = zero(WT)
 
     return nothing
 end
