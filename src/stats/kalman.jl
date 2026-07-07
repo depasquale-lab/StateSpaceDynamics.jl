@@ -389,7 +389,7 @@ function backwards_cov!(
     smooth_cov = kws.smooth_cov::Vector{PDMat{T,Matrix{T}}}
     filt_cov = kws.filt_cov::Vector{PDMat{T,Matrix{T}}}
     pred_cov = kws.pred_cov::Vector{PDMat{T,Matrix{T}}}
-    Q_PD = kws.Q_PD::Base.RefValue{PDMat{T,Matrix{T}}}
+    Q_PD = kws.Q_PD::Base.RefValue{DensePDMat{T}}
     G = kws.G::Array{T,3}
     A = lds.state_model.A
 

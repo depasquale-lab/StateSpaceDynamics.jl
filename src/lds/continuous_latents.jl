@@ -33,6 +33,20 @@ _cP0(ws::SmoothWorkspace) = ws.cP0[]
 _cQ(ws::SmoothWorkspace) = ws.cQ[]
 _cR(ws::SmoothWorkspace) = ws.cR[]
 
+# In-place whitening solve `v := U⁻ᵀ v` against a Cholesky Σ = U'U, so that
+# `sum(abs2, v)` afterwards is the quadratic form `v'Σ⁻¹v`. 
+@inline function _whiten!(
+    chol::Cholesky{T,Matrix{T}}, v::StridedVector{T}
+) where {T<:LinearAlgebra.BlasFloat}
+    if chol.uplo === 'U'
+        LinearAlgebra.LAPACK.trtrs!('U', 'T', 'N', chol.factors, v)
+    else
+        LinearAlgebra.LAPACK.trtrs!('L', 'N', 'N', chol.factors, v)
+    end
+    return v
+end
+_whiten!(chol::Cholesky, v::AbstractVector) = ldiv!(chol.U', v)
+
 """
     stateloglikelihood!(cc, dxt, tmp, x, t, lds[, ux])
 
@@ -66,7 +80,7 @@ function stateloglikelihood!(
 
     if t == 1
         @views dxt .= x[:, 1] .- x0
-        ldiv!(cc.P0_PD[].chol.U', dxt)
+        _whiten!(cc.P0_PD[].chol, dxt)
         return _cP0(cc) - T(0.5) * sum(abs2, dxt)
     else
         @views mul!(tmp, A, x[:, t - 1])
@@ -74,7 +88,7 @@ function stateloglikelihood!(
             @views mul!(tmp, lds.state_model.B, ux[:, t - 1], one(T), one(T))
         end
         @views tmp .= x[:, t] .- tmp .- b
-        ldiv!(cc.Q_PD[].chol.U', tmp)
+        _whiten!(cc.Q_PD[].chol, tmp)
         return _cQ(cc) - T(0.5) * sum(abs2, tmp)
     end
 end

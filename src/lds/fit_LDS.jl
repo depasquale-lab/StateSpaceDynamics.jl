@@ -88,7 +88,7 @@ function observationloglikelihood!(
         @views mul!(dyt, lds.obs_model.D, uy[:, t], one(T), one(T))
     end
     @views dyt .= y[:, t] .- dyt .- d
-    ldiv!(cc.R_PD[].chol.U', dyt)
+    _whiten!(cc.R_PD[].chol, dyt)
     return _cR(cc) - T(0.5) * sum(abs2, dyt)
 end
 

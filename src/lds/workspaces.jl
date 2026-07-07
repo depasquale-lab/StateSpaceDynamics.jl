@@ -9,12 +9,17 @@
 # =============================================================================
 
 #=
-Wrap a `PDMat` in a `Ref` whose element type matches the workspace field type
-`PDMat{T,Matrix{T}}`. Pinning the eltype here keeps construction working on both 2- and 3-parameter
-PDMats. Reading (`ref[]`) and rebinding (`ref[] = pd`) are unaffected either way. Not my favorite but it works.
-TODO: Consider lowerbounding PDMats to 0.11.40
+PDMats 0.11.40 added a third (Cholesky) type parameter to `PDMat`, which turns
+the two-parameter `PDMat{T,Matrix{T}}` into a non-concrete UnionAll. 
+TODO: Consider lowerbounding PDMats to 0.11.40 and inlining the 3-param alias.
 =#
-_pd_ref(pd::PDMat{T,Matrix{T}}) where {T} = Base.RefValue{PDMat{T,Matrix{T}}}(pd)
+if length(Base.unwrap_unionall(PDMat).parameters) == 3
+    const DensePDMat{T} = PDMat{T,Matrix{T},Cholesky{T,Matrix{T}}}
+else
+    const DensePDMat{T} = PDMat{T,Matrix{T}}
+end
+
+_pd_ref(pd::PDMat) = Base.RefValue{DensePDMat{eltype(pd)}}(pd)
 
 """
     FilterSmooth{T<:Real}
@@ -90,21 +95,21 @@ mutable struct SufficientStatistics{T<:Real}
     # weighted aggregator can flow non-integer counts through the M-step
     # without truncation.
     init_n::T
-    init_xx::Base.RefValue{PDMat{T,Matrix{T}}}
+    init_xx::Base.RefValue{DensePDMat{T}}
     init_xy::Matrix{T}
-    init_yy::Base.RefValue{PDMat{T,Matrix{T}}}
+    init_yy::Base.RefValue{DensePDMat{T}}
 
     # transitions model
     dyn_n::T
-    dyn_xx::Base.RefValue{PDMat{T,Matrix{T}}}
+    dyn_xx::Base.RefValue{DensePDMat{T}}
     dyn_xy::Matrix{T}
-    dyn_yy::Base.RefValue{PDMat{T,Matrix{T}}}
+    dyn_yy::Base.RefValue{DensePDMat{T}}
 
     # observation model
     obs_n::T
-    obs_xx::Base.RefValue{PDMat{T,Matrix{T}}}
+    obs_xx::Base.RefValue{DensePDMat{T}}
     obs_xy::Matrix{T}
-    obs_yy::Base.RefValue{PDMat{T,Matrix{T}}}
+    obs_yy::Base.RefValue{DensePDMat{T}}
 end
 
 """
@@ -123,9 +128,9 @@ struct SmoothWorkspace{T<:Real}
     # `compute_smooth_constants!`; downstream code consumes via
     # `ws.R_PD[].chol.U` (triangular factor) and `logdet(ws.R_PD[])`.
     # Mirrors `KalmanWorkspace`'s `Q_PD` / `P0_PD` / `R_PD` pattern.
-    R_PD::Base.RefValue{PDMat{T,Matrix{T}}}      # (obs_dim × obs_dim)
-    Q_PD::Base.RefValue{PDMat{T,Matrix{T}}}      # (latent_dim × latent_dim)
-    P0_PD::Base.RefValue{PDMat{T,Matrix{T}}}     # (latent_dim × latent_dim)
+    R_PD::Base.RefValue{DensePDMat{T}}      # (obs_dim × obs_dim)
+    Q_PD::Base.RefValue{DensePDMat{T}}      # (latent_dim × latent_dim)
+    P0_PD::Base.RefValue{DensePDMat{T}}     # (latent_dim × latent_dim)
 
     # Cached log-likelihood normalizers -0.5*(dim*log(2π) + logdet(Σ))
     cP0::Base.RefValue{T}
@@ -678,9 +683,9 @@ mutable struct LDSConstantCache{T<:Real}
     # PDMats for R, Q, P0. Rewrapped once per SLDS smoothing pass by
     # `compute_slds_constants!`; downstream consumers use `.chol.U` and
     # `logdet(...)`. Mirrors `SmoothWorkspace`'s `R_PD` / `Q_PD` / `P0_PD`.
-    R_PD::Base.RefValue{PDMat{T,Matrix{T}}}
-    Q_PD::Base.RefValue{PDMat{T,Matrix{T}}}
-    P0_PD::Base.RefValue{PDMat{T,Matrix{T}}}
+    R_PD::Base.RefValue{DensePDMat{T}}
+    Q_PD::Base.RefValue{DensePDMat{T}}
+    P0_PD::Base.RefValue{DensePDMat{T}}
 
     # LL constant terms
     cP0::T
@@ -971,8 +976,8 @@ struct KalmanWorkspace{T<:Real}
     # Pre-allocated scratch buffers for covariance_forward_backward! (no per-step allocs)
     cov_tmp1::Matrix{T}   # (D, D)
     cov_tmp2::Matrix{T}   # (D, D)
-    pd_tmp::Base.RefValue{PDMat{T,Matrix{T}}} #(D, D)
-    obs_pd_tmp::Base.RefValue{PDMat{T,Matrix{T}}} #(p, p)
+    pd_tmp::Base.RefValue{DensePDMat{T}} #(D, D)
+    obs_pd_tmp::Base.RefValue{DensePDMat{T}} #(p, p)
 
     # Per-trial D-vector scratch for _filter_mean_trial! (column n used by trial n)
     mean_tmp::Matrix{T}   # (D, ntrials)
@@ -982,9 +987,9 @@ struct KalmanWorkspace{T<:Real}
     p_smooth_tt1_shared::Array{T,3}  # (D, D, T)
 
     # Derived constants (refreshed each E-step; M-step mutates Q, R, P0)
-    Q_PD::Base.RefValue{PDMat{T,Matrix{T}}}
-    P0_PD::Base.RefValue{PDMat{T,Matrix{T}}}
-    R_PD::Base.RefValue{PDMat{T,Matrix{T}}}
+    Q_PD::Base.RefValue{DensePDMat{T}}
+    P0_PD::Base.RefValue{DensePDMat{T}}
+    R_PD::Base.RefValue{DensePDMat{T}}
 
     #  Priors — matrix-normal halves stored as `MNPrior`s (M₀ + Λ);
     #  inverse-Wishart halves are split into (μ, df) pairs to keep the
@@ -1002,7 +1007,7 @@ struct KalmanWorkspace{T<:Real}
 
     # Derived terms for Kalman gain and LL computation (refreshed each E-step)
     CiR::Matrix{T}                              # C' * R^{-1}   (D × p)
-    CiRC::Base.RefValue{PDMat{T,Matrix{T}}}     # C' * R^{-1} * C  (D × D), symmetric
+    CiRC::Base.RefValue{DensePDMat{T}}     # C' * R^{-1} * C  (D × D), symmetric
     shared_entropy::Base.RefValue{T}
 
     # Per-trial mean-pass buffers (thread-safe via trial-slice access)
