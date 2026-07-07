@@ -6,14 +6,6 @@
 # backend — all Gaussian fitting goes through the block-tridiagonal path.
 # Ported from StateSpaceAnalysis.
 #
-# NOTE (JET view-eltype union): under JET's generic package analysis a workspace
-# field typed `Array{T,3}` / `Matrix{T}` (with `T` a free `<:Real` typevar) makes
-# `@views`/`view` over it infer as `Union{SubArray{Any,…}, SubArray{T,…}}`. The
-# spurious `Any` branch fails to match strict `X_A_Xt` / `BLAS.syrk!` / `logpdf`
-# signatures, yielding false-positive `no matching method` reports. Asserting the
-# view result `::SubArray{T}` intersects away the `Any` branch (the concrete
-# `ndims` from the real branch is preserved), matching runtime types exactly.
-#
 # Key design choices:
 #
 # * The covariance forward-backward pass does **not** depend on observations.
@@ -433,8 +425,6 @@ function backwards_cov!(
         # tripped the strict cholesky in `PDMat(::Matrix)` from accumulated
         # asymmetry; folding the sum into the X_A_Xt argument avoids that.
         mul!(kws.cov_tmp1, G[:, :, tt], A, one(T), zero(T))
-        # `::SubArray{T}` narrows JET's `view`-eltype union (see NOTE at the top
-        # of the file) so `X_A_Xt`'s typed signature matches.
         kws.cov_tmp2 .=
             X_A_Xt(smooth_cov[tt + 1] + Q_PD[], G[:, :, tt]::SubArray{T}) .+
             X_A_Xt(filt_cov[tt], I - kws.cov_tmp1)
@@ -988,8 +978,6 @@ function marginal_loglikelihood(
         MV = MvNormal(kws.obs_pd_tmp[])
 
         for n in axes(innovation, 3)
-            # `::SubArray{T}` narrows JET's `view`-eltype union (see NOTE at the
-            # top of the file) so `logpdf`'s typed signature matches.
             total_ll += Distributions.logpdf(MV, innovation[:, t, n]::SubArray{T})
         end
     end

@@ -1,10 +1,3 @@
-# NOTE (JET view-eltype union): under JET's generic package analysis a workspace
-# field typed `Matrix{T}` / `Array{T,3}` (with `T` a free `<:Real` typevar) makes
-# `view(field, …)` infer as `Union{SubArray{Any,…}, SubArray{T,…}}`. The spurious
-# `Any` branch fails to match the strict `BLAS.ger!` / `BLAS.syrk!` / `X_A_Xt`
-# signatures, producing false-positive `no matching method` reports. Asserting the
-# `view` result `::SubArray{T}` intersects away the `Any` branch (the concrete
-# `ndims` from the real branch is preserved), matching runtime types exactly.
 
 """
     sufficient_statistics(x_smooth, p_smooth, p_smooth_t1)
@@ -126,9 +119,7 @@ function _td_init_const_blocks!(
                 one(T),
                 uy_t,
                 one(T),
-                view(
-                    td_obs_xx_const, (D + 2):obs_reg_dim, (D + 2):obs_reg_dim
-                )::SubArray{T},
+                tview(td_obs_xx_const, (D + 2):obs_reg_dim, (D + 2):obs_reg_dim),
             )
         end
         LinearAlgebra.copytri!(
@@ -161,9 +152,7 @@ function _td_init_const_blocks!(
                 one(T),
                 u_used,
                 one(T),
-                view(
-                    td_dyn_xx_const, (D + 2):dyn_reg_dim, (D + 2):dyn_reg_dim
-                )::SubArray{T},
+                tview(td_dyn_xx_const, (D + 2):dyn_reg_dim, (D + 2):dyn_reg_dim),
             )
         end
         LinearAlgebra.copytri!(
@@ -336,18 +325,16 @@ function _aggregate_td_suff_stats!(
         for j in 1:D
             td_init_xy[1, j] += x[j, 1]
         end
-        # `::SubArray{T}` narrows JET's `view`-eltype union (see NOTE at the
-        # top of the file) so the strict `BLAS.ger!`/`syrk!` signatures match.
-        x1 = view(x, :, 1)::SubArray{T}
+        x1 = tview(x, :, 1)
         BLAS.ger!(one(T), x1, x1, S0_sum)
 
-        x_prev = view(x, :, 1:(T_n - 1))::SubArray{T}
-        x_next = view(x, :, 2:T_n)::SubArray{T}
+        x_prev = tview(x, :, 1:(T_n - 1))
+        x_next = tview(x, :, 2:T_n)
 
         # dyn_xx[1:D, 1:D] += x_prev x_prev'   (upper triangle via syrk)
-        BLAS.syrk!('U', 'N', one(T), x_prev, one(T), view(Szz_Ab, 1:D, 1:D)::SubArray{T})
+        BLAS.syrk!('U', 'N', one(T), x_prev, one(T), tview(Szz_Ab, 1:D, 1:D))
         # obs_xx[1:D, 1:D] += x x'             (upper triangle via syrk)
-        BLAS.syrk!('U', 'N', one(T), x, one(T), view(Szz_Cd, 1:D, 1:D)::SubArray{T})
+        BLAS.syrk!('U', 'N', one(T), x, one(T), tview(Szz_Cd, 1:D, 1:D))
 
         # dyn_xx[1:D, D+1] += Σ x_prev   (column-sum into upper-only bias col)
         for t in 1:(T_n - 1), i in 1:D
@@ -494,9 +481,7 @@ function _aggregate_td_suff_stats_weighted!(
         # Initial term — weighted by w[1].
         w1 = w[1]
         @views begin
-            # `::SubArray{T}` narrows JET's `view`-eltype union (see NOTE at
-            # the top of the file) so `BLAS.ger!` matches.
-            x1 = view(x_smooth, :, 1)::SubArray{T}
+            x1 = tview(x_smooth, :, 1)
             for i in 1:D
                 init_xy[1, i] += w1 * x1[i]
             end
@@ -509,11 +494,11 @@ function _aggregate_td_suff_stats_weighted!(
         # Dynamics factors at t = 2..T_n.
         @views for t in 2:T_n
             wt = w[t]
-            x_prev = view(x_smooth, :, t - 1)::SubArray{T}
-            x_next = view(x_smooth, :, t)::SubArray{T}
+            x_prev = x_smooth[:, t - 1]
+            x_next = x_smooth[:, t]
 
             # dyn_xx[1:D, 1:D] += wt * (x_prev x_prev' + P_smooth[t-1])
-            BLAS.ger!(wt, x_prev, x_prev, view(dyn_xx, 1:D, 1:D)::SubArray{T})
+            BLAS.ger!(wt, x_prev, x_prev, tview(dyn_xx, 1:D, 1:D))
             view(dyn_xx, 1:D, 1:D) .+= wt .* P_smooth[:, :, t - 1]
             # dyn_xx bias col / row
             for i in 1:D
@@ -524,7 +509,7 @@ function _aggregate_td_suff_stats_weighted!(
 
             # dyn_xy[1:D, :] += wt * (x_prev x_next' + P_smooth_tt1[t]')
             # cov(xₜ₋₁, xₜ) = P_smooth_tt1[t]'  (cf. unweighted aggregator).
-            BLAS.ger!(wt, x_prev, x_next, view(dyn_xy, 1:D, :)::SubArray{T})
+            BLAS.ger!(wt, x_prev, x_next, tview(dyn_xy, 1:D, :))
             view(dyn_xy, 1:D, :) .+= wt .* transpose(P_smooth_tt1[:, :, t])
             for j in 1:D
                 dyn_xy[D + 1, j] += wt * x_next[j]
@@ -539,11 +524,9 @@ function _aggregate_td_suff_stats_weighted!(
             # once at the end of the function via `copytri!(dyn_xx, 'U')`.
             if ux_dim > 0
                 ux_trial = ux_seq[trial]
-                ux_prev = view(ux_trial, :, t - 1)::SubArray{T}
+                ux_prev = ux_trial[:, t - 1]
                 # dyn_xx[1:D, D+2:end] += wt * x_prev ux_prev'
-                BLAS.ger!(
-                    wt, x_prev, ux_prev, view(dyn_xx, 1:D, (D + 2):dyn_reg_dim)::SubArray{T}
-                )
+                BLAS.ger!(wt, x_prev, ux_prev, tview(dyn_xx, 1:D, (D + 2):dyn_reg_dim))
                 # dyn_xx[D+1, D+2:end] += wt * ux_prev   (bias × u cross; mirrored later)
                 for k in 1:ux_dim
                     dyn_xx[D + 1, D + 1 + k] += wt * ux_prev[k]
@@ -553,12 +536,10 @@ function _aggregate_td_suff_stats_weighted!(
                     wt,
                     ux_prev,
                     ux_prev,
-                    view(dyn_xx, (D + 2):dyn_reg_dim, (D + 2):dyn_reg_dim)::SubArray{T},
+                    tview(dyn_xx, (D + 2):dyn_reg_dim, (D + 2):dyn_reg_dim),
                 )
                 # dyn_xy[D+2:end, :] += wt * ux_prev x_next'
-                BLAS.ger!(
-                    wt, ux_prev, x_next, view(dyn_xy, (D + 2):dyn_reg_dim, :)::SubArray{T}
-                )
+                BLAS.ger!(wt, ux_prev, x_next, tview(dyn_xy, (D + 2):dyn_reg_dim, :))
             end
 
             dyn_n_acc += wt
@@ -567,12 +548,12 @@ function _aggregate_td_suff_stats_weighted!(
         # Emissions at t = 1..T_n.
         @views for t in 1:T_n
             wt = w[t]
-            x_t = view(x_smooth, :, t)::SubArray{T}
-            y_t = view(y_trial, :, t)::SubArray{T}
+            x_t = x_smooth[:, t]
+            y_t = y_trial[:, t]
 
             # obs_xx[1:D, 1:D] += wt * (x_t x_t' + P_smooth[t])
-            BLAS.ger!(wt, x_t, x_t, view(obs_xx, 1:D, 1:D)::SubArray{T})
-            view(obs_xx, 1:D, 1:D) .+= wt .* P_smooth[:, :, t]
+            BLAS.ger!(wt, x_t, x_t, tview(obs_xx, 1:D, 1:D))
+            obs_xx[1:D, 1:D] .+= wt .* P_smooth[:, :, t]
             for i in 1:D
                 obs_xx[i, D + 1] += wt * x_t[i]
                 obs_xx[D + 1, i] += wt * x_t[i]
@@ -580,7 +561,7 @@ function _aggregate_td_suff_stats_weighted!(
             obs_xx[D + 1, D + 1] += wt
 
             # obs_xy[1:D, :] += wt * x_t y_t'
-            BLAS.ger!(wt, x_t, y_t, view(obs_xy, 1:D, :)::SubArray{T})
+            BLAS.ger!(wt, x_t, y_t, tview(obs_xy, 1:D, :))
             for j in 1:p
                 obs_xy[D + 1, j] += wt * y_t[j]
             end
@@ -591,11 +572,9 @@ function _aggregate_td_suff_stats_weighted!(
             # Obs-input cross blocks.
             if uy_dim > 0
                 uy_trial = uy_seq[trial]
-                uy_t = view(uy_trial, :, t)::SubArray{T}
+                uy_t = uy_trial[:, t]
                 # obs_xx[1:D, D+2:end] += wt * x_t uy_t'
-                BLAS.ger!(
-                    wt, x_t, uy_t, view(obs_xx, 1:D, (D + 2):obs_reg_dim)::SubArray{T}
-                )
+                BLAS.ger!(wt, x_t, uy_t, tview(obs_xx, 1:D, (D + 2):obs_reg_dim))
                 # obs_xx[D+1, D+2:end] / [D+2:end, D+1] += wt * uy_t
                 for k in 1:uy_dim
                     obs_xx[D + 1, D + 1 + k] += wt * uy_t[k]
@@ -603,13 +582,10 @@ function _aggregate_td_suff_stats_weighted!(
                 end
                 # obs_xx[D+2:end, D+2:end] += wt * uy_t uy_t'
                 BLAS.ger!(
-                    wt,
-                    uy_t,
-                    uy_t,
-                    view(obs_xx, (D + 2):obs_reg_dim, (D + 2):obs_reg_dim)::SubArray{T},
+                    wt, uy_t, uy_t, tview(obs_xx, (D + 2):obs_reg_dim, (D + 2):obs_reg_dim)
                 )
                 # obs_xy[D+2:end, :] += wt * uy_t y_t'
-                BLAS.ger!(wt, uy_t, y_t, view(obs_xy, (D + 2):obs_reg_dim, :)::SubArray{T})
+                BLAS.ger!(wt, uy_t, y_t, tview(obs_xy, (D + 2):obs_reg_dim, :))
             end
 
             obs_n_acc += wt

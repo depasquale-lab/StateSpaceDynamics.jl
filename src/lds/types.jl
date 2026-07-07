@@ -322,3 +322,9 @@ end
 
 # Provide eltype without going through obs_distributions
 Base.eltype(::SLDSDiscreteLayer{T}, obs, control) where {T} = T
+
+#=
+Workaround for JET union-split false positive on views with unbound eltype
+(remove when fixed upstream; see: https://github.com/depasquale-lab/StateSpaceDynamics.jl/issues/105)
+=#
+@inline tview(A::AbstractArray{T}, I...) where {T} = view(A, I...)::SubArray{T}

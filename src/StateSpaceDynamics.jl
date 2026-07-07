@@ -73,6 +73,7 @@ export valid_Σ, gaussian_entropy
 export random_rotation_matrix
 export print_full
 export info_update!
+export tview
 
 # Common functions
 export rand, smooth, fit!, loglikelihood, elbo!

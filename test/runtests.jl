@@ -41,24 +41,8 @@ using SSDTest
         end
 
         @testset "JET.jl Code Linting" begin
-            # Skipped on Julia 1.13+ (the `-` in `v"1.13.0-"` also excludes
-            # pre-releases such as `1.13.0-rc1`): JET 0.11.5's report collector
-            # leaves `#undef` slots in its internal `Vector{InferenceErrorReport}`
-            # once the analysis produces many reports (~2200 raw, mostly
-            # Base/stdlib), so `unique!` throws `UndefRefError` *before*
-            # `target_modules` filtering. That is a JET-internal bug on 1.13,
-            # unrelated to this package — our own analysis is clean (0 reports).
-            # Raise the upper bound once a JET release supports 1.13.
-            if v"1.11" <= VERSION < v"1.13.0-"
-                # Static analysis over the package's own modules. The union-split
-                # false positives that used to block this — a workspace
-                # `@views`/`view` over a field typed `Array{T,3}` / `Matrix{T}` /
-                # `Vector{PDMat{T,Matrix{T}}}` inferring a spurious
-                # `Union{SubArray{Any,…}, SubArray{T,…}}` whose `Any` branch
-                # failed to match `BLAS.ger!` / `BLAS.syrk!` / `X_A_Xt` /
-                # `logpdf` / `Symmetrize!` — are cleared by asserting each view
-                # result `::SubArray{T}` at the call site (see the NOTE atop
-                # `kalman.jl` / `sufficient_statistics.jl`).
+            # Skip pre-release versions of Julia, which JET does not yet support.
+            if (v"1.11" <= VERSION) && isempty(VERSION.prerelease)
                 JET.test_package(StateSpaceDynamics; target_modules=(StateSpaceDynamics,))
             end
         end

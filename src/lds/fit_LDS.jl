@@ -600,11 +600,8 @@ function _precompute_shared_cov!(
         p_smooth_v, p_smooth_tt1_v, neg_sub_v, neg_diag_v, neg_super_v, btd
     )
 
-    # `::SubArray{T}` narrows JET's `view`-eltype union over the `Array{T,3}`
-    # workspace field so `Symmetrize!`'s typed signature matches (cf. the NOTE
-    # in kalman.jl / sufficient_statistics.jl).
     for i in 1:tsteps
-        Symmetrize!(view(p_smooth_shared, :, :, i)::SubArray{T})
+        Symmetrize!(tview(p_smooth_shared, :, :, i))
     end
 
     return gaussian_entropy_from_logdet(logdet_precision, D * tsteps)
@@ -832,9 +829,7 @@ function _smooth_mean_only_batched!(
     x_flat = reshape(sws.batched_x_mat, n_active, ntrials)
     @. grad_flat = -grad_flat
 
-    # `::SubArray{Matrix{T}}` narrows JET's `view`-eltype union over the
-    # `Vector{Matrix{T}}` field so `block_tridiagonal_backsubst!` matches.
-    neg_sub_v = view(sws.btd.neg_sub, 1:(tsteps - 1))::SubArray{Matrix{T}}
+    neg_sub_v = tview(sws.btd.neg_sub, 1:(tsteps - 1))
     block_tridiagonal_backsubst!(x_flat, neg_sub_v, grad_flat, sws.btd, tsteps)
 
     # x_flat now holds the Newton step. Update each tfs[trial].x_smooth.
