@@ -50,16 +50,31 @@ function joint_loglikelihood!(
     ux::Union{Nothing,AbstractMatrix{T0}}=nothing,
     uy::Union{Nothing,AbstractMatrix{T0}}=nothing,
 ) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:GaussianObservationModel{T0}}
-    tsteps = size(y, 2)
     ll_vec = ws.ll_vec
 
-    for t in 1:tsteps
-        ll_t = observationloglikelihood!(ws, ws.temp_dy, ws.temp_solve_R, x, y, t, lds, uy)
-        ll_t += stateloglikelihood!(ws, ws.temp_dx, ws.temp_solve_Q, x, t, lds, ux)
-        ll_vec[t] = ll_t
+    for t in eachindex(ll_vec)
+        ll_vec[t] = observationloglikelihood!(
+            ws, ws.temp_dy, ws.temp_solve_R, x, y, t, lds, uy
+        )
+        ll_vec[t] += stateloglikelihood!(ws, ws.temp_dx, ws.temp_solve_Q, x, t, lds, ux)
     end
 
     return ll_vec
+end
+
+# type promotion wrapper for the common case of mixed-type inputs (e.g. Float32 latent states, Float64 observations)
+function joint_loglikelihood(
+    x::AbstractMatrix{XT},
+    lds::LinearDynamicalSystem{T,S,O},
+    y::AbstractMatrix{YT},
+    ux::Union{Nothing,AbstractMatrix{YT}}=nothing,
+    uy::Union{Nothing,AbstractMatrix{YT}}=nothing,
+) where {T<:Real,YT<:Real,XT<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+    tsteps = size(y, 2)
+    WT = promote_type(T, YT, XT)
+    ws = SmoothWorkspace(WT, lds.latent_dim, lds.obs_dim, tsteps)
+    compute_smooth_constants!(ws, lds)
+    return joint_loglikelihood!(ws, x, lds, y, ux, uy)
 end
 
 """
@@ -502,15 +517,15 @@ function _precompute_shared_cov!(
     neg_sub_v = view(btd.neg_sub, 1:(tsteps - 1))
     neg_super_v = view(btd.neg_super, 1:(tsteps - 1))
 
-    p_smooth_v = view(p_smooth_shared, :, :, (1:tsteps))
-    p_smooth_tt1_v = view((sws.p_smooth_tt1_shared::Array{T,3}), :, :, (1:tsteps))
+    p_smooth_v = view(p_smooth_shared,:,:,(1:tsteps))
+    p_smooth_tt1_v = view((sws.p_smooth_tt1_shared::Array{T,3}),:,:,(1:tsteps))
 
     logdet_precision = block_tridiagonal_inverse_logdet!(
         p_smooth_v, p_smooth_tt1_v, neg_sub_v, neg_diag_v, neg_super_v, btd
     )
 
     for i in 1:tsteps
-        Symmetrize!(tview(p_smooth_shared, :, :, i))
+        Symmetrize!(tview(p_smooth_shared,:,:,i))
     end
 
     return gaussian_entropy_from_logdet(logdet_precision, D * tsteps)
@@ -1010,7 +1025,7 @@ function fit!(
     # reshape y from [obs_dim, tsteps, trials] to vector of matrices if needed
     if ndims(y) == 3
         obs_dim, tsteps, ntrials = size(y)
-        y_vec = [view(y, :, :, i) for i in 1:ntrials]
+        y_vec = [view(y,:,:,i) for i in 1:ntrials]
         return fit!(lds, y_vec; kwargs...)
     elseif ndims(y) == 2
         # single trial case, wrap in vector
@@ -1029,16 +1044,6 @@ function smooth!(
     npool = Threads.maxthreadid()
     sws_pool = [SmoothWorkspace(T, lds.latent_dim, lds.obs_dim, T_max) for _ in 1:npool]
     return smooth!(lds, tfs, y, sws_pool)
-end
-
-function joint_loglikelihood(
-    x::AbstractMatrix{XT}, lds::LinearDynamicalSystem{T,S,O}, y::AbstractMatrix{YT}
-) where {T<:Real,YT<:Real,XT<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
-    tsteps = size(y, 2)
-    WT = promote_type(T, YT, XT)
-    ws = SmoothWorkspace(WT, lds.latent_dim, lds.obs_dim, tsteps)
-    compute_smooth_constants!(ws, lds)
-    return joint_loglikelihood!(ws, x, lds, y)
 end
 
 """
