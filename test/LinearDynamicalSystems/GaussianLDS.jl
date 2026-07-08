@@ -1007,3 +1007,56 @@ function test_gaussian_gradient_nondiag()
     @test norm(g - g_num) < 1e-8
     return nothing
 end
+
+function test_gaussian_hessian_nondiag()
+    # Hessian companion to `test_gaussian_gradient_nondiag`: non-diagonal
+    # Q/P0/R plus control inputs on both sides, checked against
+    # ForwardDiff.hessian through the kernel-based joint_loglikelihood!.
+    # Also verifies the Gaussian Hessian is input-independent (the analytic
+    # path never sees ux/uy; the numerical path differentiates with them).
+    rng = StableRNG(4321)
+    D_lat, p_obs, T_steps = 2, 3, 10
+
+    A_nd = [0.9 0.1; -0.05 0.85]
+    Q_nd = [0.5 0.2; 0.2 0.4]
+    b_nd = [0.1, -0.1]
+    x0_nd = [0.5, -0.5]
+    P0_nd = [1.0 0.3; 0.3 0.8]
+    B_nd = randn(rng, D_lat, 2)
+    C_nd = randn(rng, p_obs, D_lat)
+    R_nd = [0.6 0.1 0.0; 0.1 0.5 0.05; 0.0 0.05 0.7]
+    d_nd = [0.1, 0.2, -0.1]
+    D_obs_nd = randn(rng, p_obs, 1)
+
+    sm = GaussianStateModel(; A=A_nd, Q=Q_nd, b=b_nd, x0=x0_nd, P0=P0_nd, B=B_nd)
+    om = GaussianObservationModel(; C=C_nd, R=R_nd, d=d_nd, D=D_obs_nd)
+    lds = LinearDynamicalSystem(;
+        state_model=sm,
+        obs_model=om,
+        latent_dim=D_lat,
+        obs_dim=p_obs,
+        fit_bool=fill(true, 6),
+    )
+
+    x = randn(rng, D_lat, T_steps)
+    y = randn(rng, p_obs, T_steps)
+    ux = randn(rng, 2, T_steps)
+    uy = randn(rng, 1, T_steps)
+
+    ws = StateSpaceDynamics.SmoothWorkspace(Float64, D_lat, p_obs, T_steps)
+    StateSpaceDynamics.compute_smooth_constants!(ws, lds)
+    StateSpaceDynamics.Hessian!(ws, lds, y, x)
+    hess = block_tridgm(ws.btd.H_diag, ws.btd.H_super, ws.btd.H_sub)
+
+    f =
+        xv -> begin
+            xm = reshape(xv, D_lat, T_steps)
+            wsd = StateSpaceDynamics.SmoothWorkspace(eltype(xv), D_lat, p_obs, T_steps)
+            StateSpaceDynamics.compute_smooth_constants!(wsd, lds)
+            sum(StateSpaceDynamics.joint_loglikelihood!(wsd, xm, lds, y, ux, uy))
+        end
+    hess_num = ForwardDiff.hessian(f, vec(x))
+
+    @test norm(hess_num - hess) < 1e-8
+    return nothing
+end

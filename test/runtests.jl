@@ -145,6 +145,7 @@ using SSDTest
             @testset "Log-likelihood" begin
                 test_joint_loglikelihood_matches_mvnormal()
                 test_gaussian_gradient_nondiag()
+                test_gaussian_hessian_nondiag()
             end
 
             @testset "EM Algorithm" begin
@@ -209,6 +210,7 @@ using SSDTest
                 test_joint_loglikelihood_matches_distributions()
                 test_newton_objective_is_joint_loglikelihood()
                 test_poisson_gradient_nondiag()
+                test_poisson_hessian_nondiag()
             end
 
             @testset "Priors - Poisson LDS" begin

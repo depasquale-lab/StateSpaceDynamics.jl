@@ -7,7 +7,8 @@ Poisson LDS
     Gradient:       Gradient!(ws, lds, y, x)
                     gradient_observation_model!(grad, C, d, tfs, y, sws_pool)
 
-    Hessian:        Hessian!(ws, lds, y, x)
+    Hessian:        observationhessian!(out, cc, z, λ, x, y, t, lds[, α])
+                    (generic Hessian! lives in continuous_latents.jl)
 
     Smooth:         smooth!(lds, fs, y, sws)
                     smooth!(lds, tfs, y, sws_pool)
@@ -202,83 +203,41 @@ function observationgradient!(
 end
 
 """
-    Hessian!(ws, lds, y, x; w=nothing)
+    observationhessian!(out, cc, z, λ, x, y, t, lds[, α])
 
-In-place version of `Hessian` for Poisson LDS that writes blocks into the workspace
-and updates the sparse matrix values. Returns the workspace's sparse matrix.
+Poisson emission curvature: `out .+= α .* (-C' diag(λ_t) C)` with
+`λ_t = exp(C x_t + d)` — independent of `y` for the canonical log link.
+Method of the generic `observationhessian!` dispatch point (see
+`continuous_latents.jl`); `z` and `λ` are `obs_dim` scratch for the linear
+predictor and the rate, `cc` is unused (no covariance in the emission term).
 """
-function Hessian!(
-    ws::BlockTridiagonalWorkspace{T},
-    lds::LinearDynamicalSystem{T,S,O},
-    y::AbstractMatrix{T},
+function observationhessian!(
+    out::AbstractMatrix{T},
+    ::LDSLikelihoodCache{T},
+    z::AbstractVector{T},
+    λ::AbstractVector{T},
     x::AbstractMatrix{T},
-    w::Union{Nothing,AbstractVector{T}}=nothing,
-) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    if w === nothing
-        w = ones(T, size(y, 2))
-    end
+    y::AbstractMatrix{T0},
+    t::Int,
+    lds::LinearDynamicalSystem{T0,S,O},
+    α::T=one(T),
+) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:PoissonObservationModel{T0}}
+    C = lds.obs_model.C
+    d = lds.obs_model.d
+    obs_dim, latent_dim = size(C)
 
-    A, Q = lds.state_model.A, lds.state_model.Q
-    C, d = lds.obs_model.C, lds.obs_model.d
-    x0, P0 = lds.state_model.x0, lds.state_model.P0
+    @views mul!(z, C, x[:, t])
+    @. λ = exp(z + d)
 
-    tsteps = size(y, 2)
-    Q_chol = cholesky(Symmetric(Q))
-    P0_chol = cholesky(Symmetric(P0))
-
-    H_sub_entry = Q_chol \ A
-    H_super_entry = permutedims(H_sub_entry)
-
-    for i in 1:(tsteps - 1)
-        copyto!(ws.H_sub[i], H_sub_entry)
-        copyto!(ws.H_super[i], H_super_entry)
-    end
-
-    state_dim = size(A, 1)
-    obs_dim = size(C, 1)
-    λ = zeros(T, obs_dim)
-    z = similar(λ)
-    poisson_tmp = Matrix{T}(undef, state_dim, state_dim)
-
-    function calculate_poisson_hess!(out::Matrix{T}, C::Matrix{T}, λ::Vector{T}) where {T}
-        n, p = size(C)
-        for j in 1:p, i in 1:p
-            acc = zero(T)
-            for k in 1:n
-                acc += C[k, i] * λ[k] * C[k, j]
-            end
-            out[i, j] = -acc
+    # out .+= α * (-C' diag(λ) C), allocation-free (O(latent² · obs) per call).
+    for j in 1:latent_dim, i in 1:latent_dim
+        acc = zero(T)
+        for k in 1:obs_dim
+            acc += C[k, i] * λ[k] * C[k, j]
         end
+        out[i, j] -= α * acc
     end
-
-    I_mat = Matrix{T}(I, state_dim, state_dim)
-    xt_given_xt_1 = -(Q_chol \ I_mat)
-    xt1_given_xt = -A' * (Q_chol \ A)
-    x_t = -(P0_chol \ I_mat)
-
-    Q_middle = xt1_given_xt + xt_given_xt_1
-    Q_first = x_t + xt1_given_xt
-    Q_last = xt_given_xt_1
-
-    @views for t in 1:tsteps
-        mul!(z, C, x[:, t])
-        @. λ = exp(z + d)
-
-        if t == 1
-            ws.H_diag[t] .= Q_first
-        elseif t == tsteps
-            ws.H_diag[t] .= Q_last
-        else
-            ws.H_diag[t] .= Q_middle
-        end
-
-        calculate_poisson_hess!(poisson_tmp, C, λ)
-        ws.H_diag[t] .+= poisson_tmp
-    end
-
-    block_tridgm!(ws)
-
-    return ws.H_sparse
+    return out
 end
 
 """
@@ -544,70 +503,6 @@ function elbo!(
 end
 
 """
-    _fill_hessian_blocks_poisson!(ws, lds, x)
-
-Fill the Hessian block diagonal and off-diagonal entries for Poisson LDS.
-Uses pre-computed state model terms from `compute_smooth_constants!`
-and computes the x-dependent Poisson observation term per-timestep.
-"""
-function _fill_hessian_blocks_poisson!(
-    ws::SmoothWorkspace{T}, lds::LinearDynamicalSystem{T,S,O}, x::AbstractMatrix{T}
-) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    tsteps = size(x, 2)
-    btd = ws.btd
-    C = lds.obs_model.C
-    d = lds.obs_model.d
-    obs_dim, latent_dim = size(C)
-
-    # Diagonal templates (the state-side part is constant for all t; we
-    # build them into pre-existing workspace scratch to avoid the two
-    # `Q_middle = ... .+ ...` / `Q_first = ... .+ ...` allocations).
-    Q_middle = ws.elbo_temp                              # (D × D) scratch
-    Q_first = ws.elbo_temp2                              # (D × D) scratch
-    @. Q_middle = ws.xt1_given_xt + ws.xt_given_xt_1
-    @. Q_first = ws.x_t + ws.xt1_given_xt
-    Q_last = ws.xt_given_xt_1                            # already at-rest in ws
-
-    # Fill sub/super-diagonal blocks (constant for all timesteps)
-    for i in 1:(tsteps - 1)
-        copyto!(btd.H_sub[i], ws.H_sub_entry)
-        copyto!(btd.H_super[i], ws.H_super_entry)
-    end
-
-    # Reuse existing obs-dim workspace scratch instead of allocating
-    # fresh per-call `λ` / `z` vectors. `h_obs` / `rho_obs` are owned
-    # by `Q_obs!`, which isn't on the Hessian-construction call path.
-    λ = ws.h_obs
-    z = ws.rho_obs
-
-    @views for t in 1:tsteps
-        # Start with state model contribution
-        if t == 1
-            copyto!(btd.H_diag[t], Q_first)
-        elseif t == tsteps
-            copyto!(btd.H_diag[t], Q_last)
-        else
-            copyto!(btd.H_diag[t], Q_middle)
-        end
-
-        # Add Poisson observation term: -C' * diag(λ) * C
-        mul!(z, C, x[:, t])
-        @. λ = exp(z + d)
-
-        # Compute -C' * diag(λ) * C and add to diagonal block
-        for j in 1:latent_dim, i in 1:latent_dim
-            acc = zero(T)
-            for k in 1:obs_dim
-                acc += C[k, i] * λ[k] * C[k, j]
-            end
-            btd.H_diag[t][i, j] -= acc
-        end
-    end
-
-    return nothing
-end
-
-"""
     smooth!(lds, fs, y, sws; max_iter=20, tol=1e-6)
 
 Poisson LDS smoothing using iterative Newton with block tridiagonal solve.
@@ -664,7 +559,7 @@ function smooth!(
     end
 
     build_hess! = (xcur) -> begin
-        _fill_hessian_blocks_poisson!(sws, lds, xcur)
+        Hessian!(sws, lds, y, xcur)
         _negate_blocks!(btd, tsteps)
         return nothing
     end
@@ -696,7 +591,7 @@ function smooth!(
         tol=tol,
     )
 
-    _fill_hessian_blocks_poisson!(sws, lds, x)
+    Hessian!(sws, lds, y, x)
     _negate_blocks!(btd, tsteps)
 
     logdet_precision = block_tridiagonal_inverse_logdet!(

@@ -61,12 +61,8 @@ function test_hessian_common(lds, x, y)
         yi = y[i][:, 1:tsteps_test]
         xi = x[i][:, 1:tsteps_test]
 
-        if lds.obs_model isa StateSpaceDynamics.GaussianObservationModel
-            StateSpaceDynamics.compute_smooth_constants!(ws, lds)
-            StateSpaceDynamics.Hessian!(ws, lds, yi, xi)
-        else
-            StateSpaceDynamics.Hessian!(ws.btd, lds, yi, xi)
-        end
+        StateSpaceDynamics.compute_smooth_constants!(ws, lds)
+        StateSpaceDynamics.Hessian!(ws, lds, yi, xi)
 
         btd = ws.btd
         @test length(btd.H_diag) == tsteps_test

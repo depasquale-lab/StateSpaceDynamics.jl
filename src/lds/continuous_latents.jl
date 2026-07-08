@@ -8,6 +8,9 @@ Continuous (Linear Gaussian) latents
     Gradient kernels:       observationgradient!(out, cc, buf, x, y, t, lds[, uy])
                             Gradient!(grad, ws, lds, y, x[, ux, uy])
 
+    Hessian kernels:        observationhessian!(out, cc, buf1, buf2, x, y, t, lds[, α])
+                            Hessian!(sws, lds, y, x)
+
     E-Step: Q_state!(sws, lds, suf)
 
     M-Step: update_initial_state_mean!(lds, suf)
@@ -251,6 +254,98 @@ function Gradient!(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     grad = view(ws.grad_buf, :, 1:size(x, 2))
     return Gradient!(grad, ws, lds, y, x, ux, uy)
+end
+
+"""
+    observationhessian!(out, cc, buf1, buf2, x, y, t, lds[, α])
+
+Emission-model contribution `∂² log p(y_t | x_t) / ∂x_t²` **accumulated** into
+`out` (`latent_dim × latent_dim`) with weight `α`: `out .+= α .* hess_t`. The
+add-with-weight semantics let the same kernel serve both the single-LDS
+`Hessian!` (α = 1, `out` pre-filled with the state-side block) and the SLDS
+`Hessian_blocks!` (α = w[k,t], accumulating across mixture components).
+
+Dispatches on the observation model type `O` (via
+`lds::LinearDynamicalSystem{T,S,O}`) — the curvature companion to
+`observationgradient!`: a custom observation model plugs into `Hessian!` (and
+the SLDS `Hessian_blocks!`) by adding a method here, without touching the
+shared state-side Hessian blocks.
+
+Uniform interface:
+- `cc`: an [`LDSLikelihoodCache`](@ref) with Cholesky-derived templates
+  (Gaussian uses the cached `yt_given_xt = -C'R⁻¹C`; Poisson ignores it).
+- `buf1`, `buf2`: two `obs_dim` scratch vectors (overwritten); each model uses
+  what it needs (Gaussian: none; Poisson: linear predictor + rate).
+- `y` is unused by the built-in models (Gaussian/Poisson-canonical curvature is
+  observation-independent) but part of the interface for models whose curvature
+  depends on `y`.
+
+See the `GaussianObservationModel` / `PoissonObservationModel` methods in
+`fit_LDS.jl` / `fit_PLDS.jl` for the pattern to follow.
+"""
+function observationhessian! end
+
+"""
+    _state_hessian_blocks!(btd, cc, tsteps)
+
+Write the state-side (prior/transition) Hessian blocks — identical for every
+observation model — into `btd.H_diag` / `H_sub` / `H_super`:
+
+- `H_sub[i] = Q⁻¹A`, `H_super[i] = (Q⁻¹A)'` for all i
+- `H_diag[1] = -A'Q⁻¹A - P0⁻¹`
+- `H_diag[t] = -A'Q⁻¹A - Q⁻¹` (middle), `H_diag[T] = -Q⁻¹`
+
+Uses the templates cached on `cc` by `compute_smooth_constants!` /
+`compute_slds_constants!`. Overwrites the diagonal blocks — callers add the
+emission curvature afterwards via `observationhessian!`. Requires `tsteps ≥ 2`
+(matching the Newton smoother's contract).
+"""
+function _state_hessian_blocks!(btd, cc::LDSLikelihoodCache{T}, tsteps::Int) where {T<:Real}
+    for i in 1:(tsteps - 1)
+        copyto!(btd.H_sub[i], cc.H_sub_entry)
+        copyto!(btd.H_super[i], cc.H_super_entry)
+    end
+
+    btd.H_diag[1] .= cc.xt1_given_xt .+ cc.x_t
+    for t in 2:(tsteps - 1)
+        btd.H_diag[t] .= cc.xt1_given_xt .+ cc.xt_given_xt_1
+    end
+    btd.H_diag[tsteps] .= cc.xt_given_xt_1
+
+    return nothing
+end
+
+"""
+    Hessian!(sws, lds, y, x)
+
+Fill `sws.btd.H_diag`, `H_sub`, `H_super` with the complete-data log-likelihood
+Hessian blocks w.r.t. the latent path (length derived from `size(y, 2)`).
+Returns nothing — the sparse form is **not** built here because the Newton
+solver consumes blocks directly. Workspace buffers may be sized for a longer
+trial; only the first `tsteps` blocks are written, which keeps this hot path
+safe for ragged-length fitting.
+
+Generic over the observation model — the state-side blocks come from
+`_state_hessian_blocks!` and the emission curvature from
+`observationhessian!`, so supporting a new observation model here only
+requires a new `observationhessian!` method, not a new `Hessian!` method.
+Requires `compute_smooth_constants!(sws, lds)` to have been called.
+"""
+function Hessian!(
+    sws::SmoothWorkspace{T},
+    lds::LinearDynamicalSystem{T,S,O},
+    y::AbstractMatrix{T},
+    x::AbstractMatrix{T},
+) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+    tsteps = size(y, 2)
+    btd = sws.btd
+
+    _state_hessian_blocks!(btd, sws, tsteps)
+    for t in 1:tsteps
+        observationhessian!(btd.H_diag[t], sws, sws.rho_obs, sws.h_obs, x, y, t, lds)
+    end
+
+    return nothing
 end
 
 """

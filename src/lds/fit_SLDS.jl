@@ -390,7 +390,7 @@ function Hessian_blocks!(
     x::AbstractMatrix{T},
     w::AbstractMatrix{T},
 ) where {T<:Real}
-    latent_dim, Tsteps = size(x)
+    Tsteps = size(x, 2)
     K = length(slds.LDSs)
 
     H_diag = ws.btd.H_diag
@@ -422,31 +422,7 @@ function Hessian_blocks!(
         if Tsteps == 1
             α = w[k, 1]
             @. H_diag[1] += α * neg_P0_inv
-
-            if lds_k.obs_model isa GaussianObservationModel{T}
-                @. H_diag[1] += α * cc.yt_given_xt
-            elseif lds_k.obs_model isa PoissonObservationModel{T}
-                C = cc.C
-                d = cc.d  # cached Poisson log-link intercept
-
-                mul!(z, C, x[:, 1])
-                @. λ = exp(z + d)
-
-                for j in 1:latent_dim, i in 1:latent_dim
-                    acc = zero(T)
-                    for o in eachindex(λ)
-                        acc += C[o, i] * λ[o] * C[o, j]
-                    end
-                    H_diag[1][i, j] -= α * acc
-                end
-            else
-                throw(
-                    ArgumentError(
-                        "Unsupported observation model $(typeof(lds_k.obs_model))"
-                    ),
-                )
-            end
-
+            observationhessian!(H_diag[1], cc, z, λ, x, y, 1, lds_k, α)
             continue
         end
 
@@ -473,35 +449,11 @@ function Hessian_blocks!(
         # - At t=T: current-role from factor at T weighted by w[k,T]
         @. H_diag[Tsteps] += w[k, Tsteps] * neg_Q_inv
 
-        # Emission curvature contributions
-        if lds_k.obs_model isa GaussianObservationModel{T}
-            for t in 1:Tsteps
-                @. H_diag[t] += w[k, t] * cc.yt_given_xt   # -C'R^{-1}C
-            end
-
-        elseif lds_k.obs_model isa PoissonObservationModel{T}
-            C = cc.C
-            d = cc.d  # cached Poisson log-link intercept
-
-            # Add -w[k,t] * C' diag(λ_t) C where λ_t = exp(C x_t + d)
-            # This implementation is allocation-free but O(latent^2 * obs) per time. Fix later.
-            for t in 1:Tsteps
-                α = w[k, t]
-
-                mul!(z, C, x[:, t])
-                @. λ = exp(z + d)
-
-                for j in 1:latent_dim, i in 1:latent_dim
-                    acc = zero(T)
-                    for o in eachindex(λ)
-                        acc += C[o, i] * λ[o] * C[o, j]
-                    end
-                    H_diag[t][i, j] -= α * acc
-                end
-            end
-
-        else
-            throw(ArgumentError("Unsupported observation model $(typeof(lds_k.obs_model))"))
+        # Emission curvature contributions, weighted by w[k,t]. Shared kernel;
+        # dispatches on the observation model (Gaussian: cached -C'R⁻¹C,
+        # Poisson: -C' diag(λ_t) C with λ_t = exp(C x_t + d)).
+        for t in 1:Tsteps
+            observationhessian!(H_diag[t], cc, z, λ, x, y, t, lds_k, w[k, t])
         end
     end
 

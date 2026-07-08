@@ -7,7 +7,8 @@ Gaussian LDS
     Gradient:       Gradient!(ws, lds, y, x)
                     Gradient_batched!(ws, lds, y, x, ux, uy)
 
-    Hessian:        Hessian!(sws, lds, y, x)
+    Hessian:        observationhessian!(out, cc, _, _, x, y, t, lds[, α])
+                    (generic Hessian! lives in continuous_latents.jl)
 
     Smooth:         smooth!(lds, fs, y, sws)
                     smooth!(lds, tfs, y, sws_pool)
@@ -129,42 +130,39 @@ function observationgradient!(
 end
 
 """
-    Hessian!(sws, lds, y, x)
+    observationhessian!(out, cc, _, _, x, y, t, lds[, α])
 
-Fill `sws.btd.H_diag`, `H_sub`, `H_super` with the log-likelihood Hessian blocks for
-the active trial (length derived from `size(y, 2)`). Returns nothing — the sparse form
-is **not** built here because the Newton solver consumes blocks directly.
-Workspace buffers may be sized for a longer trial; only the first `tsteps` blocks are
-written, which keeps this hot path safe for ragged-length fitting.
+Gaussian emission curvature: `out .+= α .* (-C'R⁻¹C)`, using the cached
+`yt_given_xt = -C'R⁻¹C` from `cc` — constant in both `x` and `y`. Method of
+the generic `observationhessian!` dispatch point (see
+`continuous_latents.jl`); both scratch buffers are unused.
 """
-function Hessian!(
-    sws::SmoothWorkspace{T},
-    lds::LinearDynamicalSystem{T,S,O},
-    y::AbstractMatrix{T},
+function observationhessian!(
+    out::AbstractMatrix{T},
+    cc::LDSLikelihoodCache{T},
+    ::AbstractVector{T},
+    ::AbstractVector{T},
     x::AbstractMatrix{T},
-) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
-    return _fill_hessian_blocks!(sws, size(y, 2))
+    y::AbstractMatrix{T0},
+    t::Int,
+    lds::LinearDynamicalSystem{T0,S,O},
+    α::T=one(T),
+) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:GaussianObservationModel{T0}}
+    @. out += α * cc.yt_given_xt
+    return out
 end
 
 # Length-only Hessian assembly. The BT Hessian for a Gaussian LDS is
 # observation-independent — its blocks depend only on `A, Q, C, R, P0`
 # (already cached in `sws` by `compute_smooth_constants!`) and the trial
 # length. Factored out so the equal-length multi-trial fast path can fill
-# blocks without constructing a dummy `y` matrix.
+# blocks without constructing dummy `y`/`x` matrices for `Hessian!`.
 function _fill_hessian_blocks!(sws::SmoothWorkspace{T}, tsteps::Int) where {T<:Real}
     btd = sws.btd
-
-    for i in 1:(tsteps - 1)
-        copyto!(btd.H_sub[i], sws.H_sub_entry)
-        copyto!(btd.H_super[i], sws.H_super_entry)
+    _state_hessian_blocks!(btd, sws, tsteps)
+    for t in 1:tsteps
+        btd.H_diag[t] .+= sws.yt_given_xt
     end
-
-    btd.H_diag[1] .= sws.yt_given_xt .+ sws.xt1_given_xt .+ sws.x_t
-    for i in 2:(tsteps - 1)
-        btd.H_diag[i] .= sws.yt_given_xt .+ sws.xt_given_xt_1 .+ sws.xt1_given_xt
-    end
-    btd.H_diag[tsteps] .= sws.yt_given_xt .+ sws.xt_given_xt_1
-
     return nothing
 end
 
