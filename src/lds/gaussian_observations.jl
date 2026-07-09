@@ -142,9 +142,11 @@ function update_C_d!(
     CD_prior = lds.obs_model.CD_prior
 
     if CD_prior === nothing
-        # Zero-alloc OLS fast path. `sws.Syz` is exactly (p × obs_reg_dim);
-        # its transpose is the (obs_reg_dim × p) view we ldiv! into. After
-        # the in-place solve, `sws.Syz` itself holds V = [C d D].
+        #=
+        Zero-alloc OLS fast path. `sws.Syz` is exactly (p × obs_reg_dim);
+        its transpose is the (obs_reg_dim × p) view we ldiv! into. After
+        the in-place solve, `sws.Syz` itself holds V = [C d D].
+        =#
         Syz_T = transpose(sws.Syz)
         copyto!(Syz_T, suf.obs_xy)
         ldiv!(suf.obs_xx[].chol, Syz_T)
@@ -185,17 +187,21 @@ function update_R!(
     copyto!(S_res, suf.obs_yy[].mat)
     S_res .-= Vxy
     S_res .-= Vxy'
-    # In-place X_A_Xt = V · obs_xx · V'. Mirror PDMats' X_A_Xt: compute
-    # `VL = V · L` (obs_xx = L·L' via the cached Cholesky) and add
-    # `VL · VL'` to the upper triangle via a symmetric rank-k BLAS call,
-    # then reflect upper → lower for exact symmetry. (`mul!` + `Symmetrize!`
-    # would halve the off-diagonal contribution because gemm can produce
-    # 1-ULP-asymmetric output that averaging then collapses.)
+    #=
+    In-place X_A_Xt = V · obs_xx · V'. Mirror PDMats' X_A_Xt: compute
+    `VL = V · L` (obs_xx = L·L' via the cached Cholesky) and add
+    `VL · VL'` to the upper triangle via a symmetric rank-k BLAS call,
+    then reflect upper → lower for exact symmetry. (`mul!` + `Symmetrize!`
+    would halve the off-diagonal contribution because gemm can produce
+    1-ULP-asymmetric output that averaging then collapses.)
+    =#
     VL = sws.Syz                               # (p × obs_reg_dim) scratch
-    # See `update_Q!`: `BLAS.trmm!` on the raw upper-stored
-    # `chol.factors` (with transa='T' since L = U') avoids the
-    # `LowerTriangular(...)` wrapper alloc that `mul!(VL, V, chol.L)`
-    # would do.
+    #=
+    See `update_Q!`: `BLAS.trmm!` on the raw upper-stored
+    `chol.factors` (with transa='T' since L = U') avoids the
+    `LowerTriangular(...)` wrapper alloc that `mul!(VL, V, chol.L)`
+    would do.
+    =#
     copyto!(VL, V)
     BLAS.trmm!('R', 'U', 'T', 'N', one(T), suf.obs_xx[].chol.factors, VL)
     mul!(S_res, VL, transpose(VL), one(T), one(T))

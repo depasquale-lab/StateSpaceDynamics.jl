@@ -36,9 +36,11 @@ include("lds/workspaces.jl")                        # FilterSmooth / SufficientS
 include("utils/show.jl")
 include("utils/validation.jl")
 
-# Shared latent inference machinery.
-# kalman.jl is retained for the Kalman filter + marginal likelihood (and future
-# particle-filter use); the Kalman path is no longer a selectable E-step backend.
+#=
+Shared latent inference machinery.
+kalman.jl is retained for the Kalman filter + marginal likelihood (and future
+particle-filter use); the Kalman path is no longer a selectable E-step backend.
+=#
 include("stats/preprocessing.jl")           # PPCA (standalone model)
 include("stats/kalman.jl")
 include("stats/sufficient_statistics.jl")

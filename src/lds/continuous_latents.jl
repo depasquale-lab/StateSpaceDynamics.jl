@@ -406,9 +406,11 @@ function Q_state!(
     fill!(sum_mu_t, zero(T))
     fill!(sum_mu_tm1, zero(T))
 
-    # Input-specific accumulators (only allocated when ux_dim > 0). Allocating
-    # 0-element arrays here would still cost an `Array` struct each call,
-    # which adds up to thousands of trivial allocations across a fit.
+    #=
+    Input-specific accumulators (only allocated when ux_dim > 0). Allocating
+    0-element arrays here would still cost an `Array` struct each call,
+    which adds up to thousands of trivial allocations across a fit.
+    =#
     has_input = ux_dim > 0
     sum_u = has_input ? zeros(T, ux_dim) : Vector{T}()
     sum_mu_t_u = has_input ? zeros(T, D, ux_dim) : Matrix{T}(undef, 0, 0)
@@ -447,9 +449,11 @@ function Q_state!(
     mul!(temp, b, ws.tmp1', one(T), one(T))
     mul!(temp, b, b', T(tstep - 1), one(T))
 
-    # Input cross terms (`Bu_{t-1} := B u_{t-1}`). All terms here are
-    # contributions to `Σ_t E[(x_t - A x_{t-1} - b - B u_{t-1})(...)']` that
-    # involve at least one `B u_{t-1}` factor.
+    #=
+    Input cross terms (`Bu_{t-1} := B u_{t-1}`). All terms here are
+    contributions to `Σ_t E[(x_t - A x_{t-1} - b - B u_{t-1})(...)']` that
+    involve at least one `B u_{t-1}` factor.
+    =#
     if ux_dim > 0
         # -= sum_mu_t_u · B'  and  -= B · sum_mu_t_u'
         mul!(temp, sum_mu_t_u, B', -one(T), one(T))
@@ -617,10 +621,12 @@ function update_A_b!(
     AB_prior = lds.state_model.AB_prior
 
     if AB_prior === nothing
-        # Zero-alloc OLS fast path. `sws.Sxz` is exactly (D × dyn_reg_dim);
-        # its transpose is the (dyn_reg_dim × D) view we ldiv! into. After
-        # the in-place solve, `sws.Sxz` itself holds the transposed solution
-        # `transpose(dyn_xx \ dyn_xy)` = the W = [A b B] regression matrix.
+        #=
+        Zero-alloc OLS fast path. `sws.Sxz` is exactly (D × dyn_reg_dim);
+        its transpose is the (dyn_reg_dim × D) view we ldiv! into. After
+        the in-place solve, `sws.Sxz` itself holds the transposed solution
+        `transpose(dyn_xx \ dyn_xy)` = the W = [A b B] regression matrix.
+        =#
         Sxz_T = transpose(sws.Sxz)
         copyto!(Sxz_T, suf.dyn_xy)
         ldiv!(suf.dyn_xx[].chol, Sxz_T)
@@ -661,21 +667,25 @@ function update_Q!(
     copyto!(S_res, suf.dyn_yy[].mat)
     S_res .-= Wxy
     S_res .-= Wxy'
-    # In-place X_A_Xt = W · dyn_xx · W'. Mimic PDMats' X_A_Xt: compute
-    # `WL = W · L` (where dyn_xx = L·L' via the cached Cholesky) and add
-    # `WL · WL'` to the upper triangle of S_res via a symmetric rank-k
-    # BLAS call, then reflect upper → lower so the matrix is EXACTLY
-    # symmetric and positive-semidefinite by construction. (`mul!(S_res,
-    # WL, WL', 1, 1)` followed by `Symmetrize!` is *not* equivalent —
-    # BLAS gemm can produce 1-ULP-asymmetric output, and averaging then
-    # halves the off-diagonal X_A_Xt contribution.)
+    #=
+    In-place X_A_Xt = W · dyn_xx · W'. Mimic PDMats' X_A_Xt: compute
+    `WL = W · L` (where dyn_xx = L·L' via the cached Cholesky) and add
+    `WL · WL'` to the upper triangle of S_res via a symmetric rank-k
+    BLAS call, then reflect upper → lower so the matrix is EXACTLY
+    symmetric and positive-semidefinite by construction. (`mul!(S_res,
+    WL, WL', 1, 1)` followed by `Symmetrize!` is *not* equivalent —
+    BLAS gemm can produce 1-ULP-asymmetric output, and averaging then
+    halves the off-diagonal X_A_Xt contribution.)
+    =#
     WL = sws.Sxz                               # (D × dyn_reg_dim) scratch
-    # WL = W · L where L is the lower-triangular Cholesky factor of
-    # dyn_xx. PDMats stores the *upper* factor U in `.chol.factors`
-    # (uplo='U'); L = U', so the equivalent BLAS call is
-    # `trmm!(…, 'U', 'T', …)` on the raw factor matrix. This avoids
-    # the per-call `LowerTriangular(...)` wrapper that
-    # `mul!(WL, W, chol.L)` would allocate.
+    #=
+    WL = W · L where L is the lower-triangular Cholesky factor of
+    dyn_xx. PDMats stores the *upper* factor U in `.chol.factors`
+    (uplo='U'); L = U', so the equivalent BLAS call is
+    `trmm!(…, 'U', 'T', …)` on the raw factor matrix. This avoids
+    the per-call `LowerTriangular(...)` wrapper that
+    `mul!(WL, W, chol.L)` would allocate.
+    =#
     copyto!(WL, W)
     BLAS.trmm!('R', 'U', 'T', 'N', one(T), suf.dyn_xx[].chol.factors, WL)
     mul!(S_res, WL, transpose(WL), one(T), one(T))
@@ -686,10 +696,12 @@ function update_Q!(
         Wm = W .- AB_prior.M₀
         S_res .+= Wm * AB_prior.Λ * Wm'
     end
-    # Reflect upper → lower so the matrix is exactly symmetric. (`mul!`
-    # of `WL · WL'` above can give 1-ULP-asymmetric output; mirroring
-    # the upper triangle wins back exact symmetry and preserves the
-    # mathematically-PSD upper values.)
+    #=
+    Reflect upper → lower so the matrix is exactly symmetric. (`mul!`
+    of `WL · WL'` above can give 1-ULP-asymmetric output; mirroring
+    the upper triangle wins back exact symmetry and preserves the
+    mathematically-PSD upper values.)
+    =#
     for j in 2:D, i in 1:(j - 1)
         S_res[j, i] = S_res[i, j]
     end
@@ -698,11 +710,13 @@ function update_Q!(
     if Q_prior === nothing
         S_res ./= T(suf.dyn_n)
     else
-        # iw_map(Ψ, ν, S, N, d) = (Ψ + S) / (ν + N + d + 1), inlined to
-        # avoid a fresh `(Ψ .+ S)` matrix. `Ψ` is `AbstractMatrix` at the
-        # type level (IWPrior{T,M<:AbstractMatrix} doesn't pin M on the
-        # `state_model.Q_prior` field), so we assert the concrete type
-        # locally to keep the loop type-stable.
+        #=
+        iw_map(Ψ, ν, S, N, d) = (Ψ + S) / (ν + N + d + 1), inlined to
+        avoid a fresh `(Ψ .+ S)` matrix. `Ψ` is `AbstractMatrix` at the
+        type level (IWPrior{T,M<:AbstractMatrix} doesn't pin M on the
+        `state_model.Q_prior` field), so we assert the concrete type
+        locally to keep the loop type-stable.
+        =#
         denom = Q_prior.ν + T(suf.dyn_n) + T(D + 1)
         Ψ = Q_prior.Ψ::Matrix{T}
         for i in eachindex(S_res)

@@ -445,9 +445,11 @@ function _aggregate_td_suff_stats_weighted!(
     dyn_reg_dim = D + 1 + ux_dim
     obs_reg_dim = D + 1 + uy_dim
 
-    # Clear the accumulators we'll write into. Each field is hoisted with a
-    # concrete `Matrix{T}` annotation so the BLAS.ger!/syrk! callsites below
-    # stay in JET's typed union branch (cf. `backwards_cov!`).
+    #=
+    Clear the accumulators we'll write into. Each field is hoisted with a
+    concrete `Matrix{T}` annotation so the BLAS.ger!/syrk! callsites below
+    stay in JET's typed union branch (cf. `backwards_cov!`).
+    =#
     init_xy = sws.td_init_xy::Matrix{T}
     fill!(init_xy, zero(T))
     init_yy = sws.S0_sum::Matrix{T}
@@ -519,9 +521,11 @@ function _aggregate_td_suff_stats_weighted!(
             BLAS.ger!(wt, x_next, x_next, dyn_yy)
             dyn_yy .+= wt .* P_smooth[:, :, t]
 
-            # User-input cross blocks (only when ux_dim > 0). The lower-tri
-            # mirror of the off-diagonal x_prev·ux_prev' block is filled
-            # once at the end of the function via `copytri!(dyn_xx, 'U')`.
+            #=
+            User-input cross blocks (only when ux_dim > 0). The lower-tri
+            mirror of the off-diagonal x_prev·ux_prev' block is filled
+            once at the end of the function via `copytri!(dyn_xx, 'U')`.
+            =#
             if ux_dim > 0
                 ux_trial = ux_seq[trial]
                 ux_prev = ux_trial[:, t - 1]

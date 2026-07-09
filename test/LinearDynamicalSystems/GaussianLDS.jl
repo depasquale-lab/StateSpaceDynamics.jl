@@ -527,9 +527,11 @@ function test_gaussian_update_R_matches_residual_cov(; rng=MersenneTwister(7))
 end
 
 function test_td_mn_priors_shrink(; rng=MersenneTwister(20260519))
-    # MN-prior shrinkage on [A b B] and [C d D] in the TD fit. With a strong
-    # prior centered at M₀ = 0 and Λ ≫ data, the MAP regression should pull
-    # the fitted coefficients toward 0.
+    #=
+    MN-prior shrinkage on [A b B] and [C d D] in the TD fit. With a strong
+    prior centered at M₀ = 0 and Λ ≫ data, the MAP regression should pull
+    the fitted coefficients toward 0.
+    =#
     @testset "TD: MN priors shrink coefficients toward M₀" begin
         D, p, Tt, N = 3, 4, 60, 4
 
@@ -575,11 +577,13 @@ function test_td_mn_priors_shrink(; rng=MersenneTwister(20260519))
             CD_prior=StateSpaceDynamics.MNPrior(; M₀=CD_M0, Λ=CD_Λ),
         )
         lds_p = LinearDynamicalSystem(sm_p, om_p)
-        # ELBO must be monotone under MN priors — the TD `calculate_elbo` now
-        # includes the MN log-prior trace term `-½ tr(Σ⁻¹ (W-M₀) Λ (W-M₀)')`
-        # for both [A b B] and [C d D]. Without it, the displayed ELBO drops
-        # the MN contribution and can appear non-monotone even though the
-        # underlying MAP objective is increasing.
+        #=
+        ELBO must be monotone under MN priors — the TD `calculate_elbo` now
+        includes the MN log-prior trace term `-½ tr(Σ⁻¹ (W-M₀) Λ (W-M₀)')`
+        for both [A b B] and [C d D]. Without it, the displayed ELBO drops
+        the MN contribution and can appear non-monotone even though the
+        underlying MAP objective is increasing.
+        =#
         elbos_p = fit!(lds_p, y; max_iter=20, progress=false)
         @test all(diff(elbos_p) .>= -1e-6)
 
@@ -657,9 +661,11 @@ function test_td_with_obs_inputs(; rng=MersenneTwister(20260520))
 end
 
 function test_td_ragged_multi_trial(; rng=MersenneTwister(20260521))
-    # Ragged-length multi-trial: exercises the variable-length fallback branch
-    # in smooth!/fit!. Should produce monotone ELBO and match a per-trial fit
-    # of the longest sub-batch.
+    #=
+    Ragged-length multi-trial: exercises the variable-length fallback branch
+    in smooth!/fit!. Should produce monotone ELBO and match a per-trial fit
+    of the longest sub-batch.
+    =#
     @testset "TD: ragged-length multi-trial fit" begin
         D, p = 3, 4
         Ts = [20, 30, 25, 40]   # ragged
@@ -1009,11 +1015,13 @@ function test_gaussian_gradient_nondiag()
 end
 
 function test_gaussian_hessian_nondiag()
-    # Hessian companion to `test_gaussian_gradient_nondiag`: non-diagonal
-    # Q/P0/R plus control inputs on both sides, checked against
-    # ForwardDiff.hessian through the kernel-based joint_loglikelihood!.
-    # Also verifies the Gaussian Hessian is input-independent (the analytic
-    # path never sees ux/uy; the numerical path differentiates with them).
+    #=
+    Hessian companion to `test_gaussian_gradient_nondiag`: non-diagonal
+    Q/P0/R plus control inputs on both sides, checked against
+    ForwardDiff.hessian through the kernel-based joint_loglikelihood!.
+    Also verifies the Gaussian Hessian is input-independent (the analytic
+    path never sees ux/uy; the numerical path differentiates with them).
+    =#
     rng = StableRNG(4321)
     D_lat, p_obs, T_steps = 2, 3, 10
 

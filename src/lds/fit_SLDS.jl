@@ -449,9 +449,11 @@ function Hessian_blocks!(
         # - At t=T: current-role from factor at T weighted by w[k,T]
         @. H_diag[Tsteps] += w[k, Tsteps] * neg_Q_inv
 
-        # Emission curvature contributions, weighted by w[k,t]. Shared kernel;
-        # dispatches on the observation model (Gaussian: cached -C'R⁻¹C,
-        # Poisson: -C' diag(λ_t) C with λ_t = exp(C x_t + d)).
+        #=
+        Emission curvature contributions, weighted by w[k,t]. Shared kernel;
+        dispatches on the observation model (Gaussian: cached -C'R⁻¹C,
+        Poisson: -C' diag(λ_t) C with λ_t = exp(C x_t + d)).
+        =#
         for t in 1:Tsteps
             observation_hessian!(H_diag[t], cc, z, λ, x, y, t, lds_k, w[k, t])
         end
@@ -776,9 +778,11 @@ function elbo!(
             trial_elbo += w[k, 1] * log(slds.πₖ[k] + T(1e-12))
         end
 
-        # log p(z_t | z_{t-1}) = sum_t sum_{i,j} ξ[t][i,j] * log A[i,j].
-        # ξ is indexed by global timestep; the last entry of each trial (ξ[t2]) is zero
-        # by FB convention so we iterate t1..t2-1.
+        #=
+        log p(z_t | z_{t-1}) = sum_t sum_{i,j} ξ[t][i,j] * log A[i,j].
+        ξ is indexed by global timestep; the last entry of each trial (ξ[t2]) is zero
+        by FB convention so we iterate t1..t2-1.
+        =#
         for t in t1:(t2 - 1)
             ξt = fb_storage.ξ[t]
             for i in 1:K, j in 1:K
@@ -855,10 +859,12 @@ function mstep!(
             update_initial_state_covariance!(lds_k, suf, sws)
             update_A_b!(lds_k, suf, sws)
             update_Q!(lds_k, suf, sws)
-            # SLDS owns a single sws (not a pool); wrap as a singleton so
-            # `update_observation_model!`'s threaded gradient path runs
-            # serially. SLDS Poisson is a niche path; the threading
-            # overhead isn't a meaningful win here.
+            #=
+            SLDS owns a single sws (not a pool); wrap as a singleton so
+            `update_observation_model!`'s threaded gradient path runs
+            serially. SLDS Poisson is a niche path; the threading
+            overhead isn't a meaningful win here.
+            =#
             update_observation_model!(lds_k, tfs, y, [sws], weights)
         else
             throw(ArgumentError("Unsupported observation model $(typeof(lds_k.obs_model))"))
@@ -955,15 +961,7 @@ function fit!(
         mstep!(slds, tfs, fb_storage, dl, y, sws; obs_inputs=obs_inputs, seq_ends=seq_ends)
         refresh_slds_constants!(slds_ws, slds)
 
-        # print progress
         prog !== nothing && next!(prog)
-
-        # check convergence
-        # if iter > 1 && abs(elbos[iter] - elbos[iter - 1]) < tol
-        #     prog !== nothing && finish!(prog)
-        #     resize!(elbos, iter)
-        #     return elbos
-        # end
     end
 
     if prog !== nothing

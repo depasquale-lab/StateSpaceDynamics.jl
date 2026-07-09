@@ -101,10 +101,12 @@ function Base.show(io::IO, lds::LinearDynamicalSystem; gap="")
         # C and d are either both updated or neither
         prms = ["x0", "P0", "A (and b)", "Q", "C, d"][lds.fit_bool[1:5]]
     else
-        # Same labels for BTD and Kalman backends (length 6). The compound
-        # entries "A (and b, B)" / "C (and d, D)" reflect that each row is
-        # fit jointly as one regression — the bias and user-input columns
-        # are not gated independently.
+        #=
+        Same labels for BTD and Kalman backends (length 6). The compound
+        entries "A (and b, B)" / "C (and d, D)" reflect that each row is
+        fit jointly as one regression — the bias and user-input columns
+        are not gated independently.
+        =#
         prms = ["x0", "P0", "A (and b, B)", "Q", "C (and d, D)", "R"][lds.fit_bool[1:6]]
     end
 

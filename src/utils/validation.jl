@@ -256,9 +256,11 @@ function _validate_obs_model(
         throw(DimensionMismatchError("d vector", obs_dim, length(obs_model.d)))
     end
 
-    # Check that d values are reasonable. `d` enters the linear predictor as
-    # `λ = exp(C x + d)`; |d| above ~50 risks exp overflow/underflow once Cx
-    # is added on top.
+    #=
+    Check that d values are reasonable. `d` enters the linear predictor as
+    `λ = exp(C x + d)`; |d| above ~50 risks exp overflow/underflow once Cx
+    is added on top.
+    =#
     if any(x -> abs(x) > 50, obs_model.d)  # exp(50) ≈ 5e21, exp(-50) ≈ 2e-22
         max_val = maximum(abs.(obs_model.d))
         throw(
@@ -313,9 +315,11 @@ function validate_LDS(lds::LinearDynamicalSystem{T,S,O}) where {T,S,O}
     # Check observation model dimensions and properties
     _validate_obs_model(lds.obs_model, lds.obs_dim, lds.latent_dim)
 
-    # Check fit_bool length. Gaussian path (BTD and Kalman) uses length 6 —
-    # the regression M-step fits A&b&B and C&d&D jointly, so flag layout is
-    # the same across backends.
+    #=
+    Check fit_bool length. Gaussian path (BTD and Kalman) uses length 6 —
+    the regression M-step fits A&b&B and C&d&D jointly, so flag layout is
+    the same across backends.
+    =#
     expected_fit_length = lds.obs_model isa PoissonObservationModel ? 5 : 6
     if length(lds.fit_bool) != expected_fit_length
         throw(DimensionMismatchError("fit_bool", expected_fit_length, length(lds.fit_bool)))

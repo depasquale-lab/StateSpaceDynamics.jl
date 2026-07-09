@@ -194,10 +194,12 @@ function gradient_observation_model_single_trial!(
             λ[i] = exp(h[i] + ρ[i])
         end
 
-        # Stacked gradient ∂Q/∂W[i, j] = w · (y_t[i] − λ[i]) · z_aug[j]  −  w · λ[i] · CP_aug[i, j]
-        # where z_aug = [E_z_t; 1] and CP_aug[:, 1:D] = CP, CP_aug[:, D+1] = 0
-        # (since ρ has no dependence on the d-column of W). Split into the two
-        # blocks to skip the always-zero CP_aug column.
+        #=
+        Stacked gradient ∂Q/∂W[i, j] = w · (y_t[i] − λ[i]) · z_aug[j]  −  w · λ[i] · CP_aug[i, j]
+        where z_aug = [E_z_t; 1] and CP_aug[:, 1:D] = CP, CP_aug[:, D+1] = 0
+        (since ρ has no dependence on the d-column of W). Split into the two
+        blocks to skip the always-zero CP_aug column.
+        =#
         for j in 1:latent_dim
             for i in 1:obs_dim
                 grad_W[i, j] += weight * (y_t[i] * E_z_t[j] - λ[i] * (E_z_t[j] + CP[i, j]))
@@ -227,10 +229,12 @@ function gradient_observation_model!(
     npar = length(grad)
     @assert length(sws_pool[1].CD) == npar && length(sws_pool[1].Syz) == npar "Poisson gradient accumulator size $(length(sws_pool[1].CD)) ≠ npar=$npar (obs_input_dim must be 0)"
 
-    # Cap ntasks at `length(sws_pool)` so each task gets its own
-    # pre-allocated workspace slot indexed by its position in the chunk
-    # iteration (not `threadid()`, which can migrate under task
-    # scheduling).
+    #=
+    Cap ntasks at `length(sws_pool)` so each task gets its own
+    pre-allocated workspace slot indexed by its position in the chunk
+    iteration (not `threadid()`, which can migrate under task
+    scheduling).
+    =#
     desired = max(1, tasks_per_thread * Threads.nthreads())
     ntasks = min(trials, desired, length(sws_pool))
     chunk_size = max(1, cld(trials, ntasks))
@@ -242,13 +246,15 @@ function gradient_observation_model!(
             push!(
                 tasks,
                 Threads.@spawn begin
-                    # Each task owns one workspace from the pool. Buffers
-                    # used by `gradient_observation_model_single_trial!`
-                    # (h/ρ/λ/CP) come from this workspace's existing
-                    # `Q_obs!` scratch fields, and the per-task `acc`/`tmp`
-                    # gradient accumulators are views into `.CD` / `.Syz`
-                    # (both sized `obs_dim × Dp1 = npar` for Poisson, where
-                    # `obs_input_dim = 0`).
+                    #=
+                    Each task owns one workspace from the pool. Buffers
+                    used by `gradient_observation_model_single_trial!`
+                    (h/ρ/λ/CP) come from this workspace's existing
+                    `Q_obs!` scratch fields, and the per-task `acc`/`tmp`
+                    gradient accumulators are views into `.CD` / `.Syz`
+                    (both sized `obs_dim × Dp1 = npar` for Poisson, where
+                    `obs_input_dim = 0`).
+                    =#
                     sws = sws_pool[task_idx]
                     acc = vec(sws.CD)
                     tmp = vec(sws.Syz)
@@ -355,9 +361,11 @@ function elbo!(
         total_entropy += fs.entropy
     end
 
-    # State-side Q via aggregated suff-stats. `compute_smooth_constants!` on a
-    # Poisson LDS only fills state-side constants (Q_PD / P0_PD /
-    # derived blocks); `Q_state!(sws, lds, suf)` reads exactly those.
+    #=
+    State-side Q via aggregated suff-stats. `compute_smooth_constants!` on a
+    Poisson LDS only fills state-side constants (Q_PD / P0_PD /
+    derived blocks); `Q_state!(sws, lds, suf)` reads exactly those.
+    =#
     compute_smooth_constants!(sws_pool[1], plds)
     Q_state_total = Q_state!(sws_pool[1], plds, suf)
 
@@ -390,11 +398,13 @@ function elbo!(
         prior_term += iw_logprior_term(plds.state_model.P0, plds.state_model.P0_prior)
     end
 
-    # MN log-prior on [C d]. No row covariance Σ for Poisson, so this is the
-    # plain quadratic kernel `-½ tr((W - M₀) Λ (W - M₀)')` (matches the
-    # `+½ tr(...)` penalty `update_observation_model!` adds to its LBFGS
-    # objective). Λ-only and Λ-logdet constants are absorbed into the
-    # additive ELBO constant.
+    #=
+    MN log-prior on [C d]. No row covariance Σ for Poisson, so this is the
+    plain quadratic kernel `-½ tr((W - M₀) Λ (W - M₀)')` (matches the
+    `+½ tr(...)` penalty `update_observation_model!` adds to its LBFGS
+    objective). Λ-only and Λ-logdet constants are absorbed into the
+    additive ELBO constant.
+    =#
     if plds.obs_model.CD_prior !== nothing
         D = plds.latent_dim
         W_cd = Matrix{T}(undef, plds.obs_dim, D + 1)
@@ -506,10 +516,12 @@ function smooth!(
 
     fs.entropy = gaussian_entropy_from_logdet(logdet_precision, n_active)
 
-    # `block_tridiagonal_inverse_logdet!` blocks are symmetric in exact
-    # arithmetic but carry ~1e-12 asymmetry from the forward/back sweeps;
-    # matches `gaussian.jl:780`. Without this, the aggregator's
-    # `PDMat(copy(S0_sum))` can trip `ishermitian` downstream.
+    #=
+    `block_tridiagonal_inverse_logdet!` blocks are symmetric in exact
+    arithmetic but carry ~1e-12 asymmetry from the forward/back sweeps;
+    matches `gaussian.jl:780`. Without this, the aggregator's
+    `PDMat(copy(S0_sum))` can trip `ishermitian` downstream.
+    =#
     @views for i in 1:tsteps
         Symmetrize!(fs.p_smooth[:, :, i])
     end
@@ -643,11 +655,13 @@ function fit!(
     npool = Threads.maxthreadid()
     sws_pool = [SmoothWorkspace(T, latent_dim, obs_dim, T_max) for _ in 1:npool]
 
-    # Suf-based state-side M-step (mirrors the Gaussian TD fit path). Poisson
-    # has no inputs, so `latent_inputs` / `obs_inputs` are zero-row matrices. The const
-    # blocks (bias-row entries, obs_yy_const, …) are precomputed once; the
-    # `obs_*` blocks are written by the aggregator but unread by the Poisson
-    # M-step (emission stays LBFGS), which is a tiny constant overhead.
+    #=
+    Suf-based state-side M-step (mirrors the Gaussian TD fit path). Poisson
+    has no inputs, so `latent_inputs` / `obs_inputs` are zero-row matrices. The const
+    blocks (bias-row entries, obs_yy_const, …) are precomputed once; the
+    `obs_*` blocks are written by the aggregator but unread by the Poisson
+    M-step (emission stays LBFGS), which is a tiny constant overhead.
+    =#
     suf = _initialize_td_sufficient_statistics(T, plds, tsteps_per_trial)
     latent_inputs = [zeros(T, 0, Ti) for Ti in tsteps_per_trial]
     obs_inputs = [zeros(T, 0, Ti) for Ti in tsteps_per_trial]

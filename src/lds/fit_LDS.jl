@@ -77,11 +77,13 @@ function joint_loglikelihood(
     return joint_loglikelihood!(ws, x, lds, y, ux, uy)
 end
 
-# Length-only Hessian assembly. The BT Hessian for a Gaussian LDS is
-# observation-independent — its blocks depend only on `A, Q, C, R, P0`
-# (already cached in `sws` by `compute_smooth_constants!`) and the trial
-# length. Factored out so the equal-length multi-trial fast path can fill
-# blocks without constructing dummy `y`/`x` matrices for `Hessian!`.
+#=
+Length-only Hessian assembly. The BT Hessian for a Gaussian LDS is
+observation-independent — its blocks depend only on `A, Q, C, R, P0`
+(already cached in `sws` by `compute_smooth_constants!`) and the trial
+length. Factored out so the equal-length multi-trial fast path can fill
+blocks without constructing dummy `y`/`x` matrices for `Hessian!`.
+=#
 function _fill_hessian_blocks!(sws::SmoothWorkspace{T}, tsteps::Int) where {T<:Real}
     btd = sws.btd
     _state_hessian_blocks!(btd, sws, tsteps)
@@ -182,10 +184,12 @@ function smooth!(
     # Save x_old in fs.x_smooth before we overwrite sws.X₀ with the Newton step.
     fs.x_smooth .= x_mat
 
-    # SPD path: smoother's negated Hessian is PSD at the MAP, and the
-    # sub/super blocks are transposes of each other (Hessian is
-    # symmetric). At small `latent_dim` (≤ 8) this routes to LAPACK's
-    # `pbsv` which is 30-60× faster than the general block-Thomas code.
+    #=
+    SPD path: smoother's negated Hessian is PSD at the MAP, and the
+    sub/super blocks are transposes of each other (Hessian is
+    symmetric). At small `latent_dim` (≤ 8) this routes to LAPACK's
+    `pbsv` which is 30-60× faster than the general block-Thomas code.
+    =#
     block_tridiagonal_solve_spd!(X0, neg_sub_v, neg_diag_v, neg_super_v, grad_vec, btd)
 
     step_mat = reshape(X0, D, tsteps)
@@ -246,20 +250,24 @@ function smooth!(
         return tfs
     end
 
-    # Equal-length fast path: the BT Hessian (and its inverse) is observation-
-    # independent, so the smoothed covariance is identical across trials. Run
-    # the cov pass once on `sws_pool[1]`, alias each FilterSmooth's
-    # `p_smooth` / `p_smooth_tt1` to the shared storage, then do gradient-and-
-    # solve per trial in parallel.
+    #=
+    Equal-length fast path: the BT Hessian (and its inverse) is observation-
+    independent, so the smoothed covariance is identical across trials. Run
+    the cov pass once on `sws_pool[1]`, alias each FilterSmooth's
+    `p_smooth` / `p_smooth_tt1` to the shared storage, then do gradient-and-
+    solve per trial in parallel.
+    =#
     T1 = size(y[1], 2)
     all_equal = all(yt -> size(yt, 2) == T1, y)
 
     if all_equal
-        # `_precompute_shared_cov!` populates `sws_pool[1]`'s smoothing constants
-        # (`R_PD`/`Q_PD`/`P0_PD`/`C_inv_R`/`A_inv_Q`/…), the `btd.neg_*` blocks,
-        # and the BT forward-sweep LU cache (`btd.LU_factors`/`LU_ipivs`/`D`).
-        # Per-task back-subs and gradient evaluations read from that same
-        # workspace (no mutation), so it's safe to share across `@spawn`'d tasks.
+        #=
+        `_precompute_shared_cov!` populates `sws_pool[1]`'s smoothing constants
+        (`R_PD`/`Q_PD`/`P0_PD`/`C_inv_R`/`A_inv_Q`/…), the `btd.neg_*` blocks,
+        and the BT forward-sweep LU cache (`btd.LU_factors`/`LU_ipivs`/`D`).
+        Per-task back-subs and gradient evaluations read from that same
+        workspace (no mutation), so it's safe to share across `@spawn`'d tasks.
+        =#
         shared_entropy = _precompute_shared_cov!(sws_pool[1], lds, T1)
         source_sws = sws_pool[1]
         for trial in 1:ntrials
@@ -268,11 +276,13 @@ function smooth!(
             tfs[trial].entropy = shared_entropy
         end
 
-        # Batched mean pass: when `sws_pool[1]` was constructed with the right
-        # `ntrials`, every per-trial Newton step collapses into a single
-        # `(D*T) × N` matrix-RHS backsubst, doing the same total math as the
-        # per-trial loop below but with BLAS-3 dispatch (matches the Kalman
-        # path's batched-trial efficiency).
+        #=
+        Batched mean pass: when `sws_pool[1]` was constructed with the right
+        `ntrials`, every per-trial Newton step collapses into a single
+        `(D*T) × N` matrix-RHS backsubst, doing the same total math as the
+        per-trial loop below but with BLAS-3 dispatch (matches the Kalman
+        path's batched-trial efficiency).
+        =#
         if size(source_sws.batched_x_mat, 3) == ntrials && ntrials > 1
             if !source_sws.batched_data_valid[]
                 _populate_batched_data!(source_sws, y, latent_inputs, obs_inputs)
@@ -401,9 +411,11 @@ function _smooth_mean_only!(
     tsteps, D = size(y, 2), lds.latent_dim
     n_active = D * tsteps
 
-    # Cholesky factors and derived gradient terms were filled on `source_sws`
-    # by `_precompute_shared_cov!` already; just mirror them into the local
-    # task workspace. No-op when `sws === source_sws`.
+    #=
+    Cholesky factors and derived gradient terms were filled on `source_sws`
+    by `_precompute_shared_cov!` already; just mirror them into the local
+    task workspace. No-op when `sws === source_sws`.
+    =#
     if sws !== source_sws
         _copy_smooth_constants!(sws, source_sws)
     end
@@ -669,11 +681,13 @@ function elbo!(
         prior_term += iw_logprior_term(lds.obs_model.R, lds.obs_model.R_prior)
     end
 
-    # MN-prior log-prior contributions for [A b B] (dynamics) and [C d D] (obs).
-    # Required for ELBO monotonicity under MN priors — the M-step's `mn_map`
-    # update + the IW posterior scale modification together maximize the
-    # MAP objective, but without this term the displayed ELBO drops the
-    # MN-quadratic piece and can appear non-monotone.
+    #=
+    MN-prior log-prior contributions for [A b B] (dynamics) and [C d D] (obs).
+    Required for ELBO monotonicity under MN priors — the M-step's `mn_map`
+    update + the IW posterior scale modification together maximize the
+    MAP objective, but without this term the displayed ELBO drops the
+    MN-quadratic piece and can appear non-monotone.
+    =#
     if lds.state_model.AB_prior !== nothing
         D = lds.latent_dim
         ux_dim = lds.state_input_dim
@@ -784,10 +798,12 @@ function _fit_tridiag!(
     T_max = maximum(tsteps_per_trial)
     elbos = Vector{T}(undef, max_iter)
 
-    # Opt in to the cov-alias stub for `p_smooth` / `p_smooth_tt1` when the
-    # cov-cache fast path is going to fire (equal-length multi-trial). The
-    # smoother aliases them to shared storage on every E-step, so per-trial
-    # allocations of `(D, D, T)` are pure waste at large `N`.
+    #=
+    Opt in to the cov-alias stub for `p_smooth` / `p_smooth_tt1` when the
+    cov-cache fast path is going to fire (equal-length multi-trial). The
+    smoother aliases them to shared storage on every E-step, so per-trial
+    allocations of `(D, D, T)` are pure waste at large `N`.
+    =#
     ntrials_total = length(y)
     cov_alias = ntrials_total > 1 && all(t -> t == tsteps_per_trial[1], tsteps_per_trial)
     tfs = initialize_FilterSmooth(
@@ -796,9 +812,11 @@ function _fit_tridiag!(
 
     ux_dim = lds.state_input_dim
     uy_dim = lds.obs_input_dim
-    # Only `sws_pool[1]` needs the batched mean-pass buffers (used by the
-    # equal-length cov-cache fast path); the other workspaces back the
-    # per-trial fallback / @spawn'd tasks and stay at `ntrials = 1`.
+    #=
+    Only `sws_pool[1]` needs the batched mean-pass buffers (used by the
+    equal-length cov-cache fast path); the other workspaces back the
+    per-trial fallback / @spawn'd tasks and stay at `ntrials = 1`.
+    =#
     pool_size = Threads.maxthreadid()
     sws_pool = Vector{SmoothWorkspace{T}}(undef, pool_size)
     sws_pool[1] = SmoothWorkspace(
@@ -816,9 +834,11 @@ function _fit_tridiag!(
         )
     end
 
-    # Sufficient-statistics aggregator: allocated once, mutated each E-step.
-    # Data-only constants (Σ y y', Σ y, Σ ux ux' …) are precomputed here once
-    # and reused across iterations.
+    #=
+    Sufficient-statistics aggregator: allocated once, mutated each E-step.
+    Data-only constants (Σ y y', Σ y, Σ ux ux' …) are precomputed here once
+    and reused across iterations.
+    =#
     suf = _initialize_td_sufficient_statistics(T, lds, tsteps_per_trial)
     _td_init_const_blocks!(sws_pool[1], lds, tsteps_per_trial, y, latent_inputs, obs_inputs)
 

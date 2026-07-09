@@ -103,12 +103,14 @@ function format_kf_data!(
     ntrials::Int,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
 
-    # `data.ux` / `data.uy` carry user-supplied controls only. When the user
-    # doesn't supply them, we use 0-column arrays — there's no longer any
-    # folding of `b` / `obs_model.d` into `B` / `D`. The bias terms are
-    # added explicitly in `precompute_kalman_constants!` and the regression
-    # in `mstep!` fits them via a dedicated constant-1 column in the Gram
-    # matrix.
+    #=
+    `data.ux` / `data.uy` carry user-supplied controls only. When the user
+    doesn't supply them, we use 0-column arrays — there's no longer any
+    folding of `b` / `obs_model.d` into `B` / `D`. The bias terms are
+    added explicitly in `precompute_kalman_constants!` and the regression
+    in `mstep!` fits them via a dedicated constant-1 column in the Gram
+    matrix.
+    =#
     ux_formatted = ux === nothing ? zeros(T, 0, tsteps, ntrials) : ux
     uy_formatted = uy === nothing ? zeros(T, 0, tsteps, ntrials) : uy
 
@@ -139,19 +141,23 @@ end
     # leaves JET seeing a `Union{Array{T,3}, Matrix}` from `diagm`'s signature.
     PD_init(T, dim) = PDMat(Matrix{T}(I, dim, dim))
 
-    # initial conditions — `x0` is estimated as a per-trial mean.
-    # The 1×1 `init_xx` scaffold stores `ntrials` so `regress`/`est_cov` still
-    # express the math as a regression of `x_init` on a constant.
+    #=
+    initial conditions — `x0` is estimated as a per-trial mean.
+    The 1×1 `init_xx` scaffold stores `ntrials` so `regress`/`est_cov` still
+    express the math as a regression of `x_init` on a constant.
+    =#
     init_xx = fill(T(ntrials), 1, 1)
 
-    # Dynamics Gram matrix layout, columns/rows:
-    #   1:D                 — x_prev (filled per E-step)
-    #   D+1                 — constant-1 column (for the bias `b`)
-    #   D+2 : D+1+ux_dim     — user input ux_prev (filled with constants below)
-    #
-    # Of these, only the bias and ux_prev blocks are observation-independent
-    # and so can be filled once at init. The cross blocks involving x_prev
-    # are overwritten each iteration in `sufficient_statistics!`.
+    #=
+    Dynamics Gram matrix layout, columns/rows:
+      1:D                 — x_prev (filled per E-step)
+      D+1                 — constant-1 column (for the bias `b`)
+      D+2 : D+1+ux_dim     — user input ux_prev (filled with constants below)
+
+    Of these, only the bias and ux_prev blocks are observation-independent
+    and so can be filled once at init. The cross blocks involving x_prev
+    are overwritten each iteration in `sufficient_statistics!`.
+    =#
     dyn_n_T = T((tsteps - 1) * ntrials)
     fill!(kws.dyn_xx_buf, zero(T))
     kws.dyn_xx_buf[latent_dim + 1, latent_dim + 1] = dyn_n_T            # 1ᵀ 1
@@ -176,9 +182,11 @@ end
             tol_PD(uy_wide * uy_wide').mat
     end
 
-    # obs_xy: regress y on [x; 1; d]. The constant and d rows are observation-
-    # independent (depend only on data.y and data.uy), so they can be filled
-    # once at init.
+    #=
+    obs_xy: regress y on [x; 1; d]. The constant and d rows are observation-
+    independent (depend only on data.y and data.uy), so they can be filled
+    once at init.
+    =#
     obs_xy = zeros(T, obs_reg_dim, obs_dim)
     sum_y = sum(y_wide; dims=2)                                          # obs_dim × 1
     obs_xy[latent_dim + 1, :] .= vec(sum_y)
@@ -217,7 +225,7 @@ end
     )
 end
 
-# ==== E-STEP =============================================================================
+# E-STEP
 
 """
     estep!(lds, suf, kws::KalmanWorkspace, data::Data)
@@ -253,9 +261,11 @@ Validate input/parameter dimensional consistency for the Kalman path. Called
 function validate_kalman_inputs(
     lds::LinearDynamicalSystem{T,S,O}, data::Data{T}, ntrials::Int, tsteps::Int
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
-    # Dynamics input matrix `B`: zero-column means "no inputs", so `data.ux`
-    # must also have zero rows. Non-zero columns require `data.ux` of matching
-    # shape `(ux_dim, tsteps, ntrials)`.
+    #=
+    Dynamics input matrix `B`: zero-column means "no inputs", so `data.ux`
+    must also have zero rows. Non-zero columns require `data.ux` of matching
+    shape `(ux_dim, tsteps, ntrials)`.
+    =#
     ux_dim = size(lds.state_model.B, 2)
     if size(data.ux, 1) != ux_dim
         throw(DimensionMismatchError("ux rows vs B cols", ux_dim, size(data.ux, 1)))
@@ -311,10 +321,12 @@ function precompute_kalman_constants!(
         kws.pred_mean[:, 1, n] .= lds.state_model.x0
     end
 
-    # Dynamics offset per timestep/trial: `Bu[:, t, n] = b + B · u[:, t, n]`.
-    # The `b` term is present always; `B · u` is added only when user inputs
-    # are supplied (state_input_dim > 0). `forwards_mean!` consumes `Bu` as
-    # the pre-filled non-`A` part of pred_mean[:, t+1, :].
+    #=
+    Dynamics offset per timestep/trial: `Bu[:, t, n] = b + B · u[:, t, n]`.
+    The `b` term is present always; `B · u` is added only when user inputs
+    are supplied (state_input_dim > 0). `forwards_mean!` consumes `Bu` as
+    the pre-filled non-`A` part of pred_mean[:, t+1, :].
+    =#
     b = lds.state_model.b
     @views for n in axes(kws.Bu, 3), t in axes(kws.Bu, 2)
         kws.Bu[:, t, n] .= b
@@ -344,7 +356,7 @@ function precompute_kalman_constants!(
     return kws
 end
 
-# ==== SMOOTH COVARIANCE =============================================================================
+# SMOOTH COVARIANCE
 
 function smooth_cov!(
     lds::LinearDynamicalSystem{T,S,O}, kws::KalmanWorkspace{T}
@@ -381,11 +393,13 @@ end
 function backwards_cov!(
     lds::LinearDynamicalSystem{T,S,O}, kws::KalmanWorkspace{T}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
-    # Hoist workspace fields into locals with concrete element types so
-    # `@views` indexing below stays inside the typed branch of JET's
-    # union-split analysis. `KalmanWorkspace{T}` declares these fields as
-    # `Vector{PDMat{T,Matrix{T}}}` / `Array{T,3}`, but JET can't propagate
-    # `T` through `maybeview` without the assertion.
+    #=
+    Hoist workspace fields into locals with concrete element types so
+    `@views` indexing below stays inside the typed branch of JET's
+    union-split analysis. `KalmanWorkspace{T}` declares these fields as
+    `Vector{PDMat{T,Matrix{T}}}` / `Array{T,3}`, but JET can't propagate
+    `T` through `maybeview` without the assertion.
+    =#
     smooth_cov = kws.smooth_cov::Vector{PDMat{T,Matrix{T}}}
     filt_cov = kws.filt_cov::Vector{PDMat{T,Matrix{T}}}
     pred_cov = kws.pred_cov::Vector{PDMat{T,Matrix{T}}}
@@ -400,10 +414,13 @@ function backwards_cov!(
     kws.sum_smooth_cov_next .= smooth_cov[end].mat
     kws.sum_smooth_xcov .= zeros(T, kws.latent_dim, kws.latent_dim)
 
-    # smooth covariance + joint Gaussian entropy ================================
-    # H(x_{1:T}|y) = H(x_T|y) + Σ_{t=1}^{T-1} H(x_t | x_{t+1}, y)
-    # backward-conditional cov: Σ_{t|x_{t+1},y} = filt_cov[t] - G[t]*pred_cov[t+1]*G[t]'
-    #                                             = filt_cov[t] - filt_cov[t]*(G[t]*A)'
+    #=
+    smooth covariance + joint Gaussian entropy
+
+    H(x_{1:T}|y) = H(x_T|y) + Σ_{t=1}^{T-1} H(x_t | x_{t+1}, y)
+    backward-conditional cov: Σ_{t|x_{t+1},y} = filt_cov[t] - G[t]*pred_cov[t+1]*G[t]'
+                                                = filt_cov[t] - filt_cov[t]*(G[t]*A)'
+    =#
     ent_logdet = logdet(smooth_cov[end].mat)
 
     @views for tt in eachindex(filt_cov)[(end - 1):-1:1]
@@ -412,18 +429,20 @@ function backwards_cov!(
         mul!(G[:, :, tt], filt_cov[tt], A', one(T), zero(T))
         G[:, :, tt] /= pred_cov[tt + 1]
 
-        # smoothed covariance — Joseph-style form, algebraically equivalent to
-        # the standard RTS update `P_s[t] = P_f[t] + G[t]·(P_s[t+1] - P_p[t+1])·G[t]'`
-        # but expanded so every term is manifestly PSD:
-        #
-        #   smooth_cov[t] = G·(smooth_cov[t+1] + Q)·G' + (I - G·A)·filt_cov[t]·(I - G·A)'
-        #
-        # The two summands are each `X·A·X'` of a PD matrix, so their sum is
-        # symmetric and PSD up to floating-point roundoff. We Symmetrize!
-        # defensively before wrapping as a PDMat — an earlier attempt that
-        # built `smooth_cov[t+1] + Q` into a separate `Ref{PDMat}` first
-        # tripped the strict cholesky in `PDMat(::Matrix)` from accumulated
-        # asymmetry; folding the sum into the X_A_Xt argument avoids that.
+        #=
+        smoothed covariance — Joseph-style form, algebraically equivalent to
+        the standard RTS update `P_s[t] = P_f[t] + G[t]·(P_s[t+1] - P_p[t+1])·G[t]'`
+        but expanded so every term is manifestly PSD:
+
+          smooth_cov[t] = G·(smooth_cov[t+1] + Q)·G' + (I - G·A)·filt_cov[t]·(I - G·A)'
+
+        The two summands are each `X·A·X'` of a PD matrix, so their sum is
+        symmetric and PSD up to floating-point roundoff. We Symmetrize!
+        defensively before wrapping as a PDMat — an earlier attempt that
+        built `smooth_cov[t+1] + Q` into a separate `Ref{PDMat}` first
+        tripped the strict cholesky in `PDMat(::Matrix)` from accumulated
+        asymmetry; folding the sum into the X_A_Xt argument avoids that.
+        =#
         mul!(kws.cov_tmp1, G[:, :, tt], A, one(T), zero(T))
         kws.cov_tmp2 .=
             X_A_Xt(smooth_cov[tt + 1] + Q_PD[], G[:, :, tt]::SubArray{T}) .+
@@ -454,7 +473,7 @@ function backwards_cov!(
     return kws
 end
 
-# ==== SMOOTH MEAN =============================================================================
+# SMOOTH MEAN 
 
 function smooth_mean!(
     lds::LinearDynamicalSystem{T,S,O}, kws::KalmanWorkspace{T}
@@ -506,7 +525,7 @@ function backwards_mean!(kws::KalmanWorkspace{T}) where {T<:Real}
     return kws
 end
 
-# ==== SUFFICIENT STATISTICS =============================================================================
+# SUFFICIENT STATISTICS
 
 function sym_syrk!(out, x::Matrix{T}) where {T<:Real}
     BLAS.syrk!('U', 'N', one(T), x, one(T), out)
@@ -541,7 +560,7 @@ end
     dyn_xx_buf = kws.dyn_xx_buf::Matrix{T}
     obs_xx_buf = kws.obs_xx_buf::Matrix{T}
 
-    # initial conditions -------
+    # initial conditions
     x_init .= smooth_mean[:, 1, :]
     suf.init_n = T(kws.ntrials)
     # init_xx is preset to [ntrials] (1×1) by initialize_SufficientStatistics.
@@ -553,10 +572,13 @@ end
     # init_yy
     suf.init_yy[] = aggregate_xx(x_init, smooth_cov[1].mat, kws.ntrials)
 
-    # transitions -------
-    # Regression layout: regress x_next on [x_prev; 1; ux_prev] to fit [A b B].
-    # The constant-1 column sits at index `latent_dim + 1` of the Gram matrix;
-    # user inputs (if any) occupy `latent_dim + 2 : end`.
+    #=
+    transitions
+
+    Regression layout: regress x_next on [x_prev; 1; ux_prev] to fit [A b B].
+    The constant-1 column sits at index `latent_dim + 1` of the Gram matrix;
+    user inputs (if any) occupy `latent_dim + 2 : end`.
+    =#
     D = kws.latent_dim
     ux_dim = kws.state_input_dim
     dyn_n_int = (kws.tsteps - 1) * kws.ntrials
@@ -564,12 +586,14 @@ end
     x_prev .= reshape(smooth_mean[:, 1:(end - 1), :], D, dyn_n_int)
     x_next .= reshape(smooth_mean[:, 2:end, :], D, dyn_n_int)
 
-    # Reuse the preallocated workspace buffer; the constant blocks at the bias
-    # row/col and uᵀu sub-matrix are populated once in
-    # `initialize_SufficientStatistics` and not mutated here. PDMat's
-    # `cholesky()` makes its own copy of the factors, and downstream readers
-    # (mstep!, compute_elbo) operate via `XX + prior` / `X_A_Xt(XX, W)` which
-    # produce fresh PDMats — they never write into .mat.
+    #=
+    Reuse the preallocated workspace buffer; the constant blocks at the bias
+    row/col and uᵀu sub-matrix are populated once in
+    `initialize_SufficientStatistics` and not mutated here. PDMat's
+    `cholesky()` makes its own copy of the factors, and downstream readers
+    (mstep!, compute_elbo) operate via `XX + prior` / `X_A_Xt(XX, W)` which
+    produce fresh PDMats — they never write into .mat.
+    =#
     dyn_xx = dyn_xx_buf
     # Top-left x_prev block: smooth_cov_prev*N + x_prev x_prevᵀ
     dyn_xx[1:D, 1:D] .= kws.sum_smooth_cov_prev .* kws.ntrials
@@ -629,16 +653,17 @@ end
     # obs_xy: row D+1 (bias for obs) is constant (= Σ y) and was preset.
     mul!(suf.obs_xy[1:D, :], x_cur, y_cur', one(T), zero(T))
     return suf
-    # obs_yy (preset)
-
 end
 
-# ==== M-STEP =============================================================================
-# Two regression overloads, dispatched on the prior:
-#   * `nothing`  — OLS (no shrinkage, no shift).
-#   * `MNPrior`  — matrix-normal MAP via `mn_map`.
-# Sharing `mn_map` with `core/priors.jl` means the same math will eventually
-# back the tridiag and Poisson M-steps after their Phase 2 migration.
+#=
+M-STEP
+
+Two regression overloads, dispatched on the prior:
+  * `nothing`  — OLS (no shrinkage, no shift).
+  * `MNPrior`  — matrix-normal MAP via `mn_map`.
+Sharing `mn_map` with `core/priors.jl` means the same math will eventually
+back the tridiag and Poisson M-steps after their Phase 2 migration.
+=#
 
 function regress(XX::PDMat{T,Matrix{T}}, XY::AbstractMatrix{T}, ::Nothing) where {T<:Real}
     return transpose(XX \ XY)
@@ -680,10 +705,12 @@ function est_cov(
 )::Matrix{T} where {T<:Real}
     Wxy = W * XY
     Wm = W .- prior.M₀
-    # MN-prior contribution: (W - M₀) Λ (W - M₀)'. Expanded explicitly because
-    # PDMats only exports `X_A_Xt(::AbstractPDMat, ::AbstractMatrix)` and
-    # `prior.Λ` is a plain `Matrix`. Matrix-of-matrix triple product is a
-    # one-liner here and avoids a cholesky-of-Λ wrap per E-step.
+    #=
+    MN-prior contribution: (W - M₀) Λ (W - M₀)'. Expanded explicitly because
+    PDMats only exports `X_A_Xt(::AbstractPDMat, ::AbstractMatrix)` and
+    `prior.Λ` is a plain `Matrix`. Matrix-of-matrix triple product is a
+    one-liner here and avoids a cholesky-of-Λ wrap per E-step.
+    =#
     WmΛWmT = Wm * prior.Λ * Wm'
     Cov =
         (YY .- Wxy .- Wxy' .+ X_A_Xt(XX, W) .+ WmΛWmT .+ (prior_df * prior_mu)) /
@@ -696,11 +723,13 @@ function mstep!(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     D_lat = kws.latent_dim
 
-    # initials =================================================
-    # fit_bool[1] gates x0, fit_bool[2] gates P0. They share the same scatter,
-    # so we run the regression only if at least one flag is set, then assign
-    # selectively. (P0 uses the freshly-updated x0; if x0 is frozen, the
-    # existing model x0 is used in the scatter.)
+    #=
+    initials
+    fit_bool[1] gates x0, fit_bool[2] gates P0. They share the same scatter,
+    so we run the regression only if at least one flag is set, then assign
+    selectively. (P0 uses the freshly-updated x0; if x0 is frozen, the
+    existing model x0 is used in the scatter.)
+    =#
     if lds.fit_bool[1] || lds.fit_bool[2]
         x0_mat = regress(suf.init_xx[], suf.init_xy, nothing)  # D × 1
         if lds.fit_bool[2]
@@ -722,10 +751,12 @@ function mstep!(
         end
     end
 
-    # dynamics =================================================
-    # fit_bool[3] gates the joint [A b B] regression; fit_bool[4] gates Q.
-    # Q's residual scatter depends on the regression coefficient, so when Q
-    # is fit but [A b B] is frozen, use the existing state-model values.
+    #=
+    dynamics
+    fit_bool[3] gates the joint [A b B] regression; fit_bool[4] gates Q.
+    Q's residual scatter depends on the regression coefficient, so when Q
+    is fit but [A b B] is frozen, use the existing state-model values.
+    =#
     if lds.fit_bool[3] || lds.fit_bool[4]
         AbB = if lds.fit_bool[3]
             regress(suf.dyn_xx[], suf.dyn_xy, kws.AB_prior)
@@ -763,9 +794,11 @@ function mstep!(
         end
     end
 
-    # observations =============================================
-    # fit_bool[5] gates the joint [C d D] regression; fit_bool[6] gates R.
-    # Same residual-scatter dependency as Q above.
+    #=
+    observations
+    fit_bool[5] gates the joint [C d D] regression; fit_bool[6] gates R.
+    Same residual-scatter dependency as Q above.
+    =#
     if lds.fit_bool[5] || lds.fit_bool[6]
         CdD = if lds.fit_bool[5]
             regress(suf.obs_xx[], suf.obs_xy, kws.CD_prior)
@@ -805,12 +838,14 @@ function mstep!(
     return lds
 end
 
-# ==== COMPUTE ELBO =============================================================================
+# COMPUTE ELBO
 
-# full priors. `n` / `vN` are `Real` rather than `Int` so the SLDS / weighted
-# aggregator path (where effective sample sizes are Σₙ w[n,1] ∈ ℝ) flows
-# through unchanged. Integer values still hit these signatures via implicit
-# Int <: Real subtyping.
+#=
+full priors. `n` / `vN` are `Real` rather than `Int` so the SLDS / weighted
+aggregator path (where effective sample sizes are Σₙ w[n,1] ∈ ℝ) flows
+through unchanged. Integer values still hit these signatures via implicit
+Int <: Real subtyping.
+=#
 function log_post(
     n::Real,
     v::Int,
@@ -887,9 +922,11 @@ function compute_elbo(
     Q_PD = tol_PD(lds.state_model.Q)
     R_PD = tol_PD(lds.obs_model.R)
 
-    # Initial Conditions --------------------------------------
-    # The init "regression" has 1 parameter (x0), so the NIW posterior df
-    # correction is `n - 1` rather than `n - u0_dim`.
+    #=
+    Initial Conditions
+    The init "regression" has 1 parameter (x0), so the NIW posterior df
+    correction is `n - 1` rather than `n - u0_dim`.
+    =#
     n = suf.init_n
     v = kws.latent_dim
     v0 = kws.P0_df
@@ -909,9 +946,11 @@ function compute_elbo(
         NumericalStabilityError("ELBO (initial conditions)", "non-finite log-posterior")
     )
 
-    # Dynamics --------------------------------------
-    # The dynamics regression has (latent_dim + 1 + state_input_dim) parameters
-    # per output dim: A (D), bias `b` (1), and B (state_input_dim, possibly 0).
+    #=
+    Dynamics
+    The dynamics regression has (latent_dim + 1 + state_input_dim) parameters
+    per output dim: A (D), bias `b` (1), and B (state_input_dim, possibly 0).
+    =#
     n = suf.dyn_n
     v = kws.latent_dim
     v0 = kws.Q_df
@@ -930,7 +969,7 @@ function compute_elbo(
     isfinite(elbo) ||
         throw(NumericalStabilityError("ELBO (dynamics)", "non-finite log-posterior"))
 
-    # Observations --------------------------------------
+    # Observations
     # Same correction as dynamics: regression fits C, obs-bias `d`, and D.
     n = suf.obs_n
     v = kws.obs_dim

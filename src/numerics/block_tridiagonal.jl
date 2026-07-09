@@ -44,18 +44,22 @@ struct BlockTridiagonalWorkspace{T<:Real}
     neg_super::Vector{Matrix{T}}
     chol_factors::Vector{Matrix{T}}
 
-    # Preallocated ipiv for the per-block LU factorisations inside
-    # `block_tridiagonal_solve!`. `lu!(M)` would otherwise allocate a
-    # fresh `Vector{BlasInt}` of length `block_size` on every call, and
-    # the BT solve runs `n_blocks` LUs per Newton evaluation.
+    #=
+    Preallocated ipiv for the per-block LU factorisations inside
+    `block_tridiagonal_solve!`. `lu!(M)` would otherwise allocate a
+    fresh `Vector{BlasInt}` of length `block_size` on every call, and
+    the BT solve runs `n_blocks` LUs per Newton evaluation.
+    =#
     lu_ipiv::Vector{LinearAlgebra.BlasInt}
 
-    # Banded-format scratch for the SPD `pbsv`-based fast path used when
-    # `block_size ≤ 8`. Layout: `(2*block_size, block_size * n_blocks)`
-    # — `ldab = 2D` (one row past `kd+1 = 2D-1+1 = 2D`), one column per
-    # global matrix column. `pbsv` overwrites this with the Cholesky
-    # factor on each call, so it gets refilled from the block storage
-    # every BT solve.
+    #=
+    Banded-format scratch for the SPD `pbsv`-based fast path used when
+    `block_size ≤ 8`. Layout: `(2*block_size, block_size * n_blocks)`
+    — `ldab = 2D` (one row past `kd+1 = 2D-1+1 = 2D`), one column per
+    global matrix column. `pbsv` overwrites this with the Cholesky
+    factor on each call, so it gets refilled from the block storage
+    every BT solve.
+    =#
     Hb::Matrix{T}
 end
 
@@ -461,9 +465,11 @@ function block_tridiagonal_inverse_logdet!(
     # Accumulate log-determinant during forward sweep
     logdet_val = zero(T)
 
-    # Forward sweep — caches each Schur complement's Cholesky upper-triangle
-    # factor into `ws.chol_factors[i]` so `block_tridiagonal_backsubst!` can
-    # reuse them per trial.
+    #=
+    Forward sweep — caches each Schur complement's Cholesky upper-triangle
+    factor into `ws.chol_factors[i]` so `block_tridiagonal_backsubst!` can
+    reuse them per trial.
+    =#
     for i in 1:n
         Ai = (i == 1) ? Z : A[i - 1]
         Ci = (i <= length(C)) ? C[i] : Z
@@ -577,9 +583,11 @@ function block_tridiagonal_backsubst!(
         @views ldiv!(Fi, x[idx_start:idx_end])
     end
 
-    # Back-substitution: x[i] -= D[i+1] · x[i+1]. `D[i+1]` was filled by
-    # `block_tridiagonal_inverse_logdet!` during its forward sweep as
-    # `B̃ᵢ⁻¹ · Cᵢ`, which is exactly the modified upper diagonal needed here.
+    #=
+    Back-substitution: x[i] -= D[i+1] · x[i+1]. `D[i+1]` was filled by
+    `block_tridiagonal_inverse_logdet!` during its forward sweep as
+    `B̃ᵢ⁻¹ · Cᵢ`, which is exactly the modified upper diagonal needed here.
+    =#
     for i in (n - 1):-1:1
         idx_start = (i - 1) * bs + 1
         idx_end = i * bs
@@ -594,11 +602,13 @@ function block_tridiagonal_backsubst!(
     return x
 end
 
-# Matrix-RHS overload: each column is an independent system sharing the same
-# cached Cholesky factors. With `N` columns, every `ldiv!` becomes a triangular
-# solve with `bs × N` RHS, and every `mul!` is a `bs × bs × bs × N` matmul —
-# i.e. BLAS-3 instead of BLAS-2. This is the entry point for the batched
-# multi-trial mean pass in the cov-cache fast path.
+#=
+Matrix-RHS overload: each column is an independent system sharing the same
+cached Cholesky factors. With `N` columns, every `ldiv!` becomes a triangular
+solve with `bs × N` RHS, and every `mul!` is a `bs × bs × bs × N` matmul —
+i.e. BLAS-3 instead of BLAS-2. This is the entry point for the batched
+multi-trial mean pass in the cov-cache fast path.
+=#
 function block_tridiagonal_backsubst!(
     x::AbstractMatrix{T},
     A::AbstractVector{<:AbstractMatrix{T}},
@@ -673,10 +683,12 @@ potentially large sparse LU.
 - `b::AbstractVector{T}`: Right-hand side vector (length n*bs)
 - `ws::BlockTridiagonalWorkspace{T}`: Workspace with temp buffers
 """
-# Pack the upper triangle of a symmetric block-tridiagonal matrix into
-# LAPACK banded storage (`uplo='U'`, bandwidth `kd = 2·bs - 1`).
-# `AB[kd+1+i-j, j] = H[i, j]` for `max(1, j-kd) ≤ i ≤ j`. Only the first
-# `bs*n_blocks` columns and `kd+1` rows of `AB` are touched.
+#=
+Pack the upper triangle of a symmetric block-tridiagonal matrix into
+LAPACK banded storage (`uplo='U'`, bandwidth `kd = 2·bs - 1`).
+`AB[kd+1+i-j, j] = H[i, j]` for `max(1, j-kd) ≤ i ≤ j`. Only the first
+`bs*n_blocks` columns and `kd+1` rows of `AB` are touched.
+=#
 @inline function _pack_block_tridiag_banded!(
     AB::AbstractMatrix{T},
     diag_blocks::AbstractVector{<:AbstractMatrix{T}},
@@ -686,9 +698,11 @@ potentially large sparse LU.
     bs = size(diag_blocks[1], 1)
     kd = 2 * bs - 1
     n = bs * n_blocks
-    # Zero the active region. Most of these slots get overwritten by the
-    # block fills below; the diagonal-block lower triangle (which we
-    # never touch) needs to stay zero so LAPACK doesn't read garbage.
+    #=
+    Zero the active region. Most of these slots get overwritten by the
+    block fills below; the diagonal-block lower triangle (which we
+    never touch) needs to stay zero so LAPACK doesn't read garbage.
+    =#
     @inbounds for j in 1:n, r in 1:(kd + 1)
         AB[r, j] = zero(T)
     end
@@ -714,10 +728,12 @@ potentially large sparse LU.
     return AB
 end
 
-# pbsv-based fast path for SPD block-tridiagonal solves at small block
-# size. At `bs ≤ 8` the per-block BLAS dispatch overhead in the generic
-# block-Thomas path dominates over the tiny arithmetic; one packed
-# `pbsv` call to LAPACK amortises that overhead and is 30-60× faster.
+#=
+pbsv-based fast path for SPD block-tridiagonal solves at small block
+size. At `bs ≤ 8` the per-block BLAS dispatch overhead in the generic
+block-Thomas path dominates over the tiny arithmetic; one packed
+`pbsv` call to LAPACK amortises that overhead and is 30-60× faster.
+=#
 function _block_tridiagonal_solve_pbsv!(
     x::AbstractVector{T},
     diag_blocks::AbstractVector{<:AbstractMatrix{T}},
@@ -782,9 +798,11 @@ function block_tridiagonal_solve!(
     n = length(B)
     bs = size(B[1], 1)
 
-    # Reuse workspace buffers
-    # We need: modified diagonal blocks (stored in D), modified RHS (stored temporarily)
-    # D[i] will store the modified upper off-diagonal after forward elimination
+    #=
+    Reuse workspace buffers
+    We need: modified diagonal blocks (stored in D), modified RHS (stored temporarily)
+    D[i] will store the modified upper off-diagonal after forward elimination
+    =#
     D = ws.D
     M = ws.M  # Temp for LU factorization
 

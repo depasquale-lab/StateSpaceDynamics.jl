@@ -89,11 +89,13 @@ Base.length(f::TrialFilterSmooth) = length(f.FilterSmooths)
 
 mutable struct SufficientStatistics{T<:Real}
 
-    # initial conditions. `init_n` is the effective sample count (e.g.
-    # `ntrials` for unweighted fits; `Σₙ w[n,1]` for SLDS-style soft
-    # responsibility weights). Stored as `T` rather than `Int` so the
-    # weighted aggregator can flow non-integer counts through the M-step
-    # without truncation.
+    #=
+    initial conditions. `init_n` is the effective sample count (e.g.
+    `ntrials` for unweighted fits; `Σₙ w[n,1]` for SLDS-style soft
+    responsibility weights). Stored as `T` rather than `Int` so the
+    weighted aggregator can flow non-integer counts through the M-step
+    without truncation.
+    =#
     init_n::T
     init_xx::Base.RefValue{DensePDMat{T}}
     init_xy::Matrix{T}
@@ -124,10 +126,12 @@ struct SmoothWorkspace{T<:Real}
     # Sub-workspace for block tridiagonal operations
     btd::BlockTridiagonalWorkspace{T}
 
-    # Cached PDMats for R, Q, P0. Rewrapped once per E-step in
-    # `compute_smooth_constants!`; downstream code consumes via
-    # `ws.R_PD[].chol.U` (triangular factor) and `logdet(ws.R_PD[])`.
-    # Mirrors `KalmanWorkspace`'s `Q_PD` / `P0_PD` / `R_PD` pattern.
+    #=
+    Cached PDMats for R, Q, P0. Rewrapped once per E-step in
+    `compute_smooth_constants!`; downstream code consumes via
+    `ws.R_PD[].chol.U` (triangular factor) and `logdet(ws.R_PD[])`.
+    Mirrors `KalmanWorkspace`'s `Q_PD` / `P0_PD` / `R_PD` pattern.
+    =#
     R_PD::Base.RefValue{DensePDMat{T}}      # (obs_dim × obs_dim)
     Q_PD::Base.RefValue{DensePDMat{T}}      # (latent_dim × latent_dim)
     P0_PD::Base.RefValue{DensePDMat{T}}     # (latent_dim × latent_dim)
@@ -214,20 +218,24 @@ struct SmoothWorkspace{T<:Real}
     CP_obs::Matrix{T}              # (obs_dim × latent_dim) - C * P_t
     CEz_obs::Vector{T}             # (obs_dim,) - C * E[x_t]
 
-    # Shared smoothed-covariance storage for the equal-length multi-trial fast
-    # path. The BT Hessian (and therefore its inverse) is observation-
-    # independent; when all trials of a fit share the same length, the
-    # smoothed covariances `P_smooth[t]` and cross-covariances `P_smooth[t,t-1]`
-    # are computed once on a designated workspace and aliased by every trial's
-    # `FilterSmooth.p_smooth` / `p_smooth_tt1` field. Mirrors the Kalman
-    # path's `p_smooth_shared` / `p_smooth_tt1_shared` pattern.
+    #=
+    Shared smoothed-covariance storage for the equal-length multi-trial fast
+    path. The BT Hessian (and therefore its inverse) is observation-
+    independent; when all trials of a fit share the same length, the
+    smoothed covariances `P_smooth[t]` and cross-covariances `P_smooth[t,t-1]`
+    are computed once on a designated workspace and aliased by every trial's
+    `FilterSmooth.p_smooth` / `p_smooth_tt1` field. Mirrors the Kalman
+    path's `p_smooth_shared` / `p_smooth_tt1_shared` pattern.
+    =#
     p_smooth_shared::Array{T,3}      # (latent_dim, latent_dim, tsteps)
     p_smooth_tt1_shared::Array{T,3}  # (latent_dim, latent_dim, tsteps)
 
-    # Aggregator output buffers, sized to match the shapes of
-    # `SufficientStatistics`. The TD aggregator writes per-trial GEMM/SYRK
-    # contributions into these, then wraps them as PDMats once per E-step.
-    # Reused across iterations (only the contents change).
+    #=
+    Aggregator output buffers, sized to match the shapes of
+    `SufficientStatistics`. The TD aggregator writes per-trial GEMM/SYRK
+    contributions into these, then wraps them as PDMats once per E-step.
+    Reused across iterations (only the contents change).
+    =#
     td_init_xy::Matrix{T}              # (1, latent_dim)         Σₙ x_init
     td_dyn_xy::Matrix{T}               # (dyn_reg_dim, D)        Σₙ Σₜ [x_{t-1};1;u_{t-1}] xₜ'
     td_obs_xy::Matrix{T}               # (obs_reg_dim, p)        Σₙ Σₜ [xₜ;1;vₜ] yₜ'
@@ -238,20 +246,24 @@ struct SmoothWorkspace{T<:Real}
     td_sum_smooth_cov_all::Matrix{T}   # (D, D)  Σₙ Σ_{t=1:Tₙ}   P_smooth[t]
     td_sum_smooth_xcov::Matrix{T}      # (D, D)  Σₙ Σ_{t=2:Tₙ}   P_smooth_tt1[t]
 
-    # Constant aggregates over the input data (filled once at fit entry, not
-    # touched again). The y-only / uy-only blocks of obs_xx, obs_xy, obs_yy and
-    # the ux-only blocks of dyn_xx are observation-independent so we cache them
-    # here to skip re-summing every E-step.
+    #=
+    Constant aggregates over the input data (filled once at fit entry, not
+    touched again). The y-only / uy-only blocks of obs_xx, obs_xy, obs_yy and
+    the ux-only blocks of dyn_xx are observation-independent so we cache them
+    here to skip re-summing every E-step.
+    =#
     td_obs_yy_const::Matrix{T}         # (p, p)                Σₙ Σₜ yₜ yₜ'
     td_obs_xy_const::Matrix{T}         # (obs_reg_dim, p)      bias + uy-rows of obs_xy
     td_obs_xx_const::Matrix{T}         # (obs_reg_dim, obs_reg_dim) bias / uy blocks
     td_dyn_xx_const::Matrix{T}         # (dyn_reg_dim, dyn_reg_dim) bias / ux blocks
 
-    # Batched mean-pass buffers (equal-length cov-cache fast path). Only the
-    # designated `sws_pool[1]` workspace allocates these with `ntrials > 1`;
-    # the rest of the pool keeps them at `ntrials = 1` (effectively empty).
-    # The (D, T, N) tensors share storage with their `(D*T, N)` reshaped views
-    # used as matrix RHS for `block_tridiagonal_backsubst!`.
+    #=
+    Batched mean-pass buffers (equal-length cov-cache fast path). Only the
+    designated `sws_pool[1]` workspace allocates these with `ntrials > 1`;
+    the rest of the pool keeps them at `ntrials = 1` (effectively empty).
+    The (D, T, N) tensors share storage with their `(D*T, N)` reshaped views
+    used as matrix RHS for `block_tridiagonal_backsubst!`.
+    =#
     batched_x_mat::Array{T,3}         # (latent_dim, tsteps, ntrials) - current iterate
     batched_grad_buf::Array{T,3}      # (latent_dim, tsteps, ntrials) - Gradient! output
     batched_dxt::Matrix{T}            # (latent_dim, ntrials)
@@ -261,9 +273,11 @@ struct SmoothWorkspace{T<:Real}
     batched_tmp2::Matrix{T}           # (latent_dim, ntrials)
     batched_tmp3::Matrix{T}           # (latent_dim, ntrials)
 
-    # Stacked observation / control tensors used by the batched mean pass.
-    # Populated once at the first batched `smooth!` call (data is constant
-    # across EM iters within a fit). 0-sized when `ntrials = 1`.
+    #=
+    Stacked observation / control tensors used by the batched mean pass.
+    Populated once at the first batched `smooth!` call (data is constant
+    across EM iters within a fit). 0-sized when `ntrials = 1`.
+    =#
     batched_y::Array{T,3}             # (obs_dim, tsteps, ntrials)
     batched_ux::Array{T,3}             # (ux_dim, tsteps, ntrials)
     batched_uy::Array{T,3}             # (uy_dim, tsteps, ntrials)
@@ -343,9 +357,11 @@ function SmoothWorkspace(
     # Hessian temp matrix
     I_mat = Matrix{T}(I, latent_dim, latent_dim)
 
-    # M-step buffers. The "+1" is for the affine bias column (b for the
-    # dynamics regression, d for the observation regression); ux_dim / uy_dim
-    # add the user input columns when controls are supplied.
+    #=
+    M-step buffers. The "+1" is for the affine bias column (b for the
+    dynamics regression, d for the observation regression); ux_dim / uy_dim
+    add the user input columns when controls are supplied.
+    =#
     dyn_reg_dim = latent_dim + 1 + ux_dim
     obs_reg_dim = latent_dim + 1 + uy_dim
     Sxz = zeros(T, latent_dim, dyn_reg_dim)
@@ -382,9 +398,11 @@ function SmoothWorkspace(
     CP_obs = zeros(T, obs_dim, latent_dim)
     CEz_obs = zeros(T, obs_dim)
 
-    # Shared smoothed-covariance storage for the equal-length multi-trial
-    # fast path (filled once per E-step on the designated workspace, then
-    # aliased by every trial's FilterSmooth).
+    #=
+    Shared smoothed-covariance storage for the equal-length multi-trial
+    fast path (filled once per E-step on the designated workspace, then
+    aliased by every trial's FilterSmooth).
+    =#
     p_smooth_shared = zeros(T, latent_dim, latent_dim, tsteps)
     p_smooth_tt1_shared = zeros(T, latent_dim, latent_dim, tsteps)
 
@@ -401,9 +419,11 @@ function SmoothWorkspace(
     td_obs_xx_const = zeros(T, obs_reg_dim, obs_reg_dim)
     td_dyn_xx_const = zeros(T, dyn_reg_dim, dyn_reg_dim)
 
-    # Batched mean-pass buffers. Sized at `ntrials = 1` by default — only
-    # `sws_pool[1]` at fit entry passes the actual ntrials so the batched
-    # backsubst can do BLAS-3 across trials.
+    #=
+    Batched mean-pass buffers. Sized at `ntrials = 1` by default — only
+    `sws_pool[1]` at fit entry passes the actual ntrials so the batched
+    backsubst can do BLAS-3 across trials.
+    =#
     batched_x_mat = zeros(T, latent_dim, tsteps, ntrials)
     batched_grad_buf = zeros(T, latent_dim, tsteps, ntrials)
     batched_dxt = zeros(T, latent_dim, ntrials)
@@ -526,17 +546,19 @@ function compute_smooth_constants!(
     C = lds.obs_model.C
     R = lds.obs_model.R
 
-    # Rewrap covariances as PDMats — each PDMat caches its own Cholesky
-    # factor internally and is consumed downstream via `ws.X_PD[].chol.U`
-    # for triangular solves and `logdet(ws.X_PD[])` for the normalizer.
-    #
-    # When `WT === T` (the hot path) `convert(Matrix{WT}, M)` returns `M`
-    # unchanged — no copy, no alloc. When the workspace eltype differs
-    # (e.g. `ForwardDiff.Dual` for autodiff `loglikelihood`), constructing
-    # the PDMat directly with `WT`-typed factors avoids the
-    # `convert(::Type{PDMat{WT}}, ::PDMat{T})` fallback that requires a
-    # single-arg `Cholesky{WT}(::Cholesky{T})` method — present in
-    # Julia 1.12 but not Julia 1.10's stdlib `LinearAlgebra`.
+    #=
+    Rewrap covariances as PDMats — each PDMat caches its own Cholesky
+    factor internally and is consumed downstream via `ws.X_PD[].chol.U`
+    for triangular solves and `logdet(ws.X_PD[])` for the normalizer.
+
+    When `WT === T` (the hot path) `convert(Matrix{WT}, M)` returns `M`
+    unchanged — no copy, no alloc. When the workspace eltype differs
+    (e.g. `ForwardDiff.Dual` for autodiff `loglikelihood`), constructing
+    the PDMat directly with `WT`-typed factors avoids the
+    `convert(::Type{PDMat{WT}}, ::PDMat{T})` fallback that requires a
+    single-arg `Cholesky{WT}(::Cholesky{T})` method — present in
+    Julia 1.12 but not Julia 1.10's stdlib `LinearAlgebra`.
+    =#
     R_w = convert(Matrix{WT}, R)
     Q_w = convert(Matrix{WT}, Q)
     P0_w = convert(Matrix{WT}, P0)
@@ -630,10 +652,12 @@ function compute_smooth_constants!(
     Q = lds.state_model.Q
     P0 = lds.state_model.P0
 
-    # Wrap state-side covariances as PDMats (Poisson path doesn't need R
-    # in this workspace path). See the Gaussian overload for the `convert`
-    # rationale: it's a no-op when `WT === T` and avoids a Julia 1.10
-    # `Cholesky` convert-method gap when `WT !== T` (ForwardDiff path).
+    #=
+    Wrap state-side covariances as PDMats (Poisson path doesn't need R
+    in this workspace path). See the Gaussian overload for the `convert`
+    rationale: it's a no-op when `WT === T` and avoids a Julia 1.10
+    `Cholesky` convert-method gap when `WT !== T` (ForwardDiff path).
+    =#
     Q_w = convert(Matrix{WT}, Q)
     P0_w = convert(Matrix{WT}, P0)
     ws.Q_PD[] = PDMat(Symmetric(Q_w))
@@ -680,9 +704,11 @@ This mirrors the *constant* parts of `SmoothWorkspace`, but does not include opt
 or block-tridiagonal storage.
 """
 mutable struct LDSConstantCache{T<:Real}
-    # PDMats for R, Q, P0. Rewrapped once per SLDS smoothing pass by
-    # `compute_slds_constants!`; downstream consumers use `.chol.U` and
-    # `logdet(...)`. Mirrors `SmoothWorkspace`'s `R_PD` / `Q_PD` / `P0_PD`.
+    #=
+    PDMats for R, Q, P0. Rewrapped once per SLDS smoothing pass by
+    `compute_slds_constants!`; downstream consumers use `.chol.U` and
+    `logdet(...)`. Mirrors `SmoothWorkspace`'s `R_PD` / `Q_PD` / `P0_PD`.
+    =#
     R_PD::Base.RefValue{DensePDMat{T}}
     Q_PD::Base.RefValue{DensePDMat{T}}
     P0_PD::Base.RefValue{DensePDMat{T}}
@@ -761,9 +787,11 @@ function compute_slds_constants!(
         fill!(cc.d, zero(T))
     end
 
-    # Wrap state-side covariances as PDMats. Observation R is wrapped further
-    # below only on the Gaussian branch — Poisson leaves cc.R_PD on its
-    # identity placeholder and `cc.cR` zero.
+    #=
+    Wrap state-side covariances as PDMats. Observation R is wrapped further
+    below only on the Gaussian branch — Poisson leaves cc.R_PD on its
+    identity placeholder and `cc.cR` zero.
+    =#
     cc.Q_PD[] = PDMat(Symmetrize!(Q))
     cc.P0_PD[] = PDMat(Symmetrize!(P0))
     Qchol = cc.Q_PD[].chol
@@ -991,9 +1019,11 @@ struct KalmanWorkspace{T<:Real}
     P0_PD::Base.RefValue{DensePDMat{T}}
     R_PD::Base.RefValue{DensePDMat{T}}
 
-    #  Priors — matrix-normal halves stored as `MNPrior`s (M₀ + Λ);
-    #  inverse-Wishart halves are split into (μ, df) pairs to keep the
-    #  hot-path arithmetic indirection-free.
+    #=
+     Priors — matrix-normal halves stored as `MNPrior`s (M₀ + Λ);
+     inverse-Wishart halves are split into (μ, df) pairs to keep the
+     hot-path arithmetic indirection-free.
+    =#
     P0_mu::Matrix{T}
     P0_df::Int
 
@@ -1024,9 +1054,11 @@ struct KalmanWorkspace{T<:Real}
     x_init::Matrix{T}
     x_cur::Matrix{T}
 
-    # Sufficient-statistics scratch (reused each E-step; bottom-right uu/dd
-    # block is initialized once from `initialize_SufficientStatistics` and not
-    # mutated thereafter).
+    #=
+    Sufficient-statistics scratch (reused each E-step; bottom-right uu/dd
+    block is initialized once from `initialize_SufficientStatistics` and not
+    mutated thereafter).
+    =#
     dyn_xx_buf::Matrix{T}    # ((D + ux_dim) × (D + ux_dim))
     obs_xx_buf::Matrix{T}    # ((D + uy_dim) × (D + uy_dim))
 end
@@ -1049,9 +1081,11 @@ Allocate a `KalmanWorkspace` sized for the given `lds` and data shape. Requires
     placeholder_D = PDMat(Matrix{T}(I, D, D))
     placeholder_p = PDMat(Matrix{T}(I, p, p))
 
-    # MN priors stored verbatim; no PDMat wrapping (the M-step needs (XX + Λ)
-    # solves where XX changes every iteration, so a cached chol of Λ-alone
-    # would not be reused).
+    #=
+    MN priors stored verbatim; no PDMat wrapping (the M-step needs (XX + Λ)
+    solves where XX changes every iteration, so a cached chol of Λ-alone
+    would not be reused).
+    =#
     placeholder_AB = lds.state_model.AB_prior
     placeholder_CD = lds.obs_model.CD_prior
 
