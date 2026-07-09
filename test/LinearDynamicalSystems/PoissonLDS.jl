@@ -754,9 +754,10 @@ function test_newton_objective_is_joint_loglikelihood()
 end
 
 function test_poisson_gradient_nondiag()
-    # Gradient companion to `test_joint_loglikelihood_matches_distributions`:
-    # non-diagonal Q/P0 checked against ForwardDiff through the allocating
-    # joint_loglikelihood.
+    #=
+    Non-diagonal Q/P0; gradient checked against ForwardDiff through the
+    allocating joint_loglikelihood.
+    =#
     rng = StableRNG(4321)
     D_lat, p_obs, T_steps = 2, 3, 30
 

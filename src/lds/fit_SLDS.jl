@@ -295,9 +295,9 @@ end
 """
     Gradient!(ws, slds, y, x, w)
 
-In-place SLDS gradient with a backend compatible shape to LDS.
-Semantics match current SLDS.jl: compute per-timestep component gradient and scale by w[k,t].
-Writes into `ws.grad_buf` and returns it.
+In-place SLDS gradient: each component's complete-data gradient is scaled
+per-timestep by the responsibility `w[k, t]` and accumulated. Writes into
+`ws.grad_buf` and returns it.
 """
 function Gradient!(
     ws::SLDSSmoothWorkspace{T},

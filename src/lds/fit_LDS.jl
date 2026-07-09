@@ -24,8 +24,7 @@ Linear Dynamical System (LDS) implementation with Gaussian state and observation
 This module defines functions specific to the Gaussian observation model: log-likelihoods,
 gradients, Hessians, smoothing, the ELBO/sufficient-statistics machinery, and the EM
 fit driver. Model-agnostic helpers (parameter extraction, `initialize_FilterSmooth`)
-live in `common.jl`; sampling lives in `simulate.jl`. The code is optimized for
-performance, with careful attention to memory allocation and multi-threading.
+live in `common.jl`; sampling lives in `simulate.jl`.
 """
 
 """
@@ -81,9 +80,7 @@ end
     observationloglikelihood!(cc, dyt, _, x, y, t, lds[, uy])
 
 Gaussian emission term: `cR - 0.5*||R^{-1/2}(y_t - Cx_t - d - D uy_t)||^2`.
-Method of the generic `observationloglikelihood!` dispatch point (see
-`continuous_latents.jl`); `dyt` is the `obs_dim` residual scratch, the second
-buffer is unused.
+`dyt` is the `obs_dim` residual scratch; the second buffer is unused.
 """
 function observationloglikelihood!(
     cc::LDSLikelihoodCache{T},
@@ -111,9 +108,7 @@ end
     observationgradient!(out, cc, buf, x, y, t, lds[, uy])
 
 Gaussian emission gradient: `out = C'R⁻¹ (y_t - Cx_t - d - D uy_t)`, using the
-cached `C_inv_R = C'R⁻¹` from `cc`. Method of the generic
-`observationgradient!` dispatch point (see `continuous_latents.jl`); `buf` is
-the `obs_dim` residual scratch.
+cached `C_inv_R = C'R⁻¹` from `cc`.
 """
 function observationgradient!(
     out::AbstractVector{T},

@@ -36,9 +36,8 @@ end
 
 Per-timestep complete-data log-likelihood of a Poisson LDS, written into
 `ws.ll_vec` (an active-length view is returned — the workspace may be
-pool-oversized). Mirrors the Gaussian `joint_loglikelihood!`; requires
-`compute_smooth_constants!(ws, plds)` to have been called. The rate follows
-the canonical Poisson GLM `λ_t = exp(C x_t + d)`.
+pool-oversized). Requires `compute_smooth_constants!(ws, plds)` to have been
+called. The rate follows the canonical Poisson GLM `λ_t = exp(C x_t + d)`.
 
 - `ll[1]` includes: log p(x₁) + log p(y₁ | x₁)
 - `ll[t]` for t≥2 includes: log p(x_t | x_{t-1}) + log p(y_t | x_t)
@@ -81,8 +80,7 @@ end
     joint_loglikelihood(x, plds, y)
 
 Per-timestep complete-data log-likelihood of a Poisson LDS for a single trial
-(allocating convenience wrapper around `joint_loglikelihood!`; mirrors the
-Gaussian `joint_loglikelihood`).
+(allocating convenience wrapper around `joint_loglikelihood!`).
 
 # Arguments
 - `x::AbstractMatrix`: latent states, (latent_dim × tsteps)
@@ -106,11 +104,10 @@ end
     observationloglikelihood!(cc, z, λ, x, y, t, lds[, uy])
 
 Poisson emission term: with rate `λ = exp(Cx_t + d)`,
-`log p(y_t|x_t) = y⋅log(λ) - sum(λ) - sum(log(y!))`. Method of the generic
-`observationloglikelihood!` dispatch point (see `continuous_latents.jl`); `z` and `λ`
-are `obs_dim` scratch vectors for the linear predictor and the rate. The cache
-and `uy` arguments are unused (no covariance term; Poisson observation inputs
-are not supported).
+`log p(y_t|x_t) = y⋅log(λ) - sum(λ) - sum(log(y!))`. `z` and `λ` are `obs_dim`
+scratch vectors for the linear predictor and the rate. The cache and `uy`
+arguments are unused (no covariance term; Poisson observation inputs are not
+supported).
 """
 function observationloglikelihood!(
     ::LDSLikelihoodCache{T},
@@ -184,10 +181,8 @@ end
     observationgradient!(out, cc, buf, x, y, t, lds[, uy])
 
 Poisson emission gradient: `out = C'(y_t - λ_t)` with `λ_t = exp(Cx_t + d)`.
-Method of the generic `observationgradient!` dispatch point (see
-`continuous_latents.jl`); `buf` is the `obs_dim` scratch for `y - λ`. The cache
-and `uy` arguments are unused (no covariance term; Poisson observation inputs
-are not supported).
+The cache and `uy` arguments are unused (no covariance term; Poisson
+observation inputs are not supported).
 """
 function observationgradient!(
     out::AbstractVector{T},

@@ -958,10 +958,10 @@ function test_joint_loglikelihood_matches_mvnormal()
 end
 
 function test_gaussian_gradient_nondiag()
-    # Gradient companion to `test_joint_loglikelihood_matches_mvnormal`:
-    # non-diagonal Q/P0/R plus control inputs on both the state (B*ux) and
-    # observation (D*uy) sides, checked against ForwardDiff through the
-    # kernel-based joint_loglikelihood!.
+    #=
+    Non-diagonal Q/P0/R plus state (B*ux) and observation (D*uy) inputs;
+    gradient checked against ForwardDiff through joint_loglikelihood!.
+    =#
     rng = StableRNG(4321)
     D_lat, p_obs, T_steps = 2, 3, 30
 

@@ -54,10 +54,8 @@ _whiten!(chol::Cholesky, v::AbstractVector) = ldiv!(chol.U', v)
     _transition_residual!(out, x, t, lds[, ux])
 
 Write the dynamics residual `x_t - A x_{t-1} - b - B u_{t-1}` into `out`
-(length `latent_dim`). Shared by the log-likelihood and gradient kernels so
-the affine-dynamics mean is defined in exactly one place. Pass `ux` (state
-inputs, `t`-indexed like `x`) to include the `B u_{t-1}` term; `nothing`
-(default) skips it. Requires `t ≥ 2`.
+(length `latent_dim`). Pass `ux` (state inputs, `t`-indexed like `x`) to
+include the `B u_{t-1}` term; `nothing` (default) skips it. Requires `t ≥ 2`.
 """
 @inline function _transition_residual!(
     out::AbstractVector{T},
@@ -82,10 +80,6 @@ at timestep `t`:
 
 - `t == 1`: `cP0 - 0.5‖P0^{-1/2}(x_1 - x_0)‖²`
 - `t ≥ 2`:  `cQ - 0.5‖Q^{-1/2}(x_t - A x_{t-1} - b - B u_{t-1})‖²`
-
-This term is identical for every observation model (Gaussian, Poisson, ...);
-only the emission term differs, so `joint_loglikelihood!` implementations share
-this helper instead of duplicating the prior/transition math.
 
 `cc` is an [`LDSLikelihoodCache`](@ref) holding the Cholesky factors and
 normalizers; `dxt` and `tmp` are `latent_dim` scratch vectors (overwritten).
@@ -117,20 +111,15 @@ end
 
 Emission-model contribution `log p(y_t | x_t)` to the complete-data
 log-likelihood at timestep `t`. Dispatches on the observation model type `O`
-(via `lds::LinearDynamicalSystem{T,S,O}`) — a custom observation model plugs
-into `joint_loglikelihood!` by adding a method here, without having to
-reimplement (or duplicate) the shared `stateloglikelihood!` term.
+(via `lds::LinearDynamicalSystem{T,S,O}`); a custom observation model plugs
+into `joint_loglikelihood!` by adding a method here.
 
-Uniform interface for all observation models:
 - `cc`: an [`LDSLikelihoodCache`](@ref) with Cholesky factors / normalizers
   (unused by models whose emission term needs no covariance, e.g. Poisson).
 - `buf1`, `buf2`: two `obs_dim` scratch vectors (overwritten); each model uses
   what it needs (Gaussian: residual; Poisson: linear predictor + rate).
 - `uy` (optional): observation inputs, `t`-indexed like `y`; `nothing` or a
   zero-row matrix skips the `D u_t` term.
-
-See the `GaussianObservationModel` / `PoissonObservationModel` methods in
-`fit_LDS.jl` / `fit_PLDS.jl` for the pattern to follow.
 """
 function observationloglikelihood! end
 
@@ -140,9 +129,7 @@ function observationloglikelihood! end
 Per-timestep complete-data log-likelihood for a single SLDS component:
 `ll[t] = log p(y_t | x_t) + log p(x_t | x_{t-1})` (or `+ log p(x_1)` at
 `t == 1`). Generic over the observation model — the emission term comes from
-`observationloglikelihood!`, so supporting a new observation model here only
-requires a new `observationloglikelihood!` method, not a new
-`joint_loglikelihood!` method.
+`observationloglikelihood!`.
 
 Notes:
 - Normalization terms (logdet + log(2π)) are included. These are constant w.r.t.
@@ -177,20 +164,14 @@ end
 
 Emission-model contribution `∂ log p(y_t | x_t) / ∂x_t` written into `out`
 (length `latent_dim`). Dispatches on the observation model type `O` (via
-`lds::LinearDynamicalSystem{T,S,O}`) — the gradient companion to
-`observationloglikelihood!`: a custom observation model plugs into `Gradient!`
-(and the SLDS weighted `Gradient!`) by adding a method here, without touching
-the shared state-side gradient math.
+`lds::LinearDynamicalSystem{T,S,O}`); a custom observation model plugs into
+`Gradient!` (and the SLDS weighted `Gradient!`) by adding a method here.
 
-Uniform interface:
 - `cc`: an [`LDSLikelihoodCache`](@ref) with Cholesky-derived terms (Gaussian
   uses the cached `C_inv_R = C'R⁻¹`; models without a covariance ignore it).
 - `buf`: one `obs_dim` scratch vector (overwritten).
 - `uy` (optional): observation inputs, `t`-indexed like `y`; `nothing` or a
   zero-row matrix skips the `D u_t` term.
-
-See the `GaussianObservationModel` / `PoissonObservationModel` methods in
-`fit_LDS.jl` / `fit_PLDS.jl` for the pattern to follow.
 """
 function observationgradient! end
 
@@ -208,9 +189,8 @@ side (prior / incoming / outgoing transition factors) is shared:
 - at `t = 1` the `-Q⁻¹ r_t` term is replaced by `-P0⁻¹(x_1 - x_0)`
 - at `t = T` the `A'Q⁻¹ r_{t+1}` term is absent
 
-with `r_t = x_t - A x_{t-1} - b - B u_{t-1}` (see `_transition_residual!`).
-Uses the Cholesky-derived templates cached by `compute_smooth_constants!`;
-requires `tsteps ≥ 2` (matching the Newton smoother's contract).
+with `r_t = x_t - A x_{t-1} - b - B u_{t-1}`. Uses the Cholesky-derived
+templates cached by `compute_smooth_constants!`; requires `tsteps ≥ 2`.
 """
 function Gradient!(
     grad::AbstractMatrix{T},
@@ -261,7 +241,6 @@ function Gradient!(
     return grad
 end
 
-# Convenience form writing into the workspace's gradient buffer.
 function Gradient!(
     ws::SmoothWorkspace{T},
     lds::LinearDynamicalSystem{T,S,O},
