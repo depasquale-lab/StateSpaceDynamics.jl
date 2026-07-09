@@ -1,6 +1,10 @@
 #=============================================================================
 Gaussian Observations
 
+    Emission kernels: observation_loglikelihood!(cc, dyt, _, x, y, t, lds[, uy])
+                      observation_gradient!(out, cc, buf, x, y, t, lds[, uy])
+                      observation_hessian!(out, cc, _, _, x, y, t, lds[, α])
+
     E-Step: Q_obs!(sws, lds, suf)
 
     M-Step: update_C_d!(lds, suf, sws)
@@ -138,9 +142,11 @@ function update_C_d!(
     CD_prior = lds.obs_model.CD_prior
 
     if CD_prior === nothing
-        # Zero-alloc OLS fast path. `sws.Syz` is exactly (p × obs_reg_dim);
-        # its transpose is the (obs_reg_dim × p) view we ldiv! into. After
-        # the in-place solve, `sws.Syz` itself holds V = [C d D].
+        #=
+        Zero-alloc OLS fast path. `sws.Syz` is exactly (p × obs_reg_dim);
+        its transpose is the (obs_reg_dim × p) view we ldiv! into. After
+        the in-place solve, `sws.Syz` itself holds V = [C d D].
+        =#
         Syz_T = transpose(sws.Syz)
         copyto!(Syz_T, suf.obs_xy)
         ldiv!(suf.obs_xx[].chol, Syz_T)
@@ -181,17 +187,21 @@ function update_R!(
     copyto!(S_res, suf.obs_yy[].mat)
     S_res .-= Vxy
     S_res .-= Vxy'
-    # In-place X_A_Xt = V · obs_xx · V'. Mirror PDMats' X_A_Xt: compute
-    # `VL = V · L` (obs_xx = L·L' via the cached Cholesky) and add
-    # `VL · VL'` to the upper triangle via a symmetric rank-k BLAS call,
-    # then reflect upper → lower for exact symmetry. (`mul!` + `Symmetrize!`
-    # would halve the off-diagonal contribution because gemm can produce
-    # 1-ULP-asymmetric output that averaging then collapses.)
+    #=
+    In-place X_A_Xt = V · obs_xx · V'. Mirror PDMats' X_A_Xt: compute
+    `VL = V · L` (obs_xx = L·L' via the cached Cholesky) and add
+    `VL · VL'` to the upper triangle via a symmetric rank-k BLAS call,
+    then reflect upper → lower for exact symmetry. (`mul!` + `Symmetrize!`
+    would halve the off-diagonal contribution because gemm can produce
+    1-ULP-asymmetric output that averaging then collapses.)
+    =#
     VL = sws.Syz                               # (p × obs_reg_dim) scratch
-    # See `update_Q!`: `BLAS.trmm!` on the raw upper-stored
-    # `chol.factors` (with transa='T' since L = U') avoids the
-    # `LowerTriangular(...)` wrapper alloc that `mul!(VL, V, chol.L)`
-    # would do.
+    #=
+    See `update_Q!`: `BLAS.trmm!` on the raw upper-stored
+    `chol.factors` (with transa='T' since L = U') avoids the
+    `LowerTriangular(...)` wrapper alloc that `mul!(VL, V, chol.L)`
+    would do.
+    =#
     copyto!(VL, V)
     BLAS.trmm!('R', 'U', 'T', 'N', one(T), suf.obs_xx[].chol.factors, VL)
     mul!(S_res, VL, transpose(VL), one(T), one(T))
@@ -214,4 +224,78 @@ function update_R!(
     end
     copyto!(lds.obs_model.R, S_res)
     return nothing
+end
+
+"""
+    observation_loglikelihood!(cc, dyt, _, x, y, t, lds[, uy])
+
+Gaussian emission term: `cR - 0.5*||R^{-1/2}(y_t - Cx_t - d - D uy_t)||^2`.
+`dyt` is the `obs_dim` residual scratch; the second buffer is unused.
+"""
+function observation_loglikelihood!(
+    cc::LDSLikelihoodCache{T},
+    dyt::AbstractVector{T},
+    ::AbstractVector{T},
+    x::AbstractMatrix{T},
+    y::AbstractMatrix{T0},
+    t::Int,
+    lds::LinearDynamicalSystem{T0,S,O},
+    uy::Union{Nothing,AbstractMatrix}=nothing,
+) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:GaussianObservationModel{T0}}
+    C = lds.obs_model.C
+    d = lds.obs_model.d
+
+    @views mul!(dyt, C, x[:, t])
+    if uy !== nothing
+        @views mul!(dyt, lds.obs_model.D, uy[:, t], one(T), one(T))
+    end
+    @views dyt .= y[:, t] .- dyt .- d
+    _whiten!(cc.R_PD[].chol, dyt)
+    return _cR(cc) - T(0.5) * sum(abs2, dyt)
+end
+
+"""
+    observation_gradient!(out, cc, buf, x, y, t, lds[, uy])
+
+Gaussian emission gradient: `out = C'R⁻¹ (y_t - Cx_t - d - D uy_t)`, using the
+cached `C_inv_R = C'R⁻¹` from `cc`.
+"""
+function observation_gradient!(
+    out::AbstractVector{T},
+    cc::LDSLikelihoodCache{T},
+    buf::AbstractVector{T},
+    x::AbstractMatrix{T},
+    y::AbstractMatrix{T0},
+    t::Int,
+    lds::LinearDynamicalSystem{T0,S,O},
+    uy::Union{Nothing,AbstractMatrix}=nothing,
+) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:GaussianObservationModel{T0}}
+    @views mul!(buf, lds.obs_model.C, x[:, t])
+    if uy !== nothing
+        @views mul!(buf, lds.obs_model.D, uy[:, t], one(T), one(T))
+    end
+    @views buf .= y[:, t] .- buf .- lds.obs_model.d
+    return mul!(out, cc.C_inv_R, buf)
+end
+
+"""
+    observation_hessian!(out, cc, _, _, x, y, t, lds[, α])
+
+Gaussian emission curvature: `out .+= α .* (-C'R⁻¹C)`, using the cached
+`yt_given_xt = -C'R⁻¹C` from `cc` — constant in both `x` and `y`. Both
+scratch buffers are unused.
+"""
+function observation_hessian!(
+    out::AbstractMatrix{T},
+    cc::LDSLikelihoodCache{T},
+    ::AbstractVector{T},
+    ::AbstractVector{T},
+    x::AbstractMatrix{T},
+    y::AbstractMatrix{T0},
+    t::Int,
+    lds::LinearDynamicalSystem{T0,S,O},
+    α::T=one(T),
+) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:GaussianObservationModel{T0}}
+    @. out += α * cc.yt_given_xt
+    return out
 end

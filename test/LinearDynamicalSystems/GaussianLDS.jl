@@ -527,9 +527,11 @@ function test_gaussian_update_R_matches_residual_cov(; rng=MersenneTwister(7))
 end
 
 function test_td_mn_priors_shrink(; rng=MersenneTwister(20260519))
-    # MN-prior shrinkage on [A b B] and [C d D] in the TD fit. With a strong
-    # prior centered at M₀ = 0 and Λ ≫ data, the MAP regression should pull
-    # the fitted coefficients toward 0.
+    #=
+    MN-prior shrinkage on [A b B] and [C d D] in the TD fit. With a strong
+    prior centered at M₀ = 0 and Λ ≫ data, the MAP regression should pull
+    the fitted coefficients toward 0.
+    =#
     @testset "TD: MN priors shrink coefficients toward M₀" begin
         D, p, Tt, N = 3, 4, 60, 4
 
@@ -575,11 +577,13 @@ function test_td_mn_priors_shrink(; rng=MersenneTwister(20260519))
             CD_prior=StateSpaceDynamics.MNPrior(; M₀=CD_M0, Λ=CD_Λ),
         )
         lds_p = LinearDynamicalSystem(sm_p, om_p)
-        # ELBO must be monotone under MN priors — the TD `calculate_elbo` now
-        # includes the MN log-prior trace term `-½ tr(Σ⁻¹ (W-M₀) Λ (W-M₀)')`
-        # for both [A b B] and [C d D]. Without it, the displayed ELBO drops
-        # the MN contribution and can appear non-monotone even though the
-        # underlying MAP objective is increasing.
+        #=
+        ELBO must be monotone under MN priors — the TD `calculate_elbo` now
+        includes the MN log-prior trace term `-½ tr(Σ⁻¹ (W-M₀) Λ (W-M₀)')`
+        for both [A b B] and [C d D]. Without it, the displayed ELBO drops
+        the MN contribution and can appear non-monotone even though the
+        underlying MAP objective is increasing.
+        =#
         elbos_p = fit!(lds_p, y; max_iter=20, progress=false)
         @test all(diff(elbos_p) .>= -1e-6)
 
@@ -657,9 +661,11 @@ function test_td_with_obs_inputs(; rng=MersenneTwister(20260520))
 end
 
 function test_td_ragged_multi_trial(; rng=MersenneTwister(20260521))
-    # Ragged-length multi-trial: exercises the variable-length fallback branch
-    # in smooth!/fit!. Should produce monotone ELBO and match a per-trial fit
-    # of the longest sub-batch.
+    #=
+    Ragged-length multi-trial: exercises the variable-length fallback branch
+    in smooth!/fit!. Should produce monotone ELBO and match a per-trial fit
+    of the longest sub-batch.
+    =#
     @testset "TD: ragged-length multi-trial fit" begin
         D, p = 3, 4
         Ts = [20, 30, 25, 40]   # ragged
@@ -909,5 +915,156 @@ function test_td_weighted_aggregator_matches_unweighted_with_inputs(;
         @test norm(suf_w.dyn_xx[].mat[1:D, (D + 2):end]) > 0
         @test norm(suf_w.obs_xx[].mat[1:D, (D + 2):end]) > 0
     end
+    return nothing
+end
+
+function test_joint_loglikelihood_matches_mvnormal()
+    #=
+    Regression test for the U- vs U'-solve quadratic-form bug: with a
+    Cholesky Σ = U'U, only the transposed factor whitens (r'Σ⁻¹r = ‖U⁻ᵀr‖²);
+    solving with U itself computes r'(UU')⁻¹r. 
+    =#
+    rng = StableRNG(1234)
+    D_lat, p_obs, T_steps = 2, 3, 25
+
+    A_nd = [0.9 0.1; -0.05 0.85]
+    Q_nd = [0.5 0.2; 0.2 0.4]
+    b_nd = [0.1, -0.1]
+    x0_nd = [0.5, -0.5]
+    P0_nd = [1.0 0.3; 0.3 0.8]
+    C_nd = randn(rng, p_obs, D_lat)
+    R_nd = [0.6 0.1 0.0; 0.1 0.5 0.05; 0.0 0.05 0.7]
+    d_nd = [0.1, 0.2, -0.1]
+
+    sm = GaussianStateModel(; A=A_nd, Q=Q_nd, b=b_nd, x0=x0_nd, P0=P0_nd)
+    om = GaussianObservationModel(; C=C_nd, R=R_nd, d=d_nd)
+    lds = LinearDynamicalSystem(;
+        state_model=sm,
+        obs_model=om,
+        latent_dim=D_lat,
+        obs_dim=p_obs,
+        fit_bool=fill(true, 6),
+    )
+
+    x = randn(rng, D_lat, T_steps)
+    y = randn(rng, p_obs, T_steps)
+
+    ll = sum(StateSpaceDynamics.joint_loglikelihood(x, lds, y))
+
+    ref = logpdf(MvNormal(x0_nd, Symmetric(P0_nd)), x[:, 1])
+    for t in 2:T_steps
+        ref += logpdf(MvNormal(A_nd * x[:, t - 1] .+ b_nd, Symmetric(Q_nd)), x[:, t])
+    end
+    for t in 1:T_steps
+        ref += logpdf(MvNormal(C_nd * x[:, t] .+ d_nd, Symmetric(R_nd)), y[:, t])
+    end
+
+    @test ll ≈ ref rtol = 1e-10
+    return nothing
+end
+
+function test_gaussian_gradient_nondiag()
+    #=
+    Non-diagonal Q/P0/R plus state (B*ux) and observation (D*uy) inputs;
+    gradient checked against ForwardDiff through joint_loglikelihood!.
+    =#
+    rng = StableRNG(4321)
+    D_lat, p_obs, T_steps = 2, 3, 30
+
+    A_nd = [0.9 0.1; -0.05 0.85]
+    Q_nd = [0.5 0.2; 0.2 0.4]
+    b_nd = [0.1, -0.1]
+    x0_nd = [0.5, -0.5]
+    P0_nd = [1.0 0.3; 0.3 0.8]
+    B_nd = randn(rng, D_lat, 2)
+    C_nd = randn(rng, p_obs, D_lat)
+    R_nd = [0.6 0.1 0.0; 0.1 0.5 0.05; 0.0 0.05 0.7]
+    d_nd = [0.1, 0.2, -0.1]
+    D_obs_nd = randn(rng, p_obs, 1)
+
+    sm = GaussianStateModel(; A=A_nd, Q=Q_nd, b=b_nd, x0=x0_nd, P0=P0_nd, B=B_nd)
+    om = GaussianObservationModel(; C=C_nd, R=R_nd, d=d_nd, D=D_obs_nd)
+    lds = LinearDynamicalSystem(;
+        state_model=sm,
+        obs_model=om,
+        latent_dim=D_lat,
+        obs_dim=p_obs,
+        fit_bool=fill(true, 6),
+    )
+
+    x = randn(rng, D_lat, T_steps)
+    y = randn(rng, p_obs, T_steps)
+    ux = randn(rng, 2, T_steps)
+    uy = randn(rng, 1, T_steps)
+
+    ws = StateSpaceDynamics.SmoothWorkspace(Float64, D_lat, p_obs, T_steps)
+    StateSpaceDynamics.compute_smooth_constants!(ws, lds)
+    g = copy(StateSpaceDynamics.Gradient!(ws, lds, y, x, ux, uy))
+
+    f =
+        xv -> begin
+            xm = reshape(xv, D_lat, T_steps)
+            wsd = StateSpaceDynamics.SmoothWorkspace(eltype(xv), D_lat, p_obs, T_steps)
+            StateSpaceDynamics.compute_smooth_constants!(wsd, lds)
+            sum(StateSpaceDynamics.joint_loglikelihood!(wsd, xm, lds, y, ux, uy))
+        end
+    g_num = reshape(ForwardDiff.gradient(f, vec(x)), D_lat, T_steps)
+
+    @test norm(g - g_num) < 1e-8
+    return nothing
+end
+
+function test_gaussian_hessian_nondiag()
+    #=
+    Hessian companion to `test_gaussian_gradient_nondiag`: non-diagonal
+    Q/P0/R plus control inputs on both sides, checked against
+    ForwardDiff.hessian through the kernel-based joint_loglikelihood!.
+    Also verifies the Gaussian Hessian is input-independent (the analytic
+    path never sees ux/uy; the numerical path differentiates with them).
+    =#
+    rng = StableRNG(4321)
+    D_lat, p_obs, T_steps = 2, 3, 10
+
+    A_nd = [0.9 0.1; -0.05 0.85]
+    Q_nd = [0.5 0.2; 0.2 0.4]
+    b_nd = [0.1, -0.1]
+    x0_nd = [0.5, -0.5]
+    P0_nd = [1.0 0.3; 0.3 0.8]
+    B_nd = randn(rng, D_lat, 2)
+    C_nd = randn(rng, p_obs, D_lat)
+    R_nd = [0.6 0.1 0.0; 0.1 0.5 0.05; 0.0 0.05 0.7]
+    d_nd = [0.1, 0.2, -0.1]
+    D_obs_nd = randn(rng, p_obs, 1)
+
+    sm = GaussianStateModel(; A=A_nd, Q=Q_nd, b=b_nd, x0=x0_nd, P0=P0_nd, B=B_nd)
+    om = GaussianObservationModel(; C=C_nd, R=R_nd, d=d_nd, D=D_obs_nd)
+    lds = LinearDynamicalSystem(;
+        state_model=sm,
+        obs_model=om,
+        latent_dim=D_lat,
+        obs_dim=p_obs,
+        fit_bool=fill(true, 6),
+    )
+
+    x = randn(rng, D_lat, T_steps)
+    y = randn(rng, p_obs, T_steps)
+    ux = randn(rng, 2, T_steps)
+    uy = randn(rng, 1, T_steps)
+
+    ws = StateSpaceDynamics.SmoothWorkspace(Float64, D_lat, p_obs, T_steps)
+    StateSpaceDynamics.compute_smooth_constants!(ws, lds)
+    StateSpaceDynamics.Hessian!(ws, lds, y, x)
+    hess = block_tridgm(ws.btd.H_diag, ws.btd.H_super, ws.btd.H_sub)
+
+    f =
+        xv -> begin
+            xm = reshape(xv, D_lat, T_steps)
+            wsd = StateSpaceDynamics.SmoothWorkspace(eltype(xv), D_lat, p_obs, T_steps)
+            StateSpaceDynamics.compute_smooth_constants!(wsd, lds)
+            sum(StateSpaceDynamics.joint_loglikelihood!(wsd, xm, lds, y, ux, uy))
+        end
+    hess_num = ForwardDiff.hessian(f, vec(x))
+
+    @test norm(hess_num - hess) < 1e-8
     return nothing
 end

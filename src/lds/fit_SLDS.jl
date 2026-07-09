@@ -295,9 +295,9 @@ end
 """
     Gradient!(ws, slds, y, x, w)
 
-In-place SLDS gradient with a backend compatible shape to LDS.
-Semantics match current SLDS.jl: compute per-timestep component gradient and scale by w[k,t].
-Writes into `ws.grad_buf` and returns it.
+In-place SLDS gradient: each component's complete-data gradient is scaled
+per-timestep by the responsibility `w[k, t]` and accumulated. Writes into
+`ws.grad_buf` and returns it.
 """
 function Gradient!(
     ws::SLDSSmoothWorkspace{T},
@@ -314,179 +314,55 @@ function Gradient!(
 
     dxt = ws.dxt
     dxt_next = ws.dxt_next
-    dyt = ws.dyt
+    obs_buf = ws.z
     tmp1 = ws.tmp1
     tmp2 = ws.tmp2
     tmp3 = ws.tmp3
-
-    z = ws.z
-    λ = ws.λ
 
     @views for k in 1:K
         lds_k = slds.LDSs[k]
         cc = ws.consts[k]
 
-        A = lds_k.state_model.A
-        b = lds_k.state_model.b
         x0 = lds_k.state_model.x0
 
-        A_inv_Q = cc.A_inv_Q        # A'Q^{-1}
+        A_inv_Q = cc.A_inv_Q          # A'Q^{-1}
         neg_Q_inv = cc.xt_given_xt_1  # -Q^{-1}
-        neg_P0_inv = cc.x_t            # -P0^{-1}
+        neg_P0_inv = cc.x_t           # -P0^{-1}
 
-        if lds_k.obs_model isa GaussianObservationModel{T}
-            C = cc.C
-            d = lds_k.obs_model.d
-            C_inv_R = cc.C_inv_R        # C'R^{-1}
+        # t = 1: emission + prior, both weighted by w[k,1]
+        observation_gradient!(tmp1, cc, obs_buf, x, y, 1, lds_k)
+        @. dxt = x[:, 1] - x0
+        mul!(tmp3, neg_P0_inv, dxt)
+        α = w[k, 1]
+        @. grad[:, 1] += α * (tmp1 + tmp3)
 
-            if Tsteps == 1
-                # emission at t=1
-                mul!(dyt, C, x[:, 1])
-                @. dyt = y[:, 1] - dyt - d
-                mul!(tmp1, C_inv_R, dyt)
+        Tsteps == 1 && continue
 
-                # prior at t=1
-                @. dxt = x[:, 1] - x0
-                mul!(tmp3, neg_P0_inv, dxt)
+        # Outgoing dynamics term comes from the factor at time 2, weighted by w[k,2]
+        _transition_residual!(dxt_next, x, 2, lds_k)
+        mul!(tmp2, A_inv_Q, dxt_next)
+        @. grad[:, 1] += w[k, 2] * tmp2
 
-                α = w[k, 1]
-                @. grad[:, 1] += α * (tmp1 + tmp3)
-                continue
-            end
-
-            # t = 1 
-            # emission (weighted by w[k,1])
-            mul!(dyt, C, x[:, 1])
-            @. dyt = y[:, 1] - dyt - d
-            mul!(tmp1, C_inv_R, dyt)
-            α = w[k, 1]
-            @. grad[:, 1] += α * tmp1
-
-            # prior (weighted by w[k,1])
-            @. dxt = x[:, 1] - x0
-            mul!(tmp3, neg_P0_inv, dxt)
-            @. grad[:, 1] += α * tmp3
-
-            # outgoing dynamics term comes from factor at time 2, weighted by w[k,2]
-            mul!(dxt_next, A, x[:, 1])
-            @. dxt_next = x[:, 2] - dxt_next - b
-            mul!(tmp2, A_inv_Q, dxt_next)
-            β = w[k, 2]
-            @. grad[:, 1] += β * tmp2
-
-            # 2 .. T-1
-            for t in 2:(Tsteps - 1)
-                # emission at t, weighted by w[k,t]
-                mul!(dyt, C, x[:, t])
-                @. dyt = y[:, t] - dyt - d
-                mul!(tmp1, C_inv_R, dyt)
-                α = w[k, t]
-                @. grad[:, t] += α * tmp1
-
-                # incoming dynamics factor at time t, weighted by w[k,t]
-                mul!(dxt, A, x[:, t - 1])
-                @. dxt = x[:, t] - dxt - b
-                mul!(tmp3, neg_Q_inv, dxt)
-                @. grad[:, t] += α * tmp3
-
-                # outgoing dynamics factor at time t+1, weighted by w[k,t+1]
-                mul!(dxt_next, A, x[:, t])
-                @. dxt_next = x[:, t + 1] - dxt_next - b
-                mul!(tmp2, A_inv_Q, dxt_next)
-                β = w[k, t + 1]
-                @. grad[:, t] += β * tmp2
-            end
-
-            # t = T
-            # emission at T, weighted by w[k,T]
-            mul!(dyt, C, x[:, Tsteps])
-            @. dyt = y[:, Tsteps] - dyt - d
-            mul!(tmp1, C_inv_R, dyt)
-            α = w[k, Tsteps]
-            @. grad[:, Tsteps] += α * tmp1
-
-            # incoming dynamics factor at time T, weighted by w[k,T]
-            mul!(dxt, A, x[:, Tsteps - 1])
-            @. dxt = x[:, Tsteps] - dxt - b
+        # 2 .. T-1: emission + incoming factor at t (w[k,t]),
+        # outgoing factor at t+1 (w[k,t+1])
+        for t in 2:(Tsteps - 1)
+            observation_gradient!(tmp1, cc, obs_buf, x, y, t, lds_k)
+            _transition_residual!(dxt, x, t, lds_k)
             mul!(tmp3, neg_Q_inv, dxt)
-            @. grad[:, Tsteps] += α * tmp3
+            α = w[k, t]
+            @. grad[:, t] += α * (tmp1 + tmp3)
 
-        elseif lds_k.obs_model isa PoissonObservationModel{T}
-            C = cc.C
-            d = cc.d  # cached Poisson log-link intercept
-
-            if Tsteps == 1
-                # emission: C'*(y - λ)
-                mul!(z, C, x[:, 1])
-                @. λ = exp(z + d)
-                @. z = y[:, 1] - λ
-                mul!(tmp1, C', z)
-
-                # prior
-                @. dxt = x[:, 1] - x0
-                mul!(tmp3, neg_P0_inv, dxt)
-
-                α = w[k, 1]
-                @. grad[:, 1] += α * (tmp1 + tmp3)
-                continue
-            end
-
-            # t = 1
-            mul!(z, C, x[:, 1])
-            @. λ = exp(z + d)
-            @. z = y[:, 1] - λ
-            mul!(tmp1, C', z)
-            α = w[k, 1]
-            @. grad[:, 1] += α * tmp1
-
-            @. dxt = x[:, 1] - x0
-            mul!(tmp3, neg_P0_inv, dxt)
-            @. grad[:, 1] += α * tmp3
-
-            # outgoing dynamics factor at time 2 weighted by w[k,2]
-            mul!(dxt_next, A, x[:, 1])
-            @. dxt_next = x[:, 2] - dxt_next - b
+            _transition_residual!(dxt_next, x, t + 1, lds_k)
             mul!(tmp2, A_inv_Q, dxt_next)
-            β = w[k, 2]
-            @. grad[:, 1] += β * tmp2
-
-            # 2 .. T-1
-            for t in 2:(Tsteps - 1)
-                mul!(z, C, x[:, t])
-                @. λ = exp(z + d)
-                @. z = y[:, t] - λ
-                mul!(tmp1, C', z)
-                α = w[k, t]
-                @. grad[:, t] += α * tmp1
-
-                mul!(dxt, A, x[:, t - 1])
-                @. dxt = x[:, t] - dxt - b
-                mul!(tmp3, neg_Q_inv, dxt)
-                @. grad[:, t] += α * tmp3
-
-                mul!(dxt_next, A, x[:, t])
-                @. dxt_next = x[:, t + 1] - dxt_next - b
-                mul!(tmp2, A_inv_Q, dxt_next)
-                β = w[k, t + 1]
-                @. grad[:, t] += β * tmp2
-            end
-
-            # t = T
-            mul!(z, C, x[:, Tsteps])
-            @. λ = exp(z + d)
-            @. z = y[:, Tsteps] - λ
-            mul!(tmp1, C', z)
-            α = w[k, Tsteps]
-            @. grad[:, Tsteps] += α * tmp1
-
-            mul!(dxt, A, x[:, Tsteps - 1])
-            @. dxt = x[:, Tsteps] - dxt - b
-            mul!(tmp3, neg_Q_inv, dxt)
-            @. grad[:, Tsteps] += α * tmp3
-
-        else
-            throw(ArgumentError("Unsupported observation model $(typeof(lds_k.obs_model))"))
+            @. grad[:, t] += w[k, t + 1] * tmp2
         end
+
+        # t = T: emission + incoming factor at T, weighted by w[k,T]
+        observation_gradient!(tmp1, cc, obs_buf, x, y, Tsteps, lds_k)
+        _transition_residual!(dxt, x, Tsteps, lds_k)
+        mul!(tmp3, neg_Q_inv, dxt)
+        α = w[k, Tsteps]
+        @. grad[:, Tsteps] += α * (tmp1 + tmp3)
     end
 
     return grad
@@ -514,7 +390,7 @@ function Hessian_blocks!(
     x::AbstractMatrix{T},
     w::AbstractMatrix{T},
 ) where {T<:Real}
-    latent_dim, Tsteps = size(x)
+    Tsteps = size(x, 2)
     K = length(slds.LDSs)
 
     H_diag = ws.btd.H_diag
@@ -546,31 +422,7 @@ function Hessian_blocks!(
         if Tsteps == 1
             α = w[k, 1]
             @. H_diag[1] += α * neg_P0_inv
-
-            if lds_k.obs_model isa GaussianObservationModel{T}
-                @. H_diag[1] += α * cc.yt_given_xt
-            elseif lds_k.obs_model isa PoissonObservationModel{T}
-                C = cc.C
-                d = cc.d  # cached Poisson log-link intercept
-
-                mul!(z, C, x[:, 1])
-                @. λ = exp(z + d)
-
-                for j in 1:latent_dim, i in 1:latent_dim
-                    acc = zero(T)
-                    for o in eachindex(λ)
-                        acc += C[o, i] * λ[o] * C[o, j]
-                    end
-                    H_diag[1][i, j] -= α * acc
-                end
-            else
-                throw(
-                    ArgumentError(
-                        "Unsupported observation model $(typeof(lds_k.obs_model))"
-                    ),
-                )
-            end
-
+            observation_hessian!(H_diag[1], cc, z, λ, x, y, 1, lds_k, α)
             continue
         end
 
@@ -597,35 +449,13 @@ function Hessian_blocks!(
         # - At t=T: current-role from factor at T weighted by w[k,T]
         @. H_diag[Tsteps] += w[k, Tsteps] * neg_Q_inv
 
-        # Emission curvature contributions
-        if lds_k.obs_model isa GaussianObservationModel{T}
-            for t in 1:Tsteps
-                @. H_diag[t] += w[k, t] * cc.yt_given_xt   # -C'R^{-1}C
-            end
-
-        elseif lds_k.obs_model isa PoissonObservationModel{T}
-            C = cc.C
-            d = cc.d  # cached Poisson log-link intercept
-
-            # Add -w[k,t] * C' diag(λ_t) C where λ_t = exp(C x_t + d)
-            # This implementation is allocation-free but O(latent^2 * obs) per time. Fix later.
-            for t in 1:Tsteps
-                α = w[k, t]
-
-                mul!(z, C, x[:, t])
-                @. λ = exp(z + d)
-
-                for j in 1:latent_dim, i in 1:latent_dim
-                    acc = zero(T)
-                    for o in eachindex(λ)
-                        acc += C[o, i] * λ[o] * C[o, j]
-                    end
-                    H_diag[t][i, j] -= α * acc
-                end
-            end
-
-        else
-            throw(ArgumentError("Unsupported observation model $(typeof(lds_k.obs_model))"))
+        #=
+        Emission curvature contributions, weighted by w[k,t]. Shared kernel;
+        dispatches on the observation model (Gaussian: cached -C'R⁻¹C,
+        Poisson: -C' diag(λ_t) C with λ_t = exp(C x_t + d)).
+        =#
+        for t in 1:Tsteps
+            observation_hessian!(H_diag[t], cc, z, λ, x, y, t, lds_k, w[k, t])
         end
     end
 
@@ -948,9 +778,11 @@ function elbo!(
             trial_elbo += w[k, 1] * log(slds.πₖ[k] + T(1e-12))
         end
 
-        # log p(z_t | z_{t-1}) = sum_t sum_{i,j} ξ[t][i,j] * log A[i,j].
-        # ξ is indexed by global timestep; the last entry of each trial (ξ[t2]) is zero
-        # by FB convention so we iterate t1..t2-1.
+        #=
+        log p(z_t | z_{t-1}) = sum_t sum_{i,j} ξ[t][i,j] * log A[i,j].
+        ξ is indexed by global timestep; the last entry of each trial (ξ[t2]) is zero
+        by FB convention so we iterate t1..t2-1.
+        =#
         for t in t1:(t2 - 1)
             ξt = fb_storage.ξ[t]
             for i in 1:K, j in 1:K
@@ -1027,10 +859,12 @@ function mstep!(
             update_initial_state_covariance!(lds_k, suf, sws)
             update_A_b!(lds_k, suf, sws)
             update_Q!(lds_k, suf, sws)
-            # SLDS owns a single sws (not a pool); wrap as a singleton so
-            # `update_observation_model!`'s threaded gradient path runs
-            # serially. SLDS Poisson is a niche path; the threading
-            # overhead isn't a meaningful win here.
+            #=
+            SLDS owns a single sws (not a pool); wrap as a singleton so
+            `update_observation_model!`'s threaded gradient path runs
+            serially. SLDS Poisson is a niche path; the threading
+            overhead isn't a meaningful win here.
+            =#
             update_observation_model!(lds_k, tfs, y, [sws], weights)
         else
             throw(ArgumentError("Unsupported observation model $(typeof(lds_k.obs_model))"))
@@ -1127,15 +961,7 @@ function fit!(
         mstep!(slds, tfs, fb_storage, dl, y, sws; obs_inputs=obs_inputs, seq_ends=seq_ends)
         refresh_slds_constants!(slds_ws, slds)
 
-        # print progress
         prog !== nothing && next!(prog)
-
-        # check convergence
-        # if iter > 1 && abs(elbos[iter] - elbos[iter - 1]) < tol
-        #     prog !== nothing && finish!(prog)
-        #     resize!(elbos, iter)
-        #     return elbos
-        # end
     end
 
     if prog !== nothing

@@ -31,10 +31,12 @@ end
 
 function test_backtracking_returns_best_on_exhaustion()
     @testset "backtracking! returns best monotone step when max_iters exhausts" begin
-        # Force Armijo to never accept (huge c1) and cap phase 2 at one iter, so
-        # the loop exhausts and must fall back to the best step seen — which is
-        # the phase-1 step (α=1, ϕ=1), strictly better than the lone phase-2
-        # trial it would otherwise have returned.
+        #=
+        Force Armijo to never accept (huge c1) and cap phase 2 at one iter, so
+        the loop exhausts and must fall back to the best step seen — which is
+        the phase-1 step (α=1, ϕ=1), strictly better than the lone phase-2
+        trial it would otherwise have returned.
+        =#
         x = [2.0]
         ϕ!() = x[1]^2
         ls = SSDopt.BackTrackingLS{Float64}(; c1=1e6, max_iters=1)
@@ -124,9 +126,11 @@ end
 
 function test_newton_smooth_returns_false_on_max_iter()
     @testset "newton_smooth! returns false when max_iter is exhausted" begin
-        # Convergence is only detected at the top of the *next* iteration, so a
-        # single allowed iteration steps onto the target yet still reports
-        # non-convergence
+        #=
+        Convergence is only detected at the top of the *next* iteration, so a
+        single allowed iteration steps onto the target yet still reports
+        non-convergence
+        =#
         pr = _newton_quadratic_problem()
         converged = SSDopt.newton_smooth!(
             Val(:min),

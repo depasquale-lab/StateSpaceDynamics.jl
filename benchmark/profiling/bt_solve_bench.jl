@@ -35,7 +35,7 @@ btd = sws.btd
 # Time the Hessian build
 println("=== Hessian build + neg ===")
 b = @benchmark begin
-    StateSpaceDynamics._fill_hessian_blocks_poisson!($sws, $lds, $x0_mat)
+    StateSpaceDynamics.Hessian!($sws, $lds, $y, $x0_mat)
     StateSpaceDynamics._negate_blocks!($btd, $T_t)
 end
 println(
@@ -43,7 +43,7 @@ println(
 )
 
 # Build Hessian once, then time the BT solve
-StateSpaceDynamics._fill_hessian_blocks_poisson!(sws, lds, x0_mat)
+StateSpaceDynamics.Hessian!(sws, lds, y, x0_mat)
 StateSpaceDynamics._negate_blocks!(btd, T_t)
 neg_sub_v = view(btd.neg_sub, 1:(T_t - 1))
 neg_diag_v = view(btd.neg_diag, 1:T_t)
@@ -62,18 +62,21 @@ println(
     "  t=$(round(median(b2).time / 1e6; digits=3)) ms allocs=$(b2.allocs) mem=$(b2.memory) B",
 )
 
-# Time _loglikelihood_ws (the per-eval cost in the line search)
-println("\n=== _loglikelihood_ws (one phi-eval) ===")
-b3 = @benchmark StateSpaceDynamics._loglikelihood_ws($x0_mat, $lds, $y, $sws)
+# Time the workspace joint_loglikelihood! (the per-eval cost in the line search)
+println("\n=== sum(joint_loglikelihood!(ws, x, lds, y, lognorm_t)) (one phi-eval) ===")
+lognorm_t = StateSpaceDynamics._poisson_lognorm_t(y)
+b3 = @benchmark sum(
+    StateSpaceDynamics.joint_loglikelihood!($sws, $x0_mat, $lds, $y, $lognorm_t)
+)
 println(
     "  t=$(round(median(b3).time / 1e6; digits=3)) ms allocs=$(b3.allocs) mem=$(b3.memory) B",
 )
 
 # Compare to UMFPACK solve on equivalent sparse Hessian
 println("\n=== UMFPACK sparse solve (for comparison) ===")
-hess_ws = StateSpaceDynamics.BlockTridiagonalWorkspace(Float64, D, T_t)
-_H = StateSpaceDynamics.Hessian!(hess_ws, lds, y, x0_mat)
-neg_H = -_H
+StateSpaceDynamics.Hessian!(sws, lds, y, x0_mat)
+StateSpaceDynamics.block_tridgm!(btd)
+neg_H = -btd.H_sparse
 b4 = @benchmark $neg_H \ $g_vec
 println(
     "  t=$(round(median(b4).time / 1e6; digits=3)) ms allocs=$(b4.allocs) mem=$(round(b4.memory/1024; digits=1)) KB",

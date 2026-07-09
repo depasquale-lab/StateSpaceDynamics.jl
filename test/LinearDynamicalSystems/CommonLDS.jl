@@ -61,12 +61,8 @@ function test_hessian_common(lds, x, y)
         yi = y[i][:, 1:tsteps_test]
         xi = x[i][:, 1:tsteps_test]
 
-        if lds.obs_model isa StateSpaceDynamics.GaussianObservationModel
-            StateSpaceDynamics.compute_smooth_constants!(ws, lds)
-            StateSpaceDynamics.Hessian!(ws, lds, yi, xi)
-        else
-            StateSpaceDynamics.Hessian!(ws.btd, lds, yi, xi)
-        end
+        StateSpaceDynamics.compute_smooth_constants!(ws, lds)
+        StateSpaceDynamics.Hessian!(ws, lds, yi, xi)
 
         btd = ws.btd
         @test length(btd.H_diag) == tsteps_test
@@ -110,9 +106,11 @@ function test_smooth_common(lds, x, y)
         @test norm(grad_numerical - grad_analytical) < 1e-7
     end
 
-    # The allocating `smooth` convenience wrappers (single-trial + multi-trial)
-    # should reproduce the in-place `smooth!` result: same algorithm, fresh
-    # buffers. This is the only direct coverage of those public entry points.
+    #=
+    The allocating `smooth` convenience wrappers (single-trial + multi-trial)
+    should reproduce the in-place `smooth!` result: same algorithm, fresh
+    buffers. This is the only direct coverage of those public entry points.
+    =#
     xs_multi, Ps_multi = StateSpaceDynamics.smooth(lds, y)
     @test length(xs_multi) == length(y)
     @test length(Ps_multi) == length(y)
@@ -306,9 +304,7 @@ end
 Test that EM algorithm produces monotonically increasing likelihood/ELBO.
 """
 function test_em_convergence_common(toy_fn, n_trials=1)
-    # Seed via StableRNGs so the sampled dataset is reproducible regardless
-    # of test ordering and Julia version (the default RNG implementation can
-    # change across Julia majors; StableRNG is contractually stable).
+    # Seed via StableRNGs so the sampled dataset is reproducible
     Random.seed!(Random.default_rng(), rand(StableRNG(20260510), UInt))
     lds, x, y = toy_fn(n_trials)
     objective = fit!(lds, y; max_iter=100)

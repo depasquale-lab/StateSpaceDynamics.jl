@@ -83,9 +83,11 @@ function test_PPCA_fit()
 end
 
 function test_PPCA_samples()
-    # Seeded so the empirical-mean / noise-level tolerances aren't RNG-flaky
-    # across test orderings (10k Gaussian draws can occasionally drift past
-    # atol=0.05 even when the underlying sampler is correct).
+    #=
+    Seeded so the empirical-mean / noise-level tolerances aren't RNG-flaky
+    across test orderings (10k Gaussian draws can occasionally drift past
+    atol=0.05 even when the underlying sampler is correct).
+    =#
     rng = StableRNG(20260516)
     D = 3
     k = 2

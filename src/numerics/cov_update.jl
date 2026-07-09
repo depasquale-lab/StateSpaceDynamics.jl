@@ -53,11 +53,13 @@ function info_update!(
     Pmat = cache.Pmat
     Pfac = cache.Pchol_factors
 
-    # (1) M ← inv(P0), using P0's cached Cholesky.
-    #     potri! takes a Cholesky factor (in the `uplo` triangle) and
-    #     overwrites it with the inverse of the original PD matrix
-    #     (also in the `uplo` triangle). The other triangle is left
-    #     untouched, so we then reflect to get a full symmetric matrix.
+    #=
+    (1) M ← inv(P0), using P0's cached Cholesky.
+        potri! takes a Cholesky factor (in the `uplo` triangle) and
+        overwrites it with the inverse of the original PD matrix
+        (also in the `uplo` triangle). The other triangle is left
+        untouched, so we then reflect to get a full symmetric matrix.
+    =#
     uplo0 = P0.chol.uplo                       # 'U' or 'L'
     copyto!(M, P0.chol.factors)
     LAPACK.potri!(uplo0, M)
@@ -79,9 +81,11 @@ function info_update!(
     copyto!(Pmat, M)
     copytri!(Pmat, 'U')
 
-    # (6) Fresh Cholesky of Pmat into Pfac — the `chol` field of output.
-    #     Unavoidable: there is no closed-form shortcut from chol(M) to
-    #     chol(inv(M)) that preserves standard Cholesky triangularity.
+    #=
+    (6) Fresh Cholesky of Pmat into Pfac — the `chol` field of output.
+        Unavoidable: there is no closed-form shortcut from chol(M) to
+        chol(inv(M)) that preserves standard Cholesky triangularity.
+    =#
     copyto!(Pfac, Pmat)
     Cout = cholesky!(Symmetric(Pfac, :U); check=true)
 
@@ -116,11 +120,13 @@ function info_update!(
         size(P_dest, 1) == n || throw(DimensionMismatch("P_dest size mismatch"))
     end
 
-    # Steps (3)–(5) below write/read the *upper* factor of `P_dest`. PDMats can
-    # in principle carry a lower factor; refreshing `P_dest.chol` with an upper
-    # Cholesky while its `.uplo` tag said 'L' would leave it inconsistent. All
-    # package-allocated PDMats use 'U' (Julia's default for `cholesky(Matrix)`),
-    # so assert the precondition rather than handle a case no caller produces.
+    #=
+    Steps (3)–(5) below write/read the *upper* factor of `P_dest`. PDMats can
+    in principle carry a lower factor; refreshing `P_dest.chol` with an upper
+    Cholesky while its `.uplo` tag said 'L' would leave it inconsistent. All
+    package-allocated PDMats use 'U' (Julia's default for `cholesky(Matrix)`),
+    so assert the precondition rather than handle a case no caller produces.
+    =#
     @assert P_dest.chol.uplo == 'U' "info_update! requires P_dest to hold an upper Cholesky factor"
 
     M = scratch_M

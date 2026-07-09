@@ -48,9 +48,11 @@ function _make_poisson_lds(latent_dim::Int, obs_dim::Int; rng=Random.default_rng
     )
 end
 
-# Dense variants with non-zero C and d so the emission terms in the
-# gradient/Hessian are actually exercised (the plain `_make_*` helpers use
-# C = 0, which zeroes out every emission contribution).
+#=
+Dense variants with non-zero C and d so the emission terms in the
+gradient/Hessian are actually exercised (the plain `_make_*` helpers use
+C = 0, which zeroes out every emission contribution).
+=#
 function _make_gaussian_lds_dense(latent_dim::Int, obs_dim::Int; seed::Int=0)
     rng = MersenneTwister(seed)
     A = 0.5 * rand(rng, latent_dim, latent_dim)
@@ -142,9 +144,11 @@ function _block_tridiag_mul(H_diag, H_super, H_sub, x::AbstractVector)
     return y
 end
 
-# The package no longer ships allocating `Gradient`/`Hessian` wrappers; these
-# tiny test helpers build a workspace and call the in-place `!` versions, then
-# copy the blocks out so the surrounding assertions are unchanged.
+#=
+The package no longer ships allocating `Gradient`/`Hessian` wrappers; these
+tiny test helpers build a workspace and call the in-place `!` versions, then
+copy the blocks out so the surrounding assertions are unchanged.
+=#
 function _slds_gradient(slds, y, x, w)
     ws = StateSpaceDynamics.SLDSSmoothWorkspace(eltype(y), slds, size(y, 2))
     StateSpaceDynamics.Gradient!(ws, slds, y, x, w)
@@ -913,10 +917,6 @@ function test_SLDS_smooth_entropy_calculation(; rng=MersenneTwister(0xC0FFEE))
     # Call smooth! directly to access StateSpaceDynamics.FilterSmooth
     fs = StateSpaceDynamics.initialize_FilterSmooth(slds.LDSs[1], tsteps)
     return StateSpaceDynamics.smooth!(slds, fs, y[1], w)
-
-    # Entropy should be positive (for Gaussian)
-    # @test fs.entropy > 0
-    # @test isfinite(fs.entropy)
 end
 
 function test_SLDS_smooth_covariance_symmetry(; rng=MersenneTwister(0xC0FFEE))
@@ -1705,9 +1705,11 @@ function test_SLDS_mstep_updates_parameters_poisson(; rng=MersenneTwister(0xC0FF
     slds_ws = StateSpaceDynamics.SLDSSmoothWorkspace(Float64, slds, tsteps)
     sws = StateSpaceDynamics.SmoothWorkspace(Float64, latent_dim, obs_dim, tsteps)
 
-    # Warm-start smooth so sample_posterior! has a posterior to draw from. estep!
-    # then re-smooths with the γ weights, filling the posterior covariances the
-    # M-step aggregator reads (estep! → mstep! here; elbo! is skipped).
+    #=
+    Warm-start smooth so sample_posterior! has a posterior to draw from. estep!
+    then re-smooths with the γ weights, filling the posterior covariances the
+    M-step aggregator reads (estep! → mstep! here; elbo! is skipped).
+    =#
     for trial in 1:ntrials
         w_uniform = ones(Float64, K, tsteps) ./ K
         StateSpaceDynamics.smooth!(slds, tfs[trial], y[trial], w_uniform; ws=slds_ws)
