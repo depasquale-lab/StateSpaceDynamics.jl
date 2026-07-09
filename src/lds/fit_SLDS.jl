@@ -330,7 +330,7 @@ function Gradient!(
         neg_P0_inv = cc.x_t           # -P0^{-1}
 
         # t = 1: emission + prior, both weighted by w[k,1]
-        observationgradient!(tmp1, cc, obs_buf, x, y, 1, lds_k)
+        observation_gradient!(tmp1, cc, obs_buf, x, y, 1, lds_k)
         @. dxt = x[:, 1] - x0
         mul!(tmp3, neg_P0_inv, dxt)
         α = w[k, 1]
@@ -346,7 +346,7 @@ function Gradient!(
         # 2 .. T-1: emission + incoming factor at t (w[k,t]),
         # outgoing factor at t+1 (w[k,t+1])
         for t in 2:(Tsteps - 1)
-            observationgradient!(tmp1, cc, obs_buf, x, y, t, lds_k)
+            observation_gradient!(tmp1, cc, obs_buf, x, y, t, lds_k)
             _transition_residual!(dxt, x, t, lds_k)
             mul!(tmp3, neg_Q_inv, dxt)
             α = w[k, t]
@@ -358,7 +358,7 @@ function Gradient!(
         end
 
         # t = T: emission + incoming factor at T, weighted by w[k,T]
-        observationgradient!(tmp1, cc, obs_buf, x, y, Tsteps, lds_k)
+        observation_gradient!(tmp1, cc, obs_buf, x, y, Tsteps, lds_k)
         _transition_residual!(dxt, x, Tsteps, lds_k)
         mul!(tmp3, neg_Q_inv, dxt)
         α = w[k, Tsteps]
@@ -422,7 +422,7 @@ function Hessian_blocks!(
         if Tsteps == 1
             α = w[k, 1]
             @. H_diag[1] += α * neg_P0_inv
-            observationhessian!(H_diag[1], cc, z, λ, x, y, 1, lds_k, α)
+            observation_hessian!(H_diag[1], cc, z, λ, x, y, 1, lds_k, α)
             continue
         end
 
@@ -453,7 +453,7 @@ function Hessian_blocks!(
         # dispatches on the observation model (Gaussian: cached -C'R⁻¹C,
         # Poisson: -C' diag(λ_t) C with λ_t = exp(C x_t + d)).
         for t in 1:Tsteps
-            observationhessian!(H_diag[t], cc, z, λ, x, y, t, lds_k, w[k, t])
+            observation_hessian!(H_diag[t], cc, z, λ, x, y, t, lds_k, w[k, t])
         end
     end
 

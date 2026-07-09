@@ -7,8 +7,8 @@ Poisson LDS
     Gradient:       Gradient!(ws, lds, y, x)
                     gradient_observation_model!(grad, C, d, tfs, y, sws_pool)
 
-    Hessian:        observationhessian!(out, cc, z, λ, x, y, t, lds[, α])
-                    (generic Hessian! lives in continuous_latents.jl)
+    Hessian:        (generic Hessian! lives in continuous_latents.jl;
+                    emission kernels in poisson_observations.jl)
 
     Smooth:         smooth!(lds, fs, y, sws)
                     smooth!(lds, tfs, y, sws_pool)
@@ -71,7 +71,7 @@ function joint_loglikelihood!(
         ll_vec[t] = dot(y[:, t], η) - sum(exp, η) - lognorm_t[t]
 
         # Prior (t = 1) / transition (t ≥ 2)
-        ll_vec[t] += stateloglikelihood!(ws, dx, tmp, x, t, plds)
+        ll_vec[t] += state_loglikelihood!(ws, dx, tmp, x, t, plds)
     end
 
     return ll_vec
@@ -99,38 +99,6 @@ function joint_loglikelihood(
     x_R = convert(AbstractMatrix{R}, x)
 
     return joint_loglikelihood!(ws, x_R, plds, y)
-end
-
-"""
-    observationloglikelihood!(cc, z, λ, x, y, t, lds[, uy])
-
-Poisson emission term: with rate `λ = exp(Cx_t + d)`,
-`log p(y_t|x_t) = y⋅log(λ) - sum(λ) - sum(log(y!))`. `z` and `λ` are `obs_dim`
-scratch vectors for the linear predictor and the rate. The cache and `uy`
-arguments are unused (no covariance term; Poisson observation inputs are not
-supported).
-"""
-function observationloglikelihood!(
-    ::LDSLikelihoodCache{T},
-    z::AbstractVector{T},
-    λ::AbstractVector{T},
-    x::AbstractMatrix{T},
-    y::AbstractMatrix{T0},
-    t::Int,
-    lds::LinearDynamicalSystem{T0,S,O},
-    ::Union{Nothing,AbstractMatrix}=nothing,
-) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:PoissonObservationModel{T0}}
-    C = lds.obs_model.C
-    d = lds.obs_model.d
-
-    # z = Cx + d ; λ = exp(z)
-    @views mul!(z, C, x[:, t])
-    z .+= d
-    @. λ = exp(z)
-
-    # y⋅z - λ - log(y!)  (loggamma(n+1) = log(n!) for real n≥0)
-    yt = view(y, :, t)
-    return dot(yt, z) - sum(λ) - sum(yi -> loggamma(yi + one(T)), yt)
 end
 
 """
@@ -176,68 +144,6 @@ function loglikelihood(
         "log p(y) is intractable). Use joint_loglikelihood(x, plds, y) for the " *
         "complete-data log-likelihood, or the ELBO from fit! as a lower bound.",
     )
-end
-
-"""
-    observationgradient!(out, cc, buf, x, y, t, lds[, uy])
-
-Poisson emission gradient: `out = C'(y_t - λ_t)` with `λ_t = exp(Cx_t + d)`.
-The cache and `uy` arguments are unused (no covariance term; Poisson
-observation inputs are not supported).
-"""
-function observationgradient!(
-    out::AbstractVector{T},
-    ::LDSLikelihoodCache{T},
-    buf::AbstractVector{T},
-    x::AbstractMatrix{T},
-    y::AbstractMatrix{T0},
-    t::Int,
-    lds::LinearDynamicalSystem{T0,S,O},
-    ::Union{Nothing,AbstractMatrix}=nothing,
-) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:PoissonObservationModel{T0}}
-    C = lds.obs_model.C
-    d = lds.obs_model.d
-    @views mul!(buf, C, x[:, t])
-    @views buf .= y[:, t] .- exp.(buf .+ d)
-    return mul!(out, C', buf)
-end
-
-"""
-    observationhessian!(out, cc, z, λ, x, y, t, lds[, α])
-
-Poisson emission curvature: `out .+= α .* (-C' diag(λ_t) C)` with
-`λ_t = exp(C x_t + d)` — independent of `y` for the canonical log link.
-Method of the generic `observationhessian!` dispatch point (see
-`continuous_latents.jl`); `z` and `λ` are `obs_dim` scratch for the linear
-predictor and the rate, `cc` is unused (no covariance in the emission term).
-"""
-function observationhessian!(
-    out::AbstractMatrix{T},
-    ::LDSLikelihoodCache{T},
-    z::AbstractVector{T},
-    λ::AbstractVector{T},
-    x::AbstractMatrix{T},
-    y::AbstractMatrix{T0},
-    t::Int,
-    lds::LinearDynamicalSystem{T0,S,O},
-    α::T=one(T),
-) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:PoissonObservationModel{T0}}
-    C = lds.obs_model.C
-    d = lds.obs_model.d
-    obs_dim, latent_dim = size(C)
-
-    @views mul!(z, C, x[:, t])
-    @. λ = exp(z + d)
-
-    # out .+= α * (-C' diag(λ) C), allocation-free (O(latent² · obs) per call).
-    for j in 1:latent_dim, i in 1:latent_dim
-        acc = zero(T)
-        for k in 1:obs_dim
-            acc += C[k, i] * λ[k] * C[k, j]
-        end
-        out[i, j] -= α * acc
-    end
-    return out
 end
 
 """

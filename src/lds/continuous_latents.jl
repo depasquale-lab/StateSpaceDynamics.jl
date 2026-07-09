@@ -1,14 +1,14 @@
 #=============================================================================
 Continuous (Linear Gaussian) latents
 
-    Log-Likelihood kernels: stateloglikelihood!(cc, dxt, tmp, x, t, lds[, ux])
-                            observationloglikelihood!(cc, b1, b2, x, y, t, lds[, uy])
+    Log-Likelihood kernels: state_loglikelihood!(cc, dxt, tmp, x, t, lds[, ux])
+                            observation_loglikelihood!(cc, b1, b2, x, y, t, lds[, uy])
                             joint_loglikelihood!(ll, ws, cc, lds, x, y)
 
-    Gradient kernels:       observationgradient!(out, cc, buf, x, y, t, lds[, uy])
+    Gradient kernels:       observation_gradient!(out, cc, buf, x, y, t, lds[, uy])
                             Gradient!(grad, ws, lds, y, x[, ux, uy])
 
-    Hessian kernels:        observationhessian!(out, cc, buf1, buf2, x, y, t, lds[, α])
+    Hessian kernels:        observation_hessian!(out, cc, buf1, buf2, x, y, t, lds[, α])
                             Hessian!(sws, lds, y, x)
 
     E-Step: Q_state!(sws, lds, suf)
@@ -76,7 +76,7 @@ include the `B u_{t-1}` term; `nothing` (default) skips it. Requires `t ≥ 2`.
 end
 
 """
-    stateloglikelihood!(cc, dxt, tmp, x, t, lds[, ux])
+    state_loglikelihood!(cc, dxt, tmp, x, t, lds[, ux])
 
 State-model (prior/transition) contribution to the complete-data log-likelihood
 at timestep `t`:
@@ -89,7 +89,7 @@ normalizers; `dxt` and `tmp` are `latent_dim` scratch vectors (overwritten).
 Pass `ux` (state inputs, `t`-indexed like `x`) to include the `B u_{t-1}`
 term; `nothing` (default) or a zero-row matrix skips it.
 """
-function stateloglikelihood!(
+function state_loglikelihood!(
     cc::LDSLikelihoodCache{T},
     dxt::AbstractVector{T},
     tmp::AbstractVector{T},
@@ -110,7 +110,7 @@ function stateloglikelihood!(
 end
 
 """
-    observationloglikelihood!(cc, buf1, buf2, x, y, t, lds[, uy])
+    observation_loglikelihood!(cc, buf1, buf2, x, y, t, lds[, uy])
 
 Emission-model contribution `log p(y_t | x_t)` to the complete-data
 log-likelihood at timestep `t`. Dispatches on the observation model type `O`
@@ -124,7 +124,7 @@ into `joint_loglikelihood!` by adding a method here.
 - `uy` (optional): observation inputs, `t`-indexed like `y`; `nothing` or a
   zero-row matrix skips the `D u_t` term.
 """
-function observationloglikelihood! end
+function observation_loglikelihood! end
 
 """
     joint_loglikelihood!(ll, ws, cc, lds, x, y)
@@ -132,7 +132,7 @@ function observationloglikelihood! end
 Per-timestep complete-data log-likelihood for a single SLDS component:
 `ll[t] = log p(y_t | x_t) + log p(x_t | x_{t-1})` (or `+ log p(x_1)` at
 `t == 1`). Generic over the observation model — the emission term comes from
-`observationloglikelihood!`.
+`observation_loglikelihood!`.
 
 Notes:
 - Normalization terms (logdet + log(2π)) are included. These are constant w.r.t.
@@ -154,8 +154,8 @@ function joint_loglikelihood!(
     tmp = ws.tmp1
 
     for t in 1:tsteps
-        ll_t = observationloglikelihood!(cc, ws.z, ws.λ, x, y, t, lds)
-        ll_t += stateloglikelihood!(cc, dxt, tmp, x, t, lds)
+        ll_t = observation_loglikelihood!(cc, ws.z, ws.λ, x, y, t, lds)
+        ll_t += state_loglikelihood!(cc, dxt, tmp, x, t, lds)
         ll[t] = ll_t
     end
 
@@ -163,7 +163,7 @@ function joint_loglikelihood!(
 end
 
 """
-    observationgradient!(out, cc, buf, x, y, t, lds[, uy])
+    observation_gradient!(out, cc, buf, x, y, t, lds[, uy])
 
 Emission-model contribution `∂ log p(y_t | x_t) / ∂x_t` written into `out`
 (length `latent_dim`). Dispatches on the observation model type `O` (via
@@ -176,7 +176,7 @@ Emission-model contribution `∂ log p(y_t | x_t) / ∂x_t` written into `out`
 - `uy` (optional): observation inputs, `t`-indexed like `y`; `nothing` or a
   zero-row matrix skips the `D u_t` term.
 """
-function observationgradient! end
+function observation_gradient! end
 
 """
     Gradient!(grad, ws, lds, y, x[, ux, uy])
@@ -185,7 +185,7 @@ function observationgradient! end
 Gradient of the complete-data log-likelihood with respect to the latent path
 `x`, written into `grad` (`latent_dim × tsteps`; the convenience form uses the
 active view of `ws.grad_buf` and returns it). Generic over the observation
-model — the emission term comes from `observationgradient!`, while the state
+model — the emission term comes from `observation_gradient!`, while the state
 side (prior / incoming / outgoing transition factors) is shared:
 
 - `grad[:, t] = obs_grad(t) + A'Q⁻¹ r_{t+1} - Q⁻¹ r_t`   (middle steps)
@@ -218,7 +218,7 @@ function Gradient!(
     tmp3 = ws.tmp3
 
     # First time step: emission + prior + outgoing factor at t = 2
-    observationgradient!(tmp1, ws, obs_buf, x, y, 1, lds, uy)
+    observation_gradient!(tmp1, ws, obs_buf, x, y, 1, lds, uy)
     @views dxt .= x[:, 1] .- lds.state_model.x0
     mul!(tmp3, neg_P0_inv, dxt)
     _transition_residual!(dxt_next, x, 2, lds, ux)
@@ -227,7 +227,7 @@ function Gradient!(
 
     # Middle steps: emission + incoming factor at t + outgoing factor at t + 1
     @views for t in 2:(tsteps - 1)
-        observationgradient!(tmp1, ws, obs_buf, x, y, t, lds, uy)
+        observation_gradient!(tmp1, ws, obs_buf, x, y, t, lds, uy)
         _transition_residual!(dxt, x, t, lds, ux)
         mul!(tmp3, neg_Q_inv, dxt)
         _transition_residual!(dxt_next, x, t + 1, lds, ux)
@@ -236,7 +236,7 @@ function Gradient!(
     end
 
     # Last time step: emission + incoming factor at t = T
-    observationgradient!(tmp1, ws, obs_buf, x, y, tsteps, lds, uy)
+    observation_gradient!(tmp1, ws, obs_buf, x, y, tsteps, lds, uy)
     _transition_residual!(dxt, x, tsteps, lds, ux)
     mul!(tmp3, neg_Q_inv, dxt)
     @views grad[:, tsteps] .= tmp1 .+ tmp3
@@ -257,7 +257,7 @@ function Gradient!(
 end
 
 """
-    observationhessian!(out, cc, buf1, buf2, x, y, t, lds[, α])
+    observation_hessian!(out, cc, buf1, buf2, x, y, t, lds[, α])
 
 Emission-model contribution `∂² log p(y_t | x_t) / ∂x_t²` **accumulated** into
 `out` (`latent_dim × latent_dim`) with weight `α`: `out .+= α .* hess_t`. The
@@ -267,7 +267,7 @@ add-with-weight semantics let the same kernel serve both the single-LDS
 
 Dispatches on the observation model type `O` (via
 `lds::LinearDynamicalSystem{T,S,O}`) — the curvature companion to
-`observationgradient!`: a custom observation model plugs into `Hessian!` (and
+`observation_gradient!`: a custom observation model plugs into `Hessian!` (and
 the SLDS `Hessian_blocks!`) by adding a method here, without touching the
 shared state-side Hessian blocks.
 
@@ -283,7 +283,7 @@ Uniform interface:
 See the `GaussianObservationModel` / `PoissonObservationModel` methods in
 `fit_LDS.jl` / `fit_PLDS.jl` for the pattern to follow.
 """
-function observationhessian! end
+function observation_hessian! end
 
 """
     _state_hessian_blocks!(btd, cc, tsteps)
@@ -297,7 +297,7 @@ observation model — into `btd.H_diag` / `H_sub` / `H_super`:
 
 Uses the templates cached on `cc` by `compute_smooth_constants!` /
 `compute_slds_constants!`. Overwrites the diagonal blocks — callers add the
-emission curvature afterwards via `observationhessian!`. Requires `tsteps ≥ 2`
+emission curvature afterwards via `observation_hessian!`. Requires `tsteps ≥ 2`
 (matching the Newton smoother's contract).
 """
 function _state_hessian_blocks!(btd, cc::LDSLikelihoodCache{T}, tsteps::Int) where {T<:Real}
@@ -327,8 +327,8 @@ safe for ragged-length fitting.
 
 Generic over the observation model — the state-side blocks come from
 `_state_hessian_blocks!` and the emission curvature from
-`observationhessian!`, so supporting a new observation model here only
-requires a new `observationhessian!` method, not a new `Hessian!` method.
+`observation_hessian!`, so supporting a new observation model here only
+requires a new `observation_hessian!` method, not a new `Hessian!` method.
 Requires `compute_smooth_constants!(sws, lds)` to have been called.
 """
 function Hessian!(
@@ -342,7 +342,7 @@ function Hessian!(
 
     _state_hessian_blocks!(btd, sws, tsteps)
     for t in 1:tsteps
-        observationhessian!(btd.H_diag[t], sws, sws.rho_obs, sws.h_obs, x, y, t, lds)
+        observation_hessian!(btd.H_diag[t], sws, sws.rho_obs, sws.h_obs, x, y, t, lds)
     end
 
     return nothing

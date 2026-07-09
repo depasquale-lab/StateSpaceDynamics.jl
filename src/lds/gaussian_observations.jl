@@ -1,6 +1,10 @@
 #=============================================================================
 Gaussian Observations
 
+    Emission kernels: observation_loglikelihood!(cc, dyt, _, x, y, t, lds[, uy])
+                      observation_gradient!(out, cc, buf, x, y, t, lds[, uy])
+                      observation_hessian!(out, cc, _, _, x, y, t, lds[, α])
+
     E-Step: Q_obs!(sws, lds, suf)
 
     M-Step: update_C_d!(lds, suf, sws)
@@ -214,4 +218,78 @@ function update_R!(
     end
     copyto!(lds.obs_model.R, S_res)
     return nothing
+end
+
+"""
+    observation_loglikelihood!(cc, dyt, _, x, y, t, lds[, uy])
+
+Gaussian emission term: `cR - 0.5*||R^{-1/2}(y_t - Cx_t - d - D uy_t)||^2`.
+`dyt` is the `obs_dim` residual scratch; the second buffer is unused.
+"""
+function observation_loglikelihood!(
+    cc::LDSLikelihoodCache{T},
+    dyt::AbstractVector{T},
+    ::AbstractVector{T},
+    x::AbstractMatrix{T},
+    y::AbstractMatrix{T0},
+    t::Int,
+    lds::LinearDynamicalSystem{T0,S,O},
+    uy::Union{Nothing,AbstractMatrix}=nothing,
+) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:GaussianObservationModel{T0}}
+    C = lds.obs_model.C
+    d = lds.obs_model.d
+
+    @views mul!(dyt, C, x[:, t])
+    if uy !== nothing
+        @views mul!(dyt, lds.obs_model.D, uy[:, t], one(T), one(T))
+    end
+    @views dyt .= y[:, t] .- dyt .- d
+    _whiten!(cc.R_PD[].chol, dyt)
+    return _cR(cc) - T(0.5) * sum(abs2, dyt)
+end
+
+"""
+    observation_gradient!(out, cc, buf, x, y, t, lds[, uy])
+
+Gaussian emission gradient: `out = C'R⁻¹ (y_t - Cx_t - d - D uy_t)`, using the
+cached `C_inv_R = C'R⁻¹` from `cc`.
+"""
+function observation_gradient!(
+    out::AbstractVector{T},
+    cc::LDSLikelihoodCache{T},
+    buf::AbstractVector{T},
+    x::AbstractMatrix{T},
+    y::AbstractMatrix{T0},
+    t::Int,
+    lds::LinearDynamicalSystem{T0,S,O},
+    uy::Union{Nothing,AbstractMatrix}=nothing,
+) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:GaussianObservationModel{T0}}
+    @views mul!(buf, lds.obs_model.C, x[:, t])
+    if uy !== nothing
+        @views mul!(buf, lds.obs_model.D, uy[:, t], one(T), one(T))
+    end
+    @views buf .= y[:, t] .- buf .- lds.obs_model.d
+    return mul!(out, cc.C_inv_R, buf)
+end
+
+"""
+    observation_hessian!(out, cc, _, _, x, y, t, lds[, α])
+
+Gaussian emission curvature: `out .+= α .* (-C'R⁻¹C)`, using the cached
+`yt_given_xt = -C'R⁻¹C` from `cc` — constant in both `x` and `y`. Both
+scratch buffers are unused.
+"""
+function observation_hessian!(
+    out::AbstractMatrix{T},
+    cc::LDSLikelihoodCache{T},
+    ::AbstractVector{T},
+    ::AbstractVector{T},
+    x::AbstractMatrix{T},
+    y::AbstractMatrix{T0},
+    t::Int,
+    lds::LinearDynamicalSystem{T0,S,O},
+    α::T=one(T),
+) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:GaussianObservationModel{T0}}
+    @. out += α * cc.yt_given_xt
+    return out
 end

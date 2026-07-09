@@ -1,6 +1,10 @@
 #=============================================================================
 Poisson Observations
 
+    Emission kernels: observation_loglikelihood!(cc, z, λ, x, y, t, lds[, uy])
+                      observation_gradient!(out, cc, buf, x, y, t, lds[, uy])
+                      observation_hessian!(out, cc, z, λ, x, y, t, lds[, α])
+
     E-Step: Q_obs!(sws, lds, suf)
 
     M-Step: update_observation_model!(plds, tfs, y, sws_pool, w)
@@ -171,4 +175,97 @@ function update_observation_model!(
     @views plds.obs_model.d .= result_W[:, Dp1]
 
     return nothing
+end
+
+"""
+    observation_loglikelihood!(cc, z, λ, x, y, t, lds[, uy])
+
+Poisson emission term: with rate `λ = exp(Cx_t + d)`,
+`log p(y_t|x_t) = y⋅log(λ) - sum(λ) - sum(log(y!))`. `z` and `λ` are `obs_dim`
+scratch vectors for the linear predictor and the rate. The cache and `uy`
+arguments are unused (no covariance term; Poisson observation inputs are not
+supported).
+"""
+function observation_loglikelihood!(
+    ::LDSLikelihoodCache{T},
+    z::AbstractVector{T},
+    λ::AbstractVector{T},
+    x::AbstractMatrix{T},
+    y::AbstractMatrix{T0},
+    t::Int,
+    lds::LinearDynamicalSystem{T0,S,O},
+    ::Union{Nothing,AbstractMatrix}=nothing,
+) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:PoissonObservationModel{T0}}
+    C = lds.obs_model.C
+    d = lds.obs_model.d
+
+    # z = Cx + d ; λ = exp(z)
+    @views mul!(z, C, x[:, t])
+    z .+= d
+    @. λ = exp(z)
+
+    # y⋅z - λ - log(y!)  (loggamma(n+1) = log(n!) for real n≥0)
+    yt = view(y, :, t)
+    return dot(yt, z) - sum(λ) - sum(yi -> loggamma(yi + one(T)), yt)
+end
+
+"""
+    observation_gradient!(out, cc, buf, x, y, t, lds[, uy])
+
+Poisson emission gradient: `out = C'(y_t - λ_t)` with `λ_t = exp(Cx_t + d)`.
+The cache and `uy` arguments are unused (no covariance term; Poisson
+observation inputs are not supported).
+"""
+function observation_gradient!(
+    out::AbstractVector{T},
+    ::LDSLikelihoodCache{T},
+    buf::AbstractVector{T},
+    x::AbstractMatrix{T},
+    y::AbstractMatrix{T0},
+    t::Int,
+    lds::LinearDynamicalSystem{T0,S,O},
+    ::Union{Nothing,AbstractMatrix}=nothing,
+) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:PoissonObservationModel{T0}}
+    C = lds.obs_model.C
+    d = lds.obs_model.d
+    @views mul!(buf, C, x[:, t])
+    @views buf .= y[:, t] .- exp.(buf .+ d)
+    return mul!(out, C', buf)
+end
+
+"""
+    observation_hessian!(out, cc, z, λ, x, y, t, lds[, α])
+
+Poisson emission curvature: `out .+= α .* (-C' diag(λ_t) C)` with
+`λ_t = exp(C x_t + d)` — independent of `y` for the canonical log link.
+`z` and `λ` are `obs_dim` scratch for the linear predictor and the rate;
+`cc` is unused (no covariance in the emission term).
+"""
+function observation_hessian!(
+    out::AbstractMatrix{T},
+    ::LDSLikelihoodCache{T},
+    z::AbstractVector{T},
+    λ::AbstractVector{T},
+    x::AbstractMatrix{T},
+    y::AbstractMatrix{T0},
+    t::Int,
+    lds::LinearDynamicalSystem{T0,S,O},
+    α::T=one(T),
+) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:PoissonObservationModel{T0}}
+    C = lds.obs_model.C
+    d = lds.obs_model.d
+    obs_dim, latent_dim = size(C)
+
+    @views mul!(z, C, x[:, t])
+    @. λ = exp(z + d)
+
+    # out .+= α * (-C' diag(λ) C), allocation-free (O(latent² · obs) per call).
+    for j in 1:latent_dim, i in 1:latent_dim
+        acc = zero(T)
+        for k in 1:obs_dim
+            acc += C[k, i] * λ[k] * C[k, j]
+        end
+        out[i, j] -= α * acc
+    end
+    return out
 end

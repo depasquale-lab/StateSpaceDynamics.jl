@@ -7,8 +7,8 @@ Gaussian LDS
     Gradient:       Gradient!(ws, lds, y, x)
                     Gradient_batched!(ws, lds, y, x, ux, uy)
 
-    Hessian:        observationhessian!(out, cc, _, _, x, y, t, lds[, α])
-                    (generic Hessian! lives in continuous_latents.jl)
+    Hessian:        (generic Hessian! lives in continuous_latents.jl;
+                    emission kernels in gaussian_observations.jl)
 
     Smooth:         smooth!(lds, fs, y, sws)
                     smooth!(lds, tfs, y, sws_pool)
@@ -37,7 +37,7 @@ Per-timestep complete-data log-likelihood of a Gaussian LDS, written into
 - `ll[1]` includes: log p(x₁) + log p(y₁ | x₁)
 - `ll[t]` for t≥2 includes: log p(x_t | x_{t-1}, u_{t-1}) + log p(y_t | x_t, uy_t)
 
-Built from the shared `stateloglikelihood!` / `observationloglikelihood!`
+Built from the shared `state_loglikelihood!` / `observation_loglikelihood!`
 kernels; requires `compute_smooth_constants!(ws, lds)` to have been called.
 `ux` / `uy` are optional control inputs (`nothing` or zero-row matrices skip
 the `B u` / `D uy` terms).
@@ -53,10 +53,10 @@ function joint_loglikelihood!(
     ll_vec = ws.ll_vec
 
     for t in eachindex(ll_vec)
-        ll_vec[t] = observationloglikelihood!(
+        ll_vec[t] = observation_loglikelihood!(
             ws, ws.temp_dy, ws.temp_solve_R, x, y, t, lds, uy
         )
-        ll_vec[t] += stateloglikelihood!(ws, ws.temp_dx, ws.temp_solve_Q, x, t, lds, ux)
+        ll_vec[t] += state_loglikelihood!(ws, ws.temp_dx, ws.temp_solve_Q, x, t, lds, ux)
     end
 
     return ll_vec
@@ -75,81 +75,6 @@ function joint_loglikelihood(
     ws = SmoothWorkspace(WT, lds.latent_dim, lds.obs_dim, tsteps)
     compute_smooth_constants!(ws, lds)
     return joint_loglikelihood!(ws, x, lds, y, ux, uy)
-end
-
-"""
-    observationloglikelihood!(cc, dyt, _, x, y, t, lds[, uy])
-
-Gaussian emission term: `cR - 0.5*||R^{-1/2}(y_t - Cx_t - d - D uy_t)||^2`.
-`dyt` is the `obs_dim` residual scratch; the second buffer is unused.
-"""
-function observationloglikelihood!(
-    cc::LDSLikelihoodCache{T},
-    dyt::AbstractVector{T},
-    ::AbstractVector{T},
-    x::AbstractMatrix{T},
-    y::AbstractMatrix{T0},
-    t::Int,
-    lds::LinearDynamicalSystem{T0,S,O},
-    uy::Union{Nothing,AbstractMatrix}=nothing,
-) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:GaussianObservationModel{T0}}
-    C = lds.obs_model.C
-    d = lds.obs_model.d
-
-    @views mul!(dyt, C, x[:, t])
-    if uy !== nothing
-        @views mul!(dyt, lds.obs_model.D, uy[:, t], one(T), one(T))
-    end
-    @views dyt .= y[:, t] .- dyt .- d
-    _whiten!(cc.R_PD[].chol, dyt)
-    return _cR(cc) - T(0.5) * sum(abs2, dyt)
-end
-
-"""
-    observationgradient!(out, cc, buf, x, y, t, lds[, uy])
-
-Gaussian emission gradient: `out = C'R⁻¹ (y_t - Cx_t - d - D uy_t)`, using the
-cached `C_inv_R = C'R⁻¹` from `cc`.
-"""
-function observationgradient!(
-    out::AbstractVector{T},
-    cc::LDSLikelihoodCache{T},
-    buf::AbstractVector{T},
-    x::AbstractMatrix{T},
-    y::AbstractMatrix{T0},
-    t::Int,
-    lds::LinearDynamicalSystem{T0,S,O},
-    uy::Union{Nothing,AbstractMatrix}=nothing,
-) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:GaussianObservationModel{T0}}
-    @views mul!(buf, lds.obs_model.C, x[:, t])
-    if uy !== nothing
-        @views mul!(buf, lds.obs_model.D, uy[:, t], one(T), one(T))
-    end
-    @views buf .= y[:, t] .- buf .- lds.obs_model.d
-    return mul!(out, cc.C_inv_R, buf)
-end
-
-"""
-    observationhessian!(out, cc, _, _, x, y, t, lds[, α])
-
-Gaussian emission curvature: `out .+= α .* (-C'R⁻¹C)`, using the cached
-`yt_given_xt = -C'R⁻¹C` from `cc` — constant in both `x` and `y`. Method of
-the generic `observationhessian!` dispatch point (see
-`continuous_latents.jl`); both scratch buffers are unused.
-"""
-function observationhessian!(
-    out::AbstractMatrix{T},
-    cc::LDSLikelihoodCache{T},
-    ::AbstractVector{T},
-    ::AbstractVector{T},
-    x::AbstractMatrix{T},
-    y::AbstractMatrix{T0},
-    t::Int,
-    lds::LinearDynamicalSystem{T0,S,O},
-    α::T=one(T),
-) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:GaussianObservationModel{T0}}
-    @. out += α * cc.yt_given_xt
-    return out
 end
 
 # Length-only Hessian assembly. The BT Hessian for a Gaussian LDS is
