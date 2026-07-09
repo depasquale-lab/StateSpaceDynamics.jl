@@ -729,3 +729,26 @@ function test_joint_loglikelihood_matches_distributions()
     @test ll ≈ ref rtol = 1e-10
     return nothing
 end
+
+function test_newton_objective_is_joint_loglikelihood()
+    #=
+    The Newton line-search objective is `sum(joint_loglikelihood!(ws, x,
+    plds, y, lognorm_t))` with `-Σ log(y!)` normalizer. It must agree per-
+    timestep and in total with the allocating `joint_loglikelihood(x, plds, y)`, 
+    both with the default and the explicitly hoisted normalizer.
+    =#
+    plds, xs, ys = toy_PoissonLDS()
+    x, y = xs[1], ys[1]
+
+    ws = StateSpaceDynamics.SmoothWorkspace(
+        Float64, plds.latent_dim, plds.obs_dim, size(y, 2)
+    )
+    StateSpaceDynamics.compute_smooth_constants!(ws, plds)
+    ref = StateSpaceDynamics.joint_loglikelihood(x, plds, y)
+
+    @test StateSpaceDynamics.joint_loglikelihood!(ws, x, plds, y) ≈ ref rtol = 1e-12
+    lognorm_t = StateSpaceDynamics._poisson_lognorm_t(y)
+    @test StateSpaceDynamics.joint_loglikelihood!(ws, x, plds, y, lognorm_t) ≈ ref rtol =
+        1e-12
+    return nothing
+end

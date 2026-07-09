@@ -1,7 +1,8 @@
 #=============================================================================
 Poisson LDS
 
-    Log-Likelihood: joint_loglikelihood(x, plds, y)
+    Log-Likelihood: joint_loglikelihood!(ws, x, plds, y[, lognorm_t])
+                    joint_loglikelihood(x, plds, y)
 
     Gradient:       Gradient!(ws, lds, y, x)
                     gradient_observation_model!(grad, C, d, tfs, y, sws_pool)
@@ -21,18 +22,67 @@ Poisson LDS
 =============================================================================#
 
 """
-    joint_loglikelihood(x, plds, y)
+    _poisson_lognorm_t(y)
 
-Per-timestep complete-data log-likelihood of a Poisson Linear Dynamical System
-for a single trial (allocating convenience wrapper; mirrors the Gaussian
-`joint_loglikelihood`). The rate follows the canonical Poisson GLM
-`λ_t = exp(C x_t + d)`.
+Per-timestep Poisson emission normalizer `lognorm_t[t] = Σᵢ log(y[i,t]!)`;
+constant in the latents. Computed once per trial and handed to `joint_loglikelihood!`
+"""
+function _poisson_lognorm_t(y::AbstractMatrix{T}) where {T<:Real}
+    return vec(sum(yi -> loggamma(yi + one(T)), y; dims=1))
+end
+
+"""
+    joint_loglikelihood!(ws, x, plds, y[, lognorm_t])
+
+Per-timestep complete-data log-likelihood of a Poisson LDS, written into
+`ws.ll_vec` (an active-length view is returned — the workspace may be
+pool-oversized). Mirrors the Gaussian `joint_loglikelihood!`; requires
+`compute_smooth_constants!(ws, plds)` to have been called. The rate follows
+the canonical Poisson GLM `λ_t = exp(C x_t + d)`.
 
 - `ll[1]` includes: log p(x₁) + log p(y₁ | x₁)
 - `ll[t]` for t≥2 includes: log p(x_t | x_{t-1}) + log p(y_t | x_t)
 
 Normalization terms (Gaussian logdet + log(2π) and Poisson `-log(y!)`) are
 included, so `sum(ll)` is the exact complete-data log-density `log p(x, y)`.
+"""
+function joint_loglikelihood!(
+    ws::SmoothWorkspace{T},
+    x::AbstractMatrix{T},
+    plds::LinearDynamicalSystem{TM,S,O},
+    y::AbstractMatrix{TM},
+    lognorm_t::AbstractVector{<:Real}=_poisson_lognorm_t(y),
+) where {T<:Real,TM<:Real,S<:GaussianStateModel{TM},O<:PoissonObservationModel{TM}}
+    tsteps = size(y, 2)
+
+    C = plds.obs_model.C
+    d = plds.obs_model.d
+
+    ll_vec = view(ws.ll_vec, 1:tsteps)
+    η = ws.temp_dy                      # length obs_dim
+    dx = ws.temp_dx                     # length latent_dim
+    tmp = ws.temp_solve_Q               # length latent_dim
+
+    @views for t in 1:tsteps
+        # Emission (with -log(y!)): y_t'η_t - sum(exp(η_t)),
+        # with η_t = Cx_t + d
+        mul!(η, C, x[:, t])
+        @. η = η + d
+        ll_vec[t] = dot(y[:, t], η) - sum(exp, η) - lognorm_t[t]
+
+        # Prior (t = 1) / transition (t ≥ 2)
+        ll_vec[t] += stateloglikelihood!(ws, dx, tmp, x, t, plds)
+    end
+
+    return ll_vec
+end
+
+"""
+    joint_loglikelihood(x, plds, y)
+
+Per-timestep complete-data log-likelihood of a Poisson LDS for a single trial
+(allocating convenience wrapper around `joint_loglikelihood!`; mirrors the
+Gaussian `joint_loglikelihood`).
 
 # Arguments
 - `x::AbstractMatrix`: latent states, (latent_dim × tsteps)
@@ -49,58 +99,7 @@ function joint_loglikelihood(
     compute_smooth_constants!(ws, plds)
     x_R = convert(AbstractMatrix{R}, x)
 
-    ll = zeros(R, tsteps)
-    for t in 1:tsteps
-        ll_t = observationloglikelihood!(ws, ws.temp_dy, ws.dyt, x_R, y, t, plds)
-        ll_t += stateloglikelihood!(ws, ws.temp_dx, ws.temp_solve_Q, x_R, t, plds)
-        ll[t] = ll_t
-    end
-
-    return ll
-end
-
-"""
-    _loglikelihood_ws(x, lds, y, ws)
-
-Efficient log-likelihood computation using cached Cholesky factors from SmoothWorkspace.
-Returns the total log-likelihood (scalar), not per-timestep.
-Used in the Newton line search to avoid repeated Cholesky factorizations.
-
-The state side is the shared `stateloglikelihood!` kernel; the Poisson emission
-term stays inline because it deliberately omits the `-sum(log(y!))` normalizer —
-constant in `x`, so irrelevant to the line search and too expensive (a
-`loggamma` per observation per timestep) for this hot path. Use
-`observationloglikelihood!` when the full emission density is needed.
-"""
-function _loglikelihood_ws(
-    x::AbstractMatrix{T},
-    lds::LinearDynamicalSystem{T,S,O},
-    y::AbstractMatrix{T},
-    ws::SmoothWorkspace{T},
-) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    tsteps = size(y, 2)
-
-    C = lds.obs_model.C
-    d = lds.obs_model.d
-
-    ll = zero(T)
-
-    η = ws.temp_dy                      # length obs_dim
-    dx = ws.temp_dx                     # length latent_dim
-    tmp = ws.temp_solve_Q               # length latent_dim
-
-    @views for t in 1:tsteps
-        # Emission (up to the x-constant -log(y!)): y_t'η_t - sum(exp(η_t)),
-        # with η_t = Cx_t + d
-        mul!(η, C, x[:, t])
-        @. η = η + d
-        ll += dot(y[:, t], η) - sum(exp, η)
-
-        # Prior (t = 1) / transition (t ≥ 2)
-        ll += stateloglikelihood!(ws, dx, tmp, x, t, lds)
-    end
-
-    return ll
+    return joint_loglikelihood!(ws, x_R, plds, y)
 end
 
 """
@@ -748,7 +747,10 @@ function smooth!(
     g = grad_active
     p = reshape(X0, D, tsteps)
 
-    ϕ!() = _loglikelihood_ws(x, lds, y, sws)
+    # The line-search objective is the exact complete-data log-likelihood;
+    # hoisting the data-only normalizer makes that free per evaluation.
+    lognorm_t = _poisson_lognorm_t(y)
+    ϕ!() = sum(joint_loglikelihood!(sws, x, lds, y, lognorm_t))
 
     compute_grad! = (gcur, xcur) -> begin
         _compute_gradient_poisson!(gcur, sws, lds, y, xcur)

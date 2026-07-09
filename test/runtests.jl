@@ -206,6 +206,7 @@ using SSDTest
 
             @testset "Log-likelihood" begin
                 test_joint_loglikelihood_matches_distributions()
+                test_newton_objective_is_joint_loglikelihood()
             end
 
             @testset "Priors - Poisson LDS" begin

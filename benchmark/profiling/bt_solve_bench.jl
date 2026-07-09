@@ -62,9 +62,12 @@ println(
     "  t=$(round(median(b2).time / 1e6; digits=3)) ms allocs=$(b2.allocs) mem=$(b2.memory) B",
 )
 
-# Time _loglikelihood_ws (the per-eval cost in the line search)
-println("\n=== _loglikelihood_ws (one phi-eval) ===")
-b3 = @benchmark StateSpaceDynamics._loglikelihood_ws($x0_mat, $lds, $y, $sws)
+# Time the workspace joint_loglikelihood! (the per-eval cost in the line search)
+println("\n=== sum(joint_loglikelihood!(ws, x, lds, y, lognorm_t)) (one phi-eval) ===")
+lognorm_t = StateSpaceDynamics._poisson_lognorm_t(y)
+b3 = @benchmark sum(
+    StateSpaceDynamics.joint_loglikelihood!($sws, $x0_mat, $lds, $y, $lognorm_t)
+)
 println(
     "  t=$(round(median(b3).time / 1e6; digits=3)) ms allocs=$(b3.allocs) mem=$(b3.memory) B",
 )
