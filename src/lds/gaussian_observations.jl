@@ -33,17 +33,17 @@ function Q_obs!(
     D_obs = lds.obs_model.D
     uy_dim = size(uy, 1)
 
-    R_U = ws.R_PD[].chol.U
-    log_det_R = logdet(ws.R_PD[])
+    R_U = ws.consts.R_PD.chol.U
+    log_det_R = logdet(ws.consts.R_PD)
     const_term = obs_dim * log(T(2π))
 
-    temp = ws.elbo_obs_temp
-    work_matrix = ws.elbo_obs_work
-    ytil = ws.elbo_ytil
-    sum_yy = ws.elbo_sum_yy
-    sum_yz = ws.elbo_sum_yz
-    work1 = ws.elbo_obs_work1
-    work2 = ws.elbo_obs_work2
+    temp = ws.elbo.obs_temp
+    work_matrix = ws.elbo.obs_work
+    ytil = ws.elbo.ytil
+    sum_yy = ws.elbo.sum_yy
+    sum_yz = ws.elbo.sum_yz
+    work1 = ws.elbo.obs_work1
+    work2 = ws.elbo.obs_work2
 
     fill!(temp, zero(T))
 
@@ -105,14 +105,14 @@ function Q_obs!(
     d = lds.obs_model.d
     D_obs = lds.obs_model.D
 
-    R_U = sws.R_PD[].chol.U
-    log_det_R = logdet(sws.R_PD[])
+    R_U = sws.consts.R_PD.chol.U
+    log_det_R = logdet(sws.consts.R_PD)
     const_term = p * log(T(2π))
 
     obs_n = suf.obs_n
 
     # V = [C d D_obs] (p × obs_reg_dim)
-    V = view(sws.CD, :, 1:obs_reg_dim)
+    V = view(sws.reg.CD, :, 1:obs_reg_dim)
     copyto!(view(V, :, 1:D), C)
     copyto!(view(V, :, D + 1), d)
     if uy_dim > 0
@@ -120,11 +120,11 @@ function Q_obs!(
     end
 
     # S_obs = obs_yy - V·obs_xy - obs_xy'·V' + V·obs_xx·V'
-    S_obs = sws.elbo_obs_temp
+    S_obs = sws.elbo.obs_temp
     copyto!(S_obs, suf.obs_yy[].mat)
     mul!(S_obs, V, suf.obs_xy, -one(T), one(T))
     mul!(S_obs, transpose(suf.obs_xy), transpose(V), -one(T), one(T))
-    V_XX = view(sws.Syz, :, 1:obs_reg_dim)
+    V_XX = view(sws.reg.Syz, :, 1:obs_reg_dim)
     mul!(V_XX, V, suf.obs_xx[].mat)
     mul!(S_obs, V_XX, transpose(V), one(T), one(T))
 
@@ -143,14 +143,14 @@ function update_C_d!(
 
     if CD_prior === nothing
         #=
-        Zero-alloc OLS fast path. `sws.Syz` is exactly (p × obs_reg_dim);
+        Zero-alloc OLS fast path. `sws.reg.Syz` is exactly (p × obs_reg_dim);
         its transpose is the (obs_reg_dim × p) view we ldiv! into. After
-        the in-place solve, `sws.Syz` itself holds V = [C d D].
+        the in-place solve, `sws.reg.Syz` itself holds V = [C d D].
         =#
-        Syz_T = transpose(sws.Syz)
+        Syz_T = transpose(sws.reg.Syz)
         copyto!(Syz_T, suf.obs_xy)
         ldiv!(suf.obs_xx[].chol, Syz_T)
-        V = sws.Syz
+        V = sws.reg.Syz
     else
         V = mn_map(suf.obs_xx[], suf.obs_xy, CD_prior)
     end
@@ -171,8 +171,8 @@ function update_R!(
     D = lds.latent_dim
     uy_dim = lds.obs_input_dim
 
-    # sws.CD is exactly (p × obs_reg_dim); no view needed.
-    V = sws.CD
+    # sws.reg.CD is exactly (p × obs_reg_dim); no view needed.
+    V = sws.reg.CD
     copyto!(view(V, :, 1:D), lds.obs_model.C)
     copyto!(view(V, :, D + 1), lds.obs_model.d)
     if uy_dim > 0
@@ -180,10 +180,10 @@ function update_R!(
     end
 
     # Residual scatter S = obs_yy - V·obs_xy - obs_xy'·V' + V·obs_xx·V'
-    Vxy = sws.elbo_obs_temp                    # p × p scratch (free post-Q_obs!)
+    Vxy = sws.elbo.obs_temp                    # p × p scratch (free post-Q_obs!)
     mul!(Vxy, V, suf.obs_xy)
 
-    S_res = sws.elbo_obs_work                  # p × p scratch
+    S_res = sws.elbo.obs_work                  # p × p scratch
     copyto!(S_res, suf.obs_yy[].mat)
     S_res .-= Vxy
     S_res .-= Vxy'
@@ -195,7 +195,7 @@ function update_R!(
     would halve the off-diagonal contribution because gemm can produce
     1-ULP-asymmetric output that averaging then collapses.)
     =#
-    VL = sws.Syz                               # (p × obs_reg_dim) scratch
+    VL = sws.reg.Syz                           # (p × obs_reg_dim) scratch
     #=
     See `update_Q!`: `BLAS.trmm!` on the raw upper-stored
     `chol.factors` (with transa='T' since L = U') avoids the
@@ -233,7 +233,7 @@ Gaussian emission term: `cR - 0.5*||R^{-1/2}(y_t - Cx_t - d - D uy_t)||^2`.
 `dyt` is the `obs_dim` residual scratch; the second buffer is unused.
 """
 function observation_loglikelihood!(
-    cc::LDSLikelihoodCache{T},
+    cc::SmoothConstants{T},
     dyt::AbstractVector{T},
     ::AbstractVector{T},
     x::AbstractMatrix{T},
@@ -250,8 +250,8 @@ function observation_loglikelihood!(
         @views mul!(dyt, lds.obs_model.D, uy[:, t], one(T), one(T))
     end
     @views dyt .= y[:, t] .- dyt .- d
-    _whiten!(cc.R_PD[].chol, dyt)
-    return _cR(cc) - T(0.5) * sum(abs2, dyt)
+    _whiten!(cc.R_PD.chol, dyt)
+    return cc.cR - T(0.5) * sum(abs2, dyt)
 end
 
 """
@@ -262,7 +262,7 @@ cached `C_inv_R = C'R⁻¹` from `cc`.
 """
 function observation_gradient!(
     out::AbstractVector{T},
-    cc::LDSLikelihoodCache{T},
+    cc::SmoothConstants{T},
     buf::AbstractVector{T},
     x::AbstractMatrix{T},
     y::AbstractMatrix{T0},
@@ -287,7 +287,7 @@ scratch buffers are unused.
 """
 function observation_hessian!(
     out::AbstractMatrix{T},
-    cc::LDSLikelihoodCache{T},
+    cc::SmoothConstants{T},
     ::AbstractVector{T},
     ::AbstractVector{T},
     x::AbstractMatrix{T},

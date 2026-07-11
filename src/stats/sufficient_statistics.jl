@@ -55,7 +55,7 @@ end
     _td_init_const_blocks!(sws, lds, tsteps_per_trial, y, ux_seq, uy_seq)
 
 Fill the data-only constant blocks of the sufficient-statistics buffers
-(`td_obs_yy_const`, `td_obs_xy_const`, `td_obs_xx_const`, `td_dyn_xx_const`)
+(`sws.agg.obs_yy_const` / `obs_xy_const` / `obs_xx_const` / `dyn_xx_const`)
 once at fit entry. These are observation-independent: they depend only on
 the raw inputs, not on smoother output.
 """
@@ -79,10 +79,10 @@ function _td_init_const_blocks!(
 
     # Hoist workspace fields with concrete eltype to clear JET union-split
     # false positives on the syrk!/copytri! callsites below.
-    td_obs_yy_const = sws.td_obs_yy_const::Matrix{T}
-    td_obs_xy_const = sws.td_obs_xy_const::Matrix{T}
-    td_obs_xx_const = sws.td_obs_xx_const::Matrix{T}
-    td_dyn_xx_const = sws.td_dyn_xx_const::Matrix{T}
+    td_obs_yy_const = sws.agg.obs_yy_const::Matrix{T}
+    td_obs_xy_const = sws.agg.obs_xy_const::Matrix{T}
+    td_obs_xx_const = sws.agg.obs_xx_const::Matrix{T}
+    td_dyn_xx_const = sws.agg.dyn_xx_const::Matrix{T}
 
     fill!(td_obs_yy_const, zero(T))
     fill!(td_obs_xy_const, zero(T))
@@ -241,22 +241,22 @@ function _aggregate_td_suff_stats!(
     obs_reg_dim = D + 1 + uy_dim
 
     # Hoist workspace fields with concrete eltype for JET (cf. backwards_cov!).
-    Szz_Ab = sws.Szz_Ab::Matrix{T}
-    Szz_Cd = sws.Szz_Cd::Matrix{T}
-    Q_sum = sws.Q_sum::Matrix{T}
-    R_sum = sws.R_sum::Matrix{T}
-    S0_sum = sws.S0_sum::Matrix{T}
-    td_init_xy = sws.td_init_xy::Matrix{T}
-    td_dyn_xy = sws.td_dyn_xy::Matrix{T}
-    td_obs_xy = sws.td_obs_xy::Matrix{T}
-    td_obs_xy_const = sws.td_obs_xy_const::Matrix{T}
-    td_obs_xx_const = sws.td_obs_xx_const::Matrix{T}
-    td_dyn_xx_const = sws.td_dyn_xx_const::Matrix{T}
-    td_obs_yy_const = sws.td_obs_yy_const::Matrix{T}
-    sum_cov_prev = sws.td_sum_smooth_cov_prev::Matrix{T}
-    sum_cov_next = sws.td_sum_smooth_cov_next::Matrix{T}
-    sum_cov_all = sws.td_sum_smooth_cov_all::Matrix{T}
-    sum_xcov = sws.td_sum_smooth_xcov::Matrix{T}
+    Szz_Ab = sws.reg.Szz_Ab::Matrix{T}
+    Szz_Cd = sws.reg.Szz_Cd::Matrix{T}
+    Q_sum = sws.reg.Q_sum::Matrix{T}
+    R_sum = sws.reg.R_sum::Matrix{T}
+    S0_sum = sws.reg.S0_sum::Matrix{T}
+    td_init_xy = sws.agg.init_xy::Matrix{T}
+    td_dyn_xy = sws.agg.dyn_xy::Matrix{T}
+    td_obs_xy = sws.agg.obs_xy::Matrix{T}
+    td_obs_xy_const = sws.agg.obs_xy_const::Matrix{T}
+    td_obs_xx_const = sws.agg.obs_xx_const::Matrix{T}
+    td_dyn_xx_const = sws.agg.dyn_xx_const::Matrix{T}
+    td_obs_yy_const = sws.agg.obs_yy_const::Matrix{T}
+    sum_cov_prev = sws.agg.sum_smooth_cov_prev::Matrix{T}
+    sum_cov_next = sws.agg.sum_smooth_cov_next::Matrix{T}
+    sum_cov_all = sws.agg.sum_smooth_cov_all::Matrix{T}
+    sum_xcov = sws.agg.sum_smooth_xcov::Matrix{T}
 
     # Detect cov-cache fast path (equal-length trials share p_smooth storage).
     cov_cache = ntrials > 1 && tfs[1].p_smooth === tfs[2].p_smooth
@@ -450,21 +450,21 @@ function _aggregate_td_suff_stats_weighted!(
     concrete `Matrix{T}` annotation so the BLAS.ger!/syrk! callsites below
     stay in JET's typed union branch (cf. `backwards_cov!`).
     =#
-    init_xy = sws.td_init_xy::Matrix{T}
+    init_xy = sws.agg.init_xy::Matrix{T}
     fill!(init_xy, zero(T))
-    init_yy = sws.S0_sum::Matrix{T}
+    init_yy = sws.reg.S0_sum::Matrix{T}
     fill!(init_yy, zero(T))
-    dyn_xx = sws.Szz_Ab::Matrix{T}
+    dyn_xx = sws.reg.Szz_Ab::Matrix{T}
     fill!(dyn_xx, zero(T))
-    dyn_xy = sws.td_dyn_xy::Matrix{T}
+    dyn_xy = sws.agg.dyn_xy::Matrix{T}
     fill!(dyn_xy, zero(T))
-    dyn_yy = sws.Q_sum::Matrix{T}
+    dyn_yy = sws.reg.Q_sum::Matrix{T}
     fill!(dyn_yy, zero(T))
-    obs_xx = sws.Szz_Cd::Matrix{T}
+    obs_xx = sws.reg.Szz_Cd::Matrix{T}
     fill!(obs_xx, zero(T))
-    obs_xy = sws.td_obs_xy::Matrix{T}
+    obs_xy = sws.agg.obs_xy::Matrix{T}
     fill!(obs_xy, zero(T))
-    obs_yy = sws.R_sum::Matrix{T}
+    obs_yy = sws.reg.R_sum::Matrix{T}
     fill!(obs_yy, zero(T))
 
     init_n_acc = zero(T)

@@ -27,7 +27,7 @@ log-likelihood at the EM fixed point, instead of being off by a fixed
 data-only constant.
 """
 function Q_obs!(
-    sws::SmoothWorkspace{T},                      # must provide cc.C and cc.d
+    sws::SmoothWorkspace{T},                      # provides the Poisson Q_obs scratch
     plds::LinearDynamicalSystem{T,S,O},            # for obs_model.C and obs_model.d
     E_z::AbstractMatrix{T},                       # state_dim × T
     p_smooth::AbstractArray{T,3},                 # state_dim × state_dim × T
@@ -41,10 +41,10 @@ function Q_obs!(
     tsteps = size(y, 2)
 
     # workspace buffers
-    h = sws.h_obs::Vector{T}            # obs_dim
-    rho = sws.rho_obs::Vector{T}            # obs_dim
-    CP = sws.CP_obs::Matrix{T}            # obs_dim × state_dim
-    CEz = sws.CEz_obs::Vector{T}            # obs_dim
+    h = sws.elbo.h_obs::Vector{T}            # obs_dim
+    rho = sws.elbo.rho_obs::Vector{T}            # obs_dim
+    CP = sws.elbo.CP_obs::Matrix{T}            # obs_dim × state_dim
+    CEz = sws.elbo.CEz_obs::Vector{T}            # obs_dim
 
     Q_val = zero(T)
 
@@ -187,7 +187,7 @@ arguments are unused (no covariance term; Poisson observation inputs are not
 supported).
 """
 function observation_loglikelihood!(
-    ::LDSLikelihoodCache{T},
+    ::SmoothConstants{T},
     z::AbstractVector{T},
     λ::AbstractVector{T},
     x::AbstractMatrix{T},
@@ -218,7 +218,7 @@ observation inputs are not supported).
 """
 function observation_gradient!(
     out::AbstractVector{T},
-    ::LDSLikelihoodCache{T},
+    ::SmoothConstants{T},
     buf::AbstractVector{T},
     x::AbstractMatrix{T},
     y::AbstractMatrix{T0},
@@ -243,7 +243,7 @@ Poisson emission curvature: `out .+= α .* (-C' diag(λ_t) C)` with
 """
 function observation_hessian!(
     out::AbstractMatrix{T},
-    ::LDSLikelihoodCache{T},
+    ::SmoothConstants{T},
     z::AbstractVector{T},
     λ::AbstractVector{T},
     x::AbstractMatrix{T},

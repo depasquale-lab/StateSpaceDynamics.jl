@@ -115,53 +115,86 @@ mutable struct SufficientStatistics{T<:Real}
 end
 
 """
-    SmoothWorkspace{T<:Real}
+    SmoothConstants{T<:Real}
 
-Pre-allocated workspace for the full LDS smoothing + EM pipeline.
-Houses a `BlockTridiagonalWorkspace` for block tridiagonal operations, plus all
-buffers needed by `loglikelihood!`, `Gradient!`, `Hessian!`, and M-step updates
-to avoid repeated allocations during EM iterations.
+Cholesky-derived constants for one LDS: PDMat-wrapped covariances, cached
+log-likelihood normalizers, and the derived gradient / Hessian block
+templates. Everything here depends only on the model parameters
+(`A, Q, C, R, P0`), not on the data or the latent iterate.
+
+Filled by `compute_smooth_constants!` — once per E-step on the single-LDS
+path (where one lives inside each `SmoothWorkspace`), or once per regime per
+smoothing pass on the SLDS path (where `SLDSSmoothWorkspace` owns a vector of
+them, one per component).
+
+Mutable so the PDMat wrappers and scalar normalizers can be reassigned; the
+buffer fields are `const` (their *contents* are overwritten in place).
 """
-struct SmoothWorkspace{T<:Real}
-    # Sub-workspace for block tridiagonal operations
-    btd::BlockTridiagonalWorkspace{T}
-
-    #=
-    Cached PDMats for R, Q, P0. Rewrapped once per E-step in
-    `compute_smooth_constants!`; downstream code consumes via
-    `ws.R_PD[].chol.U` (triangular factor) and `logdet(ws.R_PD[])`.
-    Mirrors `KalmanWorkspace`'s `Q_PD` / `P0_PD` / `R_PD` pattern.
-    =#
-    R_PD::Base.RefValue{DensePDMat{T}}      # (obs_dim × obs_dim)
-    Q_PD::Base.RefValue{DensePDMat{T}}      # (latent_dim × latent_dim)
-    P0_PD::Base.RefValue{DensePDMat{T}}     # (latent_dim × latent_dim)
+mutable struct SmoothConstants{T<:Real}
+    # PDMat-wrapped covariances (each caches its own Cholesky; consumed via
+    # `cc.X_PD.chol.U` for triangular solves and `logdet(cc.X_PD)`).
+    R_PD::DensePDMat{T}      # (obs_dim × obs_dim)
+    Q_PD::DensePDMat{T}      # (latent_dim × latent_dim)
+    P0_PD::DensePDMat{T}     # (latent_dim × latent_dim)
 
     # Cached log-likelihood normalizers -0.5*(dim*log(2π) + logdet(Σ))
-    cP0::Base.RefValue{T}
-    cQ::Base.RefValue{T}
-    cR::Base.RefValue{T}
+    cP0::T
+    cQ::T
+    cR::T
 
-    # Solve Outputs
-    tmp_RC::Matrix{T}    # obs_dim × latent_dim   (R^{-1} C)
-    tmp_QA::Matrix{T}    # latent_dim × latent_dim (Q^{-1} A)
+    # Solve outputs
+    const tmp_RC::Matrix{T}    # obs_dim × latent_dim   (R^{-1} C)
+    const tmp_QA::Matrix{T}    # latent_dim × latent_dim (Q^{-1} A)
 
     # Derived terms for Gradient
-    C_inv_R::Matrix{T}        # (R_chol \ C)' = C'inv(R), size (latent_dim × obs_dim)
-    A_inv_Q::Matrix{T}        # (Q_chol \ A)' = A'inv(Q), size (latent_dim × latent_dim)
+    const C_inv_R::Matrix{T}   # (R_chol \ C)' = C'inv(R), size (latent_dim × obs_dim)
+    const A_inv_Q::Matrix{T}   # (Q_chol \ A)' = A'inv(Q), size (latent_dim × latent_dim)
 
     # Derived terms for Hessian block templates
-    H_sub_entry::Matrix{T}    # Q_chol \ A, size (latent_dim × latent_dim)
-    H_super_entry::Matrix{T}  # H_sub_entry', size (latent_dim × latent_dim)
-    yt_given_xt::Matrix{T}    # -C'*(R_chol \ C), size (latent_dim × latent_dim)
-    xt_given_xt_1::Matrix{T}  # -(Q_chol \ I), size (latent_dim × latent_dim)
-    xt1_given_xt::Matrix{T}   # -A'*(Q_chol \ A), size (latent_dim × latent_dim)
-    x_t::Matrix{T}            # -(P0_chol \ I), size (latent_dim × latent_dim)
+    const H_sub_entry::Matrix{T}    # Q_chol \ A, size (latent_dim × latent_dim)
+    const H_super_entry::Matrix{T}  # H_sub_entry', size (latent_dim × latent_dim)
+    const yt_given_xt::Matrix{T}    # -C'*(R_chol \ C), size (latent_dim × latent_dim)
+    const xt_given_xt_1::Matrix{T}  # -(Q_chol \ I), size (latent_dim × latent_dim)
+    const xt1_given_xt::Matrix{T}   # -A'*(Q_chol \ A), size (latent_dim × latent_dim)
+    const x_t::Matrix{T}            # -(P0_chol \ I), size (latent_dim × latent_dim)
 
-    # Optimizer buffers (reused across EM iterations) 
+    # Identity scratch for the `chol \ I` solves above
+    const I_mat::Matrix{T}          # (latent_dim × latent_dim)
+end
+
+function SmoothConstants(::Type{T}, latent_dim::Int, obs_dim::Int) where {T<:Real}
+    # Placeholder PDMats — rewrapped by `compute_smooth_constants!`.
+    return SmoothConstants{T}(
+        PDMat(Matrix{T}(I, obs_dim, obs_dim)),          # R_PD
+        PDMat(Matrix{T}(I, latent_dim, latent_dim)),    # Q_PD
+        PDMat(Matrix{T}(I, latent_dim, latent_dim)),    # P0_PD
+        zero(T),                                        # cP0
+        zero(T),                                        # cQ
+        zero(T),                                        # cR
+        zeros(T, obs_dim, latent_dim),                  # tmp_RC
+        zeros(T, latent_dim, latent_dim),               # tmp_QA
+        zeros(T, latent_dim, obs_dim),                  # C_inv_R
+        zeros(T, latent_dim, latent_dim),               # A_inv_Q
+        zeros(T, latent_dim, latent_dim),               # H_sub_entry
+        zeros(T, latent_dim, latent_dim),               # H_super_entry
+        zeros(T, latent_dim, latent_dim),               # yt_given_xt
+        zeros(T, latent_dim, latent_dim),               # xt_given_xt_1
+        zeros(T, latent_dim, latent_dim),               # xt1_given_xt
+        zeros(T, latent_dim, latent_dim),               # x_t
+        Matrix{T}(I, latent_dim, latent_dim),           # I_mat
+    )
+end
+
+"""
+    NewtonBuffers{T<:Real}
+
+Per-trial Newton-smoother scratch: the vectorized iterate / gradient, plus the
+small temp vectors used by the `Gradient!` and `joint_loglikelihood!` kernels.
+"""
+struct NewtonBuffers{T<:Real}
     X₀::Vector{T}             # Vectorized latent path (latent_dim * tsteps)
     grad_buf::Matrix{T}       # Gradient output buffer (latent_dim × tsteps)
-    grad_vec::Vector{T}       # Vectorized gradient for TwiceDifferentiable (latent_dim * tsteps)
-    initial_h::SparseMatrixCSC{T,Int}  # Sparse Hessian (avoid copy each iteration)
+    grad_vec::Vector{T}       # Vectorized gradient (latent_dim * tsteps)
 
     # Gradient temp vectors
     dxt::Vector{T}            # (latent_dim,)
@@ -177,74 +210,159 @@ struct SmoothWorkspace{T<:Real}
     temp_dy::Vector{T}        # (obs_dim,)
     temp_solve_Q::Vector{T}   # (latent_dim,)
     temp_solve_R::Vector{T}   # (obs_dim,)
+end
 
-    # Hessian temp matrix
-    I_mat::Matrix{T}          # Identity (latent_dim × latent_dim)
+function NewtonBuffers(
+    ::Type{T}, latent_dim::Int, obs_dim::Int, tsteps::Int
+) where {T<:Real}
+    return NewtonBuffers{T}(
+        zeros(T, latent_dim * tsteps),  # X₀
+        zeros(T, latent_dim, tsteps),   # grad_buf
+        zeros(T, latent_dim * tsteps),  # grad_vec
+        zeros(T, latent_dim),           # dxt
+        zeros(T, latent_dim),           # dxt_next
+        zeros(T, obs_dim),              # dyt
+        zeros(T, latent_dim),           # tmp1
+        zeros(T, latent_dim),           # tmp2
+        zeros(T, latent_dim),           # tmp3
+        zeros(T, tsteps),               # ll_vec
+        zeros(T, latent_dim),           # temp_dx
+        zeros(T, obs_dim),              # temp_dy
+        zeros(T, latent_dim),           # temp_solve_Q
+        zeros(T, obs_dim),              # temp_solve_R
+    )
+end
 
-    # M-step buffers
-    Sxz::Matrix{T}            # (latent_dim × latent_dim+1) for update_A_b!
-    Szz_Ab::Matrix{T}         # (latent_dim+1 × latent_dim+1) for update_A_b!
-    AB::Matrix{T}             # (latent_dim × latent_dim+1) for update_A_b!
-    Syz::Matrix{T}            # (obs_dim × latent_dim+1) for update_C_d!
-    Szz_Cd::Matrix{T}         # (latent_dim+1 × latent_dim+1) for update_C_d!
+"""
+    RegressionBuffers{T<:Real}
+
+Regression-shaped scratch sized for `[A b B]` (dyn_reg_dim = D + 1 + ux_dim)
+and `[C d D]` (obs_reg_dim = D + 1 + uy_dim). Used by the suf-based M-step
+updates, reused as accumulators by the TD sufficient-stats aggregators, and
+(`CD`/`Syz`) as the per-chunk gradient accumulators of the Poisson emission
+M-step.
+"""
+struct RegressionBuffers{T<:Real}
+    Sxz::Matrix{T}            # (latent_dim × dyn_reg_dim) for update_A_b!
+    Szz_Ab::Matrix{T}         # (dyn_reg_dim × dyn_reg_dim) for update_A_b!
+    AB::Matrix{T}             # (latent_dim × dyn_reg_dim) for update_A_b!
+    Syz::Matrix{T}            # (obs_dim × obs_reg_dim) for update_C_d!
+    Szz_Cd::Matrix{T}         # (obs_reg_dim × obs_reg_dim) for update_C_d!
+    CD::Matrix{T}             # (obs_dim × obs_reg_dim) for update_C_d!
     Q_sum::Matrix{T}          # (latent_dim × latent_dim)
     R_sum::Matrix{T}          # (obs_dim × obs_dim)
     S0_sum::Matrix{T}         # (latent_dim × latent_dim)
+end
 
-    # update_C_d! temps
-    CD::Matrix{T}             # (obs_dim × latent_dim + 1)
+function RegressionBuffers(
+    ::Type{T}, latent_dim::Int, obs_dim::Int; ux_dim::Int=0, uy_dim::Int=0
+) where {T<:Real}
+    #=
+    The "+1" is for the affine bias column (b for the dynamics regression,
+    d for the observation regression); ux_dim / uy_dim add the user input
+    columns when controls are supplied.
+    =#
+    dyn_reg_dim = latent_dim + 1 + ux_dim
+    obs_reg_dim = latent_dim + 1 + uy_dim
+    return RegressionBuffers{T}(
+        zeros(T, latent_dim, dyn_reg_dim),   # Sxz
+        zeros(T, dyn_reg_dim, dyn_reg_dim),  # Szz_Ab
+        zeros(T, latent_dim, dyn_reg_dim),   # AB
+        zeros(T, obs_dim, obs_reg_dim),      # Syz
+        zeros(T, obs_reg_dim, obs_reg_dim),  # Szz_Cd
+        zeros(T, obs_dim, obs_reg_dim),      # CD
+        zeros(T, latent_dim, latent_dim),    # Q_sum
+        zeros(T, obs_dim, obs_dim),          # R_sum
+        zeros(T, latent_dim, latent_dim),    # S0_sum
+    )
+end
 
-    # ELBO / Q_state buffers
-    elbo_temp::Matrix{T}           # (latent_dim × latent_dim) - main accumulator
-    elbo_sum_E_zz::Matrix{T}       # (latent_dim × latent_dim)
-    elbo_sum_E_zzm1::Matrix{T}     # (latent_dim × latent_dim)
-    elbo_sum_E_cross::Matrix{T}    # (latent_dim × latent_dim)
-    elbo_sum_mu_t::Vector{T}       # (latent_dim,)
-    elbo_sum_mu_tm1::Vector{T}     # (latent_dim,)
-    elbo_temp2::Matrix{T}          # (latent_dim × latent_dim) - for A * sum_E_zzm1 * A'
+"""
+    ElboBuffers{T<:Real}
+
+Accumulator / work buffers for the `Q_state!` / `Q_obs!` ELBO terms (Gaussian
+and Poisson variants). A few double as free scratch in the M-step covariance
+updates (`temp`, `obs_temp`, `obs_work`).
+"""
+struct ElboBuffers{T<:Real}
+    # Q_state buffers
+    temp::Matrix{T}           # (latent_dim × latent_dim) - main accumulator
+    sum_E_zz::Matrix{T}       # (latent_dim × latent_dim)
+    sum_E_zzm1::Matrix{T}     # (latent_dim × latent_dim)
+    sum_E_cross::Matrix{T}    # (latent_dim × latent_dim)
+    sum_mu_t::Vector{T}       # (latent_dim,)
+    sum_mu_tm1::Vector{T}     # (latent_dim,)
+    temp2::Matrix{T}          # (latent_dim × latent_dim) - for A * sum_E_zzm1 * A'
 
     # Q_obs buffers (Gaussian)
-    elbo_obs_temp::Matrix{T}       # (obs_dim × obs_dim) - accumulator
-    elbo_obs_work::Matrix{T}       # (obs_dim × obs_dim) - work matrix
-    elbo_ytil::Vector{T}           # (obs_dim,) - residualized y
-    elbo_sum_yy::Matrix{T}         # (obs_dim × obs_dim)
-    elbo_sum_yz::Matrix{T}         # (obs_dim × latent_dim)
-    elbo_obs_work1::Matrix{T}      # (obs_dim × obs_dim)
-    elbo_obs_work2::Matrix{T}      # (latent_dim × obs_dim)
+    obs_temp::Matrix{T}       # (obs_dim × obs_dim) - accumulator
+    obs_work::Matrix{T}       # (obs_dim × obs_dim) - work matrix
+    ytil::Vector{T}           # (obs_dim,) - residualized y
+    sum_yy::Matrix{T}         # (obs_dim × obs_dim)
+    sum_yz::Matrix{T}         # (obs_dim × latent_dim)
+    obs_work1::Matrix{T}      # (obs_dim × obs_dim)
+    obs_work2::Matrix{T}      # (latent_dim × obs_dim)
 
     # Q_obs buffers (Poisson)
-    h_obs::Vector{T}               # (obs_dim,) - h_t = C * E[x_t] + d
-    rho_obs::Vector{T}             # (obs_dim,) - variance correction
-    CP_obs::Matrix{T}              # (obs_dim × latent_dim) - C * P_t
-    CEz_obs::Vector{T}             # (obs_dim,) - C * E[x_t]
+    h_obs::Vector{T}          # (obs_dim,) - h_t = C * E[x_t] + d
+    rho_obs::Vector{T}        # (obs_dim,) - variance correction
+    CP_obs::Matrix{T}         # (obs_dim × latent_dim) - C * P_t
+    CEz_obs::Vector{T}        # (obs_dim,) - C * E[x_t]
+end
 
-    #=
-    Shared smoothed-covariance storage for the equal-length multi-trial fast
-    path. The BT Hessian (and therefore its inverse) is observation-
-    independent; when all trials of a fit share the same length, the
-    smoothed covariances `P_smooth[t]` and cross-covariances `P_smooth[t,t-1]`
-    are computed once on a designated workspace and aliased by every trial's
-    `FilterSmooth.p_smooth` / `p_smooth_tt1` field. Mirrors the Kalman
-    path's `p_smooth_shared` / `p_smooth_tt1_shared` pattern.
-    =#
+function ElboBuffers(::Type{T}, latent_dim::Int, obs_dim::Int) where {T<:Real}
+    return ElboBuffers{T}(
+        zeros(T, latent_dim, latent_dim),  # temp
+        zeros(T, latent_dim, latent_dim),  # sum_E_zz
+        zeros(T, latent_dim, latent_dim),  # sum_E_zzm1
+        zeros(T, latent_dim, latent_dim),  # sum_E_cross
+        zeros(T, latent_dim),              # sum_mu_t
+        zeros(T, latent_dim),              # sum_mu_tm1
+        zeros(T, latent_dim, latent_dim),  # temp2
+        zeros(T, obs_dim, obs_dim),        # obs_temp
+        zeros(T, obs_dim, obs_dim),        # obs_work
+        zeros(T, obs_dim),                 # ytil
+        zeros(T, obs_dim, obs_dim),        # sum_yy
+        zeros(T, obs_dim, latent_dim),     # sum_yz
+        zeros(T, obs_dim, obs_dim),        # obs_work1
+        zeros(T, latent_dim, obs_dim),     # obs_work2
+        zeros(T, obs_dim),                 # h_obs
+        zeros(T, obs_dim),                 # rho_obs
+        zeros(T, obs_dim, latent_dim),     # CP_obs
+        zeros(T, obs_dim),                 # CEz_obs
+    )
+end
+
+"""
+    TDAggBuffers{T<:Real}
+
+Buffers for the TD sufficient-statistics aggregator plus the shared
+smoothed-covariance storage of the equal-length multi-trial fast path.
+
+`p_smooth_shared` / `p_smooth_tt1_shared`: the BT Hessian (and therefore its
+inverse) is observation-independent; when all trials of a fit share the same
+length, the smoothed covariances are computed once on a designated workspace
+and aliased by every trial's `FilterSmooth.p_smooth` / `p_smooth_tt1` field.
+
+The `*_const` blocks are data-only aggregates filled once at fit entry
+(`_td_init_const_blocks!`); the rest are overwritten each E-step by
+`_aggregate_td_suff_stats!`.
+"""
+struct TDAggBuffers{T<:Real}
+    # Shared smoothed-covariance storage (equal-length fast path)
     p_smooth_shared::Array{T,3}      # (latent_dim, latent_dim, tsteps)
     p_smooth_tt1_shared::Array{T,3}  # (latent_dim, latent_dim, tsteps)
 
-    #=
-    Aggregator output buffers, sized to match the shapes of
-    `SufficientStatistics`. The TD aggregator writes per-trial GEMM/SYRK
-    contributions into these, then wraps them as PDMats once per E-step.
-    Reused across iterations (only the contents change).
-    =#
-    td_init_xy::Matrix{T}              # (1, latent_dim)         Σₙ x_init
-    td_dyn_xy::Matrix{T}               # (dyn_reg_dim, D)        Σₙ Σₜ [x_{t-1};1;u_{t-1}] xₜ'
-    td_obs_xy::Matrix{T}               # (obs_reg_dim, p)        Σₙ Σₜ [xₜ;1;vₜ] yₜ'
+    # Aggregator output buffers, shaped to match `SufficientStatistics`
+    init_xy::Matrix{T}               # (1, latent_dim)   Σₙ x_init
+    dyn_xy::Matrix{T}                # (dyn_reg_dim, D)  Σₙ Σₜ [x_{t-1};1;u_{t-1}] xₜ'
+    obs_xy::Matrix{T}                # (obs_reg_dim, p)  Σₙ Σₜ [xₜ;1;vₜ] yₜ'
 
     # Cross-trial smoothed-covariance accumulators
-    td_sum_smooth_cov_prev::Matrix{T}  # (D, D)  Σₙ Σ_{t=1:Tₙ-1} P_smooth[t]
-    td_sum_smooth_cov_next::Matrix{T}  # (D, D)  Σₙ Σ_{t=2:Tₙ}   P_smooth[t]
-    td_sum_smooth_cov_all::Matrix{T}   # (D, D)  Σₙ Σ_{t=1:Tₙ}   P_smooth[t]
-    td_sum_smooth_xcov::Matrix{T}      # (D, D)  Σₙ Σ_{t=2:Tₙ}   P_smooth_tt1[t]
+    sum_smooth_cov_prev::Matrix{T}   # (D, D)  Σₙ Σ_{t=1:Tₙ-1} P_smooth[t]
+    sum_smooth_cov_next::Matrix{T}   # (D, D)  Σₙ Σ_{t=2:Tₙ}   P_smooth[t]
+    sum_smooth_cov_all::Matrix{T}    # (D, D)  Σₙ Σ_{t=1:Tₙ}   P_smooth[t]
+    sum_smooth_xcov::Matrix{T}       # (D, D)  Σₙ Σ_{t=2:Tₙ}   P_smooth_tt1[t]
 
     #=
     Constant aggregates over the input data (filled once at fit entry, not
@@ -252,36 +370,110 @@ struct SmoothWorkspace{T<:Real}
     the ux-only blocks of dyn_xx are observation-independent so we cache them
     here to skip re-summing every E-step.
     =#
-    td_obs_yy_const::Matrix{T}         # (p, p)                Σₙ Σₜ yₜ yₜ'
-    td_obs_xy_const::Matrix{T}         # (obs_reg_dim, p)      bias + uy-rows of obs_xy
-    td_obs_xx_const::Matrix{T}         # (obs_reg_dim, obs_reg_dim) bias / uy blocks
-    td_dyn_xx_const::Matrix{T}         # (dyn_reg_dim, dyn_reg_dim) bias / ux blocks
+    obs_yy_const::Matrix{T}          # (p, p)                Σₙ Σₜ yₜ yₜ'
+    obs_xy_const::Matrix{T}          # (obs_reg_dim, p)      bias + uy-rows of obs_xy
+    obs_xx_const::Matrix{T}          # (obs_reg_dim, obs_reg_dim) bias / uy blocks
+    dyn_xx_const::Matrix{T}          # (dyn_reg_dim, dyn_reg_dim) bias / ux blocks
+end
 
-    #=
-    Batched mean-pass buffers (equal-length cov-cache fast path). Only the
-    designated `sws_pool[1]` workspace allocates these with `ntrials > 1`;
-    the rest of the pool keeps them at `ntrials = 1` (effectively empty).
-    The (D, T, N) tensors share storage with their `(D*T, N)` reshaped views
-    used as matrix RHS for `block_tridiagonal_backsubst!`.
-    =#
-    batched_x_mat::Array{T,3}         # (latent_dim, tsteps, ntrials) - current iterate
-    batched_grad_buf::Array{T,3}      # (latent_dim, tsteps, ntrials) - Gradient! output
-    batched_dxt::Matrix{T}            # (latent_dim, ntrials)
-    batched_dxt_next::Matrix{T}       # (latent_dim, ntrials)
-    batched_dyt::Matrix{T}            # (obs_dim, ntrials)
-    batched_tmp1::Matrix{T}           # (latent_dim, ntrials)
-    batched_tmp2::Matrix{T}           # (latent_dim, ntrials)
-    batched_tmp3::Matrix{T}           # (latent_dim, ntrials)
+function TDAggBuffers(
+    ::Type{T}, latent_dim::Int, obs_dim::Int, tsteps::Int; ux_dim::Int=0, uy_dim::Int=0
+) where {T<:Real}
+    dyn_reg_dim = latent_dim + 1 + ux_dim
+    obs_reg_dim = latent_dim + 1 + uy_dim
+    return TDAggBuffers{T}(
+        zeros(T, latent_dim, latent_dim, tsteps),  # p_smooth_shared
+        zeros(T, latent_dim, latent_dim, tsteps),  # p_smooth_tt1_shared
+        zeros(T, 1, latent_dim),                   # init_xy
+        zeros(T, dyn_reg_dim, latent_dim),         # dyn_xy
+        zeros(T, obs_reg_dim, obs_dim),            # obs_xy
+        zeros(T, latent_dim, latent_dim),          # sum_smooth_cov_prev
+        zeros(T, latent_dim, latent_dim),          # sum_smooth_cov_next
+        zeros(T, latent_dim, latent_dim),          # sum_smooth_cov_all
+        zeros(T, latent_dim, latent_dim),          # sum_smooth_xcov
+        zeros(T, obs_dim, obs_dim),                # obs_yy_const
+        zeros(T, obs_reg_dim, obs_dim),            # obs_xy_const
+        zeros(T, obs_reg_dim, obs_reg_dim),        # obs_xx_const
+        zeros(T, dyn_reg_dim, dyn_reg_dim),        # dyn_xx_const
+    )
+end
 
-    #=
-    Stacked observation / control tensors used by the batched mean pass.
-    Populated once at the first batched `smooth!` call (data is constant
-    across EM iters within a fit). 0-sized when `ntrials = 1`.
-    =#
-    batched_y::Array{T,3}             # (obs_dim, tsteps, ntrials)
-    batched_ux::Array{T,3}             # (ux_dim, tsteps, ntrials)
-    batched_uy::Array{T,3}             # (uy_dim, tsteps, ntrials)
-    batched_data_valid::Base.RefValue{Bool}  # true after first populate
+"""
+    BatchedBuffers{T<:Real}
+
+Batched mean-pass buffers for the equal-length cov-cache fast path. Only the
+designated `sws_pool[1]` workspace carries one (constructed with the fit's
+actual `ntrials`); the rest of the pool has `batched = nothing`. The
+`(D, T, N)` tensors share storage with their `(D*T, N)` reshaped views used
+as matrix RHS for `block_tridiagonal_backsubst!`.
+
+The stacked data tensors (`y` / `ux` / `uy`) are populated once at the first
+batched `smooth!` call (data is constant across EM iters within a fit);
+`data_valid` flips to `true` after that populate.
+"""
+struct BatchedBuffers{T<:Real}
+    x_mat::Array{T,3}         # (latent_dim, tsteps, ntrials) - current iterate
+    grad_buf::Array{T,3}      # (latent_dim, tsteps, ntrials) - Gradient! output
+    dxt::Matrix{T}            # (latent_dim, ntrials)
+    dxt_next::Matrix{T}       # (latent_dim, ntrials)
+    dyt::Matrix{T}            # (obs_dim, ntrials)
+    tmp1::Matrix{T}           # (latent_dim, ntrials)
+    tmp2::Matrix{T}           # (latent_dim, ntrials)
+    tmp3::Matrix{T}           # (latent_dim, ntrials)
+    y::Array{T,3}             # (obs_dim, tsteps, ntrials)
+    ux::Array{T,3}            # (ux_dim, tsteps, ntrials)
+    uy::Array{T,3}            # (uy_dim, tsteps, ntrials)
+    data_valid::Base.RefValue{Bool}  # true after first populate
+end
+
+function BatchedBuffers(
+    ::Type{T},
+    latent_dim::Int,
+    obs_dim::Int,
+    tsteps::Int,
+    ntrials::Int;
+    ux_dim::Int=0,
+    uy_dim::Int=0,
+) where {T<:Real}
+    return BatchedBuffers{T}(
+        zeros(T, latent_dim, tsteps, ntrials),  # x_mat
+        zeros(T, latent_dim, tsteps, ntrials),  # grad_buf
+        zeros(T, latent_dim, ntrials),          # dxt
+        zeros(T, latent_dim, ntrials),          # dxt_next
+        zeros(T, obs_dim, ntrials),             # dyt
+        zeros(T, latent_dim, ntrials),          # tmp1
+        zeros(T, latent_dim, ntrials),          # tmp2
+        zeros(T, latent_dim, ntrials),          # tmp3
+        zeros(T, obs_dim, tsteps, ntrials),     # y
+        zeros(T, ux_dim, tsteps, ntrials),      # ux
+        zeros(T, uy_dim, tsteps, ntrials),      # uy
+        Ref(false),                             # data_valid
+    )
+end
+
+"""
+    SmoothWorkspace{T<:Real}
+
+Pre-allocated workspace for the full LDS smoothing + EM pipeline, grouped by
+concern:
+
+- `btd`: block tridiagonal solver storage
+- `consts`: Cholesky-derived model constants ([`SmoothConstants`](@ref))
+- `opt`: Newton-smoother iterate / gradient / kernel scratch
+- `reg`: regression-shaped M-step + aggregator buffers
+- `elbo`: `Q_state!` / `Q_obs!` accumulators
+- `agg`: TD sufficient-stats aggregator + shared-covariance storage
+- `batched`: batched mean-pass buffers, or `nothing` (only `sws_pool[1]` of a
+  multi-trial equal-length fit carries one)
+"""
+struct SmoothWorkspace{T<:Real}
+    btd::BlockTridiagonalWorkspace{T}
+    consts::SmoothConstants{T}
+    opt::NewtonBuffers{T}
+    reg::RegressionBuffers{T}
+    elbo::ElboBuffers{T}
+    agg::TDAggBuffers{T}
+    batched::Union{Nothing,BatchedBuffers{T}}
 end
 
 """
@@ -291,12 +483,12 @@ end
 Construct a preallocated `SmoothWorkspace` for the full LDS EM pipeline.
 
 - `ux_dim` is the dynamics-input dimension (`size(state_model.B, 2)`), used to
-  size the M-step regression buffers `Sxz`/`Szz_Ab`/`AB` to fit `[A b B]`.
+  size the regression buffers to fit `[A b B]`.
 - `uy_dim` is the observation-input dimension (`size(obs_model.D, 2)`), used
-  to size `Syz`/`Szz_Cd`/`CD` to fit `[C d D]`.
-- `ntrials` sizes the batched mean-pass buffers used by the equal-length
-  cov-cache fast path. Default 1 (effectively empty). Only `sws_pool[1]` at
-  fit entry needs the real `ntrials`; the rest of the pool keeps the default.
+  to size the regression buffers to fit `[C d D]`.
+- `ntrials > 1` allocates the batched mean-pass buffers used by the
+  equal-length cov-cache fast path (`batched` is `nothing` otherwise). Only
+  `sws_pool[1]` at fit entry needs the real `ntrials`.
 
 Either of `ux_dim` / `uy_dim` being zero (the default) means no inputs — buffers
 fit `[A b]` and/or `[C d]` only.
@@ -310,235 +502,41 @@ function SmoothWorkspace(
     uy_dim::Int=0,
     ntrials::Int=1,
 ) where {T<:Real}
-    btd = BlockTridiagonalWorkspace(T, latent_dim, tsteps)
-
-    # Placeholder PDMats — rewrapped at the start of every E-step
-    # by `compute_smooth_constants!`.
-    R_PD = _pd_ref(PDMat(Matrix{T}(I, obs_dim, obs_dim)))
-    Q_PD = _pd_ref(PDMat(Matrix{T}(I, latent_dim, latent_dim)))
-    P0_PD = _pd_ref(PDMat(Matrix{T}(I, latent_dim, latent_dim)))
-    cP0 = Ref(zero(T))
-    cQ = Ref(zero(T))
-    cR = Ref(zero(T))
-
-    tmp_RC = zeros(T, obs_dim, latent_dim)
-    tmp_QA = zeros(T, latent_dim, latent_dim)
-
-    C_inv_R = zeros(T, latent_dim, obs_dim)
-    A_inv_Q = zeros(T, latent_dim, latent_dim)
-    H_sub_entry = zeros(T, latent_dim, latent_dim)
-    H_super_entry = zeros(T, latent_dim, latent_dim)
-    yt_given_xt = zeros(T, latent_dim, latent_dim)
-    xt_given_xt_1 = zeros(T, latent_dim, latent_dim)
-    xt1_given_xt = zeros(T, latent_dim, latent_dim)
-    x_t = zeros(T, latent_dim, latent_dim)
-
-    # Optimizer buffers
-    X₀ = zeros(T, latent_dim * tsteps)
-    grad_buf = zeros(T, latent_dim, tsteps)
-    grad_vec = zeros(T, latent_dim * tsteps)
-    initial_h = copy(btd.H_sparse)
-
-    # Gradient temp vectors
-    dxt = zeros(T, latent_dim)
-    dxt_next = zeros(T, latent_dim)
-    dyt = zeros(T, obs_dim)
-    tmp1 = zeros(T, latent_dim)
-    tmp2 = zeros(T, latent_dim)
-    tmp3 = zeros(T, latent_dim)
-
-    # loglikelihood temp vectors
-    ll_vec = zeros(T, tsteps)
-    temp_dx = zeros(T, latent_dim)
-    temp_dy = zeros(T, obs_dim)
-    temp_solve_Q = zeros(T, latent_dim)
-    temp_solve_R = zeros(T, obs_dim)
-
-    # Hessian temp matrix
-    I_mat = Matrix{T}(I, latent_dim, latent_dim)
-
-    #=
-    M-step buffers. The "+1" is for the affine bias column (b for the
-    dynamics regression, d for the observation regression); ux_dim / uy_dim
-    add the user input columns when controls are supplied.
-    =#
-    dyn_reg_dim = latent_dim + 1 + ux_dim
-    obs_reg_dim = latent_dim + 1 + uy_dim
-    Sxz = zeros(T, latent_dim, dyn_reg_dim)
-    Szz_Ab = zeros(T, dyn_reg_dim, dyn_reg_dim)
-    AB = zeros(T, latent_dim, dyn_reg_dim)
-    Syz = zeros(T, obs_dim, obs_reg_dim)
-    Szz_Cd = zeros(T, obs_reg_dim, obs_reg_dim)
-    Q_sum = zeros(T, latent_dim, latent_dim)
-    R_sum = zeros(T, obs_dim, obs_dim)
-    S0_sum = zeros(T, latent_dim, latent_dim)
-    CD = zeros(T, obs_dim, obs_reg_dim)
-
-    # ELBO / Q_state buffers
-    elbo_temp = zeros(T, latent_dim, latent_dim)
-    elbo_sum_E_zz = zeros(T, latent_dim, latent_dim)
-    elbo_sum_E_zzm1 = zeros(T, latent_dim, latent_dim)
-    elbo_sum_E_cross = zeros(T, latent_dim, latent_dim)
-    elbo_sum_mu_t = zeros(T, latent_dim)
-    elbo_sum_mu_tm1 = zeros(T, latent_dim)
-    elbo_temp2 = zeros(T, latent_dim, latent_dim)
-
-    # Q_obs buffers (Gaussian)
-    elbo_obs_temp = zeros(T, obs_dim, obs_dim)
-    elbo_obs_work = zeros(T, obs_dim, obs_dim)
-    elbo_ytil = zeros(T, obs_dim)
-    elbo_sum_yy = zeros(T, obs_dim, obs_dim)
-    elbo_sum_yz = zeros(T, obs_dim, latent_dim)
-    elbo_obs_work1 = zeros(T, obs_dim, obs_dim)
-    elbo_obs_work2 = zeros(T, latent_dim, obs_dim)
-
-    # Q_obs buffers (Poisson)
-    h_obs = zeros(T, obs_dim)
-    rho_obs = zeros(T, obs_dim)
-    CP_obs = zeros(T, obs_dim, latent_dim)
-    CEz_obs = zeros(T, obs_dim)
-
-    #=
-    Shared smoothed-covariance storage for the equal-length multi-trial
-    fast path (filled once per E-step on the designated workspace, then
-    aliased by every trial's FilterSmooth).
-    =#
-    p_smooth_shared = zeros(T, latent_dim, latent_dim, tsteps)
-    p_smooth_tt1_shared = zeros(T, latent_dim, latent_dim, tsteps)
-
-    # Kalman-style aggregator buffers
-    td_init_xy = zeros(T, 1, latent_dim)
-    td_dyn_xy = zeros(T, dyn_reg_dim, latent_dim)
-    td_obs_xy = zeros(T, obs_reg_dim, obs_dim)
-    td_sum_smooth_cov_prev = zeros(T, latent_dim, latent_dim)
-    td_sum_smooth_cov_next = zeros(T, latent_dim, latent_dim)
-    td_sum_smooth_cov_all = zeros(T, latent_dim, latent_dim)
-    td_sum_smooth_xcov = zeros(T, latent_dim, latent_dim)
-    td_obs_yy_const = zeros(T, obs_dim, obs_dim)
-    td_obs_xy_const = zeros(T, obs_reg_dim, obs_dim)
-    td_obs_xx_const = zeros(T, obs_reg_dim, obs_reg_dim)
-    td_dyn_xx_const = zeros(T, dyn_reg_dim, dyn_reg_dim)
-
-    #=
-    Batched mean-pass buffers. Sized at `ntrials = 1` by default — only
-    `sws_pool[1]` at fit entry passes the actual ntrials so the batched
-    backsubst can do BLAS-3 across trials.
-    =#
-    batched_x_mat = zeros(T, latent_dim, tsteps, ntrials)
-    batched_grad_buf = zeros(T, latent_dim, tsteps, ntrials)
-    batched_dxt = zeros(T, latent_dim, ntrials)
-    batched_dxt_next = zeros(T, latent_dim, ntrials)
-    batched_dyt = zeros(T, obs_dim, ntrials)
-    batched_tmp1 = zeros(T, latent_dim, ntrials)
-    batched_tmp2 = zeros(T, latent_dim, ntrials)
-    batched_tmp3 = zeros(T, latent_dim, ntrials)
-    batched_y = zeros(T, obs_dim, tsteps, ntrials)
-    batched_ux = zeros(T, ux_dim, tsteps, ntrials)
-    batched_uy = zeros(T, uy_dim, tsteps, ntrials)
-    batched_data_valid = Ref(false)
-
+    batched = if ntrials > 1
+        BatchedBuffers(T, latent_dim, obs_dim, tsteps, ntrials; ux_dim=ux_dim, uy_dim=uy_dim)
+    else
+        nothing
+    end
     return SmoothWorkspace{T}(
-        btd,
-        R_PD,
-        Q_PD,
-        P0_PD,
-        cP0,
-        cQ,
-        cR,
-        tmp_RC,
-        tmp_QA,
-        C_inv_R,
-        A_inv_Q,
-        H_sub_entry,
-        H_super_entry,
-        yt_given_xt,
-        xt_given_xt_1,
-        xt1_given_xt,
-        x_t,
-        X₀,
-        grad_buf,
-        grad_vec,
-        initial_h,
-        dxt,
-        dxt_next,
-        dyt,
-        tmp1,
-        tmp2,
-        tmp3,
-        ll_vec,
-        temp_dx,
-        temp_dy,
-        temp_solve_Q,
-        temp_solve_R,
-        I_mat,
-        Sxz,
-        Szz_Ab,
-        AB,
-        Syz,
-        Szz_Cd,
-        Q_sum,
-        R_sum,
-        S0_sum,
-        CD,
-        elbo_temp,
-        elbo_sum_E_zz,
-        elbo_sum_E_zzm1,
-        elbo_sum_E_cross,
-        elbo_sum_mu_t,
-        elbo_sum_mu_tm1,
-        elbo_temp2,
-        elbo_obs_temp,
-        elbo_obs_work,
-        elbo_ytil,
-        elbo_sum_yy,
-        elbo_sum_yz,
-        elbo_obs_work1,
-        elbo_obs_work2,
-        h_obs,
-        rho_obs,
-        CP_obs,
-        CEz_obs,
-        p_smooth_shared,
-        p_smooth_tt1_shared,
-        td_init_xy,
-        td_dyn_xy,
-        td_obs_xy,
-        td_sum_smooth_cov_prev,
-        td_sum_smooth_cov_next,
-        td_sum_smooth_cov_all,
-        td_sum_smooth_xcov,
-        td_obs_yy_const,
-        td_obs_xy_const,
-        td_obs_xx_const,
-        td_dyn_xx_const,
-        batched_x_mat,
-        batched_grad_buf,
-        batched_dxt,
-        batched_dxt_next,
-        batched_dyt,
-        batched_tmp1,
-        batched_tmp2,
-        batched_tmp3,
-        batched_y,
-        batched_ux,
-        batched_uy,
-        batched_data_valid,
+        BlockTridiagonalWorkspace(T, latent_dim, tsteps),
+        SmoothConstants(T, latent_dim, obs_dim),
+        NewtonBuffers(T, latent_dim, obs_dim, tsteps),
+        RegressionBuffers(T, latent_dim, obs_dim; ux_dim=ux_dim, uy_dim=uy_dim),
+        ElboBuffers(T, latent_dim, obs_dim),
+        TDAggBuffers(T, latent_dim, obs_dim, tsteps; ux_dim=ux_dim, uy_dim=uy_dim),
+        batched,
     )
 end
 
 """
-    compute_smooth_constants!(ws::SmoothWorkspace{T}, lds)
+    compute_smooth_constants!(cc::SmoothConstants, lds)
+    compute_smooth_constants!(ws::SmoothWorkspace, lds)
 
 Pre-compute and cache all Cholesky factors and derived terms that are constant
 within a single `smooth!` call (i.e., depend only on model parameters, not on x).
-Must be called once at the start of each `smooth!` invocation.
+Must be called once at the start of each `smooth!` invocation (and once per
+regime after each SLDS M-step — see `refresh_slds_constants!`).
 
 Dispatches on the observation model type:
 - Gaussian: computes both state and observation model terms.
-- Poisson: only computes state model terms (observation terms are x-dependent).
+- Poisson: only computes state model terms (observation terms are x-dependent);
+  `yt_given_xt` / `C_inv_R` are zeroed and `cR` is zero.
+
+The `SmoothWorkspace` form forwards to the workspace's embedded
+`SmoothConstants`.
 """
 function compute_smooth_constants!(
-    ws::SmoothWorkspace{WT}, lds::LinearDynamicalSystem{T,S,O}
+    cc::SmoothConstants{WT}, lds::LinearDynamicalSystem{T,S,O}
 ) where {WT<:Real,T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     A = lds.state_model.A
     Q = lds.state_model.Q
@@ -548,11 +546,11 @@ function compute_smooth_constants!(
 
     #=
     Rewrap covariances as PDMats — each PDMat caches its own Cholesky
-    factor internally and is consumed downstream via `ws.X_PD[].chol.U`
-    for triangular solves and `logdet(ws.X_PD[])` for the normalizer.
+    factor internally and is consumed downstream via `cc.X_PD.chol.U`
+    for triangular solves and `logdet(cc.X_PD)` for the normalizer.
 
     When `WT === T` (the hot path) `convert(Matrix{WT}, M)` returns `M`
-    unchanged — no copy, no alloc. When the workspace eltype differs
+    unchanged — no copy, no alloc. When the constants eltype differs
     (e.g. `ForwardDiff.Dual` for autodiff `loglikelihood`), constructing
     the PDMat directly with `WT`-typed factors avoids the
     `convert(::Type{PDMat{WT}}, ::PDMat{T})` fallback that requires a
@@ -562,76 +560,141 @@ function compute_smooth_constants!(
     R_w = convert(Matrix{WT}, R)
     Q_w = convert(Matrix{WT}, Q)
     P0_w = convert(Matrix{WT}, P0)
-    ws.R_PD[] = PDMat(Symmetric(R_w))
-    ws.Q_PD[] = PDMat(Symmetric(Q_w))
-    ws.P0_PD[] = PDMat(Symmetric(P0_w))
-    Rchol = ws.R_PD[].chol
-    Qchol = ws.Q_PD[].chol
-    P0chol = ws.P0_PD[].chol
+    cc.R_PD = PDMat(Symmetric(R_w))
+    cc.Q_PD = PDMat(Symmetric(Q_w))
+    cc.P0_PD = PDMat(Symmetric(P0_w))
+    Rchol = cc.R_PD.chol
+    Qchol = cc.Q_PD.chol
+    P0chol = cc.P0_PD.chol
 
     # tmp_RC = R^{-1} C
-    copyto!(ws.tmp_RC, C)
-    ldiv!(Rchol, ws.tmp_RC)
-    copyto!(ws.C_inv_R, ws.tmp_RC')
+    copyto!(cc.tmp_RC, C)
+    ldiv!(Rchol, cc.tmp_RC)
+    copyto!(cc.C_inv_R, cc.tmp_RC')
 
     # tmp_QA = Q^{-1} A
-    copyto!(ws.tmp_QA, A)
-    ldiv!(Qchol, ws.tmp_QA)
-    copyto!(ws.A_inv_Q, ws.tmp_QA')
-    copyto!(ws.H_sub_entry, ws.tmp_QA)
-    copyto!(ws.H_super_entry, ws.tmp_QA')
+    copyto!(cc.tmp_QA, A)
+    ldiv!(Qchol, cc.tmp_QA)
+    copyto!(cc.A_inv_Q, cc.tmp_QA')
+    copyto!(cc.H_sub_entry, cc.tmp_QA)
+    copyto!(cc.H_super_entry, cc.tmp_QA')
 
     # yt_given_xt = -C' * (R^{-1} C)
-    mul!(ws.yt_given_xt, C', ws.tmp_RC)
-    ws.yt_given_xt .*= -one(T)
+    mul!(cc.yt_given_xt, C', cc.tmp_RC)
+    cc.yt_given_xt .*= -one(T)
 
     # xt_given_xt_1 = -Q^{-1}
-    copyto!(ws.xt_given_xt_1, ws.I_mat)
-    ldiv!(Qchol, ws.xt_given_xt_1)
-    ws.xt_given_xt_1 .*= -one(T)
+    copyto!(cc.xt_given_xt_1, cc.I_mat)
+    ldiv!(Qchol, cc.xt_given_xt_1)
+    cc.xt_given_xt_1 .*= -one(T)
 
     # xt1_given_xt = -A' * (Q^{-1} A)
-    mul!(ws.xt1_given_xt, A', ws.tmp_QA)
-    ws.xt1_given_xt .*= -one(T)
+    mul!(cc.xt1_given_xt, A', cc.tmp_QA)
+    cc.xt1_given_xt .*= -one(T)
 
     # x_t = -P0^{-1}
-    copyto!(ws.x_t, ws.I_mat)
-    ldiv!(P0chol, ws.x_t)
-    ws.x_t .*= -one(T)
+    copyto!(cc.x_t, cc.I_mat)
+    ldiv!(P0chol, cc.x_t)
+    cc.x_t .*= -one(T)
 
     # Log-likelihood normalizers (consumed by the likelihood kernels)
     latent_dim = lds.latent_dim
     obs_dim = lds.obs_dim
-    ws.cP0[] = -WT(0.5) * (WT(latent_dim) * log(WT(2π)) + logdet(ws.P0_PD[]))
-    ws.cQ[] = -WT(0.5) * (WT(latent_dim) * log(WT(2π)) + logdet(ws.Q_PD[]))
-    ws.cR[] = -WT(0.5) * (WT(obs_dim) * log(WT(2π)) + logdet(ws.R_PD[]))
+    cc.cP0 = -WT(0.5) * (WT(latent_dim) * log(WT(2π)) + logdet(cc.P0_PD))
+    cc.cQ = -WT(0.5) * (WT(latent_dim) * log(WT(2π)) + logdet(cc.Q_PD))
+    cc.cR = -WT(0.5) * (WT(obs_dim) * log(WT(2π)) + logdet(cc.R_PD))
 
     return nothing
 end
 
+function compute_smooth_constants!(
+    cc::SmoothConstants{WT}, lds::LinearDynamicalSystem{T,S,O}
+) where {WT<:Real,T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
+    A = lds.state_model.A
+    Q = lds.state_model.Q
+    P0 = lds.state_model.P0
+
+    #=
+    Wrap state-side covariances as PDMats (the Poisson emission has no
+    covariance, so R_PD stays on its identity placeholder). See the
+    Gaussian overload for the `convert` rationale: it's a no-op when
+    `WT === T` and avoids a Julia 1.10 `Cholesky` convert-method gap
+    when `WT !== T` (ForwardDiff path).
+    =#
+    Q_w = convert(Matrix{WT}, Q)
+    P0_w = convert(Matrix{WT}, P0)
+    cc.Q_PD = PDMat(Symmetric(Q_w))
+    cc.P0_PD = PDMat(Symmetric(P0_w))
+    Q_chol = cc.Q_PD.chol
+    P0_chol = cc.P0_PD.chol
+
+    # Gradient terms: A_inv_Q = (Q_chol \ A)'
+    copyto!(cc.tmp_QA, A)
+    ldiv!(Q_chol, cc.tmp_QA)
+    copyto!(cc.A_inv_Q, cc.tmp_QA')
+
+    # Hessian block templates for state model
+    copyto!(cc.H_sub_entry, cc.tmp_QA)          # Q_chol \ A
+    copyto!(cc.H_super_entry, cc.tmp_QA')       # (Q_chol \ A)'
+
+    # xt_given_xt_1 = -(Q_chol \ I) = -Q^{-1}
+    copyto!(cc.xt_given_xt_1, cc.I_mat)
+    ldiv!(Q_chol, cc.xt_given_xt_1)
+    cc.xt_given_xt_1 .*= -one(T)
+
+    # xt1_given_xt = -A' * (Q_chol \ A)
+    mul!(cc.xt1_given_xt, A', cc.tmp_QA)
+    cc.xt1_given_xt .*= -one(T)
+
+    # x_t = -(P0_chol \ I) = -P0^{-1}
+    copyto!(cc.x_t, cc.I_mat)
+    ldiv!(P0_chol, cc.x_t)
+    cc.x_t .*= -one(T)
+
+    # Emission-side templates are x-dependent for Poisson; zero the cached
+    # Gaussian ones so no stale values survive an observation-model switch.
+    fill!(cc.yt_given_xt, zero(WT))
+    fill!(cc.C_inv_R, zero(WT))
+
+    # Log-likelihood normalizers. No R term for Poisson observations.
+    latent_dim = lds.latent_dim
+    cc.cP0 = -WT(0.5) * (WT(latent_dim) * log(WT(2π)) + logdet(cc.P0_PD))
+    cc.cQ = -WT(0.5) * (WT(latent_dim) * log(WT(2π)) + logdet(cc.Q_PD))
+    cc.cR = zero(WT)
+
+    return nothing
+end
+
+function compute_smooth_constants!(
+    ws::SmoothWorkspace{WT}, lds::LinearDynamicalSystem{T,S,O}
+) where {WT<:Real,T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+    return compute_smooth_constants!(ws.consts, lds)
+end
+
 """
-    _copy_smooth_constants!(dst::SmoothWorkspace, src::SmoothWorkspace)
+    _copy_smooth_constants!(dst::SmoothConstants, src::SmoothConstants)
 
 Copy all fields populated by `compute_smooth_constants!` from `src` to `dst`.
 Used by the equal-length multi-trial fast path to amortize the constants —
 `_precompute_shared_cov!` runs `compute_smooth_constants!` once on the
 designated workspace, and each per-task worker copies into its own
-`SmoothWorkspace` instead of recomputing the Cholesky factors and derived
-terms per trial. The copies are pure `copyto!` over fixed-size matrices and
-do not allocate.
+`SmoothConstants` instead of recomputing the Cholesky factors and derived
+terms per trial. The PDMat wrappers are shared by reference (they are
+immutable within an E-step); the buffer copies are pure `copyto!` over
+fixed-size matrices and do not allocate.
 
 Only the Gaussian-observation set of fields is copied; Poisson fits don't
 go through the cov-cache fast path.
 """
 function _copy_smooth_constants!(
-    dst::SmoothWorkspace{T}, src::SmoothWorkspace{T}
+    dst::SmoothConstants{T}, src::SmoothConstants{T}
 ) where {T<:Real}
-    dst.R_PD[] = src.R_PD[]
-    dst.Q_PD[] = src.Q_PD[]
-    dst.P0_PD[] = src.P0_PD[]
-    dst.cP0[] = src.cP0[]
-    dst.cQ[] = src.cQ[]
-    dst.cR[] = src.cR[]
+    dst.R_PD = src.R_PD
+    dst.Q_PD = src.Q_PD
+    dst.P0_PD = src.P0_PD
+    dst.cP0 = src.cP0
+    dst.cQ = src.cQ
+    dst.cR = src.cR
     copyto!(dst.tmp_RC, src.tmp_RC)
     copyto!(dst.tmp_QA, src.tmp_QA)
     copyto!(dst.C_inv_R, src.C_inv_R)
@@ -645,230 +708,23 @@ function _copy_smooth_constants!(
     return dst
 end
 
-function compute_smooth_constants!(
-    ws::SmoothWorkspace{WT}, lds::LinearDynamicalSystem{T,S,O}
-) where {WT<:Real,T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    A = lds.state_model.A
-    Q = lds.state_model.Q
-    P0 = lds.state_model.P0
-
-    #=
-    Wrap state-side covariances as PDMats (Poisson path doesn't need R
-    in this workspace path). See the Gaussian overload for the `convert`
-    rationale: it's a no-op when `WT === T` and avoids a Julia 1.10
-    `Cholesky` convert-method gap when `WT !== T` (ForwardDiff path).
-    =#
-    Q_w = convert(Matrix{WT}, Q)
-    P0_w = convert(Matrix{WT}, P0)
-    ws.Q_PD[] = PDMat(Symmetric(Q_w))
-    ws.P0_PD[] = PDMat(Symmetric(P0_w))
-    Q_chol = ws.Q_PD[].chol
-    P0_chol = ws.P0_PD[].chol
-
-    # Gradient terms: A_inv_Q = (Q_chol \ A)'
-    tmp_QA = Q_chol \ A   # latent_dim × latent_dim
-    copyto!(ws.A_inv_Q, tmp_QA')
-
-    # Hessian block templates for state model
-    copyto!(ws.H_sub_entry, tmp_QA)          # Q_chol \ A
-    copyto!(ws.H_super_entry, tmp_QA')       # (Q_chol \ A)'
-
-    # xt_given_xt_1 = -(Q_chol \ I) = -Q^{-1}
-    copyto!(ws.xt_given_xt_1, ws.I_mat)
-    ldiv!(Q_chol, ws.xt_given_xt_1)
-    ws.xt_given_xt_1 .*= -one(T)
-
-    # xt1_given_xt = -A' * (Q_chol \ A)
-    mul!(ws.xt1_given_xt, A', tmp_QA)
-    ws.xt1_given_xt .*= -one(T)
-
-    # x_t = -(P0_chol \ I) = -P0^{-1}
-    copyto!(ws.x_t, ws.I_mat)
-    ldiv!(P0_chol, ws.x_t)
-    ws.x_t .*= -one(T)
-
-    # Log-likelihood normalizers. No R term for Poisson observations.
-    latent_dim = lds.latent_dim
-    ws.cP0[] = -WT(0.5) * (WT(latent_dim) * log(WT(2π)) + logdet(ws.P0_PD[]))
-    ws.cQ[] = -WT(0.5) * (WT(latent_dim) * log(WT(2π)) + logdet(ws.Q_PD[]))
-    ws.cR[] = zero(WT)
-
-    return nothing
-end
-
-"""
-    LDSConstantCache{T}
-
-Cache of Cholesky-derived constants for a single LDS component used in SLDS smoothing.
-This mirrors the *constant* parts of `SmoothWorkspace`, but does not include optimizer buffers
-or block-tridiagonal storage.
-"""
-mutable struct LDSConstantCache{T<:Real}
-    #=
-    PDMats for R, Q, P0. Rewrapped once per SLDS smoothing pass by
-    `compute_slds_constants!`; downstream consumers use `.chol.U` and
-    `logdet(...)`. Mirrors `SmoothWorkspace`'s `R_PD` / `Q_PD` / `P0_PD`.
-    =#
-    R_PD::Base.RefValue{DensePDMat{T}}
-    Q_PD::Base.RefValue{DensePDMat{T}}
-    P0_PD::Base.RefValue{DensePDMat{T}}
-
-    # LL constant terms
-    cP0::T
-    cQ::T
-    cR::T
-
-    # Solve outputs / derived terms
-    tmp_RC::Matrix{T}     # R^{-1}C  (obs_dim × latent_dim)
-    tmp_QA::Matrix{T}     # Q^{-1}A  (latent_dim × latent_dim)
-
-    C_inv_R::Matrix{T}    # (R^{-1}C)'  (latent_dim × obs_dim)
-    A_inv_Q::Matrix{T}    # (Q^{-1}A)'  (latent_dim × latent_dim)
-
-    # Hessian templates (state + Gaussian obs)
-    H_sub_entry::Matrix{T}       # Q^{-1}A  (latent_dim × latent_dim)
-    H_super_entry::Matrix{T}     # (Q^{-1}A)' (latent_dim × latent_dim)
-    yt_given_xt::Matrix{T}       # -C'R^{-1}C  (latent_dim × latent_dim)  (Gaussian only; zero for Poisson)
-    xt_given_xt_1::Matrix{T}     # -Q^{-1}
-    xt1_given_xt::Matrix{T}      # -A'Q^{-1}A
-    x_t::Matrix{T}               # -P0^{-1}
-
-    # Model matrices needed for Poisson fast path
-    C::Matrix{T}                 # obs_dim × latent_dim
-    d::Vector{T}                 # obs_dim — Poisson log-link intercept (free in ℝ)
-end
-
-function LDSConstantCache(::Type{T}, latent_dim::Int, obs_dim::Int) where {T<:Real}
-    return LDSConstantCache{T}(
-        _pd_ref(PDMat(Matrix{T}(I, obs_dim, obs_dim))),         # R_PD placeholder
-        _pd_ref(PDMat(Matrix{T}(I, latent_dim, latent_dim))),   # Q_PD placeholder
-        _pd_ref(PDMat(Matrix{T}(I, latent_dim, latent_dim))),   # P0_PD placeholder
-        zero(T),                                # cP0
-        zero(T),                                # cQ
-        zero(T),                                # cR
-        zeros(T, obs_dim, latent_dim),          # tmp_RC
-        zeros(T, latent_dim, latent_dim),       # tmp_QA
-        zeros(T, latent_dim, obs_dim),          # C_inv_R  (latent_dim × obs_dim)
-        zeros(T, latent_dim, latent_dim),       # A_inv_Q  (latent_dim × latent_dim)
-        zeros(T, latent_dim, latent_dim),       # H_sub_entry
-        zeros(T, latent_dim, latent_dim),       # H_super_entry
-        zeros(T, latent_dim, latent_dim),       # yt_given_xt
-        zeros(T, latent_dim, latent_dim),       # xt_given_xt_1
-        zeros(T, latent_dim, latent_dim),       # xt1_given_xt
-        zeros(T, latent_dim, latent_dim),       # x_t
-        zeros(T, obs_dim, latent_dim),          # C
-        zeros(T, obs_dim),                      # d
-    )
-end
-
-"""
-    compute_slds_constants!(cc, lds)
-
-Fill a single-component cache with Cholesky-derived constants.
-For Poisson observation models, `yt_given_xt` is left as zero and Poisson terms are handled per-iteration.
-"""
-function compute_slds_constants!(
-    cc::LDSConstantCache{T}, lds::LinearDynamicalSystem{T,S,O}, I_mat::AbstractMatrix{T}
-) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
-    A = lds.state_model.A
-    Q = lds.state_model.Q
-    P0 = lds.state_model.P0
-
-    C = lds.obs_model.C
-    cc.C .= C
-
-    obs_dim, latent_dim = size(C)
-
-    # Cache the Poisson log-link intercept directly (no exp — `d` is free in ℝ).
-    # Gaussian observation models leave it zero (unused).
-    if lds.obs_model isa PoissonObservationModel
-        cc.d .= lds.obs_model.d
-    else
-        fill!(cc.d, zero(T))
-    end
-
-    #=
-    Wrap state-side covariances as PDMats. Observation R is wrapped further
-    below only on the Gaussian branch — Poisson leaves cc.R_PD on its
-    identity placeholder and `cc.cR` zero.
-    =#
-    cc.Q_PD[] = PDMat(Symmetrize!(Q))
-    cc.P0_PD[] = PDMat(Symmetrize!(P0))
-    Qchol = cc.Q_PD[].chol
-    P0chol = cc.P0_PD[].chol
-
-    # tmp_QA = Q^{-1}A, A_inv_Q = (Q^{-1}A)'
-    copyto!(cc.tmp_QA, A)
-    ldiv!(Qchol, cc.tmp_QA)
-    copyto!(cc.A_inv_Q, cc.tmp_QA')
-    copyto!(cc.H_sub_entry, cc.tmp_QA)
-    copyto!(cc.H_super_entry, cc.tmp_QA')
-
-    # xt_given_xt_1 = -Q^{-1}
-    copyto!(cc.xt_given_xt_1, I_mat)
-    ldiv!(Qchol, cc.xt_given_xt_1)
-    cc.xt_given_xt_1 .*= -one(T)
-
-    # xt1_given_xt = -A'Q^{-1}A = -A' * (Q^{-1}A)
-    mul!(cc.xt1_given_xt, A', cc.tmp_QA)
-    cc.xt1_given_xt .*= -one(T)
-
-    # x_t = -P0^{-1}
-    copyto!(cc.x_t, I_mat)
-    ldiv!(P0chol, cc.x_t)
-    cc.x_t .*= -one(T)
-
-    # Observation terms only if Gaussian
-    if lds.obs_model isa GaussianObservationModel{T}
-        cc.R_PD[] = PDMat(Symmetrize!(lds.obs_model.R))
-        Rchol = cc.R_PD[].chol
-
-        # tmp_RC = R^{-1}C, C_inv_R = (R^{-1}C)'
-        copyto!(cc.tmp_RC, C)
-        ldiv!(Rchol, cc.tmp_RC)
-        copyto!(cc.C_inv_R, cc.tmp_RC')
-
-        # yt_given_xt = -C'R^{-1}C
-        mul!(cc.yt_given_xt, C', cc.tmp_RC)
-        cc.yt_given_xt .*= -one(T)
-    else
-        fill!(cc.yt_given_xt, zero(T))
-        fill!(cc.C_inv_R, zero(T))  # unused for Poisson
-    end
-
-    # LL normalizers from cached Cholesky factors.
-    cc.cP0 = -T(0.5) * (T(latent_dim) * log(T(2π)) + logdet(cc.P0_PD[]))
-    cc.cQ = -T(0.5) * (T(latent_dim) * log(T(2π)) + logdet(cc.Q_PD[]))
-
-    if lds.obs_model isa GaussianObservationModel{T}
-        cc.cR = -T(0.5) * (T(obs_dim) * log(T(2π)) + logdet(cc.R_PD[]))
-    else
-        cc.cR = zero(T)
-    end
-
-    return nothing
-end
-
 """
     SLDSSmoothWorkspace{T}
 
 Workspace for SLDS smoothing that matches the LDS backend shape:
 - Owns a BlockTridiagonalWorkspace (H blocks + sparse + inverse scratch)
-- Owns per-component LDSConstantCache objects
-- Owns optimizer buffers (X₀, grad, sparse Hessian template)
+- Owns one [`SmoothConstants`](@ref) per SLDS component
+- Owns optimizer buffers (X₀, grad)
 - Owns Poisson temporary vectors
 """
 struct SLDSSmoothWorkspace{T<:Real}
     btd::BlockTridiagonalWorkspace{T}
-    I_mat::Matrix{T}
 
-    consts::Vector{LDSConstantCache{T}}
+    consts::Vector{SmoothConstants{T}}
 
     # Optim buffers
     X₀::Vector{T}
     grad_buf::Matrix{T}
-    grad_vec::Vector{T}
-    initial_h::SparseMatrixCSC{T,Int}
 
     # Poisson temporaries (shared)
     z::Vector{T}   # obs_dim
@@ -877,7 +733,6 @@ struct SLDSSmoothWorkspace{T<:Real}
     # temp vectors
     dxt::Vector{T}        # latent_dim
     dxt_next::Vector{T}   # latent_dim
-    dyt::Vector{T}        # obs_dim  (Gaussian only)
     tmp1::Vector{T}       # latent_dim
     tmp2::Vector{T}       # latent_dim
     tmp3::Vector{T}       # latent_dim
@@ -892,53 +747,24 @@ function SLDSSmoothWorkspace(::Type{T}, slds::SLDS, tsteps::Int) where {T<:Real}
     obs_dim = slds.LDSs[1].obs_dim
     K = length(slds.LDSs)
 
-    btd = BlockTridiagonalWorkspace(T, latent_dim, tsteps)
-    I_mat = Matrix{T}(I, latent_dim, latent_dim)
-
-    consts = [LDSConstantCache(T, latent_dim, obs_dim) for _ in 1:K]
-
-    X₀ = zeros(T, latent_dim * tsteps)
-    grad_buf = zeros(T, latent_dim, tsteps)
-    grad_vec = zeros(T, latent_dim * tsteps)
-    initial_h = copy(btd.H_sparse)
-
-    z = zeros(T, obs_dim)
-    λ = zeros(T, obs_dim)
-
-    dxt = zeros(T, latent_dim)
-    dxt_next = zeros(T, latent_dim)
-    dyt = zeros(T, obs_dim)
-    tmp1 = zeros(T, latent_dim)
-    tmp2 = zeros(T, latent_dim)
-    tmp3 = zeros(T, latent_dim)
-
-    ll_vec = zeros(T, tsteps)
-    ll_tmp = zeros(T, tsteps)
-
     ws = SLDSSmoothWorkspace{T}(
-        btd,
-        I_mat,
-        consts,
-        X₀,
-        grad_buf,
-        grad_vec,
-        initial_h,
-        z,
-        λ,
-        dxt,
-        dxt_next,
-        dyt,
-        tmp1,
-        tmp2,
-        tmp3,
-        ll_vec,
-        ll_tmp,
+        BlockTridiagonalWorkspace(T, latent_dim, tsteps),
+        [SmoothConstants(T, latent_dim, obs_dim) for _ in 1:K],
+        zeros(T, latent_dim * tsteps),   # X₀
+        zeros(T, latent_dim, tsteps),    # grad_buf
+        zeros(T, obs_dim),               # z
+        zeros(T, obs_dim),               # λ
+        zeros(T, latent_dim),            # dxt
+        zeros(T, latent_dim),            # dxt_next
+        zeros(T, latent_dim),            # tmp1
+        zeros(T, latent_dim),            # tmp2
+        zeros(T, latent_dim),            # tmp3
+        zeros(T, tsteps),                # ll_vec
+        zeros(T, tsteps),                # ll_tmp
     )
 
     # Cache constants once
-    for k in 1:K
-        compute_slds_constants!(ws.consts[k], slds.LDSs[k], ws.I_mat)
-    end
+    refresh_slds_constants!(ws, slds)
 
     return ws
 end
@@ -950,7 +776,7 @@ reflect the current Q, R, A, P0.
 """
 function refresh_slds_constants!(ws::SLDSSmoothWorkspace{T}, slds) where {T}
     for k in eachindex(slds.LDSs)
-        compute_slds_constants!(ws.consts[k], slds.LDSs[k], ws.I_mat)
+        compute_smooth_constants!(ws.consts[k], slds.LDSs[k])
     end
     return nothing
 end

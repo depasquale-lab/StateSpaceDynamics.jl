@@ -160,12 +160,17 @@ display(result_btil)
 
 println("\n[block_tridiagonal_solve!]")
 StateSpaceDynamics.Gradient!(sws, model, y, x_mat)
-copyto!(sws.grad_vec, 1, sws.grad_buf, 1, length(sws.grad_vec))
-sws.grad_vec .*= -1.0
+copyto!(sws.opt.grad_vec, 1, sws.opt.grad_buf, 1, length(sws.opt.grad_vec))
+sws.opt.grad_vec .*= -1.0
 StateSpaceDynamics.Hessian!(sws, model, y, x_mat)
 StateSpaceDynamics._negate_blocks!(btd)
 result_solve = @benchmark StateSpaceDynamics.block_tridiagonal_solve!(
-    $(sws.X₀), $(btd.neg_sub), $(btd.neg_diag), $(btd.neg_super), $(sws.grad_vec), $btd
+    $(sws.opt.X₀),
+    $(btd.neg_sub),
+    $(btd.neg_diag),
+    $(btd.neg_super),
+    $(sws.opt.grad_vec),
+    $btd,
 )
 display(result_solve)
 

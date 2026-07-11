@@ -134,8 +134,8 @@ function test_td_covariance_shared_across_trials()
     SSD.smooth!(lds_td, tfs, y_seq, sws_pool)
 
     # All trials' p_smooth must alias the shared storage on sws_pool[1].
-    shared_p = sws_pool[1].p_smooth_shared
-    shared_p_tt1 = sws_pool[1].p_smooth_tt1_shared
+    shared_p = sws_pool[1].agg.p_smooth_shared
+    shared_p_tt1 = sws_pool[1].agg.p_smooth_tt1_shared
     for trial in 1:N
         @test tfs[trial].p_smooth === shared_p
         @test tfs[trial].p_smooth_tt1 === shared_p_tt1
