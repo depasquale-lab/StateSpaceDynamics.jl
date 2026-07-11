@@ -148,7 +148,8 @@ function Random.rand(
     )
 
     # `MersenneTwister` (and most RNG types) is not thread-safe, so sharing
-    # `rng` across `@threads` races on internal state.
+    # `rng` across parallel iterations races on internal state; each chunk
+    # gets its own child RNG, indexed by chunk (not `threadid()`).
     if ntrials == 1
         _sample_trial!(
             rng, x[1], y[1], state_params, obs_params, lds.obs_model, ux_seq[1], uy_seq[1]
@@ -160,24 +161,22 @@ function Random.rand(
     chunksize = cld(ntrials, ntasks)
     task_rngs = [MersenneTwister(rand(rng, UInt64)) for _ in 1:ntasks]
 
-    @sync for i in 1:ntasks
+    tforeach(1:ntasks) do i
         lo = (i - 1) * chunksize + 1
         hi = min(i * chunksize, ntrials)
-        lo > hi && continue
-        @spawn begin
-            trng = task_rngs[i]
-            for trial in lo:hi
-                _sample_trial!(
-                    trng,
-                    x[trial],
-                    y[trial],
-                    state_params,
-                    obs_params,
-                    lds.obs_model,
-                    ux_seq[trial],
-                    uy_seq[trial],
-                )
-            end
+        lo > hi && return nothing
+        trng = task_rngs[i]
+        for trial in lo:hi
+            _sample_trial!(
+                trng,
+                x[trial],
+                y[trial],
+                state_params,
+                obs_params,
+                lds.obs_model,
+                ux_seq[trial],
+                uy_seq[trial],
+            )
         end
     end
 

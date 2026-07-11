@@ -45,7 +45,7 @@ function sufficient_statistics!(tfs::TrialFilterSmooth{T}) where {T<:Real}
     if ntrials == 1
         sufficient_statistics!(tfs[1])
     else
-        @threads for i in 1:ntrials
+        tforeach(1:ntrials) do i
             sufficient_statistics!(tfs[i])
         end
     end

@@ -16,7 +16,7 @@ using Statistics: mean
 using StatsAPI: StatsAPI
 import StatsAPI: loglikelihood, fit!
 
-using Base.Threads: @threads, @spawn
+using OhMyThreads: tforeach, tmapreduce
 using Base.Iterators: partition
 using Base: show
 

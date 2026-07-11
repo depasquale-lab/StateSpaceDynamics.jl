@@ -233,7 +233,10 @@ function StatsAPI.fit!(
     ξ = fb_storage.ξ
 
     # Accumulate ξ[t1:t2-1] into ξ[t2] (zero by FB convention) for each trial.
-    @threads for k in eachindex(seq_ends)
+    tforeach(eachindex(seq_ends)) do k
+        # `local`: `t1`/`t2` are also assigned in the sequential loops below,
+        # so sharing the bindings would box them (OhMyThreads rejects that).
+        local t1, t2
         t1, t2 = HMMs.seq_limits(seq_ends, k)
         scratch = ξ[t2]
         fill!(scratch, zero(eltype(scratch)))

@@ -107,8 +107,7 @@ Direct smoothing for a single trial.
 - `p_smooth::Array{T,3}`: Smoothed latent covariances (latent_dim × latent_dim × tsteps).
 """
 function smooth(lds::LinearDynamicalSystem, y::AbstractMatrix{T}) where {T}
-    # Type assertion narrows the union for JET; runtime no-op since dispatch on
-    # `size(y, 2)::Int` already lands in the FilterSmooth-returning method.
+    # Type assertion narrows the union for JET
     fs = initialize_FilterSmooth(lds, size(y, 2))::FilterSmooth{T}
     sws = SmoothWorkspace(T, lds.latent_dim, lds.obs_dim, size(y, 2))
     smooth!(lds, fs, y, sws)
@@ -224,15 +223,16 @@ end
 """
     smooth!(lds, tfs, y::AbstractVector{<:AbstractMatrix}, sws_pool)
 
-Low-allocation multi-trial smoothing. Each task in `sws_pool` owns one workspace;
-trials are partitioned across tasks via `@spawn` / `fetch` (see
+Low-allocation multi-trial smoothing. Trials are partitioned into chunks and
+run in parallel via OhMyThreads' `tforeach`; each chunk owns one workspace from
+`sws_pool`, indexed by chunk position rather than `threadid()` (see
 https://julialang.org/blog/2023/07/PSA-dont-use-threadid/).
 
 # Arguments
 - `lds::LinearDynamicalSystem`
 - `tfs::TrialFilterSmooth`: one `FilterSmooth` per trial, sized at each trial's length
 - `y::AbstractVector{<:AbstractMatrix}`: one `obs_dim × T_i` matrix per trial
-- `sws_pool::Vector{SmoothWorkspace{T}}`: task-local workspaces, each sized at
+- `sws_pool::Vector{SmoothWorkspace{T}}`: chunk-local workspaces, each sized at
   `max(T_i)`
 """
 function smooth!(
@@ -265,8 +265,8 @@ function smooth!(
         `_precompute_shared_cov!` populates `sws_pool[1]`'s smoothing constants
         (`R_PD`/`Q_PD`/`P0_PD`/`C_inv_R`/`A_inv_Q`/…), the `btd.neg_*` blocks,
         and the BT forward-sweep LU cache (`btd.LU_factors`/`LU_ipivs`/`D`).
-        Per-task back-subs and gradient evaluations read from that same
-        workspace (no mutation), so it's safe to share across `@spawn`'d tasks.
+        Per-chunk back-subs and gradient evaluations read from that same
+        workspace (no mutation), so it's safe to share across parallel chunks.
         =#
         shared_entropy = _precompute_shared_cov!(sws_pool[1], lds, T1)
         source_sws = sws_pool[1]
@@ -292,12 +292,11 @@ function smooth!(
         end
 
         ntasks = min(ntrials, length(sws_pool))
-        chunksize = cld(ntrials, ntasks)
-        @sync for i in 1:ntasks
-            lo = (i - 1) * chunksize + 1
-            hi = min(i * chunksize, ntrials)
-            lo > hi && continue
-            @spawn begin
+        let chunksize = cld(ntrials, ntasks)
+            tforeach(1:ntasks) do i
+                lo = (i - 1) * chunksize + 1
+                hi = min(i * chunksize, ntrials)
+                lo > hi && return nothing
                 sws = sws_pool[i]
                 for trial in lo:hi
                     _smooth_mean_only!(
@@ -318,13 +317,12 @@ function smooth!(
     # Variable-length fallback: per-trial smoothing (each trial gets its own
     # Hessian, cov, and mean pass on the assigned worker workspace).
     ntasks = min(ntrials, length(sws_pool))
-    chunksize = cld(ntrials, ntasks)
 
-    @sync for i in 1:ntasks
-        lo = (i - 1) * chunksize + 1
-        hi = min(i * chunksize, ntrials)
-        lo > hi && continue
-        @spawn begin
+    let chunksize = cld(ntrials, ntasks)
+        tforeach(1:ntasks) do i
+            lo = (i - 1) * chunksize + 1
+            hi = min(i * chunksize, ntrials)
+            lo > hi && return nothing
             sws = sws_pool[i]
             for trial in lo:hi
                 smooth!(
@@ -815,7 +813,7 @@ function _fit_tridiag!(
     #=
     Only `sws_pool[1]` needs the batched mean-pass buffers (used by the
     equal-length cov-cache fast path); the other workspaces back the
-    per-trial fallback / @spawn'd tasks and stay at `ntrials = 1`.
+    per-trial fallback / parallel chunks and stay at `ntrials = 1`.
     =#
     pool_size = Threads.maxthreadid()
     sws_pool = Vector{SmoothWorkspace{T}}(undef, pool_size)

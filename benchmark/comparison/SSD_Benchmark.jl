@@ -14,7 +14,6 @@ using PythonCall
 using StableRNGs
 using StatsAPI
 using Random
-using Base.Threads: @threads
 
 # Define type for organizing our implementations
 abstract type Implementation end

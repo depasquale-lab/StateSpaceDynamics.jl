@@ -114,16 +114,13 @@ function joint_loglikelihood(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     ntrials = length(y)
     chunks = collect(partition(1:ntrials, max(1, cld(ntrials, Threads.nthreads()))))
-    tasks = map(chunks) do chunk
-        Threads.@spawn begin
-            acc = zero(T)
-            for n in chunk
-                acc += sum(joint_loglikelihood(x[n], plds, y[n]))
-            end
-            acc
+    return tmapreduce(+, chunks) do chunk
+        acc = zero(T)
+        for n in chunk
+            acc += sum(joint_loglikelihood(x[n], plds, y[n]))
         end
+        acc
     end
-    return sum(fetch.(tasks))
 end
 
 """
@@ -230,7 +227,7 @@ function gradient_observation_model!(
     @assert length(sws_pool[1].CD) == npar && length(sws_pool[1].Syz) == npar "Poisson gradient accumulator size $(length(sws_pool[1].CD)) ≠ npar=$npar (obs_input_dim must be 0)"
 
     #=
-    Cap ntasks at `length(sws_pool)` so each task gets its own
+    Cap ntasks at `length(sws_pool)` so each chunk gets its own
     pre-allocated workspace slot indexed by its position in the chunk
     iteration (not `threadid()`, which can migrate under task
     scheduling).
@@ -240,68 +237,60 @@ function gradient_observation_model!(
     chunk_size = max(1, cld(trials, ntasks))
     chunks = collect(partition(1:trials, chunk_size))
 
-    tasks = Task[]
-    @sync begin
-        for (task_idx, chunk) in enumerate(chunks)
-            push!(
-                tasks,
-                Threads.@spawn begin
-                    #=
-                    Each task owns one workspace from the pool. Buffers
-                    used by `gradient_observation_model_single_trial!`
-                    (h/ρ/λ/CP) come from this workspace's existing
-                    `Q_obs!` scratch fields, and the per-task `acc`/`tmp`
-                    gradient accumulators are views into `.CD` / `.Syz`
-                    (both sized `obs_dim × Dp1 = npar` for Poisson, where
-                    `obs_input_dim = 0`).
-                    =#
-                    sws = sws_pool[task_idx]
-                    acc = vec(sws.CD)
-                    tmp = vec(sws.Syz)
-                    fill!(acc, zero(T))
+    tforeach(eachindex(chunks)) do task_idx
+        #=
+        Each chunk owns one workspace from the pool. Buffers
+        used by `gradient_observation_model_single_trial!`
+        (h/ρ/λ/CP) come from this workspace's existing
+        `Q_obs!` scratch fields, and the per-chunk `acc`/`tmp`
+        gradient accumulators are views into `.CD` / `.Syz`
+        (both sized `obs_dim × Dp1 = npar` for Poisson, where
+        `obs_input_dim = 0`).
+        =#
+        sws = sws_pool[task_idx]
+        acc = vec(sws.CD)
+        tmp = vec(sws.Syz)
+        fill!(acc, zero(T))
 
-                    h_buf = sws.h_obs
-                    ρ_buf = sws.rho_obs
-                    λ_buf = sws.CEz_obs
-                    CP_buf = sws.CP_obs
+        h_buf = sws.h_obs
+        ρ_buf = sws.rho_obs
+        λ_buf = sws.CEz_obs
+        CP_buf = sws.CP_obs
 
-                    for k in chunk
-                        fill!(tmp, zero(T))
+        for k in chunks[task_idx]
+            fill!(tmp, zero(T))
 
-                        fs = tfs[k]
-                        weights = isnothing(w) ? nothing : w[k]
+            fs = tfs[k]
+            weights = isnothing(w) ? nothing : w[k]
 
-                        gradient_observation_model_single_trial!(
-                            tmp,
-                            C,
-                            d,
-                            fs.x_smooth,
-                            fs.p_smooth,
-                            y[k],
-                            weights,
-                            h_buf,
-                            ρ_buf,
-                            λ_buf,
-                            CP_buf,
-                        )
-
-                        @simd for i in 1:npar
-                            acc[i] += tmp[i]
-                        end
-                    end
-
-                    return acc
-                end
+            gradient_observation_model_single_trial!(
+                tmp,
+                C,
+                d,
+                fs.x_smooth,
+                fs.p_smooth,
+                y[k],
+                weights,
+                h_buf,
+                ρ_buf,
+                λ_buf,
+                CP_buf,
             )
+
+            @simd for i in 1:npar
+                acc[i] += tmp[i]
+            end
         end
     end
 
-    # Deterministic reduction on the caller thread
+    # Deterministic reduction on the caller thread (chunk order is fixed).
+    # Named `chunk_acc`, not `acc`: sharing the closure's `acc` binding would
+    # box it, which OhMyThreads rejects.
     fill!(grad, zero(T))
-    for t in tasks
-        acc = fetch(t)::Vector{T}  # type assertion avoids type instability from fetch
+    for task_idx in eachindex(chunks)
+        chunk_acc = vec(sws_pool[task_idx].CD)
         @simd for i in 1:npar
-            grad[i] += acc[i]
+            grad[i] += chunk_acc[i]
         end
     end
 
@@ -315,8 +304,7 @@ end
 Suf-based M-step for a Poisson LDS. The Gaussian-state half (x0, P0, A&b, Q)
 is updated from the aggregated sufficient statistics in `suf`. The Poisson
 emission `[C d]` is non-conjugate and still goes through the existing LBFGS
-routine (`update_observation_model!`) which reads `fs.x_smooth` / `fs.p_smooth`
-directly from `tfs`.
+routine (`update_observation_model!`).
 """
 function mstep!(
     plds::LinearDynamicalSystem{T,S,O},
@@ -361,32 +349,24 @@ function elbo!(
         total_entropy += fs.entropy
     end
 
-    #=
-    State-side Q via aggregated suff-stats. `compute_smooth_constants!` on a
-    Poisson LDS only fills state-side constants (Q_PD / P0_PD /
-    derived blocks); `Q_state!(sws, lds, suf)` reads exactly those.
-    =#
     compute_smooth_constants!(sws_pool[1], plds)
     Q_state_total = Q_state!(sws_pool[1], plds, suf)
 
-    # Per-trial Poisson Q_obs. Each task uses its own sws (the Poisson
-    # buffers `h_obs` / `rho_obs` / `CP_obs` / `CEz_obs` are local to sws).
     ntasks = min(ntrials, length(sws_pool))
     partial = zeros(T, ntasks)
     chunksize = cld(ntrials, ntasks)
-    @sync for i in 1:ntasks
+    tforeach(1:ntasks) do i
         lo = (i - 1) * chunksize + 1
         hi = min(i * chunksize, ntrials)
-        lo > hi && continue
-        @spawn begin
-            sws = sws_pool[i]
-            acc = zero(T)
-            for trial in lo:hi
-                fs = tfs[trial]
-                acc += Q_obs!(sws, plds, fs.x_smooth, fs.p_smooth, y[trial])
-            end
-            partial[i] = acc
+        lo > hi && return nothing
+        sws = sws_pool[i]
+        acc = zero(T)
+        for trial in lo:hi
+            fs = tfs[trial]
+            acc += Q_obs!(sws, plds, fs.x_smooth, fs.p_smooth, y[trial])
         end
+        partial[i] = acc
+        return nothing
     end
     Q_obs_total = sum(partial)
 
@@ -399,10 +379,7 @@ function elbo!(
     end
 
     #=
-    MN log-prior on [C d]. No row covariance Σ for Poisson, so this is the
-    plain quadratic kernel `-½ tr((W - M₀) Λ (W - M₀)')` (matches the
-    `+½ tr(...)` penalty `update_observation_model!` adds to its LBFGS
-    objective). Λ-only and Λ-logdet constants are absorbed into the
+    MN log-prior on [C d]. Λ-only and Λ-logdet constants are absorbed into the
     additive ELBO constant.
     =#
     if plds.obs_model.CD_prior !== nothing
@@ -485,8 +462,10 @@ function smooth!(
             gvec = vec(gcur)
             pvec = vec(pcur)
             copyto!(pvec, gvec)
-            # Negated Hessian is SPD at the MAP — use the SPD-specialised
-            # solve so small `latent_dim` (≤ 8) routes to LAPACK `pbsv`.
+            #=
+            Negated Hessian is SPD at the MAP — use the SPD-specialised
+            solve so small `latent_dim` (≤ 8) routes to LAPACK `pbsv`.
+            =#
             block_tridiagonal_solve_spd!(
                 pvec, neg_sub_v, neg_diag_v, neg_super_v, gvec, btd
             )
@@ -516,12 +495,6 @@ function smooth!(
 
     fs.entropy = gaussian_entropy_from_logdet(logdet_precision, n_active)
 
-    #=
-    `block_tridiagonal_inverse_logdet!` blocks are symmetric in exact
-    arithmetic but carry ~1e-12 asymmetry from the forward/back sweeps;
-    matches `gaussian.jl:780`. Without this, the aggregator's
-    `PDMat(copy(S0_sum))` can trip `ishermitian` downstream.
-    =#
     @views for i in 1:tsteps
         Symmetrize!(fs.p_smooth[:, :, i])
     end
@@ -532,8 +505,7 @@ end
 """
     smooth!(lds, tfs, y, sws_pool; max_iter=20, tol=1e-6)
 
-Multi-trial Poisson LDS smoothing. Each task in `sws_pool` owns one workspace; trials
-are partitioned across tasks via `@spawn`/`fetch`.
+Multi-trial Poisson LDS smoothing.
 """
 function smooth!(
     lds::LinearDynamicalSystem{T,S,O},
@@ -553,15 +525,13 @@ function smooth!(
     ntasks = min(ntrials, length(sws_pool))
     chunksize = cld(ntrials, ntasks)
 
-    @sync for i in 1:ntasks
+    tforeach(1:ntasks) do i
         lo = (i - 1) * chunksize + 1
         hi = min(i * chunksize, ntrials)
-        lo > hi && continue
-        @spawn begin
-            sws = sws_pool[i]
-            for trial in lo:hi
-                smooth!(lds, tfs[trial], y[trial], sws; max_iter=max_iter, tol=tol)
-            end
+        lo > hi && return nothing
+        sws = sws_pool[i]
+        for trial in lo:hi
+            smooth!(lds, tfs[trial], y[trial], sws; max_iter=max_iter, tol=tol)
         end
     end
 
@@ -591,10 +561,7 @@ end
 
 Suf-based Poisson E-step. Smooths, aggregates state-side sufficient
 statistics into `suf` from each trial's smoother output (`x_smooth`,
-`p_smooth`, `p_smooth_tt1`), and returns the suf-based ELBO. The legacy
-per-trial `sufficient_statistics!(tfs)` call is skipped — the suf-based
-M-step doesn't need `fs.E_z` / `fs.E_zz` / `fs.E_zz_prev`, and the
-Poisson emission update now reads `fs.x_smooth` directly.
+`p_smooth`, `p_smooth_tt1`), and returns the suf-based ELBO.
 """
 function estep!(
     lds::LinearDynamicalSystem{T,S,O},
@@ -655,13 +622,6 @@ function fit!(
     npool = Threads.maxthreadid()
     sws_pool = [SmoothWorkspace(T, latent_dim, obs_dim, T_max) for _ in 1:npool]
 
-    #=
-    Suf-based state-side M-step (mirrors the Gaussian TD fit path). Poisson
-    has no inputs, so `latent_inputs` / `obs_inputs` are zero-row matrices. The const
-    blocks (bias-row entries, obs_yy_const, …) are precomputed once; the
-    `obs_*` blocks are written by the aggregator but unread by the Poisson
-    M-step (emission stays LBFGS), which is a tiny constant overhead.
-    =#
     suf = _initialize_td_sufficient_statistics(T, plds, tsteps_per_trial)
     latent_inputs = [zeros(T, 0, Ti) for Ti in tsteps_per_trial]
     obs_inputs = [zeros(T, 0, Ti) for Ti in tsteps_per_trial]
