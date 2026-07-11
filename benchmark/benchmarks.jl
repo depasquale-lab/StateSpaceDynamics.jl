@@ -156,7 +156,6 @@ for ntrials in (8, 32)
 
     SUITE["PoissonLDS-multitrial"]["smooth!", "ntrials=$ntrials", "T=$T"] = @benchmarkable StateSpaceDynamics.smooth!(
         $model, tfs, $y
-    ) setup = (
-        tfs = StateSpaceDynamics.initialize_FilterSmooth($model, $tsteps_per_trial)
-    ) samples = 10 seconds = 5
+    ) setup = (tfs = StateSpaceDynamics.initialize_FilterSmooth($model, $tsteps_per_trial)) samples =
+        10 seconds = 5
 end
