@@ -756,9 +756,9 @@ function test_joint_loglikelihood_multitrial()
     =#
     plds, xs, ys = toy_PoissonLDS(3)
 
-    ll = StateSpaceDynamics.joint_loglikelihood(xs, plds, ys)
+    ll = StateSpaceDynamics.joint_loglikelihood(plds, xs, ys)
     ref = sum(
-        sum(StateSpaceDynamics.joint_loglikelihood(x, plds, y)) for (x, y) in zip(xs, ys)
+        sum(StateSpaceDynamics.joint_loglikelihood(plds, x, y)) for (x, y) in zip(xs, ys)
     )
     @test ll isa Float64
     @test ll ≈ ref rtol = 1e-12
@@ -767,9 +767,9 @@ function test_joint_loglikelihood_multitrial()
     lens = [100, 60, 25]
     xr = [xs[n][:, 1:lens[n]] for n in 1:3]
     yr = [ys[n][:, 1:lens[n]] for n in 1:3]
-    ll_r = StateSpaceDynamics.joint_loglikelihood(xr, plds, yr)
+    ll_r = StateSpaceDynamics.joint_loglikelihood(plds, xr, yr)
     ref_r = sum(
-        sum(StateSpaceDynamics.joint_loglikelihood(x, plds, y)) for (x, y) in zip(xr, yr)
+        sum(StateSpaceDynamics.joint_loglikelihood(plds, x, y)) for (x, y) in zip(xr, yr)
     )
     @test ll_r ≈ ref_r rtol = 1e-12
     return nothing
