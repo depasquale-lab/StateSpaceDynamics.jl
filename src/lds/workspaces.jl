@@ -189,7 +189,7 @@ end
     NewtonBuffers{T<:Real}
 
 Per-trial Newton-smoother scratch: the vectorized iterate / gradient, plus the
-small temp vectors used by the `Gradient!` and `joint_loglikelihood!` kernels.
+small temp vectors used by the `gradient!` and `joint_loglikelihood!` kernels.
 Owned as `opt` by both `SmoothWorkspace` and `SLDSSmoothWorkspace`, so kernels
 shared between the two paths address scratch through one set of field paths.
 """
@@ -415,7 +415,7 @@ batched `smooth!` call (data is constant across EM iters within a fit);
 """
 struct BatchedBuffers{T<:Real}
     x_mat::Array{T,3}         # (latent_dim, tsteps, ntrials) - current iterate
-    grad_buf::Array{T,3}      # (latent_dim, tsteps, ntrials) - Gradient! output
+    grad_buf::Array{T,3}      # (latent_dim, tsteps, ntrials) - gradient! output
     dxt::Matrix{T}            # (latent_dim, ntrials)
     dxt_next::Matrix{T}       # (latent_dim, ntrials)
     dyt::Matrix{T}            # (obs_dim, ntrials)

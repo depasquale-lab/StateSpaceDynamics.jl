@@ -1,15 +1,15 @@
 #=============================================================================
 Continuous (Linear Gaussian) latents
 
-    Log-Likelihood kernels: state_loglikelihood!(cc, dxt, tmp, x, t, lds[, ux])
-                            observation_loglikelihood!(cc, b1, b2, x, y, t, lds[, uy])
-                            joint_loglikelihood!(ll, ws, cc, lds, x, y)
+    Log-Likelihood kernels: state_loglikelihood!(cc, dxt, tmp, lds, x, t[, ux])
+                            observation_loglikelihood!(cc, b1, b2, lds, x, y, t[, uy])
+                            joint_loglikelihood!(ll, ws, cc, lds, x, y[, ux, uy])
 
-    Gradient kernels:       observation_gradient!(out, cc, buf, x, y, t, lds[, uy])
-                            Gradient!(grad, ws, lds, y, x[, ux, uy])
+    Gradient kernels:       observation_gradient!(out, cc, buf, lds, x, y, t[, uy])
+                            gradient!(grad, ws, lds, x, y[, ux, uy])
 
-    Hessian kernels:        observation_hessian!(out, cc, buf1, buf2, x, y, t, lds[, α])
-                            Hessian!(sws, lds, y, x)
+    Hessian kernels:        observation_hessian!(out, cc, buf1, buf2, lds, x, y, t[, α])
+                            hessian!(sws, lds, x, y)
 
     E-Step: Q_state!(sws, lds, suf)
 
@@ -34,7 +34,7 @@ end
 _whiten!(chol::Cholesky, v::AbstractVector) = ldiv!(chol.U', v)
 
 """
-    _transition_residual!(out, x, t, lds[, ux])
+    _transition_residual!(out, lds, x, t[, ux])
 
 Write the dynamics residual `x_t - A x_{t-1} - b - B u_{t-1}` into `out`
 (length `latent_dim`). Pass `ux` (state inputs, `t`-indexed like `x`) to
@@ -42,9 +42,9 @@ include the `B u_{t-1}` term; `nothing` (default) skips it. Requires `t ≥ 2`.
 """
 @inline function _transition_residual!(
     out::AbstractVector{T},
+    lds::LinearDynamicalSystem,
     x::AbstractMatrix{T},
     t::Int,
-    lds::LinearDynamicalSystem,
     ux::Union{Nothing,AbstractMatrix}=nothing,
 ) where {T<:Real}
     @views mul!(out, lds.state_model.A, x[:, t - 1])
@@ -56,7 +56,7 @@ include the `B u_{t-1}` term; `nothing` (default) skips it. Requires `t ≥ 2`.
 end
 
 """
-    state_loglikelihood!(cc, dxt, tmp, x, t, lds[, ux])
+    state_loglikelihood!(cc, dxt, tmp, lds, x, t[, ux])
 
 State-model (prior/transition) contribution to the complete-data log-likelihood
 at timestep `t`:
@@ -73,9 +73,9 @@ function state_loglikelihood!(
     cc::SmoothConstants{T},
     dxt::AbstractVector{T},
     tmp::AbstractVector{T},
+    lds::LinearDynamicalSystem{T0,S,O},
     x::AbstractMatrix{T},
     t::Int,
-    lds::LinearDynamicalSystem{T0,S,O},
     ux::Union{Nothing,AbstractMatrix}=nothing,
 ) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:AbstractObservationModel{T0}}
     if t == 1
@@ -83,14 +83,14 @@ function state_loglikelihood!(
         _whiten!(cc.P0_PD.chol, dxt)
         return cc.cP0 - T(0.5) * sum(abs2, dxt)
     else
-        _transition_residual!(tmp, x, t, lds, ux)
+        _transition_residual!(tmp, lds, x, t, ux)
         _whiten!(cc.Q_PD.chol, tmp)
         return cc.cQ - T(0.5) * sum(abs2, tmp)
     end
 end
 
 """
-    observation_loglikelihood!(cc, buf1, buf2, x, y, t, lds[, uy])
+    observation_loglikelihood!(cc, buf1, buf2, lds, x, y, t[, uy])
 
 Emission-model contribution `log p(y_t | x_t)` to the complete-data
 log-likelihood at timestep `t`. Dispatches on the observation model type `O`
@@ -140,9 +140,9 @@ function joint_loglikelihood!(
 
     for t in 1:tsteps
         ll_t = observation_loglikelihood!(
-            cc, opt.temp_dy, opt.temp_solve_R, x, y, t, lds, uy
+            cc, opt.temp_dy, opt.temp_solve_R, lds, x, y, t, uy
         )
-        ll_t += state_loglikelihood!(cc, opt.temp_dx, opt.temp_solve_Q, x, t, lds, ux)
+        ll_t += state_loglikelihood!(cc, opt.temp_dx, opt.temp_solve_Q, lds, x, t, ux)
         ll[t] = ll_t
     end
 
@@ -150,12 +150,13 @@ function joint_loglikelihood!(
 end
 
 """
-    observation_gradient!(out, cc, buf, x, y, t, lds[, uy])
+    observation_gradient!(out, cc, buf, lds, x, y, t[, uy])
 
 Emission-model contribution `∂ log p(y_t | x_t) / ∂x_t` written into `out`
 (length `latent_dim`). Dispatches on the observation model type `O` (via
 `lds::LinearDynamicalSystem{T,S,O}`); a custom observation model plugs into
-`Gradient!` (and the SLDS weighted `Gradient!`) by adding a method here.
+`gradient!` (both the single-LDS and the SLDS weighted form) by adding a
+method here.
 
 - `cc`: a [`SmoothConstants`](@ref) with Cholesky-derived terms (Gaussian
   uses the cached `C_inv_R = C'R⁻¹`; models without a covariance ignore it).
@@ -166,8 +167,8 @@ Emission-model contribution `∂ log p(y_t | x_t) / ∂x_t` written into `out`
 function observation_gradient! end
 
 """
-    Gradient!(grad, ws, lds, y, x[, ux, uy])
-    Gradient!(ws, lds, y, x[, ux, uy])
+    gradient!(grad, ws, lds, x, y[, ux, uy])
+    gradient!(ws, lds, x, y[, ux, uy])
 
 Gradient of the complete-data log-likelihood with respect to the latent path
 `x`, written into `grad` (`latent_dim × tsteps`; the convenience form uses the
@@ -182,12 +183,12 @@ side (prior / incoming / outgoing transition factors) is shared:
 with `r_t = x_t - A x_{t-1} - b - B u_{t-1}`. Uses the Cholesky-derived
 templates cached by `compute_smooth_constants!`; requires `tsteps ≥ 2`.
 """
-function Gradient!(
+function gradient!(
     grad::AbstractMatrix{T},
     ws::SmoothWorkspace{T},
     lds::LinearDynamicalSystem{T,S,O},
-    y::AbstractMatrix{T},
     x::AbstractMatrix{T},
+    y::AbstractMatrix{T},
     ux::Union{Nothing,AbstractMatrix}=nothing,
     uy::Union{Nothing,AbstractMatrix}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
@@ -206,58 +207,58 @@ function Gradient!(
     tmp3 = ws.opt.tmp3
 
     # First time step: emission + prior + outgoing factor at t = 2
-    observation_gradient!(tmp1, cc, obs_buf, x, y, 1, lds, uy)
+    observation_gradient!(tmp1, cc, obs_buf, lds, x, y, 1, uy)
     @views dxt .= x[:, 1] .- lds.state_model.x0
     mul!(tmp3, neg_P0_inv, dxt)
-    _transition_residual!(dxt_next, x, 2, lds, ux)
+    _transition_residual!(dxt_next, lds, x, 2, ux)
     mul!(tmp2, A_inv_Q, dxt_next)
     @views grad[:, 1] .= tmp1 .+ tmp2 .+ tmp3
 
     # Middle steps: emission + incoming factor at t + outgoing factor at t + 1
     @views for t in 2:(tsteps - 1)
-        observation_gradient!(tmp1, cc, obs_buf, x, y, t, lds, uy)
-        _transition_residual!(dxt, x, t, lds, ux)
+        observation_gradient!(tmp1, cc, obs_buf, lds, x, y, t, uy)
+        _transition_residual!(dxt, lds, x, t, ux)
         mul!(tmp3, neg_Q_inv, dxt)
-        _transition_residual!(dxt_next, x, t + 1, lds, ux)
+        _transition_residual!(dxt_next, lds, x, t + 1, ux)
         mul!(tmp2, A_inv_Q, dxt_next)
         grad[:, t] .= tmp1 .+ tmp3 .+ tmp2
     end
 
     # Last time step: emission + incoming factor at t = T
-    observation_gradient!(tmp1, cc, obs_buf, x, y, tsteps, lds, uy)
-    _transition_residual!(dxt, x, tsteps, lds, ux)
+    observation_gradient!(tmp1, cc, obs_buf, lds, x, y, tsteps, uy)
+    _transition_residual!(dxt, lds, x, tsteps, ux)
     mul!(tmp3, neg_Q_inv, dxt)
     @views grad[:, tsteps] .= tmp1 .+ tmp3
 
     return grad
 end
 
-function Gradient!(
+function gradient!(
     ws::SmoothWorkspace{T},
     lds::LinearDynamicalSystem{T,S,O},
-    y::AbstractMatrix{T},
     x::AbstractMatrix{T},
+    y::AbstractMatrix{T},
     ux::Union{Nothing,AbstractMatrix}=nothing,
     uy::Union{Nothing,AbstractMatrix}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     grad = view(ws.opt.grad_buf, :, 1:size(x, 2))
-    return Gradient!(grad, ws, lds, y, x, ux, uy)
+    return gradient!(grad, ws, lds, x, y, ux, uy)
 end
 
 """
-    observation_hessian!(out, cc, buf1, buf2, x, y, t, lds[, α])
+    observation_hessian!(out, cc, buf1, buf2, lds, x, y, t[, α])
 
 Emission-model contribution `∂² log p(y_t | x_t) / ∂x_t²` **accumulated** into
 `out` (`latent_dim × latent_dim`) with weight `α`: `out .+= α .* hess_t`. The
 add-with-weight semantics let the same kernel serve both the single-LDS
-`Hessian!` (α = 1, `out` pre-filled with the state-side block) and the SLDS
-`Hessian_blocks!` (α = w[k,t], accumulating across mixture components).
+`hessian!` (α = 1, `out` pre-filled with the state-side block) and the SLDS
+`hessian!` (α = w[k,t], accumulating across mixture components).
 
 Dispatches on the observation model type `O` (via
 `lds::LinearDynamicalSystem{T,S,O}`) — the curvature companion to
-`observation_gradient!`: a custom observation model plugs into `Hessian!` (and
-the SLDS `Hessian_blocks!`) by adding a method here, without touching the
-shared state-side Hessian blocks.
+`observation_gradient!`: a custom observation model plugs into both `hessian!`
+forms by adding a method here, without touching the shared state-side Hessian
+blocks.
 
 Uniform interface:
 - `cc`: a [`SmoothConstants`](@ref) with Cholesky-derived templates
@@ -269,7 +270,8 @@ Uniform interface:
   depends on `y`.
 
 See the `GaussianObservationModel` / `PoissonObservationModel` methods in
-`fit_LDS.jl` / `fit_PLDS.jl` for the pattern to follow.
+`gaussian_observations.jl` / `poisson_observations.jl` for the pattern to
+follow.
 """
 function observation_hessian! end
 
@@ -304,7 +306,7 @@ function _state_hessian_blocks!(btd, cc::SmoothConstants{T}, tsteps::Int) where 
 end
 
 """
-    Hessian!(sws, lds, y, x)
+    hessian!(sws, lds, x, y)
 
 Fill `sws.btd.H_diag`, `H_sub`, `H_super` with the complete-data log-likelihood
 Hessian blocks w.r.t. the latent path (length derived from `size(y, 2)`).
@@ -316,14 +318,14 @@ safe for ragged-length fitting.
 Generic over the observation model — the state-side blocks come from
 `_state_hessian_blocks!` and the emission curvature from
 `observation_hessian!`, so supporting a new observation model here only
-requires a new `observation_hessian!` method, not a new `Hessian!` method.
+requires a new `observation_hessian!` method, not a new `hessian!` method.
 Requires `compute_smooth_constants!(sws, lds)` to have been called.
 """
-function Hessian!(
+function hessian!(
     sws::SmoothWorkspace{T},
     lds::LinearDynamicalSystem{T,S,O},
-    y::AbstractMatrix{T},
     x::AbstractMatrix{T},
+    y::AbstractMatrix{T},
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     tsteps = size(y, 2)
     btd = sws.btd
@@ -332,7 +334,7 @@ function Hessian!(
     _state_hessian_blocks!(btd, cc, tsteps)
     for t in 1:tsteps
         observation_hessian!(
-            btd.H_diag[t], cc, sws.elbo.rho_obs, sws.elbo.h_obs, x, y, t, lds
+            btd.H_diag[t], cc, sws.elbo.rho_obs, sws.elbo.h_obs, lds, x, y, t
         )
     end
 

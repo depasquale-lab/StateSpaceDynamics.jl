@@ -277,7 +277,7 @@ function test_poisson_loglikelihood_type_preservation()
         x_mat = x[1]
         y_mat = y[1]
 
-        ll = sum(StateSpaceDynamics.joint_loglikelihood(x_mat, lds, y_mat))
+        ll = sum(StateSpaceDynamics.joint_loglikelihood(lds, x_mat, y_mat))
 
         if ll isa Number
             @test typeof(ll) === T
@@ -734,7 +734,7 @@ function test_joint_loglikelihood_matches_distributions()
     λ = exp.(C_nd * x .+ d_nd)
     y = Float64.(rand.(Ref(rng), Poisson.(λ)))
 
-    ll = sum(StateSpaceDynamics.joint_loglikelihood(x, plds, y))
+    ll = sum(StateSpaceDynamics.joint_loglikelihood(plds, x, y))
 
     ref = logpdf(MvNormal(x0_nd, Symmetric(P0_nd)), x[:, 1])
     for t in 2:T_steps
@@ -777,9 +777,9 @@ end
 
 function test_newton_objective_is_joint_loglikelihood()
     #=
-    The Newton line-search objective is `sum(joint_loglikelihood!(ws, x,
-    plds, y, lognorm_t))` with `-Σ log(y!)` normalizer. It must agree per-
-    timestep and in total with the allocating `joint_loglikelihood(x, plds, y)`, 
+    The Newton line-search objective is `sum(joint_loglikelihood!(ws, plds,
+    x, y, lognorm_t))` with `-Σ log(y!)` normalizer. It must agree per-
+    timestep and in total with the allocating `joint_loglikelihood(plds, x, y)`,
     both with the default and the explicitly hoisted normalizer.
     =#
     plds, xs, ys = toy_PoissonLDS()
@@ -789,11 +789,11 @@ function test_newton_objective_is_joint_loglikelihood()
         Float64, plds.latent_dim, plds.obs_dim, size(y, 2)
     )
     StateSpaceDynamics.compute_smooth_constants!(ws, plds)
-    ref = StateSpaceDynamics.joint_loglikelihood(x, plds, y)
+    ref = StateSpaceDynamics.joint_loglikelihood(plds, x, y)
 
-    @test StateSpaceDynamics.joint_loglikelihood!(ws, x, plds, y) ≈ ref rtol = 1e-12
+    @test StateSpaceDynamics.joint_loglikelihood!(ws, plds, x, y) ≈ ref rtol = 1e-12
     lognorm_t = StateSpaceDynamics._poisson_lognorm_t(y)
-    @test StateSpaceDynamics.joint_loglikelihood!(ws, x, plds, y, lognorm_t) ≈ ref rtol =
+    @test StateSpaceDynamics.joint_loglikelihood!(ws, plds, x, y, lognorm_t) ≈ ref rtol =
         1e-12
     return nothing
 end
@@ -829,11 +829,11 @@ function test_poisson_gradient_nondiag()
 
     ws = StateSpaceDynamics.SmoothWorkspace(Float64, D_lat, p_obs, T_steps)
     StateSpaceDynamics.compute_smooth_constants!(ws, plds)
-    g = copy(StateSpaceDynamics.Gradient!(ws, plds, y, x))
+    g = copy(StateSpaceDynamics.gradient!(ws, plds, x, y))
 
     f =
         xv -> sum(
-            StateSpaceDynamics.joint_loglikelihood(reshape(xv, D_lat, T_steps), plds, y)
+            StateSpaceDynamics.joint_loglikelihood(plds, reshape(xv, D_lat, T_steps), y)
         )
     g_num = reshape(ForwardDiff.gradient(f, vec(x)), D_lat, T_steps)
 
@@ -845,7 +845,7 @@ function test_poisson_hessian_nondiag()
     #=
     Hessian companion to `test_poisson_gradient_nondiag`: non-diagonal Q/P0
     checked against ForwardDiff.hessian through the allocating
-    joint_loglikelihood, exercising the kernel-based generic `Hessian!`.
+    joint_loglikelihood, exercising the kernel-based generic `hessian!`.
     =#
     rng = StableRNG(4321)
     D_lat, p_obs, T_steps = 2, 3, 10
@@ -873,12 +873,12 @@ function test_poisson_hessian_nondiag()
 
     ws = StateSpaceDynamics.SmoothWorkspace(Float64, D_lat, p_obs, T_steps)
     StateSpaceDynamics.compute_smooth_constants!(ws, plds)
-    StateSpaceDynamics.Hessian!(ws, plds, y, x)
+    StateSpaceDynamics.hessian!(ws, plds, x, y)
     hess = block_tridgm(ws.btd.H_diag, ws.btd.H_super, ws.btd.H_sub)
 
     f =
         xv -> sum(
-            StateSpaceDynamics.joint_loglikelihood(reshape(xv, D_lat, T_steps), plds, y)
+            StateSpaceDynamics.joint_loglikelihood(plds, reshape(xv, D_lat, T_steps), y)
         )
     hess_num = ForwardDiff.hessian(f, vec(x))
 

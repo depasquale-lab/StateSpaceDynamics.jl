@@ -31,13 +31,13 @@ Test that analytical gradient matches numerical gradient for any LDS type.
 """
 function test_gradient_common(lds, x, y)
     for i in eachindex(y)
-        f = latents -> sum(StateSpaceDynamics.joint_loglikelihood(latents, lds, y[i]))
+        f = latents -> sum(StateSpaceDynamics.joint_loglikelihood(lds, latents, y[i]))
         grad_numerical = ForwardDiff.gradient(f, x[i])
         ws = StateSpaceDynamics.SmoothWorkspace(
             Float64, lds.latent_dim, lds.obs_dim, size(y[i], 2)
         )
         StateSpaceDynamics.compute_smooth_constants!(ws, lds)
-        grad_analytical = copy(StateSpaceDynamics.Gradient!(ws, lds, y[i], x[i]))
+        grad_analytical = copy(StateSpaceDynamics.gradient!(ws, lds, x[i], y[i]))
         @test norm(grad_numerical - grad_analytical) < 1e-8
     end
 end
@@ -49,7 +49,7 @@ Test that analytical Hessian matches numerical Hessian for any LDS type.
 """
 function test_hessian_common(lds, x, y)
     function log_likelihood(x::AbstractArray, lds, y::AbstractArray)
-        return sum(StateSpaceDynamics.joint_loglikelihood(x, lds, y))
+        return sum(StateSpaceDynamics.joint_loglikelihood(lds, x, y))
     end
 
     tsteps_test = 3
@@ -62,7 +62,7 @@ function test_hessian_common(lds, x, y)
         xi = x[i][:, 1:tsteps_test]
 
         StateSpaceDynamics.compute_smooth_constants!(ws, lds)
-        StateSpaceDynamics.Hessian!(ws, lds, yi, xi)
+        StateSpaceDynamics.hessian!(ws, lds, xi, yi)
 
         btd = ws.btd
         @test length(btd.H_diag) == tsteps_test
@@ -96,13 +96,13 @@ function test_smooth_common(lds, x, y)
     @test size(p_smooth_tt1) == (lds.latent_dim, lds.latent_dim, n_tsteps)
 
     for i in eachindex(y)
-        f = latents -> sum(StateSpaceDynamics.joint_loglikelihood(latents, lds, y[i]))
+        f = latents -> sum(StateSpaceDynamics.joint_loglikelihood(lds, latents, y[i]))
         grad_numerical = ForwardDiff.gradient(f, tfs[i].x_smooth)
         ws = StateSpaceDynamics.SmoothWorkspace(
             Float64, lds.latent_dim, lds.obs_dim, size(y[i], 2)
         )
         StateSpaceDynamics.compute_smooth_constants!(ws, lds)
-        grad_analytical = copy(StateSpaceDynamics.Gradient!(ws, lds, y[i], tfs[i].x_smooth))
+        grad_analytical = copy(StateSpaceDynamics.gradient!(ws, lds, tfs[i].x_smooth, y[i]))
         @test norm(grad_numerical - grad_analytical) < 1e-7
     end
 

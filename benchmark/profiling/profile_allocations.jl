@@ -136,17 +136,17 @@ StateSpaceDynamics.compute_smooth_constants!(sws, model)
 StateSpaceDynamics.smooth!(model, fs, y, sws)
 x_mat = fs.x_smooth  # (D × T) smoothed latent trajectory
 
-println("\n[Gradient!]")
-result_grad = @benchmark StateSpaceDynamics.Gradient!($sws, $model, $y, $x_mat)
+println("\n[gradient!]")
+result_grad = @benchmark StateSpaceDynamics.gradient!($sws, $model, $x_mat, $y)
 display(result_grad)
 
-println("\n[Hessian!]")
-result_hess = @benchmark StateSpaceDynamics.Hessian!($sws, $model, $y, $x_mat)
+println("\n[hessian!]")
+result_hess = @benchmark StateSpaceDynamics.hessian!($sws, $model, $x_mat, $y)
 display(result_hess)
 
 println("\n[block_tridiagonal_inverse_logdet!]")
 btd = sws.btd
-StateSpaceDynamics.Hessian!(sws, model, y, x_mat)
+StateSpaceDynamics.hessian!(sws, model, x_mat, y)
 StateSpaceDynamics._negate_blocks!(btd)
 result_btil = @benchmark StateSpaceDynamics.block_tridiagonal_inverse_logdet!(
     $(fs.p_smooth),
@@ -159,10 +159,10 @@ result_btil = @benchmark StateSpaceDynamics.block_tridiagonal_inverse_logdet!(
 display(result_btil)
 
 println("\n[block_tridiagonal_solve!]")
-StateSpaceDynamics.Gradient!(sws, model, y, x_mat)
+StateSpaceDynamics.gradient!(sws, model, x_mat, y)
 copyto!(sws.opt.grad_vec, 1, sws.opt.grad_buf, 1, length(sws.opt.grad_vec))
 sws.opt.grad_vec .*= -1.0
-StateSpaceDynamics.Hessian!(sws, model, y, x_mat)
+StateSpaceDynamics.hessian!(sws, model, x_mat, y)
 StateSpaceDynamics._negate_blocks!(btd)
 result_solve = @benchmark StateSpaceDynamics.block_tridiagonal_solve!(
     $(sws.opt.X₀),

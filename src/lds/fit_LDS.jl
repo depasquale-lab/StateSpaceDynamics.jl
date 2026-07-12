@@ -1,13 +1,13 @@
 #=============================================================================
 Gaussian LDS
 
-    Log-Likelihood: joint_loglikelihood!(ws, x, lds, y)
+    Log-Likelihood: joint_loglikelihood!(ws, lds, x, y)
                     loglikelihood(lds, y)
 
-    Gradient:       Gradient!(ws, lds, y, x)
-                    Gradient_batched!(ws, lds, y, x, ux, uy)
+    Gradient:       gradient!(ws, lds, x, y)
+                    gradient_batched!(ws, lds, x, y, ux, uy)
 
-    Hessian:        (generic Hessian! lives in continuous_latents.jl;
+    Hessian:        (generic hessian! lives in continuous_latents.jl;
                     emission kernels in gaussian_observations.jl)
 
     Smooth:         smooth!(lds, fs, y, sws)
@@ -29,7 +29,7 @@ live in `common.jl`; sampling lives in `simulate.jl`.
 """
 
 """
-    joint_loglikelihood!(ws, x, lds, y[, ux, uy])
+    joint_loglikelihood!(ws, lds, x, y[, ux, uy])
 
 Per-timestep complete-data log-likelihood of a Gaussian LDS, written into
 `ws.opt.ll_vec` (an active-length view is returned — the workspace may be
@@ -46,8 +46,8 @@ matrices skip the `B u` / `D uy` terms).
 """
 function joint_loglikelihood!(
     ws::SmoothWorkspace{T},
-    x::AbstractMatrix{T},
     lds::LinearDynamicalSystem{T0,S,O},
+    x::AbstractMatrix{T},
     y::AbstractMatrix{T0},
     ux::Union{Nothing,AbstractMatrix{T0}}=nothing,
     uy::Union{Nothing,AbstractMatrix{T0}}=nothing,
@@ -58,8 +58,8 @@ end
 
 # type promotion wrapper for the common case of mixed-type inputs (e.g. Float32 latent states, Float64 observations)
 function joint_loglikelihood(
-    x::AbstractMatrix{XT},
     lds::LinearDynamicalSystem{T,S,O},
+    x::AbstractMatrix{XT},
     y::AbstractMatrix{YT},
     ux::Union{Nothing,AbstractMatrix{YT}}=nothing,
     uy::Union{Nothing,AbstractMatrix{YT}}=nothing,
@@ -68,7 +68,7 @@ function joint_loglikelihood(
     WT = promote_type(T, YT, XT)
     ws = SmoothWorkspace(WT, lds.latent_dim, lds.obs_dim, tsteps)
     compute_smooth_constants!(ws, lds)
-    return joint_loglikelihood!(ws, x, lds, y, ux, uy)
+    return joint_loglikelihood!(ws, lds, x, y, ux, uy)
 end
 
 #=
@@ -76,7 +76,7 @@ Length-only Hessian assembly. The BT Hessian for a Gaussian LDS is
 observation-independent — its blocks depend only on `A, Q, C, R, P0`
 (already cached in `sws` by `compute_smooth_constants!`) and the trial
 length. Factored out so the equal-length multi-trial fast path can fill
-blocks without constructing dummy `y`/`x` matrices for `Hessian!`.
+blocks without constructing dummy `x`/`y` matrices for `hessian!`.
 =#
 function _fill_hessian_blocks!(sws::SmoothWorkspace{T}, tsteps::Int) where {T<:Real}
     btd = sws.btd
@@ -163,7 +163,7 @@ function smooth!(
     copyto!(X0, fs.E_z)
 
     x_mat = reshape(X0, D, tsteps)
-    Gradient!(sws, lds, y, x_mat, latent_inputs, obs_inputs)
+    gradient!(sws, lds, x_mat, y, latent_inputs, obs_inputs)
     # grad_vec = -gradient (minimize negative log-likelihood)
     for t in 1:tsteps, i in 1:D
         sws.opt.grad_vec[(t - 1) * D + i] = -sws.opt.grad_buf[i, t]
@@ -171,7 +171,7 @@ function smooth!(
 
     # Hessian is independent of `ux`/`uy` (linear-Gaussian model has identical
     # precision blocks regardless of input means).
-    Hessian!(sws, lds, y, x_mat)
+    hessian!(sws, lds, x_mat, y)
     _negate_blocks!(btd, tsteps)
 
     # Save x_old in fs.x_smooth before we overwrite sws.opt.X₀ with the Newton step.
@@ -422,7 +422,7 @@ function _smooth_mean_only!(
     copyto!(X0, fs.E_z)
 
     x_mat = reshape(X0, D, tsteps)
-    Gradient!(sws, lds, y, x_mat, ux, uy)
+    gradient!(sws, lds, x_mat, y, ux, uy)
     for t in 1:tsteps, i in 1:D
         sws.opt.grad_vec[(t - 1) * D + i] = -sws.opt.grad_buf[i, t]
     end
@@ -436,9 +436,9 @@ function _smooth_mean_only!(
 end
 
 """
-    Gradient_batched!(ws, lds, y_batched, x_batched, u_batched, v_batched)
+    gradient_batched!(ws, lds, x_batched, y_batched, u_batched, v_batched)
 
-Batched form of `Gradient!`: every `mul!` is promoted from BLAS-2
+Batched form of `gradient!`: every `mul!` is promoted from BLAS-2
 (`bs × bs × bs`) to BLAS-3 (`bs × bs × bs × N`) by stacking the trial axis as
 the trailing matrix dimension. The shared-cov fast path only ever needs
 gradient evaluation at the *current iterate* across all trials, so the work
@@ -448,11 +448,11 @@ dispatch overhead is paid once instead of N times.
 Writes the result into `ws.batched.grad_buf` (shape `(D, T, N)`); the affine
 bias subtractions (`-b`, `-d_obs`, `-x0`) broadcast across the trial axis.
 """
-function Gradient_batched!(
+function gradient_batched!(
     ws::SmoothWorkspace{T},
     lds::LinearDynamicalSystem{T,S,O},
-    y::AbstractArray{T,3},
     x::AbstractArray{T,3},
+    y::AbstractArray{T,3},
     ux::AbstractArray{T,3},
     uy::AbstractArray{T,3},
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
@@ -588,7 +588,7 @@ function _smooth_mean_only_batched!(
         bat.x_mat[:, :, trial] .= tfs[trial].E_z
     end
 
-    Gradient_batched!(sws, lds, bat.y, bat.x_mat, bat.ux, bat.uy)
+    gradient_batched!(sws, lds, bat.x_mat, bat.y, bat.ux, bat.uy)
 
     # Pack negated gradient into the (D*T, N) matrix RHS layout.
     n_active = D * tsteps

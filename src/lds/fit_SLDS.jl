@@ -5,9 +5,9 @@ Switching LDS (SLDS)
 
     Log-Likelihood: joint_loglikelihood!(ws, slds, x, y, w)
 
-    Gradient:       Gradient!(ws, slds, y, x, w)
+    Gradient:       gradient!(ws, slds, x, y, w)
 
-    Hessian:        Hessian_blocks!(ws, slds, y, x, w)
+    Hessian:        hessian!(ws, slds, x, y, w)
 
     Smooth:         smooth!(slds, fs, y, w)
 
@@ -265,7 +265,7 @@ function StatsAPI.fit!(
 end
 
 """
-    joint_loglikelihood(slds::SLDS, x, y, w)
+    joint_loglikelihood!(ws, slds, x, y, w)
 
 Compute weighted complete-data log-likelihood for SLDS.
 Returns vector of per-timestep log-likelihoods.
@@ -297,17 +297,17 @@ function joint_loglikelihood!(
 end
 
 """
-    Gradient!(ws, slds, y, x, w)
+    gradient!(ws, slds, x, y, w)
 
 In-place SLDS gradient: each component's complete-data gradient is scaled
 per-timestep by the responsibility `w[k, t]` and accumulated. Writes into
 `ws.opt.grad_buf` and returns it.
 """
-function Gradient!(
+function gradient!(
     ws::SLDSSmoothWorkspace{T},
     slds::SLDS{T},
-    y::AbstractMatrix{T},
     x::AbstractMatrix{T},
+    y::AbstractMatrix{T},
     w::AbstractMatrix{T},
 ) where {T<:Real}
     latent_dim, Tsteps = size(x)
@@ -334,7 +334,7 @@ function Gradient!(
         neg_P0_inv = cc.x_t           # -P0^{-1}
 
         # t = 1: emission + prior, both weighted by w[k,1]
-        observation_gradient!(tmp1, cc, obs_buf, x, y, 1, lds_k)
+        observation_gradient!(tmp1, cc, obs_buf, lds_k, x, y, 1)
         @. dxt = x[:, 1] - x0
         mul!(tmp3, neg_P0_inv, dxt)
         α = w[k, 1]
@@ -343,27 +343,27 @@ function Gradient!(
         Tsteps == 1 && continue
 
         # Outgoing dynamics term comes from the factor at time 2, weighted by w[k,2]
-        _transition_residual!(dxt_next, x, 2, lds_k)
+        _transition_residual!(dxt_next, lds_k, x, 2)
         mul!(tmp2, A_inv_Q, dxt_next)
         @. grad[:, 1] += w[k, 2] * tmp2
 
         # 2 .. T-1: emission + incoming factor at t (w[k,t]),
         # outgoing factor at t+1 (w[k,t+1])
         for t in 2:(Tsteps - 1)
-            observation_gradient!(tmp1, cc, obs_buf, x, y, t, lds_k)
-            _transition_residual!(dxt, x, t, lds_k)
+            observation_gradient!(tmp1, cc, obs_buf, lds_k, x, y, t)
+            _transition_residual!(dxt, lds_k, x, t)
             mul!(tmp3, neg_Q_inv, dxt)
             α = w[k, t]
             @. grad[:, t] += α * (tmp1 + tmp3)
 
-            _transition_residual!(dxt_next, x, t + 1, lds_k)
+            _transition_residual!(dxt_next, lds_k, x, t + 1)
             mul!(tmp2, A_inv_Q, dxt_next)
             @. grad[:, t] += w[k, t + 1] * tmp2
         end
 
         # t = T: emission + incoming factor at T, weighted by w[k,T]
-        observation_gradient!(tmp1, cc, obs_buf, x, y, Tsteps, lds_k)
-        _transition_residual!(dxt, x, Tsteps, lds_k)
+        observation_gradient!(tmp1, cc, obs_buf, lds_k, x, y, Tsteps)
+        _transition_residual!(dxt, lds_k, x, Tsteps)
         mul!(tmp3, neg_Q_inv, dxt)
         α = w[k, Tsteps]
         @. grad[:, Tsteps] += α * (tmp1 + tmp3)
@@ -373,7 +373,7 @@ function Gradient!(
 end
 
 """
-    Hessian_blocks!(ws, slds, y, x, w)
+    hessian!(ws, slds, x, y, w)
 
 Fill `ws.btd.H_diag`, `ws.btd.H_sub`, `ws.btd.H_super` with the weighted Hessian blocks
 for the Laplace/Newton step over `x₁:T` matching Zoltowski et al. Appendix B.
@@ -387,11 +387,11 @@ Weights:
 - dynamics curvature from factor at time t uses w[k,t]
 - off-diagonal block coupling (t-1,t) uses w[k,t]
 """
-function Hessian_blocks!(
+function hessian!(
     ws::SLDSSmoothWorkspace{T},
     slds::SLDS{T},
-    y::AbstractMatrix{T},
     x::AbstractMatrix{T},
+    y::AbstractMatrix{T},
     w::AbstractMatrix{T},
 ) where {T<:Real}
     Tsteps = size(x, 2)
@@ -428,7 +428,7 @@ function Hessian_blocks!(
         if Tsteps == 1
             α = w[k, 1]
             @. H_diag[1] += α * neg_P0_inv
-            observation_hessian!(H_diag[1], cc, z, λ, x, y, 1, lds_k, α)
+            observation_hessian!(H_diag[1], cc, z, λ, lds_k, x, y, 1, α)
             continue
         end
 
@@ -461,7 +461,7 @@ function Hessian_blocks!(
         Poisson: -C' diag(λ_t) C with λ_t = exp(C x_t + d)).
         =#
         for t in 1:Tsteps
-            observation_hessian!(H_diag[t], cc, z, λ, x, y, t, lds_k, w[k, t])
+            observation_hessian!(H_diag[t], cc, z, λ, lds_k, x, y, t, w[k, t])
         end
     end
 
@@ -515,13 +515,13 @@ function smooth!(
     end
 
     compute_grad! = (gcur, xcur) -> begin
-        Gradient!(ws, slds, y, xcur, w)
+        gradient!(ws, slds, xcur, y, w)
         copyto!(gcur, view(ws.opt.grad_buf, :, 1:tsteps))
         return nothing
     end
 
     build_hess! = (xcur) -> begin
-        Hessian_blocks!(ws, slds, y, xcur, w)
+        hessian!(ws, slds, xcur, y, w)
         _negate_blocks!(btd, tsteps)
         return nothing
     end
@@ -553,7 +553,7 @@ function smooth!(
     )
 
     # Posterior covariances at the MAP via Laplace approx.
-    Hessian_blocks!(ws, slds, y, x, w)
+    hessian!(ws, slds, x, y, w)
     _negate_blocks!(btd, tsteps)
 
     block_tridiagonal_inverse!(

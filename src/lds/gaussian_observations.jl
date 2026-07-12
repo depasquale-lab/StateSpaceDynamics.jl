@@ -1,9 +1,9 @@
 #=============================================================================
 Gaussian Observations
 
-    Emission kernels: observation_loglikelihood!(cc, dyt, _, x, y, t, lds[, uy])
-                      observation_gradient!(out, cc, buf, x, y, t, lds[, uy])
-                      observation_hessian!(out, cc, _, _, x, y, t, lds[, α])
+    Emission kernels: observation_loglikelihood!(cc, dyt, _, lds, x, y, t[, uy])
+                      observation_gradient!(out, cc, buf, lds, x, y, t[, uy])
+                      observation_hessian!(out, cc, _, _, lds, x, y, t[, α])
 
     E-Step: Q_obs!(sws, lds, suf)
 
@@ -227,7 +227,7 @@ function update_R!(
 end
 
 """
-    observation_loglikelihood!(cc, dyt, _, x, y, t, lds[, uy])
+    observation_loglikelihood!(cc, dyt, _, lds, x, y, t[, uy])
 
 Gaussian emission term: `cR - 0.5*||R^{-1/2}(y_t - Cx_t - d - D uy_t)||^2`.
 `dyt` is the `obs_dim` residual scratch; the second buffer is unused.
@@ -236,10 +236,10 @@ function observation_loglikelihood!(
     cc::SmoothConstants{T},
     dyt::AbstractVector{T},
     ::AbstractVector{T},
+    lds::LinearDynamicalSystem{T0,S,O},
     x::AbstractMatrix{T},
     y::AbstractMatrix{T0},
     t::Int,
-    lds::LinearDynamicalSystem{T0,S,O},
     uy::Union{Nothing,AbstractMatrix}=nothing,
 ) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:GaussianObservationModel{T0}}
     C = lds.obs_model.C
@@ -255,7 +255,7 @@ function observation_loglikelihood!(
 end
 
 """
-    observation_gradient!(out, cc, buf, x, y, t, lds[, uy])
+    observation_gradient!(out, cc, buf, lds, x, y, t[, uy])
 
 Gaussian emission gradient: `out = C'R⁻¹ (y_t - Cx_t - d - D uy_t)`, using the
 cached `C_inv_R = C'R⁻¹` from `cc`.
@@ -264,10 +264,10 @@ function observation_gradient!(
     out::AbstractVector{T},
     cc::SmoothConstants{T},
     buf::AbstractVector{T},
+    lds::LinearDynamicalSystem{T0,S,O},
     x::AbstractMatrix{T},
     y::AbstractMatrix{T0},
     t::Int,
-    lds::LinearDynamicalSystem{T0,S,O},
     uy::Union{Nothing,AbstractMatrix}=nothing,
 ) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:GaussianObservationModel{T0}}
     @views mul!(buf, lds.obs_model.C, x[:, t])
@@ -279,7 +279,7 @@ function observation_gradient!(
 end
 
 """
-    observation_hessian!(out, cc, _, _, x, y, t, lds[, α])
+    observation_hessian!(out, cc, _, _, lds, x, y, t[, α])
 
 Gaussian emission curvature: `out .+= α .* (-C'R⁻¹C)`, using the cached
 `yt_given_xt = -C'R⁻¹C` from `cc` — constant in both `x` and `y`. Both
@@ -290,10 +290,10 @@ function observation_hessian!(
     cc::SmoothConstants{T},
     ::AbstractVector{T},
     ::AbstractVector{T},
+    lds::LinearDynamicalSystem{T0,S,O},
     x::AbstractMatrix{T},
     y::AbstractMatrix{T0},
     t::Int,
-    lds::LinearDynamicalSystem{T0,S,O},
     α::T=one(T),
 ) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:GaussianObservationModel{T0}}
     @. out += α * cc.yt_given_xt

@@ -151,14 +151,14 @@ copy the blocks out so the surrounding assertions are unchanged.
 =#
 function _slds_gradient(slds, y, x, w)
     ws = StateSpaceDynamics.SLDSSmoothWorkspace(eltype(y), slds, size(y, 2))
-    StateSpaceDynamics.Gradient!(ws, slds, y, x, w)
+    StateSpaceDynamics.gradient!(ws, slds, x, y, w)
     return copy(ws.opt.grad_buf)
 end
 
 function _slds_hessian_blocks(slds, y, x, w)
     Tsteps = size(y, 2)
     ws = StateSpaceDynamics.SLDSSmoothWorkspace(eltype(y), slds, Tsteps)
-    StateSpaceDynamics.Hessian_blocks!(ws, slds, y, x, w)
+    StateSpaceDynamics.hessian!(ws, slds, x, y, w)
     H_diag = [copy(ws.btd.H_diag[t]) for t in 1:Tsteps]
     H_super = [copy(ws.btd.H_super[t]) for t in 1:(Tsteps - 1)]
     H_sub = [copy(ws.btd.H_sub[t]) for t in 1:(Tsteps - 1)]
@@ -170,7 +170,7 @@ function _lds_gradient(lds, y, x)
         eltype(y), lds.latent_dim, lds.obs_dim, size(y, 2)
     )
     StateSpaceDynamics.compute_smooth_constants!(ws, lds)
-    return copy(StateSpaceDynamics.Gradient!(ws, lds, y, x))
+    return copy(StateSpaceDynamics.gradient!(ws, lds, x, y))
 end
 
 """

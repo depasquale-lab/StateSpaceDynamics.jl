@@ -11,7 +11,7 @@
     BlockTridiagonalWorkspace{T<:Real}
 
 Pre-allocated workspace for block tridiagonal operations in LDS smoothing.
-Holds all temporary buffers needed by `Hessian!`, `block_tridgm!`, and
+Holds all temporary buffers needed by `hessian!`, `block_tridgm!`, and
 `block_tridiagonal_inverse!` to avoid repeated allocations during EM iterations.
 """
 struct BlockTridiagonalWorkspace{T<:Real}

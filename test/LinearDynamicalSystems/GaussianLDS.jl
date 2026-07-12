@@ -298,7 +298,7 @@ function test_gaussian_loglikelihood_type_preservation()
         y_mat = y[1]
 
         # compute log‐likelihood and check types 
-        ll = sum(StateSpaceDynamics.joint_loglikelihood(x_mat, lds, y_mat))
+        ll = sum(StateSpaceDynamics.joint_loglikelihood(lds, x_mat, y_mat))
 
         if ll isa Number
             @test typeof(ll) === T
@@ -345,7 +345,7 @@ function test_smooth()
             Float64, lds.latent_dim, lds.obs_dim, size(y[i], 2)
         )
         StateSpaceDynamics.compute_smooth_constants!(ws, lds)
-        grad_analytical = copy(StateSpaceDynamics.Gradient!(ws, lds, y[i], tfs[i].x_smooth))
+        grad_analytical = copy(StateSpaceDynamics.gradient!(ws, lds, tfs[i].x_smooth, y[i]))
         @test maximum(abs.(grad_analytical)) < 1e-8
         @test norm(grad_analytical) < 1e-8
     end
@@ -949,7 +949,7 @@ function test_joint_loglikelihood_matches_mvnormal()
     x = randn(rng, D_lat, T_steps)
     y = randn(rng, p_obs, T_steps)
 
-    ll = sum(StateSpaceDynamics.joint_loglikelihood(x, lds, y))
+    ll = sum(StateSpaceDynamics.joint_loglikelihood(lds, x, y))
 
     ref = logpdf(MvNormal(x0_nd, Symmetric(P0_nd)), x[:, 1])
     for t in 2:T_steps
@@ -999,14 +999,14 @@ function test_gaussian_gradient_nondiag()
 
     ws = StateSpaceDynamics.SmoothWorkspace(Float64, D_lat, p_obs, T_steps)
     StateSpaceDynamics.compute_smooth_constants!(ws, lds)
-    g = copy(StateSpaceDynamics.Gradient!(ws, lds, y, x, ux, uy))
+    g = copy(StateSpaceDynamics.gradient!(ws, lds, x, y, ux, uy))
 
     f =
         xv -> begin
             xm = reshape(xv, D_lat, T_steps)
             wsd = StateSpaceDynamics.SmoothWorkspace(eltype(xv), D_lat, p_obs, T_steps)
             StateSpaceDynamics.compute_smooth_constants!(wsd, lds)
-            sum(StateSpaceDynamics.joint_loglikelihood!(wsd, xm, lds, y, ux, uy))
+            sum(StateSpaceDynamics.joint_loglikelihood!(wsd, lds, xm, y, ux, uy))
         end
     g_num = reshape(ForwardDiff.gradient(f, vec(x)), D_lat, T_steps)
 
@@ -1053,7 +1053,7 @@ function test_gaussian_hessian_nondiag()
 
     ws = StateSpaceDynamics.SmoothWorkspace(Float64, D_lat, p_obs, T_steps)
     StateSpaceDynamics.compute_smooth_constants!(ws, lds)
-    StateSpaceDynamics.Hessian!(ws, lds, y, x)
+    StateSpaceDynamics.hessian!(ws, lds, x, y)
     hess = block_tridgm(ws.btd.H_diag, ws.btd.H_super, ws.btd.H_sub)
 
     f =
@@ -1061,7 +1061,7 @@ function test_gaussian_hessian_nondiag()
             xm = reshape(xv, D_lat, T_steps)
             wsd = StateSpaceDynamics.SmoothWorkspace(eltype(xv), D_lat, p_obs, T_steps)
             StateSpaceDynamics.compute_smooth_constants!(wsd, lds)
-            sum(StateSpaceDynamics.joint_loglikelihood!(wsd, xm, lds, y, ux, uy))
+            sum(StateSpaceDynamics.joint_loglikelihood!(wsd, lds, xm, y, ux, uy))
         end
     hess_num = ForwardDiff.hessian(f, vec(x))
 
