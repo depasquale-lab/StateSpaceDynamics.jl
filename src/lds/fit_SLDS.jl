@@ -504,7 +504,7 @@ function smooth!(
 
     # Active-length views into (possibly) oversized workspace buffers.
     g = view(ws.opt.grad_buf, :, 1:tsteps)
-    p = reshape(view(ws.opt.X₀, 1:n_active), latent_dim, tsteps)
+    p = reshape(view(ws.opt.X0, 1:n_active), latent_dim, tsteps)
     neg_diag_v = view(btd.neg_diag, 1:tsteps)
     neg_sub_v = view(btd.neg_sub, 1:(tsteps - 1))
     neg_super_v = view(btd.neg_super, 1:(tsteps - 1))

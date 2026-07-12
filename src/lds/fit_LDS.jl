@@ -153,7 +153,7 @@ function smooth!(
     compute_smooth_constants!(sws, lds)
 
     # Workspace buffers may be sized for a longer trial; take active-length views.
-    X0 = view(sws.opt.X₀, 1:n_active)
+    X0 = view(sws.opt.X0, 1:n_active)
     grad_vec = view(sws.opt.grad_vec, 1:n_active)
     neg_diag_v = view(btd.neg_diag, 1:tsteps)
     neg_sub_v = view(btd.neg_sub, 1:(tsteps - 1))
@@ -174,7 +174,7 @@ function smooth!(
     hessian!(sws, lds, x_mat, y)
     _negate_blocks!(btd, tsteps)
 
-    # Save x_old in fs.x_smooth before we overwrite sws.opt.X₀ with the Newton step.
+    # Save x_old in fs.x_smooth before we overwrite sws.opt.X0 with the Newton step.
     fs.x_smooth .= x_mat
 
     #=
@@ -415,7 +415,7 @@ function _smooth_mean_only!(
     end
 
     shared_btd = source_sws.btd
-    X0 = view(sws.opt.X₀, 1:n_active)
+    X0 = view(sws.opt.X0, 1:n_active)
     grad_vec = view(sws.opt.grad_vec, 1:n_active)
     neg_sub_v = view(shared_btd.neg_sub, 1:(tsteps - 1))
 

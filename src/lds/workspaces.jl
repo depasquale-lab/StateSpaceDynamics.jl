@@ -194,7 +194,7 @@ Owned as `opt` by both `SmoothWorkspace` and `SLDSSmoothWorkspace`, so kernels
 shared between the two paths address scratch through one set of field paths.
 """
 struct NewtonBuffers{T<:Real}
-    X₀::Vector{T}             # Vectorized latent path (latent_dim * tsteps)
+    X0::Vector{T}             # Vectorized latent path (latent_dim * tsteps)
     grad_buf::Matrix{T}       # Gradient output buffer (latent_dim × tsteps)
     grad_vec::Vector{T}       # Vectorized gradient (latent_dim * tsteps)
 
@@ -218,7 +218,7 @@ function NewtonBuffers(
     ::Type{T}, latent_dim::Int, obs_dim::Int, tsteps::Int
 ) where {T<:Real}
     return NewtonBuffers{T}(
-        zeros(T, latent_dim * tsteps),  # X₀
+        zeros(T, latent_dim * tsteps),  # X0
         zeros(T, latent_dim, tsteps),   # grad_buf
         zeros(T, latent_dim * tsteps),  # grad_vec
         zeros(T, latent_dim),           # dxt
@@ -663,7 +663,7 @@ function compute_smooth_constants!(
     cc.cP0 = -WT(0.5) * (WT(latent_dim) * log(WT(2π)) + logdet(cc.P0_PD))
     cc.cQ = -WT(0.5) * (WT(latent_dim) * log(WT(2π)) + logdet(cc.Q_PD))
     cc.cR = zero(WT)
-
+FRF
     return nothing
 end
 

@@ -432,7 +432,7 @@ function smooth!(
     end
 
     # Active-length views into (possibly) oversized workspace buffers.
-    X0 = view(sws.opt.X₀, 1:n_active)
+    X0 = view(sws.opt.X0, 1:n_active)
     grad_active = view(sws.opt.grad_buf, :, 1:tsteps)
     neg_diag_v = view(btd.neg_diag, 1:tsteps)
     neg_sub_v = view(btd.neg_sub, 1:(tsteps - 1))
