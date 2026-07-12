@@ -32,15 +32,17 @@ live in `common.jl`; sampling lives in `simulate.jl`.
     joint_loglikelihood!(ws, x, lds, y[, ux, uy])
 
 Per-timestep complete-data log-likelihood of a Gaussian LDS, written into
-`ws.opt.ll_vec` (returned):
+`ws.opt.ll_vec` (an active-length view is returned — the workspace may be
+sized for a longer trial):
 
 - `ll[1]` includes: log p(x₁) + log p(y₁ | x₁)
 - `ll[t]` for t≥2 includes: log p(x_t | x_{t-1}, u_{t-1}) + log p(y_t | x_t, uy_t)
 
-Built from the shared `state_loglikelihood!` / `observation_loglikelihood!`
-kernels; requires `compute_smooth_constants!(ws, lds)` to have been called.
-`ux` / `uy` are optional control inputs (`nothing` or zero-row matrices skip
-the `B u` / `D uy` terms).
+Convenience wrapper around the shared per-timestep kernel
+`joint_loglikelihood!(ll, ws, cc, lds, x, y, ux, uy)` in
+`continuous_latents.jl`; requires `compute_smooth_constants!(ws, lds)` to have
+been called. `ux` / `uy` are optional control inputs (`nothing` or zero-row
+matrices skip the `B u` / `D uy` terms).
 """
 function joint_loglikelihood!(
     ws::SmoothWorkspace{T},
@@ -50,18 +52,8 @@ function joint_loglikelihood!(
     ux::Union{Nothing,AbstractMatrix{T0}}=nothing,
     uy::Union{Nothing,AbstractMatrix{T0}}=nothing,
 ) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:GaussianObservationModel{T0}}
-    cc = ws.consts
-    opt = ws.opt
-    ll_vec = opt.ll_vec
-
-    for t in eachindex(ll_vec)
-        ll_vec[t] = observation_loglikelihood!(
-            cc, opt.temp_dy, opt.temp_solve_R, x, y, t, lds, uy
-        )
-        ll_vec[t] += state_loglikelihood!(cc, opt.temp_dx, opt.temp_solve_Q, x, t, lds, ux)
-    end
-
-    return ll_vec
+    ll_vec = view(ws.opt.ll_vec, 1:size(y, 2))
+    return joint_loglikelihood!(ll_vec, ws, ws.consts, lds, x, y, ux, uy)
 end
 
 # type promotion wrapper for the common case of mixed-type inputs (e.g. Float32 latent states, Float64 observations)

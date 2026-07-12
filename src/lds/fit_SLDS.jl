@@ -280,7 +280,8 @@ function joint_loglikelihood!(
     Tsteps = size(y, 2)
 
     # Workspace ll_vec may be sized for a longer trial; only touch the active prefix.
-    @views fill!(ws.ll_vec[1:Tsteps], zero(T))
+    ll_vec = ws.opt.ll_vec
+    @views fill!(ll_vec[1:Tsteps], zero(T))
 
     K = length(slds.LDSs)
     for k in 1:K
@@ -288,11 +289,11 @@ function joint_loglikelihood!(
             view(ws.ll_tmp, 1:Tsteps), ws, ws.consts[k], slds.LDSs[k], x, y
         )
         for t in 1:Tsteps
-            ws.ll_vec[t] += w[k, t] * ws.ll_tmp[t]
+            ll_vec[t] += w[k, t] * ws.ll_tmp[t]
         end
     end
 
-    return view(ws.ll_vec, 1:Tsteps)
+    return view(ll_vec, 1:Tsteps)
 end
 
 """
@@ -300,7 +301,7 @@ end
 
 In-place SLDS gradient: each component's complete-data gradient is scaled
 per-timestep by the responsibility `w[k, t]` and accumulated. Writes into
-`ws.grad_buf` and returns it.
+`ws.opt.grad_buf` and returns it.
 """
 function Gradient!(
     ws::SLDSSmoothWorkspace{T},
@@ -312,15 +313,15 @@ function Gradient!(
     latent_dim, Tsteps = size(x)
     K = length(slds.LDSs)
 
-    grad = ws.grad_buf
+    grad = ws.opt.grad_buf
     fill!(grad, zero(T))
 
-    dxt = ws.dxt
-    dxt_next = ws.dxt_next
-    obs_buf = ws.z
-    tmp1 = ws.tmp1
-    tmp2 = ws.tmp2
-    tmp3 = ws.tmp3
+    dxt = ws.opt.dxt
+    dxt_next = ws.opt.dxt_next
+    obs_buf = ws.opt.dyt
+    tmp1 = ws.opt.tmp1
+    tmp2 = ws.opt.tmp2
+    tmp3 = ws.opt.tmp3
 
     @views for k in 1:K
         lds_k = slds.LDSs[k]
@@ -408,8 +409,10 @@ function Hessian_blocks!(
         fill!(H_super[t], zero(T))
     end
 
-    z = ws.z
-    λ = ws.λ
+    # Two obs_dim scratch vectors for observation_hessian! (Poisson writes the
+    # linear predictor and rate into them; Gaussian ignores both).
+    z = ws.opt.dyt
+    λ = ws.opt.temp_dy
 
     @views for k in 1:K
         lds_k = slds.LDSs[k]
@@ -500,8 +503,8 @@ function smooth!(
     end
 
     # Active-length views into (possibly) oversized workspace buffers.
-    g = view(ws.grad_buf, :, 1:tsteps)
-    p = reshape(view(ws.X₀, 1:n_active), latent_dim, tsteps)
+    g = view(ws.opt.grad_buf, :, 1:tsteps)
+    p = reshape(view(ws.opt.X₀, 1:n_active), latent_dim, tsteps)
     neg_diag_v = view(btd.neg_diag, 1:tsteps)
     neg_sub_v = view(btd.neg_sub, 1:(tsteps - 1))
     neg_super_v = view(btd.neg_super, 1:(tsteps - 1))
@@ -513,7 +516,7 @@ function smooth!(
 
     compute_grad! = (gcur, xcur) -> begin
         Gradient!(ws, slds, y, xcur, w)
-        copyto!(gcur, view(ws.grad_buf, :, 1:tsteps))
+        copyto!(gcur, view(ws.opt.grad_buf, :, 1:tsteps))
         return nothing
     end
 

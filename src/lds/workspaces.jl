@@ -190,6 +190,8 @@ end
 
 Per-trial Newton-smoother scratch: the vectorized iterate / gradient, plus the
 small temp vectors used by the `Gradient!` and `joint_loglikelihood!` kernels.
+Owned as `opt` by both `SmoothWorkspace` and `SLDSSmoothWorkspace`, so kernels
+shared between the two paths address scratch through one set of field paths.
 """
 struct NewtonBuffers{T<:Real}
     X₀::Vector{T}             # Vectorized latent path (latent_dim * tsteps)
@@ -714,31 +716,16 @@ end
 Workspace for SLDS smoothing that matches the LDS backend shape:
 - Owns a BlockTridiagonalWorkspace (H blocks + sparse + inverse scratch)
 - Owns one [`SmoothConstants`](@ref) per SLDS component
-- Owns optimizer buffers (X₀, grad)
-- Owns Poisson temporary vectors
+- Owns a [`NewtonBuffers`](@ref) (`opt`) — the same iterate / gradient /
+  kernel scratch layout as `SmoothWorkspace`, so kernels shared between the
+  single-LDS and SLDS paths use one set of field paths
+- `ll_tmp`: per-component log-likelihood scratch; the weighted accumulation
+  across components needs a second `tsteps` buffer beside `opt.ll_vec`
 """
 struct SLDSSmoothWorkspace{T<:Real}
     btd::BlockTridiagonalWorkspace{T}
-
     consts::Vector{SmoothConstants{T}}
-
-    # Optim buffers
-    X₀::Vector{T}
-    grad_buf::Matrix{T}
-
-    # Poisson temporaries (shared)
-    z::Vector{T}   # obs_dim
-    λ::Vector{T}   # obs_dim
-
-    # temp vectors
-    dxt::Vector{T}        # latent_dim
-    dxt_next::Vector{T}   # latent_dim
-    tmp1::Vector{T}       # latent_dim
-    tmp2::Vector{T}       # latent_dim
-    tmp3::Vector{T}       # latent_dim
-
-    # LL buffers
-    ll_vec::Vector{T}   # accumulator (length tsteps)
+    opt::NewtonBuffers{T}
     ll_tmp::Vector{T}   # per-component scratch (length tsteps)
 end
 
@@ -750,16 +737,7 @@ function SLDSSmoothWorkspace(::Type{T}, slds::SLDS, tsteps::Int) where {T<:Real}
     ws = SLDSSmoothWorkspace{T}(
         BlockTridiagonalWorkspace(T, latent_dim, tsteps),
         [SmoothConstants(T, latent_dim, obs_dim) for _ in 1:K],
-        zeros(T, latent_dim * tsteps),   # X₀
-        zeros(T, latent_dim, tsteps),    # grad_buf
-        zeros(T, obs_dim),               # z
-        zeros(T, obs_dim),               # λ
-        zeros(T, latent_dim),            # dxt
-        zeros(T, latent_dim),            # dxt_next
-        zeros(T, latent_dim),            # tmp1
-        zeros(T, latent_dim),            # tmp2
-        zeros(T, latent_dim),            # tmp3
-        zeros(T, tsteps),                # ll_vec
+        NewtonBuffers(T, latent_dim, obs_dim, tsteps),
         zeros(T, tsteps),                # ll_tmp
     )
 

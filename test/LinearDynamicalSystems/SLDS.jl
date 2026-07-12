@@ -152,7 +152,7 @@ copy the blocks out so the surrounding assertions are unchanged.
 function _slds_gradient(slds, y, x, w)
     ws = StateSpaceDynamics.SLDSSmoothWorkspace(eltype(y), slds, size(y, 2))
     StateSpaceDynamics.Gradient!(ws, slds, y, x, w)
-    return copy(ws.grad_buf)
+    return copy(ws.opt.grad_buf)
 end
 
 function _slds_hessian_blocks(slds, y, x, w)

@@ -107,12 +107,16 @@ into `joint_loglikelihood!` by adding a method here.
 function observation_loglikelihood! end
 
 """
-    joint_loglikelihood!(ll, ws, cc, lds, x, y)
+    joint_loglikelihood!(ll, ws, cc, lds, x, y[, ux, uy])
 
-Per-timestep complete-data log-likelihood for a single SLDS component:
+Per-timestep complete-data log-likelihood of one LDS, written into `ll`:
 `ll[t] = log p(y_t | x_t) + log p(x_t | x_{t-1})` (or `+ log p(x_1)` at
 `t == 1`). Generic over the observation model — the emission term comes from
-`observation_loglikelihood!`.
+`observation_loglikelihood!` — and over the workspace: the single-LDS path
+passes a `SmoothWorkspace`, the SLDS path a `SLDSSmoothWorkspace` (with `cc`
+the component's `SmoothConstants`), both consuming the shared `NewtonBuffers`
+scratch in `ws.opt`. `ux` / `uy` are optional control inputs (`nothing` or
+zero-row matrices skip the `B u` / `D uy` terms).
 
 Notes:
 - Normalization terms (logdet + log(2π)) are included. These are constant w.r.t.
@@ -121,21 +125,24 @@ Notes:
 """
 function joint_loglikelihood!(
     ll::AbstractVector{T},
-    ws::SLDSSmoothWorkspace{T},
+    ws::Union{SmoothWorkspace{T},SLDSSmoothWorkspace{T}},
     cc::SmoothConstants{T},
-    lds::LinearDynamicalSystem{T,S,O},
+    lds::LinearDynamicalSystem{T0,S,O},
     x::AbstractMatrix{T},
-    y::AbstractMatrix{T},
-) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+    y::AbstractMatrix{T0},
+    ux::Union{Nothing,AbstractMatrix}=nothing,
+    uy::Union{Nothing,AbstractMatrix}=nothing,
+) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:AbstractObservationModel{T0}}
     tsteps = size(y, 2)
     @assert length(ll) == tsteps
 
-    dxt = ws.dxt
-    tmp = ws.tmp1
+    opt = ws.opt
 
     for t in 1:tsteps
-        ll_t = observation_loglikelihood!(cc, ws.z, ws.λ, x, y, t, lds)
-        ll_t += state_loglikelihood!(cc, dxt, tmp, x, t, lds)
+        ll_t = observation_loglikelihood!(
+            cc, opt.temp_dy, opt.temp_solve_R, x, y, t, lds, uy
+        )
+        ll_t += state_loglikelihood!(cc, opt.temp_dx, opt.temp_solve_Q, x, t, lds, ux)
         ll[t] = ll_t
     end
 
@@ -164,7 +171,7 @@ function observation_gradient! end
 
 Gradient of the complete-data log-likelihood with respect to the latent path
 `x`, written into `grad` (`latent_dim × tsteps`; the convenience form uses the
-active view of `ws.grad_buf` and returns it). Generic over the observation
+active view of `ws.opt.grad_buf` and returns it). Generic over the observation
 model — the emission term comes from `observation_gradient!`, while the state
 side (prior / incoming / outgoing transition factors) is shared:
 
