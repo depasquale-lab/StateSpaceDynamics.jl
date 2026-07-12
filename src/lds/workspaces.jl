@@ -663,7 +663,7 @@ function compute_smooth_constants!(
     cc.cP0 = -WT(0.5) * (WT(latent_dim) * log(WT(2π)) + logdet(cc.P0_PD))
     cc.cQ = -WT(0.5) * (WT(latent_dim) * log(WT(2π)) + logdet(cc.Q_PD))
     cc.cR = zero(WT)
-    
+
     return nothing
 end
 
