@@ -208,6 +208,7 @@ using SSDTest
 
             @testset "Log-likelihood" begin
                 test_joint_loglikelihood_matches_distributions()
+                test_joint_loglikelihood_multitrial()
                 test_newton_objective_is_joint_loglikelihood()
                 test_poisson_gradient_nondiag()
                 test_poisson_hessian_nondiag()
