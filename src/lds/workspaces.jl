@@ -562,9 +562,9 @@ function compute_smooth_constants!(
     R_w = convert(Matrix{WT}, R)
     Q_w = convert(Matrix{WT}, Q)
     P0_w = convert(Matrix{WT}, P0)
-    cc.R_PD = PDMat(Symmetric(R_w))
-    cc.Q_PD = PDMat(Symmetric(Q_w))
-    cc.P0_PD = PDMat(Symmetric(P0_w))
+    cc.R_PD = PDMat(Symmetrize!(R_w))
+    cc.Q_PD = PDMat(Symmetrize!(Q_w))
+    cc.P0_PD = PDMat(Symmetrize!(P0_w))
     Rchol = cc.R_PD.chol
     Qchol = cc.Q_PD.chol
     P0chol = cc.P0_PD.chol
@@ -625,8 +625,8 @@ function compute_smooth_constants!(
     =#
     Q_w = convert(Matrix{WT}, Q)
     P0_w = convert(Matrix{WT}, P0)
-    cc.Q_PD = PDMat(Symmetric(Q_w))
-    cc.P0_PD = PDMat(Symmetric(P0_w))
+    cc.Q_PD = PDMat(Symmetrize!(Q_w))
+    cc.P0_PD = PDMat(Symmetrize!(P0_w))
     Q_chol = cc.Q_PD.chol
     P0_chol = cc.P0_PD.chol
 
