@@ -510,12 +510,12 @@ function SmoothWorkspace(
         nothing
     end
     return SmoothWorkspace{T}(
-        BlockTridiagonalWorkspace(T, latent_dim, tsteps),
-        SmoothConstants(T, latent_dim, obs_dim),
-        NewtonBuffers(T, latent_dim, obs_dim, tsteps),
-        RegressionBuffers(T, latent_dim, obs_dim; ux_dim=ux_dim, uy_dim=uy_dim),
-        ElboBuffers(T, latent_dim, obs_dim),
-        TDAggBuffers(T, latent_dim, obs_dim, tsteps; ux_dim=ux_dim, uy_dim=uy_dim),
+        BlockTridiagonalWorkspace(T, latent_dim, tsteps),                                   # block tridiagonal solver storage (e-step)
+        SmoothConstants(T, latent_dim, obs_dim),                                            # Cholesky-derived model constants (e-step)
+        NewtonBuffers(T, latent_dim, obs_dim, tsteps),                                      # Newton solver buffers (e-step)
+        RegressionBuffers(T, latent_dim, obs_dim; ux_dim=ux_dim, uy_dim=uy_dim),            # Buffers for m-step regression updates
+        ElboBuffers(T, latent_dim, obs_dim),                                                # Buffers for Q_state! / Q_obs! ELBO terms
+        TDAggBuffers(T, latent_dim, obs_dim, tsteps; ux_dim=ux_dim, uy_dim=uy_dim),         # Buffers for TD sufficient-statistics aggregator + shared smoothed-covariance storage
         batched,
     )
 end
