@@ -107,6 +107,7 @@ using SSDTest
                 test_SLDS_fit_elbo_generally_increases()
                 test_SLDS_fit_multitrial()
                 test_SLDS_estep_elbo_components()
+                test_SLDS_elbo_matches_LDS_marginal_K1()
             end
 
             @testset "Poisson SLDS" begin

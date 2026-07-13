@@ -916,7 +916,16 @@ function test_SLDS_smooth_entropy_calculation(; rng=MersenneTwister(0xC0FFEE))
 
     # Call smooth! directly to access StateSpaceDynamics.FilterSmooth
     fs = StateSpaceDynamics.initialize_FilterSmooth(slds.LDSs[1], tsteps)
-    return StateSpaceDynamics.smooth!(slds, fs, y[1], w)
+    StateSpaceDynamics.smooth!(slds, fs, y[1], w)
+
+    #=
+    smooth! must fill fs.entropy from the BT log-determinant (it was silently
+    left at its zero initialization before the 0.5.0 fix). At these covariance
+    scales (P0 = I, Q = 0.1 I) the joint Gaussian entropy is strictly positive.
+    =#
+    @test isfinite(fs.entropy)
+    @test fs.entropy > 0
+    return fs
 end
 
 function test_SLDS_smooth_covariance_symmetry(; rng=MersenneTwister(0xC0FFEE))
@@ -1002,8 +1011,8 @@ function test_SLDS_sample_posterior_basic(; rng=MersenneTwister(0xC0FFEE))
     x_sample, entropy = StateSpaceDynamics.sample_posterior(fs)
 
     @test size(x_sample) == (latent_dim, tsteps)
-    # @test entropy > 0
-    # @test isfinite(entropy)
+    @test isfinite(entropy)
+    @test entropy > 0
     @test all(isfinite, x_sample)
 end
 
@@ -1022,8 +1031,8 @@ function test_SLDS_estep_basic(; rng=MersenneTwister(0xC0FFEE))
     # Batched fb_storage with seq_ends
     seq_ends = cumsum(fill(tsteps, ntrials))
     total_T = last(seq_ends)
-    obs_inputs = collect(1:total_T)
-    latent_inputs = fill(nothing, total_T)
+    obs_seq = collect(1:total_T)
+    control_seq = fill(nothing, total_T)
 
     tfs = StateSpaceDynamics.initialize_FilterSmooth(slds.LDSs[1], fill(tsteps, ntrials))
     dl = StateSpaceDynamics.SLDSDiscreteLayer(slds.A, slds.πₖ, zeros(Float64, K, total_T))
@@ -1047,8 +1056,8 @@ function test_SLDS_estep_basic(; rng=MersenneTwister(0xC0FFEE))
         y,
         x_samples,
         slds_ws;
-        obs_inputs=obs_inputs,
-        latent_inputs=latent_inputs,
+        obs_seq=obs_seq,
+        control_seq=control_seq,
         seq_ends=seq_ends,
     )
 
@@ -1086,8 +1095,8 @@ function test_SLDS_mstep_updates_parameters(; rng=MersenneTwister(0xC0FFEE))
 
     seq_ends = cumsum(fill(tsteps, ntrials))
     total_T = last(seq_ends)
-    obs_inputs = collect(1:total_T)
-    latent_inputs = fill(nothing, total_T)
+    obs_seq = collect(1:total_T)
+    control_seq = fill(nothing, total_T)
 
     tfs = StateSpaceDynamics.initialize_FilterSmooth(slds.LDSs[1], fill(tsteps, ntrials))
     dl = StateSpaceDynamics.SLDSDiscreteLayer(slds.A, slds.πₖ, zeros(Float64, K, total_T))
@@ -1111,15 +1120,15 @@ function test_SLDS_mstep_updates_parameters(; rng=MersenneTwister(0xC0FFEE))
         y,
         x_samples,
         slds_ws;
-        obs_inputs=obs_inputs,
-        latent_inputs=latent_inputs,
+        obs_seq=obs_seq,
+        control_seq=control_seq,
         seq_ends=seq_ends,
     )
 
     A_old = copy(slds.A)
 
     StateSpaceDynamics.mstep!(
-        slds, tfs, fb_storage, dl, y, sws; obs_inputs=obs_inputs, seq_ends=seq_ends
+        slds, tfs, fb_storage, dl, y, sws; obs_seq=obs_seq, seq_ends=seq_ends
     )
 
     # Check parameters changed (with high probability)
@@ -1215,8 +1224,8 @@ function test_SLDS_estep_elbo_components(; rng=MersenneTwister(0xC0FFEE))
 
     seq_ends = cumsum(fill(tsteps, ntrials))
     total_T = last(seq_ends)
-    obs_inputs = collect(1:total_T)
-    latent_inputs = fill(nothing, total_T)
+    obs_seq = collect(1:total_T)
+    control_seq = fill(nothing, total_T)
 
     tfs = StateSpaceDynamics.initialize_FilterSmooth(slds.LDSs[1], fill(tsteps, ntrials))
     dl = StateSpaceDynamics.SLDSDiscreteLayer(slds.A, slds.πₖ, zeros(Float64, K, total_T))
@@ -1238,8 +1247,8 @@ function test_SLDS_estep_elbo_components(; rng=MersenneTwister(0xC0FFEE))
         y,
         x_samples,
         slds_ws;
-        obs_inputs=obs_inputs,
-        latent_inputs=latent_inputs,
+        obs_seq=obs_seq,
+        control_seq=control_seq,
         seq_ends=seq_ends,
     )
 
@@ -1247,8 +1256,67 @@ function test_SLDS_estep_elbo_components(; rng=MersenneTwister(0xC0FFEE))
 
     @test isfinite(elbo)
 
-    # Entropy should be positive
-    # @test tfs[1].entropy > 0
+    # smooth! (via estep!) must fill the posterior entropy; positive at these scales.
+    @test tfs[1].entropy > 0
+end
+
+#=
+K = 1 exactness: with a single regime and Gaussian emissions, q(x) from the
+Laplace smoother is the *exact* posterior (the log-joint is quadratic) and
+q(z) is degenerate, so the ELBO must equal the marginal log-likelihood
+log p(y) — computed here by the independent Kalman-filter implementation of
+`loglikelihood`. This pins down the entropy signs, the H[q(z)] chain entropy
+(zero for K = 1), and the ½·tr(H·Σ) covariance correction simultaneously:
+an error in any of them breaks the equality.
+=#
+function test_SLDS_elbo_matches_LDS_marginal_K1(; rng=MersenneTwister(0xBEEF))
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 15
+    ntrials = 2
+
+    # Dense C/d so the observations actually constrain the posterior.
+    lds = _make_gaussian_lds_dense(latent_dim, obs_dim; seed=42)
+    slds = SLDS(; A=ones(1, 1), πₖ=[1.0], LDSs=[lds])
+
+    z, x, y = rand(rng, slds, fill(tsteps, ntrials))
+
+    seq_ends = cumsum(fill(tsteps, ntrials))
+    total_T = last(seq_ends)
+    obs_seq = collect(1:total_T)
+    control_seq = fill(nothing, total_T)
+
+    tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, fill(tsteps, ntrials))
+    dl = StateSpaceDynamics.SLDSDiscreteLayer(slds.A, slds.πₖ, zeros(Float64, 1, total_T))
+    fb_storage = StateSpaceDynamics._make_slds_fb_storage(dl, seq_ends)
+    slds_ws = StateSpaceDynamics.SLDSSmoothWorkspace(Float64, slds, tsteps)
+
+    for trial in 1:ntrials
+        w = ones(Float64, 1, tsteps)
+        StateSpaceDynamics.smooth!(slds, tfs[trial], y[trial], w; ws=slds_ws)
+    end
+
+    x_samples = [Matrix{Float64}(undef, latent_dim, tsteps) for _ in 1:ntrials]
+    randn_buf = Vector{Float64}(undef, latent_dim)
+    StateSpaceDynamics.sample_posterior!(x_samples, rng, tfs, randn_buf)
+    StateSpaceDynamics.estep!(
+        slds,
+        tfs,
+        fb_storage,
+        dl,
+        y,
+        x_samples,
+        slds_ws;
+        obs_seq=obs_seq,
+        control_seq=control_seq,
+        seq_ends=seq_ends,
+    )
+
+    elbo = StateSpaceDynamics.elbo!(slds, tfs, fb_storage, y, slds_ws; seq_ends=seq_ends)
+
+    ll = sum(loglikelihood(lds, y[trial]) for trial in 1:ntrials)
+
+    @test isapprox(elbo, ll; rtol=1e-6)
 end
 
 function test_weighted_update_initial_state_mean(; rng=MersenneTwister(0xC0FFEE))
@@ -1646,8 +1714,8 @@ function test_SLDS_estep_basic_poisson(; rng=MersenneTwister(0xC0FFEE))
 
     seq_ends = cumsum(fill(tsteps, ntrials))
     total_T = last(seq_ends)
-    obs_inputs = collect(1:total_T)
-    latent_inputs = fill(nothing, total_T)
+    obs_seq = collect(1:total_T)
+    control_seq = fill(nothing, total_T)
 
     tfs = StateSpaceDynamics.initialize_FilterSmooth(slds.LDSs[1], fill(tsteps, ntrials))
     dl = StateSpaceDynamics.SLDSDiscreteLayer(slds.A, slds.πₖ, zeros(Float64, K, total_T))
@@ -1666,8 +1734,8 @@ function test_SLDS_estep_basic_poisson(; rng=MersenneTwister(0xC0FFEE))
         y,
         x_samples,
         slds_ws;
-        obs_inputs=obs_inputs,
-        latent_inputs=latent_inputs,
+        obs_seq=obs_seq,
+        control_seq=control_seq,
         seq_ends=seq_ends,
     )
 
@@ -1696,8 +1764,8 @@ function test_SLDS_mstep_updates_parameters_poisson(; rng=MersenneTwister(0xC0FF
 
     seq_ends = cumsum(fill(tsteps, ntrials))
     total_T = last(seq_ends)
-    obs_inputs = collect(1:total_T)
-    latent_inputs = fill(nothing, total_T)
+    obs_seq = collect(1:total_T)
+    control_seq = fill(nothing, total_T)
 
     tfs = StateSpaceDynamics.initialize_FilterSmooth(slds.LDSs[1], fill(tsteps, ntrials))
     dl = StateSpaceDynamics.SLDSDiscreteLayer(slds.A, slds.πₖ, zeros(Float64, K, total_T))
@@ -1726,13 +1794,13 @@ function test_SLDS_mstep_updates_parameters_poisson(; rng=MersenneTwister(0xC0FF
         y,
         x_samples,
         slds_ws;
-        obs_inputs=obs_inputs,
-        latent_inputs=latent_inputs,
+        obs_seq=obs_seq,
+        control_seq=control_seq,
         seq_ends=seq_ends,
     )
 
     StateSpaceDynamics.mstep!(
-        slds, tfs, fb_storage, dl, y, sws; obs_inputs=obs_inputs, seq_ends=seq_ends
+        slds, tfs, fb_storage, dl, y, sws; obs_seq=obs_seq, seq_ends=seq_ends
     )
 
     for k in 1:K
