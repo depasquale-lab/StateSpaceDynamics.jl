@@ -1003,17 +1003,16 @@ function test_SLDS_sample_posterior_basic(; rng=MersenneTwister(0xC0FFEE))
     z, x, y = rand(rng, slds, fill(tsteps, 1))
     w = ones(Float64, K, tsteps) ./ K
 
-    # Get smoothed posterior
+    # Smooth and draw one joint posterior sample in the same call.
     fs = StateSpaceDynamics.initialize_FilterSmooth(slds.LDSs[1], tsteps)
-    StateSpaceDynamics.smooth!(slds, fs, y[1], w)
-
-    # Sample from posterior
-    x_sample, entropy = StateSpaceDynamics.sample_posterior(fs)
+    x_sample = Matrix{Float64}(undef, latent_dim, tsteps)
+    StateSpaceDynamics.smooth!(slds, fs, y[1], w; x_sample=x_sample, rng=rng)
 
     @test size(x_sample) == (latent_dim, tsteps)
-    @test isfinite(entropy)
-    @test entropy > 0
     @test all(isfinite, x_sample)
+    # smooth! fills the joint posterior entropy (positive at these scales).
+    @test isfinite(fs.entropy)
+    @test fs.entropy > 0
 end
 
 function test_SLDS_estep_basic(; rng=MersenneTwister(0xC0FFEE))
@@ -1040,14 +1039,21 @@ function test_SLDS_estep_basic(; rng=MersenneTwister(0xC0FFEE))
 
     slds_ws = StateSpaceDynamics.SLDSSmoothWorkspace(Float64, slds, tsteps)
 
+    # Warm-start smooth draws the first joint sample into x_samples.
+    x_samples = [Matrix{Float64}(undef, latent_dim, tsteps) for _ in 1:ntrials]
     for trial in 1:ntrials
         w_uniform = ones(Float64, K, tsteps) ./ K
-        StateSpaceDynamics.smooth!(slds, tfs[trial], y[trial], w_uniform; ws=slds_ws)
+        StateSpaceDynamics.smooth!(
+            slds,
+            tfs[trial],
+            y[trial],
+            w_uniform;
+            ws=slds_ws,
+            x_sample=x_samples[trial],
+            rng=rng,
+        )
     end
 
-    x_samples = [Matrix{Float64}(undef, latent_dim, tsteps) for _ in 1:ntrials]
-    randn_buf = Vector{Float64}(undef, latent_dim)
-    StateSpaceDynamics.sample_posterior!(x_samples, Random.default_rng(), tfs, randn_buf)
     StateSpaceDynamics.estep!(
         slds,
         tfs,
@@ -1056,6 +1062,7 @@ function test_SLDS_estep_basic(; rng=MersenneTwister(0xC0FFEE))
         y,
         x_samples,
         slds_ws;
+        rng=rng,
         obs_seq=obs_seq,
         control_seq=control_seq,
         seq_ends=seq_ends,
@@ -1105,13 +1112,19 @@ function test_SLDS_mstep_updates_parameters(; rng=MersenneTwister(0xC0FFEE))
     slds_ws = StateSpaceDynamics.SLDSSmoothWorkspace(Float64, slds, tsteps)
     sws = StateSpaceDynamics.SmoothWorkspace(Float64, latent_dim, obs_dim, tsteps)
 
+    x_samples = [Matrix{Float64}(undef, latent_dim, tsteps) for _ in 1:ntrials]
     for trial in 1:ntrials
         w_uniform = ones(Float64, K, tsteps) ./ K
-        StateSpaceDynamics.smooth!(slds, tfs[trial], y[trial], w_uniform; ws=slds_ws)
+        StateSpaceDynamics.smooth!(
+            slds,
+            tfs[trial],
+            y[trial],
+            w_uniform;
+            ws=slds_ws,
+            x_sample=x_samples[trial],
+            rng=rng,
+        )
     end
-    x_samples = [Matrix{Float64}(undef, latent_dim, tsteps) for _ in 1:ntrials]
-    randn_buf = Vector{Float64}(undef, latent_dim)
-    StateSpaceDynamics.sample_posterior!(x_samples, Random.default_rng(), tfs, randn_buf)
     StateSpaceDynamics.estep!(
         slds,
         tfs,
@@ -1120,6 +1133,7 @@ function test_SLDS_mstep_updates_parameters(; rng=MersenneTwister(0xC0FFEE))
         y,
         x_samples,
         slds_ws;
+        rng=rng,
         obs_seq=obs_seq,
         control_seq=control_seq,
         seq_ends=seq_ends,
@@ -1233,12 +1247,12 @@ function test_SLDS_estep_elbo_components(; rng=MersenneTwister(0xC0FFEE))
 
     slds_ws = StateSpaceDynamics.SLDSSmoothWorkspace(Float64, slds, tsteps)
 
-    w_uniform = ones(Float64, K, tsteps) ./ K
-    StateSpaceDynamics.smooth!(slds, tfs[1], y[1], w_uniform; ws=slds_ws)
-
     x_samples = [Matrix{Float64}(undef, latent_dim, tsteps) for _ in 1:ntrials]
-    randn_buf = Vector{Float64}(undef, latent_dim)
-    StateSpaceDynamics.sample_posterior!(x_samples, Random.default_rng(), tfs, randn_buf)
+    w_uniform = ones(Float64, K, tsteps) ./ K
+    StateSpaceDynamics.smooth!(
+        slds, tfs[1], y[1], w_uniform; ws=slds_ws, x_sample=x_samples[1], rng=rng
+    )
+
     StateSpaceDynamics.estep!(
         slds,
         tfs,
@@ -1247,6 +1261,7 @@ function test_SLDS_estep_elbo_components(; rng=MersenneTwister(0xC0FFEE))
         y,
         x_samples,
         slds_ws;
+        rng=rng,
         obs_seq=obs_seq,
         control_seq=control_seq,
         seq_ends=seq_ends,
@@ -1261,13 +1276,9 @@ function test_SLDS_estep_elbo_components(; rng=MersenneTwister(0xC0FFEE))
 end
 
 #=
-K = 1 exactness: with a single regime and Gaussian emissions, q(x) from the
-Laplace smoother is the *exact* posterior (the log-joint is quadratic) and
-q(z) is degenerate, so the ELBO must equal the marginal log-likelihood
-log p(y) — computed here by the independent Kalman-filter implementation of
-`loglikelihood`. This pins down the entropy signs, the H[q(z)] chain entropy
-(zero for K = 1), and the ½·tr(H·Σ) covariance correction simultaneously:
-an error in any of them breaks the equality.
+K = 1, Gaussian emissions: q(x) is exact and q(z) degenerate, so the ELBO must
+equal the marginal log p(y) from the independent Kalman `loglikelihood`. Pins
+the entropy signs, H[q(z)], and the ½ tr(H Σ) correction at once.
 =#
 function test_SLDS_elbo_matches_LDS_marginal_K1(; rng=MersenneTwister(0xBEEF))
     latent_dim = 2
@@ -1291,14 +1302,14 @@ function test_SLDS_elbo_matches_LDS_marginal_K1(; rng=MersenneTwister(0xBEEF))
     fb_storage = StateSpaceDynamics._make_slds_fb_storage(dl, seq_ends)
     slds_ws = StateSpaceDynamics.SLDSSmoothWorkspace(Float64, slds, tsteps)
 
+    x_samples = [Matrix{Float64}(undef, latent_dim, tsteps) for _ in 1:ntrials]
     for trial in 1:ntrials
         w = ones(Float64, 1, tsteps)
-        StateSpaceDynamics.smooth!(slds, tfs[trial], y[trial], w; ws=slds_ws)
+        StateSpaceDynamics.smooth!(
+            slds, tfs[trial], y[trial], w; ws=slds_ws, x_sample=x_samples[trial], rng=rng
+        )
     end
 
-    x_samples = [Matrix{Float64}(undef, latent_dim, tsteps) for _ in 1:ntrials]
-    randn_buf = Vector{Float64}(undef, latent_dim)
-    StateSpaceDynamics.sample_posterior!(x_samples, rng, tfs, randn_buf)
     StateSpaceDynamics.estep!(
         slds,
         tfs,
@@ -1307,6 +1318,7 @@ function test_SLDS_elbo_matches_LDS_marginal_K1(; rng=MersenneTwister(0xBEEF))
         y,
         x_samples,
         slds_ws;
+        rng=rng,
         obs_seq=obs_seq,
         control_seq=control_seq,
         seq_ends=seq_ends,
@@ -1317,6 +1329,77 @@ function test_SLDS_elbo_matches_LDS_marginal_K1(; rng=MersenneTwister(0xBEEF))
     ll = sum(loglikelihood(lds, y[trial]) for trial in 1:ntrials)
 
     @test isapprox(elbo, ll; rtol=1e-6)
+end
+
+#=
+The joint sampler must reproduce the posterior's temporal correlations, not
+just the per-timestep marginals. The old marginal sampler got this wrong; it 
+drew each x_t independently, so the empirical lag-1 cross-covariance was ~0 
+instead of `p_smooth_tt1`). Draw many samples from a fixed posterior and check 
+the empirical moments against the smoother's stored mean, marginal covariance, 
+and lag-1 cross-covariance.
+=#
+function test_SLDS_joint_sample_reproduces_cross_covariance(; rng=MersenneTwister(0x5A3D))
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 8
+
+    lds = _make_gaussian_lds_dense(latent_dim, obs_dim; seed=7)
+    slds = SLDS(; A=ones(1, 1), πₖ=[1.0], LDSs=[lds])
+    z, x, y = rand(rng, slds, fill(tsteps, 1))
+    w = ones(Float64, 1, tsteps)
+
+    slds_ws = StateSpaceDynamics.SLDSSmoothWorkspace(Float64, slds, tsteps)
+    fs = StateSpaceDynamics.initialize_FilterSmooth(slds.LDSs[1], tsteps)
+
+    # Smooth once to fix the posterior (mean/cov held constant across draws).
+    StateSpaceDynamics.smooth!(slds, fs, y[1], w; ws=slds_ws)
+    μ = copy(fs.x_smooth)
+    P = copy(fs.p_smooth)
+    Ptt1 = copy(fs.p_smooth_tt1)  # [:,:,t] = Cov(x_t, x_{t-1})
+
+    # Draw many joint samples from the *same* fixed posterior.
+    nsamp = 40_000
+    xs = Matrix{Float64}(undef, latent_dim, tsteps)
+    mean_acc = zeros(latent_dim, tsteps)
+    cov_acc = zeros(latent_dim, latent_dim, tsteps)
+    xcov_acc = zeros(latent_dim, latent_dim, tsteps)  # E[(x_t-μ_t)(x_{t-1}-μ_{t-1})']
+    for _ in 1:nsamp
+        StateSpaceDynamics.smooth!(slds, fs, y[1], w; ws=slds_ws, x_sample=xs, rng=rng)
+        mean_acc .+= xs
+        for t in 1:tsteps
+            dt = xs[:, t] .- μ[:, t]
+            cov_acc[:, :, t] .+= dt * dt'
+            if t > 1
+                dtm1 = xs[:, t - 1] .- μ[:, t - 1]
+                xcov_acc[:, :, t] .+= dt * dtm1'
+            end
+        end
+    end
+    mean_emp = mean_acc ./ nsamp
+    cov_emp = cov_acc ./ nsamp
+    xcov_emp = xcov_acc ./ nsamp
+
+    # Empirical mean matches the smoothed mean.
+    @test isapprox(mean_emp, μ; atol=5e-2)
+
+    # Empirical marginal covariance matches p_smooth.
+    for t in 1:tsteps
+        @test isapprox(cov_emp[:, :, t], P[:, :, t]; atol=8e-2)
+    end
+
+    # Empirical lag-1 cross-covariance matches p_smooth_tt1.
+    for t in 2:tsteps
+        @test isapprox(xcov_emp[:, :, t], Ptt1[:, :, t]; atol=8e-2)
+    end
+
+    #=
+    Discriminating check: the true cross-covariances are materially nonzero
+    somewhere, so an independent-marginal sampler (xcov_emp ≈ 0 everywhere)
+    would fail the loop above. We assert on the max over t rather than each
+    timestep, since the smoother's cross-cov naturally tapers near the ends.
+    =#
+    @test maximum(norm(Ptt1[:, :, t]) for t in 2:tsteps) > 0.2
 end
 
 function test_weighted_update_initial_state_mean(; rng=MersenneTwister(0xC0FFEE))
@@ -1722,9 +1805,20 @@ function test_SLDS_estep_basic_poisson(; rng=MersenneTwister(0xC0FFEE))
     fb_storage = StateSpaceDynamics._make_slds_fb_storage(dl, seq_ends)
     slds_ws = StateSpaceDynamics.SLDSSmoothWorkspace(Float64, slds, tsteps)
 
+    # Warm-start smooth draws the first joint sample into x_samples.
     x_samples = [Matrix{Float64}(undef, latent_dim, tsteps) for _ in 1:ntrials]
-    randn_buf = Vector{Float64}(undef, latent_dim)
-    StateSpaceDynamics.sample_posterior!(x_samples, Random.default_rng(), tfs, randn_buf)
+    for trial in 1:ntrials
+        w_uniform = ones(Float64, K, tsteps) ./ K
+        StateSpaceDynamics.smooth!(
+            slds,
+            tfs[trial],
+            y[trial],
+            w_uniform;
+            ws=slds_ws,
+            x_sample=x_samples[trial],
+            rng=rng,
+        )
+    end
 
     StateSpaceDynamics.estep!(
         slds,
@@ -1734,6 +1828,7 @@ function test_SLDS_estep_basic_poisson(; rng=MersenneTwister(0xC0FFEE))
         y,
         x_samples,
         slds_ws;
+        rng=rng,
         obs_seq=obs_seq,
         control_seq=control_seq,
         seq_ends=seq_ends,
@@ -1774,18 +1869,24 @@ function test_SLDS_mstep_updates_parameters_poisson(; rng=MersenneTwister(0xC0FF
     sws = StateSpaceDynamics.SmoothWorkspace(Float64, latent_dim, obs_dim, tsteps)
 
     #=
-    Warm-start smooth so sample_posterior! has a posterior to draw from. estep!
-    then re-smooths with the γ weights, filling the posterior covariances the
-    M-step aggregator reads (estep! → mstep! here; elbo! is skipped).
+    Warm-start smooth draws the first joint sample into x_samples. estep! then
+    re-smooths with the γ weights (and redraws), filling the posterior
+    covariances the M-step aggregator reads (estep! → mstep! here; elbo! skipped).
     =#
+    x_samples = [Matrix{Float64}(undef, latent_dim, tsteps) for _ in 1:ntrials]
     for trial in 1:ntrials
         w_uniform = ones(Float64, K, tsteps) ./ K
-        StateSpaceDynamics.smooth!(slds, tfs[trial], y[trial], w_uniform; ws=slds_ws)
+        StateSpaceDynamics.smooth!(
+            slds,
+            tfs[trial],
+            y[trial],
+            w_uniform;
+            ws=slds_ws,
+            x_sample=x_samples[trial],
+            rng=rng,
+        )
     end
 
-    x_samples = [Matrix{Float64}(undef, latent_dim, tsteps) for _ in 1:ntrials]
-    randn_buf = Vector{Float64}(undef, latent_dim)
-    StateSpaceDynamics.sample_posterior!(x_samples, Random.default_rng(), tfs, randn_buf)
     StateSpaceDynamics.estep!(
         slds,
         tfs,
@@ -1794,6 +1895,7 @@ function test_SLDS_mstep_updates_parameters_poisson(; rng=MersenneTwister(0xC0FF
         y,
         x_samples,
         slds_ws;
+        rng=rng,
         obs_seq=obs_seq,
         control_seq=control_seq,
         seq_ends=seq_ends,

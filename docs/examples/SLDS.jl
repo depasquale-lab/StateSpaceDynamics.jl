@@ -43,7 +43,7 @@ obs_dim = 10
 K = 2
 
 A_hmm = [
-    0.92 0.08;
+    0.92 0.08
     0.06 0.94
 ]
 πₖ = [1.0, 0.0]
@@ -170,12 +170,13 @@ dl = StateSpaceDynamics.SLDSDiscreteLayer(
 fb_storage = StateSpaceDynamics._make_slds_fb_storage(dl, seq_ends)
 slds_ws = StateSpaceDynamics.SLDSSmoothWorkspace(Float64, learned_model, T)
 
-w_uniform = fill(1.0 / K, K, T)
-StateSpaceDynamics.smooth!(learned_model, tfs[1], y, w_uniform; ws=slds_ws)
-
+# The warm-start smooth draws the first posterior sample into `x_samples`; the
+# E-step then fills the mode posterior from it and re-smooths.
 x_samples = [Matrix{Float64}(undef, ld.latent_dim, T)]
-randn_buf = Vector{Float64}(undef, ld.latent_dim)
-StateSpaceDynamics.sample_posterior!(x_samples, rng, tfs, randn_buf)
+w_uniform = fill(1.0 / K, K, T)
+StateSpaceDynamics.smooth!(
+    learned_model, tfs[1], y, w_uniform; ws=slds_ws, x_sample=x_samples[1], rng=rng
+)
 StateSpaceDynamics.estep!(
     learned_model,
     tfs,
@@ -184,6 +185,7 @@ StateSpaceDynamics.estep!(
     [y],
     x_samples,
     slds_ws;
+    rng=rng,
     obs_seq=obs_seq,
     control_seq=control_seq,
     seq_ends=seq_ends,

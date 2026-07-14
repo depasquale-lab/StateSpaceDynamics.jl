@@ -9,10 +9,7 @@ Switching LDS (SLDS)
 
     Hessian:        hessian!(ws, slds, x, y, w)
 
-    Smooth:         smooth!(slds, fs, y, w)
-
-    Posterior:      sample_posterior!(x_out, rng, tfs, randn_buf)
-                    sample_posterior(rng, fs)
+    Smooth:         smooth!(slds, fs, y, w; x_sample, rng)  # optional joint draw
 
     E-Step:         estep!(slds, tfs, fb_storage, dl, y, x_samples, slds_ws)
 
@@ -32,9 +29,11 @@ function _make_slds_fb_storage(
     dl::SLDSDiscreteLayer{T}, seq_ends::AbstractVector{Int}
 ) where {T}
     total_T = last(seq_ends)
-    # HMMs.jl "observations" are just timestep indices into dl.logL; there is
-    # no control sequence. These are unrelated to the LDS latent_inputs /
-    # obs_inputs control-input kwargs.
+    #=
+    HMMs.jl "observations" are just timestep indices into dl.logL; there is no
+    control sequence. These are unrelated to the LDS latent_inputs / obs_inputs
+    control-input kwargs.
+    =#
     obs_seq = 1:total_T
     control_seq = fill(nothing, total_T)
     return HMMs.initialize_forward_backward(
@@ -485,6 +484,8 @@ function smooth!(
     max_iter::Int=20,
     tol::T=T(1e-6),
     linesearch::Union{Nothing,AbstractLineSearch}=BackTrackingLS{T}(),
+    x_sample::Union{Nothing,AbstractMatrix{T}}=nothing,
+    rng::AbstractRNG=Random.default_rng(),
 ) where {T<:Real}
     latent_dim = slds.LDSs[1].latent_dim
     tsteps = size(y, 2)
@@ -566,6 +567,17 @@ function smooth!(
 
     fs.entropy = gaussian_entropy_from_logdet(logdet_precision, n_active)
 
+    #=
+    Optional joint draw from q(x), while `btd` still holds the precision factors.
+    `ws.opt.X0` is free after Newton; reuse it for the standard-normal input.
+    =#
+    if x_sample !== nothing
+        z = view(ws.opt.X0, 1:n_active)
+        randn!(rng, z)
+        block_tridiagonal_sample!(z, btd, tsteps)
+        @views x_sample .= fs.x_smooth .+ reshape(z, latent_dim, tsteps)
+    end
+
     @views for t in 1:tsteps
         fs.p_smooth[:, :, t] .= Symmetrize!(fs.p_smooth[:, :, t])
     end
@@ -581,118 +593,24 @@ function smooth(slds::SLDS, y::AbstractMatrix{T}, w::AbstractMatrix{T}) where {T
 end
 
 """
-    _jittered_cholesky(Σ::Symmetric; min_jitter=1e-8)
-
-Cholesky factorization with escalating diagonal jitter. Tries `Σ` as-is, then
-`Σ + jitter*I` with `jitter = min_jitter, 10·min_jitter, …` for up to five
-escalations. Uses `check=false` + `issuccess` so no attempt can throw
-mid-escalation; if even the largest jitter fails, throws
-`NotPositiveDefiniteError` with the offending minimum eigenvalue.
-"""
-function _jittered_cholesky(Σ::Symmetric{T}; min_jitter::T=T(1e-8)) where {T<:Real}
-    jitter = zero(T)
-    for _ in 1:6
-        F = cholesky(Σ + jitter * I; check=false)
-        if issuccess(F)
-            jitter > min_jitter && @warn(
-                "Posterior covariance required jitter=$jitter to factorize", maxlog = 1
-            )
-            return F
-        end
-        jitter = jitter == zero(T) ? min_jitter : jitter * T(10)
-    end
-    return throw(
-        NotPositiveDefiniteError("posterior covariance", Float64(minimum(eigvals(Σ))))
-    )
-end
-
-"""
-    sample_posterior!(x_out, rng, tfs, randn_buf)
-
-Sample one continuous-state trajectory per trial from the posterior, in place.
-`x_out` is a `Vector{Matrix{T}}` with one matrix per trial sized at that trial's
-length; trial lengths may differ. `randn_buf` (length `latent_dim`) is reused.
-
-Note: draws each timestep independently from the marginal
-`N(x_smooth_t, p_smooth_t)`, ignoring the posterior's temporal correlations
-(`p_smooth_tt1`). This factorized approximation biases the discrete-state
-update toward large-`Q` regimes; joint sampling is tracked as future work.
-"""
-function sample_posterior!(
-    x_out::AbstractVector{<:AbstractMatrix{T}},
-    rng::AbstractRNG,
-    tfs::TrialFilterSmooth{T},
-    randn_buf::Vector{T},
-) where {T<:Real}
-    ntrials = length(tfs.FilterSmooths)
-
-    for trial in 1:ntrials
-        fs = tfs[trial]
-        x_trial = x_out[trial]
-        tsteps = size(x_trial, 2)
-        for t in 1:tsteps
-            chol = _jittered_cholesky(Symmetric(fs.p_smooth[:, :, t]))
-            randn!(rng, randn_buf)
-            lmul!(chol.L, randn_buf)
-            x_trial[:, t] .= fs.x_smooth[:, t] .+ randn_buf
-        end
-    end
-    return x_out
-end
-
-"""
-    sample_posterior(rng::AbstractRNG, fs::FilterSmooth{T}) where {T<:Real}
-
-Sample a trajectory from the posterior over continuous states and compute its entropy.
-
-Returns:
-- x_sample: matrix of size (latent_dim, tsteps) representing one sample from
-  q(x) = ∏ₜ N(x_t | x_smooth_t, p_smooth_t)
-- entropy: H[q(x)] = ∑ₜ H[N(x_t | x_smooth_t, p_smooth_t)]
-"""
-function sample_posterior(rng::AbstractRNG, fs::FilterSmooth{T}) where {T<:Real}
-    latent_dim, tsteps = size(fs.x_smooth)
-    x_sample = similar(fs.x_smooth)
-    entropy = zero(T)
-
-    for t in 1:tsteps
-        μ = fs.x_smooth[:, t]
-        Σ = Symmetric(fs.p_smooth[:, :, t])
-
-        chol = _jittered_cholesky(Σ)
-
-        # Sample using the Cholesky factor
-        Σ_chol = chol.L
-        x_sample[:, t] = μ + Σ_chol * randn(rng, T, latent_dim)
-
-        # Accumulate entropy using log determinant from Cholesky
-        # log|Σ| = 2 * sum(log(diag(L))) where Σ = L*L'
-        logdet_Σ = 2 * sum(log, diag(Σ_chol))
-        entropy += 0.5 * (latent_dim * (1 + log(2π)) + logdet_Σ)
-    end
-
-    return x_sample, entropy
-end
-
-# Convenience method
-function sample_posterior(fs::FilterSmooth{T}) where {T<:Real}
-    return sample_posterior(Random.default_rng(), fs)
-end
-
-"""
-    estep!(slds, tfs, fb_storage, dl, y, x_samples, slds_ws; obs_seq, control_seq, seq_ends)
+    estep!(slds, tfs, fb_storage, dl, y, x_samples, slds_ws; rng, obs_seq, control_seq, seq_ends)
 
 E-step for SLDS using a single sample from the continuous posterior. Updates both
 variational posteriors in coordinate-ascent order:
 
-- Fills `dl.logL` (`K × sum(T_i)`) with per-state log-likelihoods from sampled continuous states
+- Fills `dl.logL` (`K × sum(T_i)`) with per-state log-likelihoods from the continuous
+  trajectory sampled at the end of the previous smooth (`x_samples`, filled either by the
+  `fit!` warm-start or by the prior E-step iteration)
 - Updates the discrete posterior q(z) via forward-backward (HiddenMarkovModels.jl, one
   storage covers all trials; HMMs.jl `@threads` across trials internally)
 - Updates the continuous posterior q(x) by running the Laplace/Newton smoother on each
   trial with the freshly-updated discrete weights `γ`, filling `tfs[*].x_smooth`,
-  `tfs[*].p_smooth`, and `tfs[*].entropy`.
+  `tfs[*].p_smooth`, and `tfs[*].entropy`, and drawing the next joint posterior sample
+  into `x_samples[trial]` for the following iteration (an exact draw from q(x) via the
+  smoother's precision factors, see `block_tridiagonal_sample!`).
 
-`obs_seq`/`control_seq` are the HMMs.jl placeholder sequences built in `fit!`
+`x_samples` is thus read (to fill `dl.logL`) then overwritten (with the fresh draw) within
+each call. `obs_seq`/`control_seq` are the HMMs.jl placeholder sequences built in `fit!`
 (timestep indices / `nothing`s) — unrelated to the LDS control-input kwargs
 `latent_inputs`/`obs_inputs`, which the SLDS path does not support.
 """
@@ -704,6 +622,7 @@ function estep!(
     y::AbstractVector{<:AbstractMatrix{T}},
     x_samples::AbstractVector{<:AbstractMatrix{T}},
     slds_ws::SLDSSmoothWorkspace{T};
+    rng::AbstractRNG=Random.default_rng(),
     obs_seq::AbstractVector,
     control_seq::AbstractVector,
     seq_ends::AbstractVector{Int},
@@ -711,7 +630,7 @@ function estep!(
     ntrials = length(y)
     K = length(slds.LDSs)
 
-    # Fill per-trial slices of dl.logL from the sampled continuous trajectory.
+    # Fill per-trial slices of dl.logL from the previously-sampled trajectory.
     for trial in 1:ntrials
         t1, t2 = HMMs.seq_limits(seq_ends, trial)
         y_trial = y[trial]
@@ -729,11 +648,17 @@ function estep!(
         fb_storage, dl, obs_seq, control_seq; seq_ends=seq_ends, transition_marginals=true
     )
 
-    # Update q(x): smooth each trial's continuous states with the new discrete weights γ.
+    #=
+    Update q(x): re-smooth each trial with the new weights γ, and draw the next
+    sample into x_samples[trial] on the way out. Overwriting x_samples here is
+    fine — the fill loop above already used the previous draw.
+    =#
     for trial in 1:ntrials
         t1, t2 = HMMs.seq_limits(seq_ends, trial)
         w = view(fb_storage.γ, :, t1:t2)  # K × Tsteps
-        smooth!(slds, tfs[trial], y[trial], w; ws=slds_ws)
+        smooth!(
+            slds, tfs[trial], y[trial], w; ws=slds_ws, x_sample=x_samples[trial], rng=rng
+        )
     end
 
     return nothing
@@ -855,8 +780,7 @@ function elbo!(
         fs = tfs[trial]
         x_smooth_trial = fs.x_smooth
 
-        # E_q[log p(y, x | z)], part 1: plug-in at the posterior mean,
-        # weighted by the discrete posteriors.
+        # E_q[log p(y, x | z)], plug-in at the posterior mean, weighted by γ.
         for k in 1:K
             ll = view(slds_ws.ll_tmp, 1:Tsteps)
             joint_loglikelihood!(
@@ -868,13 +792,10 @@ function elbo!(
         end
 
         #=
-        E_q[log p(y, x | z)], part 2: covariance correction ½ tr(H Σ).
-        `hessian!` fills the weighted Hessian blocks (un-negated) into
-        `slds_ws.btd`; `Σ`'s blocks are the smoother's `p_smooth` (diagonal)
-        and `p_smooth_tt1[:,:,t] = Cov(x_t, x_{t-1})` (off-diagonal). The two
-        off-diagonal traces are transposes of each other; both are computed
-        explicitly rather than doubling one so the identity doesn't silently
-        rely on exact symmetry of the stored blocks.
+        ½ tr(H Σ) covariance correction. H = weighted Hessian (hessian! writes
+        it un-negated into slds_ws.btd); Σ = p_smooth on the diagonal,
+        p_smooth_tt1[:,:,t] = Cov(x_t, x_{t-1}) off it. Sum both off-diagonal
+        traces rather than doubling one — don't assume exact block symmetry.
         =#
         hessian!(slds_ws, slds, x_smooth_trial, y_trial, w)
         H_diag = slds_ws.btd.H_diag
@@ -895,9 +816,8 @@ function elbo!(
         end
 
         #=
-        E_q[log p(z_t | z_{t-1})] = sum_t sum_{i,j} ξ[t][i,j] * log A[i,j].
-        ξ is indexed by global timestep; the last entry of each trial (ξ[t2]) is zero
-        by FB convention so we iterate t1..t2-1.
+        E_q[log p(z_t | z_{t-1})] = Σ_t Σ_ij ξ_t[i,j] log A[i,j]. ξ is global-
+        indexed; ξ[t2] is zero by FB convention, so iterate t1..t2-1.
         =#
         for t in t1:(t2 - 1)
             ξt = fb_storage.ξ[t]
@@ -910,10 +830,9 @@ function elbo!(
         trial_elbo += fs.entropy
 
         #=
-        + H[q(z)]: entropy of the FB chain posterior
-        q(z₁:T) = γ₁(z₁) ∏_t ξ_t(z_t, z_{t+1}) / γ_t(z_t), so
-        H = −Σ_k γ₁ log γ₁ − Σ_t Σ_ij ξ_t(i,j) [log ξ_t(i,j) − log γ_t(i)].
-        ξ_t(i,j) > 0 implies γ_t(i) ≥ ξ_t(i,j) > 0, so the inner log is safe.
+        + H[q(z)], the FB chain entropy
+        −Σ_k γ₁ log γ₁ − Σ_t Σ_ij ξ_t[i,j] (log ξ_t[i,j] − log γ_t[i]).
+        ξ_t[i,j] > 0 ⇒ γ_t[i] > 0, so both logs are safe.
         =#
         for k in 1:K
             wk1 = w[k, 1]
@@ -1023,6 +942,7 @@ function fit!(
     y::AbstractVector{<:AbstractMatrix{T}};
     max_iter::Int=50,
     progress::Bool=true,
+    rng::AbstractRNG=Random.default_rng(),
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
     K = length(slds.LDSs)
     latent_dim = slds.LDSs[1].latent_dim
@@ -1051,7 +971,6 @@ function fit!(
     sws = SmoothWorkspace(T, latent_dim, obs_dim, T_max)
     slds_ws = SLDSSmoothWorkspace(T, slds, T_max)
     x_samples = [Matrix{T}(undef, latent_dim, Ti) for Ti in tsteps_per_trial]
-    randn_buf = Vector{T}(undef, latent_dim)
 
     prog = if progress
         Progress(max_iter; desc="Fitting SLDS via EM...", barlen=50, showspeed=true)
@@ -1060,19 +979,30 @@ function fit!(
     end
     elbos = Vector{T}(undef, max_iter)
 
-    # Warm-start: smooth once per trial with uniform discrete weights.
+    #=
+    Warm-start: smooth each trial once with uniform weights, drawing the first
+    sample into x_samples for the first E-step to consume.
+    =#
     for trial in 1:ntrials
         Ti = tsteps_per_trial[trial]
         w_uniform = fill(one(T) / K, K, Ti)
-        smooth!(slds, tfs[trial], y[trial], w_uniform; ws=slds_ws)
+        smooth!(
+            slds,
+            tfs[trial],
+            y[trial],
+            w_uniform;
+            ws=slds_ws,
+            x_sample=x_samples[trial],
+            rng=rng,
+        )
     end
 
     for iter in 1:max_iter
 
-        # Sample one continuous-state trajectory per trial from the posterior.
-        sample_posterior!(x_samples, Random.default_rng(), tfs, randn_buf)
-
-        # E-step: compute discrete posteriors and smooth continuous states given sampled trajectories.
+        #=
+        E-step: fill q(z) from the current samples, run forward-backward,
+        re-smooth q(x), and draw the next samples for the following iteration.
+        =#
         estep!(
             slds,
             tfs,
@@ -1081,6 +1011,7 @@ function fit!(
             y,
             x_samples,
             slds_ws;
+            rng=rng,
             obs_seq=obs_seq,
             control_seq=control_seq,
             seq_ends=seq_ends,

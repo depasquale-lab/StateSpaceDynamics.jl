@@ -661,6 +661,37 @@ function block_tridiagonal_backsubst!(
 end
 
 """
+    block_tridiagonal_sample!(x, ws, n)
+
+Draw a zero-mean sample from `N(0, H⁻¹)`, reusing the block-LDLᵀ factors of the
+precision `H` that `block_tridiagonal_inverse_logdet!` cached in `ws`
+
+`x` must enter holding `z ~ N(0, I)` and is overwritten with the sample; add the
+mean afterwards.
+"""
+function block_tridiagonal_sample!(
+    x::AbstractVector{T}, ws::BlockTridiagonalWorkspace{T}, n::Int
+) where {T<:Real}
+    bs = ws.block_size
+    D = ws.D
+
+    # vᵢ = Uᵢ⁻¹ zᵢ, covariance Sᵢ⁻¹.
+    for i in 1:n
+        rng_i = ((i - 1) * bs + 1):(i * bs)
+        @views ldiv!(UpperTriangular(ws.chol_factors[i]), x[rng_i])
+    end
+
+    # x = L⁻ᵀ v by back-substitution.
+    for i in (n - 1):-1:1
+        idx = ((i - 1) * bs + 1):(i * bs)
+        idx_next = (i * bs + 1):((i + 1) * bs)
+        @views mul!(x[idx], D[i + 1], x[idx_next], -one(T), one(T))
+    end
+
+    return x
+end
+
+"""
     block_tridiagonal_solve!(x, A, B, C, b, ws)
 
 Solve a block tridiagonal system `H * x = b` where H has:
