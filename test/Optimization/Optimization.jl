@@ -55,6 +55,37 @@ function test_backtracking_returns_best_on_exhaustion()
     return nothing
 end
 
+function test_cubic_step_root_selection()
+    @testset "phase-2 cubic picks the sense-matching stationary point (A9)" begin
+        # check we step to the right stationary point of the cubic interpolant
+        a, b, disc = 1.0, 0.0, 9.0
+        @test SSDopt._cubic_step(Val(:min), a, b, disc) ≈ 1.0
+        @test SSDopt._cubic_step(Val(:max), a, b, disc) ≈ -1.0
+    end
+    return nothing
+end
+
+function test_backtracking_max_sense_increases()
+    @testset "backtracking! :max increases ϕ and advances x by α·p" begin
+        # ϕ(s) = -s², maximize from s = 2 along the ascent direction p = -1.
+        x = [2.0]
+        ϕ!() = -x[1]^2
+        ls = SSDopt.BackTrackingLS{Float64}()
+        ϕ0 = ϕ!()                     # -4.0
+        g = [-2 * x[1]]               # ∇ϕ = -2s = -4
+        p = [-1.0]                    # ascent direction (toward 0)
+        dϕ0 = g[1] * p[1]             # = 4 > 0 for an ascent step
+
+        α, ϕ_new = SSDopt.backtracking!(Val(:max), ls, x, p, ϕ!, ϕ0, dϕ0)
+
+        @test α > 0
+        @test ϕ_new > ϕ0              # Armijo (:max) accepted a strict increase
+        @test x ≈ [2.0 + α * p[1]]    # x mutated in place to x_start + α·p
+        @test ϕ_new ≈ ϕ!()            # returned value matches ϕ at the returned x
+    end
+    return nothing
+end
+
 # Shared minimal Newton setup: minimize ½(x-t)' H (x-t) with H SPD. The exact
 # Newton direction solves H p = -g, landing on the target in a single step.
 function _newton_quadratic_problem()

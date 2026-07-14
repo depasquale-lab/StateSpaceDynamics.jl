@@ -161,11 +161,12 @@ positive definite in the presence of floating-point noise. Ported from
 StateSpaceAnalysis.
 """
 function tol_PD(
-    A_sym::Union{Symmetric{T},Hermitian{T}}; tol::T=1e-6
+    A_sym::Union{Symmetric{T},Hermitian{T}}; tol::Real=1e-6
 )::PDMat{T,Matrix{T}} where {T<:Real}
+    tolT = convert(T, tol)
     F = eigen!(A_sym)
     λ_max = F.values[end]
-    scale = λ_max * tol
+    scale = λ_max * tolT
     slope = λ_max - scale        # = λ_max * (1 - tol)
     for i in eachindex(F.values)
         r = max(F.values[i] / λ_max, zero(T))

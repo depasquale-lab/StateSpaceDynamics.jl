@@ -393,26 +393,13 @@ function validate_SLDS(slds::SLDS)
         throw(DimensionMismatchError("size(A, 1) vs number of LDSs", lds_count, k))
     end
 
-    # Validate transition matrix rows
+    # Validate transition matrix rows and the initial distribution. Delegating to
+    # validate_probvec keeps a single source of truth for the type-scaled
+    # tolerance (see A12) instead of re-hardcoding 1.0/atol=1e-10 here.
     for i in 1:k
-        row = slds.A[i, :]
-        sum_val = sum(row)
-        has_neg = any(x -> x < 0, row)
-        has_gt1 = any(x -> x > 1, row)
-
-        if !isapprox(sum_val, 1.0; atol=1e-10) || has_neg || has_gt1
-            throw(InvalidProbabilityVectorError("A[$i, :]", sum_val, has_neg, has_gt1))
-        end
+        validate_probvec(@view(slds.A[i, :]); name="A[$i, :]")
     end
-
-    # Validate initial distribution
-    sum_val = sum(slds.πₖ)
-    has_neg = any(x -> x < 0, slds.πₖ)
-    has_gt1 = any(x -> x > 1, slds.πₖ)
-
-    if !isapprox(sum_val, 1.0; atol=1e-10) || has_neg || has_gt1
-        throw(InvalidProbabilityVectorError("πₖ", sum_val, has_neg, has_gt1))
-    end
+    validate_probvec(slds.πₖ; name="πₖ")
 
     # Checks for LDS models
     latent_dim = slds.LDSs[1].latent_dim
@@ -458,7 +445,9 @@ function validate_probvec(v::AbstractVector{T}; name::String="vector") where {T<
     has_neg = any(x -> x < 0, v)
     has_gt1 = any(x -> x > 1, v)
 
-    if !isapprox(sum_val, one(T); atol=1e-10) || has_neg || has_gt1
+    # Type-scaled tolerance:
+    atol = sqrt(eps(float(T)))
+    if !isapprox(sum_val, one(T); atol=atol) || has_neg || has_gt1
         throw(InvalidProbabilityVectorError(name, sum_val, has_neg, has_gt1))
     end
 

@@ -243,6 +243,8 @@ using SSDTest
     @testset verbose = true "Optimization" begin
         include("Optimization/Optimization.jl")
         test_backtracking_min_sense_decreases()
+        test_backtracking_max_sense_increases()
+        test_cubic_step_root_selection()
         test_backtracking_returns_best_on_exhaustion()
         test_newton_smooth_no_linesearch_converges()
         test_newton_smooth_returns_false_on_linesearch_stall()
@@ -255,6 +257,7 @@ using SSDTest
         test_block_tridgm()
         test_gaussian_entropy()
         test_valid_Σ()
+        test_tol_PD_type_preservation()
 
         @testset "Block Tridiagonal Inverse" begin
             test_block_tridiagonal_inverse_mutating()
@@ -311,6 +314,7 @@ using SSDTest
         @testset verbose = true "PPCA" begin
             test_PPCA_with_params()
             test_PPCA_E_and_M_Step()
+            test_PPCA_mstep_sigma_uses_new_W()
             test_PPCA_fit()
             test_PPCA_samples()
         end

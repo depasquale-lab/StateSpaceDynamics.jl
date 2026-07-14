@@ -82,6 +82,41 @@ function test_PPCA_fit()
     @test size(ll) == ()
 end
 
+function test_PPCA_mstep_sigma_uses_new_W()
+    #=
+    the σ² M-step must use the updated W_new (Tipping–Bishop), not the
+    pre-update W. Recompute the closed-form σ² independently from the model's
+    returned W_new and from the old W0; the model's σ² must equal the former and
+    differ from the latter.
+    =#
+    @testset "PPCA: σ² M-step uses updated W_new, not old W" begin
+        rng = StableRNG(20260714)
+        D, k, N = 4, 2, 120
+        W0 = randn(rng, D, k)
+        μ = randn(rng, D)
+        X = randn(rng, D, N) .+ μ
+        ppca = ProbabilisticPCA(copy(W0), 0.7, copy(μ))
+
+        E_z, E_zz = StateSpaceDynamics.estep(ppca, X)
+        StateSpaceDynamics.mstep!(ppca, X, E_z, E_zz)
+        W_new = ppca.W
+
+        sigma_from(Wmat) = begin
+            WW = Wmat' * Wmat
+            s = 0.0
+            for i in 1:N
+                xc = X[:, i] .- μ
+                s += sum(abs2, xc) - 2 * dot(E_z[:, i], Wmat' * xc) + tr(E_zz[:, :, i] * WW)
+            end
+            s / (N * D)
+        end
+
+        @test ppca.σ² ≈ sigma_from(W_new) rtol = 1e-9      # correct (updated W)
+        @test !isapprox(ppca.σ², sigma_from(W0); rtol=1e-6)  # old formula differs
+    end
+    return nothing
+end
+
 function test_PPCA_samples()
     #=
     Seeded so the empirical-mean / noise-level tolerances aren't RNG-flaky

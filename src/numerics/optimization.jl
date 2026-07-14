@@ -22,6 +22,15 @@ end
 @inline _improves(::Val{:max}, ϕ, ϕ0) = isfinite(ϕ) && ϕ > ϕ0
 @inline _improves(::Val{:min}, ϕ, ϕ0) = isfinite(ϕ) && ϕ < ϕ0
 
+#= Stationary point of the phase-2 cubic to step toward. The interpolant
+c(α) = aα³ + bα² + dϕ0·α + ϕ0 has two stationary points (-b ± √disc)/(3a);
+c''(α) = ±2√disc, so the +root is the local MINIMIZER and the -root the local
+MAXIMIZER.
+=#
+@inline _cubic_step(::Val{:max}, a, b, disc) = (-b - sqrt(disc)) / (3 * a)
+@inline _cubic_step(::Val{:min}, a, b, disc) = (-b + sqrt(disc)) / (3 * a)
+
+
 """
     backtracking!(sense, ls, x, p, ϕ!, ϕ0, dϕ0)
 
@@ -95,7 +104,7 @@ function backtracking!(
                 αtmp = -dϕ0 / (2 * b)
             else
                 disc = max(b * b - 3 * a * dϕ0, zero(T))
-                αtmp = (-b + sqrt(disc)) / (3 * a)
+                αtmp = _cubic_step(sense, a, b, disc)
             end
         end
 

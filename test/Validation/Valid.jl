@@ -7,12 +7,23 @@ function test_validate_probvec()
     @test validate_probvec([1.0]) === nothing
     @test validate_probvec(Float32[0.3, 0.7]) === nothing
 
+    #=
+    A12: Float32 vectors whose sum isn't exactly 1.0f0. `fill(0.1f0, 10)` sums to
+    1.0000001f0 and a normalizedrandom Float32 vector generally lands ~1e-7 off.
+    =#
+    @test validate_probvec(fill(0.1f0, 10)) === nothing
+    v32 = rand(StableRNG(7), Float32, 8)
+    v32 ./= sum(v32)
+    @test validate_probvec(v32) === nothing
+
     # Invalid probability vectors - should throw
     @test_throws InvalidProbabilityVectorError validate_probvec([0.3, 0.8])  # Sum > 1
     @test_throws InvalidProbabilityVectorError validate_probvec([0.3, 0.5])  # Sum < 1
     @test_throws InvalidProbabilityVectorError validate_probvec([-0.1, 1.1])  # Negative value
     @test_throws InvalidProbabilityVectorError validate_probvec([0.5, 0.5, 0.5])  # Sum > 1
     @test_throws InvalidProbabilityVectorError validate_probvec([0.0, 0.0])  # Sum = 0
+    # The loosened tolerance still rejects a genuinely-invalid Float32 vector.
+    @test_throws InvalidProbabilityVectorError validate_probvec(Float32[0.3, 0.8])
 end
 
 function test_validate_LDS_gaussian()

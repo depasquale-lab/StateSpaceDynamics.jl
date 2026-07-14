@@ -224,6 +224,27 @@ function test_valid_Σ()
     @test !valid_Σ([2.0 0.3; 0.7 1.0])
 end
 
+function test_tol_PD_type_preservation()
+    @testset "tol_PD preserves eltype across Float32/Float64 (A11)" begin
+        for T in (Float32, Float64)
+            A = Symmetric(T[2 0.5; 0.5 1])
+            P = StateSpaceDynamics.tol_PD(A)                 # default tol
+            @test P isa PDMat{T,Matrix{T}}
+            @test eltype(P) === T
+            @test isposdef(Matrix(P))
+
+            P2 = StateSpaceDynamics.tol_PD(A; tol=1e-5)
+            @test eltype(P2) === T
+        end
+
+        # Eigen-floor actually lifts a near-singular direction to tol·λ_max.
+        Asing = Symmetric([1.0 0.0; 0.0 1e-14])
+        Pf = StateSpaceDynamics.tol_PD(Asing; tol=1e-6)
+        @test minimum(eigen(Matrix(Pf)).values) ≈ 1e-6 rtol = 1e-6
+    end
+    return nothing
+end
+
 function test_info_update()
     #=
     `info_update!(cache, P0, CiRC)` returns `inv(inv(P0) + CiRC)` as a PDMat,
