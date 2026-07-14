@@ -30,7 +30,6 @@ MAXIMIZER.
 @inline _cubic_step(::Val{:max}, a, b, disc) = (-b - sqrt(disc)) / (3 * a)
 @inline _cubic_step(::Val{:min}, a, b, disc) = (-b + sqrt(disc)) / (3 * a)
 
-
 """
     backtracking!(sense, ls, x, p, ϕ!, ϕ0, dϕ0)
 

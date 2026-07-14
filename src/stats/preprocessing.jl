@@ -93,7 +93,8 @@ function mstep!(
         x_centered = @view(X[:, i]) .- ppca.μ
         ez = @view(E_z[:, i])
         ezz = @view(E_zz[:, :, i])
-        σ²_sum += sum(abs2, x_centered) - 2 * dot(ez, W_new' * x_centered) + tr(ezz * WW_new)
+        σ²_sum +=
+            sum(abs2, x_centered) - 2 * dot(ez, W_new' * x_centered) + tr(ezz * WW_new)
     end
 
     ppca.z = E_z

@@ -106,7 +106,8 @@ function test_PPCA_mstep_sigma_uses_new_W()
             s = 0.0
             for i in 1:N
                 xc = X[:, i] .- μ
-                s += sum(abs2, xc) - 2 * dot(E_z[:, i], Wmat' * xc) + tr(E_zz[:, :, i] * WW)
+                s +=
+                    sum(abs2, xc) - 2 * dot(E_z[:, i], Wmat' * xc) + tr(E_zz[:, :, i] * WW)
             end
             s / (N * D)
         end
