@@ -333,8 +333,9 @@ Suf-based Poisson ELBO. Mirrors the Gaussian TD path's split:
 * observation-side Q-term per-trial via the existing Poisson `Q_obs!`,
   which is irreducibly non-conjugate (no aggregator equivalent),
 * posterior entropy from `tfs[trial].entropy` (filled by `smooth!`),
-* `IWPrior` log-prior contributions on `Q` and `P0`, and the MN log-prior
-  trace term on `[C d]` to match the LBFGS objective.
+* `IWPrior` log-prior contributions on `Q` and `P0`, the MN log-prior trace
+  term on the dynamics `[A b B]` (full `Q⁻¹` form, mirroring the Gaussian path),
+  and the MN log-prior trace term on `[C d]` to match the LBFGS objective.
 """
 function elbo!(
     plds::LinearDynamicalSystem{T,S,O},
@@ -380,6 +381,23 @@ function elbo!(
     end
 
     #=
+    MN log-prior trace term on the dynamics [A b B]. The state model is Gaussian
+    with noise Q, so this is the full -½ tr(Q⁻¹ (W-M₀) Λ (W-M₀)') form (identical
+    to the Gaussian path). Required for ELBO monotonicity.
+    =#
+    if plds.state_model.AB_prior !== nothing
+        D = plds.latent_dim
+        ux_dim = plds.state_input_dim
+        W_ab = Matrix{T}(undef, D, D + 1 + ux_dim)
+        @views W_ab[:, 1:D] .= plds.state_model.A
+        @views W_ab[:, D + 1] .= plds.state_model.b
+        if ux_dim > 0
+            @views W_ab[:, (D + 2):(D + 1 + ux_dim)] .= plds.state_model.B
+        end
+        prior_term += mn_logprior_term(W_ab, plds.state_model.Q, plds.state_model.AB_prior)
+    end
+
+    #=
     MN log-prior on [C d]. Λ-only and Λ-logdet constants are absorbed into the
     additive ELBO constant.
     =#
@@ -421,14 +439,13 @@ function smooth!(
 
     x = fs.x_smooth
 
-    if all(fs.E_z .== 0)
-        @views x[:, 1] .= lds.state_model.x0
-        @views for t in 2:tsteps
-            mul!(x[:, t], lds.state_model.A, x[:, t - 1])
-            x[:, t] .+= lds.state_model.b
-        end
-    else
-        copyto!(x, fs.E_z)
+    #=
+    Warm-start the Newton iteration from the previous EM iteration's smoothed
+    mean. If the smoothed mean is all zeros (e.g., first EM iteration), use the
+    prior mean x0 instead.
+    =#
+    if all(x .== 0)
+        x .= lds.state_model.x0
     end
 
     # Active-length views into (possibly) oversized workspace buffers.

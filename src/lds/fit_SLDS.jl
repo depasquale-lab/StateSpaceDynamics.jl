@@ -496,15 +496,12 @@ function smooth!(
 
     x = fs.x_smooth
 
-    if all(fs.E_z .== 0)
-        lds1 = slds.LDSs[1]
-        x[:, 1] .= lds1.state_model.x0
-        for t in 2:tsteps
-            mul!(view(x, :, t), lds1.state_model.A, view(x, :, t - 1))
-            x[:, t] .+= lds1.state_model.b
-        end
-    else
-        copyto!(x, fs.E_z)
+    #=
+    Warm-start the Newton iteration from the previous EM iteration's smoothed
+    mean. If the smoothed mean is all zeros, use the first LDS's prior mean.
+    =#
+    if all(x .== 0)
+        x .= slds.LDSs[1].state_model.x0
     end
 
     # Active-length views into (possibly) oversized workspace buffers.

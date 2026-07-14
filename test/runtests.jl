@@ -220,6 +220,8 @@ using SSDTest
                 test_poisson_map_step_improves_Q()
                 test_poisson_gradient_shape_and_finiteness()
                 test_poisson_cd_prior_shrink()
+                test_poisson_ab_prior_shrink()
+                test_poisson_unstable_init_no_blowup()
             end
 
             @testset "EM Algorithm" begin

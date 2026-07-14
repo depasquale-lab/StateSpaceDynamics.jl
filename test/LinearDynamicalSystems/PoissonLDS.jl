@@ -592,6 +592,105 @@ function test_poisson_cd_prior_shrink(; rng=MersenneTwister(20260604))
     return nothing
 end
 
+function test_poisson_ab_prior_shrink(; rng=MersenneTwister(20260713))
+    @testset "PoissonLDS: AB_prior shrinks [A b] toward M₀, ELBO monotone" begin
+        D, P, Tt, N = 2, 3, 50, 4
+
+        A = 0.9 .* Matrix(I, D, D)
+        Q = 0.15 .* Matrix(I, D, D)
+        b = 0.3 .* ones(D)
+        x0 = zeros(D)
+        P0 = 0.15 .* Matrix(I, D, D)
+        C = 0.5 .* randn(rng, P, D)
+        d = log.(0.7 .+ rand(rng, P))
+
+        # Shared dataset, drawn from a prior-free model.
+        gsm_seed = GaussianStateModel(;
+            A=copy(A), Q=copy(Q), b=copy(b), x0=copy(x0), P0=copy(P0)
+        )
+        pom_seed = PoissonObservationModel(; C=copy(C), d=copy(d))
+        lds_seed = LinearDynamicalSystem(gsm_seed, pom_seed)
+        _, Y = rand(rng, lds_seed, fill(Tt, N))
+
+        # Reference fit: no dynamics prior.
+        gsm_ref = GaussianStateModel(;
+            A=copy(A), Q=copy(Q), b=copy(b), x0=copy(x0), P0=copy(P0)
+        )
+        pom_ref = PoissonObservationModel(; C=copy(C), d=copy(d))
+        lds_ref = LinearDynamicalSystem(gsm_ref, pom_ref)
+        elbos_ref = fit!(lds_ref, Y; max_iter=20, progress=false)
+        @test all(isfinite, elbos_ref)
+
+        # Same data, very strong MN prior on [A b] centered at zero. AB lives in
+        # (D × D+1): D columns for A, one for the bias b.
+        AB_M0 = zeros(D, D + 1)
+        AB_Λ = 1e6 .* Matrix{Float64}(I, D + 1, D + 1)
+        gsm_p = GaussianStateModel(;
+            A=copy(A),
+            Q=copy(Q),
+            b=copy(b),
+            x0=copy(x0),
+            P0=copy(P0),
+            AB_prior=StateSpaceDynamics.MNPrior(; M₀=AB_M0, Λ=AB_Λ),
+        )
+        pom_p = PoissonObservationModel(; C=copy(C), d=copy(d))
+        lds_p = LinearDynamicalSystem(gsm_p, pom_p)
+        elbos_p = fit!(lds_p, Y; max_iter=20, progress=false)
+
+        worst_ref = max(0.0, -minimum(diff(elbos_ref)))
+        worst_p = max(0.0, -minimum(diff(elbos_p)))
+        @test worst_p <= max(10 * worst_ref, 1.0)
+        @test all(isfinite, elbos_p)
+
+        # Strong shrinkage: penalized [A b] is smaller than reference and pulled
+        # to ≈ M₀ = 0.
+        W_ref = hcat(lds_ref.state_model.A, lds_ref.state_model.b)
+        W_p = hcat(lds_p.state_model.A, lds_p.state_model.b)
+        @test norm(W_p) < norm(W_ref)
+        @test norm(lds_p.state_model.A) < 0.05
+        @test all(abs.(lds_p.state_model.b) .< 0.05)
+        @test all(isfinite, lds_p.state_model.A)
+        @test all(isfinite, lds_p.state_model.b)
+    end
+    return nothing
+end
+
+function test_poisson_unstable_init_no_blowup(; rng=MersenneTwister(20260714))
+    @testset "PoissonLDS: unstable init A does not blow up the smoother" begin
+        D, P, Tt, N = 2, 3, 60, 3
+
+        # Stable data-generating model.
+        A_gen = 0.9 .* Matrix(I, D, D)
+        Q = 0.1 .* Matrix(I, D, D)
+        b = zeros(D)
+        x0 = ones(D)
+        P0 = 0.1 .* Matrix(I, D, D)
+        C = 0.5 .* randn(rng, P, D)
+        d = log.(0.7 .+ rand(rng, P))
+        lds_gen = LinearDynamicalSystem(
+            GaussianStateModel(;
+                A=copy(A_gen), Q=copy(Q), b=copy(b), x0=copy(x0), P0=copy(P0)
+            ),
+            PoissonObservationModel(; C=copy(C), d=copy(d)),
+        )
+        _, Y = rand(rng, lds_gen, fill(Tt, N))
+
+        A_bad = 1.8 .* Matrix(I, D, D)
+        lds_fit = LinearDynamicalSystem(
+            GaussianStateModel(;
+                A=copy(A_bad), Q=copy(Q), b=copy(b), x0=copy(x0), P0=copy(P0)
+            ),
+            PoissonObservationModel(; C=copy(C), d=copy(d)),
+        )
+        elbos = fit!(lds_fit, Y; max_iter=15, progress=false)
+
+        @test all(isfinite, elbos)
+        @test all(isfinite, lds_fit.state_model.A)
+        @test all(isfinite, lds_fit.obs_model.C)
+    end
+    return nothing
+end
+
 function test_poisson_gradient_shape_and_finiteness()
     @testset "PoissonLDS: gradient_observation_model! shape & finiteness" begin
         D, P, Tt, N = 2, 3, 20, 2
