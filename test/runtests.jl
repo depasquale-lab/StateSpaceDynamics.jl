@@ -181,15 +181,10 @@ using SSDTest
             test_td_sampling_zero_input_matches_no_input()
             test_td_fit_missing_u_errors()
             test_marginal_loglikelihood()
-        end
-
-        @testset "Kalman-path EM (information form)" begin
-            test_kalman_fit_basic()
-            test_kalman_fit_with_inputs()
-            test_kalman_fit_with_priors()
-            test_kalman_fit_bool_combinations()
-            test_kalman_validate_inputs_errors()
-            test_kalman_marginal_loglikelihood_internals()
+            test_marginal_ll_matches_naive_filter()
+            test_marginal_ll_with_inputs()
+            test_marginal_ll_ragged_trials()
+            test_marginal_loglikelihood_aliases()
         end
 
         include("LinearDynamicalSystems/PoissonLDS.jl")
@@ -258,7 +253,6 @@ using SSDTest
         test_block_tridgm()
         test_gaussian_entropy()
         test_valid_Σ()
-        test_tol_PD_type_preservation()
 
         @testset "Block Tridiagonal Inverse" begin
             test_block_tridiagonal_inverse_mutating()

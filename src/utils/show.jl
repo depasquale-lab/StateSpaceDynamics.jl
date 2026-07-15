@@ -102,7 +102,7 @@ function Base.show(io::IO, lds::LinearDynamicalSystem; gap="")
         prms = ["x0", "P0", "A (and b)", "Q", "C, d"][lds.fit_bool[1:5]]
     else
         #=
-        Same labels for BTD and Kalman backends (length 6). The compound
+        Gaussian path (length 6). The compound
         entries "A (and b, B)" / "C (and d, D)" reflect that each row is
         fit jointly as one regression — the bias and user-input columns
         are not gated independently.

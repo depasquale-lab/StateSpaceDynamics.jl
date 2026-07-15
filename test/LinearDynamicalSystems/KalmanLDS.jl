@@ -2,17 +2,18 @@
 Tests for the block-tridiagonal (Newton) Gaussian LDS smoother/fit path and the
 marginal (Kalman-filter) log-likelihood.
 
-The Kalman/RTS smoother is no longer a selectable E-step backend for `fit!` — all
-Gaussian fitting goes through the block-tridiagonal MAP path. The Kalman *filter*
-is retained only for the marginal log-likelihood `loglikelihood(lds, y)`.
+The Kalman/RTS smoother and its EM machinery were removed — all Gaussian fitting
+goes through the block-tridiagonal MAP path. What remains of the Kalman path is
+the filter behind `loglikelihood(lds, y)`: a shared observation-independent
+covariance pass (`_filter_cov_pass`) plus a mean-only pass per trial.
 
 These tests cover:
 - the TD cov-sharing fast path (shared covariance storage across equal-length trials),
 - learning a `B` dynamics-input matrix via the M-step,
 - sampling equivalence for inputs,
-- the marginal log-likelihood (Gaussian) and its Poisson not-implemented guard,
-- the retained Kalman-path EM driver (`_fit_kalman!`) and its E/M-step + ELBO
-  machinery in `src/kalman.jl` (see the `test_kalman_*` functions below).
+- the marginal log-likelihood: agreement across input forms, against a naive
+  textbook reference filter (with and without `ux`/`uy` inputs), ragged trials,
+  and the Poisson not-implemented guard.
 """
 
 #=
@@ -386,14 +387,14 @@ function test_marginal_loglikelihood()
 end
 
 # =============================================================================
-# Kalman-path EM (information-form filter + RTS smoother, `src/kalman.jl`).
+# Marginal log-likelihood (shared-covariance Kalman filter).
 #
-# `_fit_kalman!` is no longer wired into `fit!` — all Gaussian fitting goes
-# through the block-tridiagonal path — but the driver is retained for the
-# marginal log-likelihood and future particle-filter use. These tests keep the
-# full EM driver, E-step (covariance/mean passes + sufficient statistics),
-# M-step (with and without MNIW priors and frozen parameter blocks), input
-# validation, and ELBO machinery exercised.
+# The covariance half of the filter — innovation covariances and gains — is
+# observation-independent, so `loglikelihood` computes it once
+# (`_filter_cov_pass`) and shares it across trials; each trial then runs a
+# mean-only pass. These tests check that filter against a naive textbook
+# covariance-form reference, with and without `ux`/`uy` inputs, and for
+# ragged trial lengths.
 # =============================================================================
 
 #=
@@ -432,10 +433,9 @@ end
 
 #=
 Toy model with both a dynamics-input matrix `B` and an observation-input
-matrix `D`, plus matching simulated data. Shared by the input / fit_bool /
-validation tests below.
+matrix `D`, plus matching simulated data.
 =#
-function _make_kalman_io_setup(; D=2, p=3, Tt=40, N=3, ux_dim=2, uy_dim=2, seed=44)
+function _make_lds_io_setup(; D=2, p=3, Tt=40, N=3, ux_dim=2, uy_dim=2, seed=44)
     rng = MersenneTwister(seed)
     sm = GaussianStateModel(;
         A=0.7 * Matrix{Float64}(I, D, D),
@@ -458,302 +458,125 @@ function _make_kalman_io_setup(; D=2, p=3, Tt=40, N=3, ux_dim=2, uy_dim=2, seed=
     return lds, y, u, v
 end
 
-function test_kalman_fit_basic()
-    #=
-    No inputs, no priors: covers the EM driver, the covariance and mean
-    forward/backward passes, sufficient statistics, the OLS M-step, and the
-    prior-free ELBO branches. Uses a well-conditioned toy model — the
-    heavy-tailed `init_params` draws can push this retained path into
-    numerically unstable territory, which is not what this test is about.
-    =#
-    D, p, Tt, N = 2, 4, 60, 3
+#=
+Naive textbook covariance-form Kalman filter marginal LL for one trial i.e., no
+shared covariance pass, no information-form update. Reference implementation
+for the fast filter; both compute the same quantity exactly, so agreement is
+limited only by floating-point rounding of the two orderings.
+=#
+function _naive_kalman_ll(
+    lds::LinearDynamicalSystem, y::AbstractMatrix; u=nothing, v=nothing
+)
+    sm = lds.state_model
+    om = lds.obs_model
+    p, Tt = size(y)
+    x_f = copy(sm.x0)
+    P_f = copy(sm.P0)
+    x_p = copy(sm.x0)
+    P_p = copy(sm.P0)
+    ll = 0.0
+    for t in 1:Tt
+        if t > 1
+            x_p = sm.A * x_f .+ sm.b
+            u === nothing || (x_p .+= sm.B * u[:, t - 1])
+            P_p = sm.A * P_f * sm.A' .+ sm.Q
+        end
+        e = y[:, t] .- om.C * x_p .- om.d
+        v === nothing || (e .-= om.D * v[:, t])
+        S = cholesky(Symmetric(om.C * P_p * om.C' .+ om.R))
+        ll -= 0.5 * (p * log(2π) + logdet(S) + dot(e, S \ e))
+        K = P_p * om.C' / S
+        x_f = x_p .+ K * e
+        P_f = P_p .- K * (om.C * P_p)
+    end
+    return ll
+end
+
+function test_marginal_ll_matches_naive_filter()
+    # No inputs: the shared-covariance filter must agree with the per-trial
+    # textbook filter on a well-conditioned model.
+    D, p, Tt, N = 3, 4, 35, 4
     rng = MersenneTwister(31)
-    sm_true = GaussianStateModel(;
+    sm = GaussianStateModel(;
         A=0.7 * Matrix{Float64}(I, D, D),
         Q=0.1 * Matrix{Float64}(I, D, D),
         x0=randn(rng, D),
         P0=0.5 * Matrix{Float64}(I, D, D),
         b=0.1 * ones(D),
     )
-    om_true = GaussianObservationModel(;
+    om = GaussianObservationModel(;
         C=randn(rng, p, D), R=0.2 * Matrix{Float64}(I, p, p), d=0.1 * ones(p)
     )
-    lds_true = LinearDynamicalSystem(sm_true, om_true)
-    y = _simulate_lds(lds_true, Tt, N; seed=32)
+    lds = LinearDynamicalSystem(sm, om)
+    y = _simulate_lds(lds, Tt, N; seed=32)
 
-    function _make_init()
-        return LinearDynamicalSystem(
-            GaussianStateModel(;
-                A=0.5 * Matrix{Float64}(I, D, D),
-                Q=Matrix{Float64}(I, D, D),
-                x0=zeros(D),
-                P0=Matrix{Float64}(I, D, D),
-                b=zeros(D),
-            ),
-            GaussianObservationModel(;
-                C=randn(MersenneTwister(33), p, D), R=Matrix{Float64}(I, p, p), d=zeros(p)
-            ),
-        )
-    end
+    ll = SSD.loglikelihood(lds, y)
+    ll_ref = sum(_naive_kalman_ll(lds, y[:, :, n]) for n in 1:N)
+    @test ll ≈ ll_ref rtol = 1e-8
 
-    lds = _make_init()
-    ll_init = SSD.loglikelihood(lds, y)
-    #=
-    NOTE: when run long past convergence (≳40 iterations on these data) the
-    displayed ELBO of this retained path shows large non-monotone drops, so
-    the monotonicity assertion below is restricted to the early, stable
-    window. If this path is ever revived as a fit backend, that behavior
-    deserves a closer look.
-    =#
-    elbos = SSD._fit_kalman!(lds, y; max_iter=15, tol=1e-6, progress=false)
-
-    @test !isempty(elbos)
-    @test all(isfinite, elbos)
-    # ~monotone; slack covers floating-point jitter
-    @test all(diff(elbos) .>= -1e-4)
-    @test SSD.loglikelihood(lds, y) > ll_init   # fit improves the marginal LL
-
-    # Loose tolerance → early-convergence return; `progress=true` covers the
-    # progress-bar plumbing; `monotonicity_check=false` covers that branch.
-    lds2 = _make_init()
-    elbos2 = SSD._fit_kalman!(
-        lds2, y; max_iter=200, tol=10.0, progress=true, monotonicity_check=false
-    )
-    @test length(elbos2) < 200
+    # Single-matrix form runs the same filter on one trial.
+    @test SSD.loglikelihood(lds, y[:, :, 1]) ≈ _naive_kalman_ll(lds, y[:, :, 1]) rtol = 1e-8
 end
 
-function test_kalman_fit_with_inputs()
-    #=
-    Dynamics inputs (`B·u`) and observation inputs (`D·v`) supplied: covers
-    the `ux_dim > 0` / `uy_dim > 0` branches in data formatting, the constant
-    Gram-matrix blocks, the per-E-step offsets, and the input blocks of the
-    M-step regressions.
-    =#
-    lds_true, y, u, v = _make_kalman_io_setup()
-    D, p = lds_true.latent_dim, lds_true.obs_dim
-    ux_dim = size(u, 1)
-    uy_dim = size(v, 1)
+function test_marginal_ll_with_inputs()
+    # Dynamics (`B·u`) and observation (`D·v`) inputs flow through the filter:
+    # agreement with the naive reference, and required-input validation.
+    lds, y, u, v = _make_lds_io_setup()
+    N = size(y, 3)
 
-    rng = MersenneTwister(45)
-    sm_init = GaussianStateModel(;
-        A=0.5 * Matrix{Float64}(I, D, D),
-        Q=Matrix{Float64}(I, D, D),
+    ll = SSD.loglikelihood(lds, y; ux=u, uy=v)
+    ll_ref = sum(_naive_kalman_ll(lds, y[:, :, n]; u=u[:, :, n], v=v[:, :, n]) for n in 1:N)
+    @test ll ≈ ll_ref rtol = 1e-8
+
+    # Vector-of-matrices form agrees with the 3-D form.
+    y_vec = [y[:, :, n] for n in 1:N]
+    u_vec = [u[:, :, n] for n in 1:N]
+    v_vec = [v[:, :, n] for n in 1:N]
+    @test SSD.loglikelihood(lds, y_vec; ux=u_vec, uy=v_vec) ≈ ll
+
+    # The data were generated with these inputs, so the true inputs must
+    # explain them better than zeroed inputs.
+    @test ll > SSD.loglikelihood(lds, y; ux=zero(u), uy=zero(v))
+
+    # B/D have input columns → omitting the input sequences is an error.
+    @test_throws ArgumentError SSD.loglikelihood(lds, y)
+    @test_throws ArgumentError SSD.loglikelihood(lds, y; ux=u)
+end
+
+function test_marginal_ll_ragged_trials()
+    #=
+    Trial lengths may differ: the covariance recursion is data-independent, so
+    a shorter trial just consumes a prefix of the shared pass. The multi-trial
+    LL must equal the sum of independent single-trial LLs.
+    =#
+    D, p = 3, 4
+    rng = MersenneTwister(55)
+    sm = GaussianStateModel(;
+        A=0.6 * Matrix{Float64}(I, D, D),
+        Q=0.2 * Matrix{Float64}(I, D, D),
         x0=zeros(D),
         P0=Matrix{Float64}(I, D, D),
-        b=zeros(D),
-        B=zeros(D, ux_dim),
-    )
-    om_init = GaussianObservationModel(;
-        C=randn(rng, p, D), R=Matrix{Float64}(I, p, p), d=zeros(p), D=zeros(p, uy_dim)
-    )
-    lds_fit = LinearDynamicalSystem(sm_init, om_init)
-
-    #=
-    This run emits one ELBO-decrease warning early on (a known quirk of the
-    retained path; see the note in `test_kalman_fit_basic`) — left enabled
-    so the `monotonicity_check` warning branch stays exercised.
-    =#
-    elbos = SSD._fit_kalman!(
-        lds_fit, y; control_seq=u, obs_control_seq=v, max_iter=40, progress=false
-    )
-    @test all(isfinite, elbos)
-    @test elbos[end] > elbos[1]
-    # the input matrices were learned away from their zero init
-    @test any(!iszero, lds_fit.state_model.B)
-    @test any(!iszero, lds_fit.obs_model.D)
-end
-
-function test_kalman_fit_with_priors()
-    #=
-    Full MNIW priors (MN on [A b] / [C d] + IW on Q / R / P0): covers the
-    MAP regression (`regress(::MNPrior)`), the prior-bearing `est_cov`, and
-    the `v0 > 0` ELBO branches (`log_post` with and without a beta prior).
-    =#
-    D, p, Tt, N = 2, 3, 40, 3
-    lds_true = _make_toy_lds(; D=D, p=p, seed=51)
-    y = _simulate_lds(lds_true, Tt, N; seed=52)
-
-    dyn_reg = D + 1     # [x_prev; 1] regression columns (no inputs)
-    obs_reg = D + 1     # [x; 1] regression columns
-    params = init_params(MersenneTwister(53), D, p)
-    sm = GaussianStateModel(;
-        A=params.A,
-        Q=params.Q,
-        x0=params.x0,
-        P0=params.P0,
-        b=params.b,
-        Q_prior=IWPrior(; Ψ=0.1 * Matrix{Float64}(I, D, D), ν=Float64(D + 4)),
-        P0_prior=IWPrior(; Ψ=0.1 * Matrix{Float64}(I, D, D), ν=Float64(D + 4)),
-        AB_prior=MNPrior(;
-            M₀=zeros(D, dyn_reg), Λ=0.1 * Matrix{Float64}(I, dyn_reg, dyn_reg)
-        ),
+        b=0.1 * ones(D),
     )
     om = GaussianObservationModel(;
-        C=params.C,
-        R=params.R,
-        d=params.d,
-        R_prior=IWPrior(; Ψ=0.1 * Matrix{Float64}(I, p, p), ν=Float64(p + 4)),
-        CD_prior=MNPrior(;
-            M₀=zeros(p, obs_reg), Λ=0.1 * Matrix{Float64}(I, obs_reg, obs_reg)
-        ),
+        C=randn(rng, p, D), R=0.1 * Matrix{Float64}(I, p, p), d=zeros(p)
     )
     lds = LinearDynamicalSystem(sm, om)
-    elbos = SSD._fit_kalman!(lds, y; max_iter=30, progress=false)
-    @test all(isfinite, elbos)
-    @test elbos[end] > elbos[1]
+    _, y_seq = rand(rng, lds, [30, 20, 25])
 
-    # MN priors *without* their IW counterparts: covers the `v0 == 0` ELBO
-    # branch with a nontrivial Λ (`log_post` "no cov prior" overload).
-    params2 = init_params(MersenneTwister(54), D, p)
-    sm2 = GaussianStateModel(;
-        A=params2.A,
-        Q=params2.Q,
-        x0=params2.x0,
-        P0=params2.P0,
-        b=params2.b,
-        AB_prior=MNPrior(;
-            M₀=zeros(D, dyn_reg), Λ=0.1 * Matrix{Float64}(I, dyn_reg, dyn_reg)
-        ),
-    )
-    om2 = GaussianObservationModel(;
-        C=params2.C,
-        R=params2.R,
-        d=params2.d,
-        CD_prior=MNPrior(;
-            M₀=zeros(p, obs_reg), Λ=0.1 * Matrix{Float64}(I, obs_reg, obs_reg)
-        ),
-    )
-    lds_mn = LinearDynamicalSystem(sm2, om2)
-    elbos_mn = SSD._fit_kalman!(lds_mn, y; max_iter=20, progress=false)
-    @test all(isfinite, elbos_mn)
-    @test elbos_mn[end] > elbos_mn[1]
+    ll_multi = SSD.loglikelihood(lds, y_seq)
+    ll_sum = sum(SSD.loglikelihood(lds, yt) for yt in y_seq)
+    @test ll_multi ≈ ll_sum
 end
 
-function test_kalman_fit_bool_combinations()
-    # Frozen parameter blocks in `mstep!`. Uses a model with both input
-    # matrices so the frozen-regression buffers cover their `B` / `D` blocks.
-    lds, y, u, v = _make_kalman_io_setup(; seed=66)
-
-    #=
-    Freeze the regressions ([x0], [A b B], [C d D]) but fit the covariances
-    (P0, Q, R): covers the `buf` reassembly branches and the frozen-x0 path
-    of the P0 update.
-    =#
-    lds_cov = deepcopy(lds)
-    lds_cov.fit_bool .= [false, true, false, true, false, true]
-    A0 = copy(lds_cov.state_model.A)
-    b0 = copy(lds_cov.state_model.b)
-    B0 = copy(lds_cov.state_model.B)
-    C0 = copy(lds_cov.obs_model.C)
-    d0 = copy(lds_cov.obs_model.d)
-    D0 = copy(lds_cov.obs_model.D)
-    x00 = copy(lds_cov.state_model.x0)
-    Q0 = copy(lds_cov.state_model.Q)
-    R0 = copy(lds_cov.obs_model.R)
-    P00 = copy(lds_cov.state_model.P0)
-    # `monotonicity_check=false`: with frozen blocks the displayed ELBO is not
-    # guaranteed monotone, so the warning would just be noise here.
-    SSD._fit_kalman!(
-        lds_cov,
-        y;
-        control_seq=u,
-        obs_control_seq=v,
-        max_iter=3,
-        progress=false,
-        monotonicity_check=false,
-    )
-    @test lds_cov.state_model.A == A0
-    @test lds_cov.state_model.b == b0
-    @test lds_cov.state_model.B == B0
-    @test lds_cov.obs_model.C == C0
-    @test lds_cov.obs_model.d == d0
-    @test lds_cov.obs_model.D == D0
-    @test lds_cov.state_model.x0 == x00
-    @test lds_cov.state_model.Q != Q0
-    @test lds_cov.obs_model.R != R0
-    @test lds_cov.state_model.P0 != P00
-
-    # Inverse configuration: fit the regressions, freeze the covariances.
-    lds_reg = deepcopy(lds)
-    lds_reg.fit_bool .= [true, false, true, false, true, false]
-    SSD._fit_kalman!(
-        lds_reg,
-        y;
-        control_seq=u,
-        obs_control_seq=v,
-        max_iter=3,
-        progress=false,
-        monotonicity_check=false,
-    )
-    @test lds_reg.state_model.Q == Q0
-    @test lds_reg.obs_model.R == R0
-    @test lds_reg.state_model.P0 == P00
-    @test lds_reg.state_model.A != A0
-    @test lds_reg.obs_model.C != C0
-end
-
-function test_kalman_validate_inputs_errors()
-    # `validate_kalman_inputs` throws on every B/D-vs-u/d mismatch.
-    lds, y, u, v = _make_kalman_io_setup(; seed=77)
-    Tt, N = size(y, 2), size(y, 3)
-    ux_dim, uy_dim = size(u, 1), size(v, 1)
-
-    # B has inputs but no `control_seq` supplied (u gets 0 rows).
-    @test_throws DimensionMismatchError SSD._fit_kalman!(
-        deepcopy(lds), y; obs_control_seq=v, max_iter=1, progress=false
-    )
-    # u has the right row count but the wrong number of timesteps.
-    @test_throws DimensionMismatchError SSD._fit_kalman!(
-        deepcopy(lds),
-        y;
-        control_seq=randn(ux_dim, Tt - 1, N),
-        obs_control_seq=v,
-        max_iter=1,
-        progress=false,
-    )
-    # D has inputs but no `obs_control_seq` supplied (d gets 0 rows).
-    @test_throws DimensionMismatchError SSD._fit_kalman!(
-        deepcopy(lds), y; control_seq=u, max_iter=1, progress=false
-    )
-    # d has the right row count but the wrong number of trials.
-    @test_throws DimensionMismatchError SSD._fit_kalman!(
-        deepcopy(lds),
-        y;
-        control_seq=u,
-        obs_control_seq=randn(uy_dim, Tt, N + 1),
-        max_iter=1,
-        progress=false,
-    )
-end
-
-function test_kalman_marginal_loglikelihood_internals()
-    #=
-    The workspace-based `marginal_loglikelihood(lds, kws)` (innovation form)
-    must agree with the buffer-based Kalman filter in `loglikelihood`, and
-    the named dispatch wrappers must reduce to `loglikelihood`. Also runs a
-    standalone E-step so `estep!` and `compute_elbo` are exercised outside
-    the fit loop.
-    =#
+function test_marginal_loglikelihood_aliases()
+    # `marginal_loglikelihood` is a named alias of `loglikelihood` for all
+    # three observation forms.
     D, p, Tt, N = 3, 4, 30, 3
     lds = _make_toy_lds(; D=D, p=p, seed=61)
     y = _simulate_lds(lds, Tt, N; seed=62)
-
-    data = SSD.format_kf_data!(lds, y, nothing, nothing, Tt, N)
-    SSD.validate_kalman_inputs(lds, data, N, Tt)
-    kws = SSD.KalmanWorkspace(lds, Tt, N)
-    suf = SSD.initialize_SufficientStatistics(lds, data, kws)
-    SSD.estep!(lds, suf, kws, data)
-
-    ll_kf = SSD.marginal_loglikelihood(lds, kws)
     ll_ref = SSD.loglikelihood(lds, y)
-    # rtol allows for the `tol_PD` eigen-flooring of Q/R/P0 that the
-    # workspace path applies and the buffer-based filter does not
-    @test ll_kf ≈ ll_ref rtol = 1e-4
 
-    elbo = SSD.compute_elbo(lds, suf, kws)
-    @test isfinite(elbo)
-
-    # Named wrappers: 3-D array, vector-of-matrices, single matrix.
     @test SSD.marginal_loglikelihood(lds, y) ≈ ll_ref
     y_vec = [y[:, :, n] for n in 1:N]
     @test SSD.marginal_loglikelihood(lds, y_vec) ≈ ll_ref

@@ -240,7 +240,8 @@ function _aggregate_td_suff_stats!(
     dyn_reg_dim = D + 1 + ux_dim
     obs_reg_dim = D + 1 + uy_dim
 
-    # Hoist workspace fields with concrete eltype for JET (cf. backwards_cov!).
+    # Hoist workspace fields with concrete eltype so JET's union-split
+    # analysis keeps the callsites below in the typed branch.
     Szz_Ab = sws.reg.Szz_Ab::Matrix{T}
     Szz_Cd = sws.reg.Szz_Cd::Matrix{T}
     Q_sum = sws.reg.Q_sum::Matrix{T}
@@ -448,7 +449,7 @@ function _aggregate_td_suff_stats_weighted!(
     #=
     Clear the accumulators we'll write into. Each field is hoisted with a
     concrete `Matrix{T}` annotation so the BLAS.ger!/syrk! callsites below
-    stay in JET's typed union branch (cf. `backwards_cov!`).
+    stay in JET's typed union branch.
     =#
     init_xy = sws.agg.init_xy::Matrix{T}
     fill!(init_xy, zero(T))

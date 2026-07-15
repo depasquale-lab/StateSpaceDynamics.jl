@@ -148,39 +148,6 @@ function valid_Σ(Σ::AbstractMatrix{T}) where {T<:Real}
 end
 
 """
-    tol_PD(A; tol=1e-6) -> PDMat
-
-Eigen-floor stabilization for covariance matrices used along the Kalman path. All
-eigenvalues below `tol * λ_max` are raised to `tol * λ_max`, preserving the overall
-scale/conditioning of the matrix; the result is rewrapped as a `PDMat` so downstream
-code can reuse the cached Cholesky. The matrix is symmetrized (via `hermitianpart`) if
-passed as a plain `Matrix`.
-
-Used by the Kalman filter/smoother to keep predicted and filtered covariances strictly
-positive definite in the presence of floating-point noise. Ported from
-StateSpaceAnalysis.
-"""
-function tol_PD(
-    A_sym::Union{Symmetric{T},Hermitian{T}}; tol::Real=1e-6
-)::PDMat{T,Matrix{T}} where {T<:Real}
-    tolT = convert(T, tol)
-    F = eigen!(A_sym)
-    λ_max = F.values[end]
-    scale = λ_max * tolT
-    slope = λ_max - scale        # = λ_max * (1 - tol)
-    for i in eachindex(F.values)
-        r = max(F.values[i] / λ_max, zero(T))
-        F.values[i] = slope * r + scale
-    end
-    return PDMat(X_A_Xt(PDiagMat(F.values), F.vectors))
-end
-
-tol_PD(A::Matrix; tol::Real=1e-6)::PDMat = tol_PD(hermitianpart(A); tol=tol)
-tol_PD(A::PDMat; tol::Real=1e-6)::PDMat = tol_PD(Hermitian(Matrix(A)); tol=tol)
-id_PD(A::Matrix; tol::Real=1e-6)::PDMat =
-    PDMat(hermitianpart(A + (tol * tr(A) / size(A, 1)) * I))
-
-"""
     gaussian_entropy(H::Symmetric{T}) where {T<:Real}
 
 Entropy (in nats) of a Gaussian whose log-posterior Hessian at the MAP is `H`

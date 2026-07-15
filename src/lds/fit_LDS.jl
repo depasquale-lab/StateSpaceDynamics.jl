@@ -275,8 +275,7 @@ function smooth!(
         `ntrials` (it then carries a `BatchedBuffers`), every per-trial
         Newton step collapses into a single `(D*T) × N` matrix-RHS
         backsubst, doing the same total math as the per-trial loop below but
-        with BLAS-3 dispatch (matches the Kalman path's batched-trial
-        efficiency).
+        with BLAS-3 dispatch.
         =#
         bat = source_sws.batched
         if bat !== nothing && size(bat.x_mat, 3) == ntrials
@@ -338,7 +337,8 @@ function _precompute_shared_cov!(
     D = lds.latent_dim
     btd = sws.btd
     # Hoist `p_smooth_shared` with a concrete eltype so the `Symmetrize!`
-    # call below stays in JET's typed union branch (cf. `backwards_cov!`).
+    # call below stays in JET's typed union branch (JET can't propagate `T`
+    # through `maybeview` without the assertion).
     p_smooth_shared = sws.agg.p_smooth_shared::Array{T,3}
 
     compute_smooth_constants!(sws, lds)
@@ -878,12 +878,138 @@ function smooth!(
 end
 
 """
-    loglikelihood(lds, y)
+    _filter_cov_pass(lds, T_max) -> (S_chol, K)
+
+Observation-independent half of the Kalman filter (ported from the retired
+information-form Kalman path). The predicted/filtered covariances, innovation
+covariances `S_t = C·P_pred[t]·C' + R`, and gains `K_t = P_pred[t]·C'·S_t⁻¹`
+depend only on `A, Q, C, R, P0`, never on the data, so they are computed
+once and shared across all trials. Because the recursion is
+data-independent, a trial of length `T_i ≤ T_max` simply uses the first `T_i`
+entries, which makes ragged multi-trial input free.
+"""
+function _filter_cov_pass(
+    lds::LinearDynamicalSystem{T,SM,OM}, T_max::Int
+) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
+    A = lds.state_model.A
+    C = lds.obs_model.C
+    D = lds.latent_dim
+
+    P0_PD = PDMat(Matrix(hermitianpart(lds.state_model.P0)))
+    R_PD = PDMat(Matrix(hermitianpart(lds.obs_model.R)))
+    Q = lds.state_model.Q
+    CiRC = Matrix(hermitianpart(Xt_invA_X(R_PD, C)))
+
+    S_chol = Vector{Cholesky{T,Matrix{T}}}(undef, T_max)
+    K = Vector{Matrix{T}}(undef, T_max)
+
+    # Rolling filtered covariance, overwritten in place each step.
+    filt_cov = PDMat(Matrix{T}(I, D, D))
+    scratch = Matrix{T}(undef, D, D)
+
+    for t in 1:T_max
+        # Predicted covariance: P0 at t=1, else A·P_filt·A' + Q.
+        # (`X_A_Xt` may return a `Symmetric` wrapper — materialize before mutating.)
+        pred_cov = if t == 1
+            P0_PD
+        else
+            M = Matrix(X_A_Xt(filt_cov, A))
+            M .+= Q
+            Symmetrize!(M)
+            PDMat(M)
+        end
+
+        # Innovation covariance S_t = C·P_pred·C' + R and gain K_t = P_pred·C'·S_t⁻¹.
+        Smat = Matrix(X_A_Xt(pred_cov, C))
+        Smat .+= R_PD.mat
+        Symmetrize!(Smat)
+        S_chol[t] = cholesky!(Hermitian(Smat))
+        K[t] = rdiv!(pred_cov.mat * C', S_chol[t])
+
+        # Filtered covariance (information form; PD by construction).
+        info_update!(filt_cov, scratch, pred_cov, CiRC)
+    end
+
+    return S_chol, K
+end
+
+function _filter_ll_trial(
+    lds::LinearDynamicalSystem{T,SM,OM},
+    y::AbstractMatrix{T},
+    ux::AbstractMatrix{T},
+    uy::AbstractMatrix{T},
+    S_chol::Vector{Cholesky{T,Matrix{T}}},
+    K::Vector{Matrix{T}},
+) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
+    A = lds.state_model.A
+    b = lds.state_model.b
+    B = lds.state_model.B
+    x0 = lds.state_model.x0
+    C = lds.obs_model.C
+    d = lds.obs_model.d
+    Dm = lds.obs_model.D
+
+    D = lds.latent_dim
+    p = lds.obs_dim
+    tsteps = size(y, 2)
+    log2πp = T(p) * log(T(2π))
+
+    x_p = Vector{T}(undef, D)
+    x_f = Vector{T}(undef, D)
+    innov = Vector{T}(undef, p)
+    Si_e = Vector{T}(undef, p)
+
+    ll = zero(T)
+    @views for t in 1:tsteps
+        # Predicted mean (t=1: prediction == prior).
+        if t == 1
+            x_p .= x0
+        else
+            mul!(x_p, A, x_f)
+            x_p .+= b
+            if size(B, 2) > 0
+                mul!(x_p, B, ux[:, t - 1], one(T), one(T))
+            end
+        end
+
+        # Innovation: e = y_t - C x_p - d - D uy_t
+        mul!(innov, C, x_p)
+        innov .= y[:, t] .- innov .- d
+        if size(Dm, 2) > 0
+            mul!(innov, Dm, uy[:, t], -one(T), one(T))
+        end
+
+        # One-step predictive log-likelihood: log N(e; 0, S_t)
+        Si_e .= innov
+        ldiv!(S_chol[t], Si_e)          # Si_e ← S⁻¹ e
+        ll -= T(0.5) * (log2πp + logdet(S_chol[t]) + dot(innov, Si_e))
+
+        # Update: x_f = x_p + K_t e
+        mul!(x_f, K[t], innov)
+        x_f .+= x_p
+    end
+
+    return ll
+end
+
+"""
+    loglikelihood(lds, y; ux=nothing, uy=nothing)
 
 Marginal (observed-data) log-likelihood `∑_{t,n} log p(y_t^n | y_{1:t-1}^n)` of a
 Gaussian `LinearDynamicalSystem`, computed by running the Kalman filter and summing
 the one-step-ahead predictive densities (latent states integrated out). Valid for
 any fitted model with a `GaussianObservationModel`.
+
+The covariance half of the filter (innovation covariances and gains) is
+observation-independent and computed once, then shared across all trials
+see `_filter_cov_pass`. Trial lengths may differ.
+
+# Arguments
+- `y`: observations — `(obs_dim, T)` matrix, `(obs_dim, T, ntrials)` array, or
+  `Vector{<:AbstractMatrix}` of per-trial `(obs_dim, T_i)` matrices.
+- `ux` / `uy`: optional dynamics / observation input sequences, in the same
+  shape family as `y` (matrix, 3-D array, or vector of matrices). Required
+  when `size(state_model.B, 2) > 0` / `size(obs_model.D, 2) > 0`.
 
 This is the `StatsAPI.loglikelihood` method for the LDS; for the complete-data
 log-likelihood `log p(x, y)` given a trajectory `x`, see `joint_loglikelihood`.
@@ -891,99 +1017,72 @@ log-likelihood `log p(x, y)` given a trajectory `x`, see `joint_loglikelihood`.
 Returns the **total** log-likelihood. Divide by `obs_dim * tsteps * ntrials` for a
 per-observation score that is comparable across configurations.
 """
-function loglikelihood(
-    lds::LinearDynamicalSystem{T,SM,OM}, y::AbstractArray{T,3}
+function StatsAPI.loglikelihood(
+    lds::LinearDynamicalSystem{T,SM,OM},
+    y::AbstractVector{<:AbstractMatrix{T}};
+    ux::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
+    uy::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
 ) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
-    A = lds.state_model.A
-    Q = lds.state_model.Q
-    b = lds.state_model.b
-    x0 = lds.state_model.x0
-    P0 = lds.state_model.P0
-    C = lds.obs_model.C
-    R = lds.obs_model.R
-    d = lds.obs_model.d
+    tsteps_per_trial = [size(yt, 2) for yt in y]
+    ux_seq = _normalize_multitrial_ux(ux, lds.ux_dim, tsteps_per_trial, T, "ux")
+    uy_seq = _normalize_multitrial_uy(uy, lds.uy_dim, tsteps_per_trial, T, lds.obs_model)
 
-    obs_dim, tsteps, ntrials = size(y)
-    D = lds.latent_dim
+    S_chol, K = _filter_cov_pass(lds, maximum(tsteps_per_trial))
 
     total_ll = zero(T)
-    log2πp = T(obs_dim) * log(T(2π))
-
-    # Pre-allocate buffers (reused across trials and time steps)
-    x_p = Vector{T}(undef, D)
-    x_f = Vector{T}(undef, D)
-    P_p = Matrix{T}(undef, D, D)
-    P_f = Matrix{T}(undef, D, D)
-    tmp_DD = Matrix{T}(undef, D, D)
-    innov = Vector{T}(undef, obs_dim)
-    Si_e = Vector{T}(undef, obs_dim)
-    Smat = Matrix{T}(undef, obs_dim, obs_dim)
-    PCt = Matrix{T}(undef, D, obs_dim)
-    SiPCt = Matrix{T}(undef, obs_dim, D)
-
-    for n in 1:ntrials
-        x_f .= x0
-        P_f .= P0
-
-        for t in 1:tsteps
-            # Prediction (t=1: prediction == prior)
-            if t == 1
-                x_p .= x0
-                P_p .= P0
-            else
-                mul!(x_p, A, x_f)
-                x_p .+= b
-                mul!(tmp_DD, A, P_f)
-                mul!(P_p, tmp_DD, A')
-                P_p .+= Q
-                Symmetrize!(P_p)
-            end
-
-            # Innovation: e = y_t - C x_p - d
-            mul!(innov, C, x_p)
-            @views innov .= y[:, t, n] .- innov .- d
-
-            # Innovation covariance: S = C P_p C' + R
-            mul!(PCt, P_p, C')
-            mul!(Smat, C, PCt)
-            Smat .+= R
-            Symmetrize!(Smat)
-
-            # One-step predictive log-likelihood: log N(e; 0, S)
-            S_ch = cholesky(Hermitian(Smat))
-            Si_e .= innov
-            ldiv!(S_ch, Si_e)           # Si_e ← S⁻¹ e
-            total_ll -= T(0.5) * (log2πp + logdet(S_ch) + dot(innov, Si_e))
-
-            # Update: x_f = x_p + K e  where K = PCt S⁻¹
-            mul!(x_f, PCt, Si_e)        # x_f = PCt (S⁻¹ e)
-            x_f .+= x_p
-
-            # P_f = P_p - PCt S⁻¹ PCt'
-            SiPCt .= PCt'
-            ldiv!(S_ch, SiPCt)          # SiPCt ← S⁻¹ PCt'
-            mul!(P_f, PCt, SiPCt)
-            P_f .= P_p .- P_f
-            Symmetrize!(P_f)
-        end
+    for n in eachindex(y)
+        total_ll += _filter_ll_trial(lds, y[n], ux_seq[n], uy_seq[n], S_chol, K)
     end
-
     return total_ll
 end
 
 # Alternative observation methods
-# vector of matrices (e.g., for ragged multi-trial observation)
-function loglikelihood(
-    lds::LinearDynamicalSystem{T,SM,OM}, y::AbstractVector{<:AbstractMatrix{T}}
+# 3-D array (equal-length multi-trial observation)
+function StatsAPI.loglikelihood(
+    lds::LinearDynamicalSystem{T,SM,OM},
+    y::AbstractArray{T,3};
+    ux::Union{Nothing,AbstractArray{T,3}}=nothing,
+    uy::Union{Nothing,AbstractArray{T,3}}=nothing,
 ) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
-    y_comb = cat(y...; dims=3)
-    return loglikelihood(lds, y_comb)
+    y_vec = [view(y, :, :, n) for n in axes(y, 3)]
+    ux_vec = ux === nothing ? nothing : [view(ux, :, :, n) for n in axes(ux, 3)]
+    uy_vec = uy === nothing ? nothing : [view(uy, :, :, n) for n in axes(uy, 3)]
+    return loglikelihood(lds, y_vec; ux=ux_vec, uy=uy_vec)
 end
 
 # single-trial observation (Matrix)
-function loglikelihood(
-    lds::LinearDynamicalSystem{T,SM,OM}, y::AbstractMatrix{T}
+function StatsAPI.loglikelihood(
+    lds::LinearDynamicalSystem{T,SM,OM},
+    y::AbstractMatrix{T};
+    ux::Union{Nothing,AbstractMatrix{T}}=nothing,
+    uy::Union{Nothing,AbstractMatrix{T}}=nothing,
 ) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
-    y_comb = reshape(y, size(y, 1), size(y, 2), 1)  # add singleton trial dimension if missing
-    return loglikelihood(lds, y_comb)
+    ux_vec = ux === nothing ? nothing : [ux]
+    uy_vec = uy === nothing ? nothing : [uy]
+    return loglikelihood(lds, [y]; ux=ux_vec, uy=uy_vec)
+end
+
+#=
+    marginal_loglikelihood(lds, y; ux=nothing, uy=nothing)
+
+Specific-name companion to [`loglikelihood`](@ref): the marginal (observed-data)
+log-likelihood of `lds` with the latent states integrated out. Identical in value
+to `loglikelihood(lds, y)`; this name exists so internal call sites can disambiguate
+from the complete-data [`joint_loglikelihood`](@ref). Accepts the same observation
+forms (3-D array, vector-of-matrices, single matrix) and input kwargs.
+=#
+function marginal_loglikelihood(
+    lds::LinearDynamicalSystem, y::AbstractArray{<:Real,3}; kwargs...
+)
+    return loglikelihood(lds, y; kwargs...)
+end
+function marginal_loglikelihood(
+    lds::LinearDynamicalSystem, y::AbstractVector{<:AbstractMatrix{<:Real}}; kwargs...
+)
+    return loglikelihood(lds, y; kwargs...)
+end
+function marginal_loglikelihood(
+    lds::LinearDynamicalSystem, y::AbstractMatrix{<:Real}; kwargs...
+)
+    return loglikelihood(lds, y; kwargs...)
 end

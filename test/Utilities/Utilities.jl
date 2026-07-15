@@ -224,27 +224,6 @@ function test_valid_Σ()
     @test !valid_Σ([2.0 0.3; 0.7 1.0])
 end
 
-function test_tol_PD_type_preservation()
-    @testset "tol_PD preserves eltype across Float32/Float64 (A11)" begin
-        for T in (Float32, Float64)
-            A = Symmetric(T[2 0.5; 0.5 1])
-            P = StateSpaceDynamics.tol_PD(A)                 # default tol
-            @test P isa PDMat{T,Matrix{T}}
-            @test eltype(P) === T
-            @test isposdef(Matrix(P))
-
-            P2 = StateSpaceDynamics.tol_PD(A; tol=1e-5)
-            @test eltype(P2) === T
-        end
-
-        # Eigen-floor actually lifts a near-singular direction to tol·λ_max.
-        Asing = Symmetric([1.0 0.0; 0.0 1e-14])
-        Pf = StateSpaceDynamics.tol_PD(Asing; tol=1e-6)
-        @test minimum(eigen(Matrix(Pf)).values) ≈ 1e-6 rtol = 1e-6
-    end
-    return nothing
-end
-
 function test_info_update()
     #=
     `info_update!(cache, P0, CiRC)` returns `inv(inv(P0) + CiRC)` as a PDMat,
@@ -277,6 +256,13 @@ function test_info_update()
         @test ret === P_dest
         @test isapprox(Matrix(P_dest), expected; atol=1e-8, rtol=0)
         @test isposdef(P_dest.mat)
+
+        # `CiRC` may be a plain (merely PSD) symmetric matrix, not a PDMat —
+        # the filter passes C'R⁻¹C this way since it is singular when C is
+        # rank-deficient.
+        P_dest2 = PDMat(Matrix{Float64}(I, n, n))
+        StateSpaceDynamics.info_update!(P_dest2, scratch, P0, Matrix(CiRC_mat))
+        @test isapprox(Matrix(P_dest2), expected; atol=1e-8, rtol=0)
     end
 
     # Typed and default-eltype cache constructors size their buffers correctly.

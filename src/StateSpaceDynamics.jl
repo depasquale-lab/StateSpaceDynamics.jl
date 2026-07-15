@@ -31,18 +31,13 @@ include("numerics/cov_update.jl")          # info_update! + CovUpdateCache
 include("stats/priors.jl")
 
 # Model definitions + inference-state containers.
-include("lds/types.jl")                             # abstract types, Data, model structs, SLDS
+include("lds/types.jl")                             # abstract types, model structs, SLDS
 include("lds/workspaces.jl")                        # FilterSmooth / SufficientStatistics / workspaces
 include("utils/show.jl")
 include("utils/validation.jl")
 
-#=
-Shared latent inference machinery.
-kalman.jl is retained for the Kalman filter + marginal likelihood (and future
-particle-filter use); the Kalman path is no longer a selectable E-step backend.
-=#
+# Shared latent inference machinery.
 include("stats/preprocessing.jl")           # PPCA (standalone model)
-include("stats/kalman.jl")
 include("stats/sufficient_statistics.jl")
 include("stats/simulate.jl")
 
