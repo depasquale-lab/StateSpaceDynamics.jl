@@ -13,6 +13,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `smooth!`/`estep!`) (#139)
 - **Breaking:** renamed the `LinearDynamicalSystem` fields
   `state_input_dim`/`obs_input_dim` to `ux_dim`/`uy_dim` to match (#139)
+- Multithreading now uses OhMyThreads.jl (`tforeach`/`tmapreduce`) instead of
+  `Base.Threads` (`@threads`/`@spawn`); OhMyThreads is a new dependency (#143)
+- Deduplicated the per-observation-model complete-data log-likelihood, gradient,
+  and Hessian implementations (Gaussian / Poisson / SLDS-weighted) into shared
+  kernels in `continuous_latents.jl`. The emission-specific pieces are now single
+  dispatch points (`obsloglikelihood!`, `observationgradient!`, and the Hessian
+  emission block), the affine transition residual is defined in exactly one
+  place, and kernel signatures follow a uniform `f!(out, ws, model, x, y, ...)`
+  convention — a new observation model plugs in with one method per kernel
+  (#135, #136, #141)
+- Reworked the monolithic ~90-field `SmoothedWorkspace` into modular components
+  (`BlockTridiagonalWorkspace`, `SmoothConstants`, `NewtonBuffers`,
+  `RegressionBuffers`, `ElboBuffers`, `TDAggBuffers`, `BatchedBuffers`) and
+  unified the dev-facing function handles across the Gaussian, Poisson, and
+  SLDS paths (#144)
+
+### Removed
+- Stale one-off profiling scripts under `benchmark/profiling/` (#144)
+
+### Fixed
+- SLDS ELBO computation (incorrect sign, among other errors); correctness is now
+  tested via the K=1 SLDS ≡ LDS equivalence (#145)
+- SLDS posterior sampling drew from the marginals of `q(x)` (a mean-field
+  approximation) instead of the joint smoothed posterior (#145)
+- SLDS complete-data log-likelihood was inconsistent with the LDS
+  implementations; fixed by deduplicating into the shared kernels, with new
+  tests against Distributions.jl (#135)
+- Poisson LDS ELBO omitted the matrix-normal prior term on the stacked dynamics
+  `[A b B]` (#146)
+- PPCA M-step computed the `σ²` update from the stale `W` instead of the freshly
+  updated one (#147)
+- The backtracking line search's cubic interpolation always stepped to the local
+  minimizer of the interpolant, even when maximizing (#147)
+- `validate_probvec` used a tolerance that could give wrong results for
+  lower-precision element types (e.g. `Float32`) (#147)
+- `tol_PD` threw a method error when the `tol` keyword did not match the matrix
+  element type (#147)
+- The LDS model-selection docs example could select the wrong latent
+  dimension (#148)
 
 ## [0.4.1] - 2026-07-07
 
