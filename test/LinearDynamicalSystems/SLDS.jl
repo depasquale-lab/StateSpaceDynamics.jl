@@ -1331,9 +1331,44 @@ function test_SLDS_elbo_matches_LDS_marginal_K1(; rng=MersenneTwister(0xBEEF))
     @test isapprox(elbo, ll; rtol=1e-6)
 end
 
+function test_SLDS_no_priors_zero_prior_logdensity(; rng=MersenneTwister(0xC0FFEE))
+    K = 3
+    latent_dim = 2
+    obs_dim = 3
+
+    for lds in
+        (_make_gaussian_lds(latent_dim, obs_dim), _make_poisson_lds(latent_dim, obs_dim))
+        slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
+
+        # Every lds should have all prior fields unset.
+        for lds_k in slds.LDSs
+            sm = lds_k.state_model
+            @test sm.Q_prior === nothing
+            @test sm.P0_prior === nothing
+            @test sm.AB_prior === nothing
+            @test lds_k.obs_model.CD_prior === nothing
+            if lds_k.obs_model isa GaussianObservationModel
+                @test lds_k.obs_model.R_prior === nothing
+            end
+        end
+
+        # No priors ⇒ the log p(θ) term is exactly zero.
+        @test StateSpaceDynamics._slds_prior_logdensity(slds) == 0.0
+    end
+
+    # check: attaching one IW prior must move the term off zero.
+    lds = _make_gaussian_lds(latent_dim, obs_dim)
+    lds.state_model.Q_prior = StateSpaceDynamics.IWPrior(;
+        Ψ=Matrix(1.0 * I(latent_dim)), ν=latent_dim + 2.0
+    )
+    slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
+    @test StateSpaceDynamics._slds_prior_logdensity(slds) != 0.0
+    @test isfinite(StateSpaceDynamics._slds_prior_logdensity(slds))
+end
+
 #=
 The joint sampler must reproduce the posterior's temporal correlations, not
-just the per-timestep marginals. The old marginal sampler got this wrong; it 
+just the per-timestep marginals. The old marginal sampler got this wrong; it
 drew each x_t independently, so the empirical lag-1 cross-covariance was ~0 
 instead of `p_smooth_tt1`). Draw many samples from a fixed posterior and check 
 the empirical moments against the smoother's stored mean, marginal covariance, 
