@@ -1483,8 +1483,7 @@ function test_weighted_update_initial_state_mean(; rng=MersenneTwister(0xC0FFEE)
 
     tsteps_per_trial = [size(x[trial], 2) for trial in 1:ntrials]
     sws = StateSpaceDynamics.SmoothWorkspace(Float64, latent_dim, obs_dim, tsteps)
-    ux_seq = [zeros(Float64, 0, Ti) for Ti in tsteps_per_trial]
-    uy_seq = [zeros(Float64, 0, Ti) for Ti in tsteps_per_trial]
+    data = StateSpaceDynamics.Data(slds.LDSs[1], y)
 
     for active_k in 1:K
         lds_k = slds.LDSs[active_k]
@@ -1497,7 +1496,7 @@ function test_weighted_update_initial_state_mean(; rng=MersenneTwister(0xC0FFEE)
             Float64, lds_k, tsteps_per_trial
         )
         StateSpaceDynamics._aggregate_td_suff_stats_weighted!(
-            suf, tfs, lds_k, ux_seq, uy_seq, y, w_k, sws
+            suf, tfs, lds_k, data, w_k, sws
         )
         StateSpaceDynamics.update_initial_state_mean!(lds_k, suf)
 
@@ -1551,8 +1550,7 @@ function test_weighted_update_A_b(; rng=MersenneTwister(0xC0FFEE))
 
     tsteps_per_trial = [size(x[trial], 2) for trial in 1:ntrials]
     sws = StateSpaceDynamics.SmoothWorkspace(Float64, latent_dim, obs_dim, tsteps)
-    ux_seq = [zeros(Float64, 0, Ti) for Ti in tsteps_per_trial]
-    uy_seq = [zeros(Float64, 0, Ti) for Ti in tsteps_per_trial]
+    data = StateSpaceDynamics.Data(slds.LDSs[1], y)
 
     for active_k in 1:K
         lds_k = slds.LDSs[active_k]
@@ -1564,7 +1562,7 @@ function test_weighted_update_A_b(; rng=MersenneTwister(0xC0FFEE))
             Float64, lds_k, tsteps_per_trial
         )
         StateSpaceDynamics._aggregate_td_suff_stats_weighted!(
-            suf, tfs, lds_k, ux_seq, uy_seq, y, w_k, sws
+            suf, tfs, lds_k, data, w_k, sws
         )
         StateSpaceDynamics.update_A_b!(lds_k, suf, sws)
 
@@ -1621,8 +1619,7 @@ function test_weighted_update_Q(; rng=MersenneTwister(0xC0FFEE))
 
     tsteps_per_trial = [size(x[trial], 2) for trial in 1:ntrials]
     sws = StateSpaceDynamics.SmoothWorkspace(Float64, latent_dim, obs_dim, tsteps)
-    ux_seq = [zeros(Float64, 0, Ti) for Ti in tsteps_per_trial]
-    uy_seq = [zeros(Float64, 0, Ti) for Ti in tsteps_per_trial]
+    data = StateSpaceDynamics.Data(slds.LDSs[1], y)
 
     for active_k in 1:K
         lds_k = slds.LDSs[active_k]
@@ -1635,7 +1632,7 @@ function test_weighted_update_Q(; rng=MersenneTwister(0xC0FFEE))
             Float64, lds_k, tsteps_per_trial
         )
         StateSpaceDynamics._aggregate_td_suff_stats_weighted!(
-            suf, tfs, lds_k, ux_seq, uy_seq, y, w_k, sws
+            suf, tfs, lds_k, data, w_k, sws
         )
         StateSpaceDynamics.update_A_b!(lds_k, suf, sws)
         StateSpaceDynamics.update_Q!(lds_k, suf, sws)

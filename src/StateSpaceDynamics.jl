@@ -59,7 +59,7 @@ export DimensionMismatchError, NotPositiveDefiniteError, NotSymmetricError
 export InvalidProbabilityVectorError, NumericalStabilityError
 
 # Models and Types
-export ProbabilisticPCA, SLDS, LinearDynamicalSystem, Data
+export ProbabilisticPCA, SLDS, LinearDynamicalSystem
 export AbstractStateModel, AbstractObservationModel
 export GaussianStateModel, GaussianObservationModel, PoissonObservationModel
 export IWPrior, MNPrior

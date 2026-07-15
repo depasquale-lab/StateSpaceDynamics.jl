@@ -414,10 +414,9 @@ function test_obs_model_parameter_updates(ntrials::Int=1)
     suf = StateSpaceDynamics._initialize_td_sufficient_statistics(
         Float64, lds, tsteps_per_trial
     )
-    ux_seq = [zeros(Float64, 0, size(yt, 2)) for yt in y]
-    uy_seq = [zeros(Float64, 0, size(yt, 2)) for yt in y]
-    StateSpaceDynamics._td_init_const_blocks!(ws, lds, tsteps_per_trial, y, ux_seq, uy_seq)
-    StateSpaceDynamics._aggregate_td_suff_stats!(suf, tfs, lds, ux_seq, uy_seq, y, ws)
+    data = StateSpaceDynamics.Data(lds, y)
+    StateSpaceDynamics._td_init_const_blocks!(ws, lds, data)
+    StateSpaceDynamics._aggregate_td_suff_stats!(suf, tfs, lds, data, ws)
     StateSpaceDynamics.mstep!(lds, suf, ws)
 
     @test isapprox(lds.obs_model.C, CD_opt[:, 1:D], atol=1e-6, rtol=1e-6)
@@ -512,12 +511,9 @@ function test_gaussian_update_R_matches_residual_cov(; rng=MersenneTwister(7))
         suf = StateSpaceDynamics._initialize_td_sufficient_statistics(
             Float64, lds, tsteps_per_trial
         )
-        ux_seq = [zeros(Float64, 0, Tt) for _ in 1:N]
-        uy_seq = [zeros(Float64, 0, Tt) for _ in 1:N]
-        StateSpaceDynamics._td_init_const_blocks!(
-            ws, lds, tsteps_per_trial, Y, ux_seq, uy_seq
-        )
-        StateSpaceDynamics._aggregate_td_suff_stats!(suf, tfs, lds, ux_seq, uy_seq, Y, ws)
+        data = StateSpaceDynamics.Data(lds, Y)
+        StateSpaceDynamics._td_init_const_blocks!(ws, lds, data)
+        StateSpaceDynamics._aggregate_td_suff_stats!(suf, tfs, lds, data, ws)
         StateSpaceDynamics.update_R!(lds, suf, ws)
 
         @test issymmetric(lds.obs_model.R)
@@ -753,13 +749,12 @@ function test_gaussian_weighting_equiv_to_duplication(; rng=MersenneTwister(9))
         suf = StateSpaceDynamics._initialize_td_sufficient_statistics(
             Float64, lds1, tsteps_per_trial
         )
-        ux_seq = [zeros(Float64, 0, Tt) for _ in 1:N]
-        uy_seq = [zeros(Float64, 0, Tt) for _ in 1:N]
+        data = StateSpaceDynamics.Data(lds1, Y)
         w = [ones(Float64, Tt), 2.0 .* ones(Float64, Tt)]
         for _ in 1:6
-            StateSpaceDynamics.smooth!(lds1, tfs, Y, sws_pool)
+            StateSpaceDynamics.smooth!(lds1, tfs, data, sws_pool)
             StateSpaceDynamics._aggregate_td_suff_stats_weighted!(
-                suf, tfs, lds1, ux_seq, uy_seq, Y, w, ws
+                suf, tfs, lds1, data, w, ws
             )
             StateSpaceDynamics.mstep!(lds1, suf, ws)
         end
@@ -846,8 +841,6 @@ function test_td_weighted_aggregator_matches_unweighted_with_inputs(;
         v = 0.5 * randn(rng, uy_dim, Tt)
         _, y1 = rand(rng, lds, Tt; ux=u, uy=v)
         y = [y1]
-        ux_seq = [u]
-        uy_seq = [v]
 
         tsteps_per_trial = [Tt]
         tfs = StateSpaceDynamics.initialize_FilterSmooth(lds, tsteps_per_trial)
@@ -860,16 +853,15 @@ function test_td_weighted_aggregator_matches_unweighted_with_inputs(;
 
         # Populate the smoother outputs (x_smooth, p_smooth, p_smooth_tt1) once;
         # both aggregators read the same tfs.
-        StateSpaceDynamics._td_init_const_blocks!(
-            ws, lds, tsteps_per_trial, y, ux_seq, uy_seq
-        )
-        StateSpaceDynamics.smooth!(lds, tfs, y, sws_pool, ux_seq, uy_seq)
+        data = StateSpaceDynamics.Data(lds, y; ux=[u], uy=[v])
+        StateSpaceDynamics._td_init_const_blocks!(ws, lds, data)
+        StateSpaceDynamics.smooth!(lds, tfs, data, sws_pool)
 
         # Reference.
         suf_u = StateSpaceDynamics._initialize_td_sufficient_statistics(
             Float64, lds, tsteps_per_trial
         )
-        StateSpaceDynamics._aggregate_td_suff_stats!(suf_u, tfs, lds, ux_seq, uy_seq, y, ws)
+        StateSpaceDynamics._aggregate_td_suff_stats!(suf_u, tfs, lds, data, ws)
         ref = (
             init_n=suf_u.init_n,
             dyn_n=suf_u.dyn_n,
@@ -890,7 +882,7 @@ function test_td_weighted_aggregator_matches_unweighted_with_inputs(;
         )
         weights = [ones(Float64, Tt)]
         StateSpaceDynamics._aggregate_td_suff_stats_weighted!(
-            suf_w, tfs, lds, ux_seq, uy_seq, y, weights, ws
+            suf_w, tfs, lds, data, weights, ws
         )
 
         @test suf_w.init_n ≈ ref.init_n

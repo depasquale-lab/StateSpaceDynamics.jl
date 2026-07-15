@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Breaking:** the previously exported (but unused) `Data` struct is now a
+  private, validated container for multi-trial observations + `ux`/`uy` inputs.
+  Public entry points (`fit!`, `smooth`, `loglikelihood`) accept plain arrays —
+  a `(obs_dim, T)` matrix, a `(obs_dim, T, ntrials)` array, or a vector of
+  per-trial matrices, with `ux`/`uy` in the same shape family — and construct
+  a `Data` at the boundary, which is the single shape/dimension validation
+  site (observation rows are now checked against `obs_dim` up front). The
+  multi-trial backend (`estep!`, multi-trial `smooth!`, the sufficient-stats
+  aggregators, `_fit_tridiag!`) consumes `Data` instead of threading
+  `y`/`ux`/`uy` triples through every signature (#139)
+- `smooth` (public, allocating) now accepts `ux`/`uy` keywords on the Gaussian
+  path and all three observation shapes on both the Gaussian and Poisson
+  paths; multi-trial input returns per-trial vectors, matrix input returns
+  matrices as before (#139)
 - **Breaking:** renamed the control-input arguments `latent_inputs`/`obs_inputs`
   to `ux`/`uy` across the public API (keywords on `fit!`/`rand`, positional on
   `smooth!`/`estep!`) (#139)

@@ -52,7 +52,7 @@ function sufficient_statistics!(tfs::TrialFilterSmooth{T}) where {T<:Real}
 end
 
 """
-    _td_init_const_blocks!(sws, lds, tsteps_per_trial, y, ux_seq, uy_seq)
+    _td_init_const_blocks!(sws, lds, data)
 
 Fill the data-only constant blocks of the sufficient-statistics buffers
 (`sws.agg.obs_yy_const` / `obs_xy_const` / `obs_xx_const` / `dyn_xx_const`)
@@ -60,13 +60,12 @@ once at fit entry. These are observation-independent: they depend only on
 the raw inputs, not on smoother output.
 """
 function _td_init_const_blocks!(
-    sws::SmoothWorkspace{T},
-    lds::LinearDynamicalSystem{T,S,O},
-    tsteps_per_trial::AbstractVector{Int},
-    y::AbstractVector{<:AbstractMatrix{T}},
-    ux_seq::AbstractVector{<:AbstractMatrix{T}},
-    uy_seq::AbstractVector{<:AbstractMatrix{T}},
+    sws::SmoothWorkspace{T}, lds::LinearDynamicalSystem{T,S,O}, data::Data{T}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+    y = data.y
+    ux_seq = data.ux
+    uy_seq = data.uy
+    tsteps_per_trial = data.tsteps
     D = lds.latent_dim
     p = lds.obs_dim
     ux_dim = lds.ux_dim
@@ -213,7 +212,7 @@ function _initialize_td_sufficient_statistics(
 end
 
 """
-    _aggregate_td_suff_stats!(suf, tfs, lds, ux_seq, uy_seq, sws)
+    _aggregate_td_suff_stats!(suf, tfs, lds, data, sws)
 
 Aggregate per-trial smoother output (`x_smooth`, `p_smooth`, `p_smooth_tt1`)
 into `suf` using per-trial GEMM/SYRK. Replaces the per-timestep, per-trial
@@ -227,11 +226,12 @@ function _aggregate_td_suff_stats!(
     suf::SufficientStatistics{T},
     tfs::TrialFilterSmooth{T},
     lds::LinearDynamicalSystem{T,S,O},
-    ux_seq::AbstractVector{<:AbstractMatrix{T}},
-    uy_seq::AbstractVector{<:AbstractMatrix{T}},
-    y::AbstractVector{<:AbstractMatrix{T}},
+    data::Data{T},
     sws::SmoothWorkspace{T},
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+    y = data.y
+    ux_seq = data.ux
+    uy_seq = data.uy
     D = lds.latent_dim
     p = lds.obs_dim
     ux_dim = lds.ux_dim
@@ -412,7 +412,7 @@ function _aggregate_td_suff_stats!(
 end
 
 """
-    _aggregate_td_suff_stats_weighted!(suf, tfs, lds, ux_seq, uy_seq, y, weights, sws)
+    _aggregate_td_suff_stats_weighted!(suf, tfs, lds, data, weights, sws)
 
 Weighted variant of `_aggregate_td_suff_stats!`. Each per-timestep
 accumulation is scaled by `weights[trial][t]`, which carries the
@@ -432,12 +432,13 @@ function _aggregate_td_suff_stats_weighted!(
     suf::SufficientStatistics{T},
     tfs::TrialFilterSmooth{T},
     lds::LinearDynamicalSystem{T,S,O},
-    ux_seq::AbstractVector{<:AbstractMatrix{T}},
-    uy_seq::AbstractVector{<:AbstractMatrix{T}},
-    y::AbstractVector{<:AbstractMatrix{T}},
+    data::Data{T},
     weights::AbstractVector{<:AbstractVector{T}},
     sws::SmoothWorkspace{T},
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+    y = data.y
+    ux_seq = data.ux
+    uy_seq = data.uy
     D = lds.latent_dim
     p = lds.obs_dim
     ux_dim = lds.ux_dim

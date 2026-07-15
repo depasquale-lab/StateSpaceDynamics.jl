@@ -10,16 +10,22 @@ Poisson LDS
     Hessian:        (generic hessian! lives in continuous_latents.jl;
                     emission kernels in poisson_observations.jl)
 
-    Smooth:         smooth!(lds, fs, y, sws)
+    Smooth:         smooth(plds, y)                 — public, allocating
+                    smooth!(lds, fs, y, sws)
                     smooth!(lds, tfs, y, sws_pool)
 
-    ELBO:           elbo!(plds, suf, tfs, y, sws_pool)
+    ELBO:           elbo!(plds, suf, tfs, data, sws_pool)
 
-    E-Step:         estep!(lds, suf, tfs, y, ux, uy, sws_pool)
+    E-Step:         estep!(lds, suf, tfs, data, sws_pool)
 
-    M-Step:         mstep!(plds, suf, tfs, y, sws_pool)
+    M-Step:         mstep!(plds, suf, tfs, data, sws_pool)
 
     Fit:            fit!(plds, y)
+
+    Public entry points take plain arrays and construct a validated `Data`
+    (see `utils/validation.jl`); the multi-trial backend consumes `Data`.
+    The Poisson path takes no `ux`/`uy` inputs yet — `Data` construction
+    enforces `ux_dim == uy_dim == 0`.
 =============================================================================#
 
 """
@@ -300,7 +306,7 @@ function gradient_observation_model!(
 end
 
 """
-    mstep!(plds, suf, tfs, y, sws)
+    mstep!(plds, suf, tfs, data, sws_pool)
 
 Suf-based M-step for a Poisson LDS. The Gaussian-state half (x0, P0, A&b, Q)
 is updated from the aggregated sufficient statistics in `suf`. The Poisson
@@ -311,7 +317,7 @@ function mstep!(
     plds::LinearDynamicalSystem{T,S,O},
     suf::SufficientStatistics{T},
     tfs::TrialFilterSmooth{T},
-    y::AbstractVector{<:AbstractMatrix{T}},
+    data::Data{T},
     sws_pool::Vector{SmoothWorkspace{T}},
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     sws = sws_pool[1]
@@ -319,12 +325,12 @@ function mstep!(
     update_initial_state_covariance!(plds, suf, sws)
     update_A_b!(plds, suf, sws)
     update_Q!(plds, suf, sws)
-    update_observation_model!(plds, tfs, y, sws_pool)
+    update_observation_model!(plds, tfs, data.y, sws_pool)
     return nothing
 end
 
 """
-    elbo!(plds, suf, tfs, y, sws_pool)
+    elbo!(plds, suf, tfs, data, sws_pool)
 
 Suf-based Poisson ELBO. Mirrors the Gaussian TD path's split:
 
@@ -341,9 +347,10 @@ function elbo!(
     plds::LinearDynamicalSystem{T,S,O},
     suf::SufficientStatistics{T},
     tfs::TrialFilterSmooth{T},
-    y::AbstractVector{<:AbstractMatrix{T}},
+    data::Data{T},
     sws_pool::Vector{SmoothWorkspace{T}},
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
+    y = data.y
     ntrials = length(y)
 
     total_entropy = zero(T)
@@ -575,7 +582,7 @@ function smooth!(
 end
 
 """
-    estep!(lds, suf, tfs, y, ux, uy, sws_pool; max_iter=20, tol=1e-6)
+    estep!(lds, suf, tfs, data, sws_pool; max_iter=20, tol=1e-6)
 
 Suf-based Poisson E-step. Smooths, aggregates state-side sufficient
 statistics into `suf` from each trial's smoother output (`x_smooth`,
@@ -585,19 +592,50 @@ function estep!(
     lds::LinearDynamicalSystem{T,S,O},
     suf::SufficientStatistics{T},
     tfs::TrialFilterSmooth{T},
-    y::AbstractVector{<:AbstractMatrix{T}},
-    ux::AbstractVector{<:AbstractMatrix{T}},
-    uy::AbstractVector{<:AbstractMatrix{T}},
+    data::Data{T},
     sws_pool::Vector{SmoothWorkspace{T}};
     max_iter::Int=20,
     tol::T=T(1e-6),
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
 
     # smooth each trial
-    smooth!(lds, tfs, y, sws_pool; max_iter=max_iter, tol=tol)
+    smooth!(lds, tfs, data.y, sws_pool; max_iter=max_iter, tol=tol)
 
     # compute the sufficient statistics
-    return _aggregate_td_suff_stats!(suf, tfs, lds, ux, uy, y, sws_pool[1])
+    return _aggregate_td_suff_stats!(suf, tfs, lds, data, sws_pool[1])
+end
+
+"""
+    smooth(plds, y)
+
+Direct smoothing for a Poisson LDS (allocating convenience wrapper around the
+iterative-Newton `smooth!`).
+
+# Arguments
+- `plds::LinearDynamicalSystem`: the Poisson LDS model.
+- `y`: observed counts — a `(obs_dim, T)` matrix (single trial), a
+  `(obs_dim, T, ntrials)` array, or a `Vector{<:AbstractMatrix}` of per-trial
+  `(obs_dim, T_i)` matrices (ragged lengths allowed).
+
+# Returns
+For a single-trial (matrix) `y`:
+- `x_smooth::Matrix`: smoothed latent means (latent_dim × tsteps).
+- `p_smooth::Array{T,3}`: smoothed latent covariances (latent_dim × latent_dim × tsteps).
+
+For multi-trial `y`: `Vector`s of the above, one entry per trial.
+"""
+function smooth(
+    plds::LinearDynamicalSystem{T,S,O},
+    y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}},
+) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
+    data = Data(plds, y)
+    tfs = initialize_FilterSmooth(plds, data.tsteps)::TrialFilterSmooth{T}
+    sws_pool = [
+        SmoothWorkspace(T, plds.latent_dim, plds.obs_dim, maximum(data.tsteps)) for
+        _ in 1:Threads.maxthreadid()
+    ]
+    smooth!(plds, tfs, data.y, sws_pool)
+    return _collect_smooth_output(tfs, y)
 end
 
 """
@@ -607,8 +645,9 @@ Fit a Poisson LDS via Laplace-EM.
 
 # Arguments
 - `plds`: the Poisson LDS model (modified in place)
-- `y`: observations. Two shapes accepted:
+- `y`: observations. Three shapes accepted:
     * `AbstractMatrix{T}` of size `(obs_dim, T)` — single trial
+    * `AbstractArray{T,3}` of size `(obs_dim, T, ntrials)` — equal-length multi-trial
     * `AbstractVector{<:AbstractMatrix{T}}` — multi-trial, each `(obs_dim, T_i)`,
       ragged trial lengths allowed
 
@@ -621,27 +660,23 @@ Fit a Poisson LDS via Laplace-EM.
 """
 function fit!(
     plds::LinearDynamicalSystem{T,S,O},
-    y::AbstractVector{<:AbstractMatrix{T}};
+    y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
     max_iter::Int=100,
     tol::Float64=1e-6,
     progress=true,
     newton_max_iter::Int=20,
     newton_tol::Float64=1e-6,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    obs_dim = plds.obs_dim
-    latent_dim = plds.latent_dim
-    tsteps_per_trial = [size(yt, 2) for yt in y]
-    T_max = maximum(tsteps_per_trial)
+    data = Data(plds, y)
+    T_max = maximum(data.tsteps)
 
-    tfs = initialize_FilterSmooth(plds, tsteps_per_trial)::TrialFilterSmooth{T}
+    tfs = initialize_FilterSmooth(plds, data.tsteps)::TrialFilterSmooth{T}
 
     npool = Threads.maxthreadid()
-    sws_pool = [SmoothWorkspace(T, latent_dim, obs_dim, T_max) for _ in 1:npool]
+    sws_pool = [SmoothWorkspace(T, plds.latent_dim, plds.obs_dim, T_max) for _ in 1:npool]
 
-    suf = _initialize_td_sufficient_statistics(T, plds, tsteps_per_trial)
-    ux = [zeros(T, 0, Ti) for Ti in tsteps_per_trial]
-    uy = [zeros(T, 0, Ti) for Ti in tsteps_per_trial]
-    _td_init_const_blocks!(sws_pool[1], plds, tsteps_per_trial, y, ux, uy)
+    suf = _initialize_td_sufficient_statistics(T, plds, data.tsteps)
+    _td_init_const_blocks!(sws_pool[1], plds, data)
 
     elbos = Vector{T}(undef, max_iter)
 
@@ -659,15 +694,13 @@ function fit!(
     for iter in 1:max_iter
 
         # E-step: smooth each trial, aggregate state-side suff-stats, compute ELBO
-        estep!(
-            plds, suf, tfs, y, ux, uy, sws_pool; max_iter=newton_max_iter, tol=T(newton_tol)
-        )
+        estep!(plds, suf, tfs, data, sws_pool; max_iter=newton_max_iter, tol=T(newton_tol))
 
         # compute the ELBO
-        elbos[iter] = elbo!(plds, suf, tfs, y, sws_pool)
+        elbos[iter] = elbo!(plds, suf, tfs, data, sws_pool)
 
         # M-step: update state-side suff-stats from suf, update Poisson emission via LBFGS
-        mstep!(plds, suf, tfs, y, sws_pool)
+        mstep!(plds, suf, tfs, data, sws_pool)
 
         # print progress
         prog !== nothing && next!(prog)
@@ -682,10 +715,4 @@ function fit!(
 
     prog !== nothing && finish!(prog)
     return elbos
-end
-
-function fit!(
-    plds::LinearDynamicalSystem{T,S,O}, y::AbstractMatrix{T}; kwargs...
-) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    return fit!(plds, [y]; kwargs...)
 end

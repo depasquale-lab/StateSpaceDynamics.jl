@@ -171,7 +171,7 @@ Given the latent structure of state-space models, we must rely on either the Exp
     These issues affect **parameter interpretability** but not **predictive performance**; be cautious when interpreting individual entries of ``A``, ``C``, or ``Q``.
 
 ```@docs
-fit!(lds::LinearDynamicalSystem{T,S,O}, y::AbstractVector{<:AbstractMatrix{T}}; max_iter::Int=100, tol::Float64=1e-6, progress::Bool=true) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+fit!(lds::LinearDynamicalSystem{T,S,O}, y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}}; max_iter::Int=100, tol::Float64=1e-6, progress::Bool=true) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
 ```
 
 ## Inverse-Wishart Priors on Covariances (MAP)

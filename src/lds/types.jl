@@ -20,14 +20,28 @@ abstract type AbstractObservationModel{T<:Real} end
 """
     Data{T<:Real}
 
-Container for the observed data passed to the Kalman path: observations `y`,
-dynamics (latent) inputs `ux`, and observation inputs `uy`, each `(dim, tsteps, ntrials)`
-(input fields may have zero rows when no controls are supplied).
+**Internal** container for a normalized, validated multi-trial dataset:
+per-trial observations `y`, dynamics inputs `ux`, and observation inputs `uy`
+(each a vector of `(dim, T_i)` matrices; input matrices have zero rows when
+the model takes no inputs), plus the per-trial lengths `tsteps`.
+
+Not part of the public API. Public entry points (`fit!`, `smooth`,
+`loglikelihood`) accept plain arrays — a `(obs_dim, T)` matrix, a
+`(obs_dim, T, ntrials)` array, or a vector of per-trial matrices — and
+construct a `Data` via `Data(lds, y; ux, uy)` (see `utils/validation.jl`),
+which is the single shape/dimension validation site. Everything downstream
+of a `Data` may assume consistent, model-compatible shapes.
 """
-Base.@kwdef struct Data{T<:Real}
-    y::Array{T,3}
-    ux::Array{T,3}
-    uy::Array{T,3}
+struct Data{
+    T<:Real,
+    YV<:AbstractVector{<:AbstractMatrix{T}},
+    UXV<:AbstractVector{<:AbstractMatrix{T}},
+    UYV<:AbstractVector{<:AbstractMatrix{T}},
+}
+    y::YV
+    ux::UXV
+    uy::UYV
+    tsteps::Vector{Int}
 end
 
 """
