@@ -156,9 +156,9 @@ scale/conditioning of the matrix; the result is rewrapped as a `PDMat` so downst
 code can reuse the cached Cholesky. The matrix is symmetrized (via `hermitianpart`) if
 passed as a plain `Matrix`.
 
-Used by the Kalman filter/smoother to keep predicted and filtered covariances strictly
-positive definite in the presence of floating-point noise. Ported from
-StateSpaceAnalysis.
+Used by the marginal-loglikelihood Kalman filter to keep predicted and filtered
+covariances strictly positive definite in the presence of floating-point noise.
+Ported from StateSpaceAnalysis.
 """
 function tol_PD(
     A_sym::Union{Symmetric{T},Hermitian{T}}; tol::Real=1e-6

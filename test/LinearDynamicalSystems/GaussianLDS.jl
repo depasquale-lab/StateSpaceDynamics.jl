@@ -815,11 +815,8 @@ function test_mn_prior_type_decoupled_from_model_matrix()
         @test om.CD_prior isa StateSpaceDynamics.MNPrior{Float64,Matrix{Float64}}
 
         lds = LinearDynamicalSystem(sm, om)
-        kws = StateSpaceDynamics.KalmanWorkspace(lds, 20, 1)
-        @test kws.AB_prior isa StateSpaceDynamics.MNPrior{Float64,Matrix{Float64}}
-        @test kws.CD_prior isa StateSpaceDynamics.MNPrior{Float64,Matrix{Float64}}
-        @test kws.AB_prior === sm.AB_prior   # stored verbatim, no copy/convert
-        @test kws.CD_prior === om.CD_prior
+        @test lds.state_model.AB_prior === sm.AB_prior   # stored verbatim, no copy/convert
+        @test lds.obs_model.CD_prior === om.CD_prior
     end
     return nothing
 end

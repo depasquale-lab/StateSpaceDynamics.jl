@@ -55,7 +55,7 @@ where `B·ux_t` is present only when `B` is supplied (i.e., has nonzero columns)
 - `AB_prior::Union{Nothing,MNPrior{T,Matrix{T}}} = nothing`: Optional matrix-normal prior on
     the stacked dynamics matrix `[A B]`. Pair with `Q_prior` for a full MNIW prior on `(AB, Q)`.
     Prior matrices are stored as plain `Matrix{T}` (decoupled from `A`'s storage type `M`) so
-    they match the internal `KalmanWorkspace` regardless of how `A` is stored.
+    they match the internal workspaces regardless of how `A` is stored.
 """
 Base.@kwdef mutable struct GaussianStateModel{
     T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}
@@ -85,7 +85,7 @@ Represents the observation model of a Linear Dynamical System with Gaussian nois
 - `CD_prior::Union{Nothing,MNPrior{T,Matrix{T}}} = nothing`: Optional matrix-normal prior on
     the stacked emission matrix `[C D]`. Pair with `R_prior` for a full MNIW prior on `(CD, R)`.
     Prior matrices are stored as plain `Matrix{T}` (decoupled from `C`'s storage type `M`) so
-    they match the internal `KalmanWorkspace` regardless of how `C` is stored.
+    they match the internal workspaces regardless of how `C` is stored.
 """
 Base.@kwdef mutable struct GaussianObservationModel{
     T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}

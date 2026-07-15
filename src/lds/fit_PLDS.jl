@@ -134,7 +134,7 @@ model (non-conjugate; there is no closed-form Kalman filter as in the Gaussian c
 Use `joint_loglikelihood(plds, x, y)` for the complete-data log-likelihood given a
 trajectory `x`, or the ELBO returned by `fit!` as a lower bound on `log p(y)`.
 """
-function loglikelihood(
+function StatsAPI.loglikelihood(
     plds::LinearDynamicalSystem{T,S,O}, y
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     return error(

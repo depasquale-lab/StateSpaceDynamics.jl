@@ -98,8 +98,8 @@ end
 In-place variant of `info_update!` that writes the result of
 `inv(inv(P0) + CiRC)` into the existing PDMat `P_dest` (overwriting both its
 `mat` and `chol.factors` fields). This is the form required when the result
-must persist across many calls — e.g. inside a loop where every step's output
-is read again later (Kalman forward pass → backward pass).
+must persist across calls — e.g. the Kalman filter's forward pass, where each
+step's filtered covariance seeds the next step's prediction.
 
 `scratch_M` is a single n × n workspace (re-used across calls). All inputs and
 the destination must be n × n.
