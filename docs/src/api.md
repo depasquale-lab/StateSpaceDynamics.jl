@@ -63,7 +63,7 @@ fit!(ppca::ProbabilisticPCA, X::AbstractMatrix{T}, max_iters::Int=100, tol::Floa
 ## Likelihoods and ELBO
 
 ```@docs
-loglikelihood(lds::LinearDynamicalSystem{T,SM,OM}, y::AbstractArray{T,3}) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
+loglikelihood(lds::LinearDynamicalSystem{T,SM,OM}, y::AbstractVector{<:AbstractMatrix{T}}) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
 loglikelihood(plds::LinearDynamicalSystem{T,S,O}, y) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
 loglikelihood(ppca::ProbabilisticPCA, X::AbstractMatrix{T}) where {T<:Real}
 elbo!(lds::LinearDynamicalSystem{T,S,O}, suf::StateSpaceDynamics.SufficientStatistics{T}, sws::StateSpaceDynamics.SmoothWorkspace{T}, total_entropy::T) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
