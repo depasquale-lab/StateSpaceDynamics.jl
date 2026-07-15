@@ -386,7 +386,6 @@ function test_marginal_loglikelihood()
     @test_throws Exception StateSpaceDynamics.loglikelihood(plds, y_pois)
 end
 
-
 # =============================================================================
 # Marginal log-likelihood (shared-covariance Kalman filter).
 #
@@ -517,8 +516,7 @@ function test_marginal_ll_matches_naive_filter()
     @test ll ≈ ll_ref rtol = 1e-4
 
     # Single-matrix form runs the same filter on one trial.
-    @test SSD.loglikelihood(lds, y[:, :, 1]) ≈ _naive_kalman_ll(lds, y[:, :, 1]) rtol =
-        1e-4
+    @test SSD.loglikelihood(lds, y[:, :, 1]) ≈ _naive_kalman_ll(lds, y[:, :, 1]) rtol = 1e-4
 end
 
 function test_marginal_ll_with_inputs()
@@ -528,9 +526,7 @@ function test_marginal_ll_with_inputs()
     N = size(y, 3)
 
     ll = SSD.loglikelihood(lds, y; ux=u, uy=v)
-    ll_ref = sum(
-        _naive_kalman_ll(lds, y[:, :, n]; u=u[:, :, n], v=v[:, :, n]) for n in 1:N
-    )
+    ll_ref = sum(_naive_kalman_ll(lds, y[:, :, n]; u=u[:, :, n], v=v[:, :, n]) for n in 1:N)
     @test ll ≈ ll_ref rtol = 1e-4
 
     # Vector-of-matrices form agrees with the 3-D form.
