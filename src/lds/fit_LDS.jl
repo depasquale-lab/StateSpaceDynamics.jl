@@ -895,10 +895,10 @@ function _filter_cov_pass(
     C = lds.obs_model.C
     D = lds.latent_dim
 
-    P0_PD = tol_PD(lds.state_model.P0)
-    Q_PD = tol_PD(lds.state_model.Q)
-    R_PD = tol_PD(lds.obs_model.R)
-    CiRC = tol_PD(Xt_invA_X(R_PD, C))
+    P0_PD = lds.state_model.P0
+    Q_PD = lds.state_model.Q
+    R_PD = lds.obs_model.R
+    CiRC = Xt_invA_X(R_PD, C)
 
     S_chol = Vector{Cholesky{T,Matrix{T}}}(undef, T_max)
     K = Vector{Matrix{T}}(undef, T_max)
