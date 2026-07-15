@@ -30,7 +30,7 @@ default(; # hide
 
 K_true = 4
 D = 10
-T = 500
+T = 1000
 
 θ = π / 12
 λ = 0.92
@@ -171,6 +171,6 @@ test_lds_dimensions(true_lds; latent_dim=K_true, obs_dim=D)  #src
 test_lds_dimensions(final_lds; latent_dim=best_K, obs_dim=D)  #src
 @test best_K in K_candidates  #src
 @test reconstruction_error >= 0  #src
-# CV should pick a sensible dimension — within ±3 of the truth on this small  #src
+# CV should pick a sensible dimension within ±1 of the truth on this small  #src
 # synthetic dataset (CV is noisy across random initialisations).              #src
-@test abs(best_K - K_true) <= 3  #src
+@test abs(best_K - K_true) <= 1  #src
