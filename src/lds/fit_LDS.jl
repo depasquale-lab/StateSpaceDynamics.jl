@@ -675,7 +675,7 @@ function elbo!(
     =#
     if lds.state_model.AB_prior !== nothing
         D = lds.latent_dim
-        ux_dim = lds.state_input_dim
+        ux_dim = lds.ux_dim
         W_ab = view(sws.reg.AB, :, 1:(D + 1 + ux_dim))
         copyto!(view(W_ab, :, 1:D), lds.state_model.A)
         copyto!(view(W_ab, :, D + 1), lds.state_model.b)
@@ -686,7 +686,7 @@ function elbo!(
     end
     if lds.obs_model.CD_prior !== nothing
         D = lds.latent_dim
-        uy_dim = lds.obs_input_dim
+        uy_dim = lds.uy_dim
         W_cd = view(sws.reg.CD, :, 1:(D + 1 + uy_dim))
         copyto!(view(W_cd, :, 1:D), lds.obs_model.C)
         copyto!(view(W_cd, :, D + 1), lds.obs_model.d)
@@ -753,8 +753,8 @@ function fit!(
     uy::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     tsteps_per_trial = [size(yt, 2) for yt in y]
-    ux = _normalize_multitrial_ux(ux, lds.state_input_dim, tsteps_per_trial, T, "ux")
-    uy = _normalize_multitrial_uy(uy, lds.obs_input_dim, tsteps_per_trial, T, lds.obs_model)
+    ux = _normalize_multitrial_ux(ux, lds.ux_dim, tsteps_per_trial, T, "ux")
+    uy = _normalize_multitrial_uy(uy, lds.uy_dim, tsteps_per_trial, T, lds.obs_model)
     return _fit_tridiag!(
         lds, y; ux=ux, uy=uy, max_iter=max_iter, tol=tol, progress=progress
     )
@@ -785,8 +785,8 @@ function _fit_tridiag!(
         lds, tsteps_per_trial; cov_alias=cov_alias
     )::TrialFilterSmooth{T}
 
-    ux_dim = lds.state_input_dim
-    uy_dim = lds.obs_input_dim
+    ux_dim = lds.ux_dim
+    uy_dim = lds.uy_dim
     #=
     Only `sws_pool[1]` needs the batched mean-pass buffers (used by the
     equal-length cov-cache fast path); the other workspaces back the

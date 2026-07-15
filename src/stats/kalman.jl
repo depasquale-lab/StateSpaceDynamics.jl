@@ -124,8 +124,8 @@ end
     obs_dim = model.obs_dim
     tsteps = size(data.y, 2)
     ntrials = size(data.y, 3)
-    ux_dim = model.state_input_dim     # user-supplied input dim (0 when no controls)
-    uy_dim = model.obs_input_dim       # user-supplied obs-control dim
+    ux_dim = model.ux_dim     # user-supplied input dim (0 when no controls)
+    uy_dim = model.uy_dim       # user-supplied obs-control dim
 
     # Regression-augmented column counts: D + 1 (bias) + user_input_dim.
     dyn_reg_dim = latent_dim + 1 + ux_dim
@@ -324,14 +324,14 @@ function precompute_kalman_constants!(
     #=
     Dynamics offset per timestep/trial: `Bu[:, t, n] = b + B · u[:, t, n]`.
     The `b` term is present always; `B · u` is added only when user inputs
-    are supplied (state_input_dim > 0). `forwards_mean!` consumes `Bu` as
+    are supplied (ux_dim > 0). `forwards_mean!` consumes `Bu` as
     the pre-filled non-`A` part of pred_mean[:, t+1, :].
     =#
     b = lds.state_model.b
     @views for n in axes(kws.Bu, 3), t in axes(kws.Bu, 2)
         kws.Bu[:, t, n] .= b
     end
-    if kws.state_input_dim > 0
+    if kws.ux_dim > 0
         B = lds.state_model.B
         @views for n in axes(data.ux, 3)
             mul!(kws.Bu[:, :, n], B, data.ux[:, :, n], one(T), one(T))  # Bu += B·u
@@ -343,7 +343,7 @@ function precompute_kalman_constants!(
     @views for n in axes(kws.y_minus_d, 3), t in axes(kws.y_minus_d, 2)
         kws.y_minus_d[:, t, n] .= data.y[:, t, n] .- obs_d
     end
-    if kws.obs_input_dim > 0
+    if kws.uy_dim > 0
         D = lds.obs_model.D
         @views for n in axes(data.uy, 3)
             mul!(kws.y_minus_d[:, :, n], D, data.uy[:, :, n], -one(T), one(T))
@@ -580,7 +580,7 @@ end
     user inputs (if any) occupy `latent_dim + 2 : end`.
     =#
     D = kws.latent_dim
-    ux_dim = kws.state_input_dim
+    ux_dim = kws.ux_dim
     dyn_n_int = (kws.tsteps - 1) * kws.ntrials
     suf.dyn_n = T(dyn_n_int)
     x_prev .= reshape(smooth_mean[:, 1:(end - 1), :], D, dyn_n_int)
@@ -629,7 +629,7 @@ end
 
     # observations -------
     # Same layout: regress y on [x; 1; d] to fit [C d_bias D].
-    uy_dim = kws.obs_input_dim
+    uy_dim = kws.uy_dim
     obs_n_int = kws.tsteps * kws.ntrials
     suf.obs_n = T(obs_n_int)
     x_cur .= reshape(smooth_mean, D, obs_n_int)
@@ -762,10 +762,10 @@ function mstep!(
             regress(suf.dyn_xx[], suf.dyn_xy, kws.AB_prior)
         else
             # Reassemble current model [A b B] for Q's scatter; never written back.
-            buf = Matrix{T}(undef, D_lat, D_lat + 1 + kws.state_input_dim)
+            buf = Matrix{T}(undef, D_lat, D_lat + 1 + kws.ux_dim)
             buf[:, 1:D_lat] .= lds.state_model.A
             buf[:, D_lat + 1] .= lds.state_model.b
-            if kws.state_input_dim > 0
+            if kws.ux_dim > 0
                 buf[:, (D_lat + 2):end] .= lds.state_model.B
             end
             buf
@@ -788,7 +788,7 @@ function mstep!(
         if lds.fit_bool[3]
             lds.state_model.A .= view(AbB, :, 1:D_lat)
             lds.state_model.b .= view(AbB, :, D_lat + 1)
-            if kws.state_input_dim > 0
+            if kws.ux_dim > 0
                 lds.state_model.B .= view(AbB, :, (D_lat + 2):size(AbB, 2))
             end
         end
@@ -803,10 +803,10 @@ function mstep!(
         CdD = if lds.fit_bool[5]
             regress(suf.obs_xx[], suf.obs_xy, kws.CD_prior)
         else
-            buf = Matrix{T}(undef, kws.obs_dim, D_lat + 1 + kws.obs_input_dim)
+            buf = Matrix{T}(undef, kws.obs_dim, D_lat + 1 + kws.uy_dim)
             buf[:, 1:D_lat] .= lds.obs_model.C
             buf[:, D_lat + 1] .= lds.obs_model.d
-            if kws.obs_input_dim > 0
+            if kws.uy_dim > 0
                 buf[:, (D_lat + 2):end] .= lds.obs_model.D
             end
             buf
@@ -829,7 +829,7 @@ function mstep!(
         if lds.fit_bool[5]
             lds.obs_model.C .= view(CdD, :, 1:D_lat)
             lds.obs_model.d .= view(CdD, :, D_lat + 1)
-            if kws.obs_input_dim > 0
+            if kws.uy_dim > 0
                 lds.obs_model.D .= view(CdD, :, (D_lat + 2):size(CdD, 2))
             end
         end
@@ -948,13 +948,13 @@ function compute_elbo(
 
     #=
     Dynamics
-    The dynamics regression has (latent_dim + 1 + state_input_dim) parameters
-    per output dim: A (D), bias `b` (1), and B (state_input_dim, possibly 0).
+    The dynamics regression has (latent_dim + 1 + ux_dim) parameters
+    per output dim: A (D), bias `b` (1), and B (ux_dim, possibly 0).
     =#
     n = suf.dyn_n
     v = kws.latent_dim
     v0 = kws.Q_df
-    vN = v0 + (n - (kws.latent_dim + 1 + kws.state_input_dim))
+    vN = v0 + (n - (kws.latent_dim + 1 + kws.ux_dim))
     lam0 = _prior_Λ_PD(kws.AB_prior)
     lamN = lam0 === nothing ? suf.dyn_xx[] : lam0 + suf.dyn_xx[]
     Sig0 = kws.Q_mu * kws.Q_df
@@ -974,7 +974,7 @@ function compute_elbo(
     n = suf.obs_n
     v = kws.obs_dim
     v0 = kws.R_df
-    vN = v0 + (n - (kws.latent_dim + 1 + kws.obs_input_dim))
+    vN = v0 + (n - (kws.latent_dim + 1 + kws.uy_dim))
     lam0 = _prior_Λ_PD(kws.CD_prior)
     lamN = lam0 === nothing ? suf.obs_xx[] : lam0 + suf.obs_xx[]
     Sig0 = kws.R_mu * kws.R_df

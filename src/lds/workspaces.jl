@@ -789,8 +789,8 @@ struct KalmanWorkspace{T<:Real}
     # constants
     latent_dim::Int
     obs_dim::Int
-    state_input_dim::Int
-    obs_input_dim::Int
+    ux_dim::Int
+    uy_dim::Int
     tsteps::Int
     ntrials::Int
 
@@ -878,8 +878,8 @@ Allocate a `KalmanWorkspace` sized for the given `lds` and data shape. Requires
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     D = lds.latent_dim
     p = lds.obs_dim
-    state_input_dim = size(lds.state_model.B, 2)
-    obs_input_dim = size(lds.obs_model.D, 2)
+    ux_dim = size(lds.state_model.B, 2)
+    uy_dim = size(lds.obs_model.D, 2)
 
     # Placeholder PDMats; re-wrapped at the start of every E-step
     placeholder_D = PDMat(Matrix{T}(I, D, D))
@@ -929,8 +929,8 @@ Allocate a `KalmanWorkspace` sized for the given `lds` and data shape. Requires
     return KalmanWorkspace{T}(
         D,                              # latent_dim
         p,                              # obs_dim
-        state_input_dim,                # control_dim
-        obs_input_dim,                  # observation_control_dim
+        ux_dim,                         # ux_dim
+        uy_dim,                         # uy_dim
         tsteps,                         # time_steps
         ntrials,                        # number_of_trials
         pred_cov,                       # Vector{PDMat} for P_pred[t]
@@ -974,8 +974,8 @@ Allocate a `KalmanWorkspace` sized for the given `lds` and data shape. Requires
         zeros(T, D, (tsteps - 1) * ntrials),# x_next
         zeros(T, D, ntrials),           # x_init
         zeros(T, D, tsteps * ntrials),    # x_cur
-        zeros(T, D + 1 + state_input_dim, D + 1 + state_input_dim),  # dyn_xx_buf
-        zeros(T, D + 1 + obs_input_dim, D + 1 + obs_input_dim),      # obs_xx_buf
+        zeros(T, D + 1 + ux_dim, D + 1 + ux_dim),  # dyn_xx_buf
+        zeros(T, D + 1 + uy_dim, D + 1 + uy_dim),      # obs_xx_buf
     )
 end
 

@@ -201,6 +201,8 @@ Represents a unified Linear Dynamical System with customizable state and observa
     PoissonObservationModel)
 - `latent_dim::Int`: Dimension of the latent state
 - `obs_dim::Int`: Dimension of the observations
+- `ux_dim::Int`: Dimension of the dynamics input `ux` (0 when `B` is absent)
+- `uy_dim::Int`: Dimension of the observation input `uy` (0 when `D` is absent)
 - `fit_bool::Vector{Bool}`: Vector indicating which parameters to fit during optimization.
     Length 6 for the Gaussian path (`[x0, P0, A&b&B, Q, C&d&D, R]`); the M-step
     regression fits each row jointly. Length 5 for the Poisson path
@@ -213,8 +215,8 @@ Base.@kwdef struct LinearDynamicalSystem{
     obs_model::O
     latent_dim::Int
     obs_dim::Int
-    state_input_dim::Int = 0
-    obs_input_dim::Int = 0
+    ux_dim::Int = 0
+    uy_dim::Int = 0
     fit_bool::Vector{Bool}
 end
 
@@ -225,12 +227,12 @@ function LinearDynamicalSystem(
     # Infer dimensions from matrices
     latent_dim = size(state_model.A, 1)
     obs_dim = size(obs_model.C, 1)
-    state_input_dim = if hasproperty(state_model, :B) && !isnothing(state_model.B)
+    ux_dim = if hasproperty(state_model, :B) && !isnothing(state_model.B)
         size(state_model.B, 2)
     else
         0
     end
-    obs_input_dim =
+    uy_dim =
         hasproperty(obs_model, :D) && !isnothing(obs_model.D) ? size(obs_model.D, 2) : 0
 
     # Set default fit_bool based on observation model type. The M-step fits
@@ -247,13 +249,7 @@ function LinearDynamicalSystem(
 
     # Create the LDS
     lds = LinearDynamicalSystem{T,S,O}(
-        state_model,
-        obs_model,
-        latent_dim,
-        obs_dim,
-        state_input_dim,
-        obs_input_dim,
-        fit_bool,
+        state_model, obs_model, latent_dim, obs_dim, ux_dim, uy_dim, fit_bool
     )
 
     # Validate the constructed LDS (throws on error)

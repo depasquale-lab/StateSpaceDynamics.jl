@@ -225,7 +225,7 @@ function gradient_observation_model!(
 ) where {T<:Real}
     trials = length(tfs.FilterSmooths)
     npar = length(grad)
-    @assert length(sws_pool[1].reg.CD) == npar && length(sws_pool[1].reg.Syz) == npar "Poisson gradient accumulator size $(length(sws_pool[1].reg.CD)) ≠ npar=$npar (obs_input_dim must be 0)"
+    @assert length(sws_pool[1].reg.CD) == npar && length(sws_pool[1].reg.Syz) == npar "Poisson gradient accumulator size $(length(sws_pool[1].reg.CD)) ≠ npar=$npar (uy_dim must be 0)"
 
     #=
     Cap ntasks at `length(sws_pool)` so each chunk gets its own
@@ -246,7 +246,7 @@ function gradient_observation_model!(
         `Q_obs!` scratch fields, and the per-chunk `acc`/`tmp`
         gradient accumulators are views into `.reg.CD` / `.reg.Syz`
         (both sized `obs_dim × Dp1 = npar` for Poisson, where
-        `obs_input_dim = 0`).
+        `uy_dim = 0`).
         =#
         sws = sws_pool[task_idx]
         acc = vec(sws.reg.CD)
@@ -387,7 +387,7 @@ function elbo!(
     =#
     if plds.state_model.AB_prior !== nothing
         D = plds.latent_dim
-        ux_dim = plds.state_input_dim
+        ux_dim = plds.ux_dim
         W_ab = Matrix{T}(undef, D, D + 1 + ux_dim)
         @views W_ab[:, 1:D] .= plds.state_model.A
         @views W_ab[:, D + 1] .= plds.state_model.b
