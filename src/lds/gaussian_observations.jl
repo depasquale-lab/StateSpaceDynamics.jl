@@ -99,7 +99,7 @@ function Q_obs!(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     D = lds.latent_dim
     p = lds.obs_dim
-    uy_dim = lds.obs_input_dim
+    uy_dim = lds.uy_dim
     obs_reg_dim = D + 1 + uy_dim
     C = lds.obs_model.C
     d = lds.obs_model.d
@@ -138,7 +138,7 @@ function update_C_d!(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     lds.fit_bool[5] || return nothing
     D = lds.latent_dim
-    uy_dim = lds.obs_input_dim
+    uy_dim = lds.uy_dim
     CD_prior = lds.obs_model.CD_prior
 
     if CD_prior === nothing
@@ -169,7 +169,7 @@ function update_R!(
     lds.fit_bool[6] || return nothing
     p = lds.obs_dim
     D = lds.latent_dim
-    uy_dim = lds.obs_input_dim
+    uy_dim = lds.uy_dim
 
     # sws.reg.CD is exactly (p × obs_reg_dim); no view needed.
     V = sws.reg.CD

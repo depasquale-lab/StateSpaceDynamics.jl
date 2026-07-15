@@ -693,7 +693,7 @@ function _slds_prior_logdensity(slds::SLDS{T}) where {T<:Real}
             prior_term += iw_logprior_term(sm.P0, sm.P0_prior)
         end
         if sm.AB_prior !== nothing
-            ux_dim = lds.state_input_dim
+            ux_dim = lds.ux_dim
             W_ab = Matrix{T}(undef, D, D + 1 + ux_dim)
             @views W_ab[:, 1:D] .= sm.A
             @views W_ab[:, D + 1] .= sm.b
@@ -706,7 +706,7 @@ function _slds_prior_logdensity(slds::SLDS{T}) where {T<:Real}
                 prior_term += iw_logprior_term(om.R, om.R_prior)
             end
             if om.CD_prior !== nothing
-                uy_dim = lds.obs_input_dim
+                uy_dim = lds.uy_dim
                 W_cd = Matrix{T}(undef, lds.obs_dim, D + 1 + uy_dim)
                 @views W_cd[:, 1:D] .= om.C
                 @views W_cd[:, D + 1] .= om.d

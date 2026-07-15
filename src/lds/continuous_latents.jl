@@ -503,7 +503,7 @@ function Q_state!(
     b = lds.state_model.b
     B = lds.state_model.B
     x0 = lds.state_model.x0
-    ux_dim = lds.state_input_dim
+    ux_dim = lds.ux_dim
     dyn_reg_dim = D + 1 + ux_dim
 
     Q_U = sws.consts.Q_PD.chol.U
@@ -610,7 +610,7 @@ function update_A_b!(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     lds.fit_bool[3] || return nothing
     D = lds.latent_dim
-    ux_dim = lds.state_input_dim
+    ux_dim = lds.ux_dim
     AB_prior = lds.state_model.AB_prior
 
     if AB_prior === nothing
@@ -642,7 +642,7 @@ function update_Q!(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     lds.fit_bool[4] || return nothing
     D = lds.latent_dim
-    ux_dim = lds.state_input_dim
+    ux_dim = lds.ux_dim
 
     # sws.reg.AB is exactly (D × dyn_reg_dim); no view needed.
     W = sws.reg.AB

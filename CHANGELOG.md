@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** renamed the control-input arguments `latent_inputs`/`obs_inputs`
   to `ux`/`uy` across the public API (keywords on `fit!`/`rand`, positional on
   `smooth!`/`estep!`) (#139)
+- **Breaking:** renamed the `LinearDynamicalSystem` fields
+  `state_input_dim`/`obs_input_dim` to `ux_dim`/`uy_dim` to match (#139)
 
 ## [0.4.1] - 2026-07-07
 

@@ -69,8 +69,8 @@ function _td_init_const_blocks!(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     D = lds.latent_dim
     p = lds.obs_dim
-    ux_dim = lds.state_input_dim
-    uy_dim = lds.obs_input_dim
+    ux_dim = lds.ux_dim
+    uy_dim = lds.uy_dim
     ntrials = length(y)
     dyn_reg_dim = D + 1 + ux_dim
     obs_reg_dim = D + 1 + uy_dim
@@ -186,8 +186,8 @@ function _initialize_td_sufficient_statistics(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     D = lds.latent_dim
     p = lds.obs_dim
-    ux_dim = lds.state_input_dim
-    uy_dim = lds.obs_input_dim
+    ux_dim = lds.ux_dim
+    uy_dim = lds.uy_dim
     ntrials = length(tsteps_per_trial)
     dyn_reg_dim = D + 1 + ux_dim
     obs_reg_dim = D + 1 + uy_dim
@@ -234,8 +234,8 @@ function _aggregate_td_suff_stats!(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     D = lds.latent_dim
     p = lds.obs_dim
-    ux_dim = lds.state_input_dim
-    uy_dim = lds.obs_input_dim
+    ux_dim = lds.ux_dim
+    uy_dim = lds.uy_dim
     ntrials = length(tfs)
     dyn_reg_dim = D + 1 + ux_dim
     obs_reg_dim = D + 1 + uy_dim
@@ -439,8 +439,8 @@ function _aggregate_td_suff_stats_weighted!(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     D = lds.latent_dim
     p = lds.obs_dim
-    ux_dim = lds.state_input_dim
-    uy_dim = lds.obs_input_dim
+    ux_dim = lds.ux_dim
+    uy_dim = lds.uy_dim
     ntrials = length(tfs)
     dyn_reg_dim = D + 1 + ux_dim
     obs_reg_dim = D + 1 + uy_dim

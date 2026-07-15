@@ -110,8 +110,8 @@ function Random.rand(
     obs_params = _extract_obs_params(lds.obs_model)
     Ti = Int(tsteps)
 
-    ux_trial = _check_ux(ux, lds.state_input_dim, Ti, "ux", T)
-    uy_trial = _check_uy(uy, lds.obs_input_dim, Ti, lds.obs_model)
+    ux_trial = _check_ux(ux, lds.ux_dim, Ti, "ux", T)
+    uy_trial = _check_uy(uy, lds.uy_dim, Ti, lds.obs_model)
 
     x = Matrix{T}(undef, lds.latent_dim, Ti)
     y = Matrix{T}(undef, lds.obs_dim, Ti)
@@ -138,10 +138,8 @@ function Random.rand(
         y[i] = Matrix{T}(undef, lds.obs_dim, Ti)
     end
 
-    ux_seq = _normalize_multitrial_ux(ux, lds.state_input_dim, tsteps_per_trial, T, "ux")
-    uy_seq = _normalize_multitrial_uy(
-        uy, lds.obs_input_dim, tsteps_per_trial, T, lds.obs_model
-    )
+    ux_seq = _normalize_multitrial_ux(ux, lds.ux_dim, tsteps_per_trial, T, "ux")
+    uy_seq = _normalize_multitrial_uy(uy, lds.uy_dim, tsteps_per_trial, T, lds.obs_model)
 
     # `MersenneTwister` (and most RNG types) is not thread-safe, so sharing
     # `rng` across parallel iterations races on internal state; each chunk
