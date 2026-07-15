@@ -63,5 +63,5 @@ makedocs(;
 println("Deploying documentation...")
 deploydocs(;
     repo="github.com/depasquale-lab/StateSpaceDynamics.jl",
-    devbranch="main"
+    devbranch="dev"
 )
