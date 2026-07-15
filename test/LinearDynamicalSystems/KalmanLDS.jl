@@ -258,7 +258,7 @@ function test_td_fit_with_latent_input()
     lds_true = LinearDynamicalSystem(sm_true, om_true)
 
     ux_seq = [randn(rng, ux_dim, Tt) for _ in 1:N]
-    _, y_seq = rand(lds_true, fill(Tt, N); latent_inputs=ux_seq)
+    _, y_seq = rand(lds_true, fill(Tt, N); ux=ux_seq)
 
     # Fit from a perturbed init.
     sm_init = GaussianStateModel(;
@@ -274,7 +274,7 @@ function test_td_fit_with_latent_input()
     )
     lds_fit = LinearDynamicalSystem(sm_init, om_init)
 
-    elbos = fit!(lds_fit, y_seq; latent_inputs=ux_seq, max_iter=80, progress=false)
+    elbos = fit!(lds_fit, y_seq; ux=ux_seq, max_iter=80, progress=false)
 
     @test all(diff(elbos) .>= -1e-4)        # ~monotone
     #=
@@ -300,7 +300,7 @@ function test_td_fit_with_latent_input()
 end
 
 function test_td_sampling_zero_input_matches_no_input()
-    # With latent_inputs present but u ≡ 0 and B = 0, sampling should match
+    # With ux present but u ≡ 0 and B = 0, sampling should match
     # the no-control case (same RNG seed).
     D, p, Tt = 3, 4, 25
     rng = MersenneTwister(7)
@@ -319,9 +319,9 @@ function test_td_sampling_zero_input_matches_no_input()
 
     u_zero = zeros(2, Tt)
     rng1 = MersenneTwister(42)
-    x1, y1 = rand(rng1, lds, Tt; latent_inputs=u_zero)
+    x1, y1 = rand(rng1, lds, Tt; ux=u_zero)
 
-    # Reset state-model to a 0-column B and call without latent_inputs.
+    # Reset state-model to a 0-column B and call without ux.
     sm2 = GaussianStateModel(; A=sm.A, Q=sm.Q, x0=sm.x0, P0=sm.P0, b=sm.b)
     lds2 = LinearDynamicalSystem(sm2, om)
     rng2 = MersenneTwister(42)

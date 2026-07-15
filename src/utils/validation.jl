@@ -455,14 +455,14 @@ function validate_probvec(v::AbstractVector{T}; name::String="vector") where {T<
 end
 
 # ============================================================================
-# input-sequence normalization helpers. The public `latent_inputs`/`obs_inputs`
+# input-sequence normalization helpers. The public `ux`/`uy`
 # kwargs accept either `nothing` (no inputs — must match a zero-column `B`/`D`)
 # or per-trial matrices. Internally every sampler/smoother/M-step expects an
 # `AbstractMatrix{T}` of shape `(ux_dim, T_i)` (possibly `0 × T_i`), so these
 # helpers validate the supplied sequences and canonicalize on the way in.
 # ============================================================================
 
-function _check_latent_inputs(
+function _check_ux(
     cs::Nothing, expected_dim::Int, tsteps::Int, name::AbstractString, ::Type{T}
 ) where {T}
     expected_dim == 0 || throw(
@@ -475,7 +475,7 @@ function _check_latent_inputs(
     return zeros(T, 0, tsteps)
 end
 
-function _check_latent_inputs(
+function _check_ux(
     cs::AbstractMatrix{T}, expected_dim::Int, tsteps::Int, name::AbstractString, ::Type{T}
 ) where {T<:Real}
     size(cs, 1) == expected_dim || throw(
@@ -488,22 +488,21 @@ function _check_latent_inputs(
     return cs
 end
 
-@inline function _check_obs_inputs(
+@inline function _check_uy(
     cs, expected_dim::Int, tsteps::Int, ::GaussianObservationModel{T}
 ) where {T}
-    return _check_latent_inputs(cs, expected_dim, tsteps, "obs_inputs", T)
+    return _check_ux(cs, expected_dim, tsteps, "uy", T)
 end
 
-@inline function _check_obs_inputs(
+@inline function _check_uy(
     cs::Nothing, expected_dim::Int, tsteps::Int, ::PoissonObservationModel{T}
 ) where {T}
-    expected_dim == 0 || error(
-        "Poisson observation model does not support obs_inputs (expected_dim must be 0)"
-    )
+    expected_dim == 0 ||
+        error("Poisson observation model does not support uy (expected_dim must be 0)")
     return zeros(T, 0, tsteps)
 end
 
-function _normalize_multitrial_latent_inputs(
+function _normalize_multitrial_ux(
     cs::Nothing, expected_dim::Int, tsteps_per_trial, ::Type{T}, name::AbstractString
 ) where {T<:Real}
     expected_dim == 0 || throw(
@@ -514,7 +513,7 @@ function _normalize_multitrial_latent_inputs(
     return [zeros(T, 0, Int(Ti)) for Ti in tsteps_per_trial]
 end
 
-function _normalize_multitrial_latent_inputs(
+function _normalize_multitrial_ux(
     cs::AbstractVector{<:AbstractMatrix{T}},
     expected_dim::Int,
     tsteps_per_trial,
@@ -536,19 +535,16 @@ function _normalize_multitrial_latent_inputs(
     return cs
 end
 
-@inline function _normalize_multitrial_obs_inputs(
+@inline function _normalize_multitrial_uy(
     cs, expected_dim::Int, tsteps_per_trial, ::Type{T}, ::GaussianObservationModel
 ) where {T<:Real}
-    return _normalize_multitrial_latent_inputs(
-        cs, expected_dim, tsteps_per_trial, T, "obs_inputs"
-    )
+    return _normalize_multitrial_ux(cs, expected_dim, tsteps_per_trial, T, "uy")
 end
 
-@inline function _normalize_multitrial_obs_inputs(
+@inline function _normalize_multitrial_uy(
     cs::Nothing, expected_dim::Int, tsteps_per_trial, ::Type{T}, ::PoissonObservationModel
 ) where {T<:Real}
-    expected_dim == 0 || error(
-        "Poisson observation model does not support obs_inputs (expected_dim must be 0)"
-    )
+    expected_dim == 0 ||
+        error("Poisson observation model does not support uy (expected_dim must be 0)")
     return [zeros(T, 0, Int(Ti)) for Ti in tsteps_per_trial]
 end

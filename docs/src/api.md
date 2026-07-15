@@ -102,5 +102,5 @@ Documented internal methods, listed here for completeness. These are not part
 of the public API and may change between releases.
 
 ```@docs
-fit!(dl::StateSpaceDynamics.SLDSDiscreteLayer{T}, fb_storage::StateSpaceDynamics.HMMs.ForwardBackwardStorage, obs_inputs::AbstractVector) where {T<:Real}
+fit!(dl::StateSpaceDynamics.SLDSDiscreteLayer{T}, fb_storage::StateSpaceDynamics.HMMs.ForwardBackwardStorage, obs_seq::AbstractVector) where {T<:Real}
 ```

@@ -165,7 +165,7 @@ using SSDTest
                 test_gaussian_update_R_matches_residual_cov()
                 test_gaussian_weighting_equiv_to_duplication()
                 test_td_mn_priors_shrink()
-                test_td_with_obs_inputs()
+                test_td_with_uy()
                 test_td_ragged_multi_trial()
                 test_td_weighted_aggregator_matches_unweighted_with_inputs()
                 test_mn_prior_type_decoupled_from_model_matrix()

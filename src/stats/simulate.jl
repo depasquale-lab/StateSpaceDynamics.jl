@@ -81,9 +81,9 @@ function _sample_trial!(
 end
 
 """
-    Random.rand([rng,] lds, tsteps::Integer; latent_inputs=nothing, obs_inputs=nothing)
+    Random.rand([rng,] lds, tsteps::Integer; ux=nothing, uy=nothing)
     Random.rand([rng,] lds, tsteps_per_trial::AbstractVector{<:Integer};
-                latent_inputs=nothing, obs_inputs=nothing)
+                ux=nothing, uy=nothing)
 
 Sample from a Linear Dynamical System.
 
@@ -93,27 +93,25 @@ Sample from a Linear Dynamical System.
   `(x::Vector{Matrix}, y::Vector{Matrix})`. Lengths may differ across trials.
 
 Optional input sequences:
-- `latent_inputs`: dynamics-input sequence consumed by `B`. Single-trial form
+- `ux`: dynamics-input sequence consumed by `B`. Single-trial form
   is an `(ux_dim, tsteps)` matrix; multi-trial is a `Vector{<:AbstractMatrix}`
   of per-trial matrices. Required when `size(state_model.B, 2) > 0`.
-- `obs_inputs`: same shape for the observation input `D`. Required when
+- `uy`: same shape for the observation input `D`. Required when
   `size(obs_model.D, 2) > 0`. Gaussian observation model only.
 """
 function Random.rand(
     rng::AbstractRNG,
     lds::LinearDynamicalSystem{T,S,O},
     tsteps::Integer;
-    latent_inputs::Union{Nothing,AbstractMatrix{T}}=nothing,
-    obs_inputs::Union{Nothing,AbstractMatrix{T}}=nothing,
+    ux::Union{Nothing,AbstractMatrix{T}}=nothing,
+    uy::Union{Nothing,AbstractMatrix{T}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     state_params = _extract_state_params(lds.state_model)
     obs_params = _extract_obs_params(lds.obs_model)
     Ti = Int(tsteps)
 
-    ux_trial = _check_latent_inputs(
-        latent_inputs, lds.state_input_dim, Ti, "latent_inputs", T
-    )
-    uy_trial = _check_obs_inputs(obs_inputs, lds.obs_input_dim, Ti, lds.obs_model)
+    ux_trial = _check_ux(ux, lds.state_input_dim, Ti, "ux", T)
+    uy_trial = _check_uy(uy, lds.obs_input_dim, Ti, lds.obs_model)
 
     x = Matrix{T}(undef, lds.latent_dim, Ti)
     y = Matrix{T}(undef, lds.obs_dim, Ti)
@@ -125,8 +123,8 @@ function Random.rand(
     rng::AbstractRNG,
     lds::LinearDynamicalSystem{T,S,O},
     tsteps_per_trial::AbstractVector{<:Integer};
-    latent_inputs::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
-    obs_inputs::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
+    ux::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
+    uy::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     state_params = _extract_state_params(lds.state_model)
     obs_params = _extract_obs_params(lds.obs_model)
@@ -140,11 +138,9 @@ function Random.rand(
         y[i] = Matrix{T}(undef, lds.obs_dim, Ti)
     end
 
-    ux_seq = _normalize_multitrial_latent_inputs(
-        latent_inputs, lds.state_input_dim, tsteps_per_trial, T, "latent_inputs"
-    )
-    uy_seq = _normalize_multitrial_obs_inputs(
-        obs_inputs, lds.obs_input_dim, tsteps_per_trial, T, lds.obs_model
+    ux_seq = _normalize_multitrial_ux(ux, lds.state_input_dim, tsteps_per_trial, T, "ux")
+    uy_seq = _normalize_multitrial_uy(
+        uy, lds.obs_input_dim, tsteps_per_trial, T, lds.obs_model
     )
 
     # `MersenneTwister` (and most RNG types) is not thread-safe, so sharing
