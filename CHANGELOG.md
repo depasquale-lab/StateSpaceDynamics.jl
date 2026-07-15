@@ -31,11 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `loglikelihood(lds, y)` now computes the observation-independent half of the
   Kalman filter (innovation covariances and gains) once and shares it across
   trials, uses the positive-definite-by-construction information-form update
-  (`info_update!`) with `tol_PD` eigen-floor stabilization from the retired
-  Kalman path, supports ragged trial lengths, and accepts `ux`/`uy` input
-  keywords. Models with input matrices (`B`/`D` with nonzero columns) now
-  **require** the matching input sequences — previously inputs were silently
-  ignored, giving a wrong likelihood
+  (`info_update!`) from the retired Kalman path, supports ragged trial
+  lengths, and accepts `ux`/`uy` input keywords. Models with input matrices
+  (`B`/`D` with nonzero columns) now **require** the matching input
+  sequences — previously inputs were silently ignored, giving a wrong
+  likelihood
 
 ### Removed
 - Stale one-off profiling scripts under `benchmark/profiling/` (#144)
@@ -45,6 +45,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not been a selectable `fit!` backend since v0.4.0; the filter it contributed
   now lives behind `loglikelihood` (see Changed). `marginal_loglikelihood`
   remains as an internal alias of `loglikelihood`
+- The internal `tol_PD` / `id_PD` eigen-floor helpers. The filter wraps the
+  model covariances as strict `PDMat`s instead. — a genuinely non-PD `Q`/`R`/
+  `P0` now fails.
 
 ### Fixed
 - SLDS ELBO computation (incorrect sign, among other errors); correctness is now

@@ -459,11 +459,10 @@ function _make_lds_io_setup(; D=2, p=3, Tt=40, N=3, ux_dim=2, uy_dim=2, seed=44)
 end
 
 #=
-Naive textbook covariance-form Kalman filter marginal LL for one trial, using
-the raw model parameters — no `tol_PD` eigen-flooring, no shared covariance
-pass, no information-form update. Reference implementation for the fast
-filter; the `rtol`s below absorb the ~1e-6 relative eigen-floor that
-`tol_PD` applies to Q/R/P0 along the package path.
+Naive textbook covariance-form Kalman filter marginal LL for one trial i.e., no
+shared covariance pass, no information-form update. Reference implementation
+for the fast filter; both compute the same quantity exactly, so agreement is
+limited only by floating-point rounding of the two orderings.
 =#
 function _naive_kalman_ll(
     lds::LinearDynamicalSystem, y::AbstractMatrix; u=nothing, v=nothing
@@ -513,10 +512,10 @@ function test_marginal_ll_matches_naive_filter()
 
     ll = SSD.loglikelihood(lds, y)
     ll_ref = sum(_naive_kalman_ll(lds, y[:, :, n]) for n in 1:N)
-    @test ll ≈ ll_ref rtol = 1e-4
+    @test ll ≈ ll_ref rtol = 1e-8
 
     # Single-matrix form runs the same filter on one trial.
-    @test SSD.loglikelihood(lds, y[:, :, 1]) ≈ _naive_kalman_ll(lds, y[:, :, 1]) rtol = 1e-4
+    @test SSD.loglikelihood(lds, y[:, :, 1]) ≈ _naive_kalman_ll(lds, y[:, :, 1]) rtol = 1e-8
 end
 
 function test_marginal_ll_with_inputs()
@@ -527,7 +526,7 @@ function test_marginal_ll_with_inputs()
 
     ll = SSD.loglikelihood(lds, y; ux=u, uy=v)
     ll_ref = sum(_naive_kalman_ll(lds, y[:, :, n]; u=u[:, :, n], v=v[:, :, n]) for n in 1:N)
-    @test ll ≈ ll_ref rtol = 1e-4
+    @test ll ≈ ll_ref rtol = 1e-8
 
     # Vector-of-matrices form agrees with the 3-D form.
     y_vec = [y[:, :, n] for n in 1:N]

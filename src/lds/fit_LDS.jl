@@ -895,10 +895,10 @@ function _filter_cov_pass(
     C = lds.obs_model.C
     D = lds.latent_dim
 
-    P0_PD = lds.state_model.P0
-    Q_PD = lds.state_model.Q
-    R_PD = lds.obs_model.R
-    CiRC = Xt_invA_X(R_PD, C)
+    P0_PD = PDMat(Matrix(hermitianpart(lds.state_model.P0)))
+    R_PD = PDMat(Matrix(hermitianpart(lds.obs_model.R)))
+    Q = lds.state_model.Q
+    CiRC = Matrix(hermitianpart(Xt_invA_X(R_PD, C)))
 
     S_chol = Vector{Cholesky{T,Matrix{T}}}(undef, T_max)
     K = Vector{Matrix{T}}(undef, T_max)
@@ -914,7 +914,7 @@ function _filter_cov_pass(
             P0_PD
         else
             M = Matrix(X_A_Xt(filt_cov, A))
-            M .+= Q_PD.mat
+            M .+= Q
             Symmetrize!(M)
             PDMat(M)
         end

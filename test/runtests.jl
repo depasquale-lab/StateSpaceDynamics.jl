@@ -253,7 +253,6 @@ using SSDTest
         test_block_tridgm()
         test_gaussian_entropy()
         test_valid_Σ()
-        test_tol_PD_type_preservation()
 
         @testset "Block Tridiagonal Inverse" begin
             test_block_tridiagonal_inverse_mutating()
