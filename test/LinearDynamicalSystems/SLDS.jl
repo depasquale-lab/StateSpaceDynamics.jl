@@ -1387,6 +1387,38 @@ function test_SLDS_public_elbo(; rng=MersenneTwister(0xE1B0))
     return nothing
 end
 
+function test_SLDS_fit_shapes_and_validation(; rng=MersenneTwister(0xE1B1))
+    @testset "SLDS fit! shapes + Data validation" begin
+        K = 2
+        latent_dim = 2
+        obs_dim = 3
+        tsteps = 15
+        ntrials = 2
+
+        lds = _make_gaussian_lds_dense(latent_dim, obs_dim; seed=42)
+        slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=[lds, deepcopy(lds)])
+        z, x, y = rand(rng, slds, fill(tsteps, ntrials))
+
+        # 3-D array and vector-of-matrices forms give the same ELBO trace
+        # under a shared rng (equal-length trials).
+        Y3 = cat(y...; dims=3)
+        e_vec = fit!(deepcopy(slds), y; max_iter=2, progress=false, rng=MersenneTwister(7))
+        e_arr = fit!(deepcopy(slds), Y3; max_iter=2, progress=false, rng=MersenneTwister(7))
+        @test e_vec ≈ e_arr
+
+        # Wrong obs_dim now fails fast at Data construction, not deep in the
+        # smoother.
+        y_bad = [yt[1:(obs_dim - 1), :] for yt in y]
+        @test_throws StateSpaceDynamics.DimensionMismatchError fit!(
+            deepcopy(slds), y_bad; max_iter=1, progress=false
+        )
+
+        # Marginal loglikelihood is intractable for an SLDS — informative error.
+        @test_throws ErrorException loglikelihood(slds, y)
+    end
+    return nothing
+end
+
 function test_SLDS_no_priors_zero_prior_logdensity(; rng=MersenneTwister(0xC0FFEE))
     K = 3
     latent_dim = 2

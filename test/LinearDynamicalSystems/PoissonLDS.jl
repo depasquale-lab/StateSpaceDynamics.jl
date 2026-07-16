@@ -406,9 +406,7 @@ function test_poisson_public_elbo(; rng=MersenneTwister(0xE1B0))
         @test isapprox(elbo(plds, Y[1]), elbo(plds, [Y[1]]); rtol=1e-10)
 
         # Matches the first entry of fit!'s ELBO trace (same Laplace E-step).
-        @test isapprox(
-            e, fit!(deepcopy(plds), Y; max_iter=1, progress=false)[1]; rtol=1e-8
-        )
+        @test isapprox(e, fit!(deepcopy(plds), Y; max_iter=1, progress=false)[1]; rtol=1e-8)
     end
     return nothing
 end

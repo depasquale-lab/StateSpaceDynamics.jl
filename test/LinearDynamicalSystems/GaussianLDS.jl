@@ -452,9 +452,7 @@ function test_gaussian_public_elbo(; rng=MersenneTwister(0xE1B0))
         @test isapprox(elbo(lds, Y[1]), elbo(lds, [Y[1]]); rtol=1e-10)
 
         # Matches the first entry of fit!'s ELBO trace (same E-step).
-        @test isapprox(
-            e, fit!(deepcopy(lds), Y; max_iter=1, progress=false)[1]; rtol=1e-8
-        )
+        @test isapprox(e, fit!(deepcopy(lds), Y; max_iter=1, progress=false)[1]; rtol=1e-8)
 
         # Input-driven model: still equals the marginal LL, and omitting a
         # required input sequence throws at Data construction.

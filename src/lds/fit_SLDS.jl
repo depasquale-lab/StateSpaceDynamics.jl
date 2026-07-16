@@ -929,6 +929,24 @@ function elbo(
 end
 
 """
+    loglikelihood(slds, y)
+
+Marginal (observed-data) log-likelihood for an SLDS — **not implemented**.
+
+The marginal `log p(y)` requires summing over all `K^T` discrete regime
+sequences (the switching model has no closed-form filter). Use
+[`elbo`](@ref)`(slds, y)` for a variational lower bound on `log p(y)`, or the
+ELBO trace returned by `fit!`.
+"""
+function StatsAPI.loglikelihood(slds::SLDS, y)
+    return error(
+        "marginal loglikelihood is not implemented for the SLDS (marginalizing the " *
+        "discrete regime sequence requires summing over K^T paths). Use " *
+        "elbo(slds, y) for a variational lower bound, or the ELBO trace from fit!.",
+    )
+end
+
+"""
     mstep!(slds, tfs, fb_storage, y, sws; obs_seq, seq_ends)
 
 M-step for SLDS.
@@ -1002,31 +1020,39 @@ function mstep!(
 end
 
 """
-    fit!(slds::SLDS, y::AbstractVector{<:AbstractMatrix}; max_iter=50, progress=true)
-    fit!(slds::SLDS, y::AbstractMatrix; max_iter=50, progress=true)
+    fit!(slds::SLDS, y; max_iter=50, progress=true)
 
 Fit SLDS using variational Laplace EM. Runs for exactly `max_iter` iterations
 (no early-stopping criterion: the E-step's posterior sampling makes the ELBO
 trace noisy across iterations, so a tolerance check on successive differences
 would fire spuriously). Returns the per-iteration ELBO trace.
 
-`y` is either a single trial `(obs_dim × T)` matrix or a vector of per-trial matrices
-(ragged `T_i` allowed). Internally a single batched `HMMs.ForwardBackwardStorage` of
-length `sum(T_i)` is allocated, with `seq_ends = cumsum(T_i)` to demarcate trials.
+`y` is a single trial `(obs_dim × T)` matrix, a `(obs_dim, T, ntrials)` array,
+or a vector of per-trial matrices (ragged `T_i` allowed). Internally a single
+batched `HMMs.ForwardBackwardStorage` of length `sum(T_i)` is allocated, with
+`seq_ends = cumsum(T_i)` to demarcate trials.
 """
 function fit!(
     slds::SLDS{T,S,O},
-    y::AbstractVector{<:AbstractMatrix{T}};
+    y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
     max_iter::Int=50,
     progress::Bool=true,
     rng::AbstractRNG=Random.default_rng(),
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
+    #=
+    SLDS takes no ux/uy inputs; `Data` still centralizes shape validation and
+    canonicalizes the three observation forms (regime dims are uniform, so
+    validating against LDSs[1] covers all regimes).
+    =#
+    data = Data(slds.LDSs[1], y)
+    y_seq = data.y
+
     K = length(slds.LDSs)
     latent_dim = slds.LDSs[1].latent_dim
     obs_dim = slds.LDSs[1].obs_dim
 
-    tsteps_per_trial = [size(yt, 2) for yt in y]
-    ntrials = length(y)
+    tsteps_per_trial = data.tsteps
+    ntrials = length(y_seq)
     seq_ends = cumsum(tsteps_per_trial)
     total_T = last(seq_ends)
     T_max = maximum(tsteps_per_trial)
@@ -1066,7 +1092,7 @@ function fit!(
         smooth!(
             slds,
             tfs[trial],
-            y[trial],
+            y_seq[trial],
             w_uniform;
             ws=slds_ws,
             x_sample=x_samples[trial],
@@ -1085,7 +1111,7 @@ function fit!(
             tfs,
             fb_storage,
             dl,
-            y,
+            y_seq,
             x_samples,
             slds_ws;
             rng=rng,
@@ -1095,10 +1121,10 @@ function fit!(
         )
 
         # Compute the ELBO at the current posteriors.
-        elbos[iter] = elbo!(slds, tfs, fb_storage, y, slds_ws; seq_ends)
+        elbos[iter] = elbo!(slds, tfs, fb_storage, y_seq, slds_ws; seq_ends)
 
         # M-step: update discrete and continuous parameters.
-        mstep!(slds, tfs, fb_storage, dl, y, sws; obs_seq=obs_seq, seq_ends=seq_ends)
+        mstep!(slds, tfs, fb_storage, dl, y_seq, sws; obs_seq=obs_seq, seq_ends=seq_ends)
         refresh_slds_constants!(slds_ws, slds)
 
         prog !== nothing && next!(prog)
@@ -1108,10 +1134,4 @@ function fit!(
         finish!(prog)
     end
     return elbos
-end
-
-function fit!(
-    slds::SLDS{T,S,O}, y::AbstractMatrix{T}; kwargs...
-) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
-    return fit!(slds, [y]; kwargs...)
 end

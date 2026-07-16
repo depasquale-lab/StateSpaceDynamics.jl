@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one E-step and evaluates the ELBO at the resulting posterior, the same
   quantity `fit!` reports per iteration,  without requiring the private
   workspace structs the `elbo!` variants take (#139)
+- `loglikelihood(slds, y)` now throws an informative error (the marginal is
+  intractable for a switching model; use `elbo`) instead of a raw
+  `MethodError`, mirroring the Poisson LDS (#139)
 
 ### Changed
 - **Breaking:** the previously exported (but unused) `Data` struct is now a
@@ -26,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   multi-trial backend (`estep!`, multi-trial `smooth!`, the sufficient-stats
   aggregators, `_fit_tridiag!`) consumes `Data` instead of threading
   `y`/`ux`/`uy` triples through every signature (#139)
+- `fit!(slds, y)` now validates observations through `Data` like the other
+  entry points (dimension mismatches throw a clean `DimensionMismatchError`
+  upfront instead of failing deep in the smoother) and accepts the
+  `(obs_dim, T, ntrials)` array form (#139)
 - `smooth` (public, allocating) now accepts `ux`/`uy` keywords on the Gaussian
   path and all three observation shapes on both the Gaussian and Poisson
   paths; multi-trial input returns per-trial vectors, matrix input returns
