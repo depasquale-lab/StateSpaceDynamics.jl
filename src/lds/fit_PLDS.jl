@@ -637,9 +637,10 @@ function elbo(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     data = Data(plds, y)
     tfs = initialize_FilterSmooth(plds, data.tsteps)::TrialFilterSmooth{T}
+    npool = min(Threads.maxthreadid(), length(data.y))
     sws_pool = [
         SmoothWorkspace(T, plds.latent_dim, plds.obs_dim, maximum(data.tsteps)) for
-        _ in 1:Threads.maxthreadid()
+        _ in 1:npool
     ]
     suf = _initialize_td_sufficient_statistics(T, plds, data.tsteps)
     _td_init_const_blocks!(sws_pool[1], plds, data)
@@ -674,9 +675,12 @@ function smooth(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     data = Data(plds, y)
     tfs = initialize_FilterSmooth(plds, data.tsteps)::TrialFilterSmooth{T}
+    # Cap the pool at the trial count — workspaces beyond ntrials are never
+    # touched and each carries O(D²·T) of block-tridiagonal storage.
+    npool = min(Threads.maxthreadid(), length(data.y))
     sws_pool = [
         SmoothWorkspace(T, plds.latent_dim, plds.obs_dim, maximum(data.tsteps)) for
-        _ in 1:Threads.maxthreadid()
+        _ in 1:npool
     ]
     smooth!(plds, tfs, data.y, sws_pool)
     return _collect_smooth_output(tfs, y)

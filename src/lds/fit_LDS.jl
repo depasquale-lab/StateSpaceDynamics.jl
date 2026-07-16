@@ -130,15 +130,19 @@ end
 
 #=
 Shared allocating-smooth driver: build a TrialFilterSmooth + workspace pool
-and run the multi-trial smoother over a validated `Data`.
+and run the multi-trial smoother over a validated `Data`. The pool is capped
+at the trial count — workspaces beyond `ntrials` would never be touched
+(`smooth!` chunks trials over `min(ntrials, length(pool))` tasks), and each
+one carries O(D²·T) of block-tridiagonal storage.
 =#
 function _smooth_data(
     lds::LinearDynamicalSystem{T,S,O}, data::Data{T}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     tfs = initialize_FilterSmooth(lds, data.tsteps)::TrialFilterSmooth{T}
+    npool = min(Threads.maxthreadid(), length(data.y))
     sws_pool = [
         SmoothWorkspace(T, lds.latent_dim, lds.obs_dim, maximum(data.tsteps)) for
-        _ in 1:Threads.maxthreadid()
+        _ in 1:npool
     ]
     smooth!(lds, tfs, data, sws_pool)
     return tfs
@@ -148,10 +152,14 @@ end
 Public-shape return convention for `smooth`: matrix in → matrix out
 (single trial); vector / 3-D array in → per-trial vectors out. The `y`
 argument is only inspected for its container type.
+
+Single trial returns the (function-local) smoother arrays directly; the
+multi-trial path must copy because the equal-length fast path aliases every
+trial's `p_smooth` to shared workspace storage.
 =#
 function _collect_smooth_output(tfs::TrialFilterSmooth{T}, y::AbstractMatrix) where {T}
     fs = tfs[1]
-    return copy(fs.x_smooth), copy(fs.p_smooth)
+    return fs.x_smooth, fs.p_smooth
 end
 
 function _collect_smooth_output(tfs::TrialFilterSmooth{T}, y) where {T}
@@ -761,6 +769,7 @@ function elbo(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     data = Data(lds, y; ux=ux, uy=uy)
     tfs = initialize_FilterSmooth(lds, data.tsteps)::TrialFilterSmooth{T}
+    npool = min(Threads.maxthreadid(), length(data.y))
     sws_pool = [
         SmoothWorkspace(
             T,
@@ -769,7 +778,7 @@ function elbo(
             maximum(data.tsteps);
             ux_dim=lds.ux_dim,
             uy_dim=lds.uy_dim,
-        ) for _ in 1:Threads.maxthreadid()
+        ) for _ in 1:npool
     ]
     suf = _initialize_td_sufficient_statistics(T, lds, data.tsteps)
     _td_init_const_blocks!(sws_pool[1], lds, data)
