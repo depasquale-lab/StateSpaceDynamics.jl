@@ -899,7 +899,7 @@ function test_SLDS_smooth_consistency_with_gradients(; rng=MersenneTwister(0xC0F
 end
 
 function test_SLDS_smooth_entropy_calculation(; rng=MersenneTwister(0xC0FFEE))
-    # Verify entropy is computed and has reasonable values
+    # Verify entropy is computed and matches an independent dense reference
     K = 2
     latent_dim = 2
     obs_dim = 3
@@ -920,11 +920,28 @@ function test_SLDS_smooth_entropy_calculation(; rng=MersenneTwister(0xC0FFEE))
 
     #=
     smooth! must fill fs.entropy from the BT log-determinant (it was silently
-    left at its zero initialization before the 0.5.0 fix). At these covariance
-    scales (P0 = I, Q = 0.1 I) the joint Gaussian entropy is strictly positive.
+    left at its zero initialization before the 0.5.0 fix). Check the value
+    against an external reference: rebuild the weighted BT Hessian at the MAP
+    on a fresh workspace, invert the dense precision (negated Hessian) into
+    the joint posterior covariance, and take Distributions.jl's entropy of the
+    corresponding MvNormal.
     =#
     @test isfinite(fs.entropy)
-    @test fs.entropy > 0
+
+    ws = StateSpaceDynamics.SLDSSmoothWorkspace(Float64, slds, tsteps)
+    StateSpaceDynamics.hessian!(ws, slds, fs.x_smooth, y[1], w)
+    P_dense =
+        -Matrix(
+            StateSpaceDynamics.block_tridgm(
+                ws.btd.H_diag[1:tsteps],
+                ws.btd.H_super[1:(tsteps - 1)],
+                ws.btd.H_sub[1:(tsteps - 1)],
+            ),
+        )
+    n = latent_dim * tsteps
+    Σ_dense = Matrix(inv(Symmetric(P_dense)))
+    entropy_ref = entropy(MvNormal(zeros(n), Σ_dense))
+    @test isapprox(fs.entropy, entropy_ref; rtol=1e-8, atol=1e-8)
     return fs
 end
 
