@@ -384,6 +384,35 @@ function test_EM(n_trials::Int=1)
     return test_em_convergence_common(toy_PoissonLDS, n_trials)
 end
 
+function test_poisson_public_elbo(; rng=MersenneTwister(0xE1B0))
+    @testset "public elbo (allocating)" begin
+        D, P, Tt, N = 2, 4, 60, 3
+        sm = GaussianStateModel(
+            0.9 * Matrix{Float64}(I, D, D),
+            0.1 * Matrix{Float64}(I, D, D),
+            zeros(D),
+            zeros(D),
+            Matrix{Float64}(I, D, D),
+        )
+        pom = PoissonObservationModel(0.5 * randn(rng, P, D), fill(-0.5, P))
+        plds = LinearDynamicalSystem(sm, pom)
+        _, Y = rand(rng, plds, fill(Tt, N))
+
+        e = elbo(plds, Y)
+        @test isfinite(e)
+
+        # Shape invariance: 3-D array and single-matrix forms agree.
+        @test isapprox(elbo(plds, cat(Y...; dims=3)), e; rtol=1e-10)
+        @test isapprox(elbo(plds, Y[1]), elbo(plds, [Y[1]]); rtol=1e-10)
+
+        # Matches the first entry of fit!'s ELBO trace (same Laplace E-step).
+        @test isapprox(
+            e, fit!(deepcopy(plds), Y; max_iter=1, progress=false)[1]; rtol=1e-8
+        )
+    end
+    return nothing
+end
+
 function test_EM_matlab()
     # read data used to smooth the results
     data_1 = Matrix(CSV.read("test_data/trial1.csv", DataFrame))

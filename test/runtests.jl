@@ -108,6 +108,7 @@ using SSDTest
                 test_SLDS_fit_multitrial()
                 test_SLDS_estep_elbo_components()
                 test_SLDS_elbo_matches_LDS_marginal_K1()
+                test_SLDS_public_elbo()
                 test_SLDS_no_priors_zero_prior_logdensity()
                 test_SLDS_joint_sample_reproduces_cross_covariance()
             end
@@ -161,6 +162,7 @@ using SSDTest
                 test_obs_model_parameter_updates(3)
                 test_EM()
                 test_EM(3)
+                test_gaussian_public_elbo()
                 test_gaussian_iw_priors_shape_map_and_R_sanity()
                 test_gaussian_update_R_matches_residual_cov()
                 test_gaussian_weighting_equiv_to_duplication()
@@ -229,6 +231,7 @@ using SSDTest
                 test_EM()
                 test_EM(3)
                 test_EM_matlab()
+                test_poisson_public_elbo()
                 test_poisson_map_step_improves_Q()
                 test_poisson_gradient_shape_and_finiteness()
             end

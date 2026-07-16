@@ -61,7 +61,11 @@ fit!(ppca::ProbabilisticPCA, X::AbstractMatrix{T}, max_iters::Int=100, tol::Floa
 
 ## Likelihoods and ELBO
 
+`elbo` is the public, allocating entry point (all three models); the `elbo!`
+variants are the workspace-based internals it wraps.
+
 ```@docs
+elbo
 loglikelihood(lds::LinearDynamicalSystem{T,SM,OM}, y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}}) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
 loglikelihood(plds::LinearDynamicalSystem{T,S,O}, y) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
 loglikelihood(ppca::ProbabilisticPCA, X::AbstractMatrix{T}) where {T<:Real}

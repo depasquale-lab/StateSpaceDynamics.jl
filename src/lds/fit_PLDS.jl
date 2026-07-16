@@ -14,7 +14,8 @@ Poisson LDS
                     smooth!(lds, fs, y, sws)
                     smooth!(lds, tfs, y, sws_pool)
 
-    ELBO:           elbo!(plds, suf, tfs, data, sws_pool)
+    ELBO:           elbo(plds, y)                   — public, allocating
+                    elbo!(plds, suf, tfs, data, sws_pool)
 
     E-Step:         estep!(lds, suf, tfs, data, sws_pool)
 
@@ -603,6 +604,49 @@ function estep!(
 
     # compute the sufficient statistics
     return _aggregate_td_suff_stats!(suf, tfs, lds, data, sws_pool[1])
+end
+
+"""
+    elbo(plds, y; newton_max_iter=20, newton_tol=1e-6)
+
+Evidence lower bound of a Poisson `LinearDynamicalSystem` at the current
+parameters (allocating convenience wrapper around the workspace-based
+[`elbo!`](@ref)): runs one Laplace E-step (iterative-Newton smoothing +
+sufficient-statistics aggregation) and evaluates the ELBO at the resulting
+Gaussian posterior approximation `q(x)`.
+
+This is the same quantity `fit!` reports per iteration — a lower bound on the
+(intractable) marginal `log p(y)`, plus any IW/MN prior log-density terms.
+
+# Arguments
+- `y`: observed counts — a `(obs_dim, T)` matrix, a `(obs_dim, T, ntrials)`
+  array, or a `Vector{<:AbstractMatrix}` of per-trial `(obs_dim, T_i)`
+  matrices (ragged lengths allowed).
+
+# Keywords
+- `newton_max_iter` / `newton_tol`: Newton-smoother iteration cap and
+  convergence tolerance (as in `fit!`).
+
+Returns a scalar.
+"""
+function elbo(
+    plds::LinearDynamicalSystem{T,S,O},
+    y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
+    newton_max_iter::Int=20,
+    newton_tol::Float64=1e-6,
+) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
+    data = Data(plds, y)
+    tfs = initialize_FilterSmooth(plds, data.tsteps)::TrialFilterSmooth{T}
+    sws_pool = [
+        SmoothWorkspace(T, plds.latent_dim, plds.obs_dim, maximum(data.tsteps)) for
+        _ in 1:Threads.maxthreadid()
+    ]
+    suf = _initialize_td_sufficient_statistics(T, plds, data.tsteps)
+    _td_init_const_blocks!(sws_pool[1], plds, data)
+
+    estep!(plds, suf, tfs, data, sws_pool; max_iter=newton_max_iter, tol=T(newton_tol))
+
+    return elbo!(plds, suf, tfs, data, sws_pool)
 end
 
 """

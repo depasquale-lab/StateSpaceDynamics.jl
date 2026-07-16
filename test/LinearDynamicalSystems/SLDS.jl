@@ -1348,6 +1348,45 @@ function test_SLDS_elbo_matches_LDS_marginal_K1(; rng=MersenneTwister(0xBEEF))
     @test isapprox(elbo, ll; rtol=1e-6)
 end
 
+function test_SLDS_public_elbo(; rng=MersenneTwister(0xE1B0))
+    @testset "public elbo (allocating)" begin
+        K = 2
+        latent_dim = 2
+        obs_dim = 3
+        tsteps = 15
+        ntrials = 2
+
+        lds = _make_gaussian_lds_dense(latent_dim, obs_dim; seed=42)
+        slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=[lds, deepcopy(lds)])
+        z, x, y = rand(rng, slds, fill(tsteps, ntrials))
+
+        # The E-step consumes a joint posterior sample, so the value is
+        # stochastic — with a shared rng it must match fit!'s first ELBO.
+        e = StateSpaceDynamics.elbo(slds, y; rng=MersenneTwister(7))
+        @test isfinite(e)
+        e_fit = fit!(deepcopy(slds), y; max_iter=1, progress=false, rng=MersenneTwister(7))[1]
+        @test isapprox(e, e_fit; rtol=1e-8)
+
+        # Shape invariance under a shared rng (single trial: matrix == [matrix]).
+        e_mat = StateSpaceDynamics.elbo(slds, y[1]; rng=MersenneTwister(7))
+        e_vec = StateSpaceDynamics.elbo(slds, [y[1]]; rng=MersenneTwister(7))
+        @test isapprox(e_mat, e_vec; rtol=1e-10)
+
+        #=
+        K=1 Gaussian regime with no priors: q(z) is degenerate, q(x) is the
+        exact posterior, so the ELBO equals the exact marginal log-likelihood
+        (deterministic — the posterior sample only feeds the K=1 FB pass,
+        whose γ ≡ 1 regardless).
+        =#
+        slds1 = SLDS(; A=ones(1, 1), πₖ=[1.0], LDSs=[deepcopy(lds)])
+        _, _, y1 = rand(rng, slds1, fill(tsteps, ntrials))
+        e1 = StateSpaceDynamics.elbo(slds1, y1; rng=MersenneTwister(11))
+        ll = sum(loglikelihood(lds, y1[trial]) for trial in 1:ntrials)
+        @test isapprox(e1, ll; rtol=1e-6)
+    end
+    return nothing
+end
+
 function test_SLDS_no_priors_zero_prior_logdensity(; rng=MersenneTwister(0xC0FFEE))
     K = 3
     latent_dim = 2

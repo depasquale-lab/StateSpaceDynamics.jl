@@ -424,6 +424,55 @@ function test_obs_model_parameter_updates(ntrials::Int=1)
     @test isapprox(lds.obs_model.R, R_opt_sqrt * R_opt_sqrt', atol=1e-6, rtol=1e-6)
 end
 
+function test_gaussian_public_elbo(; rng=MersenneTwister(0xE1B0))
+    @testset "public elbo (allocating)" begin
+        D, P, Tt, N = 2, 4, 60, 3
+        sm = GaussianStateModel(
+            0.9 * Matrix{Float64}(I, D, D),
+            0.1 * Matrix{Float64}(I, D, D),
+            zeros(D),
+            zeros(D),
+            Matrix{Float64}(I, D, D),
+        )
+        om = GaussianObservationModel(
+            randn(rng, P, D), 0.2 * Matrix{Float64}(I, P, P), zeros(P)
+        )
+        lds = LinearDynamicalSystem(sm, om)
+        _, Y = rand(rng, lds, fill(Tt, N))
+
+        #=
+        The Gaussian smoother computes the exact posterior, so with no
+        parameter priors the ELBO equals the marginal log-likelihood.
+        =#
+        e = elbo(lds, Y)
+        @test isapprox(e, loglikelihood(lds, Y); rtol=1e-6)
+
+        # Shape invariance: 3-D array and single-matrix forms agree.
+        @test isapprox(elbo(lds, cat(Y...; dims=3)), e; rtol=1e-10)
+        @test isapprox(elbo(lds, Y[1]), elbo(lds, [Y[1]]); rtol=1e-10)
+
+        # Matches the first entry of fit!'s ELBO trace (same E-step).
+        @test isapprox(
+            e, fit!(deepcopy(lds), Y; max_iter=1, progress=false)[1]; rtol=1e-8
+        )
+
+        # Input-driven model: still equals the marginal LL, and omitting a
+        # required input sequence throws at Data construction.
+        smB = GaussianStateModel(
+            0.9 * Matrix{Float64}(I, D, D),
+            0.1 * Matrix{Float64}(I, D, D),
+            0.3 * randn(rng, D, 2),
+            Matrix{Float64}(I, D, D),
+        )
+        ldsB = LinearDynamicalSystem(smB, om)
+        u = [randn(rng, 2, Tt) for _ in 1:N]
+        _, Yb = rand(rng, ldsB, fill(Tt, N); ux=u)
+        @test isapprox(elbo(ldsB, Yb; ux=u), loglikelihood(ldsB, Yb; ux=u); rtol=1e-6)
+        @test_throws ArgumentError elbo(ldsB, Yb)
+    end
+    return nothing
+end
+
 function test_EM(n_trials::Int=1)
     test_em_convergence_common(toy_lds, n_trials)
     # Additional check for monotonic increase

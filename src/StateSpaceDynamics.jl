@@ -74,6 +74,6 @@ export info_update!
 export tview
 
 # Common functions
-export rand, smooth, fit!, loglikelihood, elbo!
+export rand, smooth, fit!, loglikelihood, elbo, elbo!
 
 end

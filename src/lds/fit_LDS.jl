@@ -16,7 +16,8 @@ Gaussian LDS
 
     E-Step:         estep!(lds, suf, tfs, data, sws_pool)
 
-    ELBO:           elbo!(lds, suf, sws, total_entropy)
+    ELBO:           elbo(lds, y; ux, uy)            — public, allocating
+                    elbo!(lds, suf, sws, total_entropy)
 
     M-Step:         mstep!(lds, suf, sws)
 
@@ -727,6 +728,56 @@ function elbo!(
     end
 
     return Q_total + prior_term + total_entropy
+end
+
+"""
+    elbo(lds, y; ux=nothing, uy=nothing)
+
+Evidence lower bound of a Gaussian `LinearDynamicalSystem` at the current
+parameters (allocating convenience wrapper around the workspace-based
+[`elbo!`](@ref)): runs one E-step (smooth + sufficient-statistics
+aggregation) and evaluates the ELBO at the resulting posterior `q(x)`.
+
+For the Gaussian LDS the smoother computes the exact posterior, so with no
+parameter priors this equals the marginal [`loglikelihood`](@ref); with
+IW/MN priors it additionally includes their log-density terms (the MAP
+objective the M-step optimizes).
+
+# Arguments
+- `y`: observations — a `(obs_dim, T)` matrix, a `(obs_dim, T, ntrials)`
+  array, or a `Vector{<:AbstractMatrix}` of per-trial `(obs_dim, T_i)`
+  matrices (ragged lengths allowed).
+- `ux` / `uy`: optional dynamics / observation input sequences in the same
+  shape family as `y`. Required when `size(state_model.B, 2) > 0` /
+  `size(obs_model.D, 2) > 0`.
+
+Returns a scalar.
+"""
+function elbo(
+    lds::LinearDynamicalSystem{T,S,O},
+    y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
+    ux=nothing,
+    uy=nothing,
+) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+    data = Data(lds, y; ux=ux, uy=uy)
+    tfs = initialize_FilterSmooth(lds, data.tsteps)::TrialFilterSmooth{T}
+    sws_pool = [
+        SmoothWorkspace(
+            T,
+            lds.latent_dim,
+            lds.obs_dim,
+            maximum(data.tsteps);
+            ux_dim=lds.ux_dim,
+            uy_dim=lds.uy_dim,
+        ) for _ in 1:Threads.maxthreadid()
+    ]
+    suf = _initialize_td_sufficient_statistics(T, lds, data.tsteps)
+    _td_init_const_blocks!(sws_pool[1], lds, data)
+
+    estep!(lds, suf, tfs, data, sws_pool)
+
+    total_entropy = sum(fs.entropy for fs in tfs.FilterSmooths; init=zero(T))
+    return elbo!(lds, suf, sws_pool[1], total_entropy)
 end
 
 """

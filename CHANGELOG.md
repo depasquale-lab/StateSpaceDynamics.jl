@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Public allocating `elbo(model, y; ...)` for all three models (Gaussian LDS
+  with `ux`/`uy` keywords, Poisson LDS with Newton-smoother keywords, SLDS
+  with an `rng` keyword since its E-step consumes a posterior sample). Runs
+  one E-step and evaluates the ELBO at the resulting posterior, the same
+  quantity `fit!` reports per iteration,  without requiring the private
+  workspace structs the `elbo!` variants take (#139)
+
 ### Changed
 - **Breaking:** the previously exported (but unused) `Data` struct is now a
   private, validated container for multi-trial observations + `ux`/`uy` inputs.
