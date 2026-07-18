@@ -1,34 +1,35 @@
 #=============================================================================
 Poisson LDS
 
-    Log-Likelihood: joint_loglikelihood!(ws, plds, x, y[, lognorm_t])
+    Log-Likelihood: joint_loglikelihood!(ws, plds, x, y[, lognorm_t, ux, uy])
                     joint_loglikelihood(plds, x, y)
 
-    Gradient:       gradient!(ws, lds, x, y)
-                    gradient_observation_model!(grad, C, d, tfs, y, sws_pool)
+    Gradient:       gradient!(ws, lds, x, y[, ux, uy])
+                    gradient_observation_model!(grad, C, d, D, tfs, y, uy, sws_pool)
 
     Hessian:        (generic hessian! lives in continuous_latents.jl;
                     emission kernels in poisson_observations.jl)
 
-    Smooth:         smooth(plds, y)                 — public, allocating
-                    smooth!(lds, fs, y, sws)
-                    smooth!(lds, tfs, y, sws_pool)
+    Smooth:         smooth(plds, y; ux, uy)         — public, allocating
+                    smooth!(lds, fs, y, sws, ux, uy)
+                    smooth!(lds, tfs, data, sws_pool)
 
-    ELBO:           elbo(plds, y)                   — public, allocating
+    ELBO:           elbo(plds, y; ux, uy)           — public, allocating
                     elbo!(plds, suf, tfs, data, sws_pool)
 
     E-Step:         estep!(lds, suf, tfs, data, sws_pool)
 
     M-Step:         mstep!(plds, suf, tfs, data, sws_pool)
 
-    Fit:            fit!(plds, y)
+    Fit:            fit!(plds, y; ux, uy)
 
     Public entry points take plain arrays and construct a validated `Data`
     (see `utils/validation.jl`); the multi-trial backend consumes `Data`.
-    The Poisson path supports latent (dynamics) inputs `ux` via the `B u_{t-1}`
-    term, threaded through the smoother/ELBO/M-step exactly as in the Gaussian
-    path. Observation inputs `uy` are not supported yet — there is no `D` matrix
-    on `PoissonObservationModel`, so `Data` construction enforces `uy_dim == 0`.
+    The Poisson path supports both latent (dynamics) inputs `ux` via the
+    `B u_{t-1}` term and observation inputs `uy` via the `D v_t` emission term
+    (rate `λ = exp(C x + d + D v)`), threaded through the smoother/ELBO/M-step
+    exactly as in the Gaussian path. `uy` also enters the Poisson emission
+    curvature, since the rate depends on the linear predictor.
 =============================================================================#
 
 """
@@ -42,12 +43,12 @@ function _poisson_lognorm_t(y::AbstractMatrix{T}) where {T<:Real}
 end
 
 """
-    joint_loglikelihood!(ws, plds, x, y[, lognorm_t, ux])
+    joint_loglikelihood!(ws, plds, x, y[, lognorm_t, ux, uy])
 
 Per-timestep complete-data log-likelihood of a Poisson LDS, written into
 `ws.opt.ll_vec` (an active-length view is returned — the workspace may be
 pool-oversized). Requires `compute_smooth_constants!(ws, plds)` to have been
-called. The rate follows the canonical Poisson GLM `λ_t = exp(C x_t + d)`.
+called. The rate follows the canonical Poisson GLM `λ_t = exp(C x_t + d + D v_t)`.
 
 - `ll[1]` includes: log p(x₁) + log p(y₁ | x₁)
 - `ll[t]` for t≥2 includes: log p(x_t | x_{t-1}) + log p(y_t | x_t)
@@ -56,7 +57,8 @@ Normalization terms (Gaussian logdet + log(2π) and Poisson `-log(y!)`) are
 included, so `sum(ll)` is the exact complete-data log-density `log p(x, y)`.
 
 Pass `ux` (state inputs, `t`-indexed like `x`) to include the `B u_{t-1}`
-dynamics term; `nothing` (default) or a zero-row matrix skips it.
+dynamics term and `uy` (observation inputs, `t`-indexed like `y`) to include the
+`D v_t` emission term; `nothing` (default) or a zero-row matrix skips either.
 """
 function joint_loglikelihood!(
     ws::SmoothWorkspace{T},
@@ -65,11 +67,13 @@ function joint_loglikelihood!(
     y::AbstractMatrix{TM},
     lognorm_t::AbstractVector{<:Real}=_poisson_lognorm_t(y),
     ux::Union{Nothing,AbstractMatrix}=nothing,
+    uy::Union{Nothing,AbstractMatrix}=nothing,
 ) where {T<:Real,TM<:Real,S<:GaussianStateModel{TM},O<:PoissonObservationModel{TM}}
     tsteps = size(y, 2)
 
     C = plds.obs_model.C
     d = plds.obs_model.d
+    D_obs = plds.obs_model.D
 
     cc = ws.consts
     ll_vec = view(ws.opt.ll_vec, 1:tsteps)
@@ -79,8 +83,11 @@ function joint_loglikelihood!(
 
     @views for t in 1:tsteps
         # Emission (with -log(y!)): y_t'η_t - sum(exp(η_t)),
-        # with η_t = Cx_t + d
+        # with η_t = Cx_t + d (+ D v_t)
         mul!(η, C, x[:, t])
+        if uy !== nothing
+            mul!(η, D_obs, uy[:, t], one(T), one(T))
+        end
         @. η = η + d
         ll_vec[t] = dot(y[:, t], η) - sum(exp, η) - lognorm_t[t]
 
@@ -158,24 +165,31 @@ function StatsAPI.loglikelihood(
 end
 
 """
-    gradient_observation_model_single_trial!(grad, C, d, E_z, p_smooth, y, weights)
+    gradient_observation_model_single_trial!(grad, C, d, D_obs, E_z, p_smooth, y, uy, weights, ...)
 
 Compute the gradient for a single trial and add it to the accumulated gradient.
 
-Treats `[C d]` as a single regression matrix `W` of size `obs_dim × (latent_dim + 1)`
-on the augmented latent `z_aug = [x; 1]`. The parameter layout is unchanged from the
-unstacked version — `vcat(vec(C), d) == vec([C d])` in column-major order — so callers
-of this function don't need to know about the stacked view; only the gradient
-computation has been unified across the two blocks. The MN-prior penalty (added by
+Treats `[C d D]` as a single regression matrix `W` of size
+`obs_dim × (latent_dim + 1 + uy_dim)` on the augmented latent `z_aug = [x; 1; v]`
+(where `v` is the observation input `uy`). The parameter layout is
+`vcat(vec(C), d, vec(D)) == vec([C d D])` in column-major order — so callers of
+this function don't need to know about the stacked view; the gradient
+computation is unified across the three blocks. The MN-prior penalty (added by
 `update_observation_model!`) lives over the same stacked `W`.
+
+The rate is `λ = exp(C·E[x] + d + D·v + ρ)` with `ρ = ½ diag(C P C')`. Only the
+`C` block carries the variance-correction term `CP = C·P`; the `d` and `D`
+blocks have zero correction since `ρ` depends on neither `d` nor `D`.
 """
 function gradient_observation_model_single_trial!(
     grad::AbstractVector{T},
     C::AbstractMatrix{T},
     d::AbstractVector{T},
+    D_obs::AbstractMatrix{T},
     E_z::AbstractMatrix{T},
     p_smooth::AbstractArray{T,3},
     y::AbstractMatrix{T},
+    uy::Union{Nothing,AbstractMatrix},
     weights::Union{Nothing,AbstractVector{T}},
     h::AbstractVector{T},
     ρ::AbstractVector{T},
@@ -183,11 +197,13 @@ function gradient_observation_model_single_trial!(
     CP::AbstractMatrix{T},
 ) where {T<:Real}
     obs_dim, latent_dim = size(C)
+    uy_dim = size(D_obs, 2)
     Dp1 = latent_dim + 1
+    reg_dim = Dp1 + uy_dim
     tsteps = size(y, 2)
 
-    # 2-D view of the gradient buffer as `[C d]`-shaped W (obs_dim × Dp1).
-    grad_W = reshape(view(grad, 1:(obs_dim * Dp1)), obs_dim, Dp1)
+    # 2-D view of the gradient buffer as `[C d D]`-shaped W (obs_dim × reg_dim).
+    grad_W = reshape(view(grad, 1:(obs_dim * reg_dim)), obs_dim, reg_dim)
 
     @views for t in 1:tsteps
         weight = isnothing(weights) ? one(T) : weights[t]
@@ -198,6 +214,9 @@ function gradient_observation_model_single_trial!(
 
         mul!(h, C, E_z_t)
         h .+= d
+        if uy !== nothing
+            mul!(h, D_obs, uy[:, t], one(T), one(T))
+        end
         mul!(CP, C, P_smooth_t)
 
         @views for i in 1:obs_dim
@@ -207,9 +226,9 @@ function gradient_observation_model_single_trial!(
 
         #=
         Stacked gradient ∂Q/∂W[i, j] = w · (y_t[i] − λ[i]) · z_aug[j]  −  w · λ[i] · CP_aug[i, j]
-        where z_aug = [E_z_t; 1] and CP_aug[:, 1:D] = CP, CP_aug[:, D+1] = 0
-        (since ρ has no dependence on the d-column of W). Split into the two
-        blocks to skip the always-zero CP_aug column.
+        where z_aug = [E_z_t; 1; v_t] and CP_aug[:, 1:D] = CP, with the d- and
+        v-columns of CP_aug all zero (ρ has no dependence on the d- or D-columns
+        of W). Split into three blocks to skip the always-zero CP_aug columns.
         =#
         for j in 1:latent_dim
             for i in 1:obs_dim
@@ -217,28 +236,43 @@ function gradient_observation_model_single_trial!(
             end
         end
         # j = latent_dim + 1: z_aug[j] = 1, CP_aug[:, j] = 0 → grad ← grad + w · (y − λ)
-        @views grad_W[:, Dp1] .+= weight .* (y_t .- λ)
+        grad_W[:, Dp1] .+= weight .* (y_t .- λ)
+        # D block (cols D+2 : D+1+uy_dim): z_aug[j] = v_t[j], CP_aug[:, j] = 0.
+        if uy !== nothing
+            v_t = uy[:, t]
+            for jj in 1:uy_dim
+                col = Dp1 + jj
+                vj = v_t[jj]
+                for i in 1:obs_dim
+                    grad_W[i, col] += weight * ((y_t[i] - λ[i]) * vj)
+                end
+            end
+        end
     end
 end
 
 """
-    gradient_observation_model!(grad, C, d, tfs, y, w)
+    gradient_observation_model!(grad, C, d, D_obs, tfs, y, uy, sws_pool, w)
 
-Compute the gradient of the Q-function with respect to the observation model parameters using TrialFilterSmooth.
+Compute the gradient of the Q-function with respect to the stacked emission
+parameters `[C d D]` using `TrialFilterSmooth`. `uy` is the per-trial vector of
+observation-input matrices (or `nothing` for no inputs).
 """
 function gradient_observation_model!(
     grad::AbstractVector{T},
     C::AbstractMatrix{T},
     d::AbstractVector{T},
+    D_obs::AbstractMatrix{T},
     tfs::TrialFilterSmooth{T},
     y::AbstractVector{<:AbstractMatrix{T}},
+    uy::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}},
     sws_pool::Vector{SmoothWorkspace{T}},
     w::Union{Nothing,AbstractVector{<:AbstractVector{T}}}=nothing;
     tasks_per_thread::Int=2,
 ) where {T<:Real}
     trials = length(tfs.FilterSmooths)
     npar = length(grad)
-    @assert length(sws_pool[1].reg.CD) == npar && length(sws_pool[1].reg.Syz) == npar "Poisson gradient accumulator size $(length(sws_pool[1].reg.CD)) ≠ npar=$npar (uy_dim must be 0)"
+    @assert length(sws_pool[1].reg.CD) == npar && length(sws_pool[1].reg.Syz) == npar "Poisson gradient accumulator size $(length(sws_pool[1].reg.CD)) ≠ npar=$npar (expected obs_dim·(latent_dim+1+uy_dim); build the workspace with uy_dim=lds.uy_dim)"
 
     #=
     Cap ntasks at `length(sws_pool)` so each chunk gets its own
@@ -276,14 +310,17 @@ function gradient_observation_model!(
 
             fs = tfs[k]
             weights = isnothing(w) ? nothing : w[k]
+            uy_k = isnothing(uy) ? nothing : uy[k]
 
             gradient_observation_model_single_trial!(
                 tmp,
                 C,
                 d,
+                D_obs,
                 fs.x_smooth,
                 fs.p_smooth,
                 y[k],
+                uy_k,
                 weights,
                 h_buf,
                 ρ_buf,
@@ -315,10 +352,11 @@ end
 """
     mstep!(plds, suf, tfs, data, sws_pool)
 
-Suf-based M-step for a Poisson LDS. The Gaussian-state half (x0, P0, A&b, Q)
+Suf-based M-step for a Poisson LDS. The Gaussian-state half (x0, P0, A&b&B, Q)
 is updated from the aggregated sufficient statistics in `suf`. The Poisson
-emission `[C d]` is non-conjugate and still goes through the existing LBFGS
-routine (`update_observation_model!`).
+emission `[C d D]` is non-conjugate and still goes through the existing LBFGS
+routine (`update_observation_model!`), which receives `data.uy` for the `D v`
+term.
 """
 function mstep!(
     plds::LinearDynamicalSystem{T,S,O},
@@ -332,7 +370,7 @@ function mstep!(
     update_initial_state_covariance!(plds, suf, sws)
     update_A_b!(plds, suf, sws)
     update_Q!(plds, suf, sws)
-    update_observation_model!(plds, tfs, data.y, sws_pool)
+    update_observation_model!(plds, tfs, data.y, sws_pool; uy=data.uy)
     return nothing
 end
 
@@ -358,6 +396,7 @@ function elbo!(
     sws_pool::Vector{SmoothWorkspace{T}},
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     y = data.y
+    uy = data.uy
     ntrials = length(y)
 
     total_entropy = zero(T)
@@ -379,7 +418,7 @@ function elbo!(
         acc = zero(T)
         for trial in lo:hi
             fs = tfs[trial]
-            acc += Q_obs!(sws, plds, fs.x_smooth, fs.p_smooth, y[trial])
+            acc += Q_obs!(sws, plds, fs.x_smooth, fs.p_smooth, y[trial], uy[trial])
         end
         partial[i] = acc
         return nothing
@@ -412,14 +451,19 @@ function elbo!(
     end
 
     #=
-    MN log-prior on [C d]. Λ-only and Λ-logdet constants are absorbed into the
+    MN log-prior on [C d D]. Λ-only and Λ-logdet constants are absorbed into the
     additive ELBO constant.
     =#
     if plds.obs_model.CD_prior !== nothing
         D = plds.latent_dim
-        W_cd = Matrix{T}(undef, plds.obs_dim, D + 1)
+        uy_dim = plds.uy_dim
+        reg_dim = D + 1 + uy_dim
+        W_cd = Matrix{T}(undef, plds.obs_dim, reg_dim)
         @views W_cd[:, 1:D] .= plds.obs_model.C
         @views W_cd[:, D + 1] .= plds.obs_model.d
+        if uy_dim > 0
+            @views W_cd[:, (D + 2):reg_dim] .= plds.obs_model.D
+        end
         prior = plds.obs_model.CD_prior
         Wm = W_cd .- prior.M₀
         prior_term -= T(0.5) * sum(Wm .* (Wm * prior.Λ))
@@ -429,12 +473,14 @@ function elbo!(
 end
 
 """
-    smooth!(lds, fs, y, sws, ux; max_iter=20, tol=1e-6)
+    smooth!(lds, fs, y, sws, ux, uy; max_iter=20, tol=1e-6)
 
 Poisson LDS smoothing using iterative Newton with block tridiagonal solve.
-Uses `SmoothWorkspace` for pre-allocated buffers. `ux` is the per-trial
-latent-input matrix `(ux_dim, T_i)` feeding the `B u_{t-1}` dynamics term;
-pass a `0×T_i` matrix when there are no inputs.
+Uses `SmoothWorkspace` for pre-allocated buffers. `ux`/`uy` are the per-trial
+latent-input `(ux_dim, T_i)` and observation-input `(uy_dim, T_i)` matrices
+feeding the `B u_{t-1}` dynamics and `D v_t` emission terms; pass `0×T_i`
+matrices when there are no inputs. The Poisson emission curvature depends on the
+rate `λ = exp(Cx + d + D v)`, so `uy` also enters the Hessian.
 
 Since the Poisson log-likelihood is non-quadratic, multiple Newton iterations
 are required (unlike Gaussian LDS which converges in one step).
@@ -444,7 +490,8 @@ function smooth!(
     fs::FilterSmooth{T},
     y::AbstractMatrix{T},
     sws::SmoothWorkspace{T},
-    ux::AbstractMatrix{T};
+    ux::AbstractMatrix{T},
+    uy::AbstractMatrix{T};
     max_iter::Int=20,
     tol::T=T(1e-6),
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
@@ -479,15 +526,15 @@ function smooth!(
     # The line-search objective is the exact complete-data log-likelihood;
     # hoisting the data-only normalizer makes that free per evaluation.
     lognorm_t = _poisson_lognorm_t(y)
-    ϕ!() = sum(joint_loglikelihood!(sws, lds, x, y, lognorm_t, ux))
+    ϕ!() = sum(joint_loglikelihood!(sws, lds, x, y, lognorm_t, ux, uy))
 
     compute_grad! = (gcur, xcur) -> begin
-        gradient!(gcur, sws, lds, xcur, y, ux)
+        gradient!(gcur, sws, lds, xcur, y, ux, uy)
         return nothing
     end
 
     build_hess! = (xcur) -> begin
-        hessian!(sws, lds, xcur, y)
+        hessian!(sws, lds, xcur, y, uy)
         _negate_blocks!(btd, tsteps)
         return nothing
     end
@@ -521,7 +568,7 @@ function smooth!(
         tol=tol,
     )
 
-    hessian!(sws, lds, x, y)
+    hessian!(sws, lds, x, y, uy)
     _negate_blocks!(btd, tsteps)
 
     logdet_precision = block_tridiagonal_inverse_logdet!(
@@ -537,7 +584,7 @@ function smooth!(
     return fs
 end
 
-# Backward-compatible no-input overload (zero-row ux).
+# Backward-compatible no-input overload (zero-row ux/uy).
 function smooth!(
     lds::LinearDynamicalSystem{T,S,O},
     fs::FilterSmooth{T},
@@ -547,15 +594,17 @@ function smooth!(
     tol::T=T(1e-6),
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     ux = zeros(T, 0, size(y, 2))
-    return smooth!(lds, fs, y, sws, ux; max_iter=max_iter, tol=tol)
+    uy = zeros(T, 0, size(y, 2))
+    return smooth!(lds, fs, y, sws, ux, uy; max_iter=max_iter, tol=tol)
 end
 
 """
     smooth!(lds, tfs, data::Data, sws_pool; max_iter=20, tol=1e-6)
 
 Multi-trial Poisson LDS smoothing. `data` carries the per-trial observations
-`data.y` and latent inputs `data.ux` (zero-row when absent); each trial's
-`B u_{t-1}` term is threaded through the single-trial smoother.
+`data.y`, latent inputs `data.ux`, and observation inputs `data.uy` (zero-row
+when absent); each trial's `B u_{t-1}` and `D v_t` terms are threaded through
+the single-trial smoother.
 """
 function smooth!(
     lds::LinearDynamicalSystem{T,S,O},
@@ -567,10 +616,11 @@ function smooth!(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     y = data.y
     ux = data.ux
+    uy = data.uy
     ntrials = length(y)
 
     if ntrials == 1
-        smooth!(lds, tfs[1], y[1], sws_pool[1], ux[1]; max_iter=max_iter, tol=tol)
+        smooth!(lds, tfs[1], y[1], sws_pool[1], ux[1], uy[1]; max_iter=max_iter, tol=tol)
         return tfs
     end
 
@@ -583,7 +633,16 @@ function smooth!(
         lo > hi && return nothing
         sws = sws_pool[i]
         for trial in lo:hi
-            smooth!(lds, tfs[trial], y[trial], sws, ux[trial]; max_iter=max_iter, tol=tol)
+            smooth!(
+                lds,
+                tfs[trial],
+                y[trial],
+                sws,
+                ux[trial],
+                uy[trial];
+                max_iter=max_iter,
+                tol=tol,
+            )
         end
     end
 
@@ -618,8 +677,9 @@ function smooth!(
     T_max = maximum(size(yt, 2) for yt in y)
     npool = Threads.maxthreadid()
     sws_pool = [
-        SmoothWorkspace(T, lds.latent_dim, lds.obs_dim, T_max; ux_dim=lds.ux_dim) for
-        _ in 1:npool
+        SmoothWorkspace(
+            T, lds.latent_dim, lds.obs_dim, T_max; ux_dim=lds.ux_dim, uy_dim=lds.uy_dim
+        ) for _ in 1:npool
     ]
     return smooth!(lds, tfs, y, sws_pool; max_iter=max_iter, tol=tol)
 end
@@ -675,15 +735,21 @@ function elbo(
     plds::LinearDynamicalSystem{T,S,O},
     y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
     ux=nothing,
+    uy=nothing,
     newton_max_iter::Int=20,
     newton_tol::Float64=1e-6,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    data = Data(plds, y; ux=ux)
+    data = Data(plds, y; ux=ux, uy=uy)
     tfs = initialize_FilterSmooth(plds, data.tsteps)::TrialFilterSmooth{T}
     npool = min(Threads.maxthreadid(), length(data.y))
     sws_pool = [
         SmoothWorkspace(
-            T, plds.latent_dim, plds.obs_dim, maximum(data.tsteps); ux_dim=plds.ux_dim
+            T,
+            plds.latent_dim,
+            plds.obs_dim,
+            maximum(data.tsteps);
+            ux_dim=plds.ux_dim,
+            uy_dim=plds.uy_dim,
         ) for _ in 1:npool
     ]
     suf = _initialize_td_sufficient_statistics(T, plds, data.tsteps)
@@ -717,15 +783,21 @@ function smooth(
     plds::LinearDynamicalSystem{T,S,O},
     y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
     ux=nothing,
+    uy=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    data = Data(plds, y; ux=ux)
+    data = Data(plds, y; ux=ux, uy=uy)
     tfs = initialize_FilterSmooth(plds, data.tsteps)::TrialFilterSmooth{T}
     # Cap the pool at the trial count — workspaces beyond ntrials are never
     # touched and each carries O(D²·T) of block-tridiagonal storage.
     npool = min(Threads.maxthreadid(), length(data.y))
     sws_pool = [
         SmoothWorkspace(
-            T, plds.latent_dim, plds.obs_dim, maximum(data.tsteps); ux_dim=plds.ux_dim
+            T,
+            plds.latent_dim,
+            plds.obs_dim,
+            maximum(data.tsteps);
+            ux_dim=plds.ux_dim,
+            uy_dim=plds.uy_dim,
         ) for _ in 1:npool
     ]
     smooth!(plds, tfs, data, sws_pool)
@@ -749,6 +821,9 @@ Fit a Poisson LDS via Laplace-EM.
 - `ux`: latent (dynamics) inputs feeding the `B u_{t-1}` term; same shapes as
   `y` with `ux_dim` rows. Required when `size(state_model.B, 2) > 0`; `nothing`
   (default) means no inputs.
+- `uy`: observation inputs feeding the `D v_t` emission term; same shapes as `y`
+  with `uy_dim` rows. Required when `size(obs_model.D, 2) > 0`; `nothing`
+  (default) means no inputs.
 - `max_iter`: maximum EM iterations
 - `tol`: convergence tolerance on ELBO change
 - `progress`: show progress bar
@@ -759,21 +834,23 @@ function fit!(
     plds::LinearDynamicalSystem{T,S,O},
     y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
     ux=nothing,
+    uy=nothing,
     max_iter::Int=100,
     tol::Float64=1e-6,
     progress=true,
     newton_max_iter::Int=20,
     newton_tol::Float64=1e-6,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    data = Data(plds, y; ux=ux)
+    data = Data(plds, y; ux=ux, uy=uy)
     T_max = maximum(data.tsteps)
 
     tfs = initialize_FilterSmooth(plds, data.tsteps)::TrialFilterSmooth{T}
 
     npool = Threads.maxthreadid()
     sws_pool = [
-        SmoothWorkspace(T, plds.latent_dim, plds.obs_dim, T_max; ux_dim=plds.ux_dim) for
-        _ in 1:npool
+        SmoothWorkspace(
+            T, plds.latent_dim, plds.obs_dim, T_max; ux_dim=plds.ux_dim, uy_dim=plds.uy_dim
+        ) for _ in 1:npool
     ]
 
     suf = _initialize_td_sufficient_statistics(T, plds, data.tsteps)

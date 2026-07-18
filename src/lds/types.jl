@@ -170,38 +170,46 @@ Represents the observation model of a Linear Dynamical System with Poisson obser
 with canonical log-link:
 
 ```math
-λ_t = exp(C x_t + d)
+λ_t = exp(C x_t + d + D v_t)
 ```
 
 `d` is the standard Poisson-GLM intercept — the per-channel baseline log-rate,
-unconstrained in ℝ; positivity of the rate `λ` is provided by the `exp`.
+unconstrained in ℝ; positivity of the rate `λ` is provided by the `exp`. `D v_t`
+is an optional observation-input (covariate) term; when `D` has zero columns the
+model reduces to the canonical `λ_t = exp(C x_t + d)`.
 
 # Fields
 - `C::AbstractMatrix{T}`: Observation matrix of size `(obs_dim × latent_dim)`. Maps latent
     states into observation space.
 - `d::AbstractVector{T}`: Per-neuron baseline log-rate (length `obs_dim`). Free in ℝ.
+- `D::AbstractMatrix{T} = zeros(..., obs_dim, 0)`: Observation-input matrix of size
+    `(obs_dim × uy_dim)` mapping the observation input `v_t` (`uy`) into log-rate space.
+    Defaults to a zero-column matrix (no inputs).
 - `CD_prior::Union{Nothing,MNPrior{T,Matrix{T}}} = nothing`: Optional matrix-normal prior on
-    the stacked emission matrix `[C d]` (treated as a single regression of `log λ` on
-    `[x; 1]`). Prior matrices are stored as plain `Matrix{T}`, decoupled from `C`'s storage
-    type `M`. `M₀` and `Λ` have shapes `(obs_dim, latent_dim+1)` and
-    `(latent_dim+1, latent_dim+1)` respectively. Unlike the Gaussian path there is no IW
-    counterpart since Poisson has no observation-noise covariance — this is an MN-only
-    prior contributing `½ tr(([C d] - M₀) Λ ([C d] - M₀)')` to the LBFGS objective.
+    the stacked emission matrix `[C d D]` (treated as a single regression of `log λ` on
+    `[x; 1; v]`). Prior matrices are stored as plain `Matrix{T}`, decoupled from `C`'s storage
+    type `M`. `M₀` and `Λ` have shapes `(obs_dim, latent_dim+1+uy_dim)` and
+    `(latent_dim+1+uy_dim, latent_dim+1+uy_dim)` respectively. Unlike the Gaussian path there
+    is no IW counterpart since Poisson has no observation-noise covariance — this is an
+    MN-only prior contributing `½ tr(([C d D] - M₀) Λ ([C d D] - M₀)')` to the LBFGS objective.
 """
 Base.@kwdef mutable struct PoissonObservationModel{
     T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}
 } <: AbstractObservationModel{T}
     C::M
     d::V
+    D::M = zeros(eltype(C), size(C, 1), 0)  # eltype-preserving default (no obs inputs)
     CD_prior::Union{Nothing,MNPrior{T,Matrix{T}}} = nothing
 end
 
 # 2-arg convenience constructor; matches the Gaussian path's positional form
-# so callers don't have to spell out `CD_prior=nothing`.
+# so callers don't have to spell out `D` / `CD_prior`.
 function PoissonObservationModel(
     C::M, d::V
 ) where {T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}}
-    return PoissonObservationModel{T,M,V}(; C=C, d=d, CD_prior=nothing)
+    return PoissonObservationModel{T,M,V}(;
+        C=C, d=d, D=zeros(eltype(C), size(C, 1), 0), CD_prior=nothing
+    )
 end
 
 """

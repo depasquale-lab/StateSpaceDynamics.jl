@@ -279,11 +279,12 @@ function observation_gradient!(
 end
 
 """
-    observation_hessian!(out, cc, _, _, lds, x, y, t[, α])
+    observation_hessian!(out, cc, _, _, lds, x, y, t[, α, uy])
 
 Gaussian emission curvature: `out .+= α .* (-C'R⁻¹C)`, using the cached
-`yt_given_xt = -C'R⁻¹C` from `cc` — constant in both `x` and `y`. Both
-scratch buffers are unused.
+`yt_given_xt = -C'R⁻¹C` from `cc` — constant in `x`, `y`, and any observation
+input. Both scratch buffers and `uy` are unused (accepted for interface parity
+with the Poisson curvature, which depends on the rate).
 """
 function observation_hessian!(
     out::AbstractMatrix{T},
@@ -295,6 +296,7 @@ function observation_hessian!(
     y::AbstractMatrix{T0},
     t::Int,
     α::T=one(T),
+    ::Union{Nothing,AbstractMatrix}=nothing,
 ) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:GaussianObservationModel{T0}}
     @. out += α * cc.yt_given_xt
     return out
