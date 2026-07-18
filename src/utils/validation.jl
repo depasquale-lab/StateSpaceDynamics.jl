@@ -256,9 +256,15 @@ function _validate_obs_model(
         throw(DimensionMismatchError("d vector", obs_dim, length(obs_model.d)))
     end
 
+    # Check D matrix (observation-input map): (obs_dim × uy_dim). uy_dim is free,
+    # but the row count must match obs_dim.
+    if hasproperty(obs_model, :D) && size(obs_model.D, 1) != obs_dim
+        throw(DimensionMismatchError("D matrix rows", obs_dim, size(obs_model.D, 1)))
+    end
+
     #=
     Check that d values are reasonable. `d` enters the linear predictor as
-    `λ = exp(C x + d)`; |d| above ~50 risks exp overflow/underflow once Cx
+    `λ = exp(C x + d + D v)`; |d| above ~50 risks exp overflow/underflow once Cx
     is added on top.
     =#
     if any(x -> abs(x) > 50, obs_model.d)  # exp(50) ≈ 5e21, exp(-50) ≈ 2e-22
@@ -494,11 +500,9 @@ end
 end
 
 @inline function _check_uy(
-    cs::Nothing, expected_dim::Int, tsteps::Int, ::PoissonObservationModel{T}
+    cs, expected_dim::Int, tsteps::Int, ::PoissonObservationModel{T}
 ) where {T}
-    expected_dim == 0 ||
-        error("Poisson observation model does not support uy (expected_dim must be 0)")
-    return zeros(T, 0, tsteps)
+    return _check_ux(cs, expected_dim, tsteps, "uy", T)
 end
 
 function _normalize_multitrial_ux(
@@ -541,24 +545,9 @@ end
 end
 
 @inline function _normalize_multitrial_uy(
-    cs::Nothing, expected_dim::Int, tsteps_per_trial, ::Type{T}, ::PoissonObservationModel
+    cs, expected_dim::Int, tsteps_per_trial, ::Type{T}, ::PoissonObservationModel
 ) where {T<:Real}
-    expected_dim == 0 ||
-        error("Poisson observation model does not support uy (expected_dim must be 0)")
-    return [zeros(T, 0, Int(Ti)) for Ti in tsteps_per_trial]
-end
-
-@inline function _normalize_multitrial_uy(
-    cs::AbstractVector{<:AbstractMatrix},
-    expected_dim::Int,
-    tsteps_per_trial,
-    ::Type{T},
-    ::PoissonObservationModel,
-) where {T<:Real}
-    return error(
-        "Poisson observation model does not support observation inputs uy " *
-        "(there is no D matrix); pass uy=nothing.",
-    )
+    return _normalize_multitrial_ux(cs, expected_dim, tsteps_per_trial, T, "uy")
 end
 
 # ============================================================================

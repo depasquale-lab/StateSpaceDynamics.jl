@@ -56,15 +56,23 @@ function _sample_trial!(
     uy_trial::AbstractMatrix,
 )
     tsteps = size(x_trial, 2)
-    # Poisson obs model has no D matrix; uy_trial is accepted for signature
-    # parity with the Gaussian path but must be empty (validated by callers).
-    @assert size(uy_trial, 1) == 0 "Poisson observation model does not support obs inputs"
 
-    # Initial state
+    # Initial state. The observation at t=1 includes the obs-input term D·v_1
+    # when uy_trial has nonzero rows; zero-row matmul is a no-op.
     x_trial[:, 1] = rand(rng, MvNormal(state_params.x0, state_params.P0))
-    y_trial[:, 1] = rand.(rng, Poisson.(exp.(obs_params.C * x_trial[:, 1] + obs_params.d)))
+    y_trial[:, 1] =
+        rand.(
+            rng,
+            Poisson.(
+                exp.(
+                    obs_params.C * x_trial[:, 1] +
+                    obs_params.d +
+                    obs_params.D * uy_trial[:, 1]
+                )
+            ),
+        )
 
-    # Subsequent states
+    # Subsequent states. The dynamics input B·u_{t-1} kicks the state forward.
     for t in 2:tsteps
         x_trial[:, t] = rand(
             rng,
@@ -76,7 +84,16 @@ function _sample_trial!(
             ),
         )
         y_trial[:, t] =
-            rand.(rng, Poisson.(exp.(obs_params.C * x_trial[:, t] + obs_params.d)))
+            rand.(
+                rng,
+                Poisson.(
+                    exp.(
+                        obs_params.C * x_trial[:, t] +
+                        obs_params.d +
+                        obs_params.D * uy_trial[:, t]
+                    )
+                ),
+            )
     end
 end
 
@@ -97,7 +114,8 @@ Optional input sequences:
   is an `(ux_dim, tsteps)` matrix; multi-trial is a `Vector{<:AbstractMatrix}`
   of per-trial matrices. Required when `size(state_model.B, 2) > 0`.
 - `uy`: same shape for the observation input `D`. Required when
-  `size(obs_model.D, 2) > 0`. Gaussian observation model only.
+  `size(obs_model.D, 2) > 0`. Supported for both Gaussian and Poisson
+  observation models.
 """
 function Random.rand(
     rng::AbstractRNG,

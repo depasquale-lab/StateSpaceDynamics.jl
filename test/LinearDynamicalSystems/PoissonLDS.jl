@@ -335,9 +335,9 @@ function test_parameter_gradient()
     C, d = plds.obs_model.C, plds.obs_model.d
     params = vcat(vec(C), d)
 
-    # get analytical gradient
+    # get analytical gradient (no obs inputs: zero-col D, uy=nothing)
     grad_analytical = StateSpaceDynamics.gradient_observation_model!(
-        zeros(length(params)), C, d, tfs, y, sws_pool
+        zeros(length(params)), C, d, plds.obs_model.D, tfs, y, nothing, sws_pool
     )
 
     # numerical gradient against trial 1 only
@@ -407,6 +407,180 @@ function test_poisson_public_elbo(; rng=MersenneTwister(0xE1B0))
 
         # Matches the first entry of fit!'s ELBO trace (same Laplace E-step).
         @test isapprox(e, fit!(deepcopy(plds), Y; max_iter=1, progress=false)[1]; rtol=1e-8)
+    end
+    return nothing
+end
+
+function test_poisson_latent_inputs(; rng=MersenneTwister(0x50B1))
+    @testset "Poisson LDS latent inputs (B*ux)" begin
+        D, P, U, Tt, N = 2, 5, 3, 80, 4
+
+        # Input-driven state model: nonzero B → ux_dim = U.
+        smB = GaussianStateModel(;
+            A=0.9 * Matrix{Float64}(I, D, D),
+            Q=0.05 * Matrix{Float64}(I, D, D),
+            b=zeros(D),
+            B=0.3 * randn(rng, D, U),
+            x0=zeros(D),
+            P0=Matrix{Float64}(I, D, D),
+        )
+        pom = PoissonObservationModel(0.5 * randn(rng, P, D), fill(-1.0, P))
+        plds = LinearDynamicalSystem(smB, pom)
+        @test plds.ux_dim == U
+        @test plds.uy_dim == 0
+        @test length(plds.fit_bool) == 5
+
+        u = [randn(rng, U, Tt) for _ in 1:N]
+        _, Y = rand(rng, plds, fill(Tt, N); ux=u)
+
+        # Public entry points accept `ux` and stay finite.
+        @test isfinite(elbo(plds, Y; ux=u))
+        xs = smooth(plds, Y; ux=u)
+        @test all(isfinite, xs[1][1])
+
+        # Omitting a required input sequence throws at Data construction.
+        @test_throws ArgumentError elbo(plds, Y)
+        @test_throws ArgumentError smooth(plds, Y)
+        @test_throws ArgumentError fit!(deepcopy(plds), Y; progress=false)
+
+        # Laplace-EM ELBO is monotone (up to smoother-tolerance noise) and the
+        # input matrix B is actually learned from a zero init.
+        plds0 = LinearDynamicalSystem(
+            GaussianStateModel(;
+                A=0.5 * Matrix{Float64}(I, D, D),
+                Q=0.1 * Matrix{Float64}(I, D, D),
+                b=zeros(D),
+                B=zeros(D, U),
+                x0=zeros(D),
+                P0=Matrix{Float64}(I, D, D),
+            ),
+            PoissonObservationModel(0.1 * randn(rng, P, D), zeros(P)),
+        )
+        elbos = fit!(plds0, Y; ux=u, max_iter=40, progress=false)
+        @test minimum(diff(elbos)) >= -1e-6
+        @test norm(plds0.state_model.B) > 1e-3
+    end
+    return nothing
+end
+
+function test_poisson_obs_inputs(; rng=MersenneTwister(0xD0B5))
+    @testset "Poisson LDS observation inputs (D*uy)" begin
+        Dl, P, V, Tt, N = 2, 4, 3, 60, 4
+
+        gsm = GaussianStateModel(;
+            A=0.9 * Matrix{Float64}(I, Dl, Dl),
+            Q=0.05 * Matrix{Float64}(I, Dl, Dl),
+            b=zeros(Dl),
+            x0=zeros(Dl),
+            P0=Matrix{Float64}(I, Dl, Dl),
+        )
+        Cm = 0.5 * randn(rng, P, Dl)
+        dm = fill(-0.5, P)
+        Dm = 0.4 * randn(rng, P, V)
+        pom = PoissonObservationModel(; C=Cm, d=dm, D=Dm)
+        plds = LinearDynamicalSystem(gsm, pom)
+        @test plds.uy_dim == V
+        @test plds.ux_dim == 0
+        @test length(plds.fit_bool) == 5
+        @test size(plds.obs_model.D) == (P, V)
+
+        uy1 = randn(rng, V, Tt)
+        x1 = 0.3 * randn(rng, Dl, Tt)
+        y1 = Float64.(rand.(rng, Poisson.(exp.(Cm * x1 .+ dm .+ Dm * uy1))))
+
+        # Hand-rolled, Dual-safe complete-data log-likelihood (independent of the
+        # code under test) — the reference for the latent gradient and Hessian.
+        function ref_ll(xv)
+            xm = reshape(xv, Dl, Tt)
+            P0i = inv(plds.state_model.P0)
+            Qi = inv(plds.state_model.Q)
+            x0v = plds.state_model.x0
+            acc =
+                -0.5 * (xm[:, 1] - x0v)' * P0i * (xm[:, 1] - x0v) -
+                0.5 * logdet(plds.state_model.P0) - 0.5 * Dl * log(2π)
+            for t in 2:Tt
+                r = xm[:, t] - plds.state_model.A * xm[:, t - 1] - plds.state_model.b
+                acc +=
+                    -0.5 * r' * Qi * r - 0.5 * logdet(plds.state_model.Q) -
+                    0.5 * Dl * log(2π)
+            end
+            for t in 1:Tt
+                η = Cm * xm[:, t] + dm + Dm * uy1[:, t]
+                acc += dot(y1[:, t], η) - sum(exp, η) - sum(z -> loggamma(z + 1), y1[:, t])
+            end
+            return acc
+        end
+
+        ws = StateSpaceDynamics.SmoothWorkspace(Float64, Dl, P, Tt; uy_dim=V)
+        StateSpaceDynamics.compute_smooth_constants!(ws, plds)
+
+        # Latent gradient: D*uy shifts the rate λ = exp(Cx + d + D uy), so it
+        # enters the x-gradient through λ.
+        g_ad = ForwardDiff.gradient(ref_ll, vec(x1))
+        g_an = vec(copy(StateSpaceDynamics.gradient!(ws, plds, x1, y1, nothing, uy1)))
+        @test norm(g_an - g_ad) < 1e-8
+
+        # Latent Hessian: Poisson curvature depends on the rate, hence on uy.
+        H_ad = ForwardDiff.hessian(ref_ll, vec(x1))
+        StateSpaceDynamics.hessian!(ws, plds, x1, y1, uy1)
+        H_dense = block_tridgm(ws.btd.H_diag, ws.btd.H_super, ws.btd.H_sub)
+        @test norm(H_dense - H_ad) < 1e-8
+
+        # Q-gradient over the stacked emission [C d D] on z_aug = [x; 1; v].
+        uy = [randn(rng, V, Tt) for _ in 1:N]
+        _, Y = rand(rng, plds, fill(Tt, N); uy=uy)
+        data = StateSpaceDynamics.Data(plds, Y; uy=uy)
+        tfs = StateSpaceDynamics.initialize_FilterSmooth(plds, data.tsteps)
+        sws_pool = [
+            StateSpaceDynamics.SmoothWorkspace(Float64, Dl, P, Tt; uy_dim=V) for
+            _ in 1:Threads.maxthreadid()
+        ]
+        StateSpaceDynamics.smooth!(plds, tfs, data, sws_pool)
+
+        function Qfun(pv)
+            Cx = reshape(pv[1:(P * Dl)], P, Dl)
+            dx = pv[(P * Dl + 1):(P * Dl + P)]
+            Dx = reshape(pv[(P * Dl + P + 1):end], P, V)
+            acc = zero(eltype(pv))
+            for k in 1:N
+                Ez = tfs[k].x_smooth
+                Ps = tfs[k].p_smooth
+                for t in 1:Tt
+                    h = Cx * Ez[:, t] .+ dx .+ Dx * uy[k][:, t]
+                    ρ = [0.5 * dot(Cx[i, :], Ps[:, :, t] * Cx[i, :]) for i in 1:P]
+                    λ = exp.(h .+ ρ)
+                    acc += dot(Y[k][:, t], h) - sum(λ)
+                end
+            end
+            return acc
+        end
+        gQ_ad = ForwardDiff.gradient(Qfun, vcat(vec(Cm), dm, vec(Dm)))
+        gQ_an = zeros(P * (Dl + 1 + V))
+        # gradient_observation_model! returns -∇Q (for minimization); negate.
+        StateSpaceDynamics.gradient_observation_model!(
+            gQ_an, Cm, dm, Dm, tfs, Y, uy, sws_pool
+        )
+        @test norm(-gQ_an - gQ_ad) < 1e-8
+
+        # Public entry points accept uy; omitting a required input throws.
+        @test isfinite(elbo(plds, Y; uy=uy))
+        @test_throws ArgumentError elbo(plds, Y)
+        @test_throws ArgumentError fit!(deepcopy(plds), Y; progress=false)
+
+        # Laplace-EM ELBO monotone and D is learned from a zero init.
+        plds0 = LinearDynamicalSystem(
+            GaussianStateModel(;
+                A=0.5 * Matrix{Float64}(I, Dl, Dl),
+                Q=0.1 * Matrix{Float64}(I, Dl, Dl),
+                b=zeros(Dl),
+                x0=zeros(Dl),
+                P0=Matrix{Float64}(I, Dl, Dl),
+            ),
+            PoissonObservationModel(; C=0.1 * randn(rng, P, Dl), d=zeros(P), D=zeros(P, V)),
+        )
+        elbos = fit!(plds0, Y; uy=uy, max_iter=50, progress=false)
+        @test minimum(diff(elbos)) >= -1e-6
+        @test norm(plds0.obs_model.D) > 1e-3
     end
     return nothing
 end
@@ -747,7 +921,14 @@ function test_poisson_gradient_shape_and_finiteness()
 
         g = zeros(Float64, length(vec(C)) + length(d))
         StateSpaceDynamics.gradient_observation_model!(
-            g, plds.obs_model.C, plds.obs_model.d, tfs, Y, sws_pool
+            g,
+            plds.obs_model.C,
+            plds.obs_model.d,
+            plds.obs_model.D,
+            tfs,
+            Y,
+            nothing,
+            sws_pool,
         )
 
         @test all(isfinite, g)

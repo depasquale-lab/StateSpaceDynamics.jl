@@ -845,5 +845,5 @@ function _extract_obs_params(obs_model::GaussianObservationModel{T}) where {T}
 end
 
 function _extract_obs_params(obs_model::PoissonObservationModel{T}) where {T}
-    return (C=obs_model.C, d=obs_model.d)
+    return (C=obs_model.C, d=obs_model.d, D=obs_model.D)
 end
