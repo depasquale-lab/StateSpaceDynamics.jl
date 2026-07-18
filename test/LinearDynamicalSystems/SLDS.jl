@@ -1366,6 +1366,33 @@ function test_SLDS_no_priors_zero_prior_logdensity(; rng=MersenneTwister(0xC0FFE
     @test isfinite(StateSpaceDynamics._slds_prior_logdensity(slds))
 end
 
+function test_SLDS_x0_niw_prior(; rng=MersenneTwister(0xB0BA))
+    K, latent_dim, obs_dim = 3, 2, 3
+
+    x0p() = x0_mean_prior(zeros(latent_dim); κ₀=1.0)
+    P0p() = StateSpaceDynamics.IWPrior(; Ψ=Matrix(1.0 * I(latent_dim)), ν=latent_dim + 2.0)
+
+    lds = _make_gaussian_lds(latent_dim, obs_dim)
+    lds.state_model.x0_prior = x0_mean_prior(fill(0.5, latent_dim); κ₀=1.0)
+    slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds, K))
+    ld = StateSpaceDynamics._slds_prior_logdensity(slds)
+    @test isfinite(ld)
+    @test ld != 0.0
+    @test ld < 0.0   # a shrinkage penalty: -½ κ₀ (x0-μ₀)'P0⁻¹(x0-μ₀) ≤ 0
+
+    lds2 = _make_gaussian_lds(latent_dim, obs_dim)
+    lds2.state_model.x0_prior = x0p()
+    lds2.state_model.P0_prior = P0p()
+    slds2 = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fill(lds2, K))
+    _, _, y = rand(rng, slds2, fill(20, 3))
+    elbos = fit!(slds2, y; max_iter=8, progress=false)
+    @test all(isfinite, elbos)
+    for lds_k in slds2.LDSs
+        @test all(isfinite, lds_k.state_model.x0)
+        @test all(isfinite, lds_k.state_model.P0)
+    end
+end
+
 #=
 The joint sampler must reproduce the posterior's temporal correlations, not
 just the per-timestep marginals. The old marginal sampler got this wrong; it

@@ -379,6 +379,13 @@ function elbo!(
     if plds.state_model.P0_prior !== nothing
         prior_term += iw_logprior_term(plds.state_model.P0, plds.state_model.P0_prior)
     end
+    if plds.state_model.x0_prior !== nothing
+        prior_term += mn_logprior_term(
+            reshape(plds.state_model.x0, :, 1),
+            plds.state_model.P0,
+            plds.state_model.x0_prior,
+        )
+    end
 
     #=
     MN log-prior trace term on the dynamics [A b B]. The state model is Gaussian

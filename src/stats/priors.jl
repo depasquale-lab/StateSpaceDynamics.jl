@@ -131,3 +131,22 @@ ELBO can decrease under strong shrinkage — see git log for the fix context.
 end
 
 @inline mn_logprior_term(W::AbstractMatrix, ::AbstractMatrix, ::Nothing) = zero(eltype(W))
+
+"""
+    x0_mean_prior(μ₀; κ₀=1) -> MNPrior
+
+Convenience constructor for the mean half of a Normal–Inverse–Wishart prior on
+the initial latent state.
+
+- pair this `MNPrior` (on `x0`, via `state_model.x0_prior`) with an `IWPrior` on
+  `P0` (via `state_model.P0_prior`) to obtain the full NIW conjugate prior:
+
+  ```math
+  x0 | P0 ~ N(μ₀, P0 / κ₀),   P0 ~ IW(Ψ, ν)
+  ```
+"""
+function x0_mean_prior(μ₀::AbstractVector{T}; κ₀::Real=one(T)) where {T<:Real}
+    κ₀ > zero(T) || throw(ArgumentError("x0_mean_prior: κ₀ must be positive, got $κ₀"))
+    D = length(μ₀)
+    return MNPrior{T,Matrix{T}}(; M₀=reshape(collect(μ₀), D, 1), Λ=fill(T(κ₀), 1, 1))
+end

@@ -109,6 +109,7 @@ using SSDTest
                 test_SLDS_estep_elbo_components()
                 test_SLDS_elbo_matches_LDS_marginal_K1()
                 test_SLDS_no_priors_zero_prior_logdensity()
+                test_SLDS_x0_niw_prior()
                 test_SLDS_joint_sample_reproduces_cross_covariance()
             end
 
@@ -162,6 +163,7 @@ using SSDTest
                 test_EM()
                 test_EM(3)
                 test_gaussian_iw_priors_shape_map_and_R_sanity()
+                test_x0_niw_prior_map_and_degradation()
                 test_gaussian_update_R_matches_residual_cov()
                 test_gaussian_weighting_equiv_to_duplication()
                 test_td_mn_priors_shrink()

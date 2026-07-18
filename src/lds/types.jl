@@ -56,6 +56,8 @@ where `B·ux_t` is present only when `B` is supplied (i.e., has nonzero columns)
     the stacked dynamics matrix `[A B]`. Pair with `Q_prior` for a full MNIW prior on `(AB, Q)`.
     Prior matrices are stored as plain `Matrix{T}` (decoupled from `A`'s storage type `M`) so
     they match the internal workspaces regardless of how `A` is stored.
+- `x0_prior::Union{Nothing,MNPrior{T,Matrix{T}}} = nothing`: Optional matrix-normal prior on the
+    initial mean `x0`.
 """
 Base.@kwdef mutable struct GaussianStateModel{
     T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}
@@ -69,6 +71,7 @@ Base.@kwdef mutable struct GaussianStateModel{
     Q_prior::Union{Nothing,IWPrior{T}} = nothing
     P0_prior::Union{Nothing,IWPrior{T}} = nothing
     AB_prior::Union{Nothing,MNPrior{T,Matrix{T}}} = nothing
+    x0_prior::Union{Nothing,MNPrior{T,Matrix{T}}} = nothing
 end
 
 """

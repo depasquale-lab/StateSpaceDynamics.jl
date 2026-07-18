@@ -692,6 +692,9 @@ function _slds_prior_logdensity(slds::SLDS{T}) where {T<:Real}
         if sm.P0_prior !== nothing
             prior_term += iw_logprior_term(sm.P0, sm.P0_prior)
         end
+        if sm.x0_prior !== nothing
+            prior_term += mn_logprior_term(reshape(sm.x0, :, 1), sm.P0, sm.x0_prior)
+        end
         if sm.AB_prior !== nothing
             ux_dim = lds.ux_dim
             W_ab = Matrix{T}(undef, D, D + 1 + ux_dim)

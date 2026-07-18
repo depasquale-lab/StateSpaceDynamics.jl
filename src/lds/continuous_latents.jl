@@ -559,10 +559,21 @@ function update_initial_state_mean!(
     lds::LinearDynamicalSystem{T,S,O}, suf::SufficientStatistics{T}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     lds.fit_bool[1] || return nothing
-    inv_n = inv(T(suf.init_n))
     x0 = lds.state_model.x0
-    for j in eachindex(x0)
-        x0[j] = suf.init_xy[1, j] * inv_n
+    x0_prior = lds.state_model.x0_prior
+    # NIW mean update: x0 = (Σγ·x₁ + κ₀ μ₀) / (Σγ + κ₀)
+    if x0_prior === nothing
+        inv_n = inv(T(suf.init_n))
+        for j in eachindex(x0)
+            x0[j] = suf.init_xy[1, j] * inv_n
+        end
+    else
+        κ₀ = x0_prior.Λ[1, 1]
+        μ₀ = x0_prior.M₀            # D×1
+        κ_n = T(suf.init_n) + κ₀
+        for j in eachindex(x0)
+            x0[j] = (suf.init_xy[1, j] + κ₀ * μ₀[j, 1]) / κ_n
+        end
     end
     return nothing
 end
@@ -578,6 +589,7 @@ function update_initial_state_covariance!(
     S0 = sws.reg.S0_sum                              # D × D scratch
     copyto!(S0, suf.init_yy[].mat)
 
+    # Scatter of the initial state around x0: S0 = Σγ(x₁-x0)(x₁-x0)' + Σγ P₁.
     # Rank-1 updates inline (BLAS.ger! would need a contiguous μ vector and
     # `view(init_xy, 1, :)` allocates a SubArray header — small but nonzero).
     for j in 1:D
@@ -587,6 +599,22 @@ function update_initial_state_covariance!(
             μ_i = suf.init_xy[1, i]
             x0_i = x0[i]
             S0[i, j] += T(N) * x0_i * x0_j - x0_i * μ_j - μ_i * x0_j
+        end
+    end
+
+    #=
+    Matrix-normal prior on x0 (the mean half of the NIW): fold κ₀(x0-μ₀)(x0-μ₀)'
+    into the IW scale, exactly as update_Q!/update_R! fold in their `Wm Λ Wm'`
+    term. Together with `P0_prior` (the IW half) this yields the NIW posterior
+    scale Ψₙ = Ψ + Σγ(x₁x₁'+P₁) + κ₀μ₀μ₀' - κₙ x0 x0'. `x0` must already hold the
+    NIW mean μₙ here (update_initial_state_mean! runs first in the M-step).
+    =#
+    x0_prior = lds.state_model.x0_prior
+    if x0_prior !== nothing
+        κ₀ = x0_prior.Λ[1, 1]
+        μ₀ = x0_prior.M₀
+        for j in 1:D, i in 1:D
+            S0[i, j] += κ₀ * (x0[i] - μ₀[i, 1]) * (x0[j] - μ₀[j, 1])
         end
     end
     Symmetrize!(S0)

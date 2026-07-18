@@ -662,6 +662,11 @@ function elbo!(
     if lds.state_model.P0_prior !== nothing
         prior_term += iw_logprior_term(lds.state_model.P0, lds.state_model.P0_prior)
     end
+    if lds.state_model.x0_prior !== nothing
+        prior_term += mn_logprior_term(
+            reshape(lds.state_model.x0, :, 1), lds.state_model.P0, lds.state_model.x0_prior
+        )
+    end
     if lds.obs_model.R_prior !== nothing
         prior_term += iw_logprior_term(lds.obs_model.R, lds.obs_model.R_prior)
     end

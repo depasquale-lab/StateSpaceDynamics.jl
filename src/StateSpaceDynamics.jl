@@ -62,7 +62,7 @@ export InvalidProbabilityVectorError, NumericalStabilityError
 export ProbabilisticPCA, SLDS, LinearDynamicalSystem, Data
 export AbstractStateModel, AbstractObservationModel
 export GaussianStateModel, GaussianObservationModel, PoissonObservationModel
-export IWPrior, MNPrior
+export IWPrior, MNPrior, x0_mean_prior
 export CovUpdateCache
 
 # Utilities
