@@ -233,6 +233,7 @@ using SSDTest
                 test_EM(3)
                 test_EM_matlab()
                 test_poisson_public_elbo()
+                test_poisson_latent_inputs()
                 test_poisson_map_step_improves_Q()
                 test_poisson_gradient_shape_and_finiteness()
             end

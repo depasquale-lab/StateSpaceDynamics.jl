@@ -411,6 +411,58 @@ function test_poisson_public_elbo(; rng=MersenneTwister(0xE1B0))
     return nothing
 end
 
+function test_poisson_latent_inputs(; rng=MersenneTwister(0x50B1))
+    @testset "Poisson LDS latent inputs (B*ux)" begin
+        D, P, U, Tt, N = 2, 5, 3, 80, 4
+
+        # Input-driven state model: nonzero B → ux_dim = U.
+        smB = GaussianStateModel(;
+            A=0.9 * Matrix{Float64}(I, D, D),
+            Q=0.05 * Matrix{Float64}(I, D, D),
+            b=zeros(D),
+            B=0.3 * randn(rng, D, U),
+            x0=zeros(D),
+            P0=Matrix{Float64}(I, D, D),
+        )
+        pom = PoissonObservationModel(0.5 * randn(rng, P, D), fill(-1.0, P))
+        plds = LinearDynamicalSystem(smB, pom)
+        @test plds.ux_dim == U
+        @test plds.uy_dim == 0
+        @test length(plds.fit_bool) == 5
+
+        u = [randn(rng, U, Tt) for _ in 1:N]
+        _, Y = rand(rng, plds, fill(Tt, N); ux=u)
+
+        # Public entry points accept `ux` and stay finite.
+        @test isfinite(elbo(plds, Y; ux=u))
+        xs = smooth(plds, Y; ux=u)
+        @test all(isfinite, xs[1][1])
+
+        # Omitting a required input sequence throws at Data construction.
+        @test_throws ArgumentError elbo(plds, Y)
+        @test_throws ArgumentError smooth(plds, Y)
+        @test_throws ArgumentError fit!(deepcopy(plds), Y; progress=false)
+
+        # Laplace-EM ELBO is monotone (up to smoother-tolerance noise) and the
+        # input matrix B is actually learned from a zero init.
+        plds0 = LinearDynamicalSystem(
+            GaussianStateModel(;
+                A=0.5 * Matrix{Float64}(I, D, D),
+                Q=0.1 * Matrix{Float64}(I, D, D),
+                b=zeros(D),
+                B=zeros(D, U),
+                x0=zeros(D),
+                P0=Matrix{Float64}(I, D, D),
+            ),
+            PoissonObservationModel(0.1 * randn(rng, P, D), zeros(P)),
+        )
+        elbos = fit!(plds0, Y; ux=u, max_iter=40, progress=false)
+        @test minimum(diff(elbos)) >= -1e-6
+        @test norm(plds0.state_model.B) > 1e-3
+    end
+    return nothing
+end
+
 function test_EM_matlab()
     # read data used to smooth the results
     data_1 = Matrix(CSV.read("test_data/trial1.csv", DataFrame))

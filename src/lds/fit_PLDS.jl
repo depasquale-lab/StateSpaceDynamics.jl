@@ -25,8 +25,10 @@ Poisson LDS
 
     Public entry points take plain arrays and construct a validated `Data`
     (see `utils/validation.jl`); the multi-trial backend consumes `Data`.
-    The Poisson path takes no `ux`/`uy` inputs yet — `Data` construction
-    enforces `ux_dim == uy_dim == 0`.
+    The Poisson path supports latent (dynamics) inputs `ux` via the `B u_{t-1}`
+    term, threaded through the smoother/ELBO/M-step exactly as in the Gaussian
+    path. Observation inputs `uy` are not supported yet — there is no `D` matrix
+    on `PoissonObservationModel`, so `Data` construction enforces `uy_dim == 0`.
 =============================================================================#
 
 """
@@ -40,7 +42,7 @@ function _poisson_lognorm_t(y::AbstractMatrix{T}) where {T<:Real}
 end
 
 """
-    joint_loglikelihood!(ws, plds, x, y[, lognorm_t])
+    joint_loglikelihood!(ws, plds, x, y[, lognorm_t, ux])
 
 Per-timestep complete-data log-likelihood of a Poisson LDS, written into
 `ws.opt.ll_vec` (an active-length view is returned — the workspace may be
@@ -52,6 +54,9 @@ called. The rate follows the canonical Poisson GLM `λ_t = exp(C x_t + d)`.
 
 Normalization terms (Gaussian logdet + log(2π) and Poisson `-log(y!)`) are
 included, so `sum(ll)` is the exact complete-data log-density `log p(x, y)`.
+
+Pass `ux` (state inputs, `t`-indexed like `x`) to include the `B u_{t-1}`
+dynamics term; `nothing` (default) or a zero-row matrix skips it.
 """
 function joint_loglikelihood!(
     ws::SmoothWorkspace{T},
@@ -59,6 +64,7 @@ function joint_loglikelihood!(
     x::AbstractMatrix{T},
     y::AbstractMatrix{TM},
     lognorm_t::AbstractVector{<:Real}=_poisson_lognorm_t(y),
+    ux::Union{Nothing,AbstractMatrix}=nothing,
 ) where {T<:Real,TM<:Real,S<:GaussianStateModel{TM},O<:PoissonObservationModel{TM}}
     tsteps = size(y, 2)
 
@@ -79,7 +85,7 @@ function joint_loglikelihood!(
         ll_vec[t] = dot(y[:, t], η) - sum(exp, η) - lognorm_t[t]
 
         # Prior (t = 1) / transition (t ≥ 2)
-        ll_vec[t] += state_loglikelihood!(cc, dx, tmp, plds, x, t)
+        ll_vec[t] += state_loglikelihood!(cc, dx, tmp, plds, x, t, ux)
     end
 
     return ll_vec
@@ -423,10 +429,12 @@ function elbo!(
 end
 
 """
-    smooth!(lds, fs, y, sws; max_iter=20, tol=1e-6)
+    smooth!(lds, fs, y, sws, ux; max_iter=20, tol=1e-6)
 
 Poisson LDS smoothing using iterative Newton with block tridiagonal solve.
-Uses `SmoothWorkspace` for pre-allocated buffers.
+Uses `SmoothWorkspace` for pre-allocated buffers. `ux` is the per-trial
+latent-input matrix `(ux_dim, T_i)` feeding the `B u_{t-1}` dynamics term;
+pass a `0×T_i` matrix when there are no inputs.
 
 Since the Poisson log-likelihood is non-quadratic, multiple Newton iterations
 are required (unlike Gaussian LDS which converges in one step).
@@ -435,7 +443,8 @@ function smooth!(
     lds::LinearDynamicalSystem{T,S,O},
     fs::FilterSmooth{T},
     y::AbstractMatrix{T},
-    sws::SmoothWorkspace{T};
+    sws::SmoothWorkspace{T},
+    ux::AbstractMatrix{T};
     max_iter::Int=20,
     tol::T=T(1e-6),
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
@@ -470,10 +479,10 @@ function smooth!(
     # The line-search objective is the exact complete-data log-likelihood;
     # hoisting the data-only normalizer makes that free per evaluation.
     lognorm_t = _poisson_lognorm_t(y)
-    ϕ!() = sum(joint_loglikelihood!(sws, lds, x, y, lognorm_t))
+    ϕ!() = sum(joint_loglikelihood!(sws, lds, x, y, lognorm_t, ux))
 
     compute_grad! = (gcur, xcur) -> begin
-        gradient!(gcur, sws, lds, xcur, y)
+        gradient!(gcur, sws, lds, xcur, y, ux)
         return nothing
     end
 
@@ -528,23 +537,40 @@ function smooth!(
     return fs
 end
 
-"""
-    smooth!(lds, tfs, y, sws_pool; max_iter=20, tol=1e-6)
+# Backward-compatible no-input overload (zero-row ux).
+function smooth!(
+    lds::LinearDynamicalSystem{T,S,O},
+    fs::FilterSmooth{T},
+    y::AbstractMatrix{T},
+    sws::SmoothWorkspace{T};
+    max_iter::Int=20,
+    tol::T=T(1e-6),
+) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
+    ux = zeros(T, 0, size(y, 2))
+    return smooth!(lds, fs, y, sws, ux; max_iter=max_iter, tol=tol)
+end
 
-Multi-trial Poisson LDS smoothing.
+"""
+    smooth!(lds, tfs, data::Data, sws_pool; max_iter=20, tol=1e-6)
+
+Multi-trial Poisson LDS smoothing. `data` carries the per-trial observations
+`data.y` and latent inputs `data.ux` (zero-row when absent); each trial's
+`B u_{t-1}` term is threaded through the single-trial smoother.
 """
 function smooth!(
     lds::LinearDynamicalSystem{T,S,O},
     tfs::TrialFilterSmooth{T},
-    y::AbstractVector{<:AbstractMatrix{T}},
+    data::Data{T},
     sws_pool::Vector{SmoothWorkspace{T}};
     max_iter::Int=20,
     tol::T=T(1e-6),
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
+    y = data.y
+    ux = data.ux
     ntrials = length(y)
 
     if ntrials == 1
-        smooth!(lds, tfs[1], y[1], sws_pool[1]; max_iter=max_iter, tol=tol)
+        smooth!(lds, tfs[1], y[1], sws_pool[1], ux[1]; max_iter=max_iter, tol=tol)
         return tfs
     end
 
@@ -557,11 +583,24 @@ function smooth!(
         lo > hi && return nothing
         sws = sws_pool[i]
         for trial in lo:hi
-            smooth!(lds, tfs[trial], y[trial], sws; max_iter=max_iter, tol=tol)
+            smooth!(lds, tfs[trial], y[trial], sws, ux[trial]; max_iter=max_iter, tol=tol)
         end
     end
 
     return tfs
+end
+
+# Convenience overload: validate + canonicalize raw observations into a `Data`
+# (no inputs) before smoothing.
+function smooth!(
+    lds::LinearDynamicalSystem{T,S,O},
+    tfs::TrialFilterSmooth{T},
+    y::AbstractVector{<:AbstractMatrix{T}},
+    sws_pool::Vector{SmoothWorkspace{T}};
+    max_iter::Int=20,
+    tol::T=T(1e-6),
+) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
+    return smooth!(lds, tfs, Data(lds, y), sws_pool; max_iter=max_iter, tol=tol)
 end
 
 """
@@ -578,7 +617,10 @@ function smooth!(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     T_max = maximum(size(yt, 2) for yt in y)
     npool = Threads.maxthreadid()
-    sws_pool = [SmoothWorkspace(T, lds.latent_dim, lds.obs_dim, T_max) for _ in 1:npool]
+    sws_pool = [
+        SmoothWorkspace(T, lds.latent_dim, lds.obs_dim, T_max; ux_dim=lds.ux_dim) for
+        _ in 1:npool
+    ]
     return smooth!(lds, tfs, y, sws_pool; max_iter=max_iter, tol=tol)
 end
 
@@ -600,7 +642,7 @@ function estep!(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
 
     # smooth each trial
-    smooth!(lds, tfs, data.y, sws_pool; max_iter=max_iter, tol=tol)
+    smooth!(lds, tfs, data, sws_pool; max_iter=max_iter, tol=tol)
 
     # compute the sufficient statistics
     return _aggregate_td_suff_stats!(suf, tfs, lds, data, sws_pool[1])
@@ -632,15 +674,17 @@ Returns a scalar.
 function elbo(
     plds::LinearDynamicalSystem{T,S,O},
     y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
+    ux=nothing,
     newton_max_iter::Int=20,
     newton_tol::Float64=1e-6,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    data = Data(plds, y)
+    data = Data(plds, y; ux=ux)
     tfs = initialize_FilterSmooth(plds, data.tsteps)::TrialFilterSmooth{T}
     npool = min(Threads.maxthreadid(), length(data.y))
     sws_pool = [
-        SmoothWorkspace(T, plds.latent_dim, plds.obs_dim, maximum(data.tsteps)) for
-        _ in 1:npool
+        SmoothWorkspace(
+            T, plds.latent_dim, plds.obs_dim, maximum(data.tsteps); ux_dim=plds.ux_dim
+        ) for _ in 1:npool
     ]
     suf = _initialize_td_sufficient_statistics(T, plds, data.tsteps)
     _td_init_const_blocks!(sws_pool[1], plds, data)
@@ -671,18 +715,20 @@ For multi-trial `y`: `Vector`s of the above, one entry per trial.
 """
 function smooth(
     plds::LinearDynamicalSystem{T,S,O},
-    y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}},
+    y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
+    ux=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    data = Data(plds, y)
+    data = Data(plds, y; ux=ux)
     tfs = initialize_FilterSmooth(plds, data.tsteps)::TrialFilterSmooth{T}
     # Cap the pool at the trial count — workspaces beyond ntrials are never
     # touched and each carries O(D²·T) of block-tridiagonal storage.
     npool = min(Threads.maxthreadid(), length(data.y))
     sws_pool = [
-        SmoothWorkspace(T, plds.latent_dim, plds.obs_dim, maximum(data.tsteps)) for
-        _ in 1:npool
+        SmoothWorkspace(
+            T, plds.latent_dim, plds.obs_dim, maximum(data.tsteps); ux_dim=plds.ux_dim
+        ) for _ in 1:npool
     ]
-    smooth!(plds, tfs, data.y, sws_pool)
+    smooth!(plds, tfs, data, sws_pool)
     return _collect_smooth_output(tfs, y)
 end
 
@@ -700,6 +746,9 @@ Fit a Poisson LDS via Laplace-EM.
       ragged trial lengths allowed
 
 # Keywords
+- `ux`: latent (dynamics) inputs feeding the `B u_{t-1}` term; same shapes as
+  `y` with `ux_dim` rows. Required when `size(state_model.B, 2) > 0`; `nothing`
+  (default) means no inputs.
 - `max_iter`: maximum EM iterations
 - `tol`: convergence tolerance on ELBO change
 - `progress`: show progress bar
@@ -709,19 +758,23 @@ Fit a Poisson LDS via Laplace-EM.
 function fit!(
     plds::LinearDynamicalSystem{T,S,O},
     y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
+    ux=nothing,
     max_iter::Int=100,
     tol::Float64=1e-6,
     progress=true,
     newton_max_iter::Int=20,
     newton_tol::Float64=1e-6,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    data = Data(plds, y)
+    data = Data(plds, y; ux=ux)
     T_max = maximum(data.tsteps)
 
     tfs = initialize_FilterSmooth(plds, data.tsteps)::TrialFilterSmooth{T}
 
     npool = Threads.maxthreadid()
-    sws_pool = [SmoothWorkspace(T, plds.latent_dim, plds.obs_dim, T_max) for _ in 1:npool]
+    sws_pool = [
+        SmoothWorkspace(T, plds.latent_dim, plds.obs_dim, T_max; ux_dim=plds.ux_dim) for
+        _ in 1:npool
+    ]
 
     suf = _initialize_td_sufficient_statistics(T, plds, data.tsteps)
     _td_init_const_blocks!(sws_pool[1], plds, data)
