@@ -485,26 +485,35 @@ function test_x0_niw_prior_map_and_degradation()
     =#
     @testset "Initial-state NIW prior: MAP, MLE reduction, graceful degradation" begin
         D, P = 2, 3
-        mk = (; x0p, P0p) -> begin
-            gsm = GaussianStateModel(;
-                A=0.5 * Matrix(I(D)), Q=Matrix(0.1 * I(D)), b=zeros(D),
-                x0=zeros(D), P0=Matrix(1.0 * I(D)), x0_prior=x0p, P0_prior=P0p,
-            )
-            gom = GaussianObservationModel(; C=0.5 * ones(P, D), R=Matrix(1.0 * I(P)), d=zeros(P))
-            return LinearDynamicalSystem(gsm, gom)
-        end
+        mk =
+            (; x0p, P0p) -> begin
+                gsm = GaussianStateModel(;
+                    A=0.5 * Matrix(I(D)),
+                    Q=Matrix(0.1 * I(D)),
+                    b=zeros(D),
+                    x0=zeros(D),
+                    P0=Matrix(1.0 * I(D)),
+                    x0_prior=x0p,
+                    P0_prior=P0p,
+                )
+                gom = GaussianObservationModel(;
+                    C=0.5 * ones(P, D), R=Matrix(1.0 * I(P)), d=zeros(P)
+                )
+                return LinearDynamicalSystem(gsm, gom)
+            end
         # Hand-set sufficient statistics for one (fake) regime.
         N = 0.7
         msum = [0.4, -0.3]                       # Σγ·x₁
         SS = [0.9 0.1; 0.1 0.7]                  # Σγ(x₁x₁' + P₁), SPD
-        set_suf! = lds -> begin
-            suf = StateSpaceDynamics._initialize_td_sufficient_statistics(Float64, lds, [5])
-            suf.init_n = N
-            suf.init_xy[1, 1] = msum[1]
-            suf.init_xy[1, 2] = msum[2]
-            suf.init_yy[] = PDMat(copy(SS))
-            return suf
-        end
+        set_suf! =
+            lds -> begin
+                suf = StateSpaceDynamics._initialize_td_sufficient_statistics(Float64, lds, [5])
+                suf.init_n = N
+                suf.init_xy[1, 1] = msum[1]
+                suf.init_xy[1, 2] = msum[2]
+                suf.init_yy[] = PDMat(copy(SS))
+                return suf
+            end
         sws = StateSpaceDynamics.SmoothWorkspace(Float64, D, P, 5)
 
         # (1) constructor

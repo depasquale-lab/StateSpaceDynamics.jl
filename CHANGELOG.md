@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Composable Normal-Inverse-Wishart prior on the initial latent state via a new
+  `GaussianStateModel` field `x0_prior::Union{Nothing,MNPrior}` (the mean half),
+  paired with the existing `P0_prior::IWPrior` (the covariance half). The initial
+  state `x₁ ~ N(x0, P0)` is an intercept-only regression, so its NIW prior is the
+  same `MNPrior` + `IWPrior` composition used for `[A b]`/`Q` and `[C d]`/`R` —
+  no bespoke prior type. Construct the mean half with the exported
+  `x0_mean_prior(μ₀; κ₀)` helper; the M-step then does
+  `x0 = (Σγ·x₁ + κ₀ μ₀) / (Σγ + κ₀)` and folds `κ₀(x0-μ₀)(x0-μ₀)'` into the IW
+  scale. With `κ₀ → 0` (and no `P0_prior`) it reduces exactly to the previous MLE
+  update
+
 ### Changed
 - **Breaking:** renamed the control-input arguments `latent_inputs`/`obs_inputs`
   to `ux`/`uy` across the public API (keywords on `fit!`/`rand`, positional on
@@ -50,6 +62,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `P0` now fails.
 
 ### Fixed
+- SLDS `forward_backward` could produce `NaN`s when a regime received ~no
+  responsibility at trial starts: its initial-state effective count `init_n`
+  underflowed toward zero, so `x0 = init_xy/init_n` and `P0 = S0/init_n` blew up
+  to `±Inf`/`NaN`, poisoning `dl.logL` and the whole chain posterior. Setting the
+  new initial-state NIW prior (`x0_prior` + `P0_prior`) makes the update degrade
+  to the prior (`x0 → μ₀`, `P0 →` its IW mode) instead of dividing by ~0
 - SLDS ELBO computation (incorrect sign, among other errors); correctness is now
   tested via the K=1 SLDS ≡ LDS equivalence (#145)
 - SLDS posterior sampling drew from the marginals of `q(x)` (a mean-field
