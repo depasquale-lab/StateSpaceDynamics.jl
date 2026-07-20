@@ -35,6 +35,10 @@ IWPrior
 MNPrior
 ```
 
+```@docs
+x0_mean_prior
+```
+
 ## Sampling
 
 ```@docs; canonical = false

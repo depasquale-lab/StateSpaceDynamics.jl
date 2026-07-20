@@ -520,6 +520,103 @@ function test_gaussian_iw_priors_shape_map_and_R_sanity(; rng=MersenneTwister(20
     return nothing
 end
 
+function test_x0_niw_prior_map_and_degradation()
+    #=
+    Composable NIW prior on the initial state: `x0_prior` and `P0_prior` 
+    Checks (1) the constructor shape, (2) the M-step MAP matches the closed-form
+    NIW posterior mode, (3) with no priors it reduces exactly to the MLE, and
+    (4) it degrades gracefully to the prior when an LDS gets ~zero
+    responsibility at trial starts (the collapse that otherwise makes
+    `x0 = init_xy/init_n` blow up to ±Inf and NaN out forward-backward).
+    =#
+    @testset "Initial-state NIW prior: MAP, MLE reduction, graceful degradation" begin
+        D, P = 2, 3
+        mk =
+            (; x0p, P0p) -> begin
+                gsm = GaussianStateModel(;
+                    A=0.5 * Matrix(I(D)),
+                    Q=Matrix(0.1 * I(D)),
+                    b=zeros(D),
+                    x0=zeros(D),
+                    P0=Matrix(1.0 * I(D)),
+                    x0_prior=x0p,
+                    P0_prior=P0p,
+                )
+                gom = GaussianObservationModel(;
+                    C=0.5 * ones(P, D), R=Matrix(1.0 * I(P)), d=zeros(P)
+                )
+                return LinearDynamicalSystem(gsm, gom)
+            end
+        # Hand-set sufficient statistics for one (fake) regime.
+        N = 0.7
+        msum = [0.4, -0.3]                       # Σγ·x₁
+        SS = [0.9 0.1; 0.1 0.7]                  # Σγ(x₁x₁' + P₁), SPD
+        set_suf! =
+            lds -> begin
+                suf = StateSpaceDynamics._initialize_td_sufficient_statistics(Float64, lds, [5])
+                suf.init_n = N
+                suf.init_xy[1, 1] = msum[1]
+                suf.init_xy[1, 2] = msum[2]
+                suf.init_yy[] = PDMat(copy(SS))
+                return suf
+            end
+        sws = StateSpaceDynamics.SmoothWorkspace(Float64, D, P, 5)
+
+        # (1) constructor
+        μ₀, κ₀ = [1.0, -1.0], 2.0
+        xp = x0_mean_prior(μ₀; κ₀=κ₀)
+        @test xp isa MNPrior
+        @test size(xp.M₀) == (D, 1)
+        @test xp.Λ == fill(κ₀, 1, 1)
+        @test_throws ArgumentError x0_mean_prior(μ₀; κ₀=0.0)
+
+        # (2) MAP == closed-form NIW mode
+        Ψ, ν = Matrix(0.5 * I(D)), 5.0
+        lds = mk(; x0p=xp, P0p=IWPrior(; Ψ=Ψ, ν=ν))
+        suf = set_suf!(lds)
+        StateSpaceDynamics.update_initial_state_mean!(lds, suf)
+        StateSpaceDynamics.update_initial_state_covariance!(lds, suf, sws)
+        κn = N + κ₀
+        x0e = (msum .+ κ₀ .* μ₀) ./ κn
+        Ψn = Ψ .+ SS .+ κ₀ .* (μ₀ * μ₀') .- κn .* (x0e * x0e')
+        @test lds.state_model.x0 ≈ x0e
+        @test lds.state_model.P0 ≈ Ψn ./ (ν + N + D + 1)
+        @test issymmetric(lds.state_model.P0)
+
+        # (3) no priors ⇒ MLE
+        lds0 = mk(; x0p=nothing, P0p=nothing)
+        suf0 = set_suf!(lds0)
+        StateSpaceDynamics.update_initial_state_mean!(lds0, suf0)
+        StateSpaceDynamics.update_initial_state_covariance!(lds0, suf0, sws)
+        x0m = msum ./ N
+        @test lds0.state_model.x0 ≈ x0m
+        @test lds0.state_model.P0 ≈ (SS .- N .* (x0m * x0m')) ./ N
+
+        # (4) collapse
+        ldsd = mk(; x0p=xp, P0p=IWPrior(; Ψ=Ψ, ν=ν))
+        sufd = StateSpaceDynamics._initialize_td_sufficient_statistics(Float64, ldsd, [5])
+        sufd.init_n = 0.0
+        fill!(sufd.init_xy, 0.0)
+        sufd.init_yy[] = PDMat(Matrix(1e-12 * I(D)))
+        StateSpaceDynamics.update_initial_state_mean!(ldsd, sufd)
+        StateSpaceDynamics.update_initial_state_covariance!(ldsd, sufd, sws)
+        @test all(isfinite, ldsd.state_model.x0)
+        @test all(isfinite, ldsd.state_model.P0)
+        @test ldsd.state_model.x0 ≈ μ₀
+        @test ldsd.state_model.P0 ≈ Ψ ./ (ν + D + 1)
+
+        # Contrast: without the prior the same collapse produces non-finite x0.
+        ldsn = mk(; x0p=nothing, P0p=nothing)
+        sufn = StateSpaceDynamics._initialize_td_sufficient_statistics(Float64, ldsn, [5])
+        sufn.init_n = 0.0
+        fill!(sufn.init_xy, 0.0)
+        sufn.init_yy[] = PDMat(Matrix(1e-12 * I(D)))
+        StateSpaceDynamics.update_initial_state_mean!(ldsn, sufn)
+        @test !all(isfinite, ldsn.state_model.x0)
+    end
+    return nothing
+end
+
 function test_gaussian_update_R_matches_residual_cov(; rng=MersenneTwister(7))
     @testset "GaussianLDS: update_R! ≈ residual covariance when latents ~ deterministic" begin
         D, P, Tt, N = 2, 3, 80, 6

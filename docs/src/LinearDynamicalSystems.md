@@ -290,6 +290,8 @@ You can attach an MN prior to:
 - The stacked dynamics matrix via `AB_prior` on a [`GaussianStateModel`](@ref)
 - The stacked emission matrix via `CD_prior` on a [`GaussianObservationModel`](@ref) or
   [`PoissonObservationModel`](@ref)
+- The initial state mean ``x_0`` via `x0_prior` on a [`GaussianStateModel`](@ref)
+  (see below)
 
 The MN prior is kept separate from the covariance priors on purpose: pairing an
 `AB_prior`/`CD_prior` with the matching `Q_prior`/`R_prior` ([`IWPrior`](@ref)) recovers a
@@ -300,3 +302,76 @@ applies there.
 ```@docs; canonical = false
 MNPrior
 ```
+
+### Example: Adding MN priors to an LDS
+
+All three coefficient matrices can carry an MN prior at once. The stacked matrices are
+``[A\; b]`` (``D \times (D+1)``) and ``[C\; d]`` (``P \times (D+1)``), and ``x_0`` is a
+length-``D`` intercept:
+
+```julia
+using LinearAlgebra, StateSpaceDynamics
+
+D, P = 3, 4
+λ = 1e-2
+
+# Shrink [A b] toward a random walk (A → I, b → 0):
+AB_prior = MNPrior(M₀ = hcat(Matrix(I, D, D), zeros(D)),
+                   Λ  = Matrix(I, D + 1, D + 1) .* λ)
+# Ridge on [C d] (shrink toward 0):
+CD_prior = MNPrior(M₀ = zeros(P, D + 1),
+                   Λ  = Matrix(I, D + 1, D + 1) .* λ)
+# Pull the initial mean x0 toward 0 with κ₀ = 1 pseudo-observation:
+x0_prior = x0_mean_prior(zeros(D); κ₀ = 1.0)
+
+gsm = GaussianStateModel(A=A, Q=Q, b=b, x0=x0, P0=P0,
+                         AB_prior=AB_prior, x0_prior=x0_prior)
+gom = GaussianObservationModel(C=C, R=R, d=d, CD_prior=CD_prior)
+```
+
+## Composing Priors: Full MNIW + NIW
+
+Because the mean and covariance halves attach independently, you can pair every MN prior
+with its matching IW prior to place a full **matrix-normal-inverse-Wishart (MNIW)** prior
+on each regression :``(AB, Q)`` and ``(CD, R)`` or 
+an **NIW** prior on the initial state ``(x_0, P_0)``:
+
+```julia
+using LinearAlgebra, Random, StateSpaceDynamics
+
+rng = MersenneTwister(42)
+D, P = 3, 4
+λ = 1e-2
+
+# Model parameters
+A = 0.9I + 0.05randn(rng, D, D)
+Q = Matrix(I, D, D) .* 0.3
+b = zeros(D); x0 = zeros(D); P0 = Matrix(I, D, D) .* 0.8
+C = randn(rng, P, D)
+R = Matrix(I, P, P) .* 0.25
+d = 0.1 .* randn(rng, P)
+
+# Covariance (IW) halves
+Q_prior  = IWPrior(Ψ = diagm(0 => fill(0.01, D)), ν = D + 3.0)
+R_prior  = IWPrior(Ψ = diagm(0 => fill(0.01, P)), ν = P + 3.0)
+P0_prior = IWPrior(Ψ = diagm(0 => fill(0.01, D)), ν = D + 3.0)
+
+# Mean (MN) halves
+AB_prior = MNPrior(M₀ = hcat(Matrix(I, D, D), zeros(D)), Λ = Matrix(I, D + 1, D + 1) .* λ)
+CD_prior = MNPrior(M₀ = zeros(P, D + 1),                 Λ = Matrix(I, D + 1, D + 1) .* λ)
+x0_prior = x0_mean_prior(zeros(D); κ₀ = 1.0)
+
+# AB_prior + Q_prior → MNIW on (AB, Q); CD_prior + R_prior → MNIW on (CD, R);
+# x0_prior + P0_prior → NIW on (x0, P0).
+gsm = GaussianStateModel(A=A, Q=Q, b=b, x0=x0, P0=P0,
+                         AB_prior=AB_prior, Q_prior=Q_prior,
+                         x0_prior=x0_prior, P0_prior=P0_prior)
+gom = GaussianObservationModel(C=C, R=R, d=d,
+                               CD_prior=CD_prior, R_prior=R_prior)
+lds = LinearDynamicalSystem(gsm, gom)
+
+X, Y = rand(rng, lds, fill(100, 5))   # 5 trials of 100 timesteps each
+fit!(lds, Y; max_iter=20, progress=false)
+```
+
+Any subset works.
