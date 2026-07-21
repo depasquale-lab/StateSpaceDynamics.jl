@@ -949,11 +949,11 @@ from the pooled init stats in `suf` (see `mstep!`) and copy it into every
 function _update_shared_initial_state!(
     slds::SLDS{T}, suf::SufficientStatistics{T}, sws::SmoothWorkspace{T}
 ) where {T<:Real}
-    lds1 = slds.LDSs[1]
+    lds1 = deepcopy(slds.LDSs[1])
     update_initial_state_mean!(lds1, suf)
     update_initial_state_covariance!(lds1, suf, sws)
     fit_x0, fit_P0 = lds1.fit_bool[1], lds1.fit_bool[2]
-    for k in 2:length(slds.LDSs)
+    for k in eachindex(slds.LDSs)
         fit_x0 && copyto!(slds.LDSs[k].state_model.x0, lds1.state_model.x0)
         fit_P0 && copyto!(slds.LDSs[k].state_model.P0, lds1.state_model.P0)
     end
