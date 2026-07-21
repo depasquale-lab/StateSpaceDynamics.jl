@@ -649,7 +649,8 @@ function smooth!(
     y::AbstractVector{<:AbstractMatrix{T}},
     sws_pool::Vector{SmoothWorkspace{T}},
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
-    return smooth!(lds, tfs, Data(lds, y), sws_pool)
+    data = Data(lds, y)
+    return smooth!(lds, tfs, data, sws_pool)
 end
 
 """
