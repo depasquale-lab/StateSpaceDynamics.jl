@@ -97,9 +97,10 @@ mutable struct SufficientStatistics{T<:Real}
     without truncation.
     =#
     init_n::T
-    init_xx::Base.RefValue{DensePDMat{T}}
     init_xy::Matrix{T}
-    init_yy::Base.RefValue{DensePDMat{T}}
+    #= Raw scatter `Σγ(x₁x₁' + P₁)`, only ever read as a plain matrix. Not a PDMat:
+    a zero-weight regime makes it the zero matrix (would fail the Cholesky). =#
+    init_yy::Base.RefValue{Matrix{T}}
 
     # transitions model
     dyn_n::T

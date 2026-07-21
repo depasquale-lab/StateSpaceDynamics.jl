@@ -1223,6 +1223,77 @@ function test_SLDS_fit_multitrial(; rng=MersenneTwister(0xC0FFEE))
     @test all(isfinite, elbos)
 end
 
+function test_SLDS_shared_initial_state(; rng=MersenneTwister(0xC0FFEE))
+    #= The SLDS shares an initial state across LDS modes. This test verifies that the 
+    shared initial state is updated correctly. See #155 =#
+    K, latent_dim, obs_dim, ntrials, tsteps = 2, 2, 3, 3, 12
+
+    # Distinct modes so the tie is observable (start both at x0=0, P0=I).
+    lds1 = _make_gaussian_lds(latent_dim, obs_dim; rng=MersenneTwister(1))
+    lds2 = _make_gaussian_lds(latent_dim, obs_dim; rng=MersenneTwister(2))
+    slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=[lds1, lds2])
+    z, x, y = rand(rng, slds, fill(tsteps, ntrials))
+
+    # One q(x) per trial (shared across LDSs), as the SLDS smoother produces.
+    tfs_array = Vector{StateSpaceDynamics.FilterSmooth{Float64}}(undef, ntrials)
+    for trial in 1:ntrials
+        p_smooth = zeros(Float64, latent_dim, latent_dim, tsteps)
+        p_smooth_tt1 = zeros(Float64, latent_dim, latent_dim, tsteps)
+        for t in 1:tsteps
+            p_smooth[:, :, t] .= 0.1 * I(latent_dim)
+            p_smooth_tt1[:, :, t] .= 0.05 * I(latent_dim)
+        end
+        E_zz = zeros(Float64, latent_dim, latent_dim, tsteps)
+        E_zz_prev = zeros(Float64, latent_dim, latent_dim, tsteps)
+        tfs_array[trial] = StateSpaceDynamics.FilterSmooth(
+            x[trial], p_smooth, p_smooth_tt1, x[trial], E_zz, E_zz_prev, 0.0
+        )
+    end
+    tfs = StateSpaceDynamics.TrialFilterSmooth(tfs_array)
+
+    tsteps_per_trial = fill(tsteps, ntrials)
+    sws = StateSpaceDynamics.SmoothWorkspace(Float64, latent_dim, obs_dim, tsteps)
+    suf = StateSpaceDynamics._initialize_td_sufficient_statistics(
+        Float64, lds1, tsteps_per_trial
+    )
+    ux_seq = [zeros(Float64, 0, tsteps) for _ in 1:ntrials]
+    uy_seq = [zeros(Float64, 0, tsteps) for _ in 1:ntrials]
+
+    #= LDS 2 gets zero responsibility at t=1 in every trial — the
+    aggregator must not throw and must leave a finite (zero) init scatter. =#
+    w2 = [vcat(0.0, fill(0.2, tsteps - 1)) for _ in 1:ntrials]
+    StateSpaceDynamics._aggregate_td_suff_stats_weighted!(
+        suf, tfs, lds2, ux_seq, uy_seq, y, w2, sws
+    )
+    @test suf.init_n < 1e-12
+    @test all(isfinite, suf.init_yy[])
+
+    #= Tie x0/P0 from the pooled (unit-weight) init stats: finite, equal across
+    LDSs, and equal to the plain unweighted initial fit over all trial starts.
+    Unit weights give the same pooled result mstep sums over regimes. =#
+    unit_w = [ones(Float64, tsteps) for _ in 1:ntrials]
+    StateSpaceDynamics._aggregate_td_suff_stats_weighted!(
+        suf, tfs, lds1, ux_seq, uy_seq, y, unit_w, sws
+    )
+    StateSpaceDynamics._update_shared_initial_state!(slds, suf, sws)
+    @test all(isfinite, slds.LDSs[1].state_model.x0)
+    @test all(isfinite, slds.LDSs[1].state_model.P0)
+    @test slds.LDSs[1].state_model.x0 ≈ slds.LDSs[2].state_model.x0
+    @test slds.LDSs[1].state_model.P0 ≈ slds.LDSs[2].state_model.P0
+    x0_expected = sum(x[trial][:, 1] for trial in 1:ntrials) ./ ntrials
+    @test slds.LDSs[1].state_model.x0 ≈ x0_expected
+
+    # End-to-end: a full fit with distinct regimes completes and keeps x0/P0 tied.
+    lds1b = _make_gaussian_lds(latent_dim, obs_dim; rng=MersenneTwister(3))
+    lds2b = _make_gaussian_lds(latent_dim, obs_dim; rng=MersenneTwister(4))
+    slds2 = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=[lds1b, lds2b])
+    _, _, y2 = rand(rng, slds2, fill(tsteps, ntrials))
+    elbos = fit!(slds2, y2; max_iter=4, progress=false)
+    @test all(isfinite, elbos)
+    @test slds2.LDSs[1].state_model.x0 ≈ slds2.LDSs[2].state_model.x0
+    @test slds2.LDSs[1].state_model.P0 ≈ slds2.LDSs[2].state_model.P0
+end
+
 function test_SLDS_estep_elbo_components(; rng=MersenneTwister(0xC0FFEE))
     # Verify ELBO contains expected components
     K = 2

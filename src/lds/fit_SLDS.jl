@@ -892,6 +892,16 @@ function mstep!(
     # weighted aggregator.
     suf = _initialize_td_sufficient_statistics(T, slds.LDSs[1], tsteps_per_trial)
 
+    #=
+    x0/P0 are tied across modes. Since the smoother gives one q(x) per trial
+    and Σₖ γₖ(t=1) = 1, the pooled unit-weight init stats are exactly the sum
+    over modes of the per-mode init stats the aggregator already computes —
+    so accumulate them across the loop instead of recomputing.
+    =#
+    D = slds.LDSs[1].latent_dim
+    init_xy = zeros(T, 1, D)
+    init_yy = zeros(T, D, D)
+
     weights = Vector{AbstractVector{T}}(undef, ntrials)
     for k in 1:K
         lds_k = slds.LDSs[k]
@@ -901,26 +911,52 @@ function mstep!(
         end
 
         _aggregate_td_suff_stats_weighted!(suf, tfs, lds_k, ux_seq, uy_seq, y, weights, sws)
+        init_xy .+= suf.init_xy
+        init_yy .+= suf.init_yy[]
 
+        # Per-regime updates cover only dynamics + emissions (init is tied).
         if lds_k.obs_model isa GaussianObservationModel{T}
-            mstep!(lds_k, suf, sws)
-        elseif lds_k.obs_model isa PoissonObservationModel{T}
-            update_initial_state_mean!(lds_k, suf)
-            update_initial_state_covariance!(lds_k, suf, sws)
             update_A_b!(lds_k, suf, sws)
             update_Q!(lds_k, suf, sws)
-            #=
-            SLDS owns a single sws (not a pool); wrap as a singleton so
-            `update_observation_model!`'s threaded gradient path runs
-            serially. SLDS Poisson is a niche path; the threading
-            overhead isn't a meaningful win here.
-            =#
+            update_C_d!(lds_k, suf, sws)
+            update_R!(lds_k, suf, sws)
+        elseif lds_k.obs_model isa PoissonObservationModel{T}
+            update_A_b!(lds_k, suf, sws)
+            update_Q!(lds_k, suf, sws)
+            # Single sws wrapped as a pool of one; maybe thread in future
             update_observation_model!(lds_k, tfs, y, [sws], weights)
         else
             throw(ArgumentError("Unsupported observation model $(typeof(lds_k.obs_model))"))
         end
     end
 
+    # Fit the single shared x0/P0 from the pooled stats, then broadcast.
+    copyto!(suf.init_xy, init_xy)
+    copyto!(suf.init_yy[], init_yy)
+    suf.init_n = T(ntrials)
+    _update_shared_initial_state!(slds, suf, sws)
+
+    return nothing
+end
+
+"""
+    _update_shared_initial_state!(slds, suf, sws)
+
+Fit the single initial-state distribution `N(x0, P0)` shared by all SLDS modes
+from the pooled init stats in `suf` (see `mstep!`) and copy it into every
+`state_model`.
+"""
+function _update_shared_initial_state!(
+    slds::SLDS{T}, suf::SufficientStatistics{T}, sws::SmoothWorkspace{T}
+) where {T<:Real}
+    lds1 = slds.LDSs[1]
+    update_initial_state_mean!(lds1, suf)
+    update_initial_state_covariance!(lds1, suf, sws)
+    fit_x0, fit_P0 = lds1.fit_bool[1], lds1.fit_bool[2]
+    for k in 2:length(slds.LDSs)
+        fit_x0 && copyto!(slds.LDSs[k].state_model.x0, lds1.state_model.x0)
+        fit_P0 && copyto!(slds.LDSs[k].state_model.P0, lds1.state_model.P0)
+    end
     return nothing
 end
 

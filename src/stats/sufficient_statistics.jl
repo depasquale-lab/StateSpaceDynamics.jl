@@ -198,9 +198,8 @@ function _initialize_td_sufficient_statistics(
 
     return SufficientStatistics{T}(
         T(ntrials),
-        _pd_ref(PDMat(fill(T(ntrials), 1, 1))),       # init_xx (1×1 = N)
         zeros(T, 1, D),                            # init_xy
-        _pd_ref(PD_init(D)),                           # init_yy
+        Base.RefValue{Matrix{T}}(zeros(T, D, D)),  # this does not need to be PD as we do not compute a cholesky
         T(total_dyn),
         _pd_ref(PD_init(dyn_reg_dim)),                 # dyn_xx
         zeros(T, dyn_reg_dim, D),                  # dyn_xy
@@ -401,8 +400,7 @@ function _aggregate_td_suff_stats!(
     copyto!(suf.dyn_xy, td_dyn_xy)
     copyto!(suf.obs_xy, td_obs_xy)
 
-    suf.init_xx[] = PDMat(fill(T(ntrials), 1, 1))
-    suf.init_yy[] = PDMat(copy(S0_sum))
+    suf.init_yy[] = copy(S0_sum)                # see above; not needed to be PDMat
     suf.dyn_xx[] = PDMat(copy(Szz_Ab))
     suf.dyn_yy[] = PDMat(copy(Q_sum))
     suf.obs_xx[] = PDMat(copy(Szz_Cd))
@@ -616,7 +614,6 @@ function _aggregate_td_suff_stats_weighted!(
     LinearAlgebra.copytri!(obs_xx, 'U')
     LinearAlgebra.copytri!(obs_yy, 'U')
 
-    # init_xx is the (1×1) effective sample count for x_init.
     suf.init_n = init_n_acc
     suf.dyn_n = dyn_n_acc
     suf.obs_n = obs_n_acc
@@ -625,8 +622,7 @@ function _aggregate_td_suff_stats_weighted!(
     copyto!(suf.dyn_xy, dyn_xy)
     copyto!(suf.obs_xy, obs_xy)
 
-    suf.init_xx[] = PDMat(fill(init_n_acc, 1, 1))
-    suf.init_yy[] = PDMat(copy(init_yy))
+    suf.init_yy[] = copy(init_yy)               # see above
     suf.dyn_xx[] = PDMat(copy(dyn_xx))
     suf.dyn_yy[] = PDMat(copy(dyn_yy))
     suf.obs_xx[] = PDMat(copy(obs_xx))

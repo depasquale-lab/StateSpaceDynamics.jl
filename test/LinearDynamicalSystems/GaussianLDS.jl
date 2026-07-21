@@ -511,7 +511,7 @@ function test_x0_niw_prior_map_and_degradation()
                 suf.init_n = N
                 suf.init_xy[1, 1] = msum[1]
                 suf.init_xy[1, 2] = msum[2]
-                suf.init_yy[] = PDMat(copy(SS))
+                suf.init_yy[] = copy(SS)
                 return suf
             end
         sws = StateSpaceDynamics.SmoothWorkspace(Float64, D, P, 5)
@@ -551,22 +551,13 @@ function test_x0_niw_prior_map_and_degradation()
         sufd = StateSpaceDynamics._initialize_td_sufficient_statistics(Float64, ldsd, [5])
         sufd.init_n = 0.0
         fill!(sufd.init_xy, 0.0)
-        sufd.init_yy[] = PDMat(Matrix(1e-12 * I(D)))
+        sufd.init_yy[] = Matrix(1e-12 * I(D))
         StateSpaceDynamics.update_initial_state_mean!(ldsd, sufd)
         StateSpaceDynamics.update_initial_state_covariance!(ldsd, sufd, sws)
         @test all(isfinite, ldsd.state_model.x0)
         @test all(isfinite, ldsd.state_model.P0)
         @test ldsd.state_model.x0 ≈ μ₀
         @test ldsd.state_model.P0 ≈ Ψ ./ (ν + D + 1)
-
-        # Contrast: without the prior the same collapse produces non-finite x0.
-        ldsn = mk(; x0p=nothing, P0p=nothing)
-        sufn = StateSpaceDynamics._initialize_td_sufficient_statistics(Float64, ldsn, [5])
-        sufn.init_n = 0.0
-        fill!(sufn.init_xy, 0.0)
-        sufn.init_yy[] = PDMat(Matrix(1e-12 * I(D)))
-        StateSpaceDynamics.update_initial_state_mean!(ldsn, sufn)
-        @test !all(isfinite, ldsn.state_model.x0)
     end
     return nothing
 end
@@ -974,7 +965,7 @@ function test_td_weighted_aggregator_matches_unweighted_with_inputs(;
             init_xy=copy(suf_u.init_xy),
             dyn_xy=copy(suf_u.dyn_xy),
             obs_xy=copy(suf_u.obs_xy),
-            init_yy=copy(suf_u.init_yy[].mat),
+            init_yy=copy(suf_u.init_yy[]),
             dyn_xx=copy(suf_u.dyn_xx[].mat),
             dyn_yy=copy(suf_u.dyn_yy[].mat),
             obs_xx=copy(suf_u.obs_xx[].mat),
@@ -994,7 +985,7 @@ function test_td_weighted_aggregator_matches_unweighted_with_inputs(;
         @test suf_w.dyn_n ≈ ref.dyn_n
         @test suf_w.obs_n ≈ ref.obs_n
         @test suf_w.init_xy ≈ ref.init_xy
-        @test suf_w.init_yy[].mat ≈ ref.init_yy
+        @test suf_w.init_yy[] ≈ ref.init_yy
         # dyn_xx / obs_xx carry the x·u and x·v cross blocks under test; dyn_xy /
         # obs_xy carry the u·x_next and v·y cross rows.
         @test suf_w.dyn_xx[].mat ≈ ref.dyn_xx

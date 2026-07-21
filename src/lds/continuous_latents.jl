@@ -521,7 +521,7 @@ function Q_state!(
 
     # S_init = init_yy - μ x0' - x0 μ' + N x0 x0'    (μ = Σ x_init)
     S_init = sws.elbo.temp
-    copyto!(S_init, suf.init_yy[].mat)
+    copyto!(S_init, suf.init_yy[])
     μ_sum = vec(suf.init_xy)
     BLAS.ger!(-one(T), μ_sum, x0, S_init)
     BLAS.ger!(-one(T), x0, μ_sum, S_init)
@@ -587,7 +587,7 @@ function update_initial_state_covariance!(
     N = suf.init_n
 
     S0 = sws.reg.S0_sum                              # D × D scratch
-    copyto!(S0, suf.init_yy[].mat)
+    copyto!(S0, suf.init_yy[])
 
     # Scatter of the initial state around x0: S0 = Σγ(x₁-x0)(x₁-x0)' + Σγ P₁.
     # Rank-1 updates inline (BLAS.ger! would need a contiguous μ vector and
