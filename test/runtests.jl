@@ -130,6 +130,16 @@ using SSDTest
                 test_SLDS_poisson_d_interpretation()
                 test_SLDS_gradient_weight_normalization_poisson()
             end
+
+            @testset "Control inputs (ux/uy)" begin
+                test_SLDS_input_dim_validation()
+                test_SLDS_sampling_with_inputs()
+                test_SLDS_missing_input_throws()
+                test_SLDS_gradient_numerical_with_inputs()
+                test_SLDS_hessian_numerical_with_inputs_poisson()
+                test_SLDS_fit_with_inputs_gaussian()
+                test_SLDS_fit_with_inputs_poisson()
+            end
         end
 
         include("LinearDynamicalSystems/GaussianLDS.jl")
