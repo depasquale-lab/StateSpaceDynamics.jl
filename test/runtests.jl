@@ -269,6 +269,48 @@ using SSDTest
         end
     end
 
+    # Input Basis Tests
+    @testset verbose = true "Input Bases" begin
+        include("Bases/Bases.jl")
+
+        @testset "Generic apply!/get_penalty" begin
+            test_apply_shape_and_kron_structure()
+            test_apply_default_trial_pred_broadcasts_across_trials()
+            test_apply_target_d()
+            test_apply_size_mismatch_throws()
+            test_apply_trial_pred_row_mismatch_throws()
+            test_apply_invalid_target_throws()
+            test_get_penalty_data_convenience_overload()
+            test_get_penalty_kron_block_structure()
+        end
+
+        @testset "Per-basis sanity" begin
+            test_bspline_partition_of_unity()
+            test_bspline_manual_knots()
+            test_bspline_manual_knots_wrong_length_throws()
+            test_bspline_invalid_args()
+            test_fourier_basis_values()
+            test_fourier_analytic_penalty_dc_nullspace()
+            test_fourier_analytic_vs_discrete_ordering()
+            test_fourier_period_kwarg()
+            test_raised_cosine_linear_bumps()
+            test_raised_cosine_log_bumps()
+            test_raised_cosine_invalid_args()
+            test_polynomial_values()
+            test_polynomial_invalid_args()
+        end
+
+        @testset "Curvature penalty properties" begin
+            test_curvature_penalty_symmetric_psd_all_bases()
+            test_curvature_penalty_nullspace_bspline()
+            test_curvature_penalty_nullspace_polynomial()
+        end
+
+        @testset "Type preservation" begin
+            test_float32_type_preservation_all_bases()
+        end
+    end
+
     # Conjugate-prior helpers (IW / MN MAP + log-prior terms)
     @testset verbose = true "Priors" begin
         include("Priors/Priors.jl")

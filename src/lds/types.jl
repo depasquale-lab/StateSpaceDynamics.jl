@@ -26,8 +26,24 @@ dynamics (latent) inputs `ux`, and observation inputs `uy`, each `(dim, tsteps, 
 """
 Base.@kwdef struct Data{T<:Real}
     y::Array{T,3}
-    ux::Array{T,3}
-    uy::Array{T,3}
+    ux::Array{T,3} = zeros(eltype(y), 0, size(y, 2), size(y, 3))
+    uy::Array{T,3} = zeros(eltype(y), 0, size(y, 2), size(y, 3))
+    epoch_pred::Matrix{T} = Matrix{eltype(y)}(undef, 0, 1)
+end
+
+# ensure that epoch_pred type matches input types
+_epoch_matrix(::Type{T}, A::AbstractMatrix{<:Real}) where {T<:Real} = convert(Matrix{T}, A)
+function _epoch_matrix(::Type{T}, v::AbstractVector{<:Real}) where {T<:Real}
+    return isempty(v) ? Matrix{T}(undef, 0, 0) : convert(Matrix{T}, reshape(v, :, 1))
+end
+
+function Data(
+    y::Array{T,3},
+    ux::Array{T,3}=zeros(T, 0, size(y, 2), size(y, 3)),
+    uy::Array{T,3}=zeros(T, 0, size(y, 2), size(y, 3)),
+    epoch_pred::AbstractVecOrMat{<:Real}=Matrix{T}(undef, 0, 0),
+) where {T<:Real}
+    return Data{T}(y, ux, uy, _epoch_matrix(T, epoch_pred))
 end
 
 """

@@ -20,6 +20,8 @@ using OhMyThreads: tforeach, tmapreduce
 using Base.Iterators: partition
 using Base: show
 
+using BSplines: BSplines
+
 # Model-agnostic numerical kernels (no package types — reusable primitives).
 include("numerics/linalg.jl")
 include("numerics/optimization.jl")        # line search + Newton
@@ -35,6 +37,13 @@ include("lds/types.jl")                             # abstract types, model stru
 include("lds/workspaces.jl")                        # FilterSmooth / SufficientStatistics / workspaces
 include("utils/show.jl")
 include("utils/validation.jl")
+
+# Input basis library (B-spline, Fourier, raised cosine, polynomial)
+include("bases/Bases.jl")
+include("bases/BSpline.jl")
+include("bases/Fourier.jl")
+include("bases/RaisedCosine.jl")
+include("bases/Polynomial.jl")
 
 # Shared latent inference machinery.
 include("stats/preprocessing.jl")           # PPCA (standalone model)
@@ -72,6 +81,11 @@ export random_rotation_matrix
 export print_full
 export info_update!
 export tview
+
+# Input bases
+export AbstractInputBasis
+export BSpline, Fourier, RaisedCosineLinear, RaisedCosineLog, Polynomial
+export apply!, get_penalty, n_bases, evaluate_basis
 
 # Common functions
 export rand, smooth, fit!, loglikelihood, elbo!
