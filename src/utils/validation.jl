@@ -409,6 +409,8 @@ function validate_SLDS(slds::SLDS)
     # Checks for LDS models
     latent_dim = slds.LDSs[1].latent_dim
     obs_dim = slds.LDSs[1].obs_dim
+    ux_dim = slds.LDSs[1].ux_dim
+    uy_dim = slds.LDSs[1].uy_dim
 
     for (i, lds) in enumerate(slds.LDSs)
         if lds.latent_dim != latent_dim
@@ -417,6 +419,15 @@ function validate_SLDS(slds::SLDS)
 
         if lds.obs_dim != obs_dim
             throw(DimensionMismatchError("LDS[$i].obs_dim", obs_dim, lds.obs_dim))
+        end
+
+        # Input dimensions must be uniform across LDsS models so a single `Data`
+        if lds.ux_dim != ux_dim
+            throw(DimensionMismatchError("LDS[$i].ux_dim", ux_dim, lds.ux_dim))
+        end
+
+        if lds.uy_dim != uy_dim
+            throw(DimensionMismatchError("LDS[$i].uy_dim", uy_dim, lds.uy_dim))
         end
 
         # This will throw if invalid

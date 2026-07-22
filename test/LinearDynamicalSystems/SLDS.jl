@@ -2402,3 +2402,270 @@ function test_SLDS_gradient_weight_normalization_poisson(; rng=MersenneTwister(0
     @test all(isfinite, grad_weighted)
     @test size(grad_weighted) == size(x_trial)
 end
+
+function _make_gaussian_input_lds(D, N, ux_dim, uy_dim; seed::Int=0)
+    rng = MersenneTwister(seed)
+    A = _stable_A(rng, D)
+    Q = Matrix(0.1 * I(D))
+    b = 0.05 * randn(rng, D)
+    x0 = zeros(D)
+    P0 = Matrix(1.0 * I(D))
+    B = 0.3 * randn(rng, D, ux_dim)
+
+    C = 0.3 * randn(rng, N, D)
+    R = Matrix(0.5 * I(N))
+    d = 0.05 * randn(rng, N)
+    Dm = 0.3 * randn(rng, N, uy_dim)
+
+    gsm = GaussianStateModel(; A=A, Q=Q, b=b, x0=x0, P0=P0, B=B)
+    gom = GaussianObservationModel(; C=C, R=R, d=d, D=Dm)
+    return LinearDynamicalSystem(gsm, gom; fit_bool=fill(true, 6))
+end
+
+function _make_poisson_input_lds(D, N, ux_dim, uy_dim; seed::Int=0)
+    rng = MersenneTwister(seed)
+    A = _stable_A(rng, D)
+    Q = Matrix(0.1 * I(D))
+    b = 0.05 * randn(rng, D)
+    x0 = zeros(D)
+    P0 = Matrix(1.0 * I(D))
+    B = 0.3 * randn(rng, D, ux_dim)
+
+    # Small C/d/D keep λ = exp(Cx + d + Dv) modest so Poisson terms stay finite.
+    C = 0.2 * randn(rng, N, D)
+    d = 0.05 * randn(rng, N)
+    Dm = 0.2 * randn(rng, N, uy_dim)
+
+    gsm = GaussianStateModel(; A=A, Q=Q, b=b, x0=x0, P0=P0, B=B)
+    pom = PoissonObservationModel(; C=C, d=d, D=Dm)
+    return LinearDynamicalSystem(gsm, pom; fit_bool=fill(true, 5))
+end
+
+function test_SLDS_input_dim_validation()
+    K, D, N = 2, 2, 3
+    # Uniform input dims across regimes → valid.
+    lds = [_make_gaussian_input_lds(D, N, 2, 2; seed=k) for k in 1:K]
+    s = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=lds)
+    @test validate_SLDS(s) === nothing
+    @test lds[1].ux_dim == 2 && lds[1].uy_dim == 2
+
+    # Mismatched ux_dim across regimes → DimensionMismatchError.
+    lds_bad_ux = [
+        _make_gaussian_input_lds(D, N, 2, 2; seed=1),
+        _make_gaussian_input_lds(D, N, 3, 2; seed=2),
+    ]
+    s_bad_ux = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=lds_bad_ux)
+    @test_throws DimensionMismatchError validate_SLDS(s_bad_ux)
+
+    # Mismatched uy_dim across regimes → DimensionMismatchError.
+    lds_bad_uy = [
+        _make_gaussian_input_lds(D, N, 2, 2; seed=1),
+        _make_gaussian_input_lds(D, N, 2, 1; seed=2),
+    ]
+    s_bad_uy = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=lds_bad_uy)
+    @test_throws DimensionMismatchError validate_SLDS(s_bad_uy)
+end
+
+function test_SLDS_sampling_with_inputs(; rng=MersenneTwister(0xBEEF))
+    K, D, N, ux_dim, uy_dim = 2, 2, 3, 2, 2
+    lds = [_make_gaussian_input_lds(D, N, ux_dim, uy_dim; seed=k) for k in 1:K]
+    slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=lds)
+
+    tsteps, ntrials = 25, 2
+    ux = [randn(rng, ux_dim, tsteps) for _ in 1:ntrials]
+    uy = [randn(rng, uy_dim, tsteps) for _ in 1:ntrials]
+
+    z, x, y = rand(rng, slds, fill(tsteps, ntrials); ux=ux, uy=uy)
+    @test length(y) == ntrials
+    @test all(size(y[n]) == (N, tsteps) for n in 1:ntrials)
+    @test all(all(isfinite, xn) for xn in x)
+    @test all(all(isfinite, yn) for yn in y)
+
+    # Reproducible given the same RNG and inputs.
+    z1, x1, y1 = rand(MersenneTwister(11), slds, fill(tsteps, ntrials); ux=ux, uy=uy)
+    z2, x2, y2 = rand(MersenneTwister(11), slds, fill(tsteps, ntrials); ux=ux, uy=uy)
+    @test z1 == z2 && all(x1 .≈ x2) && all(y1 .≈ y2)
+
+    # Inputs move the trajectory: zero inputs vs the drawn inputs differ
+    zux = [zeros(ux_dim, tsteps) for _ in 1:ntrials]
+    zuy = [zeros(uy_dim, tsteps) for _ in 1:ntrials]
+    _, x0, y0 = rand(MersenneTwister(11), slds, fill(tsteps, ntrials); ux=zux, uy=zuy)
+    @test !all(x0[1] .≈ x1[1])
+    @test !all(y0[1] .≈ y1[1])
+
+    # Single-integer overload with inputs returns bare arrays.
+    zi, xi, yi = rand(MersenneTwister(3), slds, tsteps; ux=ux[1], uy=uy[1])
+    @test size(xi) == (D, tsteps) && size(yi) == (N, tsteps)
+end
+
+function test_SLDS_missing_input_throws(; rng=MersenneTwister(0xFEED))
+    K, D, N = 2, 2, 3
+    lds = [_make_gaussian_input_lds(D, N, 2, 2; seed=k) for k in 1:K]
+    slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=lds)
+
+    tsteps = 10
+    ux = [randn(rng, 2, tsteps)]
+    uy = [randn(rng, 2, tsteps)]
+    _, _, y = rand(rng, slds, fill(tsteps, 1); ux=ux, uy=uy)
+
+    # Model requires inputs (nonzero-column B / D) but none supplied.
+    @test_throws ArgumentError rand(rng, slds, tsteps)
+    @test_throws ArgumentError fit!(slds, y; max_iter=1, progress=false)
+    @test_throws ArgumentError elbo(slds, y)
+end
+
+function test_SLDS_gradient_numerical_with_inputs(; rng=MersenneTwister(0xC0FFEE))
+    K, D, N, ux_dim, uy_dim = 2, 2, 3, 2, 2
+    lds = [_make_gaussian_input_lds(D, N, ux_dim, uy_dim; seed=k) for k in 1:K]
+    slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=lds)
+
+    tsteps = 15
+    ux = [randn(rng, ux_dim, tsteps)]
+    uy = [randn(rng, uy_dim, tsteps)]
+    _, x, y = rand(rng, slds, fill(tsteps, 1); ux=ux, uy=uy)
+
+    w = rand(K, tsteps)
+    w ./= sum(w; dims=1)
+    y_trial, x_trial = y[1], x[1]
+    ux_t, uy_t = ux[1], uy[1]
+
+    ws = StateSpaceDynamics.SLDSSmoothWorkspace(eltype(y_trial), slds, tsteps)
+    StateSpaceDynamics.gradient!(ws, slds, x_trial, y_trial, w, ux_t, uy_t)
+    grad_analytical = copy(view(ws.opt.grad_buf, :, 1:tsteps))
+
+    function weighted_ll(x_flat)
+        x_mat = reshape(x_flat, size(x_trial))
+        ll = zero(eltype(x_flat))
+        for k in 1:K
+            lds_k = slds.LDSs[k]
+            A_k, Q_k, b_k, B_k = lds_k.state_model.A,
+            lds_k.state_model.Q, lds_k.state_model.b,
+            lds_k.state_model.B
+            x0_k, P0_k = lds_k.state_model.x0, lds_k.state_model.P0
+            C_k, R_k, d_k, D_k = lds_k.obs_model.C,
+            lds_k.obs_model.R, lds_k.obs_model.d,
+            lds_k.obs_model.D
+
+            R_chol = cholesky(Symmetric(R_k)).U
+            Q_chol = cholesky(Symmetric(Q_k)).U
+            P0_chol = cholesky(Symmetric(P0_k)).U
+
+            dx0 = x_mat[:, 1] - x0_k
+            ll += w[k, 1] * (-0.5 * sum(abs2, P0_chol \ dx0))
+            for t in 1:tsteps
+                dy = y_trial[:, t] - (C_k * x_mat[:, t] + d_k + D_k * uy_t[:, t])
+                ll += w[k, t] * (-0.5 * sum(abs2, R_chol \ dy))
+                if t > 1
+                    dx = x_mat[:, t] - (A_k * x_mat[:, t - 1] + b_k + B_k * ux_t[:, t - 1])
+                    ll += w[k, t] * (-0.5 * sum(abs2, Q_chol \ dx))
+                end
+            end
+        end
+        return ll
+    end
+
+    grad_numerical = reshape(ForwardDiff.gradient(weighted_ll, vec(x_trial)), size(x_trial))
+    @test isapprox(grad_analytical, grad_numerical, rtol=1e-5, atol=1e-5)
+end
+
+function test_SLDS_hessian_numerical_with_inputs_poisson(; rng=MersenneTwister(0xABCD))
+    K, D, N, ux_dim, uy_dim = 2, 2, 4, 2, 2
+    lds = [_make_poisson_input_lds(D, N, ux_dim, uy_dim; seed=k) for k in 1:K]
+    slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=lds)
+
+    tsteps = 6
+    ux = [randn(rng, ux_dim, tsteps)]
+    uy = [randn(rng, uy_dim, tsteps)]
+    _, x, y = rand(rng, slds, fill(tsteps, 1); ux=ux, uy=uy)
+
+    w = rand(K, tsteps)
+    w ./= sum(w; dims=1)
+    y_trial, x_trial = y[1], x[1]
+    ux_t, uy_t = ux[1], uy[1]
+
+    ws = StateSpaceDynamics.SLDSSmoothWorkspace(eltype(y_trial), slds, tsteps)
+    StateSpaceDynamics.hessian!(ws, slds, x_trial, y_trial, w, uy_t)
+    H_diag = [copy(ws.btd.H_diag[t]) for t in 1:tsteps]
+
+    # Full weighted joint log-likelihood as a function of vec(x); its Hessian's
+    # diagonal blocks must match hessian!'s (Poisson curvature depends on uy_t).
+    function weighted_ll(x_flat)
+        x_mat = reshape(x_flat, size(x_trial))
+        ll = zero(eltype(x_flat))
+        for k in 1:K
+            lds_k = slds.LDSs[k]
+            A_k, Q_k, b_k, B_k = lds_k.state_model.A,
+            lds_k.state_model.Q, lds_k.state_model.b,
+            lds_k.state_model.B
+            x0_k, P0_k = lds_k.state_model.x0, lds_k.state_model.P0
+            C_k, d_k, D_k = lds_k.obs_model.C, lds_k.obs_model.d, lds_k.obs_model.D
+
+            Q_chol = cholesky(Symmetric(Q_k)).U
+            P0_chol = cholesky(Symmetric(P0_k)).U
+
+            dx0 = x_mat[:, 1] - x0_k
+            ll += w[k, 1] * (-0.5 * sum(abs2, P0_chol \ dx0))
+            for t in 1:tsteps
+                η = C_k * x_mat[:, t] + d_k + D_k * uy_t[:, t]
+                λ = exp.(η)
+                ll += w[k, t] * sum(y_trial[:, t] .* η .- λ)  # drop const log(y!)
+                if t > 1
+                    dx = x_mat[:, t] - (A_k * x_mat[:, t - 1] + b_k + B_k * ux_t[:, t - 1])
+                    ll += w[k, t] * (-0.5 * sum(abs2, Q_chol \ dx))
+                end
+            end
+        end
+        return ll
+    end
+
+    H_full = ForwardDiff.hessian(weighted_ll, vec(x_trial))
+    for t in 1:tsteps
+        rows = ((t - 1) * D + 1):(t * D)
+        @test isapprox(H_diag[t], H_full[rows, rows], rtol=1e-5, atol=1e-5)
+    end
+end
+
+function test_SLDS_fit_with_inputs_gaussian(; rng=MersenneTwister(0xC0FFEE))
+    K, D, N, ux_dim, uy_dim = 2, 2, 3, 2, 2
+    tsteps, ntrials, max_iter = 20, 3, 10
+
+    lds = [_make_gaussian_input_lds(D, N, ux_dim, uy_dim; seed=k) for k in 1:K]
+    slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=lds)
+
+    ux = [randn(rng, ux_dim, tsteps) for _ in 1:ntrials]
+    uy = [randn(rng, uy_dim, tsteps) for _ in 1:ntrials]
+    _, _, y = rand(rng, slds, fill(tsteps, ntrials); ux=ux, uy=uy)
+
+    # Fit a fresh model (distinct inits) with the same inputs.
+    fit_lds = [_make_gaussian_input_lds(D, N, ux_dim, uy_dim; seed=100 + k) for k in 1:K]
+    fit_slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fit_lds)
+    elbos = fit!(fit_slds, y; ux=ux, uy=uy, max_iter=max_iter, progress=false)
+
+    @test length(elbos) == max_iter
+    @test all(isfinite, elbos)
+    @test mean(elbos[(end - 2):end]) > mean(elbos[1:3]) - 100  # don't fail CI on noise
+    # B / D remained finite through the regression M-step.
+    @test all(all(isfinite, l.state_model.B) for l in fit_slds.LDSs)
+    @test all(all(isfinite, l.obs_model.D) for l in fit_slds.LDSs)
+end
+
+function test_SLDS_fit_with_inputs_poisson(; rng=MersenneTwister(0xC0FFEE))
+    K, D, N, ux_dim, uy_dim = 2, 2, 4, 2, 2
+    tsteps, ntrials, max_iter = 20, 3, 8
+
+    lds = [_make_poisson_input_lds(D, N, ux_dim, uy_dim; seed=k) for k in 1:K]
+    slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=lds)
+
+    ux = [randn(rng, ux_dim, tsteps) for _ in 1:ntrials]
+    uy = [randn(rng, uy_dim, tsteps) for _ in 1:ntrials]
+    _, _, y = rand(rng, slds, fill(tsteps, ntrials); ux=ux, uy=uy)
+
+    fit_lds = [_make_poisson_input_lds(D, N, ux_dim, uy_dim; seed=200 + k) for k in 1:K]
+    fit_slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fit_lds)
+    elbos = fit!(fit_slds, y; ux=ux, uy=uy, max_iter=max_iter, progress=false)
+
+    @test length(elbos) == max_iter
+    @test all(isfinite, elbos)
+    @test all(all(isfinite, l.state_model.B) for l in fit_slds.LDSs)
+    @test all(all(isfinite, l.obs_model.D) for l in fit_slds.LDSs)
+end
