@@ -266,17 +266,16 @@ function _sample_continuous_given_discrete!(
     # Initial state
     k1 = z_trial[1]
     x_trial[:, 1] = rand(rng, MvNormal(state_params[k1].x0, state_params[k1].P0))
-    y_trial[:, 1] =
-        rand.(
-            rng,
-            Poisson.(
-                exp.(
-                    obs_params[k1].C * x_trial[:, 1] +
-                    obs_params[k1].d +
-                    obs_params[k1].D * uy_trial[:, 1]
-                )
+    y_trial[:, 1] = rand.(
+        rng,
+        Poisson.(
+            exp.(
+                obs_params[k1].C * x_trial[:, 1] +
+                obs_params[k1].d +
+                obs_params[k1].D * uy_trial[:, 1],
             ),
-        )
+        ),
+    )
 
     # Subsequent states
     for t in 2:tsteps
@@ -292,17 +291,16 @@ function _sample_continuous_given_discrete!(
             ),
         )
 
-        y_trial[:, t] =
-            rand.(
-                rng,
-                Poisson.(
-                    exp.(
-                        obs_params[k_curr].C * x_trial[:, t] +
-                        obs_params[k_curr].d +
-                        obs_params[k_curr].D * uy_trial[:, t]
-                    )
+        y_trial[:, t] = rand.(
+            rng,
+            Poisson.(
+                exp.(
+                    obs_params[k_curr].C * x_trial[:, t] +
+                    obs_params[k_curr].d +
+                    obs_params[k_curr].D * uy_trial[:, t],
                 ),
-            )
+            ),
+        )
     end
 end
 
@@ -1440,11 +1438,13 @@ function infer_γ(
     tol::Real=1e-6,
     check_convergence::Bool=true,
     progress::Bool=false,
+    ux=nothing,
+    uy=nothing,
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
-    data = Data(slds.LDSs[1], y)
+    data = Data(slds.LDSs[1], y; ux=ux, uy=uy)
     γ = _infer_γ(
         slds,
-        data.y;
+        data;
         max_iter=max_iter,
         tol=T(tol),
         check_convergence=check_convergence,
@@ -1461,11 +1461,13 @@ function infer_γ(
     tol::Real=1e-6,
     check_convergence::Bool=true,
     progress::Bool=false,
+    ux=nothing,
+    uy=nothing,
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
-    data = Data(slds.LDSs[1], y)
+    data = Data(slds.LDSs[1], y; ux=ux, uy=uy)
     return _infer_γ(
         slds,
-        data.y;
+        data;
         max_iter=max_iter,
         tol=T(tol),
         check_convergence=check_convergence,
@@ -1484,7 +1486,7 @@ cached once and reused every iteration.
 """
 function _infer_γ(
     slds::SLDS{T,S,O},
-    y_seq::AbstractVector{<:AbstractMatrix{T}};
+    data::Data{T};
     max_iter::Int,
     tol::T,
     check_convergence::Bool,
@@ -1492,7 +1494,11 @@ function _infer_γ(
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
     K = length(slds.LDSs)
 
-    tsteps_per_trial = Int[size(yt, 2) for yt in y_seq]
+    y_seq = data.y
+    ux_seq = data.ux
+    uy_seq = data.uy
+
+    tsteps_per_trial = data.tsteps #Int[size(yt, 2) for yt in y_seq]
     ntrials = length(y_seq)
     seq_ends = cumsum(tsteps_per_trial)
     total_T = last(seq_ends)
@@ -1515,13 +1521,19 @@ function _infer_γ(
     =#
     for trial in 1:ntrials
         w_uniform = fill(one(T) / K, K, tsteps_per_trial[trial])
-        smooth!(slds, tfs[trial], y_seq[trial], w_uniform; ws=slds_ws)
+        smooth!(
+            slds,
+            tfs[trial],
+            y_seq[trial],
+            w_uniform;
+            ws=slds_ws,
+            ux=ux_seq[trial],
+            uy=uy_seq[trial],
+        )
     end
 
     prog = if progress
-        Progress(
-            max_iter; desc="Inferring SLDS responsibilities...", barlen=50, showspeed=true
-        )
+        Progress(max_iter; desc="Inferring SLDS responsibilities...", barlen=50, showspeed=true)
     else
         nothing
     end
@@ -1536,14 +1548,20 @@ function _infer_γ(
         current smoothed mean (plug-in E_q[x]), then run forward-backward to
         refresh q(z) = γ. HMMs.jl threads across trials internally.
         =#
-        for trial in 1:ntrials
+        @views for trial in 1:ntrials
             t1, t2 = HMMs.seq_limits(seq_ends, trial)
-            y_trial = y_seq[trial]
             x_mean = tfs[trial].x_smooth
             for k in 1:K
                 ll_view = view(dl.logL, k, t1:t2)
                 joint_loglikelihood!(
-                    ll_view, slds_ws, slds_ws.consts[k], slds.LDSs[k], x_mean, y_trial
+                    ll_view,
+                    slds_ws,
+                    slds_ws.consts[k],
+                    slds.LDSs[k],
+                    x_mean,
+                    y_seq[trial],
+                    ux_seq[trial],
+                    uy_seq[trial],
                 )
             end
         end
@@ -1565,7 +1583,15 @@ function _infer_γ(
         for trial in 1:ntrials
             t1, t2 = HMMs.seq_limits(seq_ends, trial)
             w = view(fb_storage.γ, :, t1:t2)  # K × Tsteps
-            smooth!(slds, tfs[trial], y_seq[trial], w; ws=slds_ws)
+            smooth!(
+                slds,
+                tfs[trial],
+                y_seq[trial],
+                w;
+                ws=slds_ws,
+                ux=ux_seq[trial],
+                uy=uy_seq[trial],
+            )
         end
 
         prog !== nothing && next!(prog)
