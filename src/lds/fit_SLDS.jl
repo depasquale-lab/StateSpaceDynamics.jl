@@ -1629,15 +1629,18 @@ function posterior(
 
     # Slice the batched γ into per-trial K × T_i responsibility matrices.
     γ_trials = Vector{Matrix{T}}(undef, ntrials)
-    for trial in 1:ntrials
-        t1, t2 = HMMs.seq_limits(seq_ends, trial)
-        γ_trials[trial] = copy(view(fb_storage.γ, :, t1:t2))
+    if return_γ
+        for trial in 1:ntrials
+            t1, t2 = HMMs.seq_limits(seq_ends, trial)
+            γ_trials[trial] = copy(view(fb_storage.γ, :, t1:t2))
+        end
     end
 
     # return a tuple of requested outputs (γ, ELBO, smoothed x) with `nothing` for
     # the unrequested ones.
     return (
-        γ=return_γ ? fb_storage.γ : nothing,
+        # γ=return_γ ? fb_storage.γ : nothing,
+        γ=return_γ ? γ_trials : nothing,
         elbo=if return_elbo
             elbo!(
                 slds,
