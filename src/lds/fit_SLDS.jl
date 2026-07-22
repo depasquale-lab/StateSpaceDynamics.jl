@@ -20,6 +20,8 @@ are shared across regimes; the active regime `zₜ` selects which per-regime
     M-Step:         mstep!(slds, tfs, fb_storage, dl, y, sws; ux, uy)
 
     Fit:            fit!(slds, y; ux, uy)
+
+    Posterior:      posterior(slds, y; ux, uy)
 =============================================================================#
 
 """
@@ -1382,7 +1384,7 @@ function fit!(
 end
 
 """
-    infer_γ(slds, y; max_iter=100, tol=1e-6, check_convergence=true, progress=false)
+    posterior(slds, y; max_iter=100, tol=1e-6, check_convergence=true, progress=false)
 
 Infer the discrete-state responsibilities `γₜ(k) = q(zₜ = k) ≈ p(zₜ = k ∣ y₁:T)`
 of a **fitted** `SLDS`, holding all model parameters fixed.
@@ -1431,43 +1433,53 @@ The responsibilities `γ`:
 
 Each column is a probability vector over the `K` discrete states (sums to 1).
 """
-function infer_γ(
+function posterior(
     slds::SLDS{T,S,O},
     y::AbstractMatrix{T};
+    ux=nothing,
+    uy=nothing,
+    return_γ::Bool=true,
+    return_elbo::Bool=true,
+    return_x::Bool=false,
     max_iter::Int=100,
     tol::Real=1e-6,
     check_convergence::Bool=true,
     progress::Bool=false,
-    ux=nothing,
-    uy=nothing,
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
     data = Data(slds.LDSs[1], y; ux=ux, uy=uy)
-    γ = _infer_γ(
+    return posterior(
         slds,
         data;
+        return_γ=return_γ,
+        return_elbo=return_elbo,
+        return_x=return_x,
         max_iter=max_iter,
         tol=T(tol),
         check_convergence=check_convergence,
         progress=progress,
     )
-    # Single-trial matrix input ⇒ return the lone responsibility matrix.
-    return γ[1]
 end
 
-function infer_γ(
+function posterior(
     slds::SLDS{T,S,O},
     y::Union{AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
+    ux=nothing,
+    uy=nothing,
+    return_γ::Bool=true,
+    return_elbo::Bool=true,
+    return_x::Bool=false,
     max_iter::Int=100,
     tol::Real=1e-6,
     check_convergence::Bool=true,
     progress::Bool=false,
-    ux=nothing,
-    uy=nothing,
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
     data = Data(slds.LDSs[1], y; ux=ux, uy=uy)
-    return _infer_γ(
+    return posterior(
         slds,
         data;
+        return_γ=return_γ,
+        return_elbo=return_elbo,
+        return_x=return_x,
         max_iter=max_iter,
         tol=T(tol),
         check_convergence=check_convergence,
@@ -1476,17 +1488,20 @@ function infer_γ(
 end
 
 """
-    _infer_γ(slds, y_seq; max_iter, tol, check_convergence, progress)
+    posterior(slds, y_seq; max_iter, tol, check_convergence, progress)
 
-Core deterministic variational-E-step iteration behind [`infer_γ`](@ref). Operates
+Core deterministic variational-E-step iteration behind [`posterior`](@ref). Operates
 on the canonicalized per-trial observation sequence `y_seq` (a `Vector` of
 `(obs_dim, T_i)` matrices) and returns one `K × T_i` responsibility matrix per
 trial. Holds the `SLDS` parameters fixed (no M-step); the per-regime constants are
 cached once and reused every iteration.
 """
-function _infer_γ(
+function posterior(
     slds::SLDS{T,S,O},
     data::Data{T};
+    return_γ::Bool=true,
+    return_elbo::Bool=true,
+    return_x::Bool=false,
     max_iter::Int,
     tol::T,
     check_convergence::Bool,
@@ -1618,5 +1633,25 @@ function _infer_γ(
         t1, t2 = HMMs.seq_limits(seq_ends, trial)
         γ_trials[trial] = copy(view(fb_storage.γ, :, t1:t2))
     end
-    return γ_trials
+
+    # return a tuple of requested outputs (γ, ELBO, smoothed x) with `nothing` for
+    # the unrequested ones.
+    return (
+        γ=return_γ ? fb_storage.γ : nothing,
+        elbo=if return_elbo
+            elbo!(
+                slds,
+                tfs,
+                fb_storage,
+                y_seq,
+                slds_ws;
+                seq_ends=seq_ends,
+                ux=ux_seq,
+                uy=uy_seq,
+            )
+        else
+            nothing
+        end,
+        x=return_x ? [tfs[trial].x_smooth for trial in 1:ntrials] : nothing,
+    )
 end

@@ -1488,7 +1488,7 @@ function test_SLDS_fit_shapes_and_validation(; rng=MersenneTwister(0xE1B1))
     return nothing
 end
 
-function test_SLDS_infer_gamma_basic(; rng=MersenneTwister(0xACE0))
+function test_SLDS_posterior_basic(; rng=MersenneTwister(0xACE0))
     K = 2
     latent_dim = 2
     obs_dim = 3
@@ -1501,21 +1501,21 @@ function test_SLDS_infer_gamma_basic(; rng=MersenneTwister(0xACE0))
 
     z, x, y = rand(rng, slds, fill(tsteps, ntrials))
 
-    γ = infer_γ(slds, y; max_iter=50, tol=1e-8)
+    post = posterior(slds, y; max_iter=50, tol=1e-8)
 
     # Multi-trial input ⇒ one K × T responsibility matrix per trial.
-    @test γ isa Vector{Matrix{Float64}}
-    @test length(γ) == ntrials
+    @test post.γ isa Vector{Matrix{Float64}}
+    @test length(post.γ) == ntrials
     for trial in 1:ntrials
-        @test size(γ[trial]) == (K, tsteps)
-        @test all(isfinite, γ[trial])
-        @test all(γ[trial] .>= 0)
+        @test size(post.γ[trial]) == (K, tsteps)
+        @test all(isfinite, post.γ[trial])
+        @test all(post.γ[trial] .>= 0)
         # Each column is a probability vector over the K discrete states.
-        @test all(isapprox.(sum(γ[trial]; dims=1), 1.0; atol=1e-10))
+        @test all(isapprox.(sum(post.γ[trial]; dims=1), 1.0; atol=1e-10))
     end
 end
 
-function test_SLDS_infer_gamma_shapes(; rng=MersenneTwister(0xACE1))
+function test_SLDS_posterior_shapes(; rng=MersenneTwister(0xACE1))
     K = 2
     latent_dim = 2
     obs_dim = 3
@@ -1546,7 +1546,7 @@ function test_SLDS_infer_gamma_shapes(; rng=MersenneTwister(0xACE1))
     end
 end
 
-function test_SLDS_infer_gamma_deterministic_and_modes(; rng=MersenneTwister(0xACE2))
+function test_SLDS_posterior_deterministic_and_modes(; rng=MersenneTwister(0xACE2))
     K = 2
     latent_dim = 2
     obs_dim = 3
@@ -1576,7 +1576,7 @@ function test_SLDS_infer_gamma_deterministic_and_modes(; rng=MersenneTwister(0xA
     @test maximum(abs.(γ_conv .- γ_full)) < 1e-8
 end
 
-function test_SLDS_infer_gamma_K1(; rng=MersenneTwister(0xACE3))
+function test_SLDS_posterior_K1(; rng=MersenneTwister(0xACE3))
     # K = 1: q(z) is degenerate, so every responsibility must be exactly 1.
     latent_dim = 2
     obs_dim = 3
@@ -1594,7 +1594,7 @@ function test_SLDS_infer_gamma_K1(; rng=MersenneTwister(0xACE3))
     end
 end
 
-function test_SLDS_infer_gamma_recovers_distinct_regimes(; rng=MersenneTwister(0xACE4))
+function test_SLDS_posterior_recovers_distinct_regimes(; rng=MersenneTwister(0xACE4))
     # Two regimes with well-separated emission offsets d so the observation
     # distributions barely overlap; passing the true (i.e. "fitted") model,
     # infer_γ should recover the discrete states almost perfectly.
