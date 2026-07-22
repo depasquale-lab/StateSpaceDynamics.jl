@@ -1391,23 +1391,16 @@ of a **fitted** `SLDS`, holding all model parameters fixed.
 
 This is a post-fit *inference* routine: it estimates the discrete posterior for a
 model whose parameters are already learned, and does **not** update them (there is
-no M-step). It runs the structured-variational E-step, alternating the two
-smoothing passes that make it up,
+no M-step). 
+
+It runs the structured-variational E-step, alternating between:
 
 1. **discrete smoothing** — a forward-backward pass over the switching chain that
    refreshes `q(z)` from the current per-regime log-likelihoods, and
 2. **continuous smoothing** — the Laplace/Kalman smoother that refreshes `q(x)`
    under the updated responsibilities `γ`,
 
-either until the responsibilities converge or for a fixed number of iterations.
-Interleaving discrete and continuous smoothing within the E-step is the classic
-coordinate-ascent scheme of Ghahramani & Hinton (1996).
-
-The two smoothers are coupled deterministically: the discrete-layer
-log-likelihoods are evaluated at the smoothed posterior mean `x_smooth` (a plug-in
-of `E_q[x]`). Unlike the single-Monte-Carlo-sample E-step that [`fit!`](@ref) uses
-during learning, this makes the iteration reproducible and drives `γ` monotonically
-to a fixed point — so a convergence check on successive `γ` is well behaved.
+until either the responsibilities converge or for a fixed number of iterations.
 
 # Arguments
 - `y`: observations — a `(obs_dim, T)` matrix (single trial), a
