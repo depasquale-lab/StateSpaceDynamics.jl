@@ -1488,6 +1488,161 @@ function test_SLDS_fit_shapes_and_validation(; rng=MersenneTwister(0xE1B1))
     return nothing
 end
 
+function test_SLDS_infer_gamma_basic(; rng=MersenneTwister(0xACE0))
+    K = 2
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 20
+    ntrials = 3
+
+    lds1 = _make_gaussian_lds_dense(latent_dim, obs_dim; seed=1)
+    lds2 = _make_gaussian_lds_dense(latent_dim, obs_dim; seed=2)
+    slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=[lds1, lds2])
+
+    z, x, y = rand(rng, slds, fill(tsteps, ntrials))
+
+    γ = infer_γ(slds, y; max_iter=50, tol=1e-8)
+
+    # Multi-trial input ⇒ one K × T responsibility matrix per trial.
+    @test γ isa Vector{Matrix{Float64}}
+    @test length(γ) == ntrials
+    for trial in 1:ntrials
+        @test size(γ[trial]) == (K, tsteps)
+        @test all(isfinite, γ[trial])
+        @test all(γ[trial] .>= 0)
+        # Each column is a probability vector over the K discrete states.
+        @test all(isapprox.(sum(γ[trial]; dims=1), 1.0; atol=1e-10))
+    end
+end
+
+function test_SLDS_infer_gamma_shapes(; rng=MersenneTwister(0xACE1))
+    K = 2
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 15
+    ntrials = 2
+
+    lds = _make_gaussian_lds_dense(latent_dim, obs_dim; seed=3)
+    slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=[lds, deepcopy(lds)])
+    z, x, y = rand(rng, slds, fill(tsteps, ntrials))
+
+    # Single-trial matrix ⇒ bare K × T matrix; wrapping in a vector ⇒ 1-element vector.
+    γ_mat = infer_γ(slds, y[1])
+    @test γ_mat isa Matrix{Float64}
+    @test size(γ_mat) == (K, tsteps)
+
+    γ_vec1 = infer_γ(slds, [y[1]])
+    @test γ_vec1 isa Vector{Matrix{Float64}}
+    @test length(γ_vec1) == 1
+    @test γ_vec1[1] ≈ γ_mat
+
+    # 3-D array and vector-of-matrices forms give identical per-trial γ (equal lengths).
+    Y3 = cat(y...; dims=3)
+    γ_v = infer_γ(slds, y)
+    γ_a = infer_γ(slds, Y3)
+    @test length(γ_v) == length(γ_a) == ntrials
+    for trial in 1:ntrials
+        @test γ_v[trial] ≈ γ_a[trial]
+    end
+end
+
+function test_SLDS_infer_gamma_deterministic_and_modes(; rng=MersenneTwister(0xACE2))
+    K = 2
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 25
+
+    lds1 = _make_gaussian_lds_dense(latent_dim, obs_dim; seed=5)
+    lds2 = _make_gaussian_lds_dense(latent_dim, obs_dim; seed=6)
+    slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=[lds1, lds2])
+    z, x, y = rand(rng, slds, fill(tsteps, 1))
+
+    # Deterministic: repeated calls give bit-identical γ (no RNG involved).
+    γ1 = infer_γ(slds, y[1]; max_iter=50, tol=1e-10)
+    γ2 = infer_γ(slds, y[1]; max_iter=50, tol=1e-10)
+    @test γ1 == γ2
+
+    # Fixed-iteration mode runs regardless of convergence and returns valid γ.
+    γ_fixed = infer_γ(slds, y[1]; max_iter=3, check_convergence=false)
+    @test size(γ_fixed) == (K, tsteps)
+    @test all(isapprox.(sum(γ_fixed; dims=1), 1.0; atol=1e-10))
+
+    #=
+    Early-stopping soundness: iterating "until convergence" must land on the
+    same fixed point as running many fixed iterations without a stopping test.
+    =#
+    γ_conv = infer_γ(slds, y[1]; max_iter=500, tol=1e-12, check_convergence=true)
+    γ_full = infer_γ(slds, y[1]; max_iter=500, check_convergence=false)
+    @test maximum(abs.(γ_conv .- γ_full)) < 1e-8
+end
+
+function test_SLDS_infer_gamma_K1(; rng=MersenneTwister(0xACE3))
+    # K = 1: q(z) is degenerate, so every responsibility must be exactly 1.
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 15
+    ntrials = 2
+
+    lds = _make_gaussian_lds_dense(latent_dim, obs_dim; seed=8)
+    slds = SLDS(; A=ones(1, 1), πₖ=[1.0], LDSs=[lds])
+    z, x, y = rand(rng, slds, fill(tsteps, ntrials))
+
+    γ = infer_γ(slds, y)
+    for trial in 1:ntrials
+        @test size(γ[trial]) == (1, tsteps)
+        @test all(γ[trial] .≈ 1.0)
+    end
+end
+
+function test_SLDS_infer_gamma_recovers_distinct_regimes(; rng=MersenneTwister(0xACE4))
+    # Two regimes with well-separated emission offsets d so the observation
+    # distributions barely overlap; passing the true (i.e. "fitted") model,
+    # infer_γ should recover the discrete states almost perfectly.
+    K = 2
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 60
+
+    A = _stable_A(rng, latent_dim)
+    Q = Matrix(0.1 * I(latent_dim))
+    b = zeros(latent_dim)
+    x0 = zeros(latent_dim)
+    P0 = Matrix(1.0 * I(latent_dim))
+    C = Matrix{Float64}(0.1I, obs_dim, latent_dim)  # small C: emission dominated by d
+    R = Matrix(0.05 * I(obs_dim))
+
+    sm1 = GaussianStateModel(; A=A, Q=Q, b=b, x0=x0, P0=P0)
+    om1 = GaussianObservationModel(; C=copy(C), R=copy(R), d=fill(-4.0, obs_dim))
+    lds1 = LinearDynamicalSystem(;
+        state_model=sm1,
+        obs_model=om1,
+        latent_dim=latent_dim,
+        obs_dim=obs_dim,
+        fit_bool=fill(true, 6),
+    )
+
+    sm2 = GaussianStateModel(; A=A, Q=Q, b=b, x0=x0, P0=P0)
+    om2 = GaussianObservationModel(; C=copy(C), R=copy(R), d=fill(4.0, obs_dim))
+    lds2 = LinearDynamicalSystem(;
+        state_model=sm2,
+        obs_model=om2,
+        latent_dim=latent_dim,
+        obs_dim=obs_dim,
+        fit_bool=fill(true, 6),
+    )
+
+    # Sticky discrete transitions so regimes persist over several timesteps.
+    A_disc = [0.95 0.05; 0.05 0.95]
+    slds = SLDS(; A=A_disc, πₖ=[0.5, 0.5], LDSs=[lds1, lds2])
+
+    z, x, y = rand(rng, slds, fill(tsteps, 1))
+
+    γ = infer_γ(slds, y[1]; max_iter=100, tol=1e-8)
+    ẑ = [argmax(view(γ, :, t)) for t in 1:tsteps]
+    accuracy = count(ẑ .== z[1]) / tsteps
+    @test accuracy > 0.8
+end
+
 function test_SLDS_no_priors_zero_prior_logdensity(; rng=MersenneTwister(0xC0FFEE))
     K = 3
     latent_dim = 2
