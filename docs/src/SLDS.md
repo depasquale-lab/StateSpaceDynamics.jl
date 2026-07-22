@@ -91,6 +91,25 @@ The sampling process follows the generative model:
 fit!(slds::SLDS{T,S,O}, y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}}; max_iter::Int=50, progress::Bool=true) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
 ```
 
+## Inferring discrete responsibilities (post-fit)
+
+Once an SLDS has been fit, [`infer_γ`](@ref) estimates the discrete-state
+responsibilities ``\gamma_t(k) = q(z_t = k) \approx p(z_t = k \mid y_{1:T})`` for a
+dataset, holding the model parameters fixed. It runs the variational E-step —
+alternating the forward-backward pass over the discrete chain ``q(z)`` with the
+Kalman/Laplace smoother over the continuous states ``q(x)`` — either until the
+responsibilities converge or for a fixed number of iterations. This interleaving of
+discrete and continuous smoothing within the E-step follows the classic
+coordinate-ascent scheme of Ghahramani & Hinton (1996).
+
+Unlike the single-Monte-Carlo-sample E-step that `fit!` uses during learning, the
+coupling here is deterministic (the discrete-layer log-likelihoods are evaluated at
+the smoothed posterior mean), so the returned responsibilities are reproducible.
+
+```@docs
+infer_γ
+```
+
 ## The vLEM Algorithm
 
 The vLEM algorithm maximizes the **Evidence Lower Bound (ELBO)** instead of the intractable marginal likelihood. The key insight is to use a structured variational approximation that factorizes as:
