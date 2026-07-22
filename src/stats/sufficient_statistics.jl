@@ -624,10 +624,10 @@ function _aggregate_td_suff_stats_weighted!(
     copyto!(suf.obs_xy, obs_xy)
 
     suf.init_yy[] = copy(init_yy)               # see above
-    suf.dyn_xx[] = PDMat(copy(dyn_xx))
-    suf.dyn_yy[] = PDMat(copy(dyn_yy))
-    suf.obs_xx[] = PDMat(copy(obs_xx))
-    suf.obs_yy[] = PDMat(copy(obs_yy))
+    suf.dyn_xx[] = PDMat(copy(dyn_xx) + 1e-8I)
+    suf.dyn_yy[] = PDMat(copy(dyn_yy) + 1e-8I)
+    suf.obs_xx[] = PDMat(copy(obs_xx) + 1e-8I)
+    suf.obs_yy[] = PDMat(copy(obs_yy) + 1e-8I)
 
     return suf
 end
