@@ -7,9 +7,6 @@
 # floating point, what independent fits of each session produce. Everything
 # downstream of that (partial grouping, priors, held-out scoring) shares the
 # same machinery.
-#
-# The SLDS is still on the interim guard; its grouped fit lands in a follow-up
-# (`test_depends_on_rejected_until_supported`).
 
 const PD_LATENT_DIM = 2
 const PD_OBS_DIM = 2
@@ -546,25 +543,73 @@ function test_grouped_poisson_fit()
 end
 
 # ============================================================================
-# Interim guard (removed as each model family's grouped fit lands)
+# SLDS
 # ============================================================================
 
-function test_depends_on_rejected_until_supported()
-    rng = StableRNG(101)
-    labels = [:a, :a, :b]
-    y = [randn(rng, PD_OBS_DIM, 20) for _ in 1:3]
+function pd_slds(labels; K::Int=2)
+    ldss = map(1:K) do k
+        sm = pd_state_model()
+        sm.A .= k == 1 ? [0.95 0.05; -0.05 0.95] : [0.60 0.30; -0.30 0.60]
+        om = pd_obs_model()
+        if labels !== nothing
+            om.depends_on = (C=labels, R=labels)
+        end
+        return pd_lds(sm, om)
+    end
+    A = [0.9 0.1; 0.1 0.9]
+    πₖ = [0.5, 0.5]
+    return SLDS(; A=A, πₖ=πₖ, LDSs=ldss)
+end
 
-    om = pd_obs_model()
-    om.depends_on = (C=labels,)
+function test_grouped_slds_fit()
+    rng = StableRNG(1010)
+    labels = vcat(fill(:s1, 3), fill(:s2, 3))
 
-    slds = SLDS(;
-        A=[0.9 0.1; 0.1 0.9],
-        πₖ=[0.5, 0.5],
-        LDSs=[pd_fresh_lds(), pd_lds(pd_state_model(), om)],
-    )
-    @test_throws ArgumentError fit!(slds, y; max_iter=1, progress=false)
-    @test_throws ArgumentError elbo(slds, y)
-    @test_throws ArgumentError rand(rng, slds, 20)
+    truth = pd_slds(labels)
+    for k in 1:2
+        C2 = group_parameter(truth.LDSs[k].obs_model, :C, :s2)
+        C2 .= [0.2 -0.9; 1.0 0.3]
+        R2 = group_parameter(truth.LDSs[k].obs_model, :R, :s2)
+        R2 .= Matrix(1.0 * I(PD_OBS_DIM))
+    end
+    _, _, y = rand(rng, truth, fill(35, length(labels)))
+
+    fitted = pd_slds(labels)
+    elbos = fit!(fitted, y; max_iter=6, progress=false, rng=StableRNG(11))
+    @test length(elbos) == 6
+    @test all(isfinite, elbos)
+
+    # Each regime keeps a separate emission per session.
+    for k in 1:2
+        om = fitted.LDSs[k].obs_model
+        @test !(group_parameter(om, :C, :s1) ≈ group_parameter(om, :C, :s2))
+        @test isposdef(group_parameter(om, :R, :s1))
+        @test isposdef(group_parameter(om, :R, :s2))
+    end
+
+    # x0/P0 stay tied across regimes even when grouped.
+    @test fitted.LDSs[2].state_model.x0 ≈ fitted.LDSs[1].state_model.x0
+    @test fitted.LDSs[2].state_model.P0 ≈ fitted.LDSs[1].state_model.P0
+
+    @test isfinite(elbo(fitted, y; rng=StableRNG(12)))
+
+    return nothing
+end
+
+function test_grouped_slds_requires_matching_labels()
+    labels = vcat(fill(:s1, 3), fill(:s2, 3))
+    slds = pd_slds(labels)
+    # Regime 2 disagrees about how trials are grouped.
+    slds.LDSs[2].obs_model.depends_on = (C=vcat(fill(:s1, 4), fill(:s2, 2)),)
+    @test_throws ArgumentError SSD._slds_parameter_grouping(slds, 6)
+
+    # A regime that declares nothing at all is also a disagreement.
+    slds2 = pd_slds(labels)
+    slds2.LDSs[2].obs_model.depends_on = nothing
+    @test_throws ArgumentError SSD._slds_parameter_grouping(slds2, 6)
+
+    # No regime declaring anything is simply the ungrouped path.
+    @test SSD._slds_parameter_grouping(pd_slds(nothing), 6) === nothing
 
     return nothing
 end

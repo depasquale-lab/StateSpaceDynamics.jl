@@ -285,8 +285,9 @@ using SSDTest
                 test_grouped_poisson_fit()
             end
 
-            @testset "Not yet honoured by fitting" begin
-                test_depends_on_rejected_until_supported()
+            @testset "SLDS fitting" begin
+                test_grouped_slds_fit()
+                test_grouped_slds_requires_matching_labels()
             end
         end
     end
