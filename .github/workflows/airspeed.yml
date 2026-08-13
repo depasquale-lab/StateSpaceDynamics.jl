@@ -1,6 +1,6 @@
 name: Benchmark PR (AirspeedVelocity)
 
-# On PRs into main: benchmark the PR head against its base in the same environment
+# On PRs into main or dev: benchmark the PR head against its base in the same environment
 # and post a comparison table as a PR comment. Uses `pull_request_target` so the
 # comment can be posted; the AirspeedVelocity action freezes the benchmark script
 # at the base revision, so PR code cannot rewrite what is measured.
@@ -13,6 +13,7 @@ on:
   pull_request_target:
     branches:
       - main
+      - dev
   workflow_dispatch:
     inputs:
       rev:

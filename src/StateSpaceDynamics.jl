@@ -8,14 +8,15 @@ using PDMats
 using Random
 using SparseArrays
 
-using Optim: Optim, optimize, LBFGS, HagerZhang
+using Optim: Optim, optimize, LBFGS
+using LineSearches: HagerZhang
 using ProgressMeter: Progress, next!, finish!
 using SpecialFunctions: loggamma
 using Statistics: mean
 using StatsAPI: StatsAPI
 import StatsAPI: loglikelihood, fit!
 
-using Base.Threads: @threads, @spawn
+using OhMyThreads: tforeach, tmapreduce
 using Base.Iterators: partition
 using Base: show
 
@@ -30,16 +31,13 @@ include("numerics/cov_update.jl")          # info_update! + CovUpdateCache
 include("stats/priors.jl")
 
 # Model definitions + inference-state containers.
-include("lds/types.jl")                             # abstract types, Data, model structs, SLDS
+include("lds/types.jl")                             # abstract types, model structs, SLDS
 include("lds/workspaces.jl")                        # FilterSmooth / SufficientStatistics / workspaces
 include("utils/show.jl")
 include("utils/validation.jl")
 
 # Shared latent inference machinery.
-# kalman.jl is retained for the Kalman filter + marginal likelihood (and future
-# particle-filter use); the Kalman path is no longer a selectable E-step backend.
 include("stats/preprocessing.jl")           # PPCA (standalone model)
-include("stats/kalman.jl")
 include("stats/sufficient_statistics.jl")
 include("stats/simulate.jl")
 include("stats/null_models.jl")             # latent-free baseline log-likelihoods
@@ -62,10 +60,10 @@ export DimensionMismatchError, NotPositiveDefiniteError, NotSymmetricError
 export InvalidProbabilityVectorError, NumericalStabilityError
 
 # Models and Types
-export ProbabilisticPCA, SLDS, LinearDynamicalSystem, Data
+export ProbabilisticPCA, SLDS, LinearDynamicalSystem
 export AbstractStateModel, AbstractObservationModel
 export GaussianStateModel, GaussianObservationModel, PoissonObservationModel
-export IWPrior, MNPrior
+export IWPrior, MNPrior, x0_mean_prior
 export CovUpdateCache
 
 # Utilities
@@ -74,9 +72,10 @@ export valid_Σ, gaussian_entropy
 export random_rotation_matrix
 export print_full
 export info_update!
+export tview
 
 # Common functions
-export rand, smooth, fit!, loglikelihood, elbo!
+export rand, smooth, fit!, loglikelihood, elbo, elbo!
 
 # Baseline / null model log-likelihoods
 export test_null, compute_R2

@@ -22,12 +22,21 @@ function CovUpdateCache{T}(n::Integer) where {T<:BlasFloat}
 end
 CovUpdateCache(n::Integer) = CovUpdateCache{Float64}(n)
 
+#=
+Dense backing of a symmetric operand: PDMats keep it in `.mat`; plain
+matrices are used as-is. Lets `info_update!` take `CiRC = C'R⁻¹C` as a plain
+symmetric matrix.
+=#
+_densemat(A::PDMat) = A.mat
+_densemat(A::AbstractMatrix) = A
+
 """
     info_update!(cache, P0, CiRC) -> PDMat
 
 Return `P = inv(inv(P0) + CiRC)` as a `PDMat`, using the Cholesky cached
-inside `P0` and the scratch buffers in `cache`. Both `P0` and `CiRC` must
-be `PDMat{T,Matrix{T}}` of dimension `n`, matching `cache`.
+inside `P0` and the scratch buffers in `cache`. `P0` must be a
+`PDMat{T,Matrix{T}}` of dimension `n`, matching `cache`; `CiRC` is any
+symmetric PSD matrix of the same size (`PDMat` or plain).
 
 The returned `PDMat` *shares storage* with `cache.Pmat` and
 `cache.Pchol_factors`. It is invalidated by the next call with the same
@@ -40,7 +49,7 @@ the naive `inv(inv(P0) + CiRC)` which goes ≈ 8n³/3 via PDMat → Matrix →
 LU-based `inv` → PDMat, losing PD structure in the middle.
 """
 function info_update!(
-    cache::CovUpdateCache{T}, P0::PDMat{T,Matrix{T}}, CiRC::PDMat{T,Matrix{T}}
+    cache::CovUpdateCache{T}, P0::PDMat{T,Matrix{T}}, CiRC::AbstractMatrix{T}
 ) where {T<:BlasFloat}
     n = size(P0, 1)
     @boundscheck begin
@@ -53,19 +62,21 @@ function info_update!(
     Pmat = cache.Pmat
     Pfac = cache.Pchol_factors
 
-    # (1) M ← inv(P0), using P0's cached Cholesky.
-    #     potri! takes a Cholesky factor (in the `uplo` triangle) and
-    #     overwrites it with the inverse of the original PD matrix
-    #     (also in the `uplo` triangle). The other triangle is left
-    #     untouched, so we then reflect to get a full symmetric matrix.
+    #=
+    (1) M ← inv(P0), using P0's cached Cholesky.
+        potri! takes a Cholesky factor (in the `uplo` triangle) and
+        overwrites it with the inverse of the original PD matrix
+        (also in the `uplo` triangle). The other triangle is left
+        untouched, so we then reflect to get a full symmetric matrix.
+    =#
     uplo0 = P0.chol.uplo                       # 'U' or 'L'
     copyto!(M, P0.chol.factors)
     LAPACK.potri!(uplo0, M)
     copytri!(M, uplo0)
 
-    # (2) M ← M + CiRC.mat.  (Both operands symmetric; axpy! on the
+    # (2) M ← M + CiRC.  (Both operands symmetric; axpy! on the
     #     whole dense backing is fine and is what BLAS is happiest with.)
-    axpy!(one(T), CiRC.mat, M)
+    axpy!(one(T), _densemat(CiRC), M)
 
     # (3) Cholesky of M, in place, upper triangle: M_upper ← U with M = UᵀU.
     cholesky!(Symmetric(M, :U); check=true)
@@ -79,9 +90,11 @@ function info_update!(
     copyto!(Pmat, M)
     copytri!(Pmat, 'U')
 
-    # (6) Fresh Cholesky of Pmat into Pfac — the `chol` field of output.
-    #     Unavoidable: there is no closed-form shortcut from chol(M) to
-    #     chol(inv(M)) that preserves standard Cholesky triangularity.
+    #=
+    (6) Fresh Cholesky of Pmat into Pfac — the `chol` field of output.
+        Unavoidable: there is no closed-form shortcut from chol(M) to
+        chol(inv(M)) that preserves standard Cholesky triangularity.
+    =#
     copyto!(Pfac, Pmat)
     Cout = cholesky!(Symmetric(Pfac, :U); check=true)
 
@@ -94,8 +107,8 @@ end
 In-place variant of `info_update!` that writes the result of
 `inv(inv(P0) + CiRC)` into the existing PDMat `P_dest` (overwriting both its
 `mat` and `chol.factors` fields). This is the form required when the result
-must persist across many calls — e.g. inside a loop where every step's output
-is read again later (Kalman forward pass → backward pass).
+must persist across calls — e.g. the Kalman filter's forward pass, where each
+step's filtered covariance seeds the next step's prediction.
 
 `scratch_M` is a single n × n workspace (re-used across calls). All inputs and
 the destination must be n × n.
@@ -106,7 +119,7 @@ function info_update!(
     P_dest::PDMat{T,Matrix{T}},
     scratch_M::Matrix{T},
     P0::PDMat{T,Matrix{T}},
-    CiRC::PDMat{T,Matrix{T}},
+    CiRC::AbstractMatrix{T},
 ) where {T<:BlasFloat}
     n = size(P0, 1)
     @boundscheck begin
@@ -116,11 +129,13 @@ function info_update!(
         size(P_dest, 1) == n || throw(DimensionMismatch("P_dest size mismatch"))
     end
 
-    # Steps (3)–(5) below write/read the *upper* factor of `P_dest`. PDMats can
-    # in principle carry a lower factor; refreshing `P_dest.chol` with an upper
-    # Cholesky while its `.uplo` tag said 'L' would leave it inconsistent. All
-    # package-allocated PDMats use 'U' (Julia's default for `cholesky(Matrix)`),
-    # so assert the precondition rather than handle a case no caller produces.
+    #=
+    Steps (3)–(5) below write/read the *upper* factor of `P_dest`. PDMats can
+    in principle carry a lower factor; refreshing `P_dest.chol` with an upper
+    Cholesky while its `.uplo` tag said 'L' would leave it inconsistent. All
+    package-allocated PDMats use 'U' (Julia's default for `cholesky(Matrix)`),
+    so assert the precondition rather than handle a case no caller produces.
+    =#
     @assert P_dest.chol.uplo == 'U' "info_update! requires P_dest to hold an upper Cholesky factor"
 
     M = scratch_M
@@ -132,7 +147,7 @@ function info_update!(
     copytri!(M, uplo0)
 
     # (2) M ← inv(P0) + CiRC.
-    axpy!(one(T), CiRC.mat, M)
+    axpy!(one(T), _densemat(CiRC), M)
 
     # (3) Cholesky-then-potri: M's upper triangle now holds inv(inv(P0) + CiRC).
     cholesky!(Symmetric(M, :U); check=true)

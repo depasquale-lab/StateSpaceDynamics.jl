@@ -76,20 +76,29 @@ function mstep!(
     ppca::ProbabilisticPCA, X::AbstractMatrix{T}, E_z::Matrix{T}, E_zz::Array{T,3}
 ) where {T<:Real}
     D, N = size(X)
-    W_new = zeros(T, D, ppca.k)
-    σ²_sum = zero(T)
-    WW = ppca.W' * ppca.W
 
+    # W update: W_new = [Σₙ (xₙ - μ) E[zₙ]ᵀ][Σₙ E[zₙ zₙᵀ]]⁻¹ (Tipping–Bishop).
+    W_num = zeros(T, D, ppca.k)
     for i in 1:N
-        x_centered = X[:, i] .- ppca.μ
+        x_centered = @view(X[:, i]) .- ppca.μ
+        W_num .+= x_centered * @view(E_z[:, i])'
+    end
+    W_new = W_num / sum(E_zz; dims=3)[:, :, 1]
+
+    # σ² update must use the updated W_new, not the old W;
+    # hence the second pass. Using the pre-update W breaks EM monotonicity.
+    WW_new = W_new' * W_new
+    σ²_sum = zero(T)
+    for i in 1:N
+        x_centered = @view(X[:, i]) .- ppca.μ
         ez = @view(E_z[:, i])
         ezz = @view(E_zz[:, :, i])
-        W_new .+= x_centered * ez'
-        σ²_sum += sum(x_centered .^ 2) - 2 * dot(ez, ppca.W' * x_centered) + tr(ezz * WW)
+        σ²_sum +=
+            sum(abs2, x_centered) - 2 * dot(ez, W_new' * x_centered) + tr(ezz * WW_new)
     end
 
     ppca.z = E_z
-    ppca.W = W_new * inv(sum(E_zz; dims=3)[:, :, 1])
+    ppca.W = W_new
     ppca.σ² = σ²_sum / (N * D)
 
     return nothing

@@ -1,24 +1,25 @@
 #=============================================================================
 Switching LDS (SLDS)
 
-    Sample:         rand(rng, slds, tsteps)
+Optional control inputs `ux` (dynamics, `Bₖ u`) and `uy` (observation, `Dₖ v`)
+are shared across regimes; the active regime `zₜ` selects which per-regime
+`Bₖ` / `Dₖ` multiplies them. `nothing` / zero-row matrices skip the terms.
 
-    Log-Likelihood: joint_loglikelihood!(ws, slds, x, y, w)
+    Sample:         rand(rng, slds, tsteps; ux, uy)
 
-    Gradient:       Gradient!(ws, slds, y, x, w)
+    Log-Likelihood: joint_loglikelihood!(ws, slds, x, y, w[, ux, uy])
 
-    Hessian:        Hessian_blocks!(ws, slds, y, x, w)
+    Gradient:       gradient!(ws, slds, x, y, w[, ux, uy])
 
-    Smooth:         smooth!(slds, fs, y, w)
+    Hessian:        hessian!(ws, slds, x, y, w[, uy])
 
-    Posterior:      sample_posterior!(x_out, rng, tfs, randn_buf)
-                    sample_posterior(rng, fs)
+    Smooth:         smooth!(slds, fs, y, w; x_sample, rng, ux, uy)  # optional joint draw
 
-    E-Step:         estep!(slds, tfs, fb_storage, dl, y, x_samples, slds_ws)
+    E-Step:         estep!(slds, tfs, fb_storage, dl, y, x_samples, slds_ws; ux, uy)
 
-    M-Step:         mstep!(slds, tfs, fb_storage, dl, y, sws)
+    M-Step:         mstep!(slds, tfs, fb_storage, dl, y, sws; ux, uy)
 
-    Fit:            fit!(slds, y)
+    Fit:            fit!(slds, y; ux, uy)
 =============================================================================#
 
 """
@@ -32,49 +33,90 @@ function _make_slds_fb_storage(
     dl::SLDSDiscreteLayer{T}, seq_ends::AbstractVector{Int}
 ) where {T}
     total_T = last(seq_ends)
-    obs_inputs = 1:total_T
-    latent_inputs = fill(nothing, total_T)
+    #=
+    HMMs.jl "observations" are just timestep indices into dl.logL; there is no
+    control sequence. These are unrelated to the LDS ux / uy
+    control-input kwargs.
+    =#
+    obs_seq = 1:total_T
+    control_seq = fill(nothing, total_T)
     return HMMs.initialize_forward_backward(
-        dl, obs_inputs, latent_inputs; seq_ends=seq_ends, transition_marginals=true
+        dl, obs_seq, control_seq; seq_ends=seq_ends, transition_marginals=true
     )
 end
 
 """
-    rand([rng,] slds, tsteps::Integer)
-    rand([rng,] slds, tsteps_per_trial::AbstractVector{<:Integer})
+    rand([rng,] slds, tsteps::Integer; ux=nothing, uy=nothing)
+    rand([rng,] slds, tsteps_per_trial::AbstractVector{<:Integer}; ux=nothing, uy=nothing)
 
 Sample from a Switching Linear Dynamical System.
 
 - Scalar `tsteps`: returns one trial as `(z::Vector{Int}, x::Matrix, y::Matrix)`.
 - Vector of per-trial lengths: returns `(z::Vector{Vector{Int}}, x::Vector{Matrix},
   y::Vector{Matrix})`. Trial lengths may differ.
+
+Optional control inputs (shared across models; the active mode `zₜ` selects
+which per-regime `Bₖ` / `Dₖ` multiplies them):
+- `ux`: dynamics input consumed by `Bₖ` (`xₜ ~ N(Aₖ xₜ₋₁ + bₖ + Bₖ uₜ₋₁, Qₖ)`).
+  Scalar form is an `(ux_dim, tsteps)` matrix; multi-trial is a vector of
+  per-trial matrices.
+- `uy`: observation input consumed by `Dₖ`. Same shape family as `ux`; required
+  when the LDS carry a nonzero-column `D`. Supported for both Gaussian and
+  Poisson emissions.
 """
 function Random.rand(
-    rng::AbstractRNG, slds::SLDS{T,S,O}, tsteps::Integer
+    rng::AbstractRNG,
+    slds::SLDS{T,S,O},
+    tsteps::Integer;
+    ux::Union{Nothing,AbstractMatrix{T}}=nothing,
+    uy::Union{Nothing,AbstractMatrix{T}}=nothing,
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
-    latent_dim = slds.LDSs[1].latent_dim
-    obs_dim = slds.LDSs[1].obs_dim
+    lds1 = slds.LDSs[1]
+    latent_dim = lds1.latent_dim
+    obs_dim = lds1.obs_dim
+    Ti = Int(tsteps)
 
-    z = Vector{Int}(undef, Int(tsteps))
-    x = Matrix{T}(undef, latent_dim, Int(tsteps))
-    y = Matrix{T}(undef, obs_dim, Int(tsteps))
+    ux_trial = _check_ux(ux, lds1.ux_dim, Ti, "ux", T)
+    uy_trial = _check_uy(uy, lds1.uy_dim, Ti, lds1.obs_model)
+
+    z = Vector{Int}(undef, Ti)
+    x = Matrix{T}(undef, latent_dim, Ti)
+    y = Matrix{T}(undef, obs_dim, Ti)
 
     state_params = [_extract_state_params(lds.state_model) for lds in slds.LDSs]
     obs_params = [_extract_obs_params(lds.obs_model) for lds in slds.LDSs]
 
     _sample_slds_trial!(
-        rng, z, x, y, slds.A, slds.πₖ, state_params, obs_params, slds.LDSs[1].obs_model
+        rng,
+        z,
+        x,
+        y,
+        slds.A,
+        slds.πₖ,
+        state_params,
+        obs_params,
+        lds1.obs_model,
+        ux_trial,
+        uy_trial,
     )
 
     return z, x, y
 end
 
 function Random.rand(
-    rng::AbstractRNG, slds::SLDS{T,S,O}, tsteps_per_trial::AbstractVector{<:Integer}
+    rng::AbstractRNG,
+    slds::SLDS{T,S,O},
+    tsteps_per_trial::AbstractVector{<:Integer};
+    ux::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
+    uy::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
-    latent_dim = slds.LDSs[1].latent_dim
-    obs_dim = slds.LDSs[1].obs_dim
+    lds1 = slds.LDSs[1]
+    latent_dim = lds1.latent_dim
+    obs_dim = lds1.obs_dim
     ntrials = length(tsteps_per_trial)
+
+    ux_seq = _normalize_multitrial_ux(ux, lds1.ux_dim, tsteps_per_trial, T, "ux")
+    uy_seq = _normalize_multitrial_uy(uy, lds1.uy_dim, tsteps_per_trial, T, lds1.obs_model)
 
     z = Vector{Vector{Int}}(undef, ntrials)
     x = Vector{Matrix{T}}(undef, ntrials)
@@ -97,24 +139,36 @@ function Random.rand(
             slds.πₖ,
             state_params,
             obs_params,
-            slds.LDSs[1].obs_model,
+            lds1.obs_model,
+            ux_seq[trial],
+            uy_seq[trial],
         )
     end
 
     return z, x, y
 end
 
-function Random.rand(slds::SLDS, tsteps::Integer)
-    return rand(Random.default_rng(), slds, tsteps)
+function Random.rand(slds::SLDS, tsteps::Integer; kwargs...)
+    return rand(Random.default_rng(), slds, tsteps; kwargs...)
 end
 
-function Random.rand(slds::SLDS, tsteps_per_trial::AbstractVector{<:Integer})
-    return rand(Random.default_rng(), slds, tsteps_per_trial)
+function Random.rand(slds::SLDS, tsteps_per_trial::AbstractVector{<:Integer}; kwargs...)
+    return rand(Random.default_rng(), slds, tsteps_per_trial; kwargs...)
 end
 
-# Core SLDS trial sampling logic
+# Core SLDS trial sampling logic. `ux_trial` / `uy_trial` are the canonicalized
 function _sample_slds_trial!(
-    rng, z_trial, x_trial, y_trial, A, πₖ, state_params, obs_params, obs_model_type
+    rng,
+    z_trial,
+    x_trial,
+    y_trial,
+    A,
+    πₖ,
+    state_params,
+    obs_params,
+    obs_model_type,
+    ux_trial::AbstractMatrix,
+    uy_trial::AbstractMatrix,
 )
     tsteps = length(z_trial)
     K = size(A, 1)
@@ -127,7 +181,15 @@ function _sample_slds_trial!(
 
     # Sample continuous states and observations given discrete sequence
     return _sample_continuous_given_discrete!(
-        rng, x_trial, y_trial, z_trial, state_params, obs_params, obs_model_type
+        rng,
+        x_trial,
+        y_trial,
+        z_trial,
+        state_params,
+        obs_params,
+        obs_model_type,
+        ux_trial,
+        uy_trial,
     )
 end
 
@@ -140,6 +202,8 @@ function _sample_continuous_given_discrete!(
     state_params,
     obs_params,
     obs_model_type::GaussianObservationModel,
+    ux_trial::AbstractMatrix,
+    uy_trial::AbstractMatrix,
 )
     tsteps = length(z_trial)
 
@@ -147,18 +211,28 @@ function _sample_continuous_given_discrete!(
     k1 = z_trial[1]
     x_trial[:, 1] = rand(rng, MvNormal(state_params[k1].x0, state_params[k1].P0))
     y_trial[:, 1] = rand(
-        rng, MvNormal(obs_params[k1].C * x_trial[:, 1] + obs_params[k1].d, obs_params[k1].R)
+        rng,
+        MvNormal(
+            obs_params[k1].C * x_trial[:, 1] +
+            obs_params[k1].d +
+            obs_params[k1].D * uy_trial[:, 1],
+            obs_params[k1].R,
+        ),
     )
 
     # Subsequent states - switch dynamics based on discrete state
     for t in 2:tsteps
-        k_prev, k_curr = z_trial[t - 1], z_trial[t]
+        k_curr = z_trial[t]
 
-        # Continuous state follows previous discrete state's dynamics
+        # Continuous state follows the current discrete state's dynamics
+        # (x_t | x_{t-1}, z_t=k ~ N(A_k x_{t-1} + b_k + B_k u_{t-1}, Q_k),
+        # matching `hessian!`)
         x_trial[:, t] = rand(
             rng,
             MvNormal(
-                state_params[k_curr].A * x_trial[:, t - 1] + state_params[k_curr].b,
+                state_params[k_curr].A * x_trial[:, t - 1] +
+                state_params[k_curr].b +
+                state_params[k_curr].B * ux_trial[:, t - 1],
                 state_params[k_curr].Q,
             ),
         )
@@ -167,7 +241,9 @@ function _sample_continuous_given_discrete!(
         y_trial[:, t] = rand(
             rng,
             MvNormal(
-                obs_params[k_curr].C * x_trial[:, t] + obs_params[k_curr].d,
+                obs_params[k_curr].C * x_trial[:, t] +
+                obs_params[k_curr].d +
+                obs_params[k_curr].D * uy_trial[:, t],
                 obs_params[k_curr].R,
             ),
         )
@@ -182,6 +258,8 @@ function _sample_continuous_given_discrete!(
     state_params,
     obs_params,
     obs_model_type::PoissonObservationModel,
+    ux_trial::AbstractMatrix,
+    uy_trial::AbstractMatrix,
 )
     tsteps = length(z_trial)
 
@@ -189,16 +267,27 @@ function _sample_continuous_given_discrete!(
     k1 = z_trial[1]
     x_trial[:, 1] = rand(rng, MvNormal(state_params[k1].x0, state_params[k1].P0))
     y_trial[:, 1] =
-        rand.(rng, Poisson.(exp.(obs_params[k1].C * x_trial[:, 1] + obs_params[k1].d)))
+        rand.(
+            rng,
+            Poisson.(
+                exp.(
+                    obs_params[k1].C * x_trial[:, 1] +
+                    obs_params[k1].d +
+                    obs_params[k1].D * uy_trial[:, 1]
+                )
+            ),
+        )
 
     # Subsequent states
     for t in 2:tsteps
-        k_prev, k_curr = z_trial[t - 1], z_trial[t]
+        k_curr = z_trial[t]
 
         x_trial[:, t] = rand(
             rng,
             MvNormal(
-                state_params[k_curr].A * x_trial[:, t - 1] + state_params[k_curr].b,
+                state_params[k_curr].A * x_trial[:, t - 1] +
+                state_params[k_curr].b +
+                state_params[k_curr].B * ux_trial[:, t - 1],
                 state_params[k_curr].Q,
             ),
         )
@@ -206,13 +295,19 @@ function _sample_continuous_given_discrete!(
         y_trial[:, t] =
             rand.(
                 rng,
-                Poisson.(exp.(obs_params[k_curr].C * x_trial[:, t] + obs_params[k_curr].d)),
+                Poisson.(
+                    exp.(
+                        obs_params[k_curr].C * x_trial[:, t] +
+                        obs_params[k_curr].d +
+                        obs_params[k_curr].D * uy_trial[:, t]
+                    )
+                ),
             )
     end
 end
 
 """
-    StatsAPI.fit!(dl::SLDSDiscreteLayer, fb_storage, obs_inputs; seq_ends)
+    StatsAPI.fit!(dl::SLDSDiscreteLayer, fb_storage, obs_seq; seq_ends)
 
 Update the discrete transition matrix `dl.A` and initial-state distribution `dl.πₖ`
 in place from forward-backward statistics. Mirrors HiddenMarkovModels.jl's
@@ -226,14 +321,17 @@ upstream by the SLDS E-step.
 function StatsAPI.fit!(
     dl::SLDSDiscreteLayer{T},
     fb_storage::HMMs.ForwardBackwardStorage,
-    obs_inputs::AbstractVector;
+    obs_seq::AbstractVector;
     seq_ends::AbstractVector{Int},
 ) where {T<:Real}
     γ = fb_storage.γ
     ξ = fb_storage.ξ
 
     # Accumulate ξ[t1:t2-1] into ξ[t2] (zero by FB convention) for each trial.
-    @threads for k in eachindex(seq_ends)
+    tforeach(eachindex(seq_ends)) do k
+        # `local`: `t1`/`t2` are also assigned in the sequential loops below,
+        # so sharing the bindings would box them (OhMyThreads rejects that).
+        local t1, t2
         t1, t2 = HMMs.seq_limits(seq_ends, k)
         scratch = ξ[t2]
         fill!(scratch, zero(eltype(scratch)))
@@ -262,10 +360,11 @@ function StatsAPI.fit!(
 end
 
 """
-    joint_loglikelihood(slds::SLDS, x, y, w)
+    joint_loglikelihood!(ws, slds, x, y, w[, ux, uy])
 
 Compute weighted complete-data log-likelihood for SLDS.
-Returns vector of per-timestep log-likelihoods.
+Returns vector of per-timestep log-likelihoods. `ux` / `uy` are the per-trial
+control-input matrices (`nothing` or zero-row skips the `Bₖ u` / `Dₖ v` terms).
 """
 function joint_loglikelihood!(
     ws::SLDSSmoothWorkspace{T},
@@ -273,227 +372,110 @@ function joint_loglikelihood!(
     x::AbstractMatrix{T},
     y::AbstractMatrix{T},
     w::AbstractMatrix{T},   # K × T responsibilities/weights
+    ux::Union{Nothing,AbstractMatrix}=nothing,
+    uy::Union{Nothing,AbstractMatrix}=nothing,
 ) where {T<:Real}
     Tsteps = size(y, 2)
 
     # Workspace ll_vec may be sized for a longer trial; only touch the active prefix.
-    @views fill!(ws.ll_vec[1:Tsteps], zero(T))
+    ll_vec = ws.opt.ll_vec
+    @views fill!(ll_vec[1:Tsteps], zero(T))
 
     K = length(slds.LDSs)
     for k in 1:K
         joint_loglikelihood!(
-            view(ws.ll_tmp, 1:Tsteps), ws, ws.consts[k], slds.LDSs[k], x, y
+            view(ws.ll_tmp, 1:Tsteps), ws, ws.consts[k], slds.LDSs[k], x, y, ux, uy
         )
         for t in 1:Tsteps
-            ws.ll_vec[t] += w[k, t] * ws.ll_tmp[t]
+            ll_vec[t] += w[k, t] * ws.ll_tmp[t]
         end
     end
 
-    return view(ws.ll_vec, 1:Tsteps)
+    return view(ll_vec, 1:Tsteps)
 end
 
 """
-    Gradient!(ws, slds, y, x, w)
+    gradient!(ws, slds, x, y, w[, ux, uy])
 
-In-place SLDS gradient with a backend compatible shape to LDS.
-Semantics match current SLDS.jl: compute per-timestep component gradient and scale by w[k,t].
-Writes into `ws.grad_buf` and returns it.
+In-place SLDS gradient: each component's complete-data gradient is scaled
+per-timestep by the responsibility `w[k, t]` and accumulated. Writes into
+`ws.opt.grad_buf` and returns it. `ux` (dynamics input, feeds `-Q⁻¹` /
+`A'Q⁻¹` residuals via `Bₖ u`) and `uy` (observation input, feeds the emission
+gradient via `Dₖ v`) are per-trial matrices; `nothing` or zero-row skips them.
 """
-function Gradient!(
+function gradient!(
     ws::SLDSSmoothWorkspace{T},
     slds::SLDS{T},
-    y::AbstractMatrix{T},
     x::AbstractMatrix{T},
+    y::AbstractMatrix{T},
     w::AbstractMatrix{T},
+    ux::Union{Nothing,AbstractMatrix}=nothing,
+    uy::Union{Nothing,AbstractMatrix}=nothing,
 ) where {T<:Real}
     latent_dim, Tsteps = size(x)
     K = length(slds.LDSs)
 
-    grad = ws.grad_buf
+    grad = ws.opt.grad_buf
     fill!(grad, zero(T))
 
-    dxt = ws.dxt
-    dxt_next = ws.dxt_next
-    dyt = ws.dyt
-    tmp1 = ws.tmp1
-    tmp2 = ws.tmp2
-    tmp3 = ws.tmp3
-
-    z = ws.z
-    λ = ws.λ
+    dxt = ws.opt.dxt
+    dxt_next = ws.opt.dxt_next
+    obs_buf = ws.opt.dyt
+    tmp1 = ws.opt.tmp1
+    tmp2 = ws.opt.tmp2
+    tmp3 = ws.opt.tmp3
 
     @views for k in 1:K
         lds_k = slds.LDSs[k]
         cc = ws.consts[k]
 
-        A = lds_k.state_model.A
-        b = lds_k.state_model.b
         x0 = lds_k.state_model.x0
 
-        A_inv_Q = cc.A_inv_Q        # A'Q^{-1}
+        A_inv_Q = cc.A_inv_Q          # A'Q^{-1}
         neg_Q_inv = cc.xt_given_xt_1  # -Q^{-1}
-        neg_P0_inv = cc.x_t            # -P0^{-1}
+        neg_P0_inv = cc.x_t           # -P0^{-1}
 
-        if lds_k.obs_model isa GaussianObservationModel{T}
-            C = cc.C
-            d = lds_k.obs_model.d
-            C_inv_R = cc.C_inv_R        # C'R^{-1}
+        # t = 1: emission + prior, both weighted by w[k,1]
+        observation_gradient!(tmp1, cc, obs_buf, lds_k, x, y, 1, uy)
+        @. dxt = x[:, 1] - x0
+        mul!(tmp3, neg_P0_inv, dxt)
+        α = w[k, 1]
+        @. grad[:, 1] += α * (tmp1 + tmp3)
 
-            if Tsteps == 1
-                # emission at t=1
-                mul!(dyt, C, x[:, 1])
-                @. dyt = y[:, 1] - dyt - d
-                mul!(tmp1, C_inv_R, dyt)
+        Tsteps == 1 && continue
 
-                # prior at t=1
-                @. dxt = x[:, 1] - x0
-                mul!(tmp3, neg_P0_inv, dxt)
+        # Outgoing dynamics term comes from the factor at time 2, weighted by w[k,2]
+        _transition_residual!(dxt_next, lds_k, x, 2, ux)
+        mul!(tmp2, A_inv_Q, dxt_next)
+        @. grad[:, 1] += w[k, 2] * tmp2
 
-                α = w[k, 1]
-                @. grad[:, 1] += α * (tmp1 + tmp3)
-                continue
-            end
-
-            # t = 1 
-            # emission (weighted by w[k,1])
-            mul!(dyt, C, x[:, 1])
-            @. dyt = y[:, 1] - dyt - d
-            mul!(tmp1, C_inv_R, dyt)
-            α = w[k, 1]
-            @. grad[:, 1] += α * tmp1
-
-            # prior (weighted by w[k,1])
-            @. dxt = x[:, 1] - x0
-            mul!(tmp3, neg_P0_inv, dxt)
-            @. grad[:, 1] += α * tmp3
-
-            # outgoing dynamics term comes from factor at time 2, weighted by w[k,2]
-            mul!(dxt_next, A, x[:, 1])
-            @. dxt_next = x[:, 2] - dxt_next - b
-            mul!(tmp2, A_inv_Q, dxt_next)
-            β = w[k, 2]
-            @. grad[:, 1] += β * tmp2
-
-            # 2 .. T-1
-            for t in 2:(Tsteps - 1)
-                # emission at t, weighted by w[k,t]
-                mul!(dyt, C, x[:, t])
-                @. dyt = y[:, t] - dyt - d
-                mul!(tmp1, C_inv_R, dyt)
-                α = w[k, t]
-                @. grad[:, t] += α * tmp1
-
-                # incoming dynamics factor at time t, weighted by w[k,t]
-                mul!(dxt, A, x[:, t - 1])
-                @. dxt = x[:, t] - dxt - b
-                mul!(tmp3, neg_Q_inv, dxt)
-                @. grad[:, t] += α * tmp3
-
-                # outgoing dynamics factor at time t+1, weighted by w[k,t+1]
-                mul!(dxt_next, A, x[:, t])
-                @. dxt_next = x[:, t + 1] - dxt_next - b
-                mul!(tmp2, A_inv_Q, dxt_next)
-                β = w[k, t + 1]
-                @. grad[:, t] += β * tmp2
-            end
-
-            # t = T
-            # emission at T, weighted by w[k,T]
-            mul!(dyt, C, x[:, Tsteps])
-            @. dyt = y[:, Tsteps] - dyt - d
-            mul!(tmp1, C_inv_R, dyt)
-            α = w[k, Tsteps]
-            @. grad[:, Tsteps] += α * tmp1
-
-            # incoming dynamics factor at time T, weighted by w[k,T]
-            mul!(dxt, A, x[:, Tsteps - 1])
-            @. dxt = x[:, Tsteps] - dxt - b
+        # 2 .. T-1: emission + incoming factor at t (w[k,t]),
+        # outgoing factor at t+1 (w[k,t+1])
+        for t in 2:(Tsteps - 1)
+            observation_gradient!(tmp1, cc, obs_buf, lds_k, x, y, t, uy)
+            _transition_residual!(dxt, lds_k, x, t, ux)
             mul!(tmp3, neg_Q_inv, dxt)
-            @. grad[:, Tsteps] += α * tmp3
+            α = w[k, t]
+            @. grad[:, t] += α * (tmp1 + tmp3)
 
-        elseif lds_k.obs_model isa PoissonObservationModel{T}
-            C = cc.C
-            d = cc.d  # cached Poisson log-link intercept
-
-            if Tsteps == 1
-                # emission: C'*(y - λ)
-                mul!(z, C, x[:, 1])
-                @. λ = exp(z + d)
-                @. z = y[:, 1] - λ
-                mul!(tmp1, C', z)
-
-                # prior
-                @. dxt = x[:, 1] - x0
-                mul!(tmp3, neg_P0_inv, dxt)
-
-                α = w[k, 1]
-                @. grad[:, 1] += α * (tmp1 + tmp3)
-                continue
-            end
-
-            # t = 1
-            mul!(z, C, x[:, 1])
-            @. λ = exp(z + d)
-            @. z = y[:, 1] - λ
-            mul!(tmp1, C', z)
-            α = w[k, 1]
-            @. grad[:, 1] += α * tmp1
-
-            @. dxt = x[:, 1] - x0
-            mul!(tmp3, neg_P0_inv, dxt)
-            @. grad[:, 1] += α * tmp3
-
-            # outgoing dynamics factor at time 2 weighted by w[k,2]
-            mul!(dxt_next, A, x[:, 1])
-            @. dxt_next = x[:, 2] - dxt_next - b
+            _transition_residual!(dxt_next, lds_k, x, t + 1, ux)
             mul!(tmp2, A_inv_Q, dxt_next)
-            β = w[k, 2]
-            @. grad[:, 1] += β * tmp2
-
-            # 2 .. T-1
-            for t in 2:(Tsteps - 1)
-                mul!(z, C, x[:, t])
-                @. λ = exp(z + d)
-                @. z = y[:, t] - λ
-                mul!(tmp1, C', z)
-                α = w[k, t]
-                @. grad[:, t] += α * tmp1
-
-                mul!(dxt, A, x[:, t - 1])
-                @. dxt = x[:, t] - dxt - b
-                mul!(tmp3, neg_Q_inv, dxt)
-                @. grad[:, t] += α * tmp3
-
-                mul!(dxt_next, A, x[:, t])
-                @. dxt_next = x[:, t + 1] - dxt_next - b
-                mul!(tmp2, A_inv_Q, dxt_next)
-                β = w[k, t + 1]
-                @. grad[:, t] += β * tmp2
-            end
-
-            # t = T
-            mul!(z, C, x[:, Tsteps])
-            @. λ = exp(z + d)
-            @. z = y[:, Tsteps] - λ
-            mul!(tmp1, C', z)
-            α = w[k, Tsteps]
-            @. grad[:, Tsteps] += α * tmp1
-
-            mul!(dxt, A, x[:, Tsteps - 1])
-            @. dxt = x[:, Tsteps] - dxt - b
-            mul!(tmp3, neg_Q_inv, dxt)
-            @. grad[:, Tsteps] += α * tmp3
-
-        else
-            throw(ArgumentError("Unsupported observation model $(typeof(lds_k.obs_model))"))
+            @. grad[:, t] += w[k, t + 1] * tmp2
         end
+
+        # t = T: emission + incoming factor at T, weighted by w[k,T]
+        observation_gradient!(tmp1, cc, obs_buf, lds_k, x, y, Tsteps, uy)
+        _transition_residual!(dxt, lds_k, x, Tsteps, ux)
+        mul!(tmp3, neg_Q_inv, dxt)
+        α = w[k, Tsteps]
+        @. grad[:, Tsteps] += α * (tmp1 + tmp3)
     end
 
     return grad
 end
 
 """
-    Hessian_blocks!(ws, slds, y, x, w)
+    hessian!(ws, slds, x, y, w)
 
 Fill `ws.btd.H_diag`, `ws.btd.H_sub`, `ws.btd.H_super` with the weighted Hessian blocks
 for the Laplace/Newton step over `x₁:T` matching Zoltowski et al. Appendix B.
@@ -506,15 +488,20 @@ Weights:
 - emission curvature at time t uses w[k,t]
 - dynamics curvature from factor at time t uses w[k,t]
 - off-diagonal block coupling (t-1,t) uses w[k,t]
+
+`uy` (optional observation input) is forwarded to `observation_hessian!`: the
+Gaussian curvature ignores it, the Poisson curvature depends on it through the
+rate `λ = exp(Cx + d + Dₖ v)`. The state-side blocks never depend on inputs.
 """
-function Hessian_blocks!(
+function hessian!(
     ws::SLDSSmoothWorkspace{T},
     slds::SLDS{T},
-    y::AbstractMatrix{T},
     x::AbstractMatrix{T},
+    y::AbstractMatrix{T},
     w::AbstractMatrix{T},
+    uy::Union{Nothing,AbstractMatrix}=nothing,
 ) where {T<:Real}
-    latent_dim, Tsteps = size(x)
+    Tsteps = size(x, 2)
     K = length(slds.LDSs)
 
     H_diag = ws.btd.H_diag
@@ -529,8 +516,10 @@ function Hessian_blocks!(
         fill!(H_super[t], zero(T))
     end
 
-    z = ws.z
-    λ = ws.λ
+    # Two obs_dim scratch vectors for observation_hessian! (Poisson writes the
+    # linear predictor and rate into them; Gaussian ignores both).
+    z = ws.opt.dyt
+    λ = ws.opt.temp_dy
 
     @views for k in 1:K
         lds_k = slds.LDSs[k]
@@ -546,31 +535,7 @@ function Hessian_blocks!(
         if Tsteps == 1
             α = w[k, 1]
             @. H_diag[1] += α * neg_P0_inv
-
-            if lds_k.obs_model isa GaussianObservationModel{T}
-                @. H_diag[1] += α * cc.yt_given_xt
-            elseif lds_k.obs_model isa PoissonObservationModel{T}
-                C = cc.C
-                d = cc.d  # cached Poisson log-link intercept
-
-                mul!(z, C, x[:, 1])
-                @. λ = exp(z + d)
-
-                for j in 1:latent_dim, i in 1:latent_dim
-                    acc = zero(T)
-                    for o in eachindex(λ)
-                        acc += C[o, i] * λ[o] * C[o, j]
-                    end
-                    H_diag[1][i, j] -= α * acc
-                end
-            else
-                throw(
-                    ArgumentError(
-                        "Unsupported observation model $(typeof(lds_k.obs_model))"
-                    ),
-                )
-            end
-
+            observation_hessian!(H_diag[1], cc, z, λ, lds_k, x, y, 1, α, uy)
             continue
         end
 
@@ -597,35 +562,13 @@ function Hessian_blocks!(
         # - At t=T: current-role from factor at T weighted by w[k,T]
         @. H_diag[Tsteps] += w[k, Tsteps] * neg_Q_inv
 
-        # Emission curvature contributions
-        if lds_k.obs_model isa GaussianObservationModel{T}
-            for t in 1:Tsteps
-                @. H_diag[t] += w[k, t] * cc.yt_given_xt   # -C'R^{-1}C
-            end
-
-        elseif lds_k.obs_model isa PoissonObservationModel{T}
-            C = cc.C
-            d = cc.d  # cached Poisson log-link intercept
-
-            # Add -w[k,t] * C' diag(λ_t) C where λ_t = exp(C x_t + d)
-            # This implementation is allocation-free but O(latent^2 * obs) per time. Fix later.
-            for t in 1:Tsteps
-                α = w[k, t]
-
-                mul!(z, C, x[:, t])
-                @. λ = exp(z + d)
-
-                for j in 1:latent_dim, i in 1:latent_dim
-                    acc = zero(T)
-                    for o in eachindex(λ)
-                        acc += C[o, i] * λ[o] * C[o, j]
-                    end
-                    H_diag[t][i, j] -= α * acc
-                end
-            end
-
-        else
-            throw(ArgumentError("Unsupported observation model $(typeof(lds_k.obs_model))"))
+        #=
+        Emission curvature contributions, weighted by w[k,t]. Shared kernel;
+        dispatches on the observation model (Gaussian: cached -C'R⁻¹C,
+        Poisson: -C' diag(λ_t) C with λ_t = exp(C x_t + d)).
+        =#
+        for t in 1:Tsteps
+            observation_hessian!(H_diag[t], cc, z, λ, lds_k, x, y, t, w[k, t], uy)
         end
     end
 
@@ -645,6 +588,10 @@ function smooth!(
     max_iter::Int=20,
     tol::T=T(1e-6),
     linesearch::Union{Nothing,AbstractLineSearch}=BackTrackingLS{T}(),
+    x_sample::Union{Nothing,AbstractMatrix{T}}=nothing,
+    rng::AbstractRNG=Random.default_rng(),
+    ux::Union{Nothing,AbstractMatrix{T}}=nothing,
+    uy::Union{Nothing,AbstractMatrix{T}}=nothing,
 ) where {T<:Real}
     latent_dim = slds.LDSs[1].latent_dim
     tsteps = size(y, 2)
@@ -655,37 +602,34 @@ function smooth!(
 
     x = fs.x_smooth
 
-    if all(fs.E_z .== 0)
-        lds1 = slds.LDSs[1]
-        x[:, 1] .= lds1.state_model.x0
-        for t in 2:tsteps
-            mul!(view(x, :, t), lds1.state_model.A, view(x, :, t - 1))
-            x[:, t] .+= lds1.state_model.b
-        end
-    else
-        copyto!(x, fs.E_z)
+    #=
+    Warm-start the Newton iteration from the previous EM iteration's smoothed
+    mean. If the smoothed mean is all zeros, use the first LDS's prior mean.
+    =#
+    if all(x .== 0)
+        x .= slds.LDSs[1].state_model.x0
     end
 
     # Active-length views into (possibly) oversized workspace buffers.
-    g = view(ws.grad_buf, :, 1:tsteps)
-    p = reshape(view(ws.X₀, 1:n_active), latent_dim, tsteps)
+    g = view(ws.opt.grad_buf, :, 1:tsteps)
+    p = reshape(view(ws.opt.X0, 1:n_active), latent_dim, tsteps)
     neg_diag_v = view(btd.neg_diag, 1:tsteps)
     neg_sub_v = view(btd.neg_sub, 1:(tsteps - 1))
     neg_super_v = view(btd.neg_super, 1:(tsteps - 1))
 
     ϕ!() = begin
-        ll = joint_loglikelihood!(ws, slds, x, y, w)
+        ll = joint_loglikelihood!(ws, slds, x, y, w, ux, uy)
         return sum(ll)
     end
 
     compute_grad! = (gcur, xcur) -> begin
-        Gradient!(ws, slds, y, xcur, w)
-        copyto!(gcur, view(ws.grad_buf, :, 1:tsteps))
+        gradient!(ws, slds, xcur, y, w, ux, uy)
+        copyto!(gcur, view(ws.opt.grad_buf, :, 1:tsteps))
         return nothing
     end
 
     build_hess! = (xcur) -> begin
-        Hessian_blocks!(ws, slds, y, xcur, w)
+        hessian!(ws, slds, xcur, y, w, uy)
         _negate_blocks!(btd, tsteps)
         return nothing
     end
@@ -717,142 +661,74 @@ function smooth!(
     )
 
     # Posterior covariances at the MAP via Laplace approx.
-    Hessian_blocks!(ws, slds, y, x, w)
+    hessian!(ws, slds, x, y, w, uy)
     _negate_blocks!(btd, tsteps)
 
-    block_tridiagonal_inverse!(
+    logdet_precision = block_tridiagonal_inverse_logdet!(
         fs.p_smooth, fs.p_smooth_tt1, neg_sub_v, neg_diag_v, neg_super_v, btd
     )
 
+    fs.entropy = gaussian_entropy_from_logdet(logdet_precision, n_active)
+
+    #=
+    Optional joint draw from q(x), while `btd` still holds the precision factors.
+    `ws.opt.X0` is free after Newton; reuse it for the standard-normal input.
+    =#
+    if x_sample !== nothing
+        z = view(ws.opt.X0, 1:n_active)
+        randn!(rng, z)
+        block_tridiagonal_sample!(z, btd, tsteps)
+        @views x_sample .= fs.x_smooth .+ reshape(z, latent_dim, tsteps)
+    end
+
     @views for t in 1:tsteps
-        fs.p_smooth[:, :, t] .= 0.5 .* (fs.p_smooth[:, :, t] .+ fs.p_smooth[:, :, t]')
+        fs.p_smooth[:, :, t] .= Symmetrize!(fs.p_smooth[:, :, t])
     end
 
     return fs
 end
 
 # Public API wrapper
-function smooth(slds::SLDS, y::AbstractMatrix{T}, w::AbstractMatrix{T}) where {T<:Real}
-    fs = initialize_FilterSmooth(slds.LDSs[1], size(y, 2))::FilterSmooth{T}
-    smooth!(slds, fs, y, w)
+function smooth(
+    slds::SLDS,
+    y::AbstractMatrix{T},
+    w::AbstractMatrix{T};
+    ux::Union{Nothing,AbstractMatrix{T}}=nothing,
+    uy::Union{Nothing,AbstractMatrix{T}}=nothing,
+) where {T<:Real}
+    lds1 = slds.LDSs[1]
+    tsteps = size(y, 2)
+    ux_m = _check_ux(ux, lds1.ux_dim, tsteps, "ux", T)
+    uy_m = _check_uy(uy, lds1.uy_dim, tsteps, lds1.obs_model)
+    fs = initialize_FilterSmooth(lds1, tsteps)::FilterSmooth{T}
+    smooth!(slds, fs, y, w; ux=ux_m, uy=uy_m)
     return fs.x_smooth, fs.p_smooth
 end
 
 """
-    sample_posterior!(x_out, rng, tfs, randn_buf)
-
-Sample one continuous-state trajectory per trial from the posterior, in place.
-`x_out` is a `Vector{Matrix{T}}` with one matrix per trial sized at that trial's
-length; trial lengths may differ. `randn_buf` (length `latent_dim`) is reused.
-"""
-function sample_posterior!(
-    x_out::AbstractVector{<:AbstractMatrix{T}},
-    rng::AbstractRNG,
-    tfs::TrialFilterSmooth{T},
-    randn_buf::Vector{T},
-) where {T<:Real}
-    min_jitter = T(1e-8)
-    ntrials = length(tfs.FilterSmooths)
-
-    for trial in 1:ntrials
-        fs = tfs[trial]
-        x_trial = x_out[trial]
-        tsteps = size(x_trial, 2)
-        for t in 1:tsteps
-            chol = nothing
-            jitter = zero(T)
-            for attempt in 1:5
-                try
-                    chol = cholesky(Symmetric(fs.p_smooth[:, :, t]) + jitter * I)
-                    break
-                catch
-                    jitter = min_jitter * T(10)^(attempt - 1)
-                    if attempt == 5
-                        @warn "Covariance not positive definite at t=$t trial=$trial, jitter=$jitter"
-                        chol = cholesky(Symmetric(fs.p_smooth[:, :, t]) + jitter * I)
-                    end
-                end
-            end
-            randn!(rng, randn_buf)
-            lmul!(chol.L, randn_buf)
-            x_trial[:, t] .= fs.x_smooth[:, t] .+ randn_buf
-        end
-    end
-    return x_out
-end
-
-"""
-    sample_posterior(rng::AbstractRNG, fs::FilterSmooth{T}) where {T<:Real}
-
-Sample a trajectory from the posterior over continuous states and compute its entropy.
-
-Returns:
-- x_sample: matrix of size (latent_dim, tsteps) representing one sample from
-  q(x) = ∏ₜ N(x_t | x_smooth_t, p_smooth_t)
-- entropy: H[q(x)] = ∑ₜ H[N(x_t | x_smooth_t, p_smooth_t)]
-"""
-function sample_posterior(rng::AbstractRNG, fs::FilterSmooth{T}) where {T<:Real}
-    latent_dim, tsteps = size(fs.x_smooth)
-    x_sample = similar(fs.x_smooth)
-    entropy = zero(T)
-    min_jitter = T(1e-8)
-
-    for t in 1:tsteps
-        μ = fs.x_smooth[:, t]
-        Σ = Symmetric(fs.p_smooth[:, :, t])
-
-        # Try Cholesky decomposition with increasing jitter if needed
-        chol = nothing
-        jitter = zero(T)
-        max_attempts = 5
-
-        for attempt in 1:max_attempts
-            try
-                chol = cholesky(Σ + jitter * I)
-                break
-            catch
-                if attempt == max_attempts
-                    # Last resort: use larger jitter
-                    jitter = min_jitter * T(10)^(attempt - 1)
-                    @warn "Covariance matrix not positive definite at t=$t, adding jitter=$jitter"
-                    chol = cholesky(Σ + jitter * I)
-                else
-                    # Increase jitter and try again
-                    jitter = min_jitter * T(10)^(attempt - 1)
-                end
-            end
-        end
-
-        # Sample using the Cholesky factor
-        Σ_chol = chol.L
-        x_sample[:, t] = μ + Σ_chol * randn(rng, T, latent_dim)
-
-        # Accumulate entropy using log determinant from Cholesky
-        # log|Σ| = 2 * sum(log(diag(L))) where Σ = L*L'
-        logdet_Σ = 2 * sum(log, diag(Σ_chol))
-        entropy += 0.5 * (latent_dim * (1 + log(2π)) + logdet_Σ)
-    end
-
-    return x_sample, entropy
-end
-
-# Convenience method
-function sample_posterior(fs::FilterSmooth{T}) where {T<:Real}
-    return sample_posterior(Random.GLOBAL_RNG, fs)
-end
-
-"""
-    estep!(slds, tfs, fb_storage, dl, y, x_samples, slds_ws; obs_inputs, latent_inputs, seq_ends)
+    estep!(slds, tfs, fb_storage, dl, y, x_samples, slds_ws; rng, obs_seq, control_seq, seq_ends)
 
 E-step for SLDS using a single sample from the continuous posterior. Updates both
 variational posteriors in coordinate-ascent order:
 
-- Fills `dl.logL` (`K × sum(T_i)`) with per-state log-likelihoods from sampled continuous states
+- Fills `dl.logL` (`K × sum(T_i)`) with per-state log-likelihoods from the continuous
+  trajectory sampled at the end of the previous smooth (`x_samples`, filled either by the
+  `fit!` warm-start or by the prior E-step iteration)
 - Updates the discrete posterior q(z) via forward-backward (HiddenMarkovModels.jl, one
   storage covers all trials; HMMs.jl `@threads` across trials internally)
 - Updates the continuous posterior q(x) by running the Laplace/Newton smoother on each
   trial with the freshly-updated discrete weights `γ`, filling `tfs[*].x_smooth`,
-  `tfs[*].p_smooth`, and `tfs[*].entropy`.
+  `tfs[*].p_smooth`, and `tfs[*].entropy`, and drawing the next joint posterior sample
+  into `x_samples[trial]` for the following iteration (an exact draw from q(x) via the
+  smoother's precision factors, see `block_tridiagonal_sample!`).
+
+`x_samples` is thus read (to fill `dl.logL`) then overwritten (with the fresh draw) within
+each call. `obs_seq`/`control_seq` are the HMMs.jl placeholder sequences built in `fit!`
+(timestep indices / `nothing`s) — unrelated to the LDS control-input kwargs
+`ux`/`uy`. The latter, when supplied, are per-trial vectors of input matrices
+(`ux[trial]` is `(ux_dim, T_trial)`, `uy[trial]` is `(uy_dim, T_trial)`); they
+feed the per-regime `Bₖ u` / `Dₖ v` terms of every trial's smoother and
+log-likelihood fill. `nothing` (the default) means no inputs.
 """
 function estep!(
     slds::SLDS{T,S,O},
@@ -862,54 +738,163 @@ function estep!(
     y::AbstractVector{<:AbstractMatrix{T}},
     x_samples::AbstractVector{<:AbstractMatrix{T}},
     slds_ws::SLDSSmoothWorkspace{T};
-    obs_inputs::AbstractVector,
-    latent_inputs::AbstractVector,
+    rng::AbstractRNG=Random.default_rng(),
+    obs_seq::AbstractVector,
+    control_seq::AbstractVector,
     seq_ends::AbstractVector{Int},
+    ux::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
+    uy::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
     ntrials = length(y)
     K = length(slds.LDSs)
 
-    # Fill per-trial slices of dl.logL from the sampled continuous trajectory.
+    # Fill per-trial slices of dl.logL from the previously-sampled trajectory.
     for trial in 1:ntrials
         t1, t2 = HMMs.seq_limits(seq_ends, trial)
         y_trial = y[trial]
         x_sample = x_samples[trial]
+        ux_trial = ux === nothing ? nothing : ux[trial]
+        uy_trial = uy === nothing ? nothing : uy[trial]
         for k in 1:K
             ll_view = view(dl.logL, k, t1:t2)
             joint_loglikelihood!(
-                ll_view, slds_ws, slds_ws.consts[k], slds.LDSs[k], x_sample, y_trial
+                ll_view,
+                slds_ws,
+                slds_ws.consts[k],
+                slds.LDSs[k],
+                x_sample,
+                y_trial,
+                ux_trial,
+                uy_trial,
             )
         end
     end
 
     # Update q(z): single batched forward-backward (HMMs.jl threads across trials).
     HMMs.forward_backward!(
-        fb_storage,
-        dl,
-        obs_inputs,
-        latent_inputs;
-        seq_ends=seq_ends,
-        transition_marginals=true,
+        fb_storage, dl, obs_seq, control_seq; seq_ends=seq_ends, transition_marginals=true
     )
 
-    # Update q(x): smooth each trial's continuous states with the new discrete weights γ.
+    #=
+    Update q(x): re-smooth each trial with the new weights γ, and draw the next
+    sample into x_samples[trial] on the way out. Overwriting x_samples here is
+    fine — the fill loop above already used the previous draw.
+    =#
     for trial in 1:ntrials
         t1, t2 = HMMs.seq_limits(seq_ends, trial)
         w = view(fb_storage.γ, :, t1:t2)  # K × Tsteps
-        smooth!(slds, tfs[trial], y[trial], w; ws=slds_ws)
+        smooth!(
+            slds,
+            tfs[trial],
+            y[trial],
+            w;
+            ws=slds_ws,
+            x_sample=x_samples[trial],
+            rng=rng,
+            ux=(ux === nothing ? nothing : ux[trial]),
+            uy=(uy === nothing ? nothing : uy[trial]),
+        )
     end
 
     return nothing
 end
 
+# tr(A·B) without forming the product: Σ_ij A[i,j]·B[j,i].
+@inline function _tr_prod(A::AbstractMatrix, B::AbstractMatrix)
+    acc = zero(promote_type(eltype(A), eltype(B)))
+    for j in axes(A, 2), i in axes(A, 1)
+        acc += A[i, j] * B[j, i]
+    end
+    return acc
+end
+
+"""
+    _slds_prior_logdensity(slds)
+
+Sum of the per-regime parameter log-prior contributions (IW on `Q`/`P0`/`R`,
+MN on `[A b B]`/`[C d D]`, and the MN-only `[C d]` term for Poisson emissions,
+matching the PLDS LBFGS objective). Zero when no priors are set. Needed so the
+ELBO tracks the same MAP objective the M-step optimizes; without it the
+displayed ELBO can appear non-monotone under priors.
+"""
+function _slds_prior_logdensity(slds::SLDS{T}) where {T<:Real}
+    prior_term = zero(T)
+    for lds in slds.LDSs
+        sm = lds.state_model
+        om = lds.obs_model
+        D = lds.latent_dim
+
+        if sm.Q_prior !== nothing
+            prior_term += iw_logprior_term(sm.Q, sm.Q_prior)
+        end
+        if sm.P0_prior !== nothing
+            prior_term += iw_logprior_term(sm.P0, sm.P0_prior)
+        end
+        if sm.x0_prior !== nothing
+            prior_term += mn_logprior_term(reshape(sm.x0, :, 1), sm.P0, sm.x0_prior)
+        end
+        if sm.AB_prior !== nothing
+            ux_dim = lds.ux_dim
+            W_ab = Matrix{T}(undef, D, D + 1 + ux_dim)
+            @views W_ab[:, 1:D] .= sm.A
+            @views W_ab[:, D + 1] .= sm.b
+            ux_dim > 0 && (@views W_ab[:, (D + 2):end] .= sm.B)
+            prior_term += mn_logprior_term(W_ab, sm.Q, sm.AB_prior)
+        end
+
+        if om isa GaussianObservationModel{T}
+            if om.R_prior !== nothing
+                prior_term += iw_logprior_term(om.R, om.R_prior)
+            end
+            if om.CD_prior !== nothing
+                uy_dim = lds.uy_dim
+                W_cd = Matrix{T}(undef, lds.obs_dim, D + 1 + uy_dim)
+                @views W_cd[:, 1:D] .= om.C
+                @views W_cd[:, D + 1] .= om.d
+                uy_dim > 0 && (@views W_cd[:, (D + 2):end] .= om.D)
+                prior_term += mn_logprior_term(W_cd, om.R, om.CD_prior)
+            end
+        elseif om isa PoissonObservationModel{T}
+            if om.CD_prior !== nothing
+                W_cd = Matrix{T}(undef, lds.obs_dim, D + 1)
+                @views W_cd[:, 1:D] .= om.C
+                @views W_cd[:, D + 1] .= om.d
+                Wm = W_cd .- om.CD_prior.M₀
+                prior_term -= T(0.5) * sum(Wm .* (Wm * om.CD_prior.Λ))
+            end
+        end
+    end
+    return prior_term
+end
+
 """
     elbo!(slds, tfs, fb_storage, y, slds_ws; seq_ends)
-Compute the stochastic ELBO for SLDS at the current variational posteriors.
-- Computes E_q[log p(y, x | z)] weighted by discrete posteriors
-- Computes log p(z_1) and log p(z_t | z_{t-1}) weighted by discrete posteriors
-- Subtracts entropies: -H[q(x)] - H[q(z)]
-Returns a scalar ELBO value.
 
+Evidence lower bound for the SLDS at the current variational posteriors —
+q(x) the per-trial joint Gaussian from the Laplace smoother, q(z) the
+forward-backward chain posterior:
+
+    ELBO = E_q[log p(y, x | z)] + E_q[log p(z)] + H[q(x)] + H[q(z)] + log p(θ)
+
+- `E_q[log p(y, x | z)]` is the responsibility-weighted log-density at the
+  posterior mean plus the covariance correction `½ tr(H Σ)`, where `H` is the
+  weighted Hessian over `x₁:T` and `Σ` the block-tridiagonal posterior
+  covariance. Exact for Gaussian emissions (the weighted log-density is
+  quadratic in `x`); the standard second-order/Laplace approximation for
+  Poisson.
+- `E_q[log p(z)]` uses the FB marginals `γ` (initial) and pairwise `ξ`
+  (transitions).
+- `H[q(z)]` is the Markov-chain entropy of the FB posterior,
+  `−Σ γ₁ log γ₁ − Σ_t Σ_ij ξ_t(i,j) log(ξ_t(i,j)/γ_t(i))` — not the
+  factorized `−Σ γ log γ`, which would overstate the entropy of a chain.
+- `log p(θ)` collects per-regime IW/MN prior log-densities so the ELBO tracks
+  the MAP objective the M-step optimizes (zero when no priors are set).
+
+The continuous term is evaluated at the smoothed mean (deterministic given the
+current posteriors), not at the E-step's posterior sample. For K = 1 with
+Gaussian emissions and no priors this equals the exact marginal log-likelihood.
+
+Returns a scalar. Overwrites `slds_ws.btd`'s Hessian blocks and `ll_tmp`.
 """
 function elbo!(
     slds::SLDS{T,S,O},
@@ -918,6 +903,8 @@ function elbo!(
     y::AbstractVector{<:AbstractMatrix{T}},
     slds_ws::SLDSSmoothWorkspace{T};
     seq_ends::AbstractVector{Int},
+    ux::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
+    uy::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
     total_elbo = zero(T)
     ntrials = length(y)
@@ -927,30 +914,60 @@ function elbo!(
         t1, t2 = HMMs.seq_limits(seq_ends, trial)
         Tsteps = t2 - t1 + 1
         y_trial = y[trial]
+        ux_trial = ux === nothing ? nothing : ux[trial]
+        uy_trial = uy === nothing ? nothing : uy[trial]
         w = view(fb_storage.γ, :, t1:t2)  # K × Tsteps
 
         trial_elbo = zero(T)
-        x_smooth_trial = tfs[trial].x_smooth
+        fs = tfs[trial]
+        x_smooth_trial = fs.x_smooth
 
-        # E_q[log p(y, x | z)] weighted by discrete posteriors.
+        # E_q[log p(y, x | z)], plug-in at the posterior mean, weighted by γ.
         for k in 1:K
             ll = view(slds_ws.ll_tmp, 1:Tsteps)
             joint_loglikelihood!(
-                ll, slds_ws, slds_ws.consts[k], slds.LDSs[k], x_smooth_trial, y_trial
+                ll,
+                slds_ws,
+                slds_ws.consts[k],
+                slds.LDSs[k],
+                x_smooth_trial,
+                y_trial,
+                ux_trial,
+                uy_trial,
             )
             for t in 1:Tsteps
                 trial_elbo += w[k, t] * ll[t]
             end
         end
 
-        # log p(z_1).
+        #=
+        ½ tr(H Σ) covariance correction. H = weighted Hessian (hessian! writes
+        it un-negated into slds_ws.btd); Σ = p_smooth on the diagonal,
+        p_smooth_tt1[:,:,t] = Cov(x_t, x_{t-1}) off it. Sum both off-diagonal
+        traces rather than doubling one — don't assume exact block symmetry.
+        =#
+        hessian!(slds_ws, slds, x_smooth_trial, y_trial, w, uy_trial)
+        H_diag = slds_ws.btd.H_diag
+        H_sub = slds_ws.btd.H_sub
+        H_super = slds_ws.btd.H_super
+        for t in 1:Tsteps
+            trial_elbo += T(0.5) * _tr_prod(H_diag[t], view(fs.p_smooth, :, :, t))
+        end
+        for t in 2:Tsteps
+            Σ_ttm1 = view(fs.p_smooth_tt1, :, :, t)  # Cov(x_t, x_{t-1})
+            trial_elbo += T(0.5) * _tr_prod(H_super[t - 1], Σ_ttm1)
+            trial_elbo += T(0.5) * _tr_prod(H_sub[t - 1], transpose(Σ_ttm1))
+        end
+
+        # E_q[log p(z_1)].
         for k in 1:K
             trial_elbo += w[k, 1] * log(slds.πₖ[k] + T(1e-12))
         end
 
-        # log p(z_t | z_{t-1}) = sum_t sum_{i,j} ξ[t][i,j] * log A[i,j].
-        # ξ is indexed by global timestep; the last entry of each trial (ξ[t2]) is zero
-        # by FB convention so we iterate t1..t2-1.
+        #=
+        E_q[log p(z_t | z_{t-1})] = Σ_t Σ_ij ξ_t[i,j] log A[i,j]. ξ is global-
+        indexed; ξ[t2] is zero by FB convention, so iterate t1..t2-1.
+        =#
         for t in t1:(t2 - 1)
             ξt = fb_storage.ξ[t]
             for i in 1:K, j in 1:K
@@ -958,21 +975,143 @@ function elbo!(
             end
         end
 
-        # Subtract entropies: -H[q(x)] - H[q(z)].
-        trial_elbo -= tfs[trial].entropy
-        for k in 1:K, t in 1:Tsteps
-            wkt = w[k, t]
-            wkt > 0 && (trial_elbo += wkt * log(wkt + T(1e-12)))
+        # + H[q(x)] (filled by `smooth!` from the BT log-determinant).
+        trial_elbo += fs.entropy
+
+        #=
+        + H[q(z)], the FB chain entropy
+        −Σ_k γ₁ log γ₁ − Σ_t Σ_ij ξ_t[i,j] (log ξ_t[i,j] − log γ_t[i]).
+        ξ_t[i,j] > 0 ⇒ γ_t[i] > 0, so both logs are safe.
+        =#
+        for k in 1:K
+            wk1 = w[k, 1]
+            wk1 > 0 && (trial_elbo -= wk1 * log(wk1))
+        end
+        for t in t1:(t2 - 1)
+            ξt = fb_storage.ξ[t]
+            tloc = t - t1 + 1
+            for i in 1:K, j in 1:K
+                ξij = ξt[i, j]
+                ξij > 0 && (trial_elbo -= ξij * (log(ξij) - log(w[i, tloc])))
+            end
         end
 
         total_elbo += trial_elbo
     end
 
-    return total_elbo
+    return total_elbo + _slds_prior_logdensity(slds)
 end
 
 """
-    mstep!(slds, tfs, fb_storage, y, sws; obs_inputs, seq_ends)
+    elbo(slds, y; ux=nothing, uy=nothing, rng=Random.default_rng())
+
+Evidence lower bound of an `SLDS` at the current parameters (allocating
+convenience wrapper around the workspace-based [`elbo!`](@ref)): warm-starts
+the continuous posterior with uniform discrete weights, runs one variational
+E-step (forward-backward for `q(z)`, Laplace smoothing for `q(x)`), and
+evaluates the ELBO at the resulting posteriors.
+
+The E-step consumes a joint sample from `q(x)` to build the discrete-layer
+log-likelihoods, so the returned value is **stochastic** — pass `rng` for
+reproducibility. This matches the first entry of the ELBO trace returned by
+`fit!` when given the same `rng`.
+
+# Arguments
+- `y`: observations — a `(obs_dim, T)` matrix, a `(obs_dim, T, ntrials)`
+  array, or a `Vector{<:AbstractMatrix}` of per-trial `(obs_dim, T_i)`
+  matrices (ragged lengths allowed).
+- `ux` / `uy`: optional control inputs in the same shape family as `y`
+  (`nothing` when the regimes carry no `B` / `D`). See [`fit!`](@ref).
+
+Returns a scalar.
+"""
+function elbo(
+    slds::SLDS{T,S,O},
+    y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
+    ux=nothing,
+    uy=nothing,
+    rng::AbstractRNG=Random.default_rng(),
+) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
+    # `Data` centralizes shape validation and canonicalizes the three
+    # observation/input forms (regime dims are uniform, so validating against
+    # LDSs[1] covers all regimes). Absent ux/uy become zero-row matrices.
+    data = Data(slds.LDSs[1], y; ux=ux, uy=uy)
+    y_seq = data.y
+    ux_seq = data.ux
+    uy_seq = data.uy
+
+    K = length(slds.LDSs)
+    ntrials = length(y_seq)
+    seq_ends = cumsum(data.tsteps)
+    total_T = last(seq_ends)
+    T_max = maximum(data.tsteps)
+
+    tfs = initialize_FilterSmooth(slds.LDSs[1], data.tsteps)::TrialFilterSmooth{T}
+    dl = SLDSDiscreteLayer(slds.A, slds.πₖ, zeros(T, K, total_T))
+    fb_storage = _make_slds_fb_storage(dl, seq_ends)
+    obs_seq = collect(1:total_T)
+    control_seq = fill(nothing, total_T)
+    slds_ws = SLDSSmoothWorkspace(T, slds, T_max)
+    x_samples = [Matrix{T}(undef, slds.LDSs[1].latent_dim, Ti) for Ti in data.tsteps]
+
+    # Warm-start q(x) with uniform weights, drawing the sample the E-step's
+    # discrete update consumes (mirrors the fit! warm-start).
+    for trial in 1:ntrials
+        w_uniform = fill(one(T) / K, K, data.tsteps[trial])
+        smooth!(
+            slds,
+            tfs[trial],
+            y_seq[trial],
+            w_uniform;
+            ws=slds_ws,
+            x_sample=x_samples[trial],
+            rng=rng,
+            ux=ux_seq[trial],
+            uy=uy_seq[trial],
+        )
+    end
+
+    estep!(
+        slds,
+        tfs,
+        fb_storage,
+        dl,
+        y_seq,
+        x_samples,
+        slds_ws;
+        rng=rng,
+        obs_seq=obs_seq,
+        control_seq=control_seq,
+        seq_ends=seq_ends,
+        ux=ux_seq,
+        uy=uy_seq,
+    )
+
+    return elbo!(
+        slds, tfs, fb_storage, y_seq, slds_ws; seq_ends=seq_ends, ux=ux_seq, uy=uy_seq
+    )
+end
+
+"""
+    loglikelihood(slds, y)
+
+Marginal (observed-data) log-likelihood for an SLDS — **not implemented**.
+
+The marginal `log p(y)` requires summing over all `K^T` discrete regime
+sequences (the switching model has no closed-form filter). Use
+[`elbo`](@ref)`(slds, y)` for a variational lower bound on `log p(y)`, or the
+ELBO trace returned by `fit!`.
+"""
+function StatsAPI.loglikelihood(slds::SLDS, y)
+    return error(
+        "marginal loglikelihood is not implemented for the SLDS (marginalizing the " *
+        "discrete regime sequence requires summing over K^T paths). Use " *
+        "elbo(slds, y) for a variational lower bound, or the ELBO trace from fit!.",
+    )
+end
+
+"""
+    mstep!(slds, tfs, fb_storage, y, sws; obs_seq, seq_ends, ux=nothing, uy=nothing)
 
 M-step for SLDS.
 
@@ -984,6 +1123,11 @@ M-step for SLDS.
   side updates flow through the same suf path; the emission [C d] is updated
   via the existing LBFGS routine (Poisson is non-conjugate and cannot be
   folded into the regression).
+
+`ux` / `uy` are the per-trial control-input sequences; when present, the weighted
+aggregator folds `Bₖ u` / `Dₖ v` into the regression targets so `Bₖ` (Gaussian
+and Poisson dynamics) and `Dₖ` (Gaussian emission, and Poisson emission via the
+LBFGS routine) are re-estimated alongside `Aₖ` / `Cₖ`.
 """
 function mstep!(
     slds::SLDS{T,S,O},
@@ -992,23 +1136,37 @@ function mstep!(
     dl::SLDSDiscreteLayer{T},
     y::AbstractVector{<:AbstractMatrix{T}},
     sws::SmoothWorkspace{T};
-    obs_inputs::AbstractVector,
+    obs_seq::AbstractVector,
     seq_ends::AbstractVector{Int},
+    ux::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
+    uy::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
     K = length(slds.LDSs)
     ntrials = length(y)
 
     # Discrete-layer M-step (slds.A, slds.πₖ are updated in place via dl).
-    StatsAPI.fit!(dl, fb_storage, obs_inputs; seq_ends=seq_ends)
+    StatsAPI.fit!(dl, fb_storage, obs_seq; seq_ends=seq_ends)
 
-    # SLDS doesn't currently expose user inputs; pass zero-column ux/uy.
-    ux_seq = [zeros(T, 0, size(yt, 2)) for yt in y]
-    uy_seq = [zeros(T, 0, size(yt, 2)) for yt in y]
-    tsteps_per_trial = [size(yt, 2) for yt in y]
+    #=
+    `Data` canonicalizes absent ux/uy to zero-row matrices and validates the
+    supplied ones. All regimes share the same input dims (enforced by
+    `validate_SLDS`), so one `Data` serves every `lds_k`.
+    =#
+    data = Data(slds.LDSs[1], y; ux=ux, uy=uy)
 
     # One reusable SufficientStatistics; overwritten per regime by the
     # weighted aggregator.
-    suf = _initialize_td_sufficient_statistics(T, slds.LDSs[1], tsteps_per_trial)
+    suf = _initialize_td_sufficient_statistics(T, slds.LDSs[1], data.tsteps)
+
+    #=
+    x0/P0 are tied across modes. Since the smoother gives one q(x) per trial
+    and Σₖ γₖ(t=1) = 1, the pooled unit-weight init stats are exactly the sum
+    over modes of the per-mode init stats the aggregator already computes —
+    so accumulate them across the loop instead of recomputing.
+    =#
+    D = slds.LDSs[1].latent_dim
+    init_xy = zeros(T, 1, D)
+    init_yy = zeros(T, D, D)
 
     weights = Vector{AbstractVector{T}}(undef, ntrials)
     for k in 1:K
@@ -1018,52 +1176,100 @@ function mstep!(
             weights[trial] = view(fb_storage.γ, k, t1:t2)
         end
 
-        _aggregate_td_suff_stats_weighted!(suf, tfs, lds_k, ux_seq, uy_seq, y, weights, sws)
+        _aggregate_td_suff_stats_weighted!(suf, tfs, lds_k, data, weights, sws)
+        init_xy .+= suf.init_xy
+        init_yy .+= suf.init_yy[]
 
+        # Per-regime updates cover only dynamics + emissions (init is tied).
         if lds_k.obs_model isa GaussianObservationModel{T}
-            mstep!(lds_k, suf, sws)
-        elseif lds_k.obs_model isa PoissonObservationModel{T}
-            update_initial_state_mean!(lds_k, suf)
-            update_initial_state_covariance!(lds_k, suf, sws)
             update_A_b!(lds_k, suf, sws)
             update_Q!(lds_k, suf, sws)
-            # SLDS owns a single sws (not a pool); wrap as a singleton so
-            # `update_observation_model!`'s threaded gradient path runs
-            # serially. SLDS Poisson is a niche path; the threading
-            # overhead isn't a meaningful win here.
-            update_observation_model!(lds_k, tfs, y, [sws], weights)
+            update_C_d!(lds_k, suf, sws)
+            update_R!(lds_k, suf, sws)
+        elseif lds_k.obs_model isa PoissonObservationModel{T}
+            update_A_b!(lds_k, suf, sws)
+            update_Q!(lds_k, suf, sws)
+            # Single sws wrapped as a pool of one; maybe thread in future
+            update_observation_model!(lds_k, tfs, y, [sws], weights; uy=data.uy)
         else
             throw(ArgumentError("Unsupported observation model $(typeof(lds_k.obs_model))"))
         end
     end
 
+    # Fit the single shared x0/P0 from the pooled stats, then broadcast.
+    copyto!(suf.init_xy, init_xy)
+    copyto!(suf.init_yy[], init_yy)
+    suf.init_n = T(ntrials)
+    _update_shared_initial_state!(slds, suf, sws)
+
     return nothing
 end
 
 """
-    fit!(slds::SLDS, y::AbstractVector{<:AbstractMatrix}; max_iter=50, progress=true)
-    fit!(slds::SLDS, y::AbstractMatrix; max_iter=50, progress=true)
+    _update_shared_initial_state!(slds, suf, sws)
 
-Fit SLDS using variational Laplace EM with stochastic ELBO estimates. Runs for exactly
-`max_iter` iterations.
+Fit the single initial-state distribution `N(x0, P0)` shared by all SLDS modes
+from the pooled init stats in `suf` (see `mstep!`) and copy it into every
+`state_model`.
+"""
+function _update_shared_initial_state!(
+    slds::SLDS{T}, suf::SufficientStatistics{T}, sws::SmoothWorkspace{T}
+) where {T<:Real}
+    lds1 = deepcopy(slds.LDSs[1])
+    update_initial_state_mean!(lds1, suf)
+    update_initial_state_covariance!(lds1, suf, sws)
+    fit_x0, fit_P0 = lds1.fit_bool[1], lds1.fit_bool[2]
+    for k in eachindex(slds.LDSs)
+        fit_x0 && copyto!(slds.LDSs[k].state_model.x0, lds1.state_model.x0)
+        fit_P0 && copyto!(slds.LDSs[k].state_model.P0, lds1.state_model.P0)
+    end
+    return nothing
+end
 
-`y` is either a single trial `(obs_dim × T)` matrix or a vector of per-trial matrices
-(ragged `T_i` allowed). Internally a single batched `HMMs.ForwardBackwardStorage` of
-length `sum(T_i)` is allocated, with `seq_ends = cumsum(T_i)` to demarcate trials.
+"""
+    fit!(slds::SLDS, y; ux=nothing, uy=nothing, max_iter=50, progress=true)
+
+Fit SLDS using variational Laplace EM. Runs for exactly `max_iter` iterations
+(no early-stopping criterion: the E-step's posterior sampling makes the ELBO
+trace noisy across iterations, so a tolerance check on successive differences
+would fire spuriously). Returns the per-iteration ELBO trace.
+
+`y` is a single trial `(obs_dim × T)` matrix, a `(obs_dim, T, ntrials)` array,
+or a vector of per-trial matrices (ragged `T_i` allowed). Internally a single
+batched `HMMs.ForwardBackwardStorage` of length `sum(T_i)` is allocated, with
+`seq_ends = cumsum(T_i)` to demarcate trials.
+
+Optional control inputs `ux` / `uy` accept the same shape family as `y`
+(`nothing` when the regimes carry no `B` / `D`). They are shared across regimes
+— the active regime `zₜ` selects which per-regime `Bₖ` / `Dₖ` multiplies the
+input — and are re-estimated per regime alongside the other parameters. The
+input dimensions must match across regimes (enforced by `validate_SLDS`).
 """
 function fit!(
     slds::SLDS{T,S,O},
-    y::AbstractVector{<:AbstractMatrix{T}};
+    y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
+    ux=nothing,
+    uy=nothing,
     max_iter::Int=50,
     progress::Bool=true,
-    tol::Float64=1e-6,
+    rng::AbstractRNG=Random.default_rng(),
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
+    #=
+    `Data` centralizes shape validation and canonicalizes the three
+    observation/input forms (regime dims are uniform, so validating against
+    LDSs[1] covers all regimes). Absent ux/uy become zero-row matrices.
+    =#
+    data = Data(slds.LDSs[1], y; ux=ux, uy=uy)
+    y_seq = data.y
+    ux_seq = data.ux
+    uy_seq = data.uy
+
     K = length(slds.LDSs)
     latent_dim = slds.LDSs[1].latent_dim
     obs_dim = slds.LDSs[1].obs_dim
 
-    tsteps_per_trial = [size(yt, 2) for yt in y]
-    ntrials = length(y)
+    tsteps_per_trial = data.tsteps
+    ntrials = length(y_seq)
     seq_ends = cumsum(tsteps_per_trial)
     total_T = last(seq_ends)
     T_max = maximum(tsteps_per_trial)
@@ -1071,21 +1277,29 @@ function fit!(
     # Continuous-state smoother storage (per-trial sized).
     tfs = initialize_FilterSmooth(slds.LDSs[1], tsteps_per_trial)::TrialFilterSmooth{T}
 
-    # Discrete-layer wrapper (logL sized for batched obs_inputs).
+    # Discrete-layer wrapper (logL sized for the batched timestep sequence).
     dl = SLDSDiscreteLayer(slds.A, slds.πₖ, zeros(T, K, total_T))
 
     # Single batched fb_storage covering all trials.
     fb_storage = _make_slds_fb_storage(dl, seq_ends)
 
-    # Cached batched obs_inputs / latent_inputs for HMMs.jl.
-    obs_inputs = collect(1:total_T)
-    latent_inputs = fill(nothing, total_T)
+    # Cached batched HMMs.jl placeholder sequences (timestep indices / nothings).
+    obs_seq = collect(1:total_T)
+    control_seq = fill(nothing, total_T)
 
     # Workspaces — allocated once at max trial length, reused each iteration.
-    sws = SmoothWorkspace(T, latent_dim, obs_dim, T_max)
+    # `sws` sizes its regression buffers for the (uniform) input dims so the
+    # weighted aggregator can fit `[Aₖ bₖ Bₖ]` / `[Cₖ dₖ Dₖ]`.
+    sws = SmoothWorkspace(
+        T,
+        latent_dim,
+        obs_dim,
+        T_max;
+        ux_dim=slds.LDSs[1].ux_dim,
+        uy_dim=slds.LDSs[1].uy_dim,
+    )
     slds_ws = SLDSSmoothWorkspace(T, slds, T_max)
     x_samples = [Matrix{T}(undef, latent_dim, Ti) for Ti in tsteps_per_trial]
-    randn_buf = Vector{T}(undef, latent_dim)
 
     prog = if progress
         Progress(max_iter; desc="Fitting SLDS via EM...", barlen=50, showspeed=true)
@@ -1094,58 +1308,73 @@ function fit!(
     end
     elbos = Vector{T}(undef, max_iter)
 
-    # Warm-start: smooth once per trial with uniform discrete weights.
+    #=
+    Warm-start: smooth each trial once with uniform weights, drawing the first
+    sample into x_samples for the first E-step to consume.
+    =#
     for trial in 1:ntrials
         Ti = tsteps_per_trial[trial]
         w_uniform = fill(one(T) / K, K, Ti)
-        smooth!(slds, tfs[trial], y[trial], w_uniform; ws=slds_ws)
+        smooth!(
+            slds,
+            tfs[trial],
+            y_seq[trial],
+            w_uniform;
+            ws=slds_ws,
+            x_sample=x_samples[trial],
+            rng=rng,
+            ux=ux_seq[trial],
+            uy=uy_seq[trial],
+        )
     end
 
     for iter in 1:max_iter
 
-        # Sample one continuous-state trajectory per trial from the posterior.
-        sample_posterior!(x_samples, Random.default_rng(), tfs, randn_buf)
-
-        # E-step: compute discrete posteriors and smooth continuous states given sampled trajectories.
+        #=
+        E-step: fill q(z) from the current samples, run forward-backward,
+        re-smooth q(x), and draw the next samples for the following iteration.
+        =#
         estep!(
             slds,
             tfs,
             fb_storage,
             dl,
-            y,
+            y_seq,
             x_samples,
             slds_ws;
-            obs_inputs=obs_inputs,
-            latent_inputs=latent_inputs,
+            rng=rng,
+            obs_seq=obs_seq,
+            control_seq=control_seq,
             seq_ends=seq_ends,
+            ux=ux_seq,
+            uy=uy_seq,
         )
 
-        # Compute stochastic ELBO estimate for this iteration.
-        elbos[iter] = elbo!(slds, tfs, fb_storage, y, slds_ws; seq_ends)
+        # Compute the ELBO at the current posteriors.
+        elbos[iter] = elbo!(
+            slds, tfs, fb_storage, y_seq, slds_ws; seq_ends=seq_ends, ux=ux_seq, uy=uy_seq
+        )
 
         # M-step: update discrete and continuous parameters.
-        mstep!(slds, tfs, fb_storage, dl, y, sws; obs_inputs=obs_inputs, seq_ends=seq_ends)
+        mstep!(
+            slds,
+            tfs,
+            fb_storage,
+            dl,
+            y_seq,
+            sws;
+            obs_seq=obs_seq,
+            seq_ends=seq_ends,
+            ux=ux_seq,
+            uy=uy_seq,
+        )
         refresh_slds_constants!(slds_ws, slds)
 
-        # print progress
         prog !== nothing && next!(prog)
-
-        # check convergence
-        # if iter > 1 && abs(elbos[iter] - elbos[iter - 1]) < tol
-        #     prog !== nothing && finish!(prog)
-        #     resize!(elbos, iter)
-        #     return elbos
-        # end
     end
 
     if prog !== nothing
         finish!(prog)
     end
     return elbos
-end
-
-function fit!(
-    slds::SLDS{T,S,O}, y::AbstractMatrix{T}; kwargs...
-) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
-    return fit!(slds, [y]; kwargs...)
 end

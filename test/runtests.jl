@@ -41,37 +41,9 @@ using SSDTest
         end
 
         @testset "JET.jl Code Linting" begin
-            if VERSION >= v"1.11"
-                # JET reports ~23 union-split false positives in `kalman.jl`
-                # (`backwards_cov!`, `sufficient_statistics!`,
-                # `marginal_loglikelihood`) and the TD aggregator in
-                # `gaussian.jl` (`_precompute_shared_cov!`,
-                # `_td_init_const_blocks!`, `_aggregate_td_suff_stats!`,
-                # `_aggregate_td_suff_stats_weighted!`). Pattern: `@views`
-                # over a workspace field typed `Array{T,3}` /
-                # `Vector{PDMat{T,Matrix{T}}}` (where `T<:Real`) produces a
-                # `maybeview` whose return type JET infers as
-                # `Union{SubArray{Any, …}, SubArray{T, …}}`. The `Any` branch
-                # then fails to match downstream `BLAS.ger!` /
-                # `BLAS.syrk!` / `Symmetrize!` / `X_A_Xt` / `logpdf` /
-                # `aggregate_xx` signatures.
-                #
-                # Runtime types are concrete and all functional tests pass;
-                # the field-hoist + `::Type` assertion pattern was tried
-                # (see `backwards_cov!`, `sufficient_statistics!`,
-                # `_precompute_shared_cov!`, etc.) and **does not** clear
-                # JET — its parametric analysis still sees the outer
-                # `where T<:Real` on the field and splits the union. To
-                # fully clear, the workspaces would need to be parametrized
-                # on concrete `Matrix{T}` element type at each call site (a
-                # bigger refactor — JET issue tracked but deferred).
-                #
-                # TODO(#91): un-skip once workspace fields are parametrized on
-                # concrete `Matrix{T}` so JET stops union-splitting the
-                # `@views`-over-`Array{T,3}`/`Vector{PDMat}` accessors.
-                @test_skip JET.test_package(
-                    StateSpaceDynamics; target_modules=(StateSpaceDynamics,)
-                )
+            # Skip pre-release versions of Julia, which JET does not yet support.
+            if (v"1.11" <= VERSION) && isempty(VERSION.prerelease)
+                JET.test_package(StateSpaceDynamics; target_modules=(StateSpaceDynamics,))
             end
         end
     end
@@ -134,7 +106,14 @@ using SSDTest
                 test_SLDS_fit_runs_to_completion()
                 test_SLDS_fit_elbo_generally_increases()
                 test_SLDS_fit_multitrial()
+                test_SLDS_fit_shapes_and_validation()
+                test_SLDS_shared_initial_state()
                 test_SLDS_estep_elbo_components()
+                test_SLDS_elbo_matches_LDS_marginal_K1()
+                test_SLDS_public_elbo()
+                test_SLDS_no_priors_zero_prior_logdensity()
+                test_SLDS_x0_niw_prior()
+                test_SLDS_joint_sample_reproduces_cross_covariance()
             end
 
             @testset "Poisson SLDS" begin
@@ -150,6 +129,16 @@ using SSDTest
                 test_SLDS_poisson_count_validation()
                 test_SLDS_poisson_d_interpretation()
                 test_SLDS_gradient_weight_normalization_poisson()
+            end
+
+            @testset "Control inputs (ux/uy)" begin
+                test_SLDS_input_dim_validation()
+                test_SLDS_sampling_with_inputs()
+                test_SLDS_missing_input_throws()
+                test_SLDS_gradient_numerical_with_inputs()
+                test_SLDS_hessian_numerical_with_inputs_poisson()
+                test_SLDS_fit_with_inputs_gaussian()
+                test_SLDS_fit_with_inputs_poisson()
             end
         end
 
@@ -170,6 +159,12 @@ using SSDTest
                 test_smooth()
             end
 
+            @testset "Log-likelihood" begin
+                test_joint_loglikelihood_matches_mvnormal()
+                test_gaussian_gradient_nondiag()
+                test_gaussian_hessian_nondiag()
+            end
+
             @testset "EM Algorithm" begin
                 test_estep()
                 test_initial_observation_parameter_updates()
@@ -180,11 +175,13 @@ using SSDTest
                 test_obs_model_parameter_updates(3)
                 test_EM()
                 test_EM(3)
+                test_gaussian_public_elbo()
                 test_gaussian_iw_priors_shape_map_and_R_sanity()
+                test_x0_niw_prior_map_and_degradation()
                 test_gaussian_update_R_matches_residual_cov()
                 test_gaussian_weighting_equiv_to_duplication()
                 test_td_mn_priors_shrink()
-                test_td_with_obs_inputs()
+                test_td_with_uy()
                 test_td_ragged_multi_trial()
                 test_td_weighted_aggregator_matches_unweighted_with_inputs()
                 test_mn_prior_type_decoupled_from_model_matrix()
@@ -200,15 +197,10 @@ using SSDTest
             test_td_sampling_zero_input_matches_no_input()
             test_td_fit_missing_u_errors()
             test_marginal_loglikelihood()
-        end
-
-        @testset "Kalman-path EM (information form)" begin
-            test_kalman_fit_basic()
-            test_kalman_fit_with_inputs()
-            test_kalman_fit_with_priors()
-            test_kalman_fit_bool_combinations()
-            test_kalman_validate_inputs_errors()
-            test_kalman_marginal_loglikelihood_internals()
+            test_marginal_ll_matches_naive_filter()
+            test_marginal_ll_with_inputs()
+            test_marginal_ll_ragged_trials()
+            test_marginal_loglikelihood_aliases()
         end
 
         include("LinearDynamicalSystems/PoissonLDS.jl")
@@ -228,10 +220,20 @@ using SSDTest
                 test_smooth()
             end
 
+            @testset "Log-likelihood" begin
+                test_joint_loglikelihood_matches_distributions()
+                test_joint_loglikelihood_multitrial()
+                test_newton_objective_is_joint_loglikelihood()
+                test_poisson_gradient_nondiag()
+                test_poisson_hessian_nondiag()
+            end
+
             @testset "Priors - Poisson LDS" begin
                 test_poisson_map_step_improves_Q()
                 test_poisson_gradient_shape_and_finiteness()
                 test_poisson_cd_prior_shrink()
+                test_poisson_ab_prior_shrink()
+                test_poisson_unstable_init_no_blowup()
             end
 
             @testset "EM Algorithm" begin
@@ -243,6 +245,9 @@ using SSDTest
                 test_EM()
                 test_EM(3)
                 test_EM_matlab()
+                test_poisson_public_elbo()
+                test_poisson_latent_inputs()
+                test_poisson_obs_inputs()
                 test_poisson_map_step_improves_Q()
                 test_poisson_gradient_shape_and_finiteness()
             end
@@ -253,6 +258,8 @@ using SSDTest
     @testset verbose = true "Optimization" begin
         include("Optimization/Optimization.jl")
         test_backtracking_min_sense_decreases()
+        test_backtracking_max_sense_increases()
+        test_cubic_step_root_selection()
         test_backtracking_returns_best_on_exhaustion()
         test_newton_smooth_no_linesearch_converges()
         test_newton_smooth_returns_false_on_linesearch_stall()
@@ -350,6 +357,7 @@ using SSDTest
         @testset verbose = true "PPCA" begin
             test_PPCA_with_params()
             test_PPCA_E_and_M_Step()
+            test_PPCA_mstep_sigma_uses_new_W()
             test_PPCA_fit()
             test_PPCA_samples()
         end

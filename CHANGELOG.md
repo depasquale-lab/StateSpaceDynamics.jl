@@ -5,6 +5,134 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Public allocating `elbo(model, y; ...)` for all three models (Gaussian LDS
+  with `ux`/`uy` keywords, Poisson LDS with Newton-smoother keywords, SLDS
+  with an `rng` keyword since its E-step consumes a posterior sample). Runs
+  one E-step and evaluates the ELBO at the resulting posterior, the same
+  quantity `fit!` reports per iteration,  without requiring the private
+  workspace structs the `elbo!` variants take (#139)
+- `loglikelihood(slds, y)` now throws an informative error (the marginal is
+  intractable for a switching model; use `elbo`) instead of a raw
+  `MethodError`, mirroring the Poisson LDS (#139)
+- Composable Normal-Inverse-Wishart prior on the initial latent state via a new
+  `GaussianStateModel` field `x0_prior::Union{Nothing,MNPrior}` (the mean half),
+  paired with the existing `P0_prior::IWPrior` (the covariance half). The initial
+  state `x₁ ~ N(x0, P0)` is an intercept-only regression, so its NIW prior is the
+  same `MNPrior` + `IWPrior` composition used for `[A b]`/`Q` and `[C d]`/`R` —
+  no bespoke prior type. Construct the mean half with the exported
+  `x0_mean_prior(μ₀; κ₀)` helper; the M-step then does
+  `x0 = (Σγ·x₁ + κ₀ μ₀) / (Σγ + κ₀)` and folds `κ₀(x0-μ₀)(x0-μ₀)'` into the IW
+  scale. With `κ₀ → 0` (and no `P0_prior`) it reduces exactly to the previous MLE
+  update
+
+### Changed
+- **Breaking:** the previously exported (but unused) `Data` struct is now a
+  private, validated container for multi-trial observations + `ux`/`uy` inputs.
+  Public entry points (`fit!`, `smooth`, `loglikelihood`) accept plain arrays —
+  a `(obs_dim, T)` matrix, a `(obs_dim, T, ntrials)` array, or a vector of
+  per-trial matrices, with `ux`/`uy` in the same shape family — and construct
+  a `Data` at the boundary, which is the single shape/dimension validation
+  site (observation rows are now checked against `obs_dim` up front). The
+  multi-trial backend (`estep!`, multi-trial `smooth!`, the sufficient-stats
+  aggregators, `_fit_tridiag!`) consumes `Data` instead of threading
+  `y`/`ux`/`uy` triples through every signature (#139)
+- `fit!(slds, y)` now validates observations through `Data` like the other
+  entry points (dimension mismatches throw a clean `DimensionMismatchError`
+  upfront instead of failing deep in the smoother) and accepts the
+  `(obs_dim, T, ntrials)` array form (#139)
+- `smooth` (public, allocating) now accepts `ux`/`uy` keywords on the Gaussian
+  path and all three observation shapes on both the Gaussian and Poisson
+  paths; multi-trial input returns per-trial vectors, matrix input returns
+  matrices as before (#139)
+- **Breaking:** renamed the control-input arguments `latent_inputs`/`obs_inputs`
+  to `ux`/`uy` across the public API (keywords on `fit!`/`rand`, positional on
+  `smooth!`/`estep!`) (#139)
+- **Breaking:** renamed the `LinearDynamicalSystem` fields
+  `state_input_dim`/`obs_input_dim` to `ux_dim`/`uy_dim` to match (#139)
+- Multithreading now uses OhMyThreads.jl (`tforeach`/`tmapreduce`) instead of
+  `Base.Threads` (`@threads`/`@spawn`); OhMyThreads is a new dependency (#143)
+- Deduplicated the per-observation-model complete-data log-likelihood, gradient,
+  and Hessian implementations (Gaussian / Poisson / SLDS-weighted) into shared
+  kernels in `continuous_latents.jl`. The emission-specific pieces are now single
+  dispatch points (`obsloglikelihood!`, `observationgradient!`, and the Hessian
+  emission block), the affine transition residual is defined in exactly one
+  place, and kernel signatures follow a uniform `f!(out, ws, model, x, y, ...)`
+  convention — a new observation model plugs in with one method per kernel
+  (#135, #136, #141)
+- Reworked the monolithic ~90-field `SmoothedWorkspace` into modular components
+  (`BlockTridiagonalWorkspace`, `SmoothConstants`, `NewtonBuffers`,
+  `RegressionBuffers`, `ElboBuffers`, `TDAggBuffers`, `BatchedBuffers`) and
+  unified the dev-facing function handles across the Gaussian, Poisson, and
+  SLDS paths (#144)
+- `loglikelihood(lds, y)` now computes the observation-independent half of the
+  Kalman filter (innovation covariances and gains) once and shares it across
+  trials, uses the positive-definite-by-construction information-form update
+  (`info_update!`) from the retired Kalman path, supports ragged trial
+  lengths, and accepts `ux`/`uy` input keywords. Models with input matrices
+  (`B`/`D` with nonzero columns) now **require** the matching input
+  sequences — previously inputs were silently ignored, giving a wrong
+  likelihood
+
+### Removed
+- Stale one-off profiling scripts under `benchmark/profiling/` (#144)
+- The retired information-form Kalman/RTS smoother EM machinery
+  (`src/stats/kalman.jl`: the `_fit_kalman!` driver with its E/M-step, ELBO,
+  and sufficient-statistics code, plus the internal `KalmanWorkspace`). It had
+  not been a selectable `fit!` backend since v0.4.0; the filter it contributed
+  now lives behind `loglikelihood` (see Changed). `marginal_loglikelihood`
+  remains as an internal alias of `loglikelihood`
+- The internal `tol_PD` / `id_PD` eigen-floor helpers. The filter wraps the
+  model covariances as strict `PDMat`s instead. — a genuinely non-PD `Q`/`R`/
+  `P0` now fails.
+
+### Fixed
+- SLDS `forward_backward` could produce `NaN`s when a regime received ~no
+  responsibility at trial starts: its initial-state effective count `init_n`
+  underflowed toward zero, so `x0 = init_xy/init_n` and `P0 = S0/init_n` blew up
+  to `±Inf`/`NaN`, poisoning `dl.logL` and the whole chain posterior. Setting the
+  new initial-state NIW prior (`x0_prior` + `P0_prior`) makes the update degrade
+  to the prior (`x0 → μ₀`, `P0 →` its IW mode) instead of dividing by ~0
+- SLDS ELBO computation (incorrect sign, among other errors); correctness is now
+  tested via the K=1 SLDS ≡ LDS equivalence (#145)
+- SLDS posterior sampling drew from the marginals of `q(x)` (a mean-field
+  approximation) instead of the joint smoothed posterior (#145)
+- SLDS complete-data log-likelihood was inconsistent with the LDS
+  implementations; fixed by deduplicating into the shared kernels, with new
+  tests against Distributions.jl (#135)
+- Poisson LDS ELBO omitted the matrix-normal prior term on the stacked dynamics
+  `[A b B]` (#146)
+- PPCA M-step computed the `σ²` update from the stale `W` instead of the freshly
+  updated one (#147)
+- The backtracking line search's cubic interpolation always stepped to the local
+  minimizer of the interpolant, even when maximizing (#147)
+- `validate_probvec` used a tolerance that could give wrong results for
+  lower-precision element types (e.g. `Float32`) (#147)
+- `tol_PD` threw a method error when the `tol` keyword did not match the matrix
+  element type (#147)
+- The LDS model-selection docs example could select the wrong latent
+  dimension (#148)
+
+## [0.4.1] - 2026-07-07
+
+### Added
+- Add `tview` helper to fix JET errors
+- LineSearches added as a new dep, since `Optim` no longer re-exposes `HagerZhang` (#89)
+
+### Changed
+- Tests and code now use `Optim` v2 API (#89)
+- Updates `Optim` lower bound `2` (#89)
+- `Optim` v2's `LBFGS`+`HagerZhang` line search converges to marginally different values for the Poisson observation M-step (~1e-5 magnitude) than v1 did (#89)
+- `Symmetrize!` now returns a `Symmetric` matrix (#130)
+
+### Fixed
+- Re-enables JET testing after fixing false positives. (#124)
+- Fixes lower bound of Julia to 1.10 (was 1.11) (#89)
+- Enforced a stable A matrix in the SLDS tests to fix flakyness in CI testing. (#130)
+- Enforces symmetry in certain SLDS statistics causing a non-PD issue. (#130)
+
 ## [0.4.0] - 2026-07-03
 
 ### Added
@@ -140,7 +268,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documentation and examples
 - Benchmarking suite
 
-[Unreleased]: https://github.com/depasquale-lab/StateSpaceDynamics.jl/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/depasquale-lab/StateSpaceDynamics.jl/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/depasquale-lab/StateSpaceDynamics.jl/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/depasquale-lab/StateSpaceDynamics.jl/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/depasquale-lab/StateSpaceDynamics.jl/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/depasquale-lab/StateSpaceDynamics.jl/compare/v0.1.1...v0.2.0

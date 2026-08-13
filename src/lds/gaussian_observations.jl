@@ -1,6 +1,10 @@
 #=============================================================================
 Gaussian Observations
 
+    Emission kernels: observation_loglikelihood!(cc, dyt, _, lds, x, y, t[, uy])
+                      observation_gradient!(out, cc, buf, lds, x, y, t[, uy])
+                      observation_hessian!(out, cc, _, _, lds, x, y, t[, α])
+
     E-Step: Q_obs!(sws, lds, suf)
 
     M-Step: update_C_d!(lds, suf, sws)
@@ -29,17 +33,17 @@ function Q_obs!(
     D_obs = lds.obs_model.D
     uy_dim = size(uy, 1)
 
-    R_U = ws.R_PD[].chol.U
-    log_det_R = logdet(ws.R_PD[])
+    R_U = ws.consts.R_PD.chol.U
+    log_det_R = logdet(ws.consts.R_PD)
     const_term = obs_dim * log(T(2π))
 
-    temp = ws.elbo_obs_temp
-    work_matrix = ws.elbo_obs_work
-    ytil = ws.elbo_ytil
-    sum_yy = ws.elbo_sum_yy
-    sum_yz = ws.elbo_sum_yz
-    work1 = ws.elbo_obs_work1
-    work2 = ws.elbo_obs_work2
+    temp = ws.elbo.obs_temp
+    work_matrix = ws.elbo.obs_work
+    ytil = ws.elbo.ytil
+    sum_yy = ws.elbo.sum_yy
+    sum_yz = ws.elbo.sum_yz
+    work1 = ws.elbo.obs_work1
+    work2 = ws.elbo.obs_work2
 
     fill!(temp, zero(T))
 
@@ -95,20 +99,20 @@ function Q_obs!(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     D = lds.latent_dim
     p = lds.obs_dim
-    uy_dim = lds.obs_input_dim
+    uy_dim = lds.uy_dim
     obs_reg_dim = D + 1 + uy_dim
     C = lds.obs_model.C
     d = lds.obs_model.d
     D_obs = lds.obs_model.D
 
-    R_U = sws.R_PD[].chol.U
-    log_det_R = logdet(sws.R_PD[])
+    R_U = sws.consts.R_PD.chol.U
+    log_det_R = logdet(sws.consts.R_PD)
     const_term = p * log(T(2π))
 
     obs_n = suf.obs_n
 
     # V = [C d D_obs] (p × obs_reg_dim)
-    V = view(sws.CD, :, 1:obs_reg_dim)
+    V = view(sws.reg.CD, :, 1:obs_reg_dim)
     copyto!(view(V, :, 1:D), C)
     copyto!(view(V, :, D + 1), d)
     if uy_dim > 0
@@ -116,11 +120,11 @@ function Q_obs!(
     end
 
     # S_obs = obs_yy - V·obs_xy - obs_xy'·V' + V·obs_xx·V'
-    S_obs = sws.elbo_obs_temp
+    S_obs = sws.elbo.obs_temp
     copyto!(S_obs, suf.obs_yy[].mat)
     mul!(S_obs, V, suf.obs_xy, -one(T), one(T))
     mul!(S_obs, transpose(suf.obs_xy), transpose(V), -one(T), one(T))
-    V_XX = view(sws.Syz, :, 1:obs_reg_dim)
+    V_XX = view(sws.reg.Syz, :, 1:obs_reg_dim)
     mul!(V_XX, V, suf.obs_xx[].mat)
     mul!(S_obs, V_XX, transpose(V), one(T), one(T))
 
@@ -134,17 +138,19 @@ function update_C_d!(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     lds.fit_bool[5] || return nothing
     D = lds.latent_dim
-    uy_dim = lds.obs_input_dim
+    uy_dim = lds.uy_dim
     CD_prior = lds.obs_model.CD_prior
 
     if CD_prior === nothing
-        # Zero-alloc OLS fast path. `sws.Syz` is exactly (p × obs_reg_dim);
-        # its transpose is the (obs_reg_dim × p) view we ldiv! into. After
-        # the in-place solve, `sws.Syz` itself holds V = [C d D].
-        Syz_T = transpose(sws.Syz)
+        #=
+        Zero-alloc OLS fast path. `sws.reg.Syz` is exactly (p × obs_reg_dim);
+        its transpose is the (obs_reg_dim × p) view we ldiv! into. After
+        the in-place solve, `sws.reg.Syz` itself holds V = [C d D].
+        =#
+        Syz_T = transpose(sws.reg.Syz)
         copyto!(Syz_T, suf.obs_xy)
         ldiv!(suf.obs_xx[].chol, Syz_T)
-        V = sws.Syz
+        V = sws.reg.Syz
     else
         V = mn_map(suf.obs_xx[], suf.obs_xy, CD_prior)
     end
@@ -163,10 +169,10 @@ function update_R!(
     lds.fit_bool[6] || return nothing
     p = lds.obs_dim
     D = lds.latent_dim
-    uy_dim = lds.obs_input_dim
+    uy_dim = lds.uy_dim
 
-    # sws.CD is exactly (p × obs_reg_dim); no view needed.
-    V = sws.CD
+    # sws.reg.CD is exactly (p × obs_reg_dim); no view needed.
+    V = sws.reg.CD
     copyto!(view(V, :, 1:D), lds.obs_model.C)
     copyto!(view(V, :, D + 1), lds.obs_model.d)
     if uy_dim > 0
@@ -174,24 +180,28 @@ function update_R!(
     end
 
     # Residual scatter S = obs_yy - V·obs_xy - obs_xy'·V' + V·obs_xx·V'
-    Vxy = sws.elbo_obs_temp                    # p × p scratch (free post-Q_obs!)
+    Vxy = sws.elbo.obs_temp                    # p × p scratch (free post-Q_obs!)
     mul!(Vxy, V, suf.obs_xy)
 
-    S_res = sws.elbo_obs_work                  # p × p scratch
+    S_res = sws.elbo.obs_work                  # p × p scratch
     copyto!(S_res, suf.obs_yy[].mat)
     S_res .-= Vxy
     S_res .-= Vxy'
-    # In-place X_A_Xt = V · obs_xx · V'. Mirror PDMats' X_A_Xt: compute
-    # `VL = V · L` (obs_xx = L·L' via the cached Cholesky) and add
-    # `VL · VL'` to the upper triangle via a symmetric rank-k BLAS call,
-    # then reflect upper → lower for exact symmetry. (`mul!` + `Symmetrize!`
-    # would halve the off-diagonal contribution because gemm can produce
-    # 1-ULP-asymmetric output that averaging then collapses.)
-    VL = sws.Syz                               # (p × obs_reg_dim) scratch
-    # See `update_Q!`: `BLAS.trmm!` on the raw upper-stored
-    # `chol.factors` (with transa='T' since L = U') avoids the
-    # `LowerTriangular(...)` wrapper alloc that `mul!(VL, V, chol.L)`
-    # would do.
+    #=
+    In-place X_A_Xt = V · obs_xx · V'. Mirror PDMats' X_A_Xt: compute
+    `VL = V · L` (obs_xx = L·L' via the cached Cholesky) and add
+    `VL · VL'` to the upper triangle via a symmetric rank-k BLAS call,
+    then reflect upper → lower for exact symmetry. (`mul!` + `Symmetrize!`
+    would halve the off-diagonal contribution because gemm can produce
+    1-ULP-asymmetric output that averaging then collapses.)
+    =#
+    VL = sws.reg.Syz                           # (p × obs_reg_dim) scratch
+    #=
+    See `update_Q!`: `BLAS.trmm!` on the raw upper-stored
+    `chol.factors` (with transa='T' since L = U') avoids the
+    `LowerTriangular(...)` wrapper alloc that `mul!(VL, V, chol.L)`
+    would do.
+    =#
     copyto!(VL, V)
     BLAS.trmm!('R', 'U', 'T', 'N', one(T), suf.obs_xx[].chol.factors, VL)
     mul!(S_res, VL, transpose(VL), one(T), one(T))
@@ -214,4 +224,80 @@ function update_R!(
     end
     copyto!(lds.obs_model.R, S_res)
     return nothing
+end
+
+"""
+    observation_loglikelihood!(cc, dyt, _, lds, x, y, t[, uy])
+
+Gaussian emission term: `cR - 0.5*||R^{-1/2}(y_t - Cx_t - d - D uy_t)||^2`.
+`dyt` is the `obs_dim` residual scratch; the second buffer is unused.
+"""
+function observation_loglikelihood!(
+    cc::SmoothConstants{T},
+    dyt::AbstractVector{T},
+    ::AbstractVector{T},
+    lds::LinearDynamicalSystem{T0,S,O},
+    x::AbstractMatrix{T},
+    y::AbstractMatrix{T0},
+    t::Int,
+    uy::Union{Nothing,AbstractMatrix}=nothing,
+) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:GaussianObservationModel{T0}}
+    C = lds.obs_model.C
+    d = lds.obs_model.d
+
+    @views mul!(dyt, C, x[:, t])
+    if uy !== nothing
+        @views mul!(dyt, lds.obs_model.D, uy[:, t], one(T), one(T))
+    end
+    @views dyt .= y[:, t] .- dyt .- d
+    _whiten!(cc.R_PD.chol, dyt)
+    return cc.cR - T(0.5) * sum(abs2, dyt)
+end
+
+"""
+    observation_gradient!(out, cc, buf, lds, x, y, t[, uy])
+
+Gaussian emission gradient: `out = C'R⁻¹ (y_t - Cx_t - d - D uy_t)`, using the
+cached `C_inv_R = C'R⁻¹` from `cc`.
+"""
+function observation_gradient!(
+    out::AbstractVector{T},
+    cc::SmoothConstants{T},
+    buf::AbstractVector{T},
+    lds::LinearDynamicalSystem{T0,S,O},
+    x::AbstractMatrix{T},
+    y::AbstractMatrix{T0},
+    t::Int,
+    uy::Union{Nothing,AbstractMatrix}=nothing,
+) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:GaussianObservationModel{T0}}
+    @views mul!(buf, lds.obs_model.C, x[:, t])
+    if uy !== nothing
+        @views mul!(buf, lds.obs_model.D, uy[:, t], one(T), one(T))
+    end
+    @views buf .= y[:, t] .- buf .- lds.obs_model.d
+    return mul!(out, cc.C_inv_R, buf)
+end
+
+"""
+    observation_hessian!(out, cc, _, _, lds, x, y, t[, α, uy])
+
+Gaussian emission curvature: `out .+= α .* (-C'R⁻¹C)`, using the cached
+`yt_given_xt = -C'R⁻¹C` from `cc` — constant in `x`, `y`, and any observation
+input. Both scratch buffers and `uy` are unused (accepted for interface parity
+with the Poisson curvature, which depends on the rate).
+"""
+function observation_hessian!(
+    out::AbstractMatrix{T},
+    cc::SmoothConstants{T},
+    ::AbstractVector{T},
+    ::AbstractVector{T},
+    lds::LinearDynamicalSystem{T0,S,O},
+    x::AbstractMatrix{T},
+    y::AbstractMatrix{T0},
+    t::Int,
+    α::T=one(T),
+    ::Union{Nothing,AbstractMatrix}=nothing,
+) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:GaussianObservationModel{T0}}
+    @. out += α * cc.yt_given_xt
+    return out
 end

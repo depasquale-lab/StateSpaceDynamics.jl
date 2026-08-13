@@ -99,10 +99,12 @@ function test_block_tridiagonal_inverse_mutating()
     end
 end
 
-# Build a random SPD block tridiagonal matrix by forming `H = L Lᵀ` for a
-# block-bidiagonal `L`. This matches the precondition of
-# `block_tridiagonal_inverse_logdet!`, which factors the SPD Schur
-# complements via Cholesky.
+#=
+Build a random SPD block tridiagonal matrix by forming `H = L Lᵀ` for a
+block-bidiagonal `L`. This matches the precondition of
+`block_tridiagonal_inverse_logdet!`, which factors the SPD Schur
+complements via Cholesky.
+=#
 function _random_spd_block_tridiag(::Type{T}, block_size::Int, n::Int, rng) where {T<:Real}
     # Block-bidiagonal L: diagonal L_diag and lower off-diagonal L_off.
     L_diag = Matrix{T}[
@@ -187,9 +189,11 @@ function test_block_tridiagonal_solve()
 end
 
 function test_block_tridiagonal_solve_spd()
-    # `block_tridiagonal_solve_spd!` routes through the packed LAPACK `pbsv`
-    # fast path when `bs ≤ 8` and BlasFloat, else falls back to the general
-    # block-Thomas solve. Both branches must match a dense `H \ b`.
+    #=
+    `block_tridiagonal_solve_spd!` routes through the packed LAPACK `pbsv`
+    fast path when `bs ≤ 8` and BlasFloat, else falls back to the general
+    block-Thomas solve. Both branches must match a dense `H \ b`.
+    =#
     rng = MersenneTwister(2024)
     for T in (Float64, Float32)
         atol = T === Float32 ? 1e-3 : 1e-8
@@ -221,9 +225,11 @@ function test_valid_Σ()
 end
 
 function test_info_update()
-    # `info_update!(cache, P0, CiRC)` returns `inv(inv(P0) + CiRC)` as a PDMat,
-    # exploiting P0's cached Cholesky. Check against a dense reference and that
-    # the result is genuinely PD. Also exercise the in-place variant.
+    #=
+    `info_update!(cache, P0, CiRC)` returns `inv(inv(P0) + CiRC)` as a PDMat,
+    exploiting P0's cached Cholesky. Check against a dense reference and that
+    the result is genuinely PD. Also exercise the in-place variant.
+    =#
     rng = MersenneTwister(99)
     for n in (1, 2, 5)
         G = randn(rng, n, n)
@@ -250,6 +256,13 @@ function test_info_update()
         @test ret === P_dest
         @test isapprox(Matrix(P_dest), expected; atol=1e-8, rtol=0)
         @test isposdef(P_dest.mat)
+
+        # `CiRC` may be a plain (merely PSD) symmetric matrix, not a PDMat —
+        # the filter passes C'R⁻¹C this way since it is singular when C is
+        # rank-deficient.
+        P_dest2 = PDMat(Matrix{Float64}(I, n, n))
+        StateSpaceDynamics.info_update!(P_dest2, scratch, P0, Matrix(CiRC_mat))
+        @test isapprox(Matrix(P_dest2), expected; atol=1e-8, rtol=0)
     end
 
     # Typed and default-eltype cache constructors size their buffers correctly.

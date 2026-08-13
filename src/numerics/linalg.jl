@@ -1,7 +1,9 @@
-# In-place LU helpers — `LinearAlgebra.lu!(A)` allocates a fresh
-# `Vector{BlasInt}` pivot vector on every call. These wrappers reuse a
-# caller-provided `ipiv`, so a tight inner loop (e.g. the per-block LUs in
-# `block_tridiagonal_solve!`) can run allocation-free for `Float64`/`Float32`.
+#=
+In-place LU helpers — `LinearAlgebra.lu!(A)` allocates a fresh
+`Vector{BlasInt}` pivot vector on every call. These wrappers reuse a
+caller-provided `ipiv`, so a tight inner loop (e.g. the per-block LUs in
+`block_tridiagonal_solve!`) can run allocation-free for `Float64`/`Float32`.
+=#
 for (gtrf, elty) in ((:dgetrf_, :Float64), (:sgetrf_, :Float32))
     @eval function _getrf_inplace!(A::Matrix{$elty}, ipiv::Vector{LinearAlgebra.BlasInt})
         m, n = size(A)
@@ -31,9 +33,11 @@ for (gtrf, elty) in ((:dgetrf_, :Float64), (:sgetrf_, :Float32))
     end
 end
 
-# Generic fallback for non-BLAS element types (e.g. BigFloat). The pivot
-# vector is sized large enough at the workspace level, so `copyto!`
-# can't underflow.
+#=
+Generic fallback for non-BLAS element types (e.g. BigFloat). The pivot
+vector is sized large enough at the workspace level, so `copyto!`
+can't underflow.
+=#
 function _getrf_inplace!(A::AbstractMatrix, ipiv::Vector{LinearAlgebra.BlasInt})
     F = LinearAlgebra.lu!(A)
     n = length(F.ipiv)
@@ -45,12 +49,14 @@ function _getrf_inplace!(A::AbstractMatrix, ipiv::Vector{LinearAlgebra.BlasInt})
     return A
 end
 
-# In-place SPD banded solver. Wraps LAPACK's `?pbsv` (not exposed in
-# `LinearAlgebra.LAPACK`). Solves A·X = B where A is SPD with
-# bandwidth `kd`, stored in upper-banded format (`uplo='U'`):
-# A[i,j] = AB[kd+1+i-j, j] for max(1, j-kd) ≤ i ≤ j.
-# Both `AB` (Cholesky factor on return) and `B` (solution on return)
-# are overwritten. Falls back to the dense path for non-BLAS eltypes.
+#=
+In-place SPD banded solver. Wraps LAPACK's `?pbsv` (not exposed in
+`LinearAlgebra.LAPACK`). Solves A·X = B where A is SPD with
+bandwidth `kd`, stored in upper-banded format (`uplo='U'`):
+A[i,j] = AB[kd+1+i-j, j] for max(1, j-kd) ≤ i ≤ j.
+Both `AB` (Cholesky factor on return) and `B` (solution on return)
+are overwritten. Falls back to the dense path for non-BLAS eltypes.
+=#
 for (pbsv, elty) in ((:dpbsv_, :Float64), (:spbsv_, :Float32))
     @eval function _pbsv_inplace!(
         uplo::Char, n::Int, kd::Int, AB::Matrix{$elty}, B::AbstractVecOrMat{$elty}
@@ -108,12 +114,12 @@ end
 
 # Matrix utilities
 """
-    Symmetrize!(A::AbstractMatrix{T}) where {T<:Real}
+    Symmetrize!(A::AbstractMatrix{T})::Symmetric{T} where {T<:Real}
 
 In-place symmetrization of a square matrix `A` via averaging with its transpose:
 A <- 0.5*(A + A').
 """
-function Symmetrize!(A::AbstractMatrix{T}) where {T<:Real}
+function Symmetrize!(A::AbstractMatrix{T})::Symmetric{T} where {T<:Real}
     n, m = size(A)
     @boundscheck n == m || throw(
         DimensionMismatch("Matrix must be square for symmetrization, got $(n)×$(m)")
@@ -128,7 +134,7 @@ function Symmetrize!(A::AbstractMatrix{T}) where {T<:Real}
         end
     end
 
-    return A
+    return Symmetric(A)
 end
 
 """
@@ -140,44 +146,6 @@ definite.
 function valid_Σ(Σ::AbstractMatrix{T}) where {T<:Real}
     return ishermitian(Σ) && isposdef(Σ)
 end
-
-"""
-    tol_PD(A; tol=1e-6) -> PDMat
-
-Eigen-floor stabilization for covariance matrices used along the Kalman path. All
-eigenvalues below `tol * λ_max` are raised to `tol * λ_max`, preserving the overall
-scale/conditioning of the matrix; the result is rewrapped as a `PDMat` so downstream
-code can reuse the cached Cholesky. The matrix is symmetrized (via `hermitianpart`) if
-passed as a plain `Matrix`.
-
-Used by the Kalman filter/smoother to keep predicted and filtered covariances strictly
-positive definite in the presence of floating-point noise. Ported from
-StateSpaceAnalysis.
-"""
-function tol_PD(
-    A_sym::Union{Symmetric{T},Hermitian{T}}; tol::T=1e-6
-)::PDMat{T,Matrix{T}} where {T<:Real}
-    # F = eigen!(A_sym)
-    # λ_max = F.values[end]
-    # λ_r = max.(F.values ./ λ_max, zero(T))
-    # λ_new = (λ_max - λ_max * tol) .* λ_r .+ λ_max * tol
-    # return PDMat(X_A_Xt(PDiagMat(λ_new), F.vectors))
-
-    F = eigen!(A_sym)
-    λ_max = F.values[end]
-    scale = λ_max * tol
-    slope = λ_max - scale        # = λ_max * (1 - tol)
-    for i in eachindex(F.values)
-        r = max(F.values[i] / λ_max, zero(T))
-        F.values[i] = slope * r + scale
-    end
-    return PDMat(X_A_Xt(PDiagMat(F.values), F.vectors))
-end
-
-tol_PD(A::Matrix; tol::Real=1e-6)::PDMat = tol_PD(hermitianpart(A); tol=tol)
-tol_PD(A::PDMat; tol::Real=1e-6)::PDMat = tol_PD(Hermitian(Matrix(A)); tol=tol)
-id_PD(A::Matrix; tol::Real=1e-6)::PDMat =
-    PDMat(hermitianpart(A + (tol * tr(A) / size(A, 1)) * I))
 
 """
     gaussian_entropy(H::Symmetric{T}) where {T<:Real}

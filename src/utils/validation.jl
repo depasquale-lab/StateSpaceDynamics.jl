@@ -256,9 +256,17 @@ function _validate_obs_model(
         throw(DimensionMismatchError("d vector", obs_dim, length(obs_model.d)))
     end
 
-    # Check that d values are reasonable. `d` enters the linear predictor as
-    # `λ = exp(C x + d)`; |d| above ~50 risks exp overflow/underflow once Cx
-    # is added on top.
+    # Check D matrix (observation-input map): (obs_dim × uy_dim). uy_dim is free,
+    # but the row count must match obs_dim.
+    if hasproperty(obs_model, :D) && size(obs_model.D, 1) != obs_dim
+        throw(DimensionMismatchError("D matrix rows", obs_dim, size(obs_model.D, 1)))
+    end
+
+    #=
+    Check that d values are reasonable. `d` enters the linear predictor as
+    `λ = exp(C x + d + D v)`; |d| above ~50 risks exp overflow/underflow once Cx
+    is added on top.
+    =#
     if any(x -> abs(x) > 50, obs_model.d)  # exp(50) ≈ 5e21, exp(-50) ≈ 2e-22
         max_val = maximum(abs.(obs_model.d))
         throw(
@@ -313,9 +321,10 @@ function validate_LDS(lds::LinearDynamicalSystem{T,S,O}) where {T,S,O}
     # Check observation model dimensions and properties
     _validate_obs_model(lds.obs_model, lds.obs_dim, lds.latent_dim)
 
-    # Check fit_bool length. Gaussian path (BTD and Kalman) uses length 6 —
-    # the regression M-step fits A&b&B and C&d&D jointly, so flag layout is
-    # the same across backends.
+    #=
+    Check fit_bool length. The Gaussian path uses length 6 — the regression
+    M-step fits A&b&B and C&d&D jointly.
+    =#
     expected_fit_length = lds.obs_model isa PoissonObservationModel ? 5 : 6
     if length(lds.fit_bool) != expected_fit_length
         throw(DimensionMismatchError("fit_bool", expected_fit_length, length(lds.fit_bool)))
@@ -389,30 +398,19 @@ function validate_SLDS(slds::SLDS)
         throw(DimensionMismatchError("size(A, 1) vs number of LDSs", lds_count, k))
     end
 
-    # Validate transition matrix rows
+    # Validate transition matrix rows and the initial distribution. Delegating to
+    # validate_probvec keeps a single source of truth for the type-scaled
+    # tolerance (see A12) instead of re-hardcoding 1.0/atol=1e-10 here.
     for i in 1:k
-        row = slds.A[i, :]
-        sum_val = sum(row)
-        has_neg = any(x -> x < 0, row)
-        has_gt1 = any(x -> x > 1, row)
-
-        if !isapprox(sum_val, 1.0; atol=1e-10) || has_neg || has_gt1
-            throw(InvalidProbabilityVectorError("A[$i, :]", sum_val, has_neg, has_gt1))
-        end
+        validate_probvec(@view(slds.A[i, :]); name="A[$i, :]")
     end
-
-    # Validate initial distribution
-    sum_val = sum(slds.πₖ)
-    has_neg = any(x -> x < 0, slds.πₖ)
-    has_gt1 = any(x -> x > 1, slds.πₖ)
-
-    if !isapprox(sum_val, 1.0; atol=1e-10) || has_neg || has_gt1
-        throw(InvalidProbabilityVectorError("πₖ", sum_val, has_neg, has_gt1))
-    end
+    validate_probvec(slds.πₖ; name="πₖ")
 
     # Checks for LDS models
     latent_dim = slds.LDSs[1].latent_dim
     obs_dim = slds.LDSs[1].obs_dim
+    ux_dim = slds.LDSs[1].ux_dim
+    uy_dim = slds.LDSs[1].uy_dim
 
     for (i, lds) in enumerate(slds.LDSs)
         if lds.latent_dim != latent_dim
@@ -421,6 +419,15 @@ function validate_SLDS(slds::SLDS)
 
         if lds.obs_dim != obs_dim
             throw(DimensionMismatchError("LDS[$i].obs_dim", obs_dim, lds.obs_dim))
+        end
+
+        # Input dimensions must be uniform across LDsS models so a single `Data`
+        if lds.ux_dim != ux_dim
+            throw(DimensionMismatchError("LDS[$i].ux_dim", ux_dim, lds.ux_dim))
+        end
+
+        if lds.uy_dim != uy_dim
+            throw(DimensionMismatchError("LDS[$i].uy_dim", uy_dim, lds.uy_dim))
         end
 
         # This will throw if invalid
@@ -454,7 +461,9 @@ function validate_probvec(v::AbstractVector{T}; name::String="vector") where {T<
     has_neg = any(x -> x < 0, v)
     has_gt1 = any(x -> x > 1, v)
 
-    if !isapprox(sum_val, one(T); atol=1e-10) || has_neg || has_gt1
+    # Type-scaled tolerance:
+    atol = sqrt(eps(float(T)))
+    if !isapprox(sum_val, one(T); atol=atol) || has_neg || has_gt1
         throw(InvalidProbabilityVectorError(name, sum_val, has_neg, has_gt1))
     end
 
@@ -462,14 +471,14 @@ function validate_probvec(v::AbstractVector{T}; name::String="vector") where {T<
 end
 
 # ============================================================================
-# input-sequence normalization helpers. The public `latent_inputs`/`obs_inputs`
+# input-sequence normalization helpers. The public `ux`/`uy`
 # kwargs accept either `nothing` (no inputs — must match a zero-column `B`/`D`)
 # or per-trial matrices. Internally every sampler/smoother/M-step expects an
 # `AbstractMatrix{T}` of shape `(ux_dim, T_i)` (possibly `0 × T_i`), so these
 # helpers validate the supplied sequences and canonicalize on the way in.
 # ============================================================================
 
-function _check_latent_inputs(
+function _check_ux(
     cs::Nothing, expected_dim::Int, tsteps::Int, name::AbstractString, ::Type{T}
 ) where {T}
     expected_dim == 0 || throw(
@@ -482,7 +491,7 @@ function _check_latent_inputs(
     return zeros(T, 0, tsteps)
 end
 
-function _check_latent_inputs(
+function _check_ux(
     cs::AbstractMatrix{T}, expected_dim::Int, tsteps::Int, name::AbstractString, ::Type{T}
 ) where {T<:Real}
     size(cs, 1) == expected_dim || throw(
@@ -495,22 +504,19 @@ function _check_latent_inputs(
     return cs
 end
 
-@inline function _check_obs_inputs(
+@inline function _check_uy(
     cs, expected_dim::Int, tsteps::Int, ::GaussianObservationModel{T}
 ) where {T}
-    return _check_latent_inputs(cs, expected_dim, tsteps, "obs_inputs", T)
+    return _check_ux(cs, expected_dim, tsteps, "uy", T)
 end
 
-@inline function _check_obs_inputs(
-    cs::Nothing, expected_dim::Int, tsteps::Int, ::PoissonObservationModel{T}
+@inline function _check_uy(
+    cs, expected_dim::Int, tsteps::Int, ::PoissonObservationModel{T}
 ) where {T}
-    expected_dim == 0 || error(
-        "Poisson observation model does not support obs_inputs (expected_dim must be 0)"
-    )
-    return zeros(T, 0, tsteps)
+    return _check_ux(cs, expected_dim, tsteps, "uy", T)
 end
 
-function _normalize_multitrial_latent_inputs(
+function _normalize_multitrial_ux(
     cs::Nothing, expected_dim::Int, tsteps_per_trial, ::Type{T}, name::AbstractString
 ) where {T<:Real}
     expected_dim == 0 || throw(
@@ -521,7 +527,7 @@ function _normalize_multitrial_latent_inputs(
     return [zeros(T, 0, Int(Ti)) for Ti in tsteps_per_trial]
 end
 
-function _normalize_multitrial_latent_inputs(
+function _normalize_multitrial_ux(
     cs::AbstractVector{<:AbstractMatrix{T}},
     expected_dim::Int,
     tsteps_per_trial,
@@ -543,19 +549,17 @@ function _normalize_multitrial_latent_inputs(
     return cs
 end
 
-@inline function _normalize_multitrial_obs_inputs(
+@inline function _normalize_multitrial_uy(
     cs, expected_dim::Int, tsteps_per_trial, ::Type{T}, ::GaussianObservationModel
 ) where {T<:Real}
-    return _normalize_multitrial_latent_inputs(
-        cs, expected_dim, tsteps_per_trial, T, "obs_inputs"
-    )
+    return _normalize_multitrial_ux(cs, expected_dim, tsteps_per_trial, T, "uy")
 end
 
-@inline function _normalize_multitrial_obs_inputs(
-    cs::Nothing, expected_dim::Int, tsteps_per_trial, ::Type{T}, ::PoissonObservationModel
+@inline function _normalize_multitrial_uy(
+    cs, expected_dim::Int, tsteps_per_trial, ::Type{T}, ::PoissonObservationModel
 ) where {T<:Real}
-    expected_dim == 0 || error(
-        "Poisson observation model does not support obs_inputs (expected_dim must be 0)"
-    )
-    return [zeros(T, 0, Int(Ti)) for Ti in tsteps_per_trial]
+    return _normalize_multitrial_ux(cs, expected_dim, tsteps_per_trial, T, "uy")
 end
+
+# The public `Data(lds, y; ux, uy)` constructors that consume the multitrial
+# normalization helpers above live next to the `Data` struct in `lds/types.jl`.

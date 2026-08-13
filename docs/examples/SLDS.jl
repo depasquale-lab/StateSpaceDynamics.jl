@@ -17,9 +17,16 @@ rng = StableRNG(1234);
 
 ssd_palette = ["#2a78d6", "#1baf7a", "#eda100", "#4a3aa7", "#e34948", "#e87ba4"] # hide
 default(; # hide
-    palette=ssd_palette, framestyle=:box, grid=true, gridalpha=0.12, # hide
-    linewidth=2, size=(760, 420), titlefontsize=12, guidefontsize=10, # hide
-    legendfontsize=9, foreground_color_legend=nothing, # hide
+    palette=ssd_palette,
+    framestyle=:box,
+    grid=true,
+    gridalpha=0.12, # hide
+    linewidth=2,
+    size=(760, 420),
+    titlefontsize=12,
+    guidefontsize=10, # hide
+    legendfontsize=9,
+    foreground_color_legend=nothing, # hide
 ) # hide
 
 # ## Model
@@ -35,15 +42,17 @@ state_dim = 2
 obs_dim = 10
 K = 2
 
-A_hmm = [0.92 0.08;
-         0.06 0.94]
+A_hmm = [
+    0.92 0.08
+    0.06 0.94
+]
 πₖ = [1.0, 0.0]
 
 F₁ = 0.95 * [cos(0.05) -sin(0.05); sin(0.05) cos(0.05)]
 F₂ = 0.95 * [cos(0.55) -sin(0.55); sin(0.55) cos(0.55)]
 
 Q₁ = [0.001 0.0; 0.0 0.001]
-Q₂ = [0.1   0.0; 0.0 0.1]
+Q₂ = [0.1 0.0; 0.0 0.1]
 
 x0 = zeros(state_dim)
 P0 = Matrix(0.1 * I(state_dim))
@@ -51,16 +60,14 @@ b = zeros(state_dim)
 
 C₁ = randn(rng, obs_dim, state_dim)
 C₂ = randn(rng, obs_dim, state_dim)
-R  = Matrix(0.1 * I(obs_dim))
-d  = zeros(obs_dim)
+R = Matrix(0.1 * I(obs_dim))
+d = zeros(obs_dim)
 
 lds1 = LinearDynamicalSystem(
-    GaussianStateModel(F₁, Q₁, b, x0, P0),
-    GaussianObservationModel(C₁, R, d),
+    GaussianStateModel(F₁, Q₁, b, x0, P0), GaussianObservationModel(C₁, R, d)
 )
 lds2 = LinearDynamicalSystem(
-    GaussianStateModel(F₂, Q₂, b, x0, P0),
-    GaussianObservationModel(C₂, R, d),
+    GaussianStateModel(F₂, Q₂, b, x0, P0), GaussianObservationModel(C₂, R, d)
 )
 
 model = SLDS(; A=A_hmm, πₖ=πₖ, LDSs=[lds1, lds2]);
@@ -95,41 +102,47 @@ end
 
 A_init = [0.9 0.1; 0.1 0.9]
 A_init ./= sum(A_init; dims=2)
-πₖ_init = rand(rng, K); πₖ_init ./= sum(πₖ_init)
+πₖ_init = rand(rng, K);
+πₖ_init ./= sum(πₖ_init)
 
 Random.seed!(rng, 456)
 lds_init1 = LinearDynamicalSystem(
     GaussianStateModel(
         randn(rng, state_dim, state_dim) * 0.5,
         Matrix(0.1 * I(state_dim)),
-        zeros(state_dim), zeros(state_dim),
+        zeros(state_dim),
+        zeros(state_dim),
         Matrix(0.1 * I(state_dim)),
     ),
     GaussianObservationModel(
-        randn(rng, obs_dim, state_dim),
-        Matrix(0.1 * I(obs_dim)),
-        zeros(obs_dim),
+        randn(rng, obs_dim, state_dim), Matrix(0.1 * I(obs_dim)), zeros(obs_dim)
     ),
 )
 lds_init2 = LinearDynamicalSystem(
     GaussianStateModel(
         randn(rng, state_dim, state_dim) * 0.5,
         Matrix(0.1 * I(state_dim)),
-        zeros(state_dim), zeros(state_dim),
+        zeros(state_dim),
+        zeros(state_dim),
         Matrix(0.1 * I(state_dim)),
     ),
     GaussianObservationModel(
-        randn(rng, obs_dim, state_dim),
-        Matrix(0.1 * I(obs_dim)),
-        zeros(obs_dim),
+        randn(rng, obs_dim, state_dim), Matrix(0.1 * I(obs_dim)), zeros(obs_dim)
     ),
 )
 
 learned_model = SLDS(; A=A_init, πₖ=πₖ_init, LDSs=[lds_init1, lds_init2])
 elbos = fit!(learned_model, y; max_iter=20, progress=true);
 
-p_elbo = plot(elbos; xlabel="iteration", ylabel="ELBO",
-    title="Variational EM convergence", lw=2, legend=false, color="#2a78d6")
+p_elbo = plot(
+    elbos;
+    xlabel="iteration",
+    ylabel="ELBO",
+    title="Variational EM convergence",
+    lw=2,
+    legend=false,
+    color="#2a78d6",
+)
 
 # ## Decoding the mode sequence
 #
@@ -140,32 +153,42 @@ p_elbo = plot(elbos; xlabel="iteration", ylabel="ELBO",
 #     This section reaches into non-exported internals (`initialize_FilterSmooth`,
 #     `SLDSDiscreteLayer`, `estep!`, and friends) because the package does not
 #     yet expose a public posterior-decoding API for SLDS. These names may
-#     change between releases. The `obs_inputs`/`latent_inputs` values below
+#     change between releases. The `obs_seq`/`control_seq` values below
 #     are HiddenMarkovModels.jl plumbing: the "observation" fed to the discrete
 #     layer is just the timestep index used to look up pre-computed
 #     log-likelihoods, and there are no control inputs.
 
 ld = learned_model.LDSs[1]
 seq_ends = [T]
-obs_inputs = collect(1:T)
-latent_inputs = fill(nothing, T)
+obs_seq = collect(1:T)
+control_seq = fill(nothing, T)
 
 tfs = StateSpaceDynamics.initialize_FilterSmooth(ld, [T])
 dl = StateSpaceDynamics.SLDSDiscreteLayer(
-    learned_model.A, learned_model.πₖ, zeros(Float64, K, T),
+    learned_model.A, learned_model.πₖ, zeros(Float64, K, T)
 )
 fb_storage = StateSpaceDynamics._make_slds_fb_storage(dl, seq_ends)
 slds_ws = StateSpaceDynamics.SLDSSmoothWorkspace(Float64, learned_model, T)
 
-w_uniform = fill(1.0 / K, K, T)
-StateSpaceDynamics.smooth!(learned_model, tfs[1], y, w_uniform; ws=slds_ws)
-
+# The warm-start smooth draws the first posterior sample into `x_samples`; the
+# E-step then fills the mode posterior from it and re-smooths.
 x_samples = [Matrix{Float64}(undef, ld.latent_dim, T)]
-randn_buf = Vector{Float64}(undef, ld.latent_dim)
-StateSpaceDynamics.sample_posterior!(x_samples, rng, tfs, randn_buf)
+w_uniform = fill(1.0 / K, K, T)
+StateSpaceDynamics.smooth!(
+    learned_model, tfs[1], y, w_uniform; ws=slds_ws, x_sample=x_samples[1], rng=rng
+)
 StateSpaceDynamics.estep!(
-    learned_model, tfs, fb_storage, dl, [y], x_samples, slds_ws;
-    obs_inputs=obs_inputs, latent_inputs=latent_inputs, seq_ends=seq_ends,
+    learned_model,
+    tfs,
+    fb_storage,
+    dl,
+    [y],
+    x_samples,
+    slds_ws;
+    rng=rng,
+    obs_seq=obs_seq,
+    control_seq=control_seq,
+    seq_ends=seq_ends,
 )
 
 x_learned = tfs[1].x_smooth

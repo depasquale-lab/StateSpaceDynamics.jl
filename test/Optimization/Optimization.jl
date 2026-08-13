@@ -31,10 +31,12 @@ end
 
 function test_backtracking_returns_best_on_exhaustion()
     @testset "backtracking! returns best monotone step when max_iters exhausts" begin
-        # Force Armijo to never accept (huge c1) and cap phase 2 at one iter, so
-        # the loop exhausts and must fall back to the best step seen — which is
-        # the phase-1 step (α=1, ϕ=1), strictly better than the lone phase-2
-        # trial it would otherwise have returned.
+        #=
+        Force Armijo to never accept (huge c1) and cap phase 2 at one iter, so
+        the loop exhausts and must fall back to the best step seen — which is
+        the phase-1 step (α=1, ϕ=1), strictly better than the lone phase-2
+        trial it would otherwise have returned.
+        =#
         x = [2.0]
         ϕ!() = x[1]^2
         ls = SSDopt.BackTrackingLS{Float64}(; c1=1e6, max_iters=1)
@@ -49,6 +51,37 @@ function test_backtracking_returns_best_on_exhaustion()
         @test ϕ_new < ϕ0              # still a genuine improvement
         @test x ≈ [1.0]               # x restored to x_start + α_best·p
         @test ϕ_new ≈ ϕ!()            # x and returned ϕ are consistent
+    end
+    return nothing
+end
+
+function test_cubic_step_root_selection()
+    @testset "phase-2 cubic picks the sense-matching stationary point (A9)" begin
+        # check we step to the right stationary point of the cubic interpolant
+        a, b, disc = 1.0, 0.0, 9.0
+        @test SSDopt._cubic_step(Val(:min), a, b, disc) ≈ 1.0
+        @test SSDopt._cubic_step(Val(:max), a, b, disc) ≈ -1.0
+    end
+    return nothing
+end
+
+function test_backtracking_max_sense_increases()
+    @testset "backtracking! :max increases ϕ and advances x by α·p" begin
+        # ϕ(s) = -s², maximize from s = 2 along the ascent direction p = -1.
+        x = [2.0]
+        ϕ!() = -x[1]^2
+        ls = SSDopt.BackTrackingLS{Float64}()
+        ϕ0 = ϕ!()                     # -4.0
+        g = [-2 * x[1]]               # ∇ϕ = -2s = -4
+        p = [-1.0]                    # ascent direction (toward 0)
+        dϕ0 = g[1] * p[1]             # = 4 > 0 for an ascent step
+
+        α, ϕ_new = SSDopt.backtracking!(Val(:max), ls, x, p, ϕ!, ϕ0, dϕ0)
+
+        @test α > 0
+        @test ϕ_new > ϕ0              # Armijo (:max) accepted a strict increase
+        @test x ≈ [2.0 + α * p[1]]    # x mutated in place to x_start + α·p
+        @test ϕ_new ≈ ϕ!()            # returned value matches ϕ at the returned x
     end
     return nothing
 end
@@ -124,9 +157,11 @@ end
 
 function test_newton_smooth_returns_false_on_max_iter()
     @testset "newton_smooth! returns false when max_iter is exhausted" begin
-        # Convergence is only detected at the top of the *next* iteration, so a
-        # single allowed iteration steps onto the target yet still reports
-        # non-convergence
+        #=
+        Convergence is only detected at the top of the *next* iteration, so a
+        single allowed iteration steps onto the target yet still reports
+        non-convergence
+        =#
         pr = _newton_quadratic_problem()
         converged = SSDopt.newton_smooth!(
             Val(:min),

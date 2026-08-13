@@ -56,15 +56,23 @@ function _sample_trial!(
     uy_trial::AbstractMatrix,
 )
     tsteps = size(x_trial, 2)
-    # Poisson obs model has no D matrix; uy_trial is accepted for signature
-    # parity with the Gaussian path but must be empty (validated by callers).
-    @assert size(uy_trial, 1) == 0 "Poisson observation model does not support obs inputs"
 
-    # Initial state
+    # Initial state. The observation at t=1 includes the obs-input term D·v_1
+    # when uy_trial has nonzero rows; zero-row matmul is a no-op.
     x_trial[:, 1] = rand(rng, MvNormal(state_params.x0, state_params.P0))
-    y_trial[:, 1] = rand.(rng, Poisson.(exp.(obs_params.C * x_trial[:, 1] + obs_params.d)))
+    y_trial[:, 1] =
+        rand.(
+            rng,
+            Poisson.(
+                exp.(
+                    obs_params.C * x_trial[:, 1] +
+                    obs_params.d +
+                    obs_params.D * uy_trial[:, 1]
+                )
+            ),
+        )
 
-    # Subsequent states
+    # Subsequent states. The dynamics input B·u_{t-1} kicks the state forward.
     for t in 2:tsteps
         x_trial[:, t] = rand(
             rng,
@@ -76,14 +84,23 @@ function _sample_trial!(
             ),
         )
         y_trial[:, t] =
-            rand.(rng, Poisson.(exp.(obs_params.C * x_trial[:, t] + obs_params.d)))
+            rand.(
+                rng,
+                Poisson.(
+                    exp.(
+                        obs_params.C * x_trial[:, t] +
+                        obs_params.d +
+                        obs_params.D * uy_trial[:, t]
+                    )
+                ),
+            )
     end
 end
 
 """
-    Random.rand([rng,] lds, tsteps::Integer; latent_inputs=nothing, obs_inputs=nothing)
+    Random.rand([rng,] lds, tsteps::Integer; ux=nothing, uy=nothing)
     Random.rand([rng,] lds, tsteps_per_trial::AbstractVector{<:Integer};
-                latent_inputs=nothing, obs_inputs=nothing)
+                ux=nothing, uy=nothing)
 
 Sample from a Linear Dynamical System.
 
@@ -93,27 +110,26 @@ Sample from a Linear Dynamical System.
   `(x::Vector{Matrix}, y::Vector{Matrix})`. Lengths may differ across trials.
 
 Optional input sequences:
-- `latent_inputs`: dynamics-input sequence consumed by `B`. Single-trial form
+- `ux`: dynamics-input sequence consumed by `B`. Single-trial form
   is an `(ux_dim, tsteps)` matrix; multi-trial is a `Vector{<:AbstractMatrix}`
   of per-trial matrices. Required when `size(state_model.B, 2) > 0`.
-- `obs_inputs`: same shape for the observation input `D`. Required when
-  `size(obs_model.D, 2) > 0`. Gaussian observation model only.
+- `uy`: same shape for the observation input `D`. Required when
+  `size(obs_model.D, 2) > 0`. Supported for both Gaussian and Poisson
+  observation models.
 """
 function Random.rand(
     rng::AbstractRNG,
     lds::LinearDynamicalSystem{T,S,O},
     tsteps::Integer;
-    latent_inputs::Union{Nothing,AbstractMatrix{T}}=nothing,
-    obs_inputs::Union{Nothing,AbstractMatrix{T}}=nothing,
+    ux::Union{Nothing,AbstractMatrix{T}}=nothing,
+    uy::Union{Nothing,AbstractMatrix{T}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     state_params = _extract_state_params(lds.state_model)
     obs_params = _extract_obs_params(lds.obs_model)
     Ti = Int(tsteps)
 
-    ux_trial = _check_latent_inputs(
-        latent_inputs, lds.state_input_dim, Ti, "latent_inputs", T
-    )
-    uy_trial = _check_obs_inputs(obs_inputs, lds.obs_input_dim, Ti, lds.obs_model)
+    ux_trial = _check_ux(ux, lds.ux_dim, Ti, "ux", T)
+    uy_trial = _check_uy(uy, lds.uy_dim, Ti, lds.obs_model)
 
     x = Matrix{T}(undef, lds.latent_dim, Ti)
     y = Matrix{T}(undef, lds.obs_dim, Ti)
@@ -125,8 +141,8 @@ function Random.rand(
     rng::AbstractRNG,
     lds::LinearDynamicalSystem{T,S,O},
     tsteps_per_trial::AbstractVector{<:Integer};
-    latent_inputs::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
-    obs_inputs::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
+    ux::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
+    uy::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     state_params = _extract_state_params(lds.state_model)
     obs_params = _extract_obs_params(lds.obs_model)
@@ -140,15 +156,12 @@ function Random.rand(
         y[i] = Matrix{T}(undef, lds.obs_dim, Ti)
     end
 
-    ux_seq = _normalize_multitrial_latent_inputs(
-        latent_inputs, lds.state_input_dim, tsteps_per_trial, T, "latent_inputs"
-    )
-    uy_seq = _normalize_multitrial_obs_inputs(
-        obs_inputs, lds.obs_input_dim, tsteps_per_trial, T, lds.obs_model
-    )
+    ux_seq = _normalize_multitrial_ux(ux, lds.ux_dim, tsteps_per_trial, T, "ux")
+    uy_seq = _normalize_multitrial_uy(uy, lds.uy_dim, tsteps_per_trial, T, lds.obs_model)
 
     # `MersenneTwister` (and most RNG types) is not thread-safe, so sharing
-    # `rng` across `@threads` races on internal state.
+    # `rng` across parallel iterations races on internal state; each chunk
+    # gets its own child RNG, indexed by chunk (not `threadid()`).
     if ntrials == 1
         _sample_trial!(
             rng, x[1], y[1], state_params, obs_params, lds.obs_model, ux_seq[1], uy_seq[1]
@@ -160,24 +173,22 @@ function Random.rand(
     chunksize = cld(ntrials, ntasks)
     task_rngs = [MersenneTwister(rand(rng, UInt64)) for _ in 1:ntasks]
 
-    @sync for i in 1:ntasks
+    tforeach(1:ntasks) do i
         lo = (i - 1) * chunksize + 1
         hi = min(i * chunksize, ntrials)
-        lo > hi && continue
-        @spawn begin
-            trng = task_rngs[i]
-            for trial in lo:hi
-                _sample_trial!(
-                    trng,
-                    x[trial],
-                    y[trial],
-                    state_params,
-                    obs_params,
-                    lds.obs_model,
-                    ux_seq[trial],
-                    uy_seq[trial],
-                )
-            end
+        lo > hi && return nothing
+        trng = task_rngs[i]
+        for trial in lo:hi
+            _sample_trial!(
+                trng,
+                x[trial],
+                y[trial],
+                state_params,
+                obs_params,
+                lds.obs_model,
+                ux_seq[trial],
+                uy_seq[trial],
+            )
         end
     end
 

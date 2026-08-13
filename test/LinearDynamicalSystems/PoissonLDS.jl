@@ -1,4 +1,3 @@
-# Include common test utilities
 include("CommonLDS.jl")
 
 # define parameters for a PoissonLDS
@@ -13,12 +12,14 @@ b = zeros(2)
 function toy_PoissonLDS(
     ntrials::Int=1, fit_bool::Vector{Bool}=[true, true, true, true, true, true]
 )
-    # IMPORTANT: copy the module-level matrices. `GaussianStateModel`/
-    # `PoissonObservationModel` keep references to whatever arrays are
-    # passed in, so without these copies the first `fit!` call mutates the
-    # module-level `A, Q, ...` arrays in place, and every subsequent
-    # `toy_PoissonLDS()` call returns a model seeded with the previous
-    # fit's parameters. Test-ordering-dependent flakiness ensues.
+    #=
+    IMPORTANT: copy the module-level matrices. `GaussianStateModel`/
+    `PoissonObservationModel` keep references to whatever arrays are
+    passed in, so without these copies the first `fit!` call mutates the
+    module-level `A, Q, ...` arrays in place, and every subsequent
+    `toy_PoissonLDS()` call returns a model seeded with the previous
+    fit's parameters. Test-ordering-dependent flakiness ensues.
+    =#
     gaussian_sm = GaussianStateModel(;
         A=copy(A), b=copy(b), Q=copy(Q), x0=copy(x0), P0=copy(P0)
     )
@@ -31,9 +32,11 @@ function toy_PoissonLDS(
         fit_bool=fill(true, 6),
     )
 
-    # sample data — seeded so the Poisson Newton smoother doesn't
-    # occasionally diverge on an unlucky draw, and EM shows a clear
-    # ELBO improvement (the `test_em_convergence_common` assertion).
+    #=
+    sample data — seeded so the Poisson Newton smoother doesn't
+    occasionally diverge on an unlucky draw, and EM shows a clear
+    ELBO improvement (the `test_em_convergence_common` assertion).
+    =#
     T = 100
     rng = StableRNG(42)
     x, y = rand(rng, poisson_lds, fill(T, ntrials))
@@ -274,7 +277,7 @@ function test_poisson_loglikelihood_type_preservation()
         x_mat = x[1]
         y_mat = y[1]
 
-        ll = sum(StateSpaceDynamics.joint_loglikelihood(x_mat, lds, y_mat))
+        ll = sum(StateSpaceDynamics.joint_loglikelihood(lds, x_mat, y_mat))
 
         if ll isa Number
             @test typeof(ll) === T
@@ -332,9 +335,9 @@ function test_parameter_gradient()
     C, d = plds.obs_model.C, plds.obs_model.d
     params = vcat(vec(C), d)
 
-    # get analytical gradient
+    # get analytical gradient (no obs inputs: zero-col D, uy=nothing)
     grad_analytical = StateSpaceDynamics.gradient_observation_model!(
-        zeros(length(params)), C, d, tfs, y, sws_pool
+        zeros(length(params)), C, d, plds.obs_model.D, tfs, y, nothing, sws_pool
     )
 
     # numerical gradient against trial 1 only
@@ -345,10 +348,12 @@ function test_parameter_gradient()
         C_size = plds.obs_dim * plds.latent_dim
         d = params[(end - plds.obs_dim + 1):end]
         C = reshape(params[1:C_size], plds.obs_dim, plds.latent_dim)
-        # Canonical Poisson GLM: λ_t = exp(C x_t + d). The previous version of
-        # this numerical-gradient closure had `d = exp.(d)` here, which mirrored
-        # the (now-fixed) double-exp bug in poisson.jl — the analytical and
-        # numerical gradients agreed only because *both* were wrong.
+        #=
+        Canonical Poisson GLM: λ_t = exp(C x_t + d). The previous version of
+        this numerical-gradient closure had `d = exp.(d)` here, which mirrored
+        the (now-fixed) double-exp bug in poisson.jl — the analytical and
+        numerical gradients agreed only because *both* were wrong.
+        =#
         tsteps = size(y1, 2)
         val = zero(eltype(params))
         for t in 1:tsteps
@@ -379,6 +384,207 @@ function test_EM(n_trials::Int=1)
     return test_em_convergence_common(toy_PoissonLDS, n_trials)
 end
 
+function test_poisson_public_elbo(; rng=MersenneTwister(0xE1B0))
+    @testset "public elbo (allocating)" begin
+        D, P, Tt, N = 2, 4, 60, 3
+        sm = GaussianStateModel(
+            0.9 * Matrix{Float64}(I, D, D),
+            0.1 * Matrix{Float64}(I, D, D),
+            zeros(D),
+            zeros(D),
+            Matrix{Float64}(I, D, D),
+        )
+        pom = PoissonObservationModel(0.5 * randn(rng, P, D), fill(-0.5, P))
+        plds = LinearDynamicalSystem(sm, pom)
+        _, Y = rand(rng, plds, fill(Tt, N))
+
+        e = elbo(plds, Y)
+        @test isfinite(e)
+
+        # Shape invariance: 3-D array and single-matrix forms agree.
+        @test isapprox(elbo(plds, cat(Y...; dims=3)), e; rtol=1e-10)
+        @test isapprox(elbo(plds, Y[1]), elbo(plds, [Y[1]]); rtol=1e-10)
+
+        # Matches the first entry of fit!'s ELBO trace (same Laplace E-step).
+        @test isapprox(e, fit!(deepcopy(plds), Y; max_iter=1, progress=false)[1]; rtol=1e-8)
+    end
+    return nothing
+end
+
+function test_poisson_latent_inputs(; rng=MersenneTwister(0x50B1))
+    @testset "Poisson LDS latent inputs (B*ux)" begin
+        D, P, U, Tt, N = 2, 5, 3, 80, 4
+
+        # Input-driven state model: nonzero B → ux_dim = U.
+        smB = GaussianStateModel(;
+            A=0.9 * Matrix{Float64}(I, D, D),
+            Q=0.05 * Matrix{Float64}(I, D, D),
+            b=zeros(D),
+            B=0.3 * randn(rng, D, U),
+            x0=zeros(D),
+            P0=Matrix{Float64}(I, D, D),
+        )
+        pom = PoissonObservationModel(0.5 * randn(rng, P, D), fill(-1.0, P))
+        plds = LinearDynamicalSystem(smB, pom)
+        @test plds.ux_dim == U
+        @test plds.uy_dim == 0
+        @test length(plds.fit_bool) == 5
+
+        u = [randn(rng, U, Tt) for _ in 1:N]
+        _, Y = rand(rng, plds, fill(Tt, N); ux=u)
+
+        # Public entry points accept `ux` and stay finite.
+        @test isfinite(elbo(plds, Y; ux=u))
+        xs = smooth(plds, Y; ux=u)
+        @test all(isfinite, xs[1][1])
+
+        # Omitting a required input sequence throws at Data construction.
+        @test_throws ArgumentError elbo(plds, Y)
+        @test_throws ArgumentError smooth(plds, Y)
+        @test_throws ArgumentError fit!(deepcopy(plds), Y; progress=false)
+
+        # Laplace-EM ELBO is monotone (up to smoother-tolerance noise) and the
+        # input matrix B is actually learned from a zero init.
+        plds0 = LinearDynamicalSystem(
+            GaussianStateModel(;
+                A=0.5 * Matrix{Float64}(I, D, D),
+                Q=0.1 * Matrix{Float64}(I, D, D),
+                b=zeros(D),
+                B=zeros(D, U),
+                x0=zeros(D),
+                P0=Matrix{Float64}(I, D, D),
+            ),
+            PoissonObservationModel(0.1 * randn(rng, P, D), zeros(P)),
+        )
+        elbos = fit!(plds0, Y; ux=u, max_iter=40, progress=false)
+        @test minimum(diff(elbos)) >= -1e-6
+        @test norm(plds0.state_model.B) > 1e-3
+    end
+    return nothing
+end
+
+function test_poisson_obs_inputs(; rng=MersenneTwister(0xD0B5))
+    @testset "Poisson LDS observation inputs (D*uy)" begin
+        Dl, P, V, Tt, N = 2, 4, 3, 60, 4
+
+        gsm = GaussianStateModel(;
+            A=0.9 * Matrix{Float64}(I, Dl, Dl),
+            Q=0.05 * Matrix{Float64}(I, Dl, Dl),
+            b=zeros(Dl),
+            x0=zeros(Dl),
+            P0=Matrix{Float64}(I, Dl, Dl),
+        )
+        Cm = 0.5 * randn(rng, P, Dl)
+        dm = fill(-0.5, P)
+        Dm = 0.4 * randn(rng, P, V)
+        pom = PoissonObservationModel(; C=Cm, d=dm, D=Dm)
+        plds = LinearDynamicalSystem(gsm, pom)
+        @test plds.uy_dim == V
+        @test plds.ux_dim == 0
+        @test length(plds.fit_bool) == 5
+        @test size(plds.obs_model.D) == (P, V)
+
+        uy1 = randn(rng, V, Tt)
+        x1 = 0.3 * randn(rng, Dl, Tt)
+        y1 = Float64.(rand.(rng, Poisson.(exp.(Cm * x1 .+ dm .+ Dm * uy1))))
+
+        # Hand-rolled, Dual-safe complete-data log-likelihood (independent of the
+        # code under test) — the reference for the latent gradient and Hessian.
+        function ref_ll(xv)
+            xm = reshape(xv, Dl, Tt)
+            P0i = inv(plds.state_model.P0)
+            Qi = inv(plds.state_model.Q)
+            x0v = plds.state_model.x0
+            acc =
+                -0.5 * (xm[:, 1] - x0v)' * P0i * (xm[:, 1] - x0v) -
+                0.5 * logdet(plds.state_model.P0) - 0.5 * Dl * log(2π)
+            for t in 2:Tt
+                r = xm[:, t] - plds.state_model.A * xm[:, t - 1] - plds.state_model.b
+                acc +=
+                    -0.5 * r' * Qi * r - 0.5 * logdet(plds.state_model.Q) -
+                    0.5 * Dl * log(2π)
+            end
+            for t in 1:Tt
+                η = Cm * xm[:, t] + dm + Dm * uy1[:, t]
+                acc += dot(y1[:, t], η) - sum(exp, η) - sum(z -> loggamma(z + 1), y1[:, t])
+            end
+            return acc
+        end
+
+        ws = StateSpaceDynamics.SmoothWorkspace(Float64, Dl, P, Tt; uy_dim=V)
+        StateSpaceDynamics.compute_smooth_constants!(ws, plds)
+
+        # Latent gradient: D*uy shifts the rate λ = exp(Cx + d + D uy), so it
+        # enters the x-gradient through λ.
+        g_ad = ForwardDiff.gradient(ref_ll, vec(x1))
+        g_an = vec(copy(StateSpaceDynamics.gradient!(ws, plds, x1, y1, nothing, uy1)))
+        @test norm(g_an - g_ad) < 1e-8
+
+        # Latent Hessian: Poisson curvature depends on the rate, hence on uy.
+        H_ad = ForwardDiff.hessian(ref_ll, vec(x1))
+        StateSpaceDynamics.hessian!(ws, plds, x1, y1, uy1)
+        H_dense = block_tridgm(ws.btd.H_diag, ws.btd.H_super, ws.btd.H_sub)
+        @test norm(H_dense - H_ad) < 1e-8
+
+        # Q-gradient over the stacked emission [C d D] on z_aug = [x; 1; v].
+        uy = [randn(rng, V, Tt) for _ in 1:N]
+        _, Y = rand(rng, plds, fill(Tt, N); uy=uy)
+        data = StateSpaceDynamics.Data(plds, Y; uy=uy)
+        tfs = StateSpaceDynamics.initialize_FilterSmooth(plds, data.tsteps)
+        sws_pool = [
+            StateSpaceDynamics.SmoothWorkspace(Float64, Dl, P, Tt; uy_dim=V) for
+            _ in 1:Threads.maxthreadid()
+        ]
+        StateSpaceDynamics.smooth!(plds, tfs, data, sws_pool)
+
+        function Qfun(pv)
+            Cx = reshape(pv[1:(P * Dl)], P, Dl)
+            dx = pv[(P * Dl + 1):(P * Dl + P)]
+            Dx = reshape(pv[(P * Dl + P + 1):end], P, V)
+            acc = zero(eltype(pv))
+            for k in 1:N
+                Ez = tfs[k].x_smooth
+                Ps = tfs[k].p_smooth
+                for t in 1:Tt
+                    h = Cx * Ez[:, t] .+ dx .+ Dx * uy[k][:, t]
+                    ρ = [0.5 * dot(Cx[i, :], Ps[:, :, t] * Cx[i, :]) for i in 1:P]
+                    λ = exp.(h .+ ρ)
+                    acc += dot(Y[k][:, t], h) - sum(λ)
+                end
+            end
+            return acc
+        end
+        gQ_ad = ForwardDiff.gradient(Qfun, vcat(vec(Cm), dm, vec(Dm)))
+        gQ_an = zeros(P * (Dl + 1 + V))
+        # gradient_observation_model! returns -∇Q (for minimization); negate.
+        StateSpaceDynamics.gradient_observation_model!(
+            gQ_an, Cm, dm, Dm, tfs, Y, uy, sws_pool
+        )
+        @test norm(-gQ_an - gQ_ad) < 1e-8
+
+        # Public entry points accept uy; omitting a required input throws.
+        @test isfinite(elbo(plds, Y; uy=uy))
+        @test_throws ArgumentError elbo(plds, Y)
+        @test_throws ArgumentError fit!(deepcopy(plds), Y; progress=false)
+
+        # Laplace-EM ELBO monotone and D is learned from a zero init.
+        plds0 = LinearDynamicalSystem(
+            GaussianStateModel(;
+                A=0.5 * Matrix{Float64}(I, Dl, Dl),
+                Q=0.1 * Matrix{Float64}(I, Dl, Dl),
+                b=zeros(Dl),
+                x0=zeros(Dl),
+                P0=Matrix{Float64}(I, Dl, Dl),
+            ),
+            PoissonObservationModel(; C=0.1 * randn(rng, P, Dl), d=zeros(P), D=zeros(P, V)),
+        )
+        elbos = fit!(plds0, Y; uy=uy, max_iter=50, progress=false)
+        @test minimum(diff(elbos)) >= -1e-6
+        @test norm(plds0.obs_model.D) > 1e-3
+    end
+    return nothing
+end
+
 function test_EM_matlab()
     # read data used to smooth the results
     data_1 = Matrix(CSV.read("test_data/trial1.csv", DataFrame))
@@ -389,13 +595,15 @@ function test_EM_matlab()
     seq = matread("test_data/seq_matlab_3_trials_plds.mat")
     params = matread("test_data/params_matlab_3_trials_plds.mat")
 
-    # The MATLAB reference was generated against the *buggy* Poisson model
-    # `λ = exp(C x + exp(log_d))` with `log_d = log([0.1, 0.1, 0.1])`. The
-    # *effective* additive offset MATLAB used was `exp(log_d) = [0.1, 0.1, 0.1]`.
-    # Under the canonical post-fix model `λ = exp(C x + d)`, setting
-    # `d = [0.1, 0.1, 0.1]` directly reproduces MATLAB's likelihood — same E-step
-    # posteriors, same M-step optimum (the MAP is reachable from either
-    # parameterization). Hence the comparison still holds as a regression check.
+    #=
+    The MATLAB reference was generated against the *buggy* Poisson model
+    `λ = exp(C x + exp(log_d))` with `log_d = log([0.1, 0.1, 0.1])`. The
+    *effective* additive offset MATLAB used was `exp(log_d) = [0.1, 0.1, 0.1]`.
+    Under the canonical post-fix model `λ = exp(C x + d)`, setting
+    `d = [0.1, 0.1, 0.1]` directly reproduces MATLAB's likelihood — same E-step
+    posteriors, same M-step optimum (the MAP is reachable from either
+    parameterization). Hence the comparison still holds as a regression check.
+    =#
     gsm = GaussianStateModel(;
         A=[cos(0.1) -sin(0.1); sin(0.1) cos(0.1)],
         Q=0.00001 * Matrix{Float64}(I(2)),
@@ -422,13 +630,15 @@ function test_EM_matlab()
     StateSpaceDynamics.smooth!(plds, tfs, y, sws_pool)
     StateSpaceDynamics.sufficient_statistics!(tfs)
 
-    # Check each posterior moment against MATLAB's reference.
-    # MATLAB stores Vsm as `(T·D, D)` — vertically-stacked (D × D) covariance
-    # blocks across timesteps — and VVsm as `((T-1)·D, D)` lagged covariance
-    # blocks for t = 2..T. Reshape both to Julia's `(D, D, T)` / `(D, D, T-1)`
-    # layout for direct comparison with `tfs[i].p_smooth` /
-    # `tfs[i].p_smooth_tt1[:, :, 2:end]` (slice 1 of `p_smooth_tt1` is the
-    # unused lag-into-prehistory entry).
+    #=
+    Check each posterior moment against MATLAB's reference.
+    MATLAB stores Vsm as `(T·D, D)` — vertically-stacked (D × D) covariance
+    blocks across timesteps — and VVsm as `((T-1)·D, D)` lagged covariance
+    blocks for t = 2..T. Reshape both to Julia's `(D, D, T)` / `(D, D, T-1)`
+    layout for direct comparison with `tfs[i].p_smooth` /
+    `tfs[i].p_smooth_tt1[:, :, 2:end]` (slice 1 of `p_smooth_tt1` is the
+    unused lag-into-prehistory entry).
+    =#
     D = plds.latent_dim
     for i in 1:3
         T_i = size(y[i], 2)
@@ -448,13 +658,19 @@ function test_EM_matlab()
     params_obj = params["params"]["model"]
     @test isapprox(plds.state_model.A, params_obj["A"], atol=1e-5)
     @test isapprox(plds.state_model.Q, params_obj["Q"], atol=1e-5)
-    @test isapprox(plds.obs_model.C, params_obj["C"], atol=1e-5)
+    #= C, d come from the LBFGS+HagerZhang M-step (`poisson_observations.jl`);
+    Optim v2 differs from the MATLAB reference by a bit more than atol=1e-5 (max
+    diff ~1.3e-5).
+    =#
+    @test isapprox(plds.obs_model.C, params_obj["C"], atol=5e-5)
     @test isapprox(plds.state_model.x0, params_obj["x0"], atol=1e-5)
     @test isapprox(plds.state_model.P0, params_obj["Q0"], atol=1e-5)
-    # MATLAB stored `d` as the effective offset (= natural firing rate, since
-    # the buggy model's exp(log_d) IS the offset). Under the canonical model
-    # that's just `d` directly — no exp wrapping.
-    @test isapprox(plds.obs_model.d, params_obj["d"], atol=1e-5)
+    #=
+    MATLAB stored `d` as the effective offset (= natural firing rate, since
+    the buggy model's exp(log_d) IS the offset). Under the canonical model
+    that's just `d` directly — no exp wrapping.
+    =#
+    @test isapprox(plds.obs_model.d, params_obj["d"], atol=5e-5)
 end
 
 function test_poisson_map_step_improves_Q(; rng=MersenneTwister(123))
@@ -506,13 +722,15 @@ function test_poisson_map_step_improves_Q(; rng=MersenneTwister(123))
 end
 
 function test_poisson_cd_prior_shrink(; rng=MersenneTwister(20260604))
-    # MN `CD_prior` on the Poisson emission `[C d]` (the MN-only prior; Poisson
-    # has no IW observation-noise counterpart). With a strong prior centered at
-    # M₀ = 0 and Λ ≫ data, the penalized LBFGS emission update should pull the
-    # fitted `[C d]` toward 0. The suf-based Poisson `calculate_elbo` now adds
-    # the matching MN trace term `-½ tr((W-M₀)Λ(W-M₀)')`, so the displayed ELBO
-    # must stay monotone; were that term missing, the ELBO would drop sharply as
-    # `[C d]` shrinks (the data fit worsens while the dropped penalty falls).
+    #=
+    MN `CD_prior` on the Poisson emission `[C d]` (the MN-only prior; Poisson
+    has no IW observation-noise counterpart). With a strong prior centered at
+    M₀ = 0 and Λ ≫ data, the penalized LBFGS emission update should pull the
+    fitted `[C d]` toward 0. The suf-based Poisson `calculate_elbo` now adds
+    the matching MN trace term `-½ tr((W-M₀)Λ(W-M₀)')`, so the displayed ELBO
+    must stay monotone; were that term missing, the ELBO would drop sharply as
+    `[C d]` shrinks (the data fit worsens while the dropped penalty falls).
+    =#
     @testset "PoissonLDS: CD_prior shrinks [C d] toward M₀, ELBO monotone" begin
         D, P, Tt, N = 2, 3, 50, 4
 
@@ -554,9 +772,11 @@ function test_poisson_cd_prior_shrink(; rng=MersenneTwister(20260604))
         lds_p = LinearDynamicalSystem(gsm_p, pom_p)
         elbos_p = fit!(lds_p, Y; max_iter=20, progress=false)
 
-        # ELBO monotone under the MN penalty (relative slack for the Laplace
-        # E-step). A missing MN term in calculate_elbo would violate this by a
-        # wide margin given Λ = 1e6.
+        #=
+        ELBO monotone under the MN penalty (relative slack for the Laplace
+        E-step). A missing MN term in calculate_elbo would violate this by a
+        wide margin given Λ = 1e6.
+        =#
         @test all(diff(elbos_p) .>= -1e-4 .* abs.(@view elbos_p[1:(end - 1)]) .- 1e-6)
         @test all(isfinite, elbos_p)
 
@@ -569,6 +789,105 @@ function test_poisson_cd_prior_shrink(; rng=MersenneTwister(20260604))
         @test all(abs.(lds_p.obs_model.d) .< 0.05)
         @test all(isfinite, lds_p.obs_model.C)
         @test all(isfinite, lds_p.obs_model.d)
+    end
+    return nothing
+end
+
+function test_poisson_ab_prior_shrink(; rng=MersenneTwister(20260713))
+    @testset "PoissonLDS: AB_prior shrinks [A b] toward M₀, ELBO monotone" begin
+        D, P, Tt, N = 2, 3, 50, 4
+
+        A = 0.9 .* Matrix(I, D, D)
+        Q = 0.15 .* Matrix(I, D, D)
+        b = 0.3 .* ones(D)
+        x0 = zeros(D)
+        P0 = 0.15 .* Matrix(I, D, D)
+        C = 0.5 .* randn(rng, P, D)
+        d = log.(0.7 .+ rand(rng, P))
+
+        # Shared dataset, drawn from a prior-free model.
+        gsm_seed = GaussianStateModel(;
+            A=copy(A), Q=copy(Q), b=copy(b), x0=copy(x0), P0=copy(P0)
+        )
+        pom_seed = PoissonObservationModel(; C=copy(C), d=copy(d))
+        lds_seed = LinearDynamicalSystem(gsm_seed, pom_seed)
+        _, Y = rand(rng, lds_seed, fill(Tt, N))
+
+        # Reference fit: no dynamics prior.
+        gsm_ref = GaussianStateModel(;
+            A=copy(A), Q=copy(Q), b=copy(b), x0=copy(x0), P0=copy(P0)
+        )
+        pom_ref = PoissonObservationModel(; C=copy(C), d=copy(d))
+        lds_ref = LinearDynamicalSystem(gsm_ref, pom_ref)
+        elbos_ref = fit!(lds_ref, Y; max_iter=20, progress=false)
+        @test all(isfinite, elbos_ref)
+
+        # Same data, very strong MN prior on [A b] centered at zero. AB lives in
+        # (D × D+1): D columns for A, one for the bias b.
+        AB_M0 = zeros(D, D + 1)
+        AB_Λ = 1e6 .* Matrix{Float64}(I, D + 1, D + 1)
+        gsm_p = GaussianStateModel(;
+            A=copy(A),
+            Q=copy(Q),
+            b=copy(b),
+            x0=copy(x0),
+            P0=copy(P0),
+            AB_prior=StateSpaceDynamics.MNPrior(; M₀=AB_M0, Λ=AB_Λ),
+        )
+        pom_p = PoissonObservationModel(; C=copy(C), d=copy(d))
+        lds_p = LinearDynamicalSystem(gsm_p, pom_p)
+        elbos_p = fit!(lds_p, Y; max_iter=20, progress=false)
+
+        worst_ref = max(0.0, -minimum(diff(elbos_ref)))
+        worst_p = max(0.0, -minimum(diff(elbos_p)))
+        @test worst_p <= max(10 * worst_ref, 1.0)
+        @test all(isfinite, elbos_p)
+
+        # Strong shrinkage: penalized [A b] is smaller than reference and pulled
+        # to ≈ M₀ = 0.
+        W_ref = hcat(lds_ref.state_model.A, lds_ref.state_model.b)
+        W_p = hcat(lds_p.state_model.A, lds_p.state_model.b)
+        @test norm(W_p) < norm(W_ref)
+        @test norm(lds_p.state_model.A) < 0.05
+        @test all(abs.(lds_p.state_model.b) .< 0.05)
+        @test all(isfinite, lds_p.state_model.A)
+        @test all(isfinite, lds_p.state_model.b)
+    end
+    return nothing
+end
+
+function test_poisson_unstable_init_no_blowup(; rng=MersenneTwister(20260714))
+    @testset "PoissonLDS: unstable init A does not blow up the smoother" begin
+        D, P, Tt, N = 2, 3, 60, 3
+
+        # Stable data-generating model.
+        A_gen = 0.9 .* Matrix(I, D, D)
+        Q = 0.1 .* Matrix(I, D, D)
+        b = zeros(D)
+        x0 = ones(D)
+        P0 = 0.1 .* Matrix(I, D, D)
+        C = 0.5 .* randn(rng, P, D)
+        d = log.(0.7 .+ rand(rng, P))
+        lds_gen = LinearDynamicalSystem(
+            GaussianStateModel(;
+                A=copy(A_gen), Q=copy(Q), b=copy(b), x0=copy(x0), P0=copy(P0)
+            ),
+            PoissonObservationModel(; C=copy(C), d=copy(d)),
+        )
+        _, Y = rand(rng, lds_gen, fill(Tt, N))
+
+        A_bad = 1.8 .* Matrix(I, D, D)
+        lds_fit = LinearDynamicalSystem(
+            GaussianStateModel(;
+                A=copy(A_bad), Q=copy(Q), b=copy(b), x0=copy(x0), P0=copy(P0)
+            ),
+            PoissonObservationModel(; C=copy(C), d=copy(d)),
+        )
+        elbos = fit!(lds_fit, Y; max_iter=15, progress=false)
+
+        @test all(isfinite, elbos)
+        @test all(isfinite, lds_fit.state_model.A)
+        @test all(isfinite, lds_fit.obs_model.C)
     end
     return nothing
 end
@@ -602,7 +921,14 @@ function test_poisson_gradient_shape_and_finiteness()
 
         g = zeros(Float64, length(vec(C)) + length(d))
         StateSpaceDynamics.gradient_observation_model!(
-            g, plds.obs_model.C, plds.obs_model.d, tfs, Y, sws_pool
+            g,
+            plds.obs_model.C,
+            plds.obs_model.d,
+            plds.obs_model.D,
+            tfs,
+            Y,
+            nothing,
+            sws_pool,
         )
 
         @test all(isfinite, g)
@@ -667,17 +993,202 @@ function test_poisson_low_rate_recovery()
 
         recovered_rates = exp.(plds_fit.obs_model.d)
         for i in 1:P
-            # Tolerance: 30% relative — generous, since with C=0 fits the
-            # latent/dynamics parameters are unidentifiable and only `d`
-            # carries the rate signal.
+            #=
+            Tolerance: 30% relative — generous, since with C=0 fits the
+            latent/dynamics parameters are unidentifiable and only `d`
+            carries the rate signal.
+            =#
             @test isapprox(recovered_rates[i], true_rates[i]; rtol=0.30)
         end
 
-        # Strong regression assertion: if the bug were back, `d_hat` would be
-        # driven to large negative values (or NaN) trying to compensate for
-        # the spurious `exp(d)` floor. Guard against that explicitly.
+        #=
+        Strong regression assertion: if the bug were back, `d_hat` would be
+        driven to large negative values (or NaN) trying to compensate for
+        the spurious `exp(d)` floor. Guard against that explicitly.
+        =#
         @test all(plds_fit.obs_model.d .> -10.0)
         @test all(isfinite, plds_fit.obs_model.d)
     end
+    return nothing
+end
+
+function test_joint_loglikelihood_matches_distributions()
+    #=
+    Regression companion to `test_joint_loglikelihood_matches_mvnormal`
+    =#
+    rng = StableRNG(1234)
+    D_lat, p_obs, T_steps = 2, 3, 25
+
+    A_nd = [0.9 0.1; -0.05 0.85]
+    Q_nd = [0.5 0.2; 0.2 0.4]
+    b_nd = [0.1, -0.1]
+    x0_nd = [0.5, -0.5]
+    P0_nd = [1.0 0.3; 0.3 0.8]
+    C_nd = 0.5 .* randn(rng, p_obs, D_lat)
+    d_nd = [0.1, 0.2, -0.1]
+
+    sm = GaussianStateModel(; A=A_nd, Q=Q_nd, b=b_nd, x0=x0_nd, P0=P0_nd)
+    om = PoissonObservationModel(; C=C_nd, d=d_nd)
+    plds = LinearDynamicalSystem(;
+        state_model=sm,
+        obs_model=om,
+        latent_dim=D_lat,
+        obs_dim=p_obs,
+        fit_bool=fill(true, 6),
+    )
+
+    x = randn(rng, D_lat, T_steps)
+    λ = exp.(C_nd * x .+ d_nd)
+    y = Float64.(rand.(Ref(rng), Poisson.(λ)))
+
+    ll = sum(StateSpaceDynamics.joint_loglikelihood(plds, x, y))
+
+    ref = logpdf(MvNormal(x0_nd, Symmetric(P0_nd)), x[:, 1])
+    for t in 2:T_steps
+        ref += logpdf(MvNormal(A_nd * x[:, t - 1] .+ b_nd, Symmetric(Q_nd)), x[:, t])
+    end
+    for t in 1:T_steps, i in 1:p_obs
+        ref += logpdf(Poisson(λ[i, t]), y[i, t])
+    end
+
+    @test ll ≈ ref rtol = 1e-10
+    return nothing
+end
+
+function test_joint_loglikelihood_multitrial()
+    #=
+    The vector-of-matrices method threads a `tmapreduce` over trials; it must
+    equal the plain sum of per-trial single-matrix calls, including for ragged
+    trial lengths (the case the vector-of-matrices signature exists for).
+    =#
+    plds, xs, ys = toy_PoissonLDS(3)
+
+    ll = StateSpaceDynamics.joint_loglikelihood(plds, xs, ys)
+    ref = sum(
+        sum(StateSpaceDynamics.joint_loglikelihood(plds, x, y)) for (x, y) in zip(xs, ys)
+    )
+    @test ll isa Float64
+    @test ll ≈ ref rtol = 1e-12
+
+    # ragged trials: truncate to distinct lengths
+    lens = [100, 60, 25]
+    xr = [xs[n][:, 1:lens[n]] for n in 1:3]
+    yr = [ys[n][:, 1:lens[n]] for n in 1:3]
+    ll_r = StateSpaceDynamics.joint_loglikelihood(plds, xr, yr)
+    ref_r = sum(
+        sum(StateSpaceDynamics.joint_loglikelihood(plds, x, y)) for (x, y) in zip(xr, yr)
+    )
+    @test ll_r ≈ ref_r rtol = 1e-12
+    return nothing
+end
+
+function test_newton_objective_is_joint_loglikelihood()
+    #=
+    The Newton line-search objective is `sum(joint_loglikelihood!(ws, plds,
+    x, y, lognorm_t))` with `-Σ log(y!)` normalizer. It must agree per-
+    timestep and in total with the allocating `joint_loglikelihood(plds, x, y)`,
+    both with the default and the explicitly hoisted normalizer.
+    =#
+    plds, xs, ys = toy_PoissonLDS()
+    x, y = xs[1], ys[1]
+
+    ws = StateSpaceDynamics.SmoothWorkspace(
+        Float64, plds.latent_dim, plds.obs_dim, size(y, 2)
+    )
+    StateSpaceDynamics.compute_smooth_constants!(ws, plds)
+    ref = StateSpaceDynamics.joint_loglikelihood(plds, x, y)
+
+    @test StateSpaceDynamics.joint_loglikelihood!(ws, plds, x, y) ≈ ref rtol = 1e-12
+    lognorm_t = StateSpaceDynamics._poisson_lognorm_t(y)
+    @test StateSpaceDynamics.joint_loglikelihood!(ws, plds, x, y, lognorm_t) ≈ ref rtol =
+        1e-12
+    return nothing
+end
+
+function test_poisson_gradient_nondiag()
+    #=
+    Non-diagonal Q/P0; gradient checked against ForwardDiff through the
+    allocating joint_loglikelihood.
+    =#
+    rng = StableRNG(4321)
+    D_lat, p_obs, T_steps = 2, 3, 30
+
+    A_nd = [0.9 0.1; -0.05 0.85]
+    Q_nd = [0.5 0.2; 0.2 0.4]
+    b_nd = [0.1, -0.1]
+    x0_nd = [0.5, -0.5]
+    P0_nd = [1.0 0.3; 0.3 0.8]
+    C_nd = 0.5 .* randn(rng, p_obs, D_lat)
+    d_nd = [0.1, 0.2, -0.1]
+
+    sm = GaussianStateModel(; A=A_nd, Q=Q_nd, b=b_nd, x0=x0_nd, P0=P0_nd)
+    om = PoissonObservationModel(; C=C_nd, d=d_nd)
+    plds = LinearDynamicalSystem(;
+        state_model=sm,
+        obs_model=om,
+        latent_dim=D_lat,
+        obs_dim=p_obs,
+        fit_bool=fill(true, 6),
+    )
+
+    x = randn(rng, D_lat, T_steps)
+    y = Float64.(rand.(Ref(rng), Poisson.(exp.(C_nd * x .+ d_nd))))
+
+    ws = StateSpaceDynamics.SmoothWorkspace(Float64, D_lat, p_obs, T_steps)
+    StateSpaceDynamics.compute_smooth_constants!(ws, plds)
+    g = copy(StateSpaceDynamics.gradient!(ws, plds, x, y))
+
+    f =
+        xv -> sum(
+            StateSpaceDynamics.joint_loglikelihood(plds, reshape(xv, D_lat, T_steps), y)
+        )
+    g_num = reshape(ForwardDiff.gradient(f, vec(x)), D_lat, T_steps)
+
+    @test norm(g - g_num) < 1e-8
+    return nothing
+end
+
+function test_poisson_hessian_nondiag()
+    #=
+    Hessian companion to `test_poisson_gradient_nondiag`: non-diagonal Q/P0
+    checked against ForwardDiff.hessian through the allocating
+    joint_loglikelihood, exercising the kernel-based generic `hessian!`.
+    =#
+    rng = StableRNG(4321)
+    D_lat, p_obs, T_steps = 2, 3, 10
+
+    A_nd = [0.9 0.1; -0.05 0.85]
+    Q_nd = [0.5 0.2; 0.2 0.4]
+    b_nd = [0.1, -0.1]
+    x0_nd = [0.5, -0.5]
+    P0_nd = [1.0 0.3; 0.3 0.8]
+    C_nd = 0.5 .* randn(rng, p_obs, D_lat)
+    d_nd = [0.1, 0.2, -0.1]
+
+    sm = GaussianStateModel(; A=A_nd, Q=Q_nd, b=b_nd, x0=x0_nd, P0=P0_nd)
+    om = PoissonObservationModel(; C=C_nd, d=d_nd)
+    plds = LinearDynamicalSystem(;
+        state_model=sm,
+        obs_model=om,
+        latent_dim=D_lat,
+        obs_dim=p_obs,
+        fit_bool=fill(true, 6),
+    )
+
+    x = randn(rng, D_lat, T_steps)
+    y = Float64.(rand.(Ref(rng), Poisson.(exp.(C_nd * x .+ d_nd))))
+
+    ws = StateSpaceDynamics.SmoothWorkspace(Float64, D_lat, p_obs, T_steps)
+    StateSpaceDynamics.compute_smooth_constants!(ws, plds)
+    StateSpaceDynamics.hessian!(ws, plds, x, y)
+    hess = block_tridgm(ws.btd.H_diag, ws.btd.H_super, ws.btd.H_sub)
+
+    f =
+        xv -> sum(
+            StateSpaceDynamics.joint_loglikelihood(plds, reshape(xv, D_lat, T_steps), y)
+        )
+    hess_num = ForwardDiff.hessian(f, vec(x))
+
+    @test norm(hess_num - hess) < 1e-8
     return nothing
 end

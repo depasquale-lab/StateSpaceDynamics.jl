@@ -30,15 +30,16 @@ default(; # hide
 
 K_true = 4
 D = 10
-T = 300
+T = 1000
 
 θ = π / 12
 λ = 0.92
+p = 0.95
 
-A_true = [cos(θ) -sin(θ)  0.0    0.0;
-          sin(θ)  cos(θ)  0.0    0.0;
-          0.0     0.0     λ      0.0;
-          0.0     0.0     0.0    0.85 * λ]
+A_true = [p * cos(θ) -p * sin(θ)  0.0    0.0;
+          p * sin(θ)  p * cos(θ)  0.0    0.0;
+          0.0         0.0         λ      0.0;
+          0.0         0.0         0.0    0.85 * λ]
 Q_true = 0.05 * Matrix(I(K_true))
 b_true = zeros(K_true)
 
@@ -171,6 +172,6 @@ test_lds_dimensions(true_lds; latent_dim=K_true, obs_dim=D)  #src
 test_lds_dimensions(final_lds; latent_dim=best_K, obs_dim=D)  #src
 @test best_K in K_candidates  #src
 @test reconstruction_error >= 0  #src
-# CV should pick a sensible dimension — within ±3 of the truth on this small  #src
+# CV should pick a sensible dimension within ±1 of the truth on this small  #src
 # synthetic dataset (CV is noisy across random initialisations).              #src
-@test abs(best_K - K_true) <= 3  #src
+@test abs(best_K - K_true) <= 1  #src
