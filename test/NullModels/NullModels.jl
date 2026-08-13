@@ -117,7 +117,7 @@ function test_null_inputs_recovers_signal(rng=MersenneTwister(3))
     null = AffineNullModel{T}(:inputs, obs_dim; input_dim=v_dim)
     fit!(null, y; inputs=v)
 
-    @test null.D ≈ D_true atol = 5e-2
+    @test all(isapprox.(null.D, D_true; atol=5e-2))
     @test null.d ≈ d_true atol = 5e-2
 
     intercept = fit!(AffineNullModel{T}(:intercept, obs_dim), y)
@@ -137,9 +137,9 @@ function test_null_var_recovers_true_F(rng=MersenneTwister(4))
     y = _null_make_var_y(rng, F_true, d_true, R_true, μ₀_true, R₀_true, tsteps, ntrials)
     null = fit!(AffineNullModel{T}(:var, obs_dim), y)
 
-    @test null.F ≈ F_true atol = 5e-2
+    @test all(isapprox.(null.F, F_true; atol=5e-2))
     @test null.d ≈ d_true atol = 5e-2
-    @test null.R ≈ R_true atol = 2e-2
+    @test all(isapprox.(null.R, R_true; atol=2e-2))
     @test length(null.μ₀) == obs_dim
     @test size(null.R₀) == (obs_dim, obs_dim)
 
