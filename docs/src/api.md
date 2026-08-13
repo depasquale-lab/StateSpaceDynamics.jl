@@ -79,6 +79,20 @@ elbo!(plds::LinearDynamicalSystem{T,S,O}, suf::StateSpaceDynamics.SufficientStat
 elbo!(slds::SLDS{T,S,O}, tfs::StateSpaceDynamics.TrialFilterSmooth{T}, fb_storage::StateSpaceDynamics.HMMs.ForwardBackwardStorage, y::AbstractVector{<:AbstractMatrix{T}}, slds_ws::StateSpaceDynamics.SLDSSmoothWorkspace{T}) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
 ```
 
+## Model comparison
+
+Latent-free baselines to score a fitted model against, plus the StatsAPI
+methods built on them.
+
+```@docs
+AffineNullModel
+fit!(null::StateSpaceDynamics.AffineNullModel{T}, y) where {T<:Real}
+loglikelihood(null::StateSpaceDynamics.AffineNullModel{T}, y) where {T<:Real}
+r2(lds::LinearDynamicalSystem{T,SM,OM}, y, variant::Symbol) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
+nullloglikelihood(lds::LinearDynamicalSystem{T,SM,OM}, y) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
+nobs(lds::LinearDynamicalSystem{T}, y) where {T<:Real}
+```
+
 ## Validation
 
 ```@docs

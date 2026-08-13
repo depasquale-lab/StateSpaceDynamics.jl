@@ -68,13 +68,13 @@ function Base.show(io::IO, gom::GaussianObservationModel; gap="")
 end
 
 function Base.show(io::IO, pom::PoissonObservationModel; gap="")
-    nobs, nstate = size(pom.C)
+    obs_dim, nstate = size(pom.C)
 
     println(io, gap, "Poisson Observation Model:")
     println(io, gap, "--------------------------")
 
-    if nobs > 4 || nstate > 4
-        println(io, gap, " size(C) = ($nobs, $nstate)")
+    if obs_dim > 4 || nstate > 4
+        println(io, gap, " size(C) = ($obs_dim, $nstate)")
         println(io, gap, " size(d) = ($(length(pom.d)),)")
     else
         println(io, gap, " C    = $(round.(pom.C, digits=2))")

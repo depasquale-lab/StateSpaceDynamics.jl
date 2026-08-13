@@ -292,6 +292,35 @@ using SSDTest
         test_mn_prior_helpers()
     end
 
+    # Latent-free baselines + StatsAPI model comparison
+    @testset verbose = true "Null Models" begin
+        include("NullModels/NullModels.jl")
+        test_null_intercept_matches_mvnormal_loglik()
+        test_null_heldout_ll_matches_plugin_gaussian()
+        test_null_inputs_collapses_to_intercept_when_no_inputs()
+        test_null_inputs_recovers_signal()
+        test_null_var_recovers_true_F()
+        test_null_capacity_ordering()
+        test_null_input_shift_alignment()
+        test_null_ragged_trials()
+        test_null_single_trial_var_falls_back_to_R()
+        test_null_R_prior_shifts_logmap_by_iw_term()
+        test_null_mn_prior_shifts_logmap_by_mn_term()
+        test_null_all_priors_active_returns_finite_lls()
+        test_null_construction_validates_arguments()
+        test_null_input_shape_mismatch_throws()
+        test_null_var_requires_tsteps_ge_2()
+        test_nobs_counts_scalar_observations()
+        test_nullloglikelihood_matches_intercept_baseline()
+        test_r2_cox_snell_formula()
+        test_r2_variants()
+        test_r2_baseline_selection()
+        test_r2_null_inputs_ux_vs_uy()
+        test_r2_forwards_R_prior()
+        test_r2_ground_truth_beats_null_heldout()
+        test_r2_rejects_plds_and_slds()
+    end
+
     # Validation Tests
     @testset verbose = true "Validation" begin
         include("Validation/Valid.jl")
