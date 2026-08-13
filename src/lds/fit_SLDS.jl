@@ -878,7 +878,7 @@ constants.
 Assumes `slds_ws.consts` already holds the constants of `slds`.
 """
 function _slds_trial_elbo(
-    slds::SLDS{T},
+    slds::SLDS{T,S,O},
     fs::FilterSmooth{T},
     fb_storage::HMMs.ForwardBackwardStorage,
     y_trial::AbstractMatrix{T},
@@ -887,7 +887,7 @@ function _slds_trial_elbo(
     t2::Int,
     ux_trial::Union{Nothing,AbstractMatrix{T}},
     uy_trial::Union{Nothing,AbstractMatrix{T}},
-) where {T<:Real}
+) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
     K = length(slds.LDSs)
     Tsteps = t2 - t1 + 1
     w = view(fb_storage.γ, :, t1:t2)  # K × Tsteps
@@ -895,9 +895,11 @@ function _slds_trial_elbo(
     trial_elbo = zero(T)
     x_smooth_trial = fs.x_smooth
 
+    # Per-regime log-density scratch, built once rather than per regime.
+    ll = view(slds_ws.ll_tmp, 1:Tsteps)
+
     # E_q[log p(y, x | z)], plug-in at the posterior mean, weighted by γ.
     for k in 1:K
-        ll = view(slds_ws.ll_tmp, 1:Tsteps)
         joint_loglikelihood!(
             ll,
             slds_ws,
