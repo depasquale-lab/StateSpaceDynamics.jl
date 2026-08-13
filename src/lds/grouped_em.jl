@@ -617,3 +617,26 @@ function _grouped_gaussian_obs_prior_logdensity(
     end
     return total
 end
+
+"""
+    _grouped_poisson_obs_prior_logdensity(ldss, slots)
+
+`log p(θ)` for the Poisson emission parameters of a grouped model. Poisson has
+no observation-noise covariance, so the MN prior on `[C d D]` contributes the
+bare quadratic that the LBFGS emission objective penalizes, once per version.
+"""
+function _grouped_poisson_obs_prior_logdensity(
+    ldss::AbstractVector, slots::AbstractVector{Vector{Int}}, ::Type{T}
+) where {T<:Real}
+    total = zero(T)
+    for u in _slot_representatives(slots[_G_CD])
+        lds = ldss[u]
+        om = lds.obs_model
+        om.CD_prior === nothing && continue
+        D = lds.latent_dim
+        W_cd = _pack_obs_V!(Matrix{T}(undef, lds.obs_dim, D + 1 + lds.uy_dim), lds)
+        Wm = W_cd .- om.CD_prior.M₀
+        total -= T(0.5) * sum(Wm .* (Wm * om.CD_prior.Λ))
+    end
+    return total
+end

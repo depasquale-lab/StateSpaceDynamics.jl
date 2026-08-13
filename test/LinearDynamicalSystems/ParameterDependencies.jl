@@ -8,8 +8,8 @@
 # downstream of that (partial grouping, priors, held-out scoring) shares the
 # same machinery.
 #
-# The Poisson LDS and the SLDS are still on the interim guard; their grouped
-# fits land in follow-ups (`test_depends_on_rejected_until_supported`).
+# The SLDS is still on the interim guard; its grouped fit lands in a follow-up
+# (`test_depends_on_rejected_until_supported`).
 
 const PD_LATENT_DIM = 2
 const PD_OBS_DIM = 2
@@ -497,6 +497,55 @@ function test_grouped_rand_needs_a_label_for_one_trial()
 end
 
 # ============================================================================
+# Poisson
+# ============================================================================
+
+function test_grouped_poisson_fit()
+    rng = StableRNG(909)
+    labels = vcat(fill(:s1, 3), fill(:s2, 3))
+
+    sm = pd_state_model()
+    om = PoissonObservationModel([0.6 0.1; -0.2 0.5], [1.0, 0.8])
+    om.depends_on = (C=labels,)
+    truth = LinearDynamicalSystem(;
+        state_model=sm,
+        obs_model=om,
+        latent_dim=PD_LATENT_DIM,
+        obs_dim=PD_OBS_DIM,
+        fit_bool=fill(true, 5),
+    )
+    C2 = group_parameter(om, :C, :s2)
+    C2 .= [-0.4 0.7; 0.5 -0.3]
+    d2 = group_parameter(om, :d, :s2)
+    d2 .= [0.2, 1.4]
+
+    _, y = rand(rng, truth, fill(40, length(labels)))
+
+    om_fit = PoissonObservationModel([0.5 0.0; 0.0 0.5], [1.0, 1.0])
+    om_fit.depends_on = (C=labels,)
+    fitted = LinearDynamicalSystem(;
+        state_model=pd_state_model(),
+        obs_model=om_fit,
+        latent_dim=PD_LATENT_DIM,
+        obs_dim=PD_OBS_DIM,
+        fit_bool=fill(true, 5),
+    )
+
+    elbos = fit!(fitted, y; max_iter=8, tol=0.0, progress=false)
+    @test all(isfinite, elbos)
+    @test elbos[end] > elbos[1]
+
+    # The two sessions really did get separate emission parameters.
+    @test !(group_parameter(om_fit, :C, :s1) ≈ group_parameter(om_fit, :C, :s2))
+    @test isfinite(elbo(fitted, y))
+
+    xs, _ = smooth(fitted, y)
+    @test length(xs) == length(y)
+
+    return nothing
+end
+
+# ============================================================================
 # Interim guard (removed as each model family's grouped fit lands)
 # ============================================================================
 
@@ -507,24 +556,6 @@ function test_depends_on_rejected_until_supported()
 
     om = pd_obs_model()
     om.depends_on = (C=labels,)
-
-    pom = PoissonObservationModel([0.6 0.1; -0.2 0.5], [1.0, 0.8])
-    pom.depends_on = (C=labels,)
-    plds = LinearDynamicalSystem(;
-        state_model=pd_state_model(),
-        obs_model=pom,
-        latent_dim=PD_LATENT_DIM,
-        obs_dim=PD_OBS_DIM,
-        fit_bool=fill(true, 5),
-    )
-    counts = [Float64.(rand(rng, 0:3, PD_OBS_DIM, 20)) for _ in 1:3]
-    @test_throws ArgumentError fit!(plds, counts; max_iter=1, progress=false)
-    @test_throws ArgumentError smooth(plds, counts)
-    @test_throws ArgumentError elbo(plds, counts)
-
-    # Sampling is shared with the Gaussian path and is already grouped.
-    _, ys = rand(rng, plds, fill(20, 3))
-    @test length(ys) == 3
 
     slds = SLDS(;
         A=[0.9 0.1; 0.1 0.9],
