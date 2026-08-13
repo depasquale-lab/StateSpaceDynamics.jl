@@ -878,7 +878,7 @@ constants.
 Assumes `slds_ws.consts` already holds the constants of `slds`.
 """
 function _slds_trial_elbo(
-    slds::SLDS{T},
+    slds::SLDS{T,S,O},
     fs::FilterSmooth{T},
     fb_storage::HMMs.ForwardBackwardStorage,
     y_trial::AbstractMatrix{T},
@@ -887,7 +887,7 @@ function _slds_trial_elbo(
     t2::Int,
     ux_trial::Union{Nothing,AbstractMatrix{T}},
     uy_trial::Union{Nothing,AbstractMatrix{T}},
-) where {T<:Real}
+) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
     K = length(slds.LDSs)
     Tsteps = t2 - t1 + 1
     w = view(fb_storage.γ, :, t1:t2)  # K × Tsteps
