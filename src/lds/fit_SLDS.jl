@@ -356,10 +356,6 @@ function StatsAPI.fit!(
         end
     end
 
-    # add prior to A
-    dl.A .= 0.99 .* dl.A + 0.01I
-    dl.πₖ .= 0.99 .* dl.πₖ .+ (0.01 / length(dl.πₖ))
-
     return nothing
 end
 
