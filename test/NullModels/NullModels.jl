@@ -1,372 +1,405 @@
-function _null_make_data(
-    rng::AbstractRNG, obs_dim::Int, tsteps::Int, ntrials::Int; v_dim::Int=0, T::Type=Float64
-)
-    y = randn(rng, T, obs_dim, tsteps, ntrials)
-    ux = randn(rng, T, v_dim, tsteps, ntrials)
-    uy = zeros(T, 0, tsteps, ntrials)
-    return Data(; y=y, ux=ux, uy=uy)
+#=============================================================================
+Tests for the latent-free baselines (`AffineNullModel`) and the StatsAPI model
+comparison methods built on them (`nobs`, `nullloglikelihood`, `r2`).
+=============================================================================#
+
+# Per-trial observation matrices, the shape family the baselines canonicalize to.
+function _null_make_y(rng::AbstractRNG, obs_dim, tsteps_per_trial; T::Type=Float64)
+    return [randn(rng, T, obs_dim, Ti) for Ti in tsteps_per_trial]
 end
 
-function _null_make_var_data(
+function _null_make_inputs(rng::AbstractRNG, v_dim, tsteps_per_trial; T::Type=Float64)
+    return [randn(rng, T, v_dim, Ti) for Ti in tsteps_per_trial]
+end
+
+# Simulate a VAR(1) process with a known (F, d, R, μ₀, R₀).
+function _null_make_var_y(
     rng::AbstractRNG,
     F::AbstractMatrix{T},
-    d_vec::AbstractVector{T},
+    d::AbstractVector{T},
     R::AbstractMatrix{T},
-    μ_0::AbstractVector{T},
-    R_0::AbstractMatrix{T},
+    μ₀::AbstractVector{T},
+    R₀::AbstractMatrix{T},
     tsteps::Int,
     ntrials::Int,
 ) where {T<:Real}
-    obs_dim = length(d_vec)
-    y = zeros(T, obs_dim, tsteps, ntrials)
-    R_0_chol = cholesky(Symmetric(R_0)).L
+    obs_dim = length(d)
+    R₀_chol = cholesky(Symmetric(R₀)).L
     R_chol = cholesky(Symmetric(R)).L
+    y = Vector{Matrix{T}}(undef, ntrials)
     for n in 1:ntrials
-        y[:, 1, n] .= μ_0 .+ R_0_chol * randn(rng, T, obs_dim)
+        yn = zeros(T, obs_dim, tsteps)
+        yn[:, 1] .= μ₀ .+ R₀_chol * randn(rng, T, obs_dim)
         for t in 2:tsteps
-            y[:, t, n] .= F * y[:, t - 1, n] .+ d_vec .+ R_chol * randn(rng, T, obs_dim)
+            yn[:, t] .= F * yn[:, t - 1] .+ d .+ R_chol * randn(rng, T, obs_dim)
         end
+        y[n] = yn
     end
-    ux = zeros(T, 0, tsteps, ntrials)
-    uy = zeros(T, 0, tsteps, ntrials)
-    return Data(; y=y, ux=ux, uy=uy)
+    return y
 end
 
-# Closed-form multivariate-normal LL on a stacked data matrix. Used by both
-# intercept and test-LL identity tests.
-function _mvn_stacked_ll(Y, μ, R)
+# Closed-form Gaussian log-density of `Y` under `y ~ N(W X, R)`.
+function _null_ref_ll(Y, X, W, R)
     obs_dim, n = size(Y)
-    Yc = Y .- μ
-    R_inv_Yc = R \ Yc
-    return -0.5 * (n * obs_dim * log(2π) + n * logdet(R) + sum(Yc .* R_inv_Yc))
+    E = Y .- W * X
+    return -0.5 * (n * obs_dim * log(2π) + n * logdet(R) + tr(R \ (E * E')))
 end
 
-# ----- Intercept-only model ------------------------------------------------
+_null_stack(y) = reduce(hcat, y)
+
+#=
+Baseline fitting and scoring
+=#
 
 function test_null_intercept_matches_mvnormal_loglik(rng=MersenneTwister(0xC0FFEE))
     obs_dim, tsteps, ntrials = 3, 20, 5
-    data = _null_make_data(rng, obs_dim, tsteps, ntrials)
+    y = _null_make_y(rng, obs_dim, fill(tsteps, ntrials))
 
-    res = test_null(data)
+    null = AffineNullModel{Float64}(:intercept, obs_dim)
+    fit!(null, y)
 
-    # Closed-form MLE: d = mean over (t, n), R = empirical residual scatter / n.
-    Y = reshape(data.y, obs_dim, tsteps * ntrials)
+    # Closed-form MLE: d = mean over (t, n), R = residual scatter / n.
+    Y = _null_stack(y)
     n = size(Y, 2)
     d_hat = vec(mean(Y; dims=2))
     Yc = Y .- d_hat
     R_hat = (Yc * Yc') ./ n
 
-    ref_ll = _mvn_stacked_ll(Y, d_hat, R_hat)
+    @test null.d ≈ d_hat atol = 1e-10
+    @test null.R ≈ R_hat atol = 1e-10
+    @test isempty(null.F)
+    @test size(null.D) == (obs_dim, 0)
 
-    @test res.intercept.train_ll ≈ ref_ll atol = 1e-8 rtol = 1e-8
-    @test res.intercept.params.d ≈ d_hat atol = 1e-10
-    @test res.intercept.params.R ≈ R_hat atol = 1e-10
-    @test res.intercept.test_ll === nothing
+    ref = _null_ref_ll(Y, ones(1, n), reshape(d_hat, obs_dim, 1), R_hat)
+    @test loglikelihood(null, y) ≈ ref atol = 1e-8
 end
 
-# ----- Plug-in test LL identity --------------------------------------------
+# Scoring data other than the fit data is the plug-in (held-out) log-likelihood.
+function test_null_heldout_ll_matches_plugin_gaussian(rng=MersenneTwister(1))
+    obs_dim, tsteps, ntrials = 3, 15, 4
+    y_train = _null_make_y(rng, obs_dim, fill(tsteps, ntrials))
+    y_test = _null_make_y(rng, obs_dim, fill(tsteps, ntrials))
 
-function test_null_test_ll_matches_plugin_gaussian(rng=MersenneTwister(0xC0FFEE))
-    obs_dim, tsteps, ntrials = 2, 15, 4
-    train = _null_make_data(rng, obs_dim, tsteps, ntrials)
-    test = _null_make_data(rng, obs_dim, 12, 3)
+    null = AffineNullModel{Float64}(:intercept, obs_dim)
+    fit!(null, y_train)
 
-    res = test_null(train; test_data=test)
-
-    d_hat = res.intercept.params.d
-    R_hat = res.intercept.params.R
-    Y_te = reshape(test.y, obs_dim, 12 * 3)
-    ref = _mvn_stacked_ll(Y_te, d_hat, R_hat)
-    @test res.intercept.test_ll ≈ ref atol = 1e-8 rtol = 1e-8
+    Y_te = _null_stack(y_test)
+    ref = _null_ref_ll(
+        Y_te, ones(1, size(Y_te, 2)), reshape(null.d, obs_dim, 1), null.R
+    )
+    @test loglikelihood(null, y_test) ≈ ref atol = 1e-8
 end
 
-function test_null_test_ll_nothing_when_no_test_data(rng=MersenneTwister(0xC0FFEE))
-    data = _null_make_data(rng, 2, 10, 3)
-    res = test_null(data)
-    @test res.intercept.test_ll === nothing
-    @test res.inputs.test_ll === nothing
-    @test res.var.test_ll === nothing
-    @test res.var_inputs.test_ll === nothing
+# Collapse identities
+function test_null_inputs_collapses_to_intercept_when_no_inputs(rng=MersenneTwister(2))
+    obs_dim, tsteps, ntrials = 3, 20, 4
+    y = _null_make_y(rng, obs_dim, fill(tsteps, ntrials))
+    zero_inputs = [zeros(0, tsteps) for _ in 1:ntrials]
+
+    intercept = fit!(AffineNullModel{Float64}(:intercept, obs_dim), y)
+    inputs = AffineNullModel{Float64}(:inputs, obs_dim; input_dim=0)
+    fit!(inputs, y; inputs=zero_inputs)
+
+    @test inputs.d ≈ intercept.d atol = 1e-10
+    @test inputs.R ≈ intercept.R atol = 1e-10
+    @test loglikelihood(inputs, y; inputs=zero_inputs) ≈ loglikelihood(intercept, y) atol =
+        1e-8
 end
 
-# ----- Collapse identities --------------------------------------------------
-
-function test_null_inputs_collapses_to_intercept_when_no_inputs(
-    rng=MersenneTwister(0xC0FFEE)
-)
-    obs_dim, tsteps, ntrials = 3, 10, 6
-    data = _null_make_data(rng, obs_dim, tsteps, ntrials; v_dim=0)
-
-    res = test_null(data)
-
-    # With v_dim = 0 the inputs model has the same regressors as the intercept
-    # model, and the VAR+inputs model matches the VAR-only model.
-    @test res.inputs.train_ll ≈ res.intercept.train_ll atol = 1e-10
-    @test res.var_inputs.train_ll ≈ res.var.train_ll atol = 1e-10
-end
-
-# ----- Signal recovery + LL ordering ---------------------------------------
-
-function test_null_inputs_helps_when_signal_present(rng=MersenneTwister(0xC0FFEE))
+# Signal recovery + LL ordering
+function test_null_inputs_recovers_signal(rng=MersenneTwister(3))
     T = Float64
-    obs_dim, tsteps, ntrials = 4, 40, 10
-    v_dim = 2
-
+    obs_dim, v_dim, tsteps, ntrials = 3, 2, 40, 6
     D_true = randn(rng, T, obs_dim, v_dim)
     d_true = randn(rng, T, obs_dim)
-    v = randn(rng, T, v_dim, tsteps, ntrials)
-    R = Matrix{T}(0.1 * I, obs_dim, obs_dim)
-    R_chol = cholesky(Symmetric(R)).L
-    y = zeros(T, obs_dim, tsteps, ntrials)
-    for n in 1:ntrials, t in 1:tsteps
-        y[:, t, n] .= d_true .+ D_true * v[:, t, n] .+ R_chol * randn(rng, T, obs_dim)
-    end
-    data = Data(; y=y, ux=v, uy=zeros(T, 0, tsteps, ntrials))
 
-    res = test_null(data)
+    v = _null_make_inputs(rng, v_dim, fill(tsteps, ntrials))
+    y = [d_true .+ D_true * vn .+ 0.1 .* randn(rng, T, obs_dim, tsteps) for vn in v]
 
-    # The inputs model should fit strictly better than intercept-only, and
-    # var_inputs should be at least as good as var-only when inputs matter.
-    @test res.inputs.train_ll > res.intercept.train_ll
-    @test res.var_inputs.train_ll > res.var.train_ll
-    @test res.inputs.params.D ≈ D_true rtol = 0.15
-    @test res.inputs.params.d ≈ d_true rtol = 0.2
-    # Shape sanity on returned parameters.
-    @test size(res.inputs.params.D) == (obs_dim, v_dim)
-    @test size(res.var_inputs.params.D) == (obs_dim, v_dim)
-    @test size(res.var_inputs.params.F) == (obs_dim, obs_dim)
+    null = AffineNullModel{T}(:inputs, obs_dim; input_dim=v_dim)
+    fit!(null, y; inputs=v)
+
+    @test null.D ≈ D_true atol = 5e-2
+    @test null.d ≈ d_true atol = 5e-2
+
+    intercept = fit!(AffineNullModel{T}(:intercept, obs_dim), y)
+    @test loglikelihood(null, y; inputs=v) > loglikelihood(intercept, y)
 end
 
-# ----- VAR(1) parameter recovery -------------------------------------------
-
-function test_null_var_recovers_true_F_on_var_data(rng=MersenneTwister(0xC0FFEE))
+# VAR(1) parameter recovery
+function test_null_var_recovers_true_F(rng=MersenneTwister(4))
     T = Float64
-    obs_dim, tsteps, ntrials = 3, 1000, 100
-
-    F_true =
-        T(0.7) * Matrix{T}(I, obs_dim, obs_dim) .+
-        T(0.05) .* randn(rng, T, obs_dim, obs_dim)
-    d_true = zeros(T, obs_dim)
+    obs_dim, tsteps, ntrials = 2, 200, 8
+    F_true = T[0.6 0.2; -0.1 0.5]
+    d_true = T[0.3, -0.2]
     R_true = Matrix{T}(0.05 * I, obs_dim, obs_dim)
-    μ_0 = zeros(T, obs_dim)
-    R_0 = Matrix{T}(0.2 * I, obs_dim, obs_dim)
-    R0_prior = IWPrior(; Ψ=Matrix{T}(0.1 * I, obs_dim, obs_dim), ν=T(obs_dim + 2))
+    μ₀_true = T[1.0, -1.0]
+    R₀_true = Matrix{T}(0.2 * I, obs_dim, obs_dim)
 
-    data = _null_make_var_data(rng, F_true, d_true, R_true, μ_0, R_0, tsteps, ntrials)
-    res = test_null(data; R0_prior=R0_prior)
+    y = _null_make_var_y(rng, F_true, d_true, R_true, μ₀_true, R₀_true, tsteps, ntrials)
+    null = fit!(AffineNullModel{T}(:var, obs_dim), y)
 
-    @test res.var.params.F ≈ F_true atol = 0.05
-    @test res.var.params.R ≈ R_true atol = 0.02
-    @test length(res.var.params.μ_0) == obs_dim
-    @test size(res.var.params.R_0) == (obs_dim, obs_dim)
-    @test length(res.var.params.d) == obs_dim
-    # VAR model should beat intercept-only on truly autocorrelated data.
-    @test res.var.train_ll > res.intercept.train_ll
+    @test null.F ≈ F_true atol = 5e-2
+    @test null.d ≈ d_true atol = 5e-2
+    @test null.R ≈ R_true atol = 2e-2
+    @test length(null.μ₀) == obs_dim
+    @test size(null.R₀) == (obs_dim, obs_dim)
+
+    # A VAR baseline must beat intercept-only on truly autocorrelated data.
+    intercept = fit!(AffineNullModel{T}(:intercept, obs_dim), y)
+    @test loglikelihood(null, y) > loglikelihood(intercept, y)
 end
 
-# ----- IW-prior LL shift identity ------------------------------------------
+# Adding capacity cannot lower the in-sample plug-in log-likelihood.
+function test_null_capacity_ordering(rng=MersenneTwister(5))
+    T = Float64
+    obs_dim, v_dim, tsteps, ntrials = 3, 2, 60, 5
+    F_true = Matrix{T}(0.5 * I, obs_dim, obs_dim)
+    y = _null_make_var_y(
+        rng,
+        F_true,
+        zeros(T, obs_dim),
+        Matrix{T}(0.1 * I, obs_dim, obs_dim),
+        zeros(T, obs_dim),
+        Matrix{T}(0.3 * I, obs_dim, obs_dim),
+        tsteps,
+        ntrials,
+    )
+    v = _null_make_inputs(rng, v_dim, fill(tsteps, ntrials))
 
-function test_null_R_prior_shifts_LL_by_iw_logprior_term(rng=MersenneTwister(0xC0FFEE))
+    ll = Dict{Symbol,Float64}()
+    for baseline in (:intercept, :inputs, :var, :var_inputs)
+        null = AffineNullModel{T}(baseline, obs_dim; input_dim=v_dim)
+        if null.input_dim > 0
+            fit!(null, y; inputs=v)
+            ll[baseline] = loglikelihood(null, y; inputs=v)
+        else
+            fit!(null, y)
+            ll[baseline] = loglikelihood(null, y)
+        end
+    end
+
+    @test ll[:inputs] >= ll[:intercept] - 1e-8
+    @test ll[:var] >= ll[:intercept] - 1e-8
+    @test ll[:var_inputs] >= ll[:var] - 1e-8
+end
+
+#=
+Input alignment
+=#
+
+# `input_shift=1` scores `v_{t-1}`, `input_shift=0` scores `v_t`; a lagged input
+# predating the trial is zero, mirroring the LDS's input-free `x_1`.
+function test_null_input_shift_alignment(rng=MersenneTwister(6))
+    T = Float64
+    obs_dim, v_dim, tsteps, ntrials = 2, 2, 30, 4
+    y = _null_make_y(rng, obs_dim, fill(tsteps, ntrials))
+    v = _null_make_inputs(rng, v_dim, fill(tsteps, ntrials))
+
+    lagged = AffineNullModel{T}(:inputs, obs_dim; input_dim=v_dim, input_shift=1)
+    fit!(lagged, y; inputs=v)
+
+    # Shifting the inputs by hand and fitting contemporaneously must agree.
+    v_shifted = [hcat(zeros(T, v_dim, 1), vn[:, 1:(tsteps - 1)]) for vn in v]
+    contemp = AffineNullModel{T}(:inputs, obs_dim; input_dim=v_dim, input_shift=0)
+    fit!(contemp, y; inputs=v_shifted)
+
+    @test lagged.D ≈ contemp.D atol = 1e-10
+    @test lagged.d ≈ contemp.d atol = 1e-10
+    @test loglikelihood(lagged, y; inputs=v) ≈
+        loglikelihood(contemp, y; inputs=v_shifted) atol = 1e-8
+
+    # The two alignments genuinely differ on the same inputs.
+    plain = AffineNullModel{T}(:inputs, obs_dim; input_dim=v_dim, input_shift=0)
+    fit!(plain, y; inputs=v)
+    @test !isapprox(lagged.D, plain.D; rtol=1e-6)
+
+    @test SSD._shifted_inputs(v[1], Val(1))[:, 1] == zeros(T, v_dim)
+    @test SSD._shifted_inputs(v[1], Val(1))[:, 2:end] == v[1][:, 1:(end - 1)]
+    @test SSD._shifted_inputs(v[1], Val(0)) === v[1]
+end
+
+#=
+Ragged trials and rank-deficient initial covariance
+=#
+
+function test_null_ragged_trials(rng=MersenneTwister(7))
+    T = Float64
+    obs_dim = 2
+    lengths = [12, 5, 20]
+    y = _null_make_y(rng, obs_dim, lengths)
+
+    intercept = fit!(AffineNullModel{T}(:intercept, obs_dim), y)
+    @test isfinite(loglikelihood(intercept, y))
+    @test nobs(intercept, y) == obs_dim * sum(lengths)
+
+    var_null = fit!(AffineNullModel{T}(:var, obs_dim), y)
+    @test isfinite(loglikelihood(var_null, y))
+
+    # A length-1 trial informs only (μ₀, R₀), so it drops out of the VAR design.
+    y_with_singleton = vcat(y, [randn(rng, T, obs_dim, 1)])
+    var_singleton = fit!(AffineNullModel{T}(:var, obs_dim), y_with_singleton)
+    @test isfinite(loglikelihood(var_singleton, y_with_singleton))
+    @test size(var_singleton.F) == (obs_dim, obs_dim)
+end
+
+# With ntrials ≤ obs_dim and no `R₀_prior` the initial scatter is singular, so
+# `R₀` falls back to `R` instead of throwing a `PosDefException`.
+function test_null_single_trial_var_falls_back_to_R(rng=MersenneTwister(8))
+    T = Float64
+    obs_dim, tsteps = 3, 50
+    y = _null_make_y(rng, obs_dim, [tsteps])
+
+    null = fit!(AffineNullModel{T}(:var, obs_dim), y)
+    @test null.R₀ ≈ null.R atol = 1e-12
+    @test isfinite(loglikelihood(null, y))
+
+    # An `R₀_prior` keeps the initial covariance estimable, so no fallback.
+    prior = IWPrior(; Ψ=Matrix{T}(0.5 * I, obs_dim, obs_dim), ν=T(obs_dim + 3))
+    with_prior = fit!(AffineNullModel{T}(:var, obs_dim; R₀_prior=prior), y)
+    @test !isapprox(with_prior.R₀, with_prior.R; rtol=1e-6)
+    @test isfinite(loglikelihood(with_prior, y))
+end
+
+#=
+Prior contributions to the MAP objective
+=#
+
+# IW-prior LL shift identity
+function test_null_R_prior_shifts_logmap_by_iw_term(rng=MersenneTwister(9))
     T = Float64
     obs_dim, tsteps, ntrials = 3, 20, 5
-    data = _null_make_data(rng, obs_dim, tsteps, ntrials)
+    y = _null_make_y(rng, obs_dim, fill(tsteps, ntrials))
 
-    res_no = test_null(data)
     Ψ = Matrix{T}(0.1 * I, obs_dim, obs_dim)
     ν = T(obs_dim + 3)
     R_prior = IWPrior(; Ψ=Ψ, ν=ν)
-    res_with = test_null(data; R_prior=R_prior)
 
-    function data_ll(W, R)
-        Y = reshape(data.y, obs_dim, tsteps * ntrials)
-        n = size(Y, 2)
-        return _mvn_stacked_ll(Y, W, R)
-    end
+    plain = fit!(AffineNullModel{T}(:intercept, obs_dim), y)
+    @test SSD._null_logmap(plain, y) ≈ loglikelihood(plain, y) atol = 1e-10
 
-    W_no = reshape(res_no.intercept.params.d, obs_dim, 1)
-    W_with = reshape(res_with.intercept.params.d, obs_dim, 1)
-    @test res_no.intercept.train_ll ≈ data_ll(W_no, res_no.intercept.params.R) atol = 1e-8
-    delta = res_with.intercept.train_ll - data_ll(W_with, res_with.intercept.params.R)
-    # The remaining piece must be exactly the IW log-prior term (no MN prior).
-    R_with = res_with.intercept.params.R
-    expected = -0.5 * ((ν + obs_dim + 1) * logdet(R_with) + tr(R_with \ Ψ))
+    with = fit!(AffineNullModel{T}(:intercept, obs_dim; R_prior=R_prior), y)
+    delta = SSD._null_logmap(with, y) - loglikelihood(with, y)
+    expected = -0.5 * ((ν + obs_dim + 1) * logdet(with.R) + tr(with.R \ Ψ))
     @test delta ≈ expected atol = 1e-8
 end
 
-# ----- MN-prior contribution -----------------------------------------------
-
-function test_null_mn_prior_shifts_LL_by_mn_logprior_term(rng=MersenneTwister(0xC0FFEE))
+function test_null_mn_prior_shifts_logmap_by_mn_term(rng=MersenneTwister(10))
     T = Float64
-    obs_dim, tsteps, ntrials = 3, 25, 4
-    v_dim = 2
-    data = _null_make_data(rng, obs_dim, tsteps, ntrials; v_dim=v_dim)
+    obs_dim, v_dim, tsteps, ntrials = 3, 2, 25, 4
+    y = _null_make_y(rng, obs_dim, fill(tsteps, ntrials))
+    v = _null_make_inputs(rng, v_dim, fill(tsteps, ntrials))
 
-    # Shrink [d D] toward zero — the identity: train_ll(with MN prior) - data_ll
-    # = mn_logprior_term(W, R, prior) + iw_logprior_term(R, R_prior)  (=0 here).
     M₀ = zeros(T, obs_dim, 1 + v_dim)
     Λ = Matrix{T}(0.5 * I, 1 + v_dim, 1 + v_dim)
     prior = MNPrior(; M₀=M₀, Λ=Λ)
 
-    res = test_null(data; inputs_W_prior=prior)
+    null = AffineNullModel{T}(:inputs, obs_dim; input_dim=v_dim, W_prior=prior)
+    fit!(null, y; inputs=v)
 
-    # Reconstruct W = [d D] and recompute the data-only LL by hand.
-    W = hcat(res.inputs.params.d, res.inputs.params.D)
-    R = res.inputs.params.R
-    Y = reshape(data.y, obs_dim, tsteps * ntrials)
-    n = size(Y, 2)
-    v_flat = reshape(data.ux, v_dim, n)
-    X = vcat(ones(T, 1, n), v_flat)
-    E = Y .- W * X
-    data_ll_ref = -0.5 * (n * obs_dim * log(2π) + n * logdet(R) + tr(R \ (E * E')))
+    W = hcat(null.d, null.D)
+    expected = -0.5 * tr(null.R \ ((W .- M₀) * Λ * (W .- M₀)'))
+    delta = SSD._null_logmap(null, y; inputs=v) - loglikelihood(null, y; inputs=v)
+    @test delta ≈ expected atol = 1e-8
 
-    Wm = W .- M₀
-    expected_shift = -0.5 * tr(R \ (Wm * Λ * Wm'))
-    @test res.inputs.train_ll - data_ll_ref ≈ expected_shift atol = 1e-8
-
-    # Strong shrinkage should also observably pull the MAP toward M₀ = 0.
-    strong_prior = MNPrior(; M₀=M₀, Λ=Matrix{T}(1e6 * I, 1 + v_dim, 1 + v_dim))
-    res_strong = test_null(data; inputs_W_prior=strong_prior)
-    W_strong = hcat(res_strong.inputs.params.d, res_strong.inputs.params.D)
-    @test norm(W_strong) < norm(W)
+    # Strong shrinkage pulls the MAP toward M₀ = 0.
+    strong = AffineNullModel{T}(
+        :inputs,
+        obs_dim;
+        input_dim=v_dim,
+        W_prior=MNPrior(; M₀=M₀, Λ=Matrix{T}(1e6 * I, 1 + v_dim, 1 + v_dim)),
+    )
+    fit!(strong, y; inputs=v)
+    @test norm(hcat(strong.d, strong.D)) < norm(W)
 end
 
-# ----- Input override + validation -----------------------------------------
-
-function test_null_inputs_override_uses_supplied_array(rng=MersenneTwister(0xC0FFEE))
+# All-priors path finite
+function test_null_all_priors_active_returns_finite_lls(rng=MersenneTwister(11))
     T = Float64
-    obs_dim, tsteps, ntrials = 2, 12, 5
-    v_dim = 3
-
-    data = _null_make_data(rng, obs_dim, tsteps, ntrials; v_dim=v_dim)
-    # `train_data.ux` has v_dim = 3; supply a 1-column override.
-    v_override_train = randn(rng, T, 1, tsteps, ntrials)
-    # Test with matching test override too.
-    test_data_ = _null_make_data(rng, obs_dim, tsteps, ntrials; v_dim=v_dim)
-    v_override_test = randn(rng, T, 1, tsteps, ntrials)
-    res = test_null(
-        data;
-        test_data=test_data_,
-        train_inputs=v_override_train,
-        test_inputs=v_override_test,
+    obs_dim, v_dim, tsteps, ntrials = 3, 2, 30, 6
+    y = _null_make_var_y(
+        rng,
+        Matrix{T}(0.4 * I, obs_dim, obs_dim),
+        zeros(T, obs_dim),
+        Matrix{T}(0.1 * I, obs_dim, obs_dim),
+        zeros(T, obs_dim),
+        Matrix{T}(0.3 * I, obs_dim, obs_dim),
+        tsteps,
+        ntrials,
     )
+    v = _null_make_inputs(rng, v_dim, fill(tsteps, ntrials))
 
-    @test size(res.inputs.params.D, 2) == 1
-    @test size(res.var_inputs.params.D, 2) == 1
-    @test res.inputs.test_ll isa Float64 && isfinite(res.inputs.test_ll)
-    @test res.var_inputs.test_ll isa Float64 && isfinite(res.var_inputs.test_ll)
+    nregressors = obs_dim + 1 + v_dim
+    null = AffineNullModel{T}(
+        :var_inputs,
+        obs_dim;
+        input_dim=v_dim,
+        W_prior=MNPrior(;
+            M₀=zeros(T, obs_dim, nregressors),
+            Λ=Matrix{T}(0.25 * I, nregressors, nregressors),
+        ),
+        R_prior=IWPrior(; Ψ=Matrix{T}(0.2 * I, obs_dim, obs_dim), ν=T(obs_dim + 4)),
+        R₀_prior=IWPrior(; Ψ=Matrix{T}(0.4 * I, obs_dim, obs_dim), ν=T(obs_dim + 4)),
+    )
+    fit!(null, y; inputs=v)
+
+    @test isfinite(loglikelihood(null, y; inputs=v))
+    @test isfinite(SSD._null_logmap(null, y; inputs=v))
+    @test isposdef(Symmetric(null.R))
+    @test isposdef(Symmetric(null.R₀))
 end
 
-function test_null_test_inputs_default_from_test_data(rng=MersenneTwister(0xC0FFEE))
-    # When test_inputs is not supplied, defaults to test_data.ux — differs
-    # from what happens if we explicitly pass zeros.
-    train = _null_make_data(rng, 2, 12, 4; v_dim=1)
-    test = _null_make_data(rng, 2, 10, 3; v_dim=1)
-    res = test_null(train; test_data=test)
-    @test res.inputs.test_ll isa Float64 && isfinite(res.inputs.test_ll)
-    @test res.var_inputs.test_ll isa Float64 && isfinite(res.var_inputs.test_ll)
-end
+#=
+Error paths
+=#
 
-# ----- Error paths ---------------------------------------------------------
-
-function test_null_var_requires_tsteps_ge_2(rng=MersenneTwister(0xC0FFEE))
-    data = _null_make_data(rng, 2, 1, 4)
-    @test_throws ArgumentError test_null(data)
-end
-
-function test_null_input_shape_mismatch_throws(rng=MersenneTwister(0xC0FFEE))
+function test_null_construction_validates_arguments()
     T = Float64
-    obs_dim, tsteps, ntrials = 2, 8, 3
-    data = _null_make_data(rng, obs_dim, tsteps, ntrials)
-    bad_inputs = randn(rng, T, 2, tsteps + 1, ntrials)  # wrong tsteps
-    @test_throws SSD.DimensionMismatchError test_null(data; train_inputs=bad_inputs)
+    @test_throws ArgumentError AffineNullModel{T}(0)
+    @test_throws ArgumentError AffineNullModel{T}(2; input_dim=-1)
+    @test_throws ArgumentError AffineNullModel{T}(2; input_shift=2)
+    @test_throws ArgumentError AffineNullModel{T}(:nonsense, 2)
+
+    # `input_dim` is forced to 0 for the input-free baselines.
+    @test AffineNullModel{T}(:intercept, 2; input_dim=3).input_dim == 0
+    @test AffineNullModel{T}(:var, 2; input_dim=3).input_dim == 0
+    @test AffineNullModel{T}(:inputs, 2; input_dim=3).input_dim == 3
 end
 
-function test_null_test_inputs_shape_mismatch_throws(rng=MersenneTwister(0xC0FFEE))
+function test_null_input_shape_mismatch_throws(rng=MersenneTwister(12))
     T = Float64
-    train = _null_make_data(rng, 2, 10, 3)
-    test = _null_make_data(rng, 2, 10, 3)
-    bad = randn(rng, T, 1, 10, 4)  # ntrials mismatch
-    @test_throws SSD.DimensionMismatchError test_null(
-        train; test_data=test, test_inputs=bad
-    )
+    obs_dim, v_dim, tsteps, ntrials = 2, 3, 10, 4
+    y = _null_make_y(rng, obs_dim, fill(tsteps, ntrials))
+    null = AffineNullModel{T}(:inputs, obs_dim; input_dim=v_dim)
+
+    # A baseline with an input block requires inputs.
+    @test_throws ArgumentError fit!(null, y)
+
+    wrong_rows = _null_make_inputs(rng, v_dim + 1, fill(tsteps, ntrials))
+    @test_throws DimensionMismatchError fit!(null, y; inputs=wrong_rows)
+
+    wrong_tsteps = _null_make_inputs(rng, v_dim, fill(tsteps + 1, ntrials))
+    @test_throws DimensionMismatchError fit!(null, y; inputs=wrong_tsteps)
+
+    wrong_ntrials = _null_make_inputs(rng, v_dim, fill(tsteps, ntrials - 1))
+    @test_throws DimensionMismatchError fit!(null, y; inputs=wrong_ntrials)
 end
 
-function test_null_test_data_obs_dim_mismatch_throws(rng=MersenneTwister(0xC0FFEE))
-    train = _null_make_data(rng, 3, 10, 4)
-    test = _null_make_data(rng, 2, 10, 4)
-    @test_throws SSD.DimensionMismatchError test_null(train; test_data=test)
-end
-
-# ----- Capacity ordering ---------------------------------------------------
-
-function test_null_capacity_ordering_on_var_data(rng=MersenneTwister(0xC0FFEE))
+function test_null_var_requires_tsteps_ge_2(rng=MersenneTwister(13))
     T = Float64
-    obs_dim, tsteps, ntrials = 3, 100, 6
+    obs_dim = 2
+    y = [randn(rng, T, obs_dim, 1) for _ in 1:3]
+    @test_throws ArgumentError fit!(AffineNullModel{T}(:var, obs_dim), y)
 
-    F_true = T(0.6) * Matrix{T}(I, obs_dim, obs_dim)
-    d_true = T(0.5) * ones(T, obs_dim)
-    R_true = Matrix{T}(0.1 * I, obs_dim, obs_dim)
-    μ_0 = zeros(T, obs_dim)
-    R_0 = Matrix{T}(0.2 * I, obs_dim, obs_dim)
-
-    data = _null_make_var_data(rng, F_true, d_true, R_true, μ_0, R_0, tsteps, ntrials)
-    R0_prior = IWPrior(; Ψ=Matrix{T}(0.1 * I, obs_dim, obs_dim), ν=T(obs_dim + 2))
-    res = test_null(data; R0_prior=R0_prior)
-
-    @test res.var.train_ll > res.intercept.train_ll
-    @test res.var_inputs.train_ll ≈ res.var.train_ll atol = 1e-10
-    @test res.inputs.train_ll ≈ res.intercept.train_ll atol = 1e-10
+    # The no-lag baselines are happy with length-1 trials.
+    @test isfinite(loglikelihood(fit!(AffineNullModel{T}(:intercept, obs_dim), y), y))
 end
 
-# ----- All-priors path finite ---------------------------------------------
+#=
+StatsAPI model comparison against a fitted LDS
+=#
 
-function test_null_all_priors_active_returns_finite_lls(rng=MersenneTwister(0xC0FFEE))
-    # Exercise the branch where every prior kwarg is set (covers each
-    # `mn_logprior_term`/`iw_logprior_term` addition path in `_null_train_ll`
-    # and the MN residual contribution in `_null_fit_regression`).
-    T = Float64
-    obs_dim, tsteps, ntrials = 3, 20, 5
-    v_dim = 2
-    train = _null_make_data(rng, obs_dim, tsteps, ntrials; v_dim=v_dim)
-    test = _null_make_data(rng, obs_dim, 10, 3; v_dim=v_dim)
-
-    R_prior = IWPrior(; Ψ=Matrix{T}(0.1 * I, obs_dim, obs_dim), ν=T(obs_dim + 2))
-    R0_prior = IWPrior(; Ψ=Matrix{T}(0.2 * I, obs_dim, obs_dim), ν=T(obs_dim + 2))
-    intercept_prior = MNPrior(; M₀=zeros(T, obs_dim, 1), Λ=Matrix{T}(0.5 * I, 1, 1))
-    inputs_prior = MNPrior(;
-        M₀=zeros(T, obs_dim, 1 + v_dim), Λ=Matrix{T}(0.5 * I, 1 + v_dim, 1 + v_dim)
-    )
-    var_prior = MNPrior(;
-        M₀=zeros(T, obs_dim, obs_dim + 1), Λ=Matrix{T}(0.5 * I, obs_dim + 1, obs_dim + 1)
-    )
-    var_inputs_prior = MNPrior(;
-        M₀=zeros(T, obs_dim, obs_dim + 1 + v_dim),
-        Λ=Matrix{T}(0.5 * I, obs_dim + 1 + v_dim, obs_dim + 1 + v_dim),
-    )
-
-    res = test_null(
-        train;
-        test_data=test,
-        intercept_W_prior=intercept_prior,
-        inputs_W_prior=inputs_prior,
-        var_W_prior=var_prior,
-        var_inputs_W_prior=var_inputs_prior,
-        R_prior=R_prior,
-        R0_prior=R0_prior,
-    )
-    for name in (:intercept, :inputs, :var, :var_inputs)
-        entry = getproperty(res, name)
-        @test isfinite(entry.train_ll)
-        @test isfinite(entry.test_ll)
-    end
-end
-
-# ===========================================================================
-# Cox–Snell R² (`compute_R2`) against the null baselines.
-# ===========================================================================
-
-# Build a Gaussian LDS with oscillatory dynamics (complex eigenvalues) and
-# optional dynamics (`ux`) / observation (`uy`) inputs.
+# Gaussian LDS with oscillatory dynamics and optional ux / uy inputs.
 function _r2_make_lds(
     rng::AbstractRNG;
     latent_dim::Int=2,
@@ -392,188 +425,157 @@ function _r2_make_lds(
     return LinearDynamicalSystem(sm, om)
 end
 
-# Simulate a no-input LDS into a `Data` struct (obs_dim × tsteps × ntrials).
-function _r2_sim_data(rng::AbstractRNG, lds, tsteps::Int, ntrials::Int)
-    _, y_seq = rand(rng, lds, fill(tsteps, ntrials))
-    y = cat(y_seq...; dims=3)
-    T = eltype(y)
-    return Data(; y=y, ux=zeros(T, 0, tsteps, ntrials), uy=zeros(T, 0, tsteps, ntrials))
-end
-
 _r2_rowstochastic(K) = (M = rand(K, K); M ./ sum(M; dims=2))
 _r2_probvec(K) = (v = rand(K); v ./ sum(v))
 
-# The inputs-aware marginal LL must reduce to `loglikelihood(lds, y)` when the
-# model carries no inputs.
-function test_compute_R2_marginal_matches_loglikelihood_no_inputs(rng=MersenneTwister(11))
-    lds = _r2_make_lds(rng; latent_dim=2, obs_dim=4)
-    data = _r2_sim_data(rng, lds, 40, 6)
-    ll_aware = SSD.loglikelihood(lds, data)
-    ll_base = loglikelihood(lds, data.y)
-    @test ll_aware ≈ ll_base atol = 1e-8 rtol = 1e-8
+function test_nobs_counts_scalar_observations(rng=MersenneTwister(14))
+    obs_dim = 4
+    lds = _r2_make_lds(rng; latent_dim=2, obs_dim=obs_dim)
+    _, y = rand(rng, lds, [30, 12, 25])
+
+    @test nobs(lds, y) == obs_dim * (30 + 12 + 25)
+
+    _, y_rect = rand(rng, lds, fill(20, 5))
+    @test nobs(lds, y_rect) == obs_dim * 20 * 5
+    @test nobs(lds, cat(y_rect...; dims=3)) == obs_dim * 20 * 5
+    @test nobs(lds, y_rect[1]) == obs_dim * 20
 end
 
-# The inputs-aware marginal LL must honour `D·uy`: subtracting the obs-input
-# mean shift and scoring with a D-free model reproduces it exactly, and it
-# differs from the input-blind `loglikelihood(lds, y)`.
-function test_compute_R2_marginal_accounts_for_obs_inputs(rng=MersenneTwister(12))
-    T = Float64
-    latent_dim, obs_dim, uy_dim = 2, 4, 2
-    tsteps, ntrials = 30, 5
-    lds = _r2_make_lds(rng; latent_dim=latent_dim, obs_dim=obs_dim, uy_dim=uy_dim)
+function test_nullloglikelihood_matches_intercept_baseline(rng=MersenneTwister(15))
+    obs_dim = 4
+    lds = _r2_make_lds(rng; latent_dim=2, obs_dim=obs_dim)
+    _, y = rand(rng, lds, fill(30, 5))
 
-    uy_seq = [randn(rng, T, uy_dim, tsteps) for _ in 1:ntrials]
-    _, y_seq = rand(rng, lds, fill(tsteps, ntrials); obs_inputs=uy_seq)
-    y = cat(y_seq...; dims=3)
-    uy = cat(uy_seq...; dims=3)
-    data = Data(; y=y, ux=zeros(T, 0, tsteps, ntrials), uy=uy)
-
-    ll_aware = SSD.loglikelihood(lds, data)
-
-    Dm = lds.obs_model.D
-    y_shift = similar(y)
-    for n in 1:ntrials, t in 1:tsteps
-        @views y_shift[:, t, n] .= y[:, t, n] .- Dm * uy[:, t, n]
-    end
-    lds_noD = LinearDynamicalSystem(
-        lds.state_model,
-        GaussianObservationModel(; C=lds.obs_model.C, R=lds.obs_model.R, d=lds.obs_model.d),
-    )
-    ll_ref = loglikelihood(lds_noD, y_shift)
-    @test ll_aware ≈ ll_ref atol = 1e-8 rtol = 1e-8
-    @test !isapprox(ll_aware, loglikelihood(lds, y); rtol=1e-3)
+    null = fit!(AffineNullModel{Float64}(:intercept, obs_dim), y)
+    @test nullloglikelihood(lds, y) ≈ loglikelihood(null, y) atol = 1e-10
 end
 
-# Returned R² equals the closed-form Cox–Snell value built from the reported
-# log-likelihoods, and `n = obs_dim · tsteps · ntrials`.
-function test_compute_R2_formula_and_fields(rng=MersenneTwister(13))
+# The returned R² equals the closed-form value built from the two LLs and `nobs`.
+function test_r2_cox_snell_formula(rng=MersenneTwister(16))
     obs_dim, tsteps, ntrials = 4, 30, 6
     lds = _r2_make_lds(rng; latent_dim=2, obs_dim=obs_dim)
-    data = _r2_sim_data(rng, lds, tsteps, ntrials)
-    res = compute_R2(lds, data)
+    _, y = rand(rng, lds, fill(tsteps, ntrials))
 
-    n_expected = obs_dim * tsteps * ntrials
-    lds_ll = SSD.loglikelihood(lds, data)
-    for name in (:intercept, :inputs, :var, :var_inputs)
-        e = getproperty(res, name)
-        @test e.n == n_expected
-        @test e.lds_ll ≈ lds_ll atol = 1e-10
-        @test e.R2 ≈ 1 - exp((2 / n_expected) * (e.null_ll - lds_ll)) atol = 1e-12
-        @test isfinite(e.R2)
-    end
+    n = nobs(lds, y)
+    @test n == obs_dim * tsteps * ntrials
+
+    ll = loglikelihood(lds, y)
+    ll₀ = nullloglikelihood(lds, y)
+    @test r2(lds, y) ≈ 1 - exp(2 * (ll₀ - ll) / n) atol = 1e-12
+    @test r2(lds, y, :CoxSnell) ≈ r2(lds, y) atol = 1e-12
 end
 
-# Ground-truth LDS (the data-generating parameters) out-predicts every null
-# baseline on held-out data.
-function test_compute_R2_ground_truth_beats_null_heldout(rng=MersenneTwister(14))
+function test_r2_variants(rng=MersenneTwister(17))
+    obs_dim, tsteps, ntrials = 4, 30, 6
+    lds = _r2_make_lds(rng; latent_dim=2, obs_dim=obs_dim)
+    _, y = rand(rng, lds, fill(tsteps, ntrials))
+
+    n = nobs(lds, y)
+    ll = loglikelihood(lds, y)
+    ll₀ = nullloglikelihood(lds, y)
+
+    cox_snell = 1 - exp(2 * (ll₀ - ll) / n)
+    @test r2(lds, y, :McFadden) ≈ 1 - ll / ll₀ atol = 1e-12
+    @test r2(lds, y, :CoxSnell) ≈ cox_snell atol = 1e-12
+    @test r2(lds, y, :Nagelkerke) ≈ cox_snell / (1 - exp(2 * ll₀ / n)) atol = 1e-12
+
+    # Nagelkerke rescales Cox–Snell to a larger value on the same fit.
+    @test r2(lds, y, :Nagelkerke) > r2(lds, y, :CoxSnell)
+    @test_throws ArgumentError r2(lds, y, :nonsense)
+end
+
+function test_r2_baseline_selection(rng=MersenneTwister(18))
     T = Float64
-    latent_dim, obs_dim = 2, 6
-    tsteps, ntrials = 60, 30
+    latent_dim, obs_dim, ux_dim = 2, 4, 2
+    tsteps, ntrials = 40, 6
+    lds = _r2_make_lds(rng; latent_dim=latent_dim, obs_dim=obs_dim, ux_dim=ux_dim)
+    ux = [randn(rng, T, ux_dim, tsteps) for _ in 1:ntrials]
+    _, y = rand(rng, lds, fill(tsteps, ntrials); ux=ux)
 
-    # Oscillatory (complex-eigenvalue) latent dynamics with sustaining process
-    # noise: an obs-space VAR(1) cannot capture this, so the true LDS wins.
-    A = T(0.95) * random_rotation_matrix(latent_dim, rng)
-    Q = Matrix{T}(0.1 * I, latent_dim, latent_dim)
-    b = zeros(T, latent_dim)
-    x0 = zeros(T, latent_dim)
-    P0 = Matrix{T}(0.5 * I, latent_dim, latent_dim)
-    C = randn(rng, T, obs_dim, latent_dim)
-    R = Matrix{T}(0.3 * I, obs_dim, obs_dim)
-    d = T(0.5) .* randn(rng, T, obs_dim)
-    sm = GaussianStateModel(; A=A, Q=Q, b=b, x0=x0, P0=P0)
-    om = GaussianObservationModel(; C=C, R=R, d=d)
-    lds = LinearDynamicalSystem(sm, om)
-
-    train = _r2_sim_data(rng, lds, tsteps, ntrials)
-    test = _r2_sim_data(rng, lds, tsteps, ntrials)
-    res = compute_R2(lds, train, test)
-
-    for name in (:intercept, :inputs, :var, :var_inputs)
-        e = getproperty(res, name)
-        @test e.test_R2 > 0
-        @test e.train_R2 > 0
-        @test e.test_R2 < 1
+    values = Dict(
+        baseline => r2(lds, y; ux=ux, null=baseline) for
+        baseline in (:intercept, :inputs, :var, :var_inputs)
+    )
+    for (_, value) in values
+        @test isfinite(value)
     end
+
+    # A richer baseline is harder to beat, so R² cannot increase with capacity.
+    @test values[:inputs] <= values[:intercept] + 1e-8
+    @test values[:var] <= values[:intercept] + 1e-8
+    @test values[:var_inputs] <= values[:var] + 1e-8
+
+    @test_throws ArgumentError r2(lds, y; ux=ux, null=:nonsense)
 end
 
-# Single-`data` R² equals the split form's `train_R2` when the same data is the
-# training split (both fit the null on that split and score it in-sample).
-function test_compute_R2_single_matches_split_train(rng=MersenneTwister(15))
-    lds = _r2_make_lds(rng; latent_dim=2, obs_dim=4)
-    train = _r2_sim_data(rng, lds, 40, 8)
-    test = _r2_sim_data(rng, lds, 40, 8)
-    single = compute_R2(lds, train)
-    split = compute_R2(lds, train, test)
-    for name in (:intercept, :inputs, :var, :var_inputs)
-        @test getproperty(single, name).R2 ≈ getproperty(split, name).train_R2 atol = 1e-12
-    end
-end
-
-# `null_inputs` selects the input channel fed to the input-bearing baselines:
-# the LDS LL is unchanged, but the null side differs between "ux" and "uy".
-function test_compute_R2_null_inputs_ux_vs_uy(rng=MersenneTwister(16))
+# The two input channels are distinct: `:ux` feeds the baseline the dynamics
+# inputs (lagged), `:uy` the observation inputs (contemporaneous).
+function test_r2_null_inputs_ux_vs_uy(rng=MersenneTwister(19))
     T = Float64
-    latent_dim, obs_dim, ux_dim, uy_dim = 2, 4, 2, 3
-    tsteps, ntrials = 40, 8
+    latent_dim, obs_dim = 2, 4
+    ux_dim, uy_dim = 2, 3
+    tsteps, ntrials = 40, 6
     lds = _r2_make_lds(
         rng; latent_dim=latent_dim, obs_dim=obs_dim, ux_dim=ux_dim, uy_dim=uy_dim
     )
-    ux_seq = [randn(rng, T, ux_dim, tsteps) for _ in 1:ntrials]
-    uy_seq = [randn(rng, T, uy_dim, tsteps) for _ in 1:ntrials]
-    _, y_seq = rand(
-        rng, lds, fill(tsteps, ntrials); latent_inputs=ux_seq, obs_inputs=uy_seq
-    )
-    data = Data(;
-        y=cat(y_seq...; dims=3), ux=cat(ux_seq...; dims=3), uy=cat(uy_seq...; dims=3)
-    )
+    ux = [randn(rng, T, ux_dim, tsteps) for _ in 1:ntrials]
+    uy = [randn(rng, T, uy_dim, tsteps) for _ in 1:ntrials]
+    _, y = rand(rng, lds, fill(tsteps, ntrials); ux=ux, uy=uy)
 
-    res_ux = compute_R2(lds, data; null_inputs="ux")
-    res_uy = compute_R2(lds, data; null_inputs="uy")
+    r2_ux = r2(lds, y; ux=ux, uy=uy, null=:inputs, null_inputs=:ux)
+    r2_uy = r2(lds, y; ux=ux, uy=uy, null=:inputs, null_inputs=:uy)
+    @test isfinite(r2_ux) && isfinite(r2_uy)
+    @test r2_ux != r2_uy
 
-    # Same LDS marginal LL regardless of which channel the null consumes.
-    @test res_ux.inputs.lds_ll ≈ res_uy.inputs.lds_ll atol = 1e-10
-    # The intercept baseline ignores inputs, so it is identical across channels.
-    @test res_ux.intercept.null_ll ≈ res_uy.intercept.null_ll atol = 1e-10
-    # The input-bearing baselines see different regressors → different fit.
-    @test res_ux.inputs.null_ll != res_uy.inputs.null_ll
-    @test res_ux.var_inputs.null_ll != res_uy.var_inputs.null_ll
-    for r in (res_ux, res_uy), name in (:intercept, :inputs, :var, :var_inputs)
-        @test isfinite(getproperty(r, name).R2)
-    end
+    # The `:intercept` baseline has no input block, so the channel is inert.
+    @test r2(lds, y; ux=ux, uy=uy, null=:intercept, null_inputs=:ux) ≈
+        r2(lds, y; ux=ux, uy=uy, null=:intercept, null_inputs=:uy) atol = 1e-12
 
-    @test_throws ArgumentError compute_R2(lds, data; null_inputs="uz")
+    @test_throws ArgumentError r2(lds, y; ux=ux, uy=uy, null_inputs=:nope)
 end
 
-# The null models inherit the LDS's observation-noise prior by default; passing
-# it explicitly matches, and dropping it changes the null fit (hence null_ll).
-function test_compute_R2_forwards_R_prior(rng=MersenneTwister(17))
+# The baseline inherits the LDS's observation-noise prior by default.
+function test_r2_forwards_R_prior(rng=MersenneTwister(20))
     T = Float64
     obs_dim, tsteps, ntrials = 4, 40, 8
     Rp = IWPrior(; Ψ=Matrix{T}(0.5 * I, obs_dim, obs_dim), ν=T(obs_dim + 5))
     lds = _r2_make_lds(rng; latent_dim=2, obs_dim=obs_dim, R_prior=Rp)
-    data = _r2_sim_data(rng, lds, tsteps, ntrials)
+    _, y = rand(rng, lds, fill(tsteps, ntrials))
 
-    res_default = compute_R2(lds, data)
-    res_explicit = compute_R2(lds, data; R_prior=Rp)
-    res_none = compute_R2(lds, data; R_prior=nothing)
-    for name in (:intercept, :inputs, :var, :var_inputs)
-        @test getproperty(res_default, name).null_ll ≈
-            getproperty(res_explicit, name).null_ll atol = 1e-12
-        @test getproperty(res_default, name).null_ll != getproperty(res_none, name).null_ll
+    @test r2(lds, y) ≈ r2(lds, y; R_prior=Rp) atol = 1e-12
+    @test r2(lds, y) != r2(lds, y; R_prior=nothing)
+    @test nullloglikelihood(lds, y) ≈ nullloglikelihood(lds, y; R_prior=Rp) atol = 1e-12
+end
+
+# The data-generating LDS out-predicts every baseline on held-out data. Held-out
+# R² is the documented two-call recipe: fit the baseline on train, score test.
+function test_r2_ground_truth_beats_null_heldout(rng=MersenneTwister(21))
+    T = Float64
+    latent_dim, obs_dim = 2, 6
+    tsteps, ntrials = 60, 10
+    lds = _r2_make_lds(rng; latent_dim=latent_dim, obs_dim=obs_dim)
+
+    _, y_train = rand(rng, lds, fill(tsteps, ntrials))
+    _, y_test = rand(rng, lds, fill(tsteps, ntrials))
+
+    ll_test = loglikelihood(lds, y_test)
+    n_test = nobs(lds, y_test)
+
+    for baseline in (:intercept, :var)
+        null = fit!(AffineNullModel{T}(baseline, obs_dim), y_train)
+        ll₀ = loglikelihood(null, y_test)
+        r2_heldout = 1 - exp(2 * (ll₀ - ll_test) / n_test)
+        @test ll_test > ll₀
+        @test r2_heldout > 0
     end
 end
 
-# `compute_R2` is defined only for the Gaussian LDS: Poisson observations and
-# the SLDS type fall through to a `MethodError`.
-function test_compute_R2_rejects_plds_and_slds(rng=MersenneTwister(18))
+# `r2` / `nullloglikelihood` are defined only for the Gaussian LDS: Poisson
+# observations and the SLDS type fall through to a `MethodError`.
+function test_r2_rejects_plds_and_slds(rng=MersenneTwister(22))
     T = Float64
     latent_dim, obs_dim = 2, 3
-    tsteps, ntrials = 10, 4
-    data = Data(;
-        y=randn(rng, T, obs_dim, tsteps, ntrials),
-        ux=zeros(T, 0, tsteps, ntrials),
-        uy=zeros(T, 0, tsteps, ntrials),
-    )
+    y = [randn(rng, T, obs_dim, 10) for _ in 1:4]
     sm = GaussianStateModel(;
         A=T(0.5) * Matrix{T}(I, latent_dim, latent_dim),
         Q=Matrix{T}(0.1 * I, latent_dim, latent_dim),
@@ -581,13 +583,15 @@ function test_compute_R2_rejects_plds_and_slds(rng=MersenneTwister(18))
         x0=zeros(T, latent_dim),
         P0=Matrix{T}(I, latent_dim, latent_dim),
     )
+
     plds = LinearDynamicalSystem(
         sm,
         PoissonObservationModel(;
             C=randn(rng, T, obs_dim, latent_dim), d=zeros(T, obs_dim)
         ),
     )
-    @test_throws MethodError compute_R2(plds, data)
+    @test_throws MethodError r2(plds, y)
+    @test_throws MethodError nullloglikelihood(plds, y)
 
     glds = LinearDynamicalSystem(
         sm,
@@ -598,5 +602,5 @@ function test_compute_R2_rejects_plds_and_slds(rng=MersenneTwister(18))
         ),
     )
     slds = SLDS(; A=_r2_rowstochastic(2), πₖ=_r2_probvec(2), LDSs=fill(glds, 2))
-    @test_throws MethodError compute_R2(slds, data)
+    @test_throws MethodError r2(slds, y)
 end

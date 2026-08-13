@@ -1,691 +1,550 @@
-# =============================================================================
-# Baseline / null-model log-likelihoods for an LDS-style data layout.
-#
-# `test_null` fits four latent-free baselines on a `Data{T}` struct and reports
-# their training and (optionally) test log-likelihoods, computed under the same
-# convention used by the SSM's `elbo!` at the EM fixed point:
-#
-#   training LL = data Gaussian LL + iw_logprior_term(R, R_prior)
-#                                  + mn_logprior_term(W, R, W_prior)
-#
-# i.e. plug-in MAP parameters with the same partial-constant prior
-# contributions that the SSM ELBO uses. The test LL is the plug-in Gaussian
-# log-density on the test arrays (no prior terms), matching the convention of
-# the Kalman-filter marginal `loglikelihood(lds, y)`.
-#
-# The four baselines are:
-#   1. intercept   y_t ~ N(d, R)
-#   2. inputs      y_t ~ N(d + D v_t, R)
-#   3. var         y_1 ~ N(μ_0, R_0);  y_t ~ N(F y_{t-1} + d, R)         (t ≥ 2)
-#   4. var_inputs  y_1 ~ N(μ_0, R_0);  y_t ~ N(F y_{t-1} + d + D v_t, R) (t ≥ 2)
-#
-# Each VAR variant carries an additional init regression that mirrors the SSM's
-# (x0, P0) layer: μ_0 has no MN prior (matches `update_initial_state_mean!`'s
-# unregularized mean), R_0 takes the optional `R0_prior` IW prior (matches
-# `update_initial_state_covariance!`'s use of `P0_prior`).
-# =============================================================================
+#=============================================================================
+Latent-free baseline ("null") models for LDS model comparison.
+
+`AffineNullModel` is one affine-Gaussian baseline whose two structural switches
+are type parameters — `LAG`, whether an autoregressive term `F y_{t-1}` is
+present, and `SHIFT`, how far the input is lagged — so the four baselines worth
+having are configurations of a single type rather than four implementations:
+
+  :intercept   y_t ~ N(d, R)
+  :inputs      y_t ~ N(d + D v_{t-SHIFT}, R)
+  :var         y_1 ~ N(μ₀, R₀);  y_t ~ N(F y_{t-1} + d, R)                 (t ≥ 2)
+  :var_inputs  y_1 ~ N(μ₀, R₀);  y_t ~ N(F y_{t-1} + d + D v_{t-SHIFT}, R) (t ≥ 2)
+
+`SHIFT` follows whichever LDS input channel the baseline stands in for: the
+dynamics input enters lagged (`x_t = A x_{t-1} + b + B ux_{t-1}`), the
+observation input contemporaneously (`y_t = C x_t + d + D uy_t`). A lagged input
+that predates the trial is zero, mirroring the LDS's input-free `x_1`.
+
+The `μ₀`/`R₀` step of the VAR baselines mirrors the LDS's `(x0, P0)` layer, so
+every timestep is scored and the baseline stays comparable to the LDS marginal
+likelihood term for term.
+
+Baselines are fit with `fit!` and scored with `loglikelihood`; `r2`,
+`nullloglikelihood` and `nobs` build on those to score a fitted LDS against a
+baseline. Priors are optional and mirror the LDS M-step: an `MNPrior` on the
+stacked regression matrix, `IWPrior`s on `R` and `R₀`.
+=============================================================================#
+
+const NULL_BASELINES = (:intercept, :inputs, :var, :var_inputs)
 
 """
-    test_null(train_data::Data{T}; kwargs...) -> NamedTuple
+    AffineNullModel{T,LAG,SHIFT}
 
-Fit four latent-free baseline models on `train_data` and return their
-training and (optionally) test log-likelihoods. Designed as a fair baseline
-to compare against an SSM fit on the same data: the training LL uses the
-same plug-in MAP + IW/MN log-prior decomposition as the SSM's `elbo!` at
-its EM fixed point.
+Affine-Gaussian baseline model used as a null reference for a fitted
+[`LinearDynamicalSystem`](@ref). `LAG` (`Bool`) selects the autoregressive term
+`F y_{t-1}`; `SHIFT` (`0` or `1`) is the input lag. An absent input block is a
+zero-column `D`, matching how absent LDS inputs are canonicalized.
 
-# Arguments
-- `train_data::Data{T}`: training data struct
-  (`y` is `obs_dim × tsteps × ntrials`).
+# Constructors
+    AffineNullModel{T}(obs_dim; input_dim=0, lag=false, input_shift=0, priors...)
+    AffineNullModel{T}(baseline::Symbol, obs_dim; input_dim=0, input_shift=0, priors...)
 
-# Keyword Arguments
-- `test_data::Union{Nothing,Data{T}} = nothing`: optional test set with the
-  same `obs_dim`.
-- `train_inputs::Union{Nothing,AbstractArray{T,3}} = nothing`: per-timestep
-  inputs `v_t` for the input-bearing models (variants 2 and 4) on training.
-  Defaults to `train_data.ux`; pass a zero-row array (e.g. `zeros(T, 0, tsteps, ntrials)`) to disable inputs.
-- `test_inputs::Union{Nothing,AbstractArray{T,3}} = nothing`: per-timestep
-  inputs on test; defaults to `test_data.ux`.
-- `intercept_W_prior, inputs_W_prior, var_W_prior, var_inputs_W_prior::Union{Nothing,MNPrior{T}} = nothing`:
-  matrix-normal priors on the regression matrices for each of the four
-  variants. Shapes must match the variant's regressor count
-  (`1`, `1 + v_dim`, `obs_dim + 1`, `obs_dim + 1 + v_dim` respectively).
-- `R_prior::Union{Nothing,IWPrior{T}} = nothing`: IW prior on the
-  observation covariance `R` (applied to all four variants).
-- `R0_prior::Union{Nothing,IWPrior{T}} = nothing`: IW prior on the
-  initial-step covariance `R_0` (applied to the two VAR variants only).
+Prefer the second form, which names one of `$(NULL_BASELINES)` and sets `lag` /
+`input_dim` accordingly — `input_dim` is forced to `0` for the input-free
+baselines `:intercept` and `:var`. `input_shift` must be `0` (score `v_t`,
+matching the LDS observation input) or `1` (score `v_{t-1}`, matching the LDS
+dynamics input).
 
-# Returns
-A `NamedTuple` keyed by model name (`intercept`, `inputs`, `var`,
-`var_inputs`). Each entry is a `NamedTuple` with:
-- `train_ll::T`: training log-likelihood under the prior-augmented convention
-- `test_ll::Union{Nothing,T}`: plug-in test log-likelihood, or `nothing`
-- `params::NamedTuple`: fitted MAP parameters (`d`, `R`, and where
-  applicable `D`, `F`, `μ_0`, `R_0`)
+```julia
+null = AffineNullModel{Float64}(:var_inputs, obs_dim; input_dim=2, input_shift=1)
+fit!(null, y; inputs=ux)
+loglikelihood(null, y; inputs=ux)
+```
+
+# Fields
+- `obs_dim::Int`: observation dimension.
+- `input_dim::Int`: input dimension (`0` when the baseline takes no inputs).
+- `d::Vector{T}`: intercept.
+- `D::Matrix{T}`: input matrix (`obs_dim × input_dim`).
+- `F::Matrix{T}`: autoregressive matrix (`obs_dim × obs_dim`, empty when `!LAG`).
+- `R::Matrix{T}`: innovation covariance.
+- `μ₀::Vector{T}`, `R₀::Matrix{T}`: initial-step mean/covariance (empty when `!LAG`).
+- `W_prior`, `R_prior`, `R₀_prior`: optional MN/IW priors, mirroring the LDS M-step.
+
+See also [`r2`](@ref), [`nullloglikelihood`](@ref).
 """
-function test_null(
-    train_data::Data{T};
-    test_data::Union{Nothing,Data{T}}=nothing,
-    train_inputs::Union{Nothing,AbstractArray{T,3}}=nothing,
-    test_inputs::Union{Nothing,AbstractArray{T,3}}=nothing,
-    intercept_W_prior::Union{Nothing,MNPrior{T}}=nothing,
-    inputs_W_prior::Union{Nothing,MNPrior{T}}=nothing,
-    var_W_prior::Union{Nothing,MNPrior{T}}=nothing,
-    var_inputs_W_prior::Union{Nothing,MNPrior{T}}=nothing,
+mutable struct AffineNullModel{T<:Real,LAG,SHIFT}
+    obs_dim::Int
+    input_dim::Int
+    d::Vector{T}
+    D::Matrix{T}
+    F::Matrix{T}
+    R::Matrix{T}
+    μ₀::Vector{T}
+    R₀::Matrix{T}
+    W_prior::Union{Nothing,MNPrior{T,Matrix{T}}}
+    R_prior::Union{Nothing,IWPrior{T}}
+    R₀_prior::Union{Nothing,IWPrior{T}}
+end
+
+function AffineNullModel{T}(
+    obs_dim::Int;
+    input_dim::Int=0,
+    lag::Bool=false,
+    input_shift::Int=0,
+    W_prior::Union{Nothing,MNPrior{T,Matrix{T}}}=nothing,
     R_prior::Union{Nothing,IWPrior{T}}=nothing,
-    R0_prior::Union{Nothing,IWPrior{T}}=nothing,
+    R₀_prior::Union{Nothing,IWPrior{T}}=nothing,
 ) where {T<:Real}
-    obs_dim, tsteps, ntrials = size(train_data.y)
+    obs_dim > 0 || throw(ArgumentError("obs_dim must be positive; got $obs_dim"))
+    input_dim >= 0 ||
+        throw(ArgumentError("input_dim must be non-negative; got $input_dim"))
+    input_shift in (0, 1) ||
+        throw(ArgumentError("input_shift must be 0 or 1; got $input_shift"))
 
-    v_train = train_inputs === nothing ? train_data.ux : train_inputs
-    v_test = if test_data === nothing
-        nothing
-    elseif test_inputs !== nothing
-        test_inputs
-    else
-        test_data.ux
-    end
-
-    _null_check_inputs(v_train, tsteps, ntrials, "train_inputs")
-    if test_data !== nothing
-        size(test_data.y, 1) == obs_dim || throw(
-            DimensionMismatchError("test_data.y obs_dim", obs_dim, size(test_data.y, 1))
-        )
-        _null_check_inputs(
-            v_test, size(test_data.y, 2), size(test_data.y, 3), "test_inputs"
-        )
-    end
-
-    intercept_res = _null_intercept(train_data, test_data, intercept_W_prior, R_prior)
-    inputs_res = _null_inputs(
-        train_data, test_data, v_train, v_test, inputs_W_prior, R_prior
-    )
-    var_res = _null_var(train_data, test_data, var_W_prior, R_prior, R0_prior)
-    var_inputs_res = _null_var_inputs(
-        train_data, test_data, v_train, v_test, var_inputs_W_prior, R_prior, R0_prior
-    )
-
-    return (
-        intercept=intercept_res, inputs=inputs_res, var=var_res, var_inputs=var_inputs_res
+    lag_dim = lag ? obs_dim : 0
+    return AffineNullModel{T,lag,input_shift}(
+        obs_dim,
+        input_dim,
+        zeros(T, obs_dim),
+        zeros(T, obs_dim, input_dim),
+        zeros(T, obs_dim, lag_dim),
+        Matrix{T}(I, obs_dim, obs_dim),
+        zeros(T, lag_dim),
+        Matrix{T}(I, lag_dim, lag_dim),
+        W_prior,
+        R_prior,
+        R₀_prior,
     )
 end
 
-# -----------------------------------------------------------------------------
-# Input validation
-# -----------------------------------------------------------------------------
-
-function _null_check_inputs(
-    v::AbstractArray{T,3}, tsteps::Int, ntrials::Int, name::String
+function AffineNullModel{T}(
+    baseline::Symbol, obs_dim::Int; input_dim::Int=0, kwargs...
 ) where {T<:Real}
-    if size(v, 1) > 0 && (size(v, 2) != tsteps || size(v, 3) != ntrials)
-        throw(
-            DimensionMismatchError(
-                "$name shape (input_dim, T, ntrials)",
-                (size(v, 1), tsteps, ntrials),
-                size(v),
-            ),
-        )
-    end
-    return nothing
+    baseline in NULL_BASELINES ||
+        throw(ArgumentError("baseline must be one of $(NULL_BASELINES); got :$baseline"))
+    lag = baseline === :var || baseline === :var_inputs
+    takes_inputs = baseline === :inputs || baseline === :var_inputs
+    return AffineNullModel{T}(
+        obs_dim; input_dim=(takes_inputs ? input_dim : 0), lag=lag, kwargs...
+    )
 end
 
-# -----------------------------------------------------------------------------
-# Core regression + log-likelihood helpers
-# -----------------------------------------------------------------------------
+#=
+Trial normalization. A baseline is a standalone model, so it cannot reuse the
+`Data(lds, y; ux, uy)` constructor — that validates against an LDS. It accepts
+the same public shape family instead and canonicalizes here: a single
+`(obs_dim, T)` matrix, an `(obs_dim, T, ntrials)` array, or a vector of per-trial
+matrices (ragged lengths allowed).
+=#
+_null_trials(y::AbstractVector{<:AbstractMatrix}) = y
+_null_trials(y::AbstractMatrix) = [y]
+_null_trials(y::AbstractArray{<:Any,3}) = [view(y, :, :, n) for n in axes(y, 3)]
 
-# Fit MAP (W, R) for the regression Y = W X + ε, ε ~ N(0, R), with optional
-# MN prior on W and IW prior on R. `Y` is `(obs_dim, n)`, `X` is `(P, n)`.
-# Returns the MAP `(W, R)`, the data-only residual scatter
-# `S_data = YY - W·XY - XY'·W' + W·XX·W'`, and the sample count `n`. Mirrors
-# the (mn_map + iw_map) M-step machinery used by `update_R!` in
-# `lds/gaussian_observations.jl`.
+function _null_input_trials(
+    ::Type{T}, ::Nothing, tsteps::Vector{Int}, input_dim::Int
+) where {T<:Real}
+    input_dim == 0 || throw(
+        ArgumentError(
+            "inputs=nothing is only valid for a baseline with no input block; " *
+            "got input_dim=$input_dim",
+        ),
+    )
+    return [zeros(T, 0, Ti) for Ti in tsteps]
+end
+
+function _null_input_trials(
+    ::Type{T}, v, tsteps::Vector{Int}, input_dim::Int
+) where {T<:Real}
+    trials = _null_trials(v)
+    length(trials) == length(tsteps) ||
+        throw(DimensionMismatchError("inputs ntrials", length(tsteps), length(trials)))
+    for (i, vi) in enumerate(trials)
+        size(vi, 1) == input_dim ||
+            throw(DimensionMismatchError("inputs[$i] rows", input_dim, size(vi, 1)))
+        size(vi, 2) == tsteps[i] ||
+            throw(DimensionMismatchError("inputs[$i] tsteps", tsteps[i], size(vi, 2)))
+    end
+    return trials
+end
+
+#=
+Design assembly
+=#
+
+# `v_{t-SHIFT}` aligned with `y`'s columns; entries predating the trial are zero.
+_shifted_inputs(v::AbstractMatrix, ::Val{0}) = v
+
+function _shifted_inputs(v::AbstractMatrix{T}, ::Val{1}) where {T<:Real}
+    input_dim, tsteps = size(v)
+    shifted = zeros(T, input_dim, tsteps)
+    tsteps > 1 && copyto!(view(shifted, :, 2:tsteps), view(v, :, 1:(tsteps - 1)))
+    return shifted
+end
+
+# Response/design pair for the main regression, stacked over trials:
+#   LAG = false:  y_t ~ [1; v_{t-SHIFT}]            for t = 1..T
+#   LAG = true:   y_t ~ [y_{t-1}; 1; v_{t-SHIFT}]   for t = 2..T
+# A length-1 trial informs only `(μ₀, R₀)`, so it drops out of the LAG design.
+function _null_design(
+    null::AffineNullModel{T,LAG,SHIFT},
+    y::AbstractVector{<:AbstractMatrix{T}},
+    v::AbstractVector{<:AbstractMatrix{T}},
+) where {T<:Real,LAG,SHIFT}
+    responses = Matrix{T}[]
+    designs = Matrix{T}[]
+
+    for (yn, vn) in zip(y, v)
+        tsteps = size(yn, 2)
+        LAG && tsteps < 2 && continue
+
+        rows = LAG ? (2:tsteps) : (1:tsteps)
+        blocks = Matrix{T}[]
+        LAG && push!(blocks, yn[:, rows .- 1])
+        push!(blocks, ones(T, 1, length(rows)))
+        if null.input_dim > 0
+            push!(blocks, _shifted_inputs(vn, Val(SHIFT))[:, rows])
+        end
+
+        push!(responses, yn[:, rows])
+        push!(designs, reduce(vcat, blocks))
+    end
+
+    isempty(responses) &&
+        throw(ArgumentError("a VAR baseline needs at least one trial with tsteps ≥ 2"))
+    return reduce(hcat, responses), reduce(hcat, designs)
+end
+
+# Initial-step regression `y_1 ~ N(μ₀, R₀)`: one column per trial, constant design.
+function _null_init_design(
+    ::Type{T}, y::AbstractVector{<:AbstractMatrix{T}}
+) where {T<:Real}
+    Y₀ = reduce(hcat, (yn[:, 1:1] for yn in y))
+    return Y₀, ones(T, 1, size(Y₀, 2))
+end
+
+# Stacked regression matrix `[F d D]`, in the column order `_null_design` builds.
+function _pack_W(null::AffineNullModel{T,LAG}) where {T<:Real,LAG}
+    blocks = Matrix{T}[]
+    LAG && push!(blocks, null.F)
+    push!(blocks, reshape(null.d, null.obs_dim, 1))
+    null.input_dim > 0 && push!(blocks, null.D)
+    return reduce(hcat, blocks)
+end
+
+function _unpack_W!(null::AffineNullModel{T,LAG}, W::AbstractMatrix{T}) where {T<:Real,LAG}
+    offset = 0
+    if LAG
+        null.F = W[:, 1:(null.obs_dim)]
+        offset = null.obs_dim
+    end
+    null.d = vec(W[:, offset + 1])
+    null.input_dim > 0 && (null.D = W[:, (offset + 2):end])
+    return null
+end
+
+#=
+Regression + scoring kernels
+=#
+
+#=
+MAP fit of `Y = W X + ε`, `ε ~ N(0, R)`, with an optional `MNPrior` on `W` and
+`IWPrior` on `R`. Mirrors the `(mn_map, iw_map)` M-step machinery behind
+`update_R!` in `lds/gaussian_observations.jl`.
+=#
 function _null_fit_regression(
     Y::AbstractMatrix{T},
     X::AbstractMatrix{T},
-    W_prior::Union{Nothing,MNPrior{T}},
+    W_prior::Union{Nothing,MNPrior{T,Matrix{T}}},
     R_prior::Union{Nothing,IWPrior{T}},
 ) where {T<:Real}
-    obs_dim = size(Y, 1)
-    n = size(Y, 2)
+    obs_dim, n = size(Y)
     size(X, 2) == n || throw(DimensionMismatchError("X cols vs Y cols", n, size(X, 2)))
 
-    XX = X * transpose(X)
-    XY = X * transpose(Y)
-    YY = Y * transpose(Y)
+    # `mn_map` returns a `Transpose` view; materialize so downstream BLAS calls
+    # hit the concrete-matrix code paths.
+    W = Matrix(mn_map(X * transpose(X), X * transpose(Y), W_prior))
 
-    # `mn_map` returns a `Transpose` view; materialize to a plain Matrix so
-    # downstream BLAS-level ops hit the concrete-matrix code paths.
-    W = Matrix(mn_map(XX, XY, W_prior))
+    E = Y .- W * X
+    S = E * transpose(E)
+    Symmetrize!(S)
 
-    # Data-only residual scatter S_data = YY - W·XY - XY'·W' + W·XX·W'.
-    Wxy = W * XY
-    S_data = YY .- Wxy .- transpose(Wxy)
-    S_data .+= W * XX * transpose(W)
-    Symmetrize!(S_data)
-
-    # MN-prior contribution to the IW posterior scale (matches update_R!).
-    S_with_prior = copy(S_data)
+    # MN-prior contribution to the IW posterior scale (matches `update_R!`).
     if W_prior !== nothing
         Wm = W .- W_prior.M₀
-        S_with_prior .+= Wm * W_prior.Λ * transpose(Wm)
-        Symmetrize!(S_with_prior)
+        S .+= Wm * W_prior.Λ * transpose(Wm)
+        Symmetrize!(S)
     end
 
     R = if R_prior === nothing
-        S_with_prior ./ T(n)
+        S ./ T(n)
     else
-        iw_map(R_prior.Ψ, R_prior.ν, S_with_prior, T(n), obs_dim)
+        iw_map(R_prior.Ψ, R_prior.ν, S, T(n), obs_dim)
     end
-
-    return W, R, S_data, n
+    return W, R
 end
 
-# Prior-augmented training log-likelihood at the MAP fit. Mirrors `elbo!`'s
-# decomposition: data Gaussian LL + iw_logprior_term(R, R_prior)
-# + mn_logprior_term(W, R, W_prior).
-function _null_train_ll(
-    W::AbstractMatrix{T},
-    R::AbstractMatrix{T},
-    S_data::AbstractMatrix{T},
-    n::Int,
-    W_prior::Union{Nothing,MNPrior{T}},
-    R_prior::Union{Nothing,IWPrior{T}},
-) where {T<:Real}
-    obs_dim = size(R, 1)
-    F = cholesky(Symmetric(R))
-    log_det_R = 2 * sum(log, diag(F.U))
-
-    # tr(R^{-1} · S_data) via two triangular solves.
-    S_work = copy(S_data)
-    ldiv!(F.U', S_work)
-    ldiv!(F.U, S_work)
-    tr_R_inv_S = tr(S_work)
-
-    ll = T(-0.5) * (T(n) * (T(obs_dim) * log(T(2π)) + log_det_R) + tr_R_inv_S)
-    ll += mn_logprior_term(W, R, W_prior)
-    if R_prior !== nothing
-        ll += iw_logprior_term(R, R_prior)
-    end
-
-    return ll
-end
-
-# Plug-in Gaussian log-likelihood on test data using trained (W, R).
-function _null_test_ll(
+# Plug-in Gaussian log-density of `Y` under `y ~ N(W X, R)`. The single scoring
+# kernel behind both `loglikelihood` and the MAP objective.
+function _null_plugin_ll(
     Y::AbstractMatrix{T}, X::AbstractMatrix{T}, W::AbstractMatrix{T}, R::AbstractMatrix{T}
 ) where {T<:Real}
-    obs_dim = size(Y, 1)
-    n = size(Y, 2)
-    F = cholesky(Symmetric(R))
-    log_det_R = 2 * sum(log, diag(F.U))
+    obs_dim, n = size(Y)
+    chol = cholesky(Symmetric(R))
 
-    # Residuals E = Y - W X, with quadratic term tr(R^{-1} E E').
+    # tr(R⁻¹ E E') via two triangular solves.
     E = Y .- W * X
     EE = E * transpose(E)
     Symmetrize!(EE)
-    ldiv!(F.U', EE)
-    ldiv!(F.U, EE)
+    ldiv!(chol.U', EE)
+    ldiv!(chol.U, EE)
 
+    log_det_R = 2 * sum(log, diag(chol.U))
     return T(-0.5) * (T(n) * (T(obs_dim) * log(T(2π)) + log_det_R) + tr(EE))
 end
 
-# -----------------------------------------------------------------------------
-# Data stacking helpers
-# -----------------------------------------------------------------------------
-
-# Stack y over (t, n) → (obs_dim × tsteps*ntrials).
-@inline function _stack_y_all(y::AbstractArray{T,3}) where {T<:Real}
-    obs_dim, tsteps, ntrials = size(y)
-    return reshape(y, obs_dim, tsteps * ntrials)
-end
-
-# Stack a 3-D input array (input_dim, tsteps, ntrials) → (input_dim, tsteps*ntrials).
-@inline function _stack_inputs_all(v::AbstractArray{T,3}) where {T<:Real}
-    v_dim, tsteps, ntrials = size(v)
-    return reshape(v, v_dim, tsteps * ntrials)
-end
-
-# Build a (1 × n) row of ones for the bias column.
-@inline _bias_row(::Type{T}, n::Int) where {T<:Real} = fill(one(T), 1, n)
-
-# Stack y_t for t = 2..T over trials → (obs_dim × (tsteps-1)*ntrials).
-@inline function _stack_y_next(y::AbstractArray{T,3}) where {T<:Real}
-    obs_dim, tsteps, ntrials = size(y)
-    return reshape(y[:, 2:tsteps, :], obs_dim, (tsteps - 1) * ntrials)
-end
-
-# Stack y_{t-1} for t = 2..T over trials → (obs_dim × (tsteps-1)*ntrials).
-@inline function _stack_y_prev(y::AbstractArray{T,3}) where {T<:Real}
-    obs_dim, tsteps, ntrials = size(y)
-    return reshape(y[:, 1:(tsteps - 1), :], obs_dim, (tsteps - 1) * ntrials)
-end
-
-# Stack inputs v_t for t = 2..T over trials.
-@inline function _stack_inputs_next(v::AbstractArray{T,3}) where {T<:Real}
-    v_dim, tsteps, ntrials = size(v)
-    return reshape(v[:, 2:tsteps, :], v_dim, (tsteps - 1) * ntrials)
-end
-
-# Stack y_1 across trials → (obs_dim × ntrials).
-@inline function _stack_y_init(y::AbstractArray{T,3}) where {T<:Real}
-    obs_dim = size(y, 1)
-    return reshape(y[:, 1, :], obs_dim, size(y, 3))
-end
-
-# -----------------------------------------------------------------------------
-# Model 1: intercept only
-# -----------------------------------------------------------------------------
-
-function _null_intercept(
-    train_data::Data{T},
-    test_data::Union{Nothing,Data{T}},
-    W_prior::Union{Nothing,MNPrior{T}},
-    R_prior::Union{Nothing,IWPrior{T}},
+#=
+`R₀` is estimated from one initial observation per trial, so its residual scatter
+has rank ≤ ntrials - 1 and is singular whenever `ntrials ≤ obs_dim` — the common
+single-trial case. An `R₀_prior` keeps it positive definite through the IW scale;
+without one, fall back to the innovation covariance `R` so the baseline still
+scores instead of throwing a `PosDefException`.
+=#
+function _null_init_cov(
+    R₀::AbstractMatrix{T},
+    R::AbstractMatrix{T},
+    ntrials::Int,
+    obs_dim::Int,
+    R₀_prior::Union{Nothing,IWPrior{T}},
 ) where {T<:Real}
-    Y = _stack_y_all(train_data.y)
-    X = _bias_row(T, size(Y, 2))
-
-    W, R, S_data, n = _null_fit_regression(Y, X, W_prior, R_prior)
-    train_ll = _null_train_ll(W, R, S_data, n, W_prior, R_prior)
-
-    test_ll = if test_data === nothing
-        nothing
-    else
-        Y_te = _stack_y_all(test_data.y)
-        X_te = _bias_row(T, size(Y_te, 2))
-        _null_test_ll(Y_te, X_te, W, R)
-    end
-
-    d = vec(W[:, 1])
-    params = (d=d, R=R)
-    return (train_ll=train_ll, test_ll=test_ll, params=params)
+    (R₀_prior === nothing && ntrials <= obs_dim) && return copy(R)
+    return R₀
 end
 
-# -----------------------------------------------------------------------------
-# Model 2: inputs only (no autocorrelation)
-# -----------------------------------------------------------------------------
+#=
+StatsAPI methods on a baseline
+=#
 
-function _null_inputs(
-    train_data::Data{T},
-    test_data::Union{Nothing,Data{T}},
-    v_train::AbstractArray{T,3},
-    v_test::Union{Nothing,AbstractArray{T,3}},
-    W_prior::Union{Nothing,MNPrior{T}},
-    R_prior::Union{Nothing,IWPrior{T}},
+"""
+    fit!(null::AffineNullModel, y; inputs=nothing)
+
+Fit `null` in closed form on `y` and return it. `y` is a `(obs_dim, T)` matrix, an
+`(obs_dim, T, ntrials)` array, or a vector of per-trial matrices; `inputs` follows
+the same shape family and is required when the baseline has an input block.
+"""
+function StatsAPI.fit!(null::AffineNullModel{T}, y; inputs=nothing) where {T<:Real}
+    trials = _null_trials(y)
+    tsteps = Int[size(yn, 2) for yn in trials]
+    return fit!(null, trials, _null_input_trials(T, inputs, tsteps, null.input_dim))
+end
+
+function StatsAPI.fit!(
+    null::AffineNullModel{T,LAG},
+    y::AbstractVector{<:AbstractMatrix{T}},
+    v::AbstractVector{<:AbstractMatrix{T}},
+) where {T<:Real,LAG}
+    Y, X = _null_design(null, y, v)
+    W, R = _null_fit_regression(Y, X, null.W_prior, null.R_prior)
+    _unpack_W!(null, W)
+    null.R = R
+
+    if LAG
+        Y₀, X₀ = _null_init_design(T, y)
+        W₀, R₀ = _null_fit_regression(Y₀, X₀, nothing, null.R₀_prior)
+        null.μ₀ = vec(W₀[:, 1])
+        null.R₀ = _null_init_cov(R₀, R, size(Y₀, 2), null.obs_dim, null.R₀_prior)
+    end
+    return null
+end
+
+"""
+    loglikelihood(null::AffineNullModel, y; inputs=nothing)
+
+Plug-in log-likelihood of `y` under the fitted baseline — no prior terms, so it
+is directly comparable to the LDS marginal `loglikelihood(lds, y)`. Scoring data
+other than the fit data gives the held-out log-likelihood.
+"""
+function StatsAPI.loglikelihood(
+    null::AffineNullModel{T}, y; inputs=nothing
 ) where {T<:Real}
-    v_dim = size(v_train, 1)
-
-    Y = _stack_y_all(train_data.y)
-    n = size(Y, 2)
-    X = vcat(_bias_row(T, n), _stack_inputs_all(v_train))
-
-    W, R, S_data, _ = _null_fit_regression(Y, X, W_prior, R_prior)
-    train_ll = _null_train_ll(W, R, S_data, n, W_prior, R_prior)
-
-    test_ll = if test_data === nothing
-        nothing
-    else
-        Y_te = _stack_y_all(test_data.y)
-        n_te = size(Y_te, 2)
-        X_te = vcat(_bias_row(T, n_te), _stack_inputs_all(v_test))
-        _null_test_ll(Y_te, X_te, W, R)
-    end
-
-    d = vec(W[:, 1])
-    D = v_dim > 0 ? W[:, 2:end] : Matrix{T}(undef, size(W, 1), 0)
-    params = (d=d, D=D, R=R)
-    return (train_ll=train_ll, test_ll=test_ll, params=params)
+    trials = _null_trials(y)
+    tsteps = Int[size(yn, 2) for yn in trials]
+    v = _null_input_trials(T, inputs, tsteps, null.input_dim)
+    return loglikelihood(null, trials, v)
 end
 
-# -----------------------------------------------------------------------------
-# Model 3: VAR(1) only (no inputs)
-# -----------------------------------------------------------------------------
+function StatsAPI.loglikelihood(
+    null::AffineNullModel{T,LAG},
+    y::AbstractVector{<:AbstractMatrix{T}},
+    v::AbstractVector{<:AbstractMatrix{T}},
+) where {T<:Real,LAG}
+    Y, X = _null_design(null, y, v)
+    ll = _null_plugin_ll(Y, X, _pack_W(null), null.R)
+    if LAG
+        Y₀, X₀ = _null_init_design(T, y)
+        ll += _null_plugin_ll(Y₀, X₀, reshape(null.μ₀, null.obs_dim, 1), null.R₀)
+    end
+    return ll
+end
 
-function _null_var(
-    train_data::Data{T},
-    test_data::Union{Nothing,Data{T}},
-    W_prior::Union{Nothing,MNPrior{T}},
-    R_prior::Union{Nothing,IWPrior{T}},
-    R0_prior::Union{Nothing,IWPrior{T}},
+# Number of scalar observations in `y` — `obs_dim * sum(tsteps)`.
+function StatsAPI.nobs(null::AffineNullModel, y)
+    return null.obs_dim * sum(size(yn, 2) for yn in _null_trials(y))
+end
+
+#=
+MAP objective at the fitted parameters: the plug-in data log-likelihood plus the
+IW/MN log-prior terms `elbo!` carries at the EM fixed point. Not a likelihood, so
+it stays internal — it exists so a prior-regularized baseline can be compared
+against a prior-regularized SSM ELBO on the same footing.
+=#
+function _null_logmap(null::AffineNullModel{T}, y; inputs=nothing) where {T<:Real}
+    trials = _null_trials(y)
+    tsteps = Int[size(yn, 2) for yn in trials]
+    v = _null_input_trials(T, inputs, tsteps, null.input_dim)
+    return _null_logmap(null, trials, v)
+end
+
+function _null_logmap(
+    null::AffineNullModel{T,LAG},
+    y::AbstractVector{<:AbstractMatrix{T}},
+    v::AbstractVector{<:AbstractMatrix{T}},
+) where {T<:Real,LAG}
+    ll = loglikelihood(null, y, v)
+    ll += mn_logprior_term(_pack_W(null), null.R, null.W_prior)
+    null.R_prior === nothing || (ll += iw_logprior_term(null.R, null.R_prior))
+    if LAG && null.R₀_prior !== nothing
+        ll += iw_logprior_term(null.R₀, null.R₀_prior)
+    end
+    return ll
+end
+
+#=
+StatsAPI methods on a fitted LDS
+=#
+
+# Per-trial input matrices for the requested LDS channel, plus the lag that
+# channel implies: dynamics inputs act on `x_{t-1}`, observation inputs on `y_t`.
+function _null_channel(data::Data, channel::Symbol)
+    channel in (:ux, :uy) ||
+        throw(ArgumentError("null_inputs must be :ux or :uy; got :$channel"))
+    return channel === :ux ? (data.ux, 1) : (data.uy, 0)
+end
+
+# Build the named baseline for `data`, fit it, and return its plug-in LL.
+function _null_baseline_ll(
+    data::Data{T}, baseline::Symbol, channel::Symbol, R_prior::Union{Nothing,IWPrior{T}}
 ) where {T<:Real}
-    obs_dim, tsteps, _ = size(train_data.y)
-    tsteps >= 2 ||
-        throw(ArgumentError("VAR(1) null model requires tsteps ≥ 2 (got $tsteps)"))
-
-    # Init regression: y_1[:, n] ~ N(μ_0, R_0); regress on a constant.
-    Y_init = _stack_y_init(train_data.y)
-    X_init = _bias_row(T, size(Y_init, 2))
-    W_init, R0, S_init, n_init = _null_fit_regression(Y_init, X_init, nothing, R0_prior)
-
-    # VAR(1) regression: y_t ~ N(F y_{t-1} + d, R) for t = 2..T.
-    Y_var = _stack_y_next(train_data.y)
-    n_var = size(Y_var, 2)
-    X_var = vcat(_stack_y_prev(train_data.y), _bias_row(T, n_var))
-
-    W_var, R, S_var, _ = _null_fit_regression(Y_var, X_var, W_prior, R_prior)
-
-    train_ll =
-        _null_train_ll(W_init, R0, S_init, n_init, nothing, R0_prior) +
-        _null_train_ll(W_var, R, S_var, n_var, W_prior, R_prior)
-
-    test_ll = if test_data === nothing
-        nothing
-    else
-        Y_init_te = _stack_y_init(test_data.y)
-        X_init_te = _bias_row(T, size(Y_init_te, 2))
-        Y_var_te = _stack_y_next(test_data.y)
-        X_var_te = vcat(_stack_y_prev(test_data.y), _bias_row(T, size(Y_var_te, 2)))
-        _null_test_ll(Y_init_te, X_init_te, W_init, R0) +
-        _null_test_ll(Y_var_te, X_var_te, W_var, R)
-    end
-
-    μ_0 = vec(W_init[:, 1])
-    F = W_var[:, 1:obs_dim]
-    d = vec(W_var[:, obs_dim + 1])
-    params = (μ_0=μ_0, R_0=R0, F=F, d=d, R=R)
-    return (train_ll=train_ll, test_ll=test_ll, params=params)
-end
-
-# -----------------------------------------------------------------------------
-# Model 4: VAR(1) + inputs
-# -----------------------------------------------------------------------------
-
-function _null_var_inputs(
-    train_data::Data{T},
-    test_data::Union{Nothing,Data{T}},
-    v_train::AbstractArray{T,3},
-    v_test::Union{Nothing,AbstractArray{T,3}},
-    W_prior::Union{Nothing,MNPrior{T}},
-    R_prior::Union{Nothing,IWPrior{T}},
-    R0_prior::Union{Nothing,IWPrior{T}},
-) where {T<:Real}
-    obs_dim, tsteps, _ = size(train_data.y)
-    tsteps >= 2 ||
-        throw(ArgumentError("VAR(1)+inputs null model requires tsteps ≥ 2 (got $tsteps)"))
-    v_dim = size(v_train, 1)
-
-    # Init regression: same as the VAR-only model — y_1 is exogenous to inputs.
-    Y_init = _stack_y_init(train_data.y)
-    X_init = _bias_row(T, size(Y_init, 2))
-    W_init, R0, S_init, n_init = _null_fit_regression(Y_init, X_init, nothing, R0_prior)
-
-    # VAR(1)+inputs regression: y_t ~ N(F y_{t-1} + d + D v_t, R) for t = 2..T.
-    Y_var = _stack_y_next(train_data.y)
-    n_var = size(Y_var, 2)
-    X_var = vcat(
-        _stack_y_prev(train_data.y), _bias_row(T, n_var), _stack_inputs_next(v_train)
-    )
-
-    W_var, R, S_var, _ = _null_fit_regression(Y_var, X_var, W_prior, R_prior)
-
-    train_ll =
-        _null_train_ll(W_init, R0, S_init, n_init, nothing, R0_prior) +
-        _null_train_ll(W_var, R, S_var, n_var, W_prior, R_prior)
-
-    test_ll = if test_data === nothing
-        nothing
-    else
-        Y_init_te = _stack_y_init(test_data.y)
-        X_init_te = _bias_row(T, size(Y_init_te, 2))
-        Y_var_te = _stack_y_next(test_data.y)
-        X_var_te = vcat(
-            _stack_y_prev(test_data.y),
-            _bias_row(T, size(Y_var_te, 2)),
-            _stack_inputs_next(v_test),
-        )
-        _null_test_ll(Y_init_te, X_init_te, W_init, R0) +
-        _null_test_ll(Y_var_te, X_var_te, W_var, R)
-    end
-
-    μ_0 = vec(W_init[:, 1])
-    F = W_var[:, 1:obs_dim]
-    d = vec(W_var[:, obs_dim + 1])
-    D = v_dim > 0 ? W_var[:, (obs_dim + 2):end] : Matrix{T}(undef, size(W_var, 1), 0)
-    params = (μ_0=μ_0, R_0=R0, F=F, d=d, D=D, R=R)
-    return (train_ll=train_ll, test_ll=test_ll, params=params)
-end
-
-# =============================================================================
-# Cox–Snell (likelihood-ratio) R² of an LDS versus each null baseline.
-#
-# `compute_R2` scores a *fitted* Gaussian LDS against the four `test_null`
-# baselines using the Cox–Snell R²
-#
-#   R² = 1 - exp( (2/n) · (loglik_null - loglik_model) )
-#
-# where `n = obs_dim · tsteps · ntrials` is the total scalar-observation count.
-# `loglik_model` is the LDS **marginal** (observed-data) log-likelihood with
-# latent states integrated out — the same quantity as `loglikelihood(lds, y)`
-# but extended here to honour the LDS's `B·ux` / `D·uy` input terms, which the
-# base `loglikelihood` drops. `loglik_null` is the plug-in Gaussian data
-# log-density of a null model fit on the training split — the `test_null`
-# `test_ll` convention (no prior terms), which is the null-side analogue of the
-# LDS marginal likelihood. Priors therefore enter only when *fitting* the null
-# parameters: the LDS's observation-noise prior `obs_model.R_prior` is forwarded
-# to the null models' `R_prior` so both estimate `R` under the same IW prior.
-# (The LDS's remaining priors — `Q`, `P0`, `[A B]`, `[C D]` — live in latent
-# space and have no null-model counterpart, so they are not transferred.)
-#
-# Restricted to the Gaussian LDS: a Poisson LDS (`PoissonObservationModel`) has
-# no tractable marginal likelihood, and an `SLDS` is a different type entirely,
-# so both fall through to a `MethodError` by design.
-# =============================================================================
-
-# Cox–Snell R² from a pair of total log-likelihoods and the observation count.
-@inline function _cox_snell_r2(ll_null::T, ll_model::T, n::Int) where {T<:Real}
-    return one(T) - exp((T(2) / T(n)) * (ll_null - ll_model))
-end
-
-# Fit the four null baselines on `train_data` and return their plug-in Gaussian
-# data log-densities evaluated on `eval_data` (the `test_null` `test_ll`
-# convention, no prior terms). `null_inputs` selects which of the LDS's input
-# channels the input-bearing baselines consume: `"ux"` uses `data.ux` (the
-# `test_null` default), `"uy"` uses `data.uy`.
-function _null_plugin_lls(
-    train_data::Data{T},
-    eval_data::Data{T},
-    null_inputs::AbstractString,
-    R_prior::Union{Nothing,IWPrior{T}},
-) where {T<:Real}
-    res = if null_inputs == "ux"
-        test_null(train_data; test_data=eval_data, R_prior=R_prior)
-    elseif null_inputs == "uy"
-        test_null(
-            train_data;
-            test_data=eval_data,
-            train_inputs=train_data.uy,
-            test_inputs=eval_data.uy,
-            R_prior=R_prior,
-        )
-    else
-        throw(ArgumentError("null_inputs must be \"ux\" or \"uy\"; got \"$null_inputs\""))
-    end
-    return (
-        intercept=res.intercept.test_ll,
-        inputs=res.inputs.test_ll,
-        var=res.var.test_ll,
-        var_inputs=res.var_inputs.test_ll,
-    )
-end
-
-# Fit the four null baselines once on `train_data`, then return their plug-in
-# Gaussian data log-densities on BOTH `train_data` and `test_data` as
-# `(train_lls, test_lls)`.  A single `test_null` call handles the fitting and
-# scores `test_data` as a by-product; train plug-in LLs are then computed by
-# re-evaluating `train_data` against the already-fitted parameters.
-function _null_plugin_lls_both(
-    train_data::Data{T},
-    test_data::Data{T},
-    null_inputs::AbstractString,
-    R_prior::Union{Nothing,IWPrior{T}},
-) where {T<:Real}
-    v_train, v_test = if null_inputs == "ux"
-        train_data.ux, test_data.ux
-    elseif null_inputs == "uy"
-        train_data.uy, test_data.uy
-    else
-        throw(ArgumentError("null_inputs must be \"ux\" or \"uy\"; got \"$null_inputs\""))
-    end
-
-    # Single fit; test_null also scores test_data as a by-product.
-    res = test_null(
-        train_data;
-        test_data=test_data,
-        train_inputs=v_train,
-        test_inputs=v_test,
+    v, shift = _null_channel(data, channel)
+    obs_dim = size(first(data.y), 1)
+    null = AffineNullModel{T}(
+        baseline,
+        obs_dim;
+        input_dim=size(first(v), 1),
+        input_shift=shift,
         R_prior=R_prior,
     )
 
-    # Plug-in LLs on test (computed during the test_null call above).
-    test_lls = (
-        intercept=res.intercept.test_ll,
-        inputs=res.inputs.test_ll,
-        var=res.var.test_ll,
-        var_inputs=res.var_inputs.test_ll,
-    )
-
-    # Plug-in LLs on train by scoring train_data against the fitted parameters.
-    obs_dim, tsteps, ntrials = size(train_data.y)
-    Y_tr = _stack_y_all(train_data.y)
-    n_tr = size(Y_tr, 2)
-
-    # intercept: y_t ~ N(d, R)
-    p_ic = res.intercept.params
-    intercept_tr = _null_test_ll(
-        Y_tr, _bias_row(T, n_tr), reshape(p_ic.d, obs_dim, 1), p_ic.R
-    )
-
-    # inputs: y_t ~ N(d + D v_t, R)
-    p_in = res.inputs.params
-    W_in = hcat(reshape(p_in.d, obs_dim, 1), p_in.D)
-    X_in_tr = vcat(_bias_row(T, n_tr), _stack_inputs_all(v_train))
-    inputs_tr = _null_test_ll(Y_tr, X_in_tr, W_in, p_in.R)
-
-    # var: y_1 ~ N(μ_0, R_0);  y_t ~ N(F y_{t-1} + d, R)  for t ≥ 2
-    p_v = res.var.params
-    Y_init_tr = _stack_y_init(train_data.y)
-    n_init_tr = size(Y_init_tr, 2)
-    W_init_v = reshape(p_v.μ_0, obs_dim, 1)
-    init_v_tr = _null_test_ll(Y_init_tr, _bias_row(T, n_init_tr), W_init_v, p_v.R_0)
-    Y_next_tr = _stack_y_next(train_data.y)
-    n_var_tr = size(Y_next_tr, 2)
-    W_var = hcat(p_v.F, reshape(p_v.d, obs_dim, 1))
-    X_var_tr = vcat(_stack_y_prev(train_data.y), _bias_row(T, n_var_tr))
-    var_tr = init_v_tr + _null_test_ll(Y_next_tr, X_var_tr, W_var, p_v.R)
-
-    # var_inputs: y_1 ~ N(μ_0, R_0);  y_t ~ N(F y_{t-1} + d + D v_t, R)  for t ≥ 2
-    p_vi = res.var_inputs.params
-    W_init_vi = reshape(p_vi.μ_0, obs_dim, 1)
-    init_vi_tr = _null_test_ll(Y_init_tr, _bias_row(T, n_init_tr), W_init_vi, p_vi.R_0)
-    W_var_vi = hcat(p_vi.F, reshape(p_vi.d, obs_dim, 1), p_vi.D)
-    X_var_vi_tr = vcat(
-        _stack_y_prev(train_data.y), _bias_row(T, n_var_tr), _stack_inputs_next(v_train)
-    )
-    var_inputs_tr = init_vi_tr + _null_test_ll(Y_next_tr, X_var_vi_tr, W_var_vi, p_vi.R)
-
-    train_lls = (
-        intercept=intercept_tr, inputs=inputs_tr, var=var_tr, var_inputs=var_inputs_tr
-    )
-
-    return train_lls, test_lls
+    # `input_dim` is forced to 0 for the input-free baselines, so hand those
+    # matching zero-row inputs rather than the channel's.
+    inputs = null.input_dim > 0 ? v : [zeros(T, 0, Ti) for Ti in data.tsteps]
+    fit!(null, data.y, inputs)
+    return loglikelihood(null, data.y, inputs)
 end
 
 """
-    compute_R2(lds, data; null_inputs="ux", R_prior=lds.obs_model.R_prior) -> NamedTuple
-    compute_R2(lds, train_data, test_data; kwargs...) -> NamedTuple
+    nobs(lds::LinearDynamicalSystem, y; ux=nothing, uy=nothing)
 
-Cox–Snell (likelihood-ratio) R² of a fitted Gaussian `LinearDynamicalSystem`
-against each of the four [`test_null`](@ref) baselines (`intercept`, `inputs`,
-`var`, `var_inputs`):
+Number of scalar observations in `y` — `obs_dim * sum(tsteps)`, summed over
+trials. This is the denominator [`r2`](@ref) uses for the Cox–Snell and
+Nagelkerke variants, so it is on the same scale as `loglikelihood(lds, y)`.
+"""
+function StatsAPI.nobs(
+    lds::LinearDynamicalSystem{T}, y; ux=nothing, uy=nothing
+) where {T<:Real}
+    return nobs(Data(lds, y; ux=ux, uy=uy))
+end
 
-```math
-R^2 = 1 - \\exp\\!\\big( (2/n) \\, (\\ell_{null} - \\ell_{model}) \\big)
-```
+StatsAPI.nobs(data::Data) = size(first(data.y), 1) * sum(data.tsteps)
 
-with `n = obs_dim · tsteps · ntrials` the total number of scalar observations.
-`ℓ_model` is the LDS **marginal** log-likelihood (latents integrated out, via
-the Kalman filter, honouring the `B·ux`/`D·uy` input terms). `ℓ_null` is the
-plug-in Gaussian data log-density of a baseline fit on the training split (no
-prior terms — the null-side analogue of the LDS marginal likelihood). A larger
-R² means the LDS explains the data better than that baseline; it is positive
-whenever the LDS out-predicts the null.
+"""
+    nullloglikelihood(lds, y; ux=nothing, uy=nothing, R_prior=lds.obs_model.R_prior)
 
-Uses the marginal likelihood, so this is restricted to the Gaussian LDS. A
-Poisson LDS or an `SLDS` throws a `MethodError` (their marginals are
-intractable / handled elsewhere).
+Plug-in log-likelihood of the intercept baseline `y_t ~ N(d, R)` fit on the same
+data — the reference point [`r2`](@ref) measures `lds` against by default.
 
-# Arguments
-- `lds::LinearDynamicalSystem`: a fitted Gaussian LDS.
-- `data::Data{T}`: single dataset — returns one R² per baseline.
-- `train_data, test_data::Data{T}`: fit the baselines on `train_data` and score
-  both splits — returns `train_R2` and `test_R2` per baseline.
+`R_prior` defaults to the LDS's own observation-noise prior so the baseline's `R`
+is regularized exactly as the LDS's is.
+"""
+function StatsAPI.nullloglikelihood(
+    lds::LinearDynamicalSystem{T,SM,OM},
+    y;
+    ux=nothing,
+    uy=nothing,
+    R_prior::Union{Nothing,IWPrior{T}}=lds.obs_model.R_prior,
+) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
+    return _null_baseline_ll(Data(lds, y; ux=ux, uy=uy), :intercept, :ux, R_prior)
+end
+
+#=
+Pseudo-R² variants, following the StatsBase definitions so the numbers mean here
+what they mean for a GLM. `n` is `nobs`, the scalar-observation count, matching
+the scale of the log-likelihoods it divides.
+=#
+function _pseudo_r2(variant::Symbol, ll::T, ll₀::T, n::Int) where {T<:Real}
+    variant in (:McFadden, :CoxSnell, :Nagelkerke) || throw(
+        ArgumentError("variant must be :McFadden, :CoxSnell or :Nagelkerke; got :$variant"),
+    )
+    variant === :McFadden && return one(T) - ll / ll₀
+
+    # Nagelkerke is Cox–Snell rescaled by its attainable maximum.
+    cox_snell = one(T) - exp(2 * (ll₀ - ll) / n)
+    variant === :CoxSnell && return cox_snell
+    return cox_snell / (one(T) - exp(2 * ll₀ / n))
+end
+
+"""
+    r2(lds, y, variant=:CoxSnell; null=:intercept, null_inputs=:ux, ux=nothing, uy=nothing,
+       R_prior=lds.obs_model.R_prior)
+
+Pseudo-R² of a fitted Gaussian `LinearDynamicalSystem` against a latent-free
+baseline, comparing the LDS marginal log-likelihood `ℓ` (latents integrated out)
+to the baseline's plug-in log-likelihood `ℓ₀` on the same data:
+
+- `:CoxSnell` (default) — ``1 - \\exp\\big(2(\\ell_0 - \\ell)/n\\big)``
+- `:McFadden` — ``1 - \\ell/\\ell_0``
+- `:Nagelkerke` — Cox–Snell rescaled by its attainable maximum
+
+with `n = nobs(lds, y)`. A larger value means the LDS out-predicts the baseline.
+
+Restricted to the Gaussian LDS: a Poisson LDS has no tractable marginal
+likelihood and an `SLDS` is a different type, so both raise a `MethodError`.
 
 # Keyword Arguments
-- `null_inputs::AbstractString = "ux"`: which LDS input channel the
-  input-bearing baselines (`inputs`, `var_inputs`) consume — `"ux"` for the
-  dynamics inputs `data.ux`, `"uy"` for the observation inputs `data.uy`.
-- `R_prior::Union{Nothing,IWPrior{T}} = lds.obs_model.R_prior`: IW prior used
-  when fitting each baseline's observation covariance `R`, defaulting to the
-  LDS's own observation-noise prior so both are regularized alike.
+- `null::Symbol = :intercept`: baseline to score against, one of `$(NULL_BASELINES)`.
+- `null_inputs::Symbol = :ux`: LDS input channel the input-bearing baselines
+  consume. `:ux` enters lagged, `:uy` contemporaneous, matching each channel's
+  role in the LDS.
+- `R_prior`: IW prior on the baseline's `R`, defaulting to the LDS's own
+  observation-noise prior so both are regularized alike.
 
-# Returns
-A `NamedTuple` keyed by baseline name. For the single-`data` form each entry is
-`(R2, lds_ll, null_ll, n)`; for the `train_data`/`test_data` form each entry is
-`(train_R2, test_R2, lds_train_ll, lds_test_ll, null_train_ll, null_test_ll,
-n_train, n_test)`.
+# Examples
+Held-out R² comes from fitting a baseline on one split and scoring another,
+which is the same two calls `r2` makes internally:
+
+```julia
+null = AffineNullModel{Float64}(:intercept, obs_dim)
+fit!(null, y_train)
+ll  = loglikelihood(lds, y_test)
+ll₀ = loglikelihood(null, y_test)
+r2_heldout = 1 - exp(2 * (ll₀ - ll) / nobs(lds, y_test))
+```
+
+See also [`nullloglikelihood`](@ref), [`nobs`](@ref), [`AffineNullModel`](@ref).
 """
-function compute_R2(
+function StatsAPI.r2(
     lds::LinearDynamicalSystem{T,SM,OM},
-    data::Data{T};
-    null_inputs::AbstractString="ux",
+    y,
+    variant::Symbol=:CoxSnell;
+    null::Symbol=:intercept,
+    null_inputs::Symbol=:ux,
+    ux=nothing,
+    uy=nothing,
     R_prior::Union{Nothing,IWPrior{T}}=lds.obs_model.R_prior,
 ) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
-    obs_dim, tsteps, ntrials = size(data.y)
-    n = obs_dim * tsteps * ntrials
-
-    lds_ll = loglikelihood(lds, data)
-    null_ll = _null_plugin_lls(data, data, null_inputs, R_prior)
-
-    return map(null_ll) do ll
-        return (R2=_cox_snell_r2(ll, lds_ll, n), lds_ll=lds_ll, null_ll=ll, n=n)
-    end
-end
-
-function compute_R2(
-    lds::LinearDynamicalSystem{T,SM,OM},
-    train_data::Data{T},
-    test_data::Data{T};
-    null_inputs::AbstractString="ux",
-    R_prior::Union{Nothing,IWPrior{T}}=lds.obs_model.R_prior,
-) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
-    obs_dim, tsteps_tr, ntrials_tr = size(train_data.y)
-    obs_dim_te, tsteps_te, ntrials_te = size(test_data.y)
-    obs_dim == obs_dim_te ||
-        throw(DimensionMismatchError("test_data obs_dim", obs_dim, obs_dim_te))
-    n_train = obs_dim * tsteps_tr * ntrials_tr
-    n_test = obs_dim_te * tsteps_te * ntrials_te
-
-    lds_train_ll = loglikelihood(lds, train_data)
-    lds_test_ll = loglikelihood(lds, test_data)
-
-    null_train_ll, null_test_ll = _null_plugin_lls_both(
-        train_data, test_data, null_inputs, R_prior
-    )
-
-    names = (:intercept, :inputs, :var, :var_inputs)
-    entries = map(names) do name
-        ntr = getproperty(null_train_ll, name)
-        nte = getproperty(null_test_ll, name)
-        return (
-            train_R2=_cox_snell_r2(ntr, lds_train_ll, n_train),
-            test_R2=_cox_snell_r2(nte, lds_test_ll, n_test),
-            lds_train_ll=lds_train_ll,
-            lds_test_ll=lds_test_ll,
-            null_train_ll=ntr,
-            null_test_ll=nte,
-            n_train=n_train,
-            n_test=n_test,
-        )
-    end
-    return NamedTuple{names}(entries)
+    data = Data(lds, y; ux=ux, uy=uy)
+    ll = loglikelihood(lds, data.y; ux=data.ux, uy=data.uy)
+    ll₀ = _null_baseline_ll(data, null, null_inputs, R_prior)
+    return _pseudo_r2(variant, ll, ll₀, nobs(data))
 end
