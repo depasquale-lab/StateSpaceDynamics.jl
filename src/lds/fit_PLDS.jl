@@ -375,6 +375,41 @@ function mstep!(
 end
 
 """
+    _poisson_q_obs_total(plds, tfs, data, sws_pool)
+
+Observation-side Q-term summed over trials. The Poisson emission is
+irreducibly non-conjugate — there is no sufficient-statistic form — so this
+stays a per-trial loop, chunked across the workspace pool.
+"""
+function _poisson_q_obs_total(
+    plds::LinearDynamicalSystem{T,S,O},
+    tfs::TrialFilterSmooth{T},
+    data::Data{T},
+    sws_pool::Vector{SmoothWorkspace{T}},
+) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
+    y = data.y
+    uy = data.uy
+    ntrials = length(y)
+    ntasks = min(ntrials, length(sws_pool))
+    partial = zeros(T, ntasks)
+    chunksize = cld(ntrials, ntasks)
+    tforeach(1:ntasks) do i
+        lo = (i - 1) * chunksize + 1
+        hi = min(i * chunksize, ntrials)
+        lo > hi && return nothing
+        sws = sws_pool[i]
+        acc = zero(T)
+        for trial in lo:hi
+            fs = tfs[trial]
+            acc += Q_obs!(sws, plds, fs.x_smooth, fs.p_smooth, y[trial], uy[trial])
+        end
+        partial[i] = acc
+        return nothing
+    end
+    return sum(partial)
+end
+
+"""
     elbo!(plds, suf, tfs, data, sws_pool)
 
 Suf-based Poisson ELBO. Mirrors the Gaussian TD path's split:
@@ -395,10 +430,6 @@ function elbo!(
     data::Data{T},
     sws_pool::Vector{SmoothWorkspace{T}},
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
-    y = data.y
-    uy = data.uy
-    ntrials = length(y)
-
     total_entropy = zero(T)
     for fs in tfs.FilterSmooths
         total_entropy += fs.entropy
@@ -406,24 +437,7 @@ function elbo!(
 
     compute_smooth_constants!(sws_pool[1], plds)
     Q_state_total = Q_state!(sws_pool[1], plds, suf)
-
-    ntasks = min(ntrials, length(sws_pool))
-    partial = zeros(T, ntasks)
-    chunksize = cld(ntrials, ntasks)
-    tforeach(1:ntasks) do i
-        lo = (i - 1) * chunksize + 1
-        hi = min(i * chunksize, ntrials)
-        lo > hi && return nothing
-        sws = sws_pool[i]
-        acc = zero(T)
-        for trial in lo:hi
-            fs = tfs[trial]
-            acc += Q_obs!(sws, plds, fs.x_smooth, fs.p_smooth, y[trial], uy[trial])
-        end
-        partial[i] = acc
-        return nothing
-    end
-    Q_obs_total = sum(partial)
+    Q_obs_total = _poisson_q_obs_total(plds, tfs, data, sws_pool)
 
     prior_term = zero(T)
     if plds.state_model.Q_prior !== nothing

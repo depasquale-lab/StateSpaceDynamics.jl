@@ -163,28 +163,49 @@ function update_C_d!(
     return nothing
 end
 
-function update_R!(
-    lds::LinearDynamicalSystem{T,S,O}, suf::SufficientStatistics{T}, sws::SmoothWorkspace{T}
-) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
-    lds.fit_bool[6] || return nothing
-    p = lds.obs_dim
+"""
+    _pack_obs_V!(V, lds)
+
+Write the stacked emission regression `[C d D]` into `V`
+(`obs_dim × (latent_dim + 1 + uy_dim)`).
+"""
+function _pack_obs_V!(
+    V::AbstractMatrix{T}, lds::LinearDynamicalSystem{T,S,O}
+) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     D = lds.latent_dim
     uy_dim = lds.uy_dim
-
-    # sws.reg.CD is exactly (p × obs_reg_dim); no view needed.
-    V = sws.reg.CD
     copyto!(view(V, :, 1:D), lds.obs_model.C)
     copyto!(view(V, :, D + 1), lds.obs_model.d)
     if uy_dim > 0
         copyto!(view(V, :, (D + 2):(D + 1 + uy_dim)), lds.obs_model.D)
     end
+    return V
+end
 
-    # Residual scatter S = obs_yy - V·obs_xy - obs_xy'·V' + V·obs_xx·V'
+"""
+    _accumulate_obs_scatter!(S_res, lds, suf, sws)
+
+Add this model's emission residual scatter
+`obs_yy - V·obs_xy - obs_xy'·V' + V·obs_xx·V'` (with `V = [C d D]`) to `S_res`.
+
+`S_res` is accumulated into rather than overwritten, so a caller fitting one `R`
+from several models can sum their scatter — each contributing with its own
+`[C d D]`. Does **not** include the `CD_prior` term: that is one term per
+distinct `[C d D]`, added by `_accumulate_cd_prior_scatter!`.
+"""
+function _accumulate_obs_scatter!(
+    S_res::AbstractMatrix{T},
+    lds::LinearDynamicalSystem{T,S,O},
+    suf::SufficientStatistics{T},
+    sws::SmoothWorkspace{T},
+) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+    # sws.reg.CD is exactly (p × obs_reg_dim); no view needed.
+    V = _pack_obs_V!(sws.reg.CD, lds)
+
     Vxy = sws.elbo.obs_temp                    # p × p scratch (free post-Q_obs!)
     mul!(Vxy, V, suf.obs_xy)
 
-    S_res = sws.elbo.obs_work                  # p × p scratch
-    copyto!(S_res, suf.obs_yy[].mat)
+    S_res .+= suf.obs_yy[].mat
     S_res .-= Vxy
     S_res .-= Vxy'
     #=
@@ -205,24 +226,60 @@ function update_R!(
     copyto!(VL, V)
     BLAS.trmm!('R', 'U', 'T', 'N', one(T), suf.obs_xx[].chol.factors, VL)
     mul!(S_res, VL, transpose(VL), one(T), one(T))
+    return S_res
+end
 
+"""
+    _accumulate_cd_prior_scatter!(S_res, lds, sws)
+
+Add the `CD_prior` contribution `Wm Λ Wm'` (`Wm = [C d D] - M₀`) to the IW
+posterior scale of `R`. One call per distinct `[C d D]`.
+"""
+function _accumulate_cd_prior_scatter!(
+    S_res::AbstractMatrix{T}, lds::LinearDynamicalSystem{T,S,O}, sws::SmoothWorkspace{T}
+) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     CD_prior = lds.obs_model.CD_prior
-    if CD_prior !== nothing
-        Wm = V .- CD_prior.M₀
-        S_res .+= Wm * CD_prior.Λ * Wm'
-    end
+    CD_prior === nothing && return S_res
+    V = _pack_obs_V!(sws.reg.CD, lds)
+    Wm = V .- CD_prior.M₀
+    S_res .+= Wm * CD_prior.Λ * Wm'
+    return S_res
+end
 
+"""
+    _finalize_R!(lds, S_res, N)
+
+Symmetrize an accumulated emission residual scatter and turn it into `R`: MLE
+`S_res / N`, or the IW MAP under an `R_prior`.
+"""
+function _finalize_R!(
+    lds::LinearDynamicalSystem{T,S,O}, S_res::AbstractMatrix{T}, N::T
+) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+    p = lds.obs_dim
     for j in 2:p, i in 1:(j - 1)
         S_res[j, i] = S_res[i, j]
     end
 
     if lds.obs_model.R_prior === nothing
-        S_res ./= T(suf.obs_n)
+        S_res ./= N
     else
         Ψ, ν = lds.obs_model.R_prior.Ψ, lds.obs_model.R_prior.ν
-        S_res .= iw_map(Ψ, ν, S_res, T(suf.obs_n), p)
+        S_res .= iw_map(Ψ, ν, S_res, N, p)
     end
     copyto!(lds.obs_model.R, S_res)
+    return nothing
+end
+
+function update_R!(
+    lds::LinearDynamicalSystem{T,S,O}, suf::SufficientStatistics{T}, sws::SmoothWorkspace{T}
+) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+    lds.fit_bool[6] || return nothing
+
+    S_res = sws.elbo.obs_work                  # p × p scratch
+    fill!(S_res, zero(T))
+    _accumulate_obs_scatter!(S_res, lds, suf, sws)
+    _accumulate_cd_prior_scatter!(S_res, lds, sws)
+    _finalize_R!(lds, S_res, T(suf.obs_n))
     return nothing
 end
 
