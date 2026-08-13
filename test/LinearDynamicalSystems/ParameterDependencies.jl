@@ -74,21 +74,28 @@ function test_depends_on_validation()
 end
 
 """
-A malformed `depends_on` is caught when the model is built, not at the first
-`fit!` — `validate_LDS` resolves both sub-models' declarations.
+`validate_LDS` resolves both sub-models' `depends_on`, so a malformed
+declaration is reported by the validating positional constructor rather than at
+the first `fit!`. (`LinearDynamicalSystem` is a `@kwdef` struct, so the keyword
+constructor bypasses `validate_LDS` — for `depends_on` exactly as for every
+other field.)
 """
 function test_depends_on_validated_at_construction()
     bad_obs = pd_obs_model()
     bad_obs.depends_on = (nope=[:a, :b],)
-    @test_throws ArgumentError pd_lds(pd_state_model(), bad_obs)
+    @test_throws ArgumentError LinearDynamicalSystem(pd_state_model(), bad_obs)
 
     bad_state = pd_state_model()
     bad_state.depends_on = (A=[:a, :b], b=[:b, :a])   # aliases disagreeing
-    @test_throws ArgumentError pd_lds(bad_state, pd_obs_model())
+    @test_throws ArgumentError LinearDynamicalSystem(bad_state, pd_obs_model())
 
     ok_obs = pd_obs_model()
     ok_obs.depends_on = (C=[:a, :b],)
-    @test pd_lds(pd_state_model(), ok_obs) isa LinearDynamicalSystem
+    @test LinearDynamicalSystem(pd_state_model(), ok_obs) isa LinearDynamicalSystem
+
+    # A model built through the keyword constructor is still rejected when
+    # `validate_LDS` is run on it.
+    @test_throws ArgumentError validate_LDS(pd_lds(pd_state_model(), bad_obs))
 
     return nothing
 end

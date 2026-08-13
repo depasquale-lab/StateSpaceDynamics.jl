@@ -23,8 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     strings. Different parameters may use different label vectors; the trial
     partition is their common refinement
   * A malformed declaration (unknown parameter name, aliases of one group
-    carrying different labels, label vectors of unequal length) is rejected
-    when the model is constructed, not at the first `fit!`
+    carrying different labels, label vectors of unequal length) is rejected by
+    `validate_LDS` — so by the positional `LinearDynamicalSystem(state_model,
+    obs_model)` constructor, not at the first `fit!`
   * Per-group values live in a new `variants` field holding one model object
     per parameter-group combination, with non-varying parameters shared **by
     reference** so a single M-step write covers all of them. They are read back
