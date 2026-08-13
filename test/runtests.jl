@@ -259,12 +259,26 @@ using SSDTest
                 test_depends_on_validation()
                 test_depends_on_validated_at_construction()
                 test_override_key_validation()
+                test_depends_on_trial_count_and_override()
             end
 
             @testset "Accessors and partition" begin
                 test_group_accessors_and_aliasing()
                 test_grouping_is_the_join_of_label_vectors()
                 test_grouped_show()
+            end
+
+            @testset "Equivalences" begin
+                test_single_group_matches_ungrouped()
+                test_fully_grouped_matches_independent_fits()
+                test_grouped_handles_ragged_trial_lengths()
+            end
+
+            @testset "Gaussian fitting" begin
+                test_grouped_elbo_increases_and_recovers_noise()
+                test_grouped_smooth_loglikelihood_and_heldout()
+                test_grouped_integer_labels_and_priors()
+                test_grouped_rand_needs_a_label_for_one_trial()
             end
 
             @testset "Not yet honoured by fitting" begin

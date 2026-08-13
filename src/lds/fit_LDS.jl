@@ -109,6 +109,10 @@ variant see `smooth!`).
 - `ux` / `uy`: optional dynamics / observation input sequences in the same
   shape family as `y`. Required when `size(state_model.B, 2) > 0` /
   `size(obs_model.D, 2) > 0`.
+- `depends_on`: optional `NamedTuple` of per-trial label vectors overriding the
+  `depends_on` declared on the models for this call (see the ancillary parameter
+  dependency docs). Needed when this dataset's trial count differs from the one
+  the labels on the model were written for.
 
 # Returns
 For a single-trial (matrix) `y`:
@@ -122,9 +126,11 @@ function smooth(
     y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
     ux=nothing,
     uy=nothing,
+    depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
-    _reject_unsupported_dependence(lds)
     data = Data(lds, y; ux=ux, uy=uy)
+    grp = parameter_grouping(lds, length(data.y); depends_on=depends_on)
+    grp === nothing || return _grouped_smooth(lds, data, grp, y)
     tfs = _smooth_data(lds, data)
     return _collect_smooth_output(tfs, y)
 end
@@ -765,6 +771,10 @@ objective the M-step optimizes).
 - `ux` / `uy`: optional dynamics / observation input sequences in the same
   shape family as `y`. Required when `size(state_model.B, 2) > 0` /
   `size(obs_model.D, 2) > 0`.
+- `depends_on`: optional `NamedTuple` of per-trial label vectors overriding the
+  `depends_on` declared on the models for this call (see the ancillary parameter
+  dependency docs). Needed when this dataset's trial count differs from the one
+  the labels on the model were written for.
 
 Returns a scalar.
 """
@@ -773,9 +783,15 @@ function elbo(
     y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
     ux=nothing,
     uy=nothing,
+    depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
-    _reject_unsupported_dependence(lds)
     data = Data(lds, y; ux=ux, uy=uy)
+    grp = parameter_grouping(lds, length(data.y); depends_on=depends_on)
+    if grp !== nothing
+        sws_pool = _grouped_sws_pool(lds, data)
+        state = _grouped_fit_state(lds, data, grp, sws_pool[1]; batched=true)
+        return _grouped_estep_elbo_gaussian!(state, grp, sws_pool)
+    end
     tfs = initialize_FilterSmooth(lds, data.tsteps)::TrialFilterSmooth{T}
     npool = min(Threads.maxthreadid(), length(data.y))
     sws_pool = [
@@ -839,6 +855,11 @@ Fit a Gaussian Linear Dynamical System via Expectation-Maximization.
   (each trial `(ux_dim, T_i)`); required when `size(state_model.B, 2) > 0`.
 - `uy`: optional observation-input sequence (same shape family) for the
   obs-side input matrix `D`. Required when `size(obs_model.D, 2) > 0`.
+- `depends_on`: optional `NamedTuple` of per-trial label vectors overriding the
+  `depends_on` stored on the state / observation models for this call. Use it
+  to fit or score a dataset whose trial count differs from the one the labels
+  on the model were written for; it may only re-assign trials to groups the
+  model already declares.
 
 Returns a `Vector{T}` of ELBO values, one per iteration.
 """
@@ -850,10 +871,109 @@ function fit!(
     progress::Bool=true,
     ux=nothing,
     uy=nothing,
+    depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
-    _reject_unsupported_dependence(lds)
     data = Data(lds, y; ux=ux, uy=uy)
+    grp = parameter_grouping(lds, length(data.y); depends_on=depends_on)
+    grp === nothing || return _fit_tridiag_grouped!(
+        lds, data, grp; max_iter=max_iter, tol=tol, progress=progress
+    )
     return _fit_tridiag!(lds, data; max_iter=max_iter, tol=tol, progress=progress)
+end
+
+"""
+    _grouped_estep_elbo_gaussian!(state, grp, sws_pool)
+
+One grouped E-step: smooth and aggregate each cell with its own parameters, and
+return the total ELBO.
+
+Each cell runs the ordinary `estep!` on its sub-`Data`, so a cell whose trials
+are equal-length still computes its smoothed covariance once and shares it
+across the cell — the efficiency of same-length epochs is preserved *within*
+each group of labels rather than across the whole dataset (parameters differ
+between cells, so their covariances genuinely differ). The Q-terms are summed
+per cell while the workspace still holds that cell's Cholesky constants; the
+prior terms are added once per distinct parameter version.
+"""
+function _grouped_estep_elbo_gaussian!(
+    state::GroupedFitState{T,L},
+    grp::ParameterGrouping,
+    sws_pool::Vector{SmoothWorkspace{T}},
+) where {
+    T<:Real,
+    L<:LinearDynamicalSystem{T,<:GaussianStateModel{T},<:GaussianObservationModel{T}},
+}
+    total = zero(T)
+    for c in 1:grp.ncells
+        lds_c = state.cell_lds[c]
+        suf_c = state.sufs[c]
+        _prepare_cell!(sws_pool[1], state, c)
+        estep!(lds_c, suf_c, state.cell_tfs[c], state.cell_data[c], sws_pool)
+
+        #=
+        `estep!` leaves the cell's constants on `sws_pool[1]` already, but the
+        parallel per-trial fallback reaches that state through a task, so
+        recompute explicitly rather than rely on which chunk ran last.
+        =#
+        compute_smooth_constants!(sws_pool[1], lds_c)
+        total += Q_state!(sws_pool[1], lds_c, suf_c)
+        total += Q_obs!(sws_pool[1], lds_c, suf_c)
+        for fs in state.cell_tfs[c].FilterSmooths
+            total += fs.entropy
+        end
+    end
+    total += _grouped_state_prior_logdensity(state.cell_lds, grp.cell_slot, T)
+    total += _grouped_gaussian_obs_prior_logdensity(state.cell_lds, grp.cell_slot, T)
+    return total
+end
+
+"""
+    _fit_tridiag_grouped!(lds, data, grp; max_iter, tol, progress)
+
+EM driver for a Gaussian LDS whose parameters depend on an ancillary variable.
+Identical in structure to [`_fit_tridiag!`](@ref): E-step, ELBO, M-step,
+convergence check — but the E-step runs per cell and the M-step pools each
+cell's sufficient statistics per parameter version.
+"""
+function _fit_tridiag_grouped!(
+    lds::LinearDynamicalSystem{T,S,O},
+    data::Data{T},
+    grp::ParameterGrouping;
+    max_iter::Int=100,
+    tol::Float64=1e-6,
+    progress::Bool=true,
+) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+    sws_pool = _grouped_sws_pool(lds, data)
+    state = _grouped_fit_state(lds, data, grp, sws_pool[1]; batched=true)
+    elbos = Vector{T}(undef, max_iter)
+
+    prog = if progress
+        Progress(max_iter; desc="Fitting grouped LDS via EM...", barlen=50, showspeed=true)
+    else
+        nothing
+    end
+
+    for iter in 1:max_iter
+        elbos[iter] = _grouped_estep_elbo_gaussian!(state, grp, sws_pool)
+
+        _grouped_state_mstep!(
+            state.cell_lds, state.sufs, grp.cell_slot, sws_pool[1], state.bufs
+        )
+        _grouped_gaussian_obs_mstep!(
+            state.cell_lds, state.sufs, grp.cell_slot, sws_pool[1], state.bufs
+        )
+
+        prog !== nothing && next!(prog)
+
+        if iter > 1 && abs(elbos[iter] - elbos[iter - 1]) < tol
+            prog !== nothing && finish!(prog)
+            resize!(elbos, iter)
+            return elbos
+        end
+    end
+
+    prog !== nothing && finish!(prog)
+    return elbos
 end
 
 function _fit_tridiag!(
@@ -1088,6 +1208,10 @@ see `_filter_cov_pass`. Trial lengths may differ.
 - `ux` / `uy`: optional dynamics / observation input sequences, in the same
   shape family as `y` (matrix, 3-D array, or vector of matrices). Required
   when `size(state_model.B, 2) > 0` / `size(obs_model.D, 2) > 0`.
+- `depends_on`: optional `NamedTuple` of per-trial label vectors overriding the
+  `depends_on` declared on the models for this call (see the ancillary parameter
+  dependency docs). Needed when this dataset's trial count differs from the one
+  the labels on the model were written for.
 
 This is the `StatsAPI.loglikelihood` method for the LDS; for the complete-data
 log-likelihood `log p(x, y)` given a trajectory `x`, see `joint_loglikelihood`.
@@ -1100,9 +1224,30 @@ function StatsAPI.loglikelihood(
     y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
     ux=nothing,
     uy=nothing,
+    depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
-    _reject_unsupported_dependence(lds)
     data = Data(lds, y; ux=ux, uy=uy)
+    grp = parameter_grouping(lds, length(data.y); depends_on=depends_on)
+
+    #=
+    The filter's covariance pass depends only on the parameters and the trial
+    length, so it is shared across the trials of one cell exactly as it is
+    shared across all trials of an ungrouped model.
+    =#
+    if grp !== nothing
+        total_ll = zero(T)
+        for c in 1:grp.ncells
+            trials = grp.cell_trials[c]
+            lds_c = _cell_lds(lds, grp, c)
+            S_chol, K = _filter_cov_pass(lds_c, maximum(data.tsteps[n] for n in trials))
+            for n in trials
+                total_ll += _filter_ll_trial(
+                    lds_c, data.y[n], data.ux[n], data.uy[n], S_chol, K
+                )
+            end
+        end
+        return total_ll
+    end
 
     S_chol, K = _filter_cov_pass(lds, maximum(data.tsteps))
 

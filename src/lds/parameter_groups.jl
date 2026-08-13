@@ -40,9 +40,8 @@ the ELBO need to know about groups.
 
 This file holds the declaration side of that design: validating `depends_on`,
 resolving it into per-parameter versions, building the `variants` storage, and
-computing the trial partition. The grouped E/M-step that consumes the partition
-lands separately; until it does, `_reject_unsupported_dependence` keeps the
-entry points from quietly ignoring a declared dependence.
+computing the trial partition. The grouped M-step and ELBO that consume the
+partition live in `grouped_em.jl`.
 =============================================================================#
 
 #=
@@ -607,19 +606,18 @@ end
     _reject_unsupported_dependence(model)
 
 **Internal, temporary.** Refuse to run an entry point that does not yet honour
-`depends_on`. The field, its validation and its accessors land ahead of the
-grouped E/M-step machinery, so in the interim a declared dependence must be an
-error rather than a silently pooled fit. Each entry point drops this call as
-its grouped path lands.
+`depends_on`. The grouped E/M-step lands one model family at a time, so in the
+interim a declared dependence must be an error rather than a silently pooled
+fit. Each entry point drops this call as its grouped path lands.
 """
 function _reject_unsupported_dependence(lds::LinearDynamicalSystem)
     _has_parameter_dependence(lds) || return nothing
     return throw(
         ArgumentError(
             "this model declares `depends_on`, but fitting and inference with " *
-            "condition-dependent parameters are not implemented yet — the grouped " *
-            "E/M-step lands in a follow-up. Unset `depends_on` to fit the model " *
-            "with one parameter set shared by every trial.",
+            "condition-dependent parameters are not implemented yet for this model " *
+            "family — the grouped E/M-step lands in a follow-up. Unset `depends_on` " *
+            "to fit the model with one parameter set shared by every trial.",
         ),
     )
 end
@@ -629,6 +627,62 @@ function _reject_unsupported_dependence(slds::SLDS)
         _reject_unsupported_dependence(lds)
     end
     return nothing
+end
+
+"""
+    _single_trial_group_error(what)
+
+`rand` with a scalar `tsteps` draws one trial, which a grouped model cannot
+assign to a parameter version on its own.
+"""
+function _single_trial_group_error(what::AbstractString)
+    return throw(
+        ArgumentError(
+            "rand(rng, $what, tsteps) samples a single trial, but this model's " *
+            "parameters depend on an ancillary variable — say which group the trial " *
+            "belongs to, e.g. `depends_on=(C=[:session_a],)`, or sample several trials " *
+            "at once with `rand(rng, $what, fill(tsteps, ntrials))`.",
+        ),
+    )
+end
+
+"""
+    _cell_lds(lds, grp, cell) -> LinearDynamicalSystem
+
+A view of `lds` restricted to one cell: the state and observation model objects
+holding that cell's parameter arrays. Construction is two immutable struct
+allocations — the parameter arrays are shared, never copied — so the existing
+kernels can be run per cell without any group awareness of their own.
+"""
+function _cell_lds(
+    lds::LinearDynamicalSystem{T,S,O}, grp::ParameterGrouping, cell::Int
+) where {T<:Real,S<:AbstractStateModel{T},O<:AbstractObservationModel{T}}
+    sm = (lds.state_model.variants::Vector{S})[grp.cell_state[cell]]
+    om = (lds.obs_model.variants::Vector{O})[grp.cell_obs[cell]]
+    return LinearDynamicalSystem{T,S,O}(
+        sm, om, lds.latent_dim, lds.obs_dim, lds.ux_dim, lds.uy_dim, lds.fit_bool
+    )
+end
+
+"""
+    _cell_ldss(lds, grp) -> Vector{LinearDynamicalSystem}
+
+One `_cell_lds` per occupied cell.
+"""
+function _cell_ldss(
+    lds::LinearDynamicalSystem{T,S,O}, grp::ParameterGrouping
+) where {T<:Real,S<:AbstractStateModel{T},O<:AbstractObservationModel{T}}
+    return [_cell_lds(lds, grp, c) for c in 1:grp.ncells]
+end
+
+"""
+    _subset_data(data, trials) -> Data
+
+The sub-`Data` holding only `trials`, sharing the per-trial matrices by
+reference (nothing is copied).
+"""
+function _subset_data(data::Data, trials::AbstractVector{Int})
+    return Data(data.y[trials], data.ux[trials], data.uy[trials], data.tsteps[trials])
 end
 
 # ============================================================================

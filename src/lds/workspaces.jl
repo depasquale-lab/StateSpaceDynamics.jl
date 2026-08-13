@@ -468,14 +468,19 @@ concern:
 - `agg`: TD sufficient-stats aggregator + shared-covariance storage
 - `batched`: batched mean-pass buffers, or `nothing` (only `sws_pool[1]` of a
   multi-trial equal-length fit carries one)
+
+Every field except `batched` is `const`. `batched` is reassignable so a grouped
+fit (see `parameter_groups.jl`) can swap in the buffers sized for the group of
+trials it is about to smooth, while sharing the expensive O(D²·T) storage — the
+block-tridiagonal workspace and the shared-covariance cache — across all groups.
 """
-struct SmoothWorkspace{T<:Real}
-    btd::BlockTridiagonalWorkspace{T}
-    consts::SmoothConstants{T}
-    opt::NewtonBuffers{T}
-    reg::RegressionBuffers{T}
-    elbo::ElboBuffers{T}
-    agg::TDAggBuffers{T}
+mutable struct SmoothWorkspace{T<:Real}
+    const btd::BlockTridiagonalWorkspace{T}
+    const consts::SmoothConstants{T}
+    const opt::NewtonBuffers{T}
+    const reg::RegressionBuffers{T}
+    const elbo::ElboBuffers{T}
+    const agg::TDAggBuffers{T}
     batched::Union{Nothing,BatchedBuffers{T}}
 end
 
