@@ -375,3 +375,87 @@ fit!(lds, Y; max_iter=20, progress=false)
 ```
 
 Any subset works.
+
+## Parameters that depend on an ancillary variable
+
+Both sub-models carry a `depends_on` field. Leaving it `nothing` (the default)
+gives the usual behaviour: one parameter set shared by every trial. Setting it
+to a `NamedTuple` of per-trial label vectors makes the named parameters be
+**estimated separately for each group of trials**.
+
+The motivating case is stitching several recording sessions from one animal.
+The latent dynamics belong to the animal and should be pooled; the emissions
+belong to the session, because each session records a different set of neurons:
+
+```julia
+using LinearAlgebra, Random, StateSpaceDynamics
+
+session = vcat(fill(:day1, 20), fill(:day2, 15))   # one label per trial
+
+gsm = GaussianStateModel(A = A, Q = Q, b = b, x0 = x0, P0 = P0)
+gom = GaussianObservationModel(C = C, R = R, d = d)
+gom.depends_on = (C = session, R = session)        # C, d, D and R per session
+
+lds = LinearDynamicalSystem(gsm, gom)
+fit!(lds, Y; max_iter = 50)
+
+group_labels(gom, :C)                # [:day1, :day2]
+group_parameter(gom, :C, :day1)      # that session's emission matrix
+group_parameter(gom, :R, :day2)      # that session's observation noise
+```
+
+### Which names are valid
+
+Keys are canonicalized to the same groups `fit_bool` uses, because those
+parameters are fit jointly as one regression:
+
+| Key(s)           | Group                  | `fit_bool` index    |
+|:-----------------|:-----------------------|:--------------------|
+| `:x0`            | initial state mean     | 1                   |
+| `:P0`            | initial state cov      | 2                   |
+| `:A`, `:b`, `:B` | dynamics `[A b B]`     | 3                   |
+| `:Q`             | process noise          | 4                   |
+| `:C`, `:d`, `:D` | emission `[C d D]`     | 5                   |
+| `:R`             | observation noise      | 6 (Gaussian only)   |
+
+`:d` is therefore an alias for `:C`: naming either makes the whole `[C d D]`
+regression group-dependent. Naming two aliases of one group with different
+label vectors is an error.
+
+Labels can be `Symbol`s, integers or strings — anything comparable. Groups are
+ordered by first appearance in the vector set on the model.
+
+Different parameters may use different label vectors: `(Q = condition, C =
+session)` fits one `Q` per condition and one `[C d D]` per session.
+
+### Held-out data
+
+The label vectors live on the model and have one entry per fitted trial, so
+scoring a held-out set with a different trial count needs its own labels.
+`fit!`, `smooth`, `elbo`, `loglikelihood` and `rand` all take a `depends_on`
+keyword that overrides the stored labels for that call:
+
+```julia
+ll = loglikelihood(lds, Y_test; depends_on = (C = session_test, R = session_test))
+```
+
+An override re-assigns trials to groups the model already declares; it cannot
+introduce a new parameter set.
+
+### Priors, SLDS, and cost
+
+All versions of a parameter share the model's prior (`Q_prior`, `R_prior`,
+`CD_prior`, …), and each version contributes its own log-prior term to the
+ELBO.
+
+An `SLDS` supports the same field on each regime's sub-models. The grouping of
+trials is a property of the data, so every regime must declare the same labels;
+only the fitted values differ per regime. `x0` and `P0` stay tied across
+regimes, as they are for an ungrouped SLDS.
+
+Grouping does not give up the efficiency of equal-length epochs. Trials that
+share every parameter form a *cell*, and the smoother computes one covariance
+per cell and shares it across that cell's trials, exactly as it does across all
+trials of an ungrouped model. The expensive `O(D²·T)` workspace storage is
+allocated once and reused across cells, so a grouped fit's memory tracks an
+ungrouped one's rather than growing with the number of sessions.

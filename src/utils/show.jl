@@ -20,6 +20,36 @@ end
 
 print_full(obj) = print_full(stdout, obj)
 
+#=
+One line per parameter group that depends on an ancillary variable, e.g.
+
+  Depends on:
+   C, d, D  ->  2 groups (:session_a, :session_b)
+
+Prints nothing when `depends_on` is unset, so the display of an ordinary model
+is unchanged.
+=#
+function _show_depends_on(io::IO, model::DependentModel; gap="")
+    model.depends_on === nothing && return nothing
+    dep = _resolve_dependence(model)
+    any(dep.varies) || return nothing
+
+    println(io, gap, " Depends on:")
+    for g in eachindex(dep.names)
+        dep.varies[g] || continue
+        members = if dep.names[g] === :A
+            "A, b, B"
+        elseif dep.names[g] === :C
+            "C, d, D"
+        else
+            String(dep.names[g])
+        end
+        labels = join(map(repr, dep.labels[g]), ", ")
+        println(io, gap, "  $members  ->  $(dep.nslots[g]) groups ($labels)")
+    end
+    return nothing
+end
+
 function Base.show(io::IO, gsm::GaussianStateModel; gap="")
     println(io, gap, "Gaussian State Model:")
     println(io, gap, "---------------------")
@@ -45,6 +75,8 @@ function Base.show(io::IO, gsm::GaussianStateModel; gap="")
     println(io, gap, " Dynamics input:")
     println(io, gap, "  size(B)  = ($(size(gsm.B,1)), $(size(gsm.B,2)))")
 
+    _show_depends_on(io, gsm; gap=gap)
+
     return nothing
 end
 
@@ -63,6 +95,8 @@ function Base.show(io::IO, gom::GaussianObservationModel; gap="")
         println(io, gap, " d = $(round.(gom.d, digits=2))")
         println(io, gap, " D = $(round.(gom.D, digits=2))")
     end
+
+    _show_depends_on(io, gom; gap=gap)
 
     return nothing
 end
@@ -85,6 +119,8 @@ function Base.show(io::IO, pom::PoissonObservationModel; gap="")
             " rate = $(round.(exp.(pom.d), digits = 2))   # exp(d) for inspection only",
         )
     end
+
+    _show_depends_on(io, pom; gap=gap)
 
     return nothing
 end

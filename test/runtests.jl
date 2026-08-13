@@ -252,6 +252,39 @@ using SSDTest
                 test_poisson_gradient_shape_and_finiteness()
             end
         end
+
+        include("LinearDynamicalSystems/ParameterDependencies.jl")
+        @testset "Ancillary parameter dependencies" begin
+            @testset "Validation and accessors" begin
+                test_depends_on_validation()
+                test_depends_on_trial_count_and_override()
+                test_group_accessors_and_aliasing()
+                test_grouping_is_the_join_of_label_vectors()
+                test_grouped_show()
+            end
+
+            @testset "Equivalences" begin
+                test_single_group_matches_ungrouped()
+                test_fully_grouped_matches_independent_fits()
+                test_grouped_handles_ragged_trial_lengths()
+            end
+
+            @testset "Gaussian fitting" begin
+                test_grouped_elbo_increases_and_recovers_noise()
+                test_grouped_smooth_loglikelihood_and_heldout()
+                test_grouped_integer_labels_and_priors()
+                test_grouped_rand_needs_a_label_for_one_trial()
+            end
+
+            @testset "Poisson fitting" begin
+                test_grouped_poisson_fit()
+            end
+
+            @testset "SLDS fitting" begin
+                test_grouped_slds_fit()
+                test_grouped_slds_requires_matching_labels()
+            end
+        end
     end
 
     # Optimization primitives (line search + Newton)

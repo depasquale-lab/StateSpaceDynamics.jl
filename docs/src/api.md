@@ -39,6 +39,13 @@ MNPrior
 x0_mean_prior
 ```
 
+## Ancillary parameter dependencies
+
+```@docs
+group_labels
+group_parameter
+```
+
 ## Sampling
 
 ```@docs; canonical = false

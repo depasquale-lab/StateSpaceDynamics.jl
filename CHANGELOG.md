@@ -8,6 +8,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Ancillary parameter dependencies: every `AbstractStateModel` and
+  `AbstractObservationModel` now carries a `depends_on` field (default
+  `nothing`). Setting it to a `NamedTuple` of per-trial label vectors — e.g.
+  `obs_model.depends_on = (C = session, R = session)` — makes those parameters
+  be estimated separately for each group of trials, while everything else stays
+  pooled. This is the "stitching" setup for combining recording sessions that
+  observe different neurons in the same animal: shared latent dynamics,
+  session-specific `C`, `d`/`D` and `R`. Supported for the Gaussian LDS, the
+  Poisson LDS and the SLDS, across `fit!`, `smooth`, `elbo`, `loglikelihood`
+  and `rand`.
+  * Keys are canonicalized to the same groups `fit_bool` uses, since those
+    parameters are fit jointly as one regression — `:A`/`:b`/`:B` name one
+    group and `:C`/`:d`/`:D` another. Labels may be `Symbol`s, integers or
+    strings. Different parameters may use different label vectors; the trial
+    partition is their common refinement.
+  * Fitted values are read back with the new exported `group_labels(model,
+    name)` and `group_parameter(model, name, label)`, and stored on a new
+    `variants` field holding one model object per parameter-group combination.
+    Parameters that do not vary are shared **by reference** across variants.
+  * All versions of a parameter share the model's prior; each version
+    contributes its own log-prior term to the ELBO.
+  * `fit!`, `smooth`, `elbo`, `loglikelihood` and `rand` accept a `depends_on`
+    keyword that overrides the model's stored labels for that call, so a
+    held-out set with a different trial count can be scored without mutating
+    the model.
+  * The efficiency of same-length epochs is preserved *within* each group:
+    trials sharing every parameter form a cell, and the smoothed covariance is
+    computed once per cell and shared across it (parameters differ between
+    cells, so their covariances genuinely differ). The `O(D²·T)` workspace
+    storage is allocated once and reused across cells, so a grouped fit's
+    memory tracks an ungrouped one's instead of scaling with the number of
+    groups
+- For an `SLDS`, every regime must declare the same `depends_on` labels (the
+  grouping of trials is a property of the data, not of a regime); mismatched
+  declarations raise an `ArgumentError`. `x0`/`P0` remain tied across regimes
 - Public allocating `elbo(model, y; ...)` for all three models (Gaussian LDS
   with `ux`/`uy` keywords, Poisson LDS with Newton-smoother keywords, SLDS
   with an `rng` keyword since its E-step consumes a posterior sample). Runs

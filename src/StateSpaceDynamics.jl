@@ -33,6 +33,7 @@ include("stats/priors.jl")
 # Model definitions + inference-state containers.
 include("lds/types.jl")                             # abstract types, model structs, SLDS
 include("lds/workspaces.jl")                        # FilterSmooth / SufficientStatistics / workspaces
+include("lds/parameter_groups.jl")                  # `depends_on` -> per-group parameter variants
 include("utils/show.jl")
 include("utils/validation.jl")
 
@@ -47,6 +48,9 @@ include("lds/continuous_latents.jl")                # state-model Q-term + state
 # Observation models + composite / standalone models.
 include("lds/gaussian_observations.jl")
 include("lds/poisson_observations.jl")
+
+# Grouped (`depends_on`) M-step + ELBO machinery, shared by LDS / PLDS / SLDS.
+include("lds/grouped_em.jl")
 
 # Fitting Functions
 include("lds/fit_LDS.jl")
@@ -64,6 +68,9 @@ export AbstractStateModel, AbstractObservationModel
 export GaussianStateModel, GaussianObservationModel, PoissonObservationModel
 export IWPrior, MNPrior, x0_mean_prior
 export CovUpdateCache
+
+# Ancillary parameter dependencies (`depends_on`)
+export group_labels, group_parameter
 
 # Utilities
 export block_tridgm

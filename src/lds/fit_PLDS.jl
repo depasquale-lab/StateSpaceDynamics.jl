@@ -388,9 +388,15 @@ Suf-based Poisson ELBO. Mirrors the Gaussian TD path's split:
   term on the dynamics `[A b B]` (full `Q⁻¹` form, mirroring the Gaussian path),
   and the MN log-prior trace term on `[C d]` to match the LBFGS objective.
 """
-function elbo!(
+"""
+    _poisson_q_obs_total(plds, tfs, data, sws_pool)
+
+Observation-side Q-term summed over trials. The Poisson emission is
+irreducibly non-conjugate — there is no sufficient-statistic form — so this
+stays a per-trial loop, chunked across the workspace pool.
+"""
+function _poisson_q_obs_total(
     plds::LinearDynamicalSystem{T,S,O},
-    suf::SufficientStatistics{T},
     tfs::TrialFilterSmooth{T},
     data::Data{T},
     sws_pool::Vector{SmoothWorkspace{T}},
@@ -398,15 +404,6 @@ function elbo!(
     y = data.y
     uy = data.uy
     ntrials = length(y)
-
-    total_entropy = zero(T)
-    for fs in tfs.FilterSmooths
-        total_entropy += fs.entropy
-    end
-
-    compute_smooth_constants!(sws_pool[1], plds)
-    Q_state_total = Q_state!(sws_pool[1], plds, suf)
-
     ntasks = min(ntrials, length(sws_pool))
     partial = zeros(T, ntasks)
     chunksize = cld(ntrials, ntasks)
@@ -423,7 +420,24 @@ function elbo!(
         partial[i] = acc
         return nothing
     end
-    Q_obs_total = sum(partial)
+    return sum(partial)
+end
+
+function elbo!(
+    plds::LinearDynamicalSystem{T,S,O},
+    suf::SufficientStatistics{T},
+    tfs::TrialFilterSmooth{T},
+    data::Data{T},
+    sws_pool::Vector{SmoothWorkspace{T}},
+) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
+    total_entropy = zero(T)
+    for fs in tfs.FilterSmooths
+        total_entropy += fs.entropy
+    end
+
+    compute_smooth_constants!(sws_pool[1], plds)
+    Q_state_total = Q_state!(sws_pool[1], plds, suf)
+    Q_obs_total = _poisson_q_obs_total(plds, tfs, data, sws_pool)
 
     prior_term = zero(T)
     if plds.state_model.Q_prior !== nothing
@@ -735,6 +749,10 @@ This is the same quantity `fit!` reports per iteration — a lower bound on the
 # Keywords
 - `newton_max_iter` / `newton_tol`: Newton-smoother iteration cap and
   convergence tolerance (as in `fit!`).
+- `depends_on`: optional `NamedTuple` of per-trial label vectors overriding the
+  `depends_on` declared on the models for this call (see the ancillary parameter
+  dependency docs). Needed when this dataset's trial count differs from the one
+  the labels on the model were written for.
 
 Returns a scalar.
 """
@@ -745,8 +763,17 @@ function elbo(
     uy=nothing,
     newton_max_iter::Int=20,
     newton_tol::Float64=1e-6,
+    depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     data = Data(plds, y; ux=ux, uy=uy)
+    grp = parameter_grouping(plds, length(data.y); depends_on=depends_on)
+    if grp !== nothing
+        sws_pool = _grouped_sws_pool(plds, data)
+        state = _grouped_fit_state(plds, data, grp, sws_pool[1])
+        return _grouped_estep_elbo_poisson!(
+            state, grp, sws_pool; max_iter=newton_max_iter, tol=T(newton_tol)
+        )
+    end
     tfs = initialize_FilterSmooth(plds, data.tsteps)::TrialFilterSmooth{T}
     npool = min(Threads.maxthreadid(), length(data.y))
     sws_pool = [
@@ -778,6 +805,10 @@ iterative-Newton `smooth!`).
 - `y`: observed counts — a `(obs_dim, T)` matrix (single trial), a
   `(obs_dim, T, ntrials)` array, or a `Vector{<:AbstractMatrix}` of per-trial
   `(obs_dim, T_i)` matrices (ragged lengths allowed).
+- `depends_on`: optional `NamedTuple` of per-trial label vectors overriding the
+  `depends_on` declared on the models for this call (see the ancillary parameter
+  dependency docs). Needed when this dataset's trial count differs from the one
+  the labels on the model were written for.
 
 # Returns
 For a single-trial (matrix) `y`:
@@ -791,8 +822,11 @@ function smooth(
     y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
     ux=nothing,
     uy=nothing,
+    depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     data = Data(plds, y; ux=ux, uy=uy)
+    grp = parameter_grouping(plds, length(data.y); depends_on=depends_on)
+    grp === nothing || return _grouped_smooth(plds, data, grp, y)
     tfs = initialize_FilterSmooth(plds, data.tsteps)::TrialFilterSmooth{T}
     # Cap the pool at the trial count — workspaces beyond ntrials are never
     # touched and each carries O(D²·T) of block-tridiagonal storage.
@@ -836,6 +870,10 @@ Fit a Poisson LDS via Laplace-EM.
 - `progress`: show progress bar
 - `newton_max_iter`: Newton iterations per E-step inner solve
 - `newton_tol`: Newton convergence tolerance
+- `depends_on`: optional `NamedTuple` of per-trial label vectors overriding the
+  `depends_on` declared on the models for this call (see the ancillary parameter
+  dependency docs). Needed when this dataset's trial count differs from the one
+  the labels on the model were written for.
 """
 function fit!(
     plds::LinearDynamicalSystem{T,S,O},
@@ -847,8 +885,20 @@ function fit!(
     progress=true,
     newton_max_iter::Int=20,
     newton_tol::Float64=1e-6,
+    depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     data = Data(plds, y; ux=ux, uy=uy)
+    grp = parameter_grouping(plds, length(data.y); depends_on=depends_on)
+    grp === nothing || return _fit_plds_grouped!(
+        plds,
+        data,
+        grp;
+        max_iter=max_iter,
+        tol=tol,
+        progress=progress,
+        newton_max_iter=newton_max_iter,
+        newton_tol=newton_tol,
+    )
     T_max = maximum(data.tsteps)
 
     tfs = initialize_FilterSmooth(plds, data.tsteps)::TrialFilterSmooth{T}
@@ -891,6 +941,129 @@ function fit!(
         prog !== nothing && next!(prog)
 
         # check convergence
+        if iter > 1 && abs(elbos[iter] - elbos[iter - 1]) < tol
+            prog !== nothing && finish!(prog)
+            resize!(elbos, iter)
+            return elbos
+        end
+    end
+
+    prog !== nothing && finish!(prog)
+    return elbos
+end
+
+"""
+    _grouped_estep_elbo_poisson!(state, grp, sws_pool; max_iter, tol)
+
+One grouped Laplace E-step for a Poisson LDS: smooth and aggregate each cell
+with its own parameters, and return the total ELBO. Mirrors
+`_grouped_estep_elbo_gaussian!`, but the observation-side Q-term stays a
+per-trial loop (the Poisson emission has no sufficient-statistic form).
+"""
+function _grouped_estep_elbo_poisson!(
+    state::GroupedFitState{T,L},
+    grp::ParameterGrouping,
+    sws_pool::Vector{SmoothWorkspace{T}};
+    max_iter::Int=20,
+    tol::T=T(1e-6),
+) where {
+    T<:Real,
+    L<:LinearDynamicalSystem{T,<:GaussianStateModel{T},<:PoissonObservationModel{T}},
+}
+    total = zero(T)
+    for c in 1:grp.ncells
+        lds_c = state.cell_lds[c]
+        suf_c = state.sufs[c]
+        tfs_c = state.cell_tfs[c]
+        _prepare_cell!(sws_pool[1], state, c)
+        estep!(
+            lds_c, suf_c, tfs_c, state.cell_data[c], sws_pool; max_iter=max_iter, tol=tol
+        )
+
+        compute_smooth_constants!(sws_pool[1], lds_c)
+        total += Q_state!(sws_pool[1], lds_c, suf_c)
+        total += _poisson_q_obs_total(lds_c, tfs_c, state.cell_data[c], sws_pool)
+        for fs in tfs_c.FilterSmooths
+            total += fs.entropy
+        end
+    end
+    total += _grouped_state_prior_logdensity(state.cell_lds, grp.cell_slot, T)
+    total += _grouped_poisson_obs_prior_logdensity(state.cell_lds, grp.cell_slot, T)
+    return total
+end
+
+"""
+    _grouped_update_observation_model!(state, grp, data, sws_pool)
+
+Poisson emission M-step, once per version of `[C d D]`: the LBFGS solve runs on
+the trials of every cell that shares that version, so a `[C d D]` shared across
+cells is still fit from all of their data.
+"""
+function _grouped_update_observation_model!(
+    state::GroupedFitState{T},
+    grp::ParameterGrouping,
+    data::Data{T},
+    sws_pool::Vector{SmoothWorkspace{T}},
+) where {T<:Real}
+    for units in _units_by_slot(grp.cell_slot[_G_CD])
+        trials = Int[]
+        for c in units
+            append!(trials, grp.cell_trials[c])
+        end
+        sort!(trials)
+        tfs = TrialFilterSmooth([state.tfs_all[n] for n in trials])
+        update_observation_model!(
+            state.cell_lds[units[1]], tfs, data.y[trials], sws_pool; uy=data.uy[trials]
+        )
+    end
+    return nothing
+end
+
+"""
+    _fit_plds_grouped!(plds, data, grp; ...)
+
+Laplace-EM driver for a Poisson LDS whose parameters depend on an ancillary
+variable. Same structure as the ungrouped `fit!`: the state side flows through
+the pooled sufficient statistics, the emission through one LBFGS solve per
+`[C d D]` version.
+"""
+function _fit_plds_grouped!(
+    plds::LinearDynamicalSystem{T,S,O},
+    data::Data{T},
+    grp::ParameterGrouping;
+    max_iter::Int=100,
+    tol::Float64=1e-6,
+    progress=true,
+    newton_max_iter::Int=20,
+    newton_tol::Float64=1e-6,
+) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
+    sws_pool = _grouped_sws_pool(plds, data)
+    state = _grouped_fit_state(plds, data, grp, sws_pool[1])
+    elbos = Vector{T}(undef, max_iter)
+
+    prog = if progress
+        Progress(
+            max_iter;
+            desc="Fitting grouped Poisson LDS via LaPlaceEM...",
+            barlen=50,
+            showspeed=true,
+        )
+    else
+        nothing
+    end
+
+    for iter in 1:max_iter
+        elbos[iter] = _grouped_estep_elbo_poisson!(
+            state, grp, sws_pool; max_iter=newton_max_iter, tol=T(newton_tol)
+        )
+
+        _grouped_state_mstep!(
+            state.cell_lds, state.sufs, grp.cell_slot, sws_pool[1], state.bufs
+        )
+        _grouped_update_observation_model!(state, grp, data, sws_pool)
+
+        prog !== nothing && next!(prog)
+
         if iter > 1 && abs(elbos[iter] - elbos[iter - 1]) < tol
             prog !== nothing && finish!(prog)
             resize!(elbos, iter)

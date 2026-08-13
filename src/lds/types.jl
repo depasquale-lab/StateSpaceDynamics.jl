@@ -4,6 +4,11 @@
 Abstract supertype for latent-state models of a [`LinearDynamicalSystem`](@ref)
 (e.g. [`GaussianStateModel`](@ref)). A state model defines how the latent state
 evolves from one timestep to the next.
+
+Every concrete subtype carries a `depends_on` field declaring which of its
+parameters are estimated separately per group of trials, and a companion
+`variants` field holding one model object per parameter-group combination.
+See `src/lds/parameter_groups.jl` for the full description.
 """
 abstract type AbstractStateModel{T<:Real} end
 
@@ -14,6 +19,11 @@ Abstract supertype for observation (emission) models of a
 [`LinearDynamicalSystem`](@ref) (e.g. [`GaussianObservationModel`](@ref) or
 [`PoissonObservationModel`](@ref)). An observation model defines how observed
 data are generated from the latent state.
+
+Every concrete subtype carries a `depends_on` field declaring which of its
+parameters are estimated separately per group of trials, and a companion
+`variants` field holding one model object per parameter-group combination.
+See `src/lds/parameter_groups.jl` for the full description.
 """
 abstract type AbstractObservationModel{T<:Real} end
 
@@ -74,6 +84,14 @@ where `B·ux_t` is present only when `B` is supplied (i.e., has nonzero columns)
     they match the internal workspaces regardless of how `A` is stored.
 - `x0_prior::Union{Nothing,MNPrior{T,Matrix{T}}} = nothing`: Optional matrix-normal prior on the
     initial mean `x0`.
+- `depends_on::Union{Nothing,NamedTuple} = nothing`: Optional declaration that some
+    parameters are estimated separately per group of trials. Keys are parameter names
+    (`:x0`, `:P0`, `:A`/`:b`/`:B`, `:Q`), values are per-trial label vectors; `nothing`
+    (the default) means one parameter set shared by every trial.
+- `variants::Union{Nothing,Vector{GaussianStateModel{T,M,V}}} = nothing`: Derived storage
+    for the per-group parameter sets; populated from `depends_on` by the fitting entry
+    points. Parameters that do not vary are shared **by reference** across variants, so
+    an M-step write through any variant is visible from all of them.
 """
 Base.@kwdef mutable struct GaussianStateModel{
     T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}
@@ -88,6 +106,8 @@ Base.@kwdef mutable struct GaussianStateModel{
     P0_prior::Union{Nothing,IWPrior{T}} = nothing
     AB_prior::Union{Nothing,MNPrior{T,Matrix{T}}} = nothing
     x0_prior::Union{Nothing,MNPrior{T,Matrix{T}}} = nothing
+    depends_on::Union{Nothing,NamedTuple} = nothing
+    variants::Union{Nothing,Vector{GaussianStateModel{T,M,V}}} = nothing
 end
 
 """
@@ -105,6 +125,13 @@ Represents the observation model of a Linear Dynamical System with Gaussian nois
     the stacked emission matrix `[C D]`. Pair with `R_prior` for a full MNIW prior on `(CD, R)`.
     Prior matrices are stored as plain `Matrix{T}` (decoupled from `C`'s storage type `M`) so
     they match the internal workspaces regardless of how `C` is stored.
+- `depends_on::Union{Nothing,NamedTuple} = nothing`: Optional declaration that some
+    parameters are estimated separately per group of trials. Keys are parameter names
+    (`:C`/`:d`/`:D`, `:R`), values are per-trial label vectors; `nothing` (the default)
+    means one parameter set shared by every trial.
+- `variants::Union{Nothing,Vector{GaussianObservationModel{T,M,V}}} = nothing`: Derived
+    storage for the per-group parameter sets; populated from `depends_on` by the fitting
+    entry points. Parameters that do not vary are shared **by reference** across variants.
 """
 Base.@kwdef mutable struct GaussianObservationModel{
     T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}
@@ -115,6 +142,8 @@ Base.@kwdef mutable struct GaussianObservationModel{
     D::M = zeros(eltype(C), size(C, 1), 0)  # eltype-preserving default
     R_prior::Union{Nothing,IWPrior{T}} = nothing
     CD_prior::Union{Nothing,MNPrior{T,Matrix{T}}} = nothing
+    depends_on::Union{Nothing,NamedTuple} = nothing
+    variants::Union{Nothing,Vector{GaussianObservationModel{T,M,V}}} = nothing
 end
 
 # Convenience constructors (State)
@@ -197,6 +226,13 @@ model reduces to the canonical `λ_t = exp(C x_t + d)`.
     `(latent_dim+1+uy_dim, latent_dim+1+uy_dim)` respectively. Unlike the Gaussian path there
     is no IW counterpart since Poisson has no observation-noise covariance — this is an
     MN-only prior contributing `½ tr(([C d D] - M₀) Λ ([C d D] - M₀)')` to the LBFGS objective.
+- `depends_on::Union{Nothing,NamedTuple} = nothing`: Optional declaration that `[C d D]`
+    is estimated separately per group of trials. Keys are parameter names (`:C`/`:d`/`:D`),
+    values are per-trial label vectors; `nothing` (the default) means one parameter set
+    shared by every trial.
+- `variants::Union{Nothing,Vector{PoissonObservationModel{T,M,V}}} = nothing`: Derived
+    storage for the per-group parameter sets; populated from `depends_on` by the fitting
+    entry points.
 """
 Base.@kwdef mutable struct PoissonObservationModel{
     T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}
@@ -205,6 +241,8 @@ Base.@kwdef mutable struct PoissonObservationModel{
     d::V
     D::M = zeros(eltype(C), size(C, 1), 0)  # eltype-preserving default (no obs inputs)
     CD_prior::Union{Nothing,MNPrior{T,Matrix{T}}} = nothing
+    depends_on::Union{Nothing,NamedTuple} = nothing
+    variants::Union{Nothing,Vector{PoissonObservationModel{T,M,V}}} = nothing
 end
 
 # 2-arg convenience constructor; matches the Gaussian path's positional form
