@@ -609,7 +609,7 @@ function _aggregate_td_suff_stats_weighted!(
 
     # Symmetrize PD blocks (BLAS.ger! is not symmetric and we touched the
     # bias row/col by hand; round-trip via Symmetrize! keeps PDMat happy).
-    Symmetrize!(init_yy) # add jitter to avoid singularity in case of zero weight
+    Symmetrize!(init_yy)
     LinearAlgebra.copytri!(dyn_xx, 'U')   # use upper to mirror everything to lower
     LinearAlgebra.copytri!(dyn_yy, 'U')
     LinearAlgebra.copytri!(obs_xx, 'U')
