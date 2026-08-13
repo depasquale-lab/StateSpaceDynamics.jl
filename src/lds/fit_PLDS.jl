@@ -760,6 +760,7 @@ function elbo(
     newton_max_iter::Int=20,
     newton_tol::Float64=1e-6,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
+    _reject_unsupported_dependence(plds)
     data = Data(plds, y; ux=ux, uy=uy)
     tfs = initialize_FilterSmooth(plds, data.tsteps)::TrialFilterSmooth{T}
     npool = min(Threads.maxthreadid(), length(data.y))
@@ -806,6 +807,7 @@ function smooth(
     ux=nothing,
     uy=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
+    _reject_unsupported_dependence(plds)
     data = Data(plds, y; ux=ux, uy=uy)
     tfs = initialize_FilterSmooth(plds, data.tsteps)::TrialFilterSmooth{T}
     # Cap the pool at the trial count — workspaces beyond ntrials are never
@@ -862,6 +864,7 @@ function fit!(
     newton_max_iter::Int=20,
     newton_tol::Float64=1e-6,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
+    _reject_unsupported_dependence(plds)
     data = Data(plds, y; ux=ux, uy=uy)
     T_max = maximum(data.tsteps)
 

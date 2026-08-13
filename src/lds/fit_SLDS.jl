@@ -71,6 +71,7 @@ function Random.rand(
     ux::Union{Nothing,AbstractMatrix{T}}=nothing,
     uy::Union{Nothing,AbstractMatrix{T}}=nothing,
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
+    _reject_unsupported_dependence(slds)
     lds1 = slds.LDSs[1]
     latent_dim = lds1.latent_dim
     obs_dim = lds1.obs_dim
@@ -110,6 +111,7 @@ function Random.rand(
     ux::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
     uy::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
+    _reject_unsupported_dependence(slds)
     lds1 = slds.LDSs[1]
     latent_dim = lds1.latent_dim
     obs_dim = lds1.obs_dim
@@ -1064,6 +1066,7 @@ function elbo(
     uy=nothing,
     rng::AbstractRNG=Random.default_rng(),
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
+    _reject_unsupported_dependence(slds)
     # `Data` centralizes shape validation and canonicalizes the three
     # observation/input forms (regime dims are uniform, so validating against
     # LDSs[1] covers all regimes). Absent ux/uy become zero-row matrices.
@@ -1286,6 +1289,7 @@ function fit!(
     progress::Bool=true,
     rng::AbstractRNG=Random.default_rng(),
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
+    _reject_unsupported_dependence(slds)
     #=
     `Data` centralizes shape validation and canonicalizes the three
     observation/input forms (regime dims are uniform, so validating against
