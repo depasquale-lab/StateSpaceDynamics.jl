@@ -238,7 +238,8 @@ function st_slds(labels; p_template::Int=3, K::Int=2)
         sm = pd_state_model()
         sm.A .= k == 1 ? [0.95 0.05; -0.05 0.95] : [0.60 0.30; -0.30 0.60]
         om = st_obs_model(p_template; seed=10 + k)
-        om.depends_on = (C=labels, R=labels)
+        # `nothing` builds the ungrouped model each session is sampled from.
+        labels === nothing || (om.depends_on = (C=labels, R=labels))
         return pd_lds(sm, om)
     end
     return SLDS(; A=[0.9 0.1; 0.1 0.9], πₖ=[0.5, 0.5], LDSs=ldss)
@@ -246,8 +247,8 @@ end
 
 function st_slds_two_session_data(; p1::Int=3, p2::Int=4, ntrials::Int=3, tsteps::Int=30)
     labels = vcat(fill(:s1, ntrials), fill(:s2, ntrials))
-    t1 = st_slds(labels; p_template=p1)
-    t2 = st_slds(labels; p_template=p2)
+    t1 = st_slds(nothing; p_template=p1)
+    t2 = st_slds(nothing; p_template=p2)
     _, _, y1 = rand(StableRNG(31), t1, fill(tsteps, ntrials))
     _, _, y2 = rand(StableRNG(32), t2, fill(tsteps, ntrials))
     return vcat(y1, y2), labels, p1, p2

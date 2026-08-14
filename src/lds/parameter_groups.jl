@@ -286,6 +286,23 @@ end
 
 _slot_arrays(base, nslots::Int) = [i == 1 ? base : copy(base) for i in 1:nslots]
 
+"""
+    ObsSlotSpec{T}
+
+**Internal.** Per-slot observation shape and data-derived seed for one
+observation-model parameter group. `dims[s]` is slot `s`'s channel count;
+`mean[s]` / `var[s]` are that slot's per-channel statistics, used only to seed
+a slot whose shape differs from the template.
+"""
+struct ObsSlotSpec{T<:Real}
+    dims::Vector{Int}
+    mean::Vector{Vector{T}}
+    var::Vector{Vector{T}}
+end
+
+_spec_dim(::Nothing, slot::Int, fallback::Int) = fallback
+_spec_dim(spec::ObsSlotSpec, slot::Int, ::Int) = spec.dims[slot]
+
 #=============================================================================
 Per-session observation dimensions ("stitching")
 
@@ -498,23 +515,6 @@ function _build_variants!(
     sm.variants = variants
     return variants
 end
-
-"""
-    ObsSlotSpec{T}
-
-**Internal.** Per-slot observation shape and data-derived seed for one
-observation-model parameter group. `dims[s]` is slot `s`'s channel count;
-`mean[s]` / `var[s]` are that slot's per-channel statistics, used only to seed
-a slot whose shape differs from the template.
-"""
-struct ObsSlotSpec{T<:Real}
-    dims::Vector{Int}
-    mean::Vector{Vector{T}}
-    var::Vector{Vector{T}}
-end
-
-_spec_dim(::Nothing, slot::Int, fallback::Int) = fallback
-_spec_dim(spec::ObsSlotSpec, slot::Int, ::Int) = spec.dims[slot]
 
 function _build_variants!(
     om::GaussianObservationModel{T,M,V},
