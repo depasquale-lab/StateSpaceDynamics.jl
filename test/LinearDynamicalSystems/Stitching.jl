@@ -17,8 +17,23 @@ function st_obs_model(p::Int, ::Type{T}=Float64; seed::Int=0) where {T<:Real}
     return GaussianObservationModel(C, R, d)
 end
 
+#=
+`pd_lds` fixes `obs_dim` at `PD_OBS_DIM`, which is exactly the assumption this
+feature removes, so these build the model with `obs_dim` taken from the
+emission itself.
+=#
+function st_build_lds(sm, om)
+    return LinearDynamicalSystem(;
+        state_model=sm,
+        obs_model=om,
+        latent_dim=ST_LATENT_DIM,
+        obs_dim=size(om.C, 1),
+        fit_bool=fill(true, 6),
+    )
+end
+
 function st_lds(p::Int; seed::Int=0)
-    return pd_lds(pd_state_model(), st_obs_model(p; seed=seed))
+    return st_build_lds(pd_state_model(), st_obs_model(p; seed=seed))
 end
 
 #=
@@ -240,7 +255,7 @@ function st_slds(labels; p_template::Int=3, K::Int=2)
         om = st_obs_model(p_template; seed=10 + k)
         # `nothing` builds the ungrouped model each session is sampled from.
         labels === nothing || (om.depends_on = (C=labels, R=labels))
-        return pd_lds(sm, om)
+        return st_build_lds(sm, om)
     end
     return SLDS(; A=[0.9 0.1; 0.1 0.9], πₖ=[0.5, 0.5], LDSs=ldss)
 end
