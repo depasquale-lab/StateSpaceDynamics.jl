@@ -677,10 +677,13 @@ function _grouped_gaussian_obs_mstep!(
     sufs::AbstractVector,
     slots::AbstractVector{Vector{Int}},
     sws::SmoothWorkspace,
-    bufs::GroupedSufBuffers,
+    bufs::GroupedSufBuffers;
+    unit_sws::Union{Nothing,AbstractVector}=nothing,
 )
-    _grouped_update_C_d!(ldss, sufs, slots[_G_CD], sws, bufs)
-    _grouped_update_R!(ldss, sufs, slots[_G_R], slots[_G_CD], sws)
+    _grouped_update_C_d!(ldss, sufs, slots[_G_CD], sws, bufs; unit_sws=unit_sws)
+    _grouped_update_R!(
+        ldss, sufs, slots[_G_R], slots[_G_CD], sws; unit_sws=unit_sws
+    )
     return nothing
 end
 

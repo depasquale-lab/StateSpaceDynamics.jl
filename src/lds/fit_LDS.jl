@@ -945,6 +945,12 @@ function _fit_tridiag_grouped!(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     sws_pool = _grouped_sws_pool(lds, data)
     state = _grouped_fit_state(lds, data, grp, sws_pool; batched=true)
+    #=
+    The emission M-step regresses per parameter version, and `[C d D]` / `R` are
+    `obs_dim`-shaped, so each cell's own workspace has to be used. With uniform
+    widths every entry is `sws_pool[1]` itself.
+    =#
+    cell_ws1 = [p[1] for p in state.cell_sws]
     elbos = Vector{T}(undef, max_iter)
 
     prog = if progress
@@ -960,7 +966,12 @@ function _fit_tridiag_grouped!(
             state.cell_lds, state.sufs, grp.cell_slot, sws_pool[1], state.bufs
         )
         _grouped_gaussian_obs_mstep!(
-            state.cell_lds, state.sufs, grp.cell_slot, sws_pool[1], state.bufs
+            state.cell_lds,
+            state.sufs,
+            grp.cell_slot,
+            sws_pool[1],
+            state.bufs;
+            unit_sws=cell_ws1,
         )
 
         prog !== nothing && next!(prog)
