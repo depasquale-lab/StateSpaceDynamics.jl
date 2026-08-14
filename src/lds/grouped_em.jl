@@ -226,10 +226,16 @@ function _grouped_fit_state(
             fs_all[n] = initialize_FilterSmooth(lds, tsteps[i]; cov_alias=alias)
         end
         cell_batched[c] = if batched && equal_len
+            #=
+            The cell's own channel count, not the parent's: these buffers hold
+            that cell's `y`, which under stitching is one session's channels.
+            Identical to `lds.obs_dim` whenever every session has the same
+            width, so the uniform case is unchanged.
+            =#
             BatchedBuffers(
                 T,
                 lds.latent_dim,
-                lds.obs_dim,
+                cell_lds[c].obs_dim,
                 tsteps[1],
                 length(trials);
                 ux_dim=lds.ux_dim,
