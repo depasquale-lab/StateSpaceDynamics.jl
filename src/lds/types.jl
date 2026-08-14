@@ -425,9 +425,17 @@ function Data(
     uy::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
 ) where {T<:Real}
     isempty(y) && throw(ArgumentError("y must contain at least one trial"))
-    for (i, yt) in enumerate(y)
-        size(yt, 1) == lds.obs_dim ||
-            throw(DimensionMismatchError("y[$i] rows", lds.obs_dim, size(yt, 1)))
+    #=
+    A group-dependent emission is the stitching case: each session brings its
+    own channel count, so rows are checked per parameter version once the trial
+    partition is known (`_slot_obs_dims`) rather than against the template's
+    `obs_dim` here. Everything else keeps the strict single-`obs_dim` check.
+    =#
+    if !_has_parameter_dependence(lds.obs_model)
+        for (i, yt) in enumerate(y)
+            size(yt, 1) == lds.obs_dim ||
+                throw(DimensionMismatchError("y[$i] rows", lds.obs_dim, size(yt, 1)))
+        end
     end
     tsteps = Int[size(yt, 2) for yt in y]
     ux_seq = _normalize_multitrial_ux(ux, lds.ux_dim, tsteps, T, "ux")

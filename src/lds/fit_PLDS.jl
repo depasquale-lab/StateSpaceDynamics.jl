@@ -766,7 +766,7 @@ function elbo(
     depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     data = Data(plds, y; ux=ux, uy=uy)
-    grp = parameter_grouping(plds, length(data.y); depends_on=depends_on)
+    grp = parameter_grouping(plds, length(data.y); depends_on=depends_on, y=data.y)
     if grp !== nothing
         sws_pool = _grouped_sws_pool(plds, data)
         state = _grouped_fit_state(plds, data, grp, sws_pool[1])
@@ -825,7 +825,7 @@ function smooth(
     depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     data = Data(plds, y; ux=ux, uy=uy)
-    grp = parameter_grouping(plds, length(data.y); depends_on=depends_on)
+    grp = parameter_grouping(plds, length(data.y); depends_on=depends_on, y=data.y)
     grp === nothing || return _grouped_smooth(plds, data, grp, y)
     tfs = initialize_FilterSmooth(plds, data.tsteps)::TrialFilterSmooth{T}
     # Cap the pool at the trial count — workspaces beyond ntrials are never
@@ -888,7 +888,7 @@ function fit!(
     depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     data = Data(plds, y; ux=ux, uy=uy)
-    grp = parameter_grouping(plds, length(data.y); depends_on=depends_on)
+    grp = parameter_grouping(plds, length(data.y); depends_on=depends_on, y=data.y)
     grp === nothing || return _fit_plds_grouped!(
         plds,
         data,

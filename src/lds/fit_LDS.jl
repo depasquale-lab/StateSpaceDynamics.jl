@@ -129,7 +129,7 @@ function smooth(
     depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     data = Data(lds, y; ux=ux, uy=uy)
-    grp = parameter_grouping(lds, length(data.y); depends_on=depends_on)
+    grp = parameter_grouping(lds, length(data.y); depends_on=depends_on, y=data.y)
     grp === nothing || return _grouped_smooth(lds, data, grp, y)
     tfs = _smooth_data(lds, data)
     return _collect_smooth_output(tfs, y)
@@ -786,7 +786,7 @@ function elbo(
     depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     data = Data(lds, y; ux=ux, uy=uy)
-    grp = parameter_grouping(lds, length(data.y); depends_on=depends_on)
+    grp = parameter_grouping(lds, length(data.y); depends_on=depends_on, y=data.y)
     if grp !== nothing
         sws_pool = _grouped_sws_pool(lds, data)
         state = _grouped_fit_state(lds, data, grp, sws_pool[1]; batched=true)
@@ -874,7 +874,7 @@ function fit!(
     depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     data = Data(lds, y; ux=ux, uy=uy)
-    grp = parameter_grouping(lds, length(data.y); depends_on=depends_on)
+    grp = parameter_grouping(lds, length(data.y); depends_on=depends_on, y=data.y)
     grp === nothing || return _fit_tridiag_grouped!(
         lds, data, grp; max_iter=max_iter, tol=tol, progress=progress
     )
@@ -1227,7 +1227,7 @@ function StatsAPI.loglikelihood(
     depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
     data = Data(lds, y; ux=ux, uy=uy)
-    grp = parameter_grouping(lds, length(data.y); depends_on=depends_on)
+    grp = parameter_grouping(lds, length(data.y); depends_on=depends_on, y=data.y)
 
     #=
     The filter's covariance pass depends only on the parameters and the trial

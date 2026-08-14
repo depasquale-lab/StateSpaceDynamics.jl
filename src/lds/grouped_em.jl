@@ -288,9 +288,15 @@ sessions and there are dozens of them.
 function _grouped_sws_pool(lds::LinearDynamicalSystem{T}, data::Data{T}) where {T<:Real}
     T_max = maximum(data.tsteps)
     npool = min(Threads.maxthreadid(), length(data.y))
+    #=
+    Sized at the widest session, not at the parent's `obs_dim`: under stitching
+    each cell has its own channel count and the parent's is only the template's.
+    Cells narrower than the maximum use the leading rows and columns.
+    =#
+    obs_max = maximum(size(yt, 1) for yt in data.y)
     return [
         SmoothWorkspace(
-            T, lds.latent_dim, lds.obs_dim, T_max; ux_dim=lds.ux_dim, uy_dim=lds.uy_dim
+            T, lds.latent_dim, obs_max, T_max; ux_dim=lds.ux_dim, uy_dim=lds.uy_dim
         ) for _ in 1:npool
     ]
 end
