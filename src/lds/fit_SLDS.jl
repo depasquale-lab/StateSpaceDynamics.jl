@@ -1114,7 +1114,7 @@ function elbo(
     total_T = last(seq_ends)
     T_max = maximum(data.tsteps)
 
-    grp = _slds_parameter_grouping(slds, ntrials; depends_on=depends_on)
+    grp = _slds_parameter_grouping(slds, ntrials; depends_on=depends_on, y=y_seq)
     cell_slds = grp === nothing ? nothing : _slds_cell_sldss(slds, grp)
 
     tfs = initialize_FilterSmooth(slds.LDSs[1], data.tsteps)::TrialFilterSmooth{T}
@@ -1123,6 +1123,11 @@ function elbo(
     obs_seq = collect(1:total_T)
     control_seq = fill(nothing, total_T)
     slds_ws = SLDSSmoothWorkspace(T, slds, T_max)
+    #=
+    Per-cell workspaces for a stitching fit; `nothing` when ungrouped, and the
+    base workspace itself when every session has the same channel count.
+    =#
+    cell_ws = _slds_cell_workspaces(slds, cell_slds, slds_ws, T_max)
     x_samples = [Matrix{T}(undef, slds.LDSs[1].latent_dim, Ti) for Ti in data.tsteps]
 
     # Warm-start q(x) with uniform weights, drawing the sample the E-step's
@@ -1140,6 +1145,7 @@ function elbo(
         rng=rng,
         ux=ux_seq,
         uy=uy_seq,
+        cell_ws=cell_ws,
     )
 
     if grp !== nothing
@@ -1164,6 +1170,7 @@ function elbo(
             seq_ends=seq_ends,
             ux=ux_seq,
             uy=uy_seq,
+            cell_ws=cell_ws,
         )
         return _elbo_grouped!(
             cells,
@@ -1175,6 +1182,7 @@ function elbo(
             seq_ends=seq_ends,
             ux=ux_seq,
             uy=uy_seq,
+            cell_ws=cell_ws,
         )
     end
 
@@ -1391,7 +1399,7 @@ function fit!(
     Ancillary parameter dependencies. `grp === nothing` (no regime declares
     `depends_on`) keeps every step on its original code path.
     =#
-    grp = _slds_parameter_grouping(slds, ntrials; depends_on=depends_on)
+    grp = _slds_parameter_grouping(slds, ntrials; depends_on=depends_on, y=y_seq)
     cell_slds = grp === nothing ? nothing : _slds_cell_sldss(slds, grp)
 
     # Continuous-state smoother storage (per-trial sized).
@@ -1419,6 +1427,18 @@ function fit!(
         uy_dim=slds.LDSs[1].uy_dim,
     )
     slds_ws = SLDSSmoothWorkspace(T, slds, T_max)
+    #=
+    Per-cell workspaces for a stitching fit; `nothing` when ungrouped, and the
+    base workspace itself when every session has the same channel count.
+    =#
+    cell_ws = _slds_cell_workspaces(slds, cell_slds, slds_ws, T_max)
+    #=
+    The M-step's regression buffers are shaped by `obs_dim` too, so a stitching
+    fit needs one per cell. `_cell_workspace` shares the block-tridiagonal and
+    smoothed-covariance storage, and `nothing` here keeps the single-workspace
+    path for every fit whose cells have the parent's width.
+    =#
+    cell_mstep_sws = _slds_cell_mstep_workspaces(slds, cell_slds, sws, T_max)
     x_samples = [Matrix{T}(undef, latent_dim, Ti) for Ti in tsteps_per_trial]
 
     prog = if progress
@@ -1445,6 +1465,7 @@ function fit!(
         rng=rng,
         ux=ux_seq,
         uy=uy_seq,
+        cell_ws=cell_ws,
     )
 
     for iter in 1:max_iter
@@ -1514,6 +1535,7 @@ function fit!(
                 seq_ends=seq_ends,
                 ux=ux_seq,
                 uy=uy_seq,
+            cell_ws=cell_ws,
             )
 
             elbos[iter] = _elbo_grouped!(
@@ -1526,6 +1548,7 @@ function fit!(
                 seq_ends=seq_ends,
                 ux=ux_seq,
                 uy=uy_seq,
+            cell_ws=cell_ws,
             )
 
             _mstep_grouped!(
@@ -1538,6 +1561,7 @@ function fit!(
                 sws;
                 obs_seq=obs_seq,
                 seq_ends=seq_ends,
+                cell_sws=cell_mstep_sws,
             )
         end
 
@@ -1582,6 +1606,7 @@ function _slds_warmstart!(
     rng::AbstractRNG=Random.default_rng(),
     ux::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
     uy::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
+    cell_ws::Union{Nothing,AbstractVector}=nothing,
 ) where {T<:Real}
     function w_of(trial)
         return fill(one(T) / K, K, tsteps[trial])
@@ -1606,7 +1631,18 @@ function _slds_warmstart!(
 
     for c in 1:grp.ncells
         _slds_smooth_cell!(
-            cell_slds, grp, c, tfs, y, x_samples, slds_ws, w_of; rng=rng, ux=ux, uy=uy
+            cell_slds,
+            grp,
+            c,
+            tfs,
+            y,
+            x_samples,
+            slds_ws,
+            w_of;
+            rng=rng,
+            ux=ux,
+            uy=uy,
+            cell_ws=cell_ws,
         )
     end
     return nothing
@@ -1619,12 +1655,12 @@ Trial partition for an `SLDS`, or `nothing` when no regime declares
 `depends_on`. Throws when the regimes disagree about the partition.
 """
 function _slds_parameter_grouping(
-    slds::SLDS, ntrials::Int; depends_on::Union{Nothing,NamedTuple}=nothing
+    slds::SLDS, ntrials::Int; depends_on::Union{Nothing,NamedTuple}=nothing, y=nothing
 )
-    grp = parameter_grouping(slds.LDSs[1], ntrials; depends_on=depends_on)
+    grp = parameter_grouping(slds.LDSs[1], ntrials; depends_on=depends_on, y=y)
     grp === nothing && return nothing
     for k in 2:length(slds.LDSs)
-        grp_k = parameter_grouping(slds.LDSs[k], ntrials; depends_on=depends_on)
+        grp_k = parameter_grouping(slds.LDSs[k], ntrials; depends_on=depends_on, y=y)
         ok =
             grp_k !== nothing &&
             grp_k.nslots == grp.nslots &&
@@ -1662,6 +1698,87 @@ function _slds_cell_sldss(
 end
 
 """
+    _cell_slds_workspace(base, slds_c, tsteps) -> SLDSSmoothWorkspace
+
+One cell's SLDS workspace for a stitching fit. Reuses `base`'s
+block-tridiagonal storage and per-timestep log-density scratch — the O(D²·T)
+and O(T) parts, neither of which depends on `obs_dim` — and allocates fresh
+per-regime constants and Newton buffers at this cell's channel count.
+
+Safe for the same reason the LDS side is: cells run one at a time, and a cell's
+Hessian blocks are consumed before the next cell overwrites them.
+"""
+function _cell_slds_workspace(
+    base::SLDSSmoothWorkspace{T}, slds_c::SLDS, tsteps::Int
+) where {T<:Real}
+    lds1 = slds_c.LDSs[1]
+    latent_dim = lds1.latent_dim
+    obs_dim = lds1.obs_dim
+    K = length(slds_c.LDSs)
+    ws = SLDSSmoothWorkspace{T}(
+        base.btd,                                          # shared O(D²·T)
+        [SmoothConstants(T, latent_dim, obs_dim) for _ in 1:K],
+        NewtonBuffers(T, latent_dim, obs_dim, tsteps),
+        base.ll_tmp,                                       # shared, length T_max
+    )
+    refresh_slds_constants!(ws, slds_c)
+    return ws
+end
+
+"""
+    _slds_cell_workspaces(slds, cell_slds, base, tsteps) -> Vector or nothing
+
+One workspace per cell. When every cell has the parent's `obs_dim` — which
+includes every SLDS fit that is not stitching sessions of differing width —
+each entry is `base` itself, so nothing extra is allocated and the previous
+code path is what runs.
+"""
+function _slds_cell_workspaces(
+    slds::SLDS,
+    cell_slds::Union{Nothing,AbstractVector},
+    base::SLDSSmoothWorkspace{T},
+    tsteps::Int,
+) where {T<:Real}
+    cell_slds === nothing && return nothing
+    p0 = slds.LDSs[1].obs_dim
+    all(sc -> sc.LDSs[1].obs_dim == p0, cell_slds) && return [base for _ in cell_slds]
+    return [_cell_slds_workspace(base, sc, tsteps) for sc in cell_slds]
+end
+
+_slds_ws_for(::Nothing, base::SLDSSmoothWorkspace, ::Int) = base
+_slds_ws_for(cell_ws::AbstractVector, ::SLDSSmoothWorkspace, c::Int) = cell_ws[c]
+
+"""
+    _slds_cell_mstep_workspaces(slds, cell_slds, base, tsteps) -> Vector or nothing
+
+One M-step `SmoothWorkspace` per cell, or `nothing` when every cell has the
+parent's `obs_dim`. The regression buffers that fit `[Cₖ dₖ Dₖ]` and the
+residual scatter `R` accumulates into are both shaped by the cell's channel
+count; everything expensive is shared with `base`.
+"""
+function _slds_cell_mstep_workspaces(
+    slds::SLDS,
+    cell_slds::Union{Nothing,AbstractVector},
+    base::SmoothWorkspace{T},
+    tsteps::Int,
+) where {T<:Real}
+    cell_slds === nothing && return nothing
+    lds1 = slds.LDSs[1]
+    p0 = lds1.obs_dim
+    all(sc -> sc.LDSs[1].obs_dim == p0, cell_slds) && return nothing
+    return [
+        _cell_workspace(
+            base,
+            lds1.latent_dim,
+            sc.LDSs[1].obs_dim,
+            tsteps;
+            ux_dim=lds1.ux_dim,
+            uy_dim=lds1.uy_dim,
+        ) for sc in cell_slds
+    ]
+end
+
+"""
     _slds_smooth_cell!(cell_slds, grp, cell, tfs, y, x_samples, slds_ws, w_of; rng, ux, uy)
 
 Smooth every trial of one cell after refreshing the workspace's regime constants
@@ -1679,16 +1796,18 @@ function _slds_smooth_cell!(
     rng::AbstractRNG=Random.default_rng(),
     ux::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
     uy::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
+    cell_ws::Union{Nothing,AbstractVector}=nothing,
 ) where {T<:Real}
     slds_c = cell_slds[cell]
-    refresh_slds_constants!(slds_ws, slds_c)
+    ws_c = _slds_ws_for(cell_ws, slds_ws, cell)
+    refresh_slds_constants!(ws_c, slds_c)
     for trial in grp.cell_trials[cell]
         smooth!(
             slds_c,
             tfs[trial],
             y[trial],
             w_of(trial);
-            ws=slds_ws,
+            ws=ws_c,
             x_sample=x_samples[trial],
             rng=rng,
             ux=(ux === nothing ? nothing : ux[trial]),
@@ -1721,19 +1840,21 @@ function _estep_grouped!(
     seq_ends::AbstractVector{Int},
     ux::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
     uy::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
+    cell_ws::Union{Nothing,AbstractVector}=nothing,
 ) where {T<:Real}
     K = length(cell_slds[1].LDSs)
 
     for c in 1:grp.ncells
         slds_c = cell_slds[c]
-        refresh_slds_constants!(slds_ws, slds_c)
+        ws_c = _slds_ws_for(cell_ws, slds_ws, c)
+        refresh_slds_constants!(ws_c, slds_c)
         for trial in grp.cell_trials[c]
             t1, t2 = HMMs.seq_limits(seq_ends, trial)
             for k in 1:K
                 joint_loglikelihood!(
                     view(dl.logL, k, t1:t2),
-                    slds_ws,
-                    slds_ws.consts[k],
+                    ws_c,
+                    ws_c.consts[k],
                     slds_c.LDSs[k],
                     x_samples[trial],
                     y[trial],
@@ -1755,7 +1876,18 @@ function _estep_grouped!(
 
     for c in 1:grp.ncells
         _slds_smooth_cell!(
-            cell_slds, grp, c, tfs, y, x_samples, slds_ws, w_of; rng=rng, ux=ux, uy=uy
+            cell_slds,
+            grp,
+            c,
+            tfs,
+            y,
+            x_samples,
+            slds_ws,
+            w_of;
+            rng=rng,
+            ux=ux,
+            uy=uy,
+            cell_ws=cell_ws,
         )
     end
 
@@ -1802,11 +1934,13 @@ function _elbo_grouped!(
     seq_ends::AbstractVector{Int},
     ux::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
     uy::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
+    cell_ws::Union{Nothing,AbstractVector}=nothing,
 ) where {T<:Real}
     total_elbo = zero(T)
     for c in 1:grp.ncells
         slds_c = cell_slds[c]
-        refresh_slds_constants!(slds_ws, slds_c)
+        ws_c = _slds_ws_for(cell_ws, slds_ws, c)
+        refresh_slds_constants!(ws_c, slds_c)
         for trial in grp.cell_trials[c]
             t1, t2 = HMMs.seq_limits(seq_ends, trial)
             total_elbo += _slds_trial_elbo(
@@ -1814,7 +1948,7 @@ function _elbo_grouped!(
                 tfs[trial],
                 fb_storage,
                 y[trial],
-                slds_ws,
+                ws_c,
                 t1,
                 t2,
                 (ux === nothing ? nothing : ux[trial]),
@@ -1873,6 +2007,7 @@ function _mstep_grouped!(
     sws::SmoothWorkspace{T};
     obs_seq::AbstractVector,
     seq_ends::AbstractVector{Int},
+    cell_sws::Union{Nothing,AbstractVector}=nothing,
 ) where {T<:Real}
     K = length(cell_slds[1].LDSs)
     ncells = grp.ncells
@@ -1893,9 +2028,15 @@ function _mstep_grouped!(
     end
 
     unit_lds = [cell_slds[c].LDSs[k] for k in 1:K for c in 1:ncells]
+    #=
+    Sized from the unit's own LDS rather than cell 1's: under stitching each
+    cell contributes a different number of channels, so `obs_xy` / `obs_yy`
+    differ per unit. Identical to `lds1` whenever the widths agree.
+    =#
     unit_suf = [
-        _initialize_td_sufficient_statistics(T, lds1, cell_data[c].tsteps) for k in 1:K for
-        c in 1:ncells
+        _initialize_td_sufficient_statistics(
+            T, cell_slds[c].LDSs[k], cell_data[c].tsteps
+        ) for k in 1:K for c in 1:ncells
     ]
 
     for k in 1:K
@@ -1903,7 +2044,12 @@ function _mstep_grouped!(
             u = (k - 1) * ncells + c
             weights = [γ_view(k, n) for n in grp.cell_trials[c]]
             _aggregate_td_suff_stats_weighted!(
-                unit_suf[u], cell_tfs[c], unit_lds[u], cell_data[c], weights, sws
+                unit_suf[u],
+                cell_tfs[c],
+                unit_lds[u],
+                cell_data[c],
+                weights,
+                _unit_ws(cell_sws, sws, c),
             )
         end
 
@@ -1915,9 +2061,16 @@ function _mstep_grouped!(
         _grouped_update_Q!(ldss_k, sufs_k, grp.cell_slot[_G_Q], grp.cell_slot[_G_AB], sws)
 
         if lds1.obs_model isa GaussianObservationModel{T}
-            _grouped_update_C_d!(ldss_k, sufs_k, grp.cell_slot[_G_CD], sws, bufs)
+            _grouped_update_C_d!(
+                ldss_k, sufs_k, grp.cell_slot[_G_CD], sws, bufs; unit_sws=cell_sws
+            )
             _grouped_update_R!(
-                ldss_k, sufs_k, grp.cell_slot[_G_R], grp.cell_slot[_G_CD], sws
+                ldss_k,
+                sufs_k,
+                grp.cell_slot[_G_R],
+                grp.cell_slot[_G_CD],
+                sws;
+                unit_sws=cell_sws,
             )
         elseif lds1.obs_model isa PoissonObservationModel{T}
             # Non-conjugate: one LBFGS solve per `[C d D]` version, over the
@@ -1932,7 +2085,7 @@ function _mstep_grouped!(
                     ldss_k[units[1]],
                     TrialFilterSmooth([tfs[n] for n in trials]),
                     data.y[trials],
-                    [sws],
+                    [_unit_ws(cell_sws, sws, units[1])],
                     [γ_view(k, n) for n in trials];
                     uy=data.uy[trials],
                 )

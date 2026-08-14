@@ -595,15 +595,26 @@ function _grouped_update_Q!(
     return nothing
 end
 
+#=
+Which workspace a unit's emission regression runs on. Ungrouped and
+equal-width fits pass `nothing` and share one; a stitching fit passes one
+workspace per unit, since `[C d D]` and `R` are shaped by the unit's width.
+=#
+_unit_ws(::Nothing, sws::SmoothWorkspace, ::Int) = sws
+_unit_ws(v::AbstractVector, ::SmoothWorkspace, u::Int) = v[u]
+
 function _grouped_update_C_d!(
     ldss::AbstractVector,
     sufs::AbstractVector,
     slots::AbstractVector{Int},
     sws::SmoothWorkspace,
-    bufs::GroupedSufBuffers,
+    bufs::GroupedSufBuffers;
+    unit_sws::Union{Nothing,AbstractVector}=nothing,
 )
     for units in _units_by_slot(slots)
-        update_C_d!(ldss[units[1]], _pool_obs!(bufs, sufs, units), sws)
+        update_C_d!(
+            ldss[units[1]], _pool_obs!(bufs, sufs, units), _unit_ws(unit_sws, sws, units[1])
+        )
     end
     return nothing
 end
@@ -613,19 +624,22 @@ function _grouped_update_R!(
     sufs::AbstractVector,
     slots::AbstractVector{Int},
     slots_cd::AbstractVector{Int},
-    sws::SmoothWorkspace{T},
+    sws::SmoothWorkspace{T};
+    unit_sws::Union{Nothing,AbstractVector}=nothing,
 ) where {T<:Real}
     ldss[1].fit_bool[_G_R] || return nothing
-    S_res = sws.elbo.obs_work
     for units in _units_by_slot(slots)
+        # `obs_work` is (p, p), so the scratch has to be this slot's width.
+        ws = _unit_ws(unit_sws, sws, units[1])
+        S_res = ws.elbo.obs_work
         fill!(S_res, zero(T))
         N = zero(T)
         for u in units
-            _accumulate_obs_scatter!(S_res, ldss[u], sufs[u], sws)
+            _accumulate_obs_scatter!(S_res, ldss[u], sufs[u], _unit_ws(unit_sws, sws, u))
             N += T(sufs[u].obs_n)
         end
         for u in _distinct_by_slot(slots_cd, units)
-            _accumulate_cd_prior_scatter!(S_res, ldss[u], sws)
+            _accumulate_cd_prior_scatter!(S_res, ldss[u], _unit_ws(unit_sws, sws, u))
         end
         _finalize_R!(ldss[units[1]], S_res, N)
     end

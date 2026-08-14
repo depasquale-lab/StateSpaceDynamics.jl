@@ -226,3 +226,104 @@ function test_stitching_smooth_shapes()
     end
     return nothing
 end
+
+#=============================================================================
+SLDS
+=============================================================================#
+
+# An SLDS whose regimes share the latent chain and each carry a session-dependent
+# emission of the template width; the per-session widths come from the data.
+function st_slds(labels; p_template::Int=3, K::Int=2)
+    ldss = map(1:K) do k
+        sm = pd_state_model()
+        sm.A .= k == 1 ? [0.95 0.05; -0.05 0.95] : [0.60 0.30; -0.30 0.60]
+        om = st_obs_model(p_template; seed=10 + k)
+        om.depends_on = (C=labels, R=labels)
+        return pd_lds(sm, om)
+    end
+    return SLDS(; A=[0.9 0.1; 0.1 0.9], πₖ=[0.5, 0.5], LDSs=ldss)
+end
+
+function st_slds_two_session_data(; p1::Int=3, p2::Int=4, ntrials::Int=3, tsteps::Int=30)
+    labels = vcat(fill(:s1, ntrials), fill(:s2, ntrials))
+    t1 = st_slds(labels; p_template=p1)
+    t2 = st_slds(labels; p_template=p2)
+    _, _, y1 = rand(StableRNG(31), t1, fill(tsteps, ntrials))
+    _, _, y2 = rand(StableRNG(32), t2, fill(tsteps, ntrials))
+    return vcat(y1, y2), labels, p1, p2
+end
+
+"""
+Every regime of a stitched SLDS gets that session's width, and the trial
+partition is still shared across regimes.
+"""
+function test_stitching_slds_shapes()
+    y, labels, p1, p2 = st_slds_two_session_data()
+    slds = st_slds(labels; p_template=p1)
+
+    grp = SSD._slds_parameter_grouping(slds, length(y); y=y)
+    @test grp !== nothing
+    @test grp.ncells == 2
+
+    cells = SSD._slds_cell_sldss(slds, grp)
+    for sc in cells
+        widths = unique([lds.obs_dim for lds in sc.LDSs])
+        # All regimes of one cell observe the same session, hence one width.
+        @test length(widths) == 1
+    end
+    @test sort([sc.LDSs[1].obs_dim for sc in cells]) == sort([p1, p2])
+    return nothing
+end
+
+"""
+The per-cell SLDS workspace shares the expensive storage and sizes the rest to
+the cell; an equal-width model gets the base workspace itself.
+"""
+function test_slds_cell_workspace_sharing()
+    y, labels, p1, p2 = st_slds_two_session_data()
+    slds = st_slds(labels; p_template=p1)
+    grp = SSD._slds_parameter_grouping(slds, length(y); y=y)
+    cells = SSD._slds_cell_sldss(slds, grp)
+
+    base = SSD.SLDSSmoothWorkspace(Float64, slds, 30)
+    ws = SSD._slds_cell_workspaces(slds, cells, base, 30)
+    @test ws !== nothing
+    for (c, w) in enumerate(ws)
+        @test w.btd === base.btd          # shared O(D²·T)
+        @test w.ll_tmp === base.ll_tmp    # shared O(T)
+        p = cells[c].LDSs[1].obs_dim
+        @test all(cc -> size(cc.tmp_RC, 1) == p, w.consts)
+    end
+
+    # Equal widths: the base workspace is handed back unchanged.
+    uniform = SSD._slds_cell_workspaces(slds, [cells[1], cells[1]], base, 30)
+    @test all(w -> w === base, uniform)
+    return nothing
+end
+
+"""
+End-to-end stitched SLDS fit: finite ELBOs and per-session emission widths.
+"""
+function test_stitching_slds_fit()
+    y, labels, p1, p2 = st_slds_two_session_data(; ntrials=3, tsteps=30)
+    slds = st_slds(labels; p_template=p1)
+
+    elbos = fit!(slds, y; max_iter=5, progress=false, rng=StableRNG(99))
+    @test length(elbos) == 5
+    @test all(isfinite, elbos)
+
+    for k in 1:2
+        om = slds.LDSs[k].obs_model
+        widths = sort([size(v.C, 1) for v in om.variants])
+        @test widths == sort([p1, p2])
+        for v in om.variants
+            @test all(isfinite, v.C)
+            @test isposdef(Symmetric(v.R))
+        end
+    end
+
+    # The discrete chain and the initial state stay shared.
+    @test slds.LDSs[2].state_model.x0 ≈ slds.LDSs[1].state_model.x0
+    @test size(slds.A) == (2, 2)
+    return nothing
+end

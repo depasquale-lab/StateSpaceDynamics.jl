@@ -313,6 +313,12 @@ using SSDTest
                 test_stitching_fit_runs_and_improves()
                 test_stitching_smooth_shapes()
             end
+
+            @testset "SLDS" begin
+                test_stitching_slds_shapes()
+                test_slds_cell_workspace_sharing()
+                test_stitching_slds_fit()
+            end
         end
     end
 
