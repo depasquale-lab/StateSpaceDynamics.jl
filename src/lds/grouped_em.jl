@@ -32,6 +32,16 @@ struct GroupedSufBuffers{T<:Real}
     init_yy::Matrix{T}
     dyn_xx::Matrix{T}
     obs_xx::Matrix{T}
+    #=
+    Pooling writes `obs_xy`, whose column count is the slot's channel count. A
+    stitching fit has more than one of those, so the odd-width scratch is built
+    on first use and cached for the rest of the fit — bounded by the number of
+    distinct widths, and never re-allocated per iteration. Stays empty whenever
+    every slot has the model's own `obs_dim`.
+    =#
+    obs_alt::Dict{Int,SufficientStatistics{T}}
+    proto::LinearDynamicalSystem{T}
+    tsteps::Vector{Int}
 end
 
 function GroupedSufBuffers(
@@ -45,7 +55,26 @@ function GroupedSufBuffers(
         zeros(T, D, D),
         zeros(T, dyn_reg_dim, dyn_reg_dim),
         zeros(T, obs_reg_dim, obs_reg_dim),
+        Dict{Int,SufficientStatistics{T}}(),
+        lds,
+        collect(tsteps_per_trial),
     )
+end
+
+#=
+The pooling target for a slot of width `p`: the preallocated one when it
+already matches, otherwise this fit's cached scratch for that width.
+=#
+function _obs_pool_target(bufs::GroupedSufBuffers{T}, p::Int) where {T<:Real}
+    size(bufs.suf.obs_xy, 2) == p && return bufs.suf
+    return get!(bufs.obs_alt, p) do
+        lds = bufs.proto
+        om = lds.obs_model
+        wide = LinearDynamicalSystem{T,typeof(lds.state_model),typeof(om)}(
+            lds.state_model, om, lds.latent_dim, p, lds.ux_dim, lds.uy_dim, lds.fit_bool
+        )
+        _initialize_td_sufficient_statistics(T, wide, bufs.tsteps)
+    end
 end
 
 #=
@@ -98,7 +127,7 @@ function _pool_obs!(
     bufs::GroupedSufBuffers{T}, sufs::AbstractVector, units::AbstractVector{Int}
 ) where {T<:Real}
     length(units) == 1 && return sufs[units[1]]
-    suf = bufs.suf
+    suf = _obs_pool_target(bufs, size(sufs[units[1]].obs_xy, 2))
     n = zero(T)
     fill!(suf.obs_xy, zero(T))
     XX = bufs.obs_xx
@@ -187,11 +216,12 @@ struct GroupedFitState{T<:Real,L,DT}
     sufs::Vector{SufficientStatistics{T}}
     cell_consts::Vector{CellConstBlocks{T}}
     cell_batched::Vector{Union{Nothing,BatchedBuffers{T}}}
+    cell_sws::Vector{Vector{SmoothWorkspace{T}}}
     bufs::GroupedSufBuffers{T}
 end
 
 """
-    _grouped_fit_state(lds, data, grp, sws; batched=false)
+    _grouped_fit_state(lds, data, grp, sws_pool; batched=false)
 
 Build the per-cell fit state. `batched=true` additionally allocates each cell's
 BLAS-3 mean-pass buffers (Gaussian path only, and only for cells whose trials
@@ -202,7 +232,7 @@ function _grouped_fit_state(
     lds::LinearDynamicalSystem{T,S,O},
     data::Data{T},
     grp::ParameterGrouping,
-    sws::SmoothWorkspace{T};
+    sws_pool::Vector{SmoothWorkspace{T}};
     batched::Bool=false,
 ) where {T<:Real,S<:AbstractStateModel{T},O<:AbstractObservationModel{T}}
     ncells = grp.ncells
@@ -253,7 +283,15 @@ function _grouped_fit_state(
         _initialize_td_sufficient_statistics(T, cell_lds[c], cell_data[c].tsteps) for
         c in 1:ncells
     ]
-    cell_consts = [_cache_const_blocks!(sws, cell_lds[c], cell_data[c]) for c in 1:ncells]
+    #=
+    Each cell's constants are cached from that cell's own workspace, whose
+    aggregator blocks are already the right width. With uniform `obs_dim` every
+    cell aliases the shared pool, so this is the previous behaviour exactly.
+    =#
+    cell_sws = _cell_sws_pools(lds, data, grp, cell_lds, sws_pool)
+    cell_consts = [
+        _cache_const_blocks!(cell_sws[c][1], cell_lds[c], cell_data[c]) for c in 1:ncells
+    ]
 
     return GroupedFitState(
         cell_lds,
@@ -263,20 +301,114 @@ function _grouped_fit_state(
         sufs,
         cell_consts,
         cell_batched,
+        cell_sws,
         GroupedSufBuffers(T, lds, data.tsteps),
     )
 end
 
 """
-    _prepare_cell!(sws, state, cell)
+    _cell_workspace(base, latent_dim, obs_dim, tsteps; ux_dim, uy_dim)
 
-Point the shared workspace at one cell: swap in that cell's batched buffers and
-restore its aggregator constants.
+A `SmoothWorkspace` for one cell of a stitching fit, reusing every expensive
+buffer in `base` and allocating only the ones whose shape depends on the cell's
+channel count.
+
+The shared storage is the O(D²·T) part — the block-tridiagonal solver and the
+two smoothed-covariance caches — and it is safe to share for exactly the reason
+the pool itself is: a cell's covariances are consumed by its own aggregation
+before the next cell runs. What cannot be shared is anything shaped by
+`obs_dim`, since under stitching that differs per session.
+
+These are built once per fit, not per iteration, so a long fit allocates no
+more than a short one.
 """
-function _prepare_cell!(sws::SmoothWorkspace, state::GroupedFitState, cell::Int)
-    sws.batched = state.cell_batched[cell]
-    _restore_const_blocks!(sws, state.cell_consts[cell])
-    return sws
+function _cell_workspace(
+    base::SmoothWorkspace{T},
+    latent_dim::Int,
+    obs_dim::Int,
+    tsteps::Int;
+    ux_dim::Int=0,
+    uy_dim::Int=0,
+) where {T<:Real}
+    dyn_reg_dim = latent_dim + 1 + ux_dim
+    obs_reg_dim = latent_dim + 1 + uy_dim
+    agg = TDAggBuffers{T}(
+        base.agg.p_smooth_shared,                  # shared (D, D, T)
+        base.agg.p_smooth_tt1_shared,              # shared (D, D, T)
+        zeros(T, 1, latent_dim),                   # init_xy
+        zeros(T, dyn_reg_dim, latent_dim),         # dyn_xy
+        zeros(T, obs_reg_dim, obs_dim),            # obs_xy
+        zeros(T, latent_dim, latent_dim),          # sum_smooth_cov_prev
+        zeros(T, latent_dim, latent_dim),          # sum_smooth_cov_next
+        zeros(T, latent_dim, latent_dim),          # sum_smooth_cov_all
+        zeros(T, latent_dim, latent_dim),          # sum_smooth_xcov
+        zeros(T, obs_dim, obs_dim),                # obs_yy_const
+        zeros(T, obs_reg_dim, obs_dim),            # obs_xy_const
+        zeros(T, obs_reg_dim, obs_reg_dim),        # obs_xx_const
+        zeros(T, dyn_reg_dim, dyn_reg_dim),        # dyn_xx_const
+    )
+    return SmoothWorkspace{T}(
+        base.btd,                                  # shared block-tridiagonal storage
+        SmoothConstants(T, latent_dim, obs_dim),
+        NewtonBuffers(T, latent_dim, obs_dim, tsteps),
+        RegressionBuffers(T, latent_dim, obs_dim; ux_dim=ux_dim, uy_dim=uy_dim),
+        ElboBuffers(T, latent_dim, obs_dim),
+        agg,
+        nothing,                                   # set by `_prepare_cell!`
+    )
+end
+
+"""
+    _cell_sws_pools(lds, data, grp, cell_lds, sws_pool)
+
+One workspace pool per cell, parallel to `sws_pool`.
+
+When every cell has the parent's `obs_dim` — which includes every fit that does
+not use `depends_on` at all, and every grouped fit whose sessions have the same
+width — each cell simply aliases `sws_pool`, so nothing extra is allocated and
+the code path is the one that existed before stitching. Only a genuinely ragged
+fit builds per-cell workspaces, and even then the O(D²·T) storage is shared.
+"""
+function _cell_sws_pools(
+    lds::LinearDynamicalSystem{T},
+    data::Data{T},
+    grp::ParameterGrouping,
+    cell_lds::AbstractVector,
+    sws_pool::Vector{SmoothWorkspace{T}},
+) where {T<:Real}
+    all(c -> cell_lds[c].obs_dim == lds.obs_dim, 1:(grp.ncells)) &&
+        return [sws_pool for _ in 1:(grp.ncells)]
+
+    T_max = maximum(data.tsteps)
+    return [
+        [
+            _cell_workspace(
+                base,
+                lds.latent_dim,
+                cell_lds[c].obs_dim,
+                T_max;
+                ux_dim=lds.ux_dim,
+                uy_dim=lds.uy_dim,
+            ) for base in sws_pool
+        ] for c in 1:(grp.ncells)
+    ]
+end
+
+"""
+    _prepare_cell!(sws_pool, state, cell) -> Vector{SmoothWorkspace}
+
+Point the workspaces at one cell: swap in that cell's batched buffers and
+restore its aggregator constants. Returns the pool the cell's E-step should
+run on, which is `sws_pool` itself unless the fit stitches sessions of
+differing width.
+"""
+function _prepare_cell!(
+    sws_pool::Vector{SmoothWorkspace{T}}, state::GroupedFitState, cell::Int
+) where {T<:Real}
+    pool = state.cell_sws[cell]
+    pool[1].batched = state.cell_batched[cell]
+    _restore_const_blocks!(pool[1], state.cell_consts[cell])
+    return pool
 end
 
 """
@@ -322,12 +454,14 @@ function _grouped_smooth(
     xs = Vector{Matrix{T}}(undef, ntrials)
     Ps = Vector{Array{T,3}}(undef, ntrials)
     sws_pool = _grouped_sws_pool(lds, data)
+    cell_lds = _cell_ldss(lds, grp)
+    cell_pools = _cell_sws_pools(lds, data, grp, cell_lds, sws_pool)
 
     for c in 1:grp.ncells
         trials = grp.cell_trials[c]
         cell_data = _subset_data(data, trials)
-        tfs = initialize_FilterSmooth(lds, cell_data.tsteps)::TrialFilterSmooth{T}
-        smooth!(_cell_lds(lds, grp, c), tfs, cell_data, sws_pool)
+        tfs = initialize_FilterSmooth(cell_lds[c], cell_data.tsteps)::TrialFilterSmooth{T}
+        smooth!(cell_lds[c], tfs, cell_data, cell_pools[c])
         for (i, n) in enumerate(trials)
             xs[n] = copy(tfs[i].x_smooth)
             Ps[n] = copy(tfs[i].p_smooth)

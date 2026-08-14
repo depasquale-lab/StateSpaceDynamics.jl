@@ -789,7 +789,7 @@ function elbo(
     grp = parameter_grouping(lds, length(data.y); depends_on=depends_on, y=data.y)
     if grp !== nothing
         sws_pool = _grouped_sws_pool(lds, data)
-        state = _grouped_fit_state(lds, data, grp, sws_pool[1]; batched=true)
+        state = _grouped_fit_state(lds, data, grp, sws_pool; batched=true)
         return _grouped_estep_elbo_gaussian!(state, grp, sws_pool)
     end
     tfs = initialize_FilterSmooth(lds, data.tsteps)::TrialFilterSmooth{T}
@@ -907,17 +907,17 @@ function _grouped_estep_elbo_gaussian!(
     for c in 1:grp.ncells
         lds_c = state.cell_lds[c]
         suf_c = state.sufs[c]
-        _prepare_cell!(sws_pool[1], state, c)
-        estep!(lds_c, suf_c, state.cell_tfs[c], state.cell_data[c], sws_pool)
+        cell_pool = _prepare_cell!(sws_pool, state, c)
+        estep!(lds_c, suf_c, state.cell_tfs[c], state.cell_data[c], cell_pool)
 
         #=
-        `estep!` leaves the cell's constants on `sws_pool[1]` already, but the
+        `estep!` leaves the cell's constants on `cell_pool[1]` already, but the
         parallel per-trial fallback reaches that state through a task, so
         recompute explicitly rather than rely on which chunk ran last.
         =#
-        compute_smooth_constants!(sws_pool[1], lds_c)
-        total += Q_state!(sws_pool[1], lds_c, suf_c)
-        total += Q_obs!(sws_pool[1], lds_c, suf_c)
+        compute_smooth_constants!(cell_pool[1], lds_c)
+        total += Q_state!(cell_pool[1], lds_c, suf_c)
+        total += Q_obs!(cell_pool[1], lds_c, suf_c)
         for fs in state.cell_tfs[c].FilterSmooths
             total += fs.entropy
         end
@@ -944,7 +944,7 @@ function _fit_tridiag_grouped!(
     progress::Bool=true,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     sws_pool = _grouped_sws_pool(lds, data)
-    state = _grouped_fit_state(lds, data, grp, sws_pool[1]; batched=true)
+    state = _grouped_fit_state(lds, data, grp, sws_pool; batched=true)
     elbos = Vector{T}(undef, max_iter)
 
     prog = if progress
