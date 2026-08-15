@@ -132,7 +132,7 @@ function joint_loglikelihood!(
     y::AbstractMatrix{T0},
     ux::Union{Nothing,AbstractMatrix}=nothing,
     uy::Union{Nothing,AbstractMatrix}=nothing,
-) where {T<:Real,T0<:Real,S<:GaussianStateModel{T0},O<:AbstractObservationModel{T0}}
+) where {T<:Real,T0<:Real,S<:AbstractStateModel,O<:AbstractObservationModel{T0}}
     tsteps = size(y, 2)
     @assert length(ll) == tsteps
 
