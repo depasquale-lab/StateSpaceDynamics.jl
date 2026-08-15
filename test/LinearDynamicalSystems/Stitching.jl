@@ -68,11 +68,21 @@ function test_stitching_variant_shapes()
     @test grp !== nothing
     @test grp.ncells == 2
 
+    #=
+    `variants` is indexed by the Cartesian product of every group's slots, so a
+    two-session model with both `:C` and `:R` varying stores four entries. Only
+    the combinations an actual cell uses are meaningful; the cross terms pair
+    one session's `C` with another's `R` and are never reached, since
+    `_cell_lds` indexes `grp.cell_obs`.
+    =#
     variants = lds.obs_model.variants
-    widths = sort([size(v.C, 1) for v in variants])
+    occupied = unique(grp.cell_obs)
+    @test length(occupied) == 2
+    widths = sort([size(variants[i].C, 1) for i in occupied])
     @test widths == sort([p1, p2])
 
-    for v in variants
+    for i in occupied
+        v = variants[i]
         p = size(v.C, 1)
         @test size(v.C, 2) == ST_LATENT_DIM
         @test length(v.d) == p
@@ -118,11 +128,11 @@ function test_stitching_data_validation()
     y, session, p1, _ = st_two_session_data()
 
     plain = st_grouped_lds(p1)
-    @test_throws SSD.DimensionMismatchError Data(plain, y)
+    @test_throws SSD.DimensionMismatchError SSD.Data(plain, y)
 
     grouped = st_grouped_lds(p1)
     grouped.obs_model.depends_on = (C=session, R=session)
-    data = Data(grouped, y)
+    data = SSD.Data(grouped, y)
     @test length(data.y) == length(y)
     return nothing
 end
@@ -148,7 +158,7 @@ function test_uniform_obs_dim_is_unchanged()
     # Slot 1 shares storage with the parent, as before this feature.
     @test any(v -> v.C === lds.obs_model.C, variants)
 
-    data = Data(lds, y)
+    data = SSD.Data(lds, y)
     pool = SSD._grouped_sws_pool(lds, data)
     cell_lds = SSD._cell_ldss(lds, grp)
     pools = SSD._cell_sws_pools(lds, data, grp, cell_lds, pool)
@@ -190,7 +200,7 @@ function test_grouped_pool_sized_at_widest_session()
     y, session, p1, p2 = st_two_session_data()
     lds = st_grouped_lds(p1)
     lds.obs_model.depends_on = (C=session, R=session)
-    data = Data(lds, y)
+    data = SSD.Data(lds, y)
     pool = SSD._grouped_sws_pool(lds, data)
     @test size(pool[1].agg.obs_yy_const, 1) == max(p1, p2)
     return nothing
@@ -209,9 +219,13 @@ function test_stitching_fit_runs_and_improves()
     @test all(isfinite, elbos)
     @test pd_is_monotone(elbos)
 
+    grp = SSD.parameter_grouping(lds, length(y); y=y)
     variants = lds.obs_model.variants
-    @test sort([size(v.C, 1) for v in variants]) == sort([p1, p2])
-    for v in variants
+    occupied = unique(grp.cell_obs)
+    @test sort([size(variants[i].C, 1) for i in occupied]) == sort([p1, p2])
+    for i in occupied
+        v = variants[i]
+        @test size(v.R, 1) == size(v.C, 1)
         @test all(isfinite, v.C)
         @test all(isfinite, v.R)
         @test isposdef(Symmetric(v.R))
@@ -328,11 +342,15 @@ function test_stitching_slds_fit()
     @test length(elbos) == 5
     @test all(isfinite, elbos)
 
+    grp = SSD._slds_parameter_grouping(slds, length(y); y=y)
+    occupied = unique(grp.cell_obs)
     for k in 1:2
         om = slds.LDSs[k].obs_model
-        widths = sort([size(v.C, 1) for v in om.variants])
+        widths = sort([size(om.variants[i].C, 1) for i in occupied])
         @test widths == sort([p1, p2])
-        for v in om.variants
+        for i in occupied
+            v = om.variants[i]
+            @test size(v.R, 1) == size(v.C, 1)
             @test all(isfinite, v.C)
             @test isposdef(Symmetric(v.R))
         end

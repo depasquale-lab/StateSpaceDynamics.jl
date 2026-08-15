@@ -316,6 +316,14 @@ error.
 
 The dimensions come from the data: each slot's `obs_dim` is the row count of
 the trials assigned to it. The latent dimension stays shared.
+
+`variants` is indexed by the Cartesian product of every group's slots, so with
+both `:C` and `:R` varying over two sessions it holds four entries while only
+two describe a real cell. Under stitching the two cross terms pair one
+session's `C` with another session's `R` and are therefore inconsistent — but
+they are unreachable: `_cell_lds` only ever indexes `grp.cell_obs`, and both
+groups take their width from the same per-trial data, so every combination an
+occupied cell names has matching `C` and `R` widths.
 =============================================================================#
 
 """
