@@ -60,17 +60,14 @@ function _sample_trial!(
     # Initial state. The observation at t=1 includes the obs-input term D·v_1
     # when uy_trial has nonzero rows; zero-row matmul is a no-op.
     x_trial[:, 1] = rand(rng, MvNormal(state_params.x0, state_params.P0))
-    y_trial[:, 1] =
-        rand.(
-            rng,
-            Poisson.(
-                exp.(
-                    obs_params.C * x_trial[:, 1] +
-                    obs_params.d +
-                    obs_params.D * uy_trial[:, 1]
-                )
+    y_trial[:, 1] = rand.(
+        rng,
+        Poisson.(
+            exp.(
+                obs_params.C * x_trial[:, 1] + obs_params.d + obs_params.D * uy_trial[:, 1]
             ),
-        )
+        ),
+    )
 
     # Subsequent states. The dynamics input B·u_{t-1} kicks the state forward.
     for t in 2:tsteps
@@ -83,17 +80,16 @@ function _sample_trial!(
                 state_params.Q,
             ),
         )
-        y_trial[:, t] =
-            rand.(
-                rng,
-                Poisson.(
-                    exp.(
-                        obs_params.C * x_trial[:, t] +
-                        obs_params.d +
-                        obs_params.D * uy_trial[:, t]
-                    )
+        y_trial[:, t] = rand.(
+            rng,
+            Poisson.(
+                exp.(
+                    obs_params.C * x_trial[:, t] +
+                    obs_params.d +
+                    obs_params.D * uy_trial[:, t],
                 ),
-            )
+            ),
+        )
     end
 end
 

@@ -88,7 +88,6 @@ end
 Base.length(f::TrialFilterSmooth) = length(f.FilterSmooths)
 
 mutable struct SufficientStatistics{T<:Real}
-
     #=
     initial conditions. `init_n` is the effective sample count (e.g.
     `ntrials` for unweighted fits; `Σₙ w[n,1]` for SLDS-style soft

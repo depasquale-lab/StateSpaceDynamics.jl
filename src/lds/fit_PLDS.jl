@@ -140,7 +140,7 @@ function joint_loglikelihood(
         for n in chunk
             acc += sum(joint_loglikelihood(plds, x[n], y[n]))
         end
-        acc
+        return acc
     end
 end
 
@@ -967,8 +967,7 @@ function _grouped_estep_elbo_poisson!(
     max_iter::Int=20,
     tol::T=T(1e-6),
 ) where {
-    T<:Real,
-    L<:LinearDynamicalSystem{T,<:GaussianStateModel{T},<:PoissonObservationModel{T}},
+    T<:Real,L<:LinearDynamicalSystem{T,<:GaussianStateModel{T},<:PoissonObservationModel{T}}
 }
     total = zero(T)
     for c in 1:grp.ncells
@@ -1012,8 +1011,11 @@ function _grouped_update_observation_model!(
         end
         sort!(trials)
         tfs = TrialFilterSmooth([state.tfs_all[n] for n in trials])
+
+        # solve using the pooled workspace for each cell
+        cell_pool = _prepare_cell!(sws_pool, state, units[1])
         update_observation_model!(
-            state.cell_lds[units[1]], tfs, data.y[trials], sws_pool; uy=data.uy[trials]
+            state.cell_lds[units[1]], tfs, data.y[trials], cell_pool; uy=data.uy[trials]
         )
     end
     return nothing

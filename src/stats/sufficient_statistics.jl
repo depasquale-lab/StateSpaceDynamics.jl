@@ -46,7 +46,7 @@ function sufficient_statistics!(tfs::TrialFilterSmooth{T}) where {T<:Real}
         sufficient_statistics!(tfs[1])
     else
         tforeach(1:ntrials) do i
-            sufficient_statistics!(tfs[i])
+            return sufficient_statistics!(tfs[i])
         end
     end
 end

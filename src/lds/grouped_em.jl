@@ -73,7 +73,7 @@ function _obs_pool_target(bufs::GroupedSufBuffers{T}, p::Int) where {T<:Real}
         wide = LinearDynamicalSystem{T,typeof(lds.state_model),typeof(om)}(
             lds.state_model, om, lds.latent_dim, p, lds.ux_dim, lds.uy_dim, lds.fit_bool
         )
-        _initialize_td_sufficient_statistics(T, wide, bufs.tsteps)
+        return _initialize_td_sufficient_statistics(T, wide, bufs.tsteps)
     end
 end
 
@@ -681,9 +681,7 @@ function _grouped_gaussian_obs_mstep!(
     unit_sws::Union{Nothing,AbstractVector}=nothing,
 )
     _grouped_update_C_d!(ldss, sufs, slots[_G_CD], sws, bufs; unit_sws=unit_sws)
-    _grouped_update_R!(
-        ldss, sufs, slots[_G_R], slots[_G_CD], sws; unit_sws=unit_sws
-    )
+    _grouped_update_R!(ldss, sufs, slots[_G_R], slots[_G_CD], sws; unit_sws=unit_sws)
     return nothing
 end
 

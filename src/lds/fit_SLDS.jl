@@ -297,17 +297,16 @@ function _sample_continuous_given_discrete!(
     # Initial state
     k1 = z_trial[1]
     x_trial[:, 1] = rand(rng, MvNormal(state_params[k1].x0, state_params[k1].P0))
-    y_trial[:, 1] =
-        rand.(
-            rng,
-            Poisson.(
-                exp.(
-                    obs_params[k1].C * x_trial[:, 1] +
-                    obs_params[k1].d +
-                    obs_params[k1].D * uy_trial[:, 1]
-                )
+    y_trial[:, 1] = rand.(
+        rng,
+        Poisson.(
+            exp.(
+                obs_params[k1].C * x_trial[:, 1] +
+                obs_params[k1].d +
+                obs_params[k1].D * uy_trial[:, 1],
             ),
-        )
+        ),
+    )
 
     # Subsequent states
     for t in 2:tsteps
@@ -323,17 +322,16 @@ function _sample_continuous_given_discrete!(
             ),
         )
 
-        y_trial[:, t] =
-            rand.(
-                rng,
-                Poisson.(
-                    exp.(
-                        obs_params[k_curr].C * x_trial[:, t] +
-                        obs_params[k_curr].d +
-                        obs_params[k_curr].D * uy_trial[:, t]
-                    )
+        y_trial[:, t] = rand.(
+            rng,
+            Poisson.(
+                exp.(
+                    obs_params[k_curr].C * x_trial[:, t] +
+                    obs_params[k_curr].d +
+                    obs_params[k_curr].D * uy_trial[:, t],
                 ),
-            )
+            ),
+        )
     end
 end
 
@@ -1469,7 +1467,6 @@ function fit!(
     )
 
     for iter in 1:max_iter
-
         #=
         E-step: fill q(z) from the current samples, run forward-backward,
         re-smooth q(x), and draw the next samples for the following iteration.
@@ -1535,7 +1532,7 @@ function fit!(
                 seq_ends=seq_ends,
                 ux=ux_seq,
                 uy=uy_seq,
-            cell_ws=cell_ws,
+                cell_ws=cell_ws,
             )
 
             elbos[iter] = _elbo_grouped!(
@@ -1548,7 +1545,7 @@ function fit!(
                 seq_ends=seq_ends,
                 ux=ux_seq,
                 uy=uy_seq,
-            cell_ws=cell_ws,
+                cell_ws=cell_ws,
             )
 
             _mstep_grouped!(
@@ -1691,9 +1688,8 @@ function _slds_cell_sldss(
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel,TM,ISV}
     K = length(slds.LDSs)
     return [
-        SLDS{T,S,O,TM,ISV}(
-            slds.A, slds.πₖ, [_cell_lds(slds.LDSs[k], grp, c) for k in 1:K]
-        ) for c in 1:grp.ncells
+        SLDS{T,S,O,TM,ISV}(slds.A, slds.πₖ, [_cell_lds(slds.LDSs[k], grp, c) for k in 1:K])
+        for c in 1:grp.ncells
     ]
 end
 
@@ -2017,9 +2013,7 @@ function _mstep_grouped!(
     StatsAPI.fit!(dl, fb_storage, obs_seq; seq_ends=seq_ends)
 
     cell_data = [_subset_data(data, grp.cell_trials[c]) for c in 1:ncells]
-    cell_tfs = [
-        TrialFilterSmooth([tfs[n] for n in grp.cell_trials[c]]) for c in 1:ncells
-    ]
+    cell_tfs = [TrialFilterSmooth([tfs[n] for n in grp.cell_trials[c]]) for c in 1:ncells]
     bufs = GroupedSufBuffers(T, lds1, data.tsteps)
 
     function γ_view(k, trial)
@@ -2034,9 +2028,8 @@ function _mstep_grouped!(
     differ per unit. Identical to `lds1` whenever the widths agree.
     =#
     unit_suf = [
-        _initialize_td_sufficient_statistics(
-            T, cell_slds[c].LDSs[k], cell_data[c].tsteps
-        ) for k in 1:K for c in 1:ncells
+        _initialize_td_sufficient_statistics(T, cell_slds[c].LDSs[k], cell_data[c].tsteps)
+        for k in 1:K for c in 1:ncells
     ]
 
     for k in 1:K
