@@ -499,6 +499,39 @@ end
 _seed_entry(::Nothing, ::Symbol) = nothing
 _seed_entry(seed, name::Symbol) = get(seed, name, nothing)
 
+"""
+    _slot_dim(spec, slot, fallback, seed) -> Int
+
+The channel count one observation slot's parameters get. A dataset pins it
+whenever there is one (`spec`), and that always wins. With no dataset in hand
+the caller's seed is the only statement of how many channels that group has, so
+it settles the size instead; the template's width is the fallback, as before.
+
+This is what lets a group's emission be read back — `group_parameter(om, :C,
+label)` — between `set_group_seeds!` and the first fit. Without it a seed
+narrower or wider than the template would be rejected as the wrong shape for a
+slot the template had sized, even though the seed is precisely the thing that
+knows better.
+"""
+function _slot_dim(spec, slot::Int, fallback::Int, seed)
+    spec === nothing || return _spec_dim(spec, slot, fallback)
+    seed === nothing && return fallback
+    C = _seed_entry(seed, :C)
+    C === nothing || return size(C, 1)
+    d = _seed_entry(seed, :d)
+    d === nothing || return length(d)
+    D = _seed_entry(seed, :D)
+    D === nothing || return size(D, 1)
+    return fallback
+end
+
+"""The channel count an `:R` slot gets: as `_slot_dim`, read off the `:R` seed."""
+function _slot_dim_R(spec, slot::Int, fallback::Int, seed)
+    spec === nothing || return _spec_dim(spec, slot, fallback)
+    R = _seed_entry(seed, :R)
+    return R === nothing ? fallback : size(R, 1)
+end
+
 """Copy a seed into a slot's storage, refusing one that is the wrong shape."""
 function _apply_seed!(out, supplied, name::Symbol, slot::Int)
     size(out) == size(supplied) || throw(
@@ -656,20 +689,14 @@ function _build_variants!(
     end
 
     p0 = size(om.C, 1)
-    Cs = [
-        _seed_slot_C(om.C, i, _spec_dim(spec_C, i, p0), _group_seed(om, dep, 1, i)) for
-        i in 1:(dep.nslots[1])
-    ]
-    ds = [
-        _seed_slot_d(om.d, i, _spec_dim(spec_C, i, p0), spec_C, _group_seed(om, dep, 1, i))
-        for i in 1:(dep.nslots[1])
-    ]
-    Ds = [
-        _seed_slot_D(om.D, i, _spec_dim(spec_C, i, p0), _group_seed(om, dep, 1, i)) for
-        i in 1:(dep.nslots[1])
-    ]
+    seeds_C = [_group_seed(om, dep, 1, i) for i in 1:(dep.nslots[1])]
+    dims_C = [_slot_dim(spec_C, i, p0, seeds_C[i]) for i in 1:(dep.nslots[1])]
+    Cs = [_seed_slot_C(om.C, i, dims_C[i], seeds_C[i]) for i in 1:(dep.nslots[1])]
+    ds = [_seed_slot_d(om.d, i, dims_C[i], spec_C, seeds_C[i]) for i in 1:(dep.nslots[1])]
+    Ds = [_seed_slot_D(om.D, i, dims_C[i], seeds_C[i]) for i in 1:(dep.nslots[1])]
+    seeds_R = [_group_seed(om, dep, 2, j) for j in 1:(dep.nslots[2])]
     Rs = [
-        _seed_slot_R(om.R, j, _spec_dim(spec_R, j, p0), spec_R, _group_seed(om, dep, 2, j))
+        _seed_slot_R(om.R, j, _slot_dim_R(spec_R, j, p0, seeds_R[j]), spec_R, seeds_R[j])
         for j in 1:(dep.nslots[2])
     ]
 
@@ -704,18 +731,11 @@ function _build_variants!(
     end
 
     p0 = size(om.C, 1)
-    Cs = [
-        _seed_slot_C(om.C, i, _spec_dim(spec_C, i, p0), _group_seed(om, dep, 1, i)) for
-        i in 1:(dep.nslots[1])
-    ]
-    ds = [
-        _seed_slot_d(om.d, i, _spec_dim(spec_C, i, p0), spec_C, _group_seed(om, dep, 1, i))
-        for i in 1:(dep.nslots[1])
-    ]
-    Ds = [
-        _seed_slot_D(om.D, i, _spec_dim(spec_C, i, p0), _group_seed(om, dep, 1, i)) for
-        i in 1:(dep.nslots[1])
-    ]
+    seeds_C = [_group_seed(om, dep, 1, i) for i in 1:(dep.nslots[1])]
+    dims_C = [_slot_dim(spec_C, i, p0, seeds_C[i]) for i in 1:(dep.nslots[1])]
+    Cs = [_seed_slot_C(om.C, i, dims_C[i], seeds_C[i]) for i in 1:(dep.nslots[1])]
+    ds = [_seed_slot_d(om.d, i, dims_C[i], spec_C, seeds_C[i]) for i in 1:(dep.nslots[1])]
+    Ds = [_seed_slot_D(om.D, i, dims_C[i], seeds_C[i]) for i in 1:(dep.nslots[1])]
 
     variants = Vector{PoissonObservationModel{T,M,V}}(undef, ncells)
     for cell in 1:ncells
