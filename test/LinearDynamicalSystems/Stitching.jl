@@ -361,3 +361,159 @@ function test_stitching_slds_fit()
     @test size(slds.A) == (2, 2)
     return nothing
 end
+
+#=============================================================================
+`group_seeds`: starting values a caller already knows
+
+Without them a slot whose `obs_dim` differs from the template has nothing to
+copy and gets the template's rows cycled — a magnitude for the M-step to move
+off, pairing each channel with an unrelated channel of the template. A caller
+that stitched every session's loadings onto shared factors before building the
+model can supply them instead.
+=============================================================================#
+
+"""Per-slot `(dep, spec_C, spec_R)` for an emission and its data, as `fit!` resolves
+them."""
+function st_slot_specs(om, y)
+    dep = SSD._resolve_dependence(om)
+    labels = [dep.trial_labels[g] for g in eachindex(dep.names)]
+    spec_C, spec_R = SSD._obs_slot_specs(om, dep, labels, length(y), y)
+    return dep, spec_C, spec_R
+end
+
+"""
+A seeded slot starts at exactly what it was given; an unseeded one still gets
+the row-cycled template, and slot 1 still shares storage with the parent.
+"""
+function test_group_seeds_replace_slot_seeding()
+    y, session, p1, p2 = st_two_session_data()
+    lds = st_grouped_lds(p1)
+    om = lds.obs_model
+    om.depends_on = (C=session, R=session)
+    dep, spec_C, spec_R = st_slot_specs(om, y)
+
+    # Baseline: no seeds, the wide session's C is the template's rows cycled.
+    plain = SSD._build_variants!(om, dep, spec_C, spec_R)
+    wide = plain[findfirst(v -> size(v.C, 1) == p2, plain)]
+    for r in 1:p2
+        @test wide.C[r, :] == om.C[mod1(r, p1), :]
+    end
+
+    om.variants = nothing
+    C_b = randn(StableRNG(31), p2, ST_LATENT_DIM)
+    R_b = Matrix{Float64}(0.7I, p2, p2)
+    set_group_seeds!(om, Dict(:b => (C=C_b, R=R_b)))
+    seeded = SSD._build_variants!(om, dep, spec_C, spec_R)
+
+    cell = findfirst(v -> size(v.C, 1) == p2 && size(v.R, 1) == p2, seeded)
+    @test seeded[cell].C == C_b
+    @test seeded[cell].R == R_b
+    # The unseeded session is untouched, and slot 1 still aliases the parent.
+    @test any(v -> v.C === om.C, seeded)
+    return nothing
+end
+
+"""
+Seeding slot 1 writes through the aliased array, so `model.C` keeps agreeing
+with its first version rather than being left behind by it.
+"""
+function test_group_seeds_keep_slot_one_aliased()
+    y, session, p1, _ = st_two_session_data()
+    lds = st_grouped_lds(p1)
+    om = lds.obs_model
+    om.depends_on = (C=session, R=session)
+    dep, spec_C, spec_R = st_slot_specs(om, y)
+
+    C_a = randn(StableRNG(32), p1, ST_LATENT_DIM)
+    set_group_seeds!(om, Dict(:a => (C=C_a,)))
+    variants = SSD._build_variants!(om, dep, spec_C, spec_R)
+    @test any(v -> v.C === om.C, variants)
+    @test om.C == C_a
+    return nothing
+end
+
+"""
+Seeds are read on the equal-`obs_dim` path too, where there is no spec at all —
+a caller may want different starting loadings per session even with matched
+channels.
+"""
+function test_group_seeds_apply_at_uniform_width()
+    ntrials = 4
+    lds = st_lds(3)
+    _, y = rand(StableRNG(41), lds, fill(20, ntrials))
+    om = lds.obs_model
+    om.depends_on = (C=[:a, :a, :b, :b], R=[:a, :a, :b, :b])
+    dep, spec_C, spec_R = st_slot_specs(om, y)
+    @test (spec_C, spec_R) === (nothing, nothing)
+
+    C_b = randn(StableRNG(42), 3, ST_LATENT_DIM)
+    set_group_seeds!(om, Dict(:b => (C=C_b,)))
+    variants = SSD._build_variants!(om, dep, spec_C, spec_R)
+    @test any(v -> v.C == C_b, variants)
+    @test any(v -> v.C === om.C, variants)
+    return nothing
+end
+
+"""
+A mistyped label would cost nothing visible — the seed would simply never be
+read — so it is refused when set, and a wrong-shaped seed when the variants are
+built.
+"""
+function test_group_seeds_validation()
+    y, session, p1, p2 = st_two_session_data()
+    lds = st_grouped_lds(p1)
+    om = lds.obs_model
+    om.depends_on = (C=session, R=session)
+    dep, spec_C, spec_R = st_slot_specs(om, y)
+
+    missing_label = Dict(:c => (C=zeros(p2, ST_LATENT_DIM),))
+    @test_throws ArgumentError set_group_seeds!(om, missing_label)
+    @test_throws ArgumentError set_group_seeds!(om, Dict(:b => (Q=zeros(2, 2),)))
+    # `depends_on` first: with no groups there are no labels to seed
+    bare = st_obs_model(p1)
+    ungrouped = Dict(:a => (C=zeros(p1, ST_LATENT_DIM),))
+    @test_throws ArgumentError set_group_seeds!(bare, ungrouped)
+
+    # A seed of the wrong width is an error, not a silent reshape
+    om.group_seeds = Dict(:b => (C=zeros(p2 + 1, ST_LATENT_DIM),))
+    om.variants = nothing
+    @test_throws ArgumentError SSD._build_variants!(om, dep, spec_C, spec_R)
+
+    @test set_group_seeds!(om, nothing).group_seeds === nothing
+    return nothing
+end
+
+"""
+The point of the feature: seeding each session's own loadings starts the fit
+above where the row-cycled default does, and the fit still runs to a monotone
+ELBO from there.
+"""
+function test_group_seeds_start_a_stitched_fit_higher()
+    ntrials, tsteps = 4, 30
+    lds1 = st_lds(3; seed=1)
+    lds2 = st_lds(5; seed=2)
+    _, y1 = rand(StableRNG(51), lds1, fill(tsteps, ntrials))
+    _, y2 = rand(StableRNG(52), lds2, fill(tsteps, ntrials))
+    y = vcat(y1, y2)
+    session = vcat(fill(:a, ntrials), fill(:b, ntrials))
+
+    #=
+    Both models start from session `a`'s emission as the template; the seeded
+    one is additionally told session `b`'s, which is what a caller that stitched
+    the two onto shared factors would know.
+    =#
+    plain = st_build_lds(pd_state_model(), st_obs_model(3; seed=1))
+    plain.obs_model.depends_on = (C=session, R=session)
+    seeded = st_build_lds(pd_state_model(), st_obs_model(3; seed=1))
+    seeded.obs_model.depends_on = (C=session, R=session)
+    set_group_seeds!(
+        seeded.obs_model, Dict(:b => (C=copy(lds2.obs_model.C), R=copy(lds2.obs_model.R)))
+    )
+
+    plain_elbos = fit!(plain, y; max_iter=3, progress=false)
+    seeded_elbos = fit!(seeded, y; max_iter=3, progress=false)
+    @test all(isfinite, seeded_elbos)
+    @test pd_is_monotone(seeded_elbos)
+    @test first(seeded_elbos) > first(plain_elbos)
+    return nothing
+end
