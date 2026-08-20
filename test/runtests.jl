@@ -304,6 +304,14 @@ using SSDTest
                 test_uniform_obs_dim_is_unchanged()
             end
 
+            @testset "Group seeds" begin
+                test_group_seeds_replace_slot_seeding()
+                test_group_seeds_keep_slot_one_aliased()
+                test_group_seeds_apply_at_uniform_width()
+                test_group_seeds_validation()
+                test_group_seeds_start_a_stitched_fit_higher()
+            end
+
             @testset "Workspaces" begin
                 test_cell_workspace_shares_big_buffers()
                 test_grouped_pool_sized_at_widest_session()

@@ -70,7 +70,7 @@ export IWPrior, MNPrior, x0_mean_prior
 export CovUpdateCache
 
 # Ancillary parameter dependencies (`depends_on`)
-export group_labels, group_parameter
+export group_labels, group_parameter, set_group_seeds!
 
 # Utilities
 export block_tridgm
