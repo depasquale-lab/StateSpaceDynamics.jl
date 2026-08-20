@@ -421,15 +421,119 @@ function _obs_stats(ys::AbstractVector, p::Int, ::Type{T}) where {T}
     return (mean_y, var_y)
 end
 
+"""
+    set_group_seeds!(model, seeds) -> model
+
+Give individual `depends_on` groups their own starting values:
+`Dict(label => (C=..., d=..., D=..., R=...))`, any subset of those keys per
+label. A label with no entry, or an entry naming only some parameters, keeps the
+defaults for the rest.
+
+This matters when the groups observe different channel *sets*. Nothing here
+knows which channel is which, so an unseeded slot starts from the template's
+emission — copied when the widths agree, its rows cycled when they do not. Both
+pair a group's channel with whatever channel sits at the same row of the
+template, which is only right when the groups share one channel list. A caller
+that already knows each group's loadings, because it stitched them onto shared
+factors before building the model, should hand them over here instead.
+
+Seeds are *initial* values: they are read when the per-group variants are built
+and ignored by a later `fit!` that reuses the cached ones, exactly as `model.C`
+is. Shapes are checked against the data when the variants are built — a seed of
+the wrong size is an error, never a silent reshape.
+
+Labels are validated here rather than at fit time, because the cost of a
+mistyped one is invisible: it would simply never be read.
+
+    om.depends_on = (C = session,)
+    set_group_seeds!(om, Dict(s => (C = loadings[s],) for s in sessions))
+"""
+function set_group_seeds!(model::DependentModel, seeds::Union{Nothing,AbstractDict})
+    if seeds === nothing
+        model.group_seeds = nothing
+        return model
+    end
+    model.depends_on === nothing && throw(
+        ArgumentError(
+            "set_group_seeds! needs `depends_on` to be set first: with no groups there " *
+            "are no labels to seed, and the seeds would never be read",
+        ),
+    )
+    dep = _resolve_dependence(model)
+    known = Set{Any}()
+    for g in eachindex(dep.names)
+        dep.varies[g] && union!(known, dep.labels[g])
+    end
+    for (label, seed) in seeds
+        label in known || throw(
+            ArgumentError(
+                "set_group_seeds!: $(repr(label)) is not a label of any group this " *
+                "model varies; it has $(join(sort!(String[repr(l) for l in known]), ", "))",
+            ),
+        )
+        for name in keys(seed)
+            _canonical_param(model, name)   # throws on a name the model does not own
+        end
+    end
+    model.group_seeds = seeds
+    return model
+end
+
+"""
+    _group_seed(model, dep, g, slot) -> NamedTuple or nothing
+
+The caller-supplied seed for one slot of observation group `g`, looked up by the
+slot's label. `nothing` whenever no seeds were given, the group does not vary,
+or that label has no entry.
+"""
+function _group_seed(
+    model::AbstractObservationModel, dep::ParameterDependence, g::Int, slot::Int
+)
+    seeds = model.group_seeds
+    seeds === nothing && return nothing
+    dep.varies[g] || return nothing
+    slot <= length(dep.labels[g]) || return nothing
+    return get(seeds, dep.labels[g][slot], nothing)
+end
+
+_seed_entry(::Nothing, ::Symbol) = nothing
+_seed_entry(seed, name::Symbol) = get(seed, name, nothing)
+
+"""Copy a seed into a slot's storage, refusing one that is the wrong shape."""
+function _apply_seed!(out, supplied, name::Symbol, slot::Int)
+    size(out) == size(supplied) || throw(
+        ArgumentError(
+            "group_seeds gave a $(size(supplied)) `:$name` for a slot that needs " *
+            "$(size(out)) (group slot $slot). A seed has to match the channel count " *
+            "the data gives that group and the model's latent/input widths.",
+        ),
+    )
+    copyto!(out, supplied)
+    return out
+end
+
 #=
 Slot 1 aliases the parent's array (as `_slot_arrays` has always done) so the
 model object stays in sync with its first version; every other slot gets its
 own storage. A slot whose shape matches the template is still a plain copy, so
-nothing about the equal-`obs_dim` path changes.
+nothing about the equal-`obs_dim` path changes. A seed is written *into* that
+storage rather than replacing it, which keeps slot 1's aliasing intact.
 =#
-function _seed_slot_C(base::AbstractMatrix{T}, i::Int, p::Int) where {T}
-    size(base, 1) == p && return i == 1 ? base : copy(base)
-    out = similar(base, p, size(base, 2))
+function _slot_storage(base::AbstractMatrix, i::Int, dims::Tuple{Int,Int})
+    size(base) == dims || return similar(base, dims...)
+    return i == 1 ? base : copy(base)
+end
+
+function _slot_storage(base::AbstractVector, i::Int, len::Int)
+    length(base) == len || return similar(base, len)
+    return i == 1 ? base : copy(base)
+end
+
+function _seed_slot_C(base::AbstractMatrix{T}, i::Int, p::Int, seed=nothing) where {T}
+    out = _slot_storage(base, i, (p, size(base, 2)))
+    supplied = _seed_entry(seed, :C)
+    supplied === nothing || return _apply_seed!(out, supplied, :C, i)
+    size(base, 1) == p && return out
     nrows = size(base, 1)
     for r in 1:p
         out[r, :] .= @view base[mod1(r, nrows), :]
@@ -437,26 +541,40 @@ function _seed_slot_C(base::AbstractMatrix{T}, i::Int, p::Int) where {T}
     return out
 end
 
-function _seed_slot_D(base::AbstractMatrix{T}, i::Int, p::Int) where {T}
-    size(base, 1) == p && return i == 1 ? base : copy(base)
-    out = similar(base, p, size(base, 2))
+function _seed_slot_D(base::AbstractMatrix{T}, i::Int, p::Int, seed=nothing) where {T}
+    out = _slot_storage(base, i, (p, size(base, 2)))
+    supplied = _seed_entry(seed, :D)
+    supplied === nothing || return _apply_seed!(out, supplied, :D, i)
+    size(base, 1) == p && return out
     return fill!(out, zero(T))
 end
 
 function _seed_slot_d(
-    base::AbstractVector{T}, i::Int, p::Int, spec::Union{Nothing,ObsSlotSpec{T}}
+    base::AbstractVector{T},
+    i::Int,
+    p::Int,
+    spec::Union{Nothing,ObsSlotSpec{T}},
+    seed=nothing,
 ) where {T}
-    length(base) == p && return i == 1 ? base : copy(base)
-    out = similar(base, p)
+    out = _slot_storage(base, i, p)
+    supplied = _seed_entry(seed, :d)
+    supplied === nothing || return _apply_seed!(out, supplied, :d, i)
+    length(base) == p && return out
     spec === nothing ? fill!(out, zero(T)) : copyto!(out, spec.mean[i])
     return out
 end
 
 function _seed_slot_R(
-    base::AbstractMatrix{T}, j::Int, p::Int, spec::Union{Nothing,ObsSlotSpec{T}}
+    base::AbstractMatrix{T},
+    j::Int,
+    p::Int,
+    spec::Union{Nothing,ObsSlotSpec{T}},
+    seed=nothing,
 ) where {T}
-    size(base, 1) == p && return j == 1 ? base : copy(base)
-    out = similar(base, p, p)
+    out = _slot_storage(base, j, (p, p))
+    supplied = _seed_entry(seed, :R)
+    supplied === nothing || return _apply_seed!(out, supplied, :R, j)
+    size(base, 1) == p && return out
     fill!(out, zero(T))
     for k in 1:p
         out[k, k] = spec === nothing ? one(T) : spec.var[j][k]
@@ -538,13 +656,21 @@ function _build_variants!(
     end
 
     p0 = size(om.C, 1)
-    Cs = [_seed_slot_C(om.C, i, _spec_dim(spec_C, i, p0)) for i in 1:(dep.nslots[1])]
-    ds = [
-        _seed_slot_d(om.d, i, _spec_dim(spec_C, i, p0), spec_C) for i in 1:(dep.nslots[1])
+    Cs = [
+        _seed_slot_C(om.C, i, _spec_dim(spec_C, i, p0), _group_seed(om, dep, 1, i)) for
+        i in 1:(dep.nslots[1])
     ]
-    Ds = [_seed_slot_D(om.D, i, _spec_dim(spec_C, i, p0)) for i in 1:(dep.nslots[1])]
+    ds = [
+        _seed_slot_d(om.d, i, _spec_dim(spec_C, i, p0), spec_C, _group_seed(om, dep, 1, i))
+        for i in 1:(dep.nslots[1])
+    ]
+    Ds = [
+        _seed_slot_D(om.D, i, _spec_dim(spec_C, i, p0), _group_seed(om, dep, 1, i)) for
+        i in 1:(dep.nslots[1])
+    ]
     Rs = [
-        _seed_slot_R(om.R, j, _spec_dim(spec_R, j, p0), spec_R) for j in 1:(dep.nslots[2])
+        _seed_slot_R(om.R, j, _spec_dim(spec_R, j, p0), spec_R, _group_seed(om, dep, 2, j))
+        for j in 1:(dep.nslots[2])
     ]
 
     variants = Vector{GaussianObservationModel{T,M,V}}(undef, ncells)
@@ -578,11 +704,18 @@ function _build_variants!(
     end
 
     p0 = size(om.C, 1)
-    Cs = [_seed_slot_C(om.C, i, _spec_dim(spec_C, i, p0)) for i in 1:(dep.nslots[1])]
-    ds = [
-        _seed_slot_d(om.d, i, _spec_dim(spec_C, i, p0), spec_C) for i in 1:(dep.nslots[1])
+    Cs = [
+        _seed_slot_C(om.C, i, _spec_dim(spec_C, i, p0), _group_seed(om, dep, 1, i)) for
+        i in 1:(dep.nslots[1])
     ]
-    Ds = [_seed_slot_D(om.D, i, _spec_dim(spec_C, i, p0)) for i in 1:(dep.nslots[1])]
+    ds = [
+        _seed_slot_d(om.d, i, _spec_dim(spec_C, i, p0), spec_C, _group_seed(om, dep, 1, i))
+        for i in 1:(dep.nslots[1])
+    ]
+    Ds = [
+        _seed_slot_D(om.D, i, _spec_dim(spec_C, i, p0), _group_seed(om, dep, 1, i)) for
+        i in 1:(dep.nslots[1])
+    ]
 
     variants = Vector{PoissonObservationModel{T,M,V}}(undef, ncells)
     for cell in 1:ncells
