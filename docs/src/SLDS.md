@@ -150,6 +150,45 @@ Using weighted sufficient statistics from the smoothed posteriors:
 
 The weights are given by the discrete posterior probabilities ``\gamma_t(k)``.
 
+## Tying the emission across regimes
+
+By default every regime carries its own emission, so `C_k`, `d_k`, `D_k` (and
+`R_k`) are fitted from that regime's share of the data. Pass
+`tie_emissions=true` to `fit!` for the other common reading of a switching
+model: the system's *dynamics* switch while the measurement does not.
+
+```julia
+elbos = fit!(slds, y; ux=ux, uy=uy, max_iter=50, tie_emissions=true)
+```
+
+The tied update is the ordinary LDS emission M-step. Summing the per-regime
+weighted objectives over `k` collapses to the unit-weight one, because the
+emission term does not depend on `k` and ``\sum_k \gamma_t(k) = 1`` — so
+`[C d D]` is fitted once from the whole trajectory and copied into every regime
+(before the first E-step as well, so no regime ever infers through an emission
+the model does not have). Combined with `depends_on` the tie is *within* a
+group: each session keeps its own emission, shared by every regime. A frozen
+emission (`fit_bool`) is left exactly as the caller set it.
+
+This is the usual setup for neural recordings, where the array does not change
+when the animal's dynamics do, and it divides the emission's parameter count —
+usually the bulk of the model — by `K`.
+
+## Reading the posteriors back out
+
+`fit!` returns the ELBO trace; `posterior` returns the variational posteriors
+themselves, at fixed parameters, on the fitted data or on held-out data:
+
+```@docs
+posterior
+```
+
+```julia
+post = posterior(fitted, y; ux=ux, uy=uy)
+occupancy = post.γ[trial]                    # K × T, columns summing to 1
+path = [argmax(view(occupancy, :, t)) for t in axes(occupancy, 2)]
+```
+
 ## Evidence Lower Bound (ELBO)
 
 The ELBO decomposes into discrete and continuous components:

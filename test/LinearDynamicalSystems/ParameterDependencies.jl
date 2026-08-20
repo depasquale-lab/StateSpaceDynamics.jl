@@ -592,6 +592,69 @@ function test_grouped_slds_fit()
     return nothing
 end
 
+function test_grouped_slds_tied_emissions()
+    rng = StableRNG(2020)
+    labels = vcat(fill(:s1, 3), fill(:s2, 3))
+
+    truth = pd_slds(labels)
+    for k in 1:2
+        group_parameter(truth.LDSs[k].obs_model, :C, :s2) .= [0.2 -0.9; 1.0 0.3]
+    end
+    _, _, y = rand(rng, truth, fill(35, length(labels)))
+
+    fitted = pd_slds(labels)
+    # Start the regimes off disagreeing about session 2's emission, so the tie
+    # has something to undo.
+    group_parameter(fitted.LDSs[2].obs_model, :C, :s2) .= [0.9 0.1; -0.2 0.7]
+
+    elbos = fit!(
+        fitted, y; max_iter=5, progress=false, rng=StableRNG(21), tie_emissions=true
+    )
+    @test all(isfinite, elbos)
+
+    #=
+    The tie is across regimes, not across sessions: each session keeps its own
+    emission, and every regime uses it.
+    =#
+    om1 = fitted.LDSs[1].obs_model
+    om2 = fitted.LDSs[2].obs_model
+    for label in (:s1, :s2)
+        @test group_parameter(om2, :C, label) ≈ group_parameter(om1, :C, label)
+        @test group_parameter(om2, :d, label) ≈ group_parameter(om1, :d, label)
+        @test group_parameter(om2, :R, label) ≈ group_parameter(om1, :R, label)
+    end
+    @test !(group_parameter(om1, :C, :s1) ≈ group_parameter(om1, :C, :s2))
+
+    # Dynamics still differ per regime.
+    @test !(fitted.LDSs[2].state_model.A ≈ fitted.LDSs[1].state_model.A)
+
+    return nothing
+end
+
+function test_grouped_slds_posterior()
+    rng = StableRNG(2021)
+    labels = vcat(fill(:s1, 3), fill(:s2, 3))
+    truth = pd_slds(labels)
+    _, _, y = rand(rng, truth, fill(30, length(labels)))
+
+    # A held-out subset has its own trial count, so it needs its own labels.
+    subset = y[1:4]
+    post = posterior(
+        truth,
+        subset;
+        depends_on=(C=labels[1:4], R=labels[1:4]),
+        max_iter=3,
+        rng=StableRNG(22),
+    )
+    @test length(post.γ) == 4
+    for n in 1:4
+        @test size(post.γ[n]) == (2, size(subset[n], 2))
+        @test all(≈(1.0), vec(sum(post.γ[n]; dims=1)))
+    end
+
+    return nothing
+end
+
 function test_grouped_slds_requires_matching_labels()
     labels = vcat(fill(:s1, 3), fill(:s2, 3))
     slds = pd_slds(labels)

@@ -131,6 +131,14 @@ using SSDTest
                 test_SLDS_gradient_weight_normalization_poisson()
             end
 
+            @testset "Tied emissions and posteriors" begin
+                test_SLDS_tied_emissions_poisson()
+                test_SLDS_tied_emissions_gaussian()
+                test_SLDS_tied_emissions_respects_fit_bool()
+                test_SLDS_posterior_poisson()
+                test_SLDS_posterior_recovers_regimes()
+            end
+
             @testset "Control inputs (ux/uy)" begin
                 test_SLDS_input_dim_validation()
                 test_SLDS_sampling_with_inputs()
@@ -287,6 +295,8 @@ using SSDTest
 
             @testset "SLDS fitting" begin
                 test_grouped_slds_fit()
+                test_grouped_slds_tied_emissions()
+                test_grouped_slds_posterior()
                 test_grouped_slds_requires_matching_labels()
             end
         end

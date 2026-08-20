@@ -2286,6 +2286,163 @@ function _make_poisson_input_lds(D, N, ux_dim, uy_dim; seed::Int=0)
     return LinearDynamicalSystem(gsm, pom; fit_bool=fill(true, 5))
 end
 
+# ============================================================================
+# Tied emissions across regimes (`tie_emissions`) and the posterior API
+# ============================================================================
+
+"""K regimes with genuinely distinct parameters (not `fill`, which aliases)."""
+function _distinct_poisson_slds(K::Int, latent_dim::Int, obs_dim::Int)
+    ldss = [_make_poisson_lds_dense(latent_dim, obs_dim; seed=10 + k) for k in 1:K]
+    return SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=ldss)
+end
+
+function _distinct_gaussian_slds(K::Int, latent_dim::Int, obs_dim::Int)
+    ldss = [_make_gaussian_lds_dense(latent_dim, obs_dim; seed=20 + k) for k in 1:K]
+    return SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=ldss)
+end
+
+function test_SLDS_tied_emissions_poisson(; rng=MersenneTwister(0x71ED))
+    K, latent_dim, obs_dim = 2, 2, 4
+
+    truth = _distinct_poisson_slds(K, latent_dim, obs_dim)
+    _, _, y = rand(rng, truth, fill(25, 4))
+
+    fitted = _distinct_poisson_slds(K, latent_dim, obs_dim)
+    C_start = copy(fitted.LDSs[1].obs_model.C)
+    # The regimes start from different emissions, so a tie that did nothing
+    # would be visible immediately.
+    @test !(fitted.LDSs[2].obs_model.C ≈ fitted.LDSs[1].obs_model.C)
+
+    elbos = fit!(
+        fitted, y; max_iter=4, progress=false, tie_emissions=true, rng=MersenneTwister(1)
+    )
+    @test length(elbos) == 4
+    @test all(isfinite, elbos)
+
+    # One emission for every regime ...
+    for k in 2:K
+        @test fitted.LDSs[k].obs_model.C ≈ fitted.LDSs[1].obs_model.C
+        @test fitted.LDSs[k].obs_model.d ≈ fitted.LDSs[1].obs_model.d
+    end
+    # ... and it was fitted, not merely copied from regime 1's starting values.
+    @test !(fitted.LDSs[1].obs_model.C ≈ C_start)
+
+    # The dynamics still switch.
+    @test !(fitted.LDSs[2].state_model.A ≈ fitted.LDSs[1].state_model.A)
+
+    return nothing
+end
+
+function test_SLDS_tied_emissions_gaussian(; rng=MersenneTwister(0x71EE))
+    K, latent_dim, obs_dim = 2, 2, 3
+
+    truth = _distinct_gaussian_slds(K, latent_dim, obs_dim)
+    _, _, y = rand(rng, truth, fill(30, 4))
+
+    fitted = _distinct_gaussian_slds(K, latent_dim, obs_dim)
+    elbos = fit!(
+        fitted, y; max_iter=4, progress=false, tie_emissions=true, rng=MersenneTwister(2)
+    )
+    @test all(isfinite, elbos)
+
+    for k in 2:K
+        @test fitted.LDSs[k].obs_model.C ≈ fitted.LDSs[1].obs_model.C
+        @test fitted.LDSs[k].obs_model.d ≈ fitted.LDSs[1].obs_model.d
+        # The noise covariance belongs to the emission, so it is tied too.
+        @test fitted.LDSs[k].obs_model.R ≈ fitted.LDSs[1].obs_model.R
+    end
+    @test isposdef(fitted.LDSs[1].obs_model.R)
+
+    return nothing
+end
+
+function test_SLDS_tied_emissions_respects_fit_bool(; rng=MersenneTwister(0x71EF))
+    K, latent_dim, obs_dim = 2, 2, 3
+
+    truth = _distinct_poisson_slds(K, latent_dim, obs_dim)
+    _, _, y = rand(rng, truth, fill(20, 3))
+
+    frozen = _distinct_poisson_slds(K, latent_dim, obs_dim)
+    for lds in frozen.LDSs
+        lds.fit_bool[5] = false      # [x0, P0, A&b, Q, C&d]
+    end
+    C1, C2 = copy(frozen.LDSs[1].obs_model.C), copy(frozen.LDSs[2].obs_model.C)
+
+    fit!(frozen, y; max_iter=2, progress=false, tie_emissions=true, rng=MersenneTwister(3))
+
+    # A frozen emission is the caller's, per regime: the tie neither fits it nor
+    # overwrites regime 2's with regime 1's.
+    @test frozen.LDSs[1].obs_model.C ≈ C1
+    @test frozen.LDSs[2].obs_model.C ≈ C2
+
+    return nothing
+end
+
+function test_SLDS_posterior_poisson(; rng=MersenneTwister(0x9051))
+    K, latent_dim, obs_dim = 2, 2, 3
+    tsteps, ntrials = 18, 3
+
+    slds = _distinct_poisson_slds(K, latent_dim, obs_dim)
+    _, _, y = rand(rng, slds, fill(tsteps, ntrials))
+
+    A_before = copy(slds.A)
+    C_before = copy(slds.LDSs[1].obs_model.C)
+
+    post = posterior(slds, y; max_iter=3, rng=MersenneTwister(4))
+
+    @test length(post.x_smooth) == ntrials
+    @test length(post.γ) == ntrials
+    @test length(post.elbos) == 3
+    @test all(isfinite, post.elbos)
+    for n in 1:ntrials
+        @test size(post.x_smooth[n]) == (latent_dim, tsteps)
+        @test size(post.p_smooth[n]) == (latent_dim, latent_dim, tsteps)
+        @test size(post.γ[n]) == (K, tsteps)
+        @test all(≈(1.0), vec(sum(post.γ[n]; dims=1)))
+        @test all(>=(0.0), post.γ[n])
+        @test all(isfinite, post.x_smooth[n])
+    end
+
+    # Reading the posterior leaves the model alone.
+    @test slds.A ≈ A_before
+    @test slds.LDSs[1].obs_model.C ≈ C_before
+
+    return nothing
+end
+
+function test_SLDS_posterior_recovers_regimes(; rng=MersenneTwister(0x9052))
+    #=
+    Two regimes far enough apart to be told apart: one nearly static, one
+    strongly rotating. The posterior should put most of its mass on whichever
+    regime generated each timestep.
+    =#
+    K, latent_dim, obs_dim = 2, 2, 6
+    lds1 = _make_gaussian_lds_dense(latent_dim, obs_dim; seed=31)
+    lds2 = _make_gaussian_lds_dense(latent_dim, obs_dim; seed=31)
+    lds1.state_model.A .= [0.99 0.0; 0.0 0.99]
+    lds2.state_model.A .= [0.0 -0.95; 0.95 0.0]
+    lds1.state_model.Q .= Matrix(0.01 * I(latent_dim))
+    lds2.state_model.Q .= Matrix(0.01 * I(latent_dim))
+    # Sticky chain, so each trial spends long stretches in one regime.
+    slds = SLDS(; A=[0.98 0.02; 0.02 0.98], πₖ=[0.5, 0.5], LDSs=[lds1, lds2])
+
+    z, _, y = rand(rng, slds, fill(60, 4))
+
+    post = posterior(slds, y; max_iter=8, rng=MersenneTwister(5))
+
+    correct = 0
+    total = 0
+    for n in eachindex(y)
+        assigned = [argmax(view(post.γ[n], :, t)) for t in axes(post.γ[n], 2)]
+        correct += count(assigned .== z[n])
+        total += length(z[n])
+    end
+    # Well above chance; not a recovery guarantee, just "it tracks the regimes".
+    @test correct / total > 0.7
+
+    return nothing
+end
+
 function test_SLDS_input_dim_validation()
     K, D, N = 2, 2, 3
     # Uniform input dims across regimes → valid.

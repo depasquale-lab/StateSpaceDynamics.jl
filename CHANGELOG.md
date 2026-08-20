@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `fit!(slds, y; tie_emissions=true)`: one emission shared by every regime.
+  `[C d D]` (and the Gaussian `R`) is then fitted once from the whole
+  trajectory and copied across regimes, so only `[A b B Q]` and the discrete
+  chain switch — the usual reading for neural data, where the recording does
+  not change when the dynamics do, and `K` times fewer emission parameters.
+  Valid because the emission term does not depend on the regime and
+  `Σₖ γₖ(t) = 1`, which collapses the summed per-regime weighted objectives to
+  the unit-weight one. Works with `depends_on`, where the tie is *within* a
+  group (each session keeps its own emission, shared by every regime), and
+  leaves a frozen emission (`fit_bool`) untouched. Default `false`, so existing
+  fits are unchanged
+- `posterior(slds, y; ux, uy, depends_on, max_iter, rng)`: the variational
+  posteriors of a fitted SLDS — `x_smooth`, `p_smooth`, the discrete
+  responsibilities `γ` and the ELBO trace — at fixed parameters. `fit!` runs the
+  same E-step but keeps its forward-backward storage private, so this is the way
+  to get `q(z)` (regime occupancy, a Viterbi-style `argmax` path, a rate
+  averaged over regimes) out of a model, on training or held-out data
 - Ancillary parameter dependencies: every
   `AbstractStateModel` and `AbstractObservationModel` now carries a
   `depends_on` field (default `nothing`). Setting it to a `NamedTuple` of
