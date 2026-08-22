@@ -457,7 +457,7 @@ function _grouped_smooth(
     cell_lds = _cell_ldss(lds, grp)
     cell_pools = _cell_sws_pools(lds, data, grp, cell_lds, sws_pool)
 
-    for c in 1:grp.ncells
+    for c in 1:(grp.ncells)
         trials = grp.cell_trials[c]
         cell_data = _subset_data(data, trials)
         tfs = initialize_FilterSmooth(cell_lds[c], cell_data.tsteps)::TrialFilterSmooth{T}
