@@ -91,24 +91,34 @@ The sampling process follows the generative model:
 fit!(slds::SLDS{T,S,O}, y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}}; max_iter::Int=50, progress::Bool=true) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
 ```
 
-## Inferring discrete responsibilities (post-fit)
+Each E-step runs `smoothing_iters` discrete↔continuous alternations before the M-step.
+The default of 1 is the standard vLEM update; larger values hand the M-step a
+better-converged posterior at proportional cost per iteration.
 
-Once an SLDS has been fit, [`infer_γ`](@ref) estimates the discrete-state
-responsibilities ``\gamma_t(k) = q(z_t = k) \approx p(z_t = k \mid y_{1:T})`` for a
-dataset, holding the model parameters fixed. It runs the variational E-step —
-alternating the forward-backward pass over the discrete chain ``q(z)`` with the
-Kalman/Laplace smoother over the continuous states ``q(x)`` — either until the
-responsibilities converge or for a fixed number of iterations. This interleaving of
-discrete and continuous smoothing within the E-step follows the classic
-coordinate-ascent scheme of Ghahramani & Hinton (1996).
+## Post-fit inference
+
+Once an SLDS has been fit, [`smooth`](@ref) infers the full posterior for a dataset with
+the parameters held fixed: the continuous states ``q(x)``, the discrete-state
+responsibilities ``\gamma_t(k) = q(z_t = k) \approx p(z_t = k \mid y_{1:T})``, and the
+ELBO at those posteriors. It alternates the forward-backward pass over the discrete chain
+with the Kalman/Laplace smoother over the continuous states, following the classic
+coordinate-ascent scheme of Ghahramani & Hinton (1996), stopping once ``\gamma``
+converges (`tol`) or after `smoothing_iters` alternations.
 
 Unlike the single-Monte-Carlo-sample E-step that `fit!` uses during learning, the
-coupling here is deterministic (the discrete-layer log-likelihoods are evaluated at
-the smoothed posterior mean), so the returned responsibilities are reproducible.
+coupling here is deterministic — the discrete-layer log-likelihoods are evaluated at the
+smoothed posterior mean — so the result is reproducible.
 
-```@docs
-infer_γ
+Because a converged alternation is expensive, `smooth` returns everything it computed in
+one `NamedTuple`; read its `elbo` field rather than calling [`elbo`](@ref) separately.
+
+```@docs; canonical = false
+smooth(slds::SLDS{T,S,O}, y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}}) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
 ```
+
+[`loglikelihood`](@ref) and [`elbo`](@ref) both return that same ELBO. The exact marginal
+``\log p(y)`` is intractable for a switching model — it requires summing over all ``K^T``
+regime sequences — so `loglikelihood(slds, y)` reports the variational lower bound.
 
 ## The vLEM Algorithm
 
