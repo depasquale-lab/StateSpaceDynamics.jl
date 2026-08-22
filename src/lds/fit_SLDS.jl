@@ -1535,7 +1535,7 @@ function fit!(
                 seq_ends=seq_ends,
                 ux=ux_seq,
                 uy=uy_seq,
-            cell_ws=cell_ws,
+                cell_ws=cell_ws,
             )
 
             elbos[iter] = _elbo_grouped!(
@@ -1548,7 +1548,7 @@ function fit!(
                 seq_ends=seq_ends,
                 ux=ux_seq,
                 uy=uy_seq,
-            cell_ws=cell_ws,
+                cell_ws=cell_ws,
             )
 
             _mstep_grouped!(
@@ -2031,9 +2031,8 @@ function _mstep_grouped!(
     differ per unit. Identical to `lds1` whenever the widths agree.
     =#
     unit_suf = [
-        _initialize_td_sufficient_statistics(
-            T, cell_slds[c].LDSs[k], cell_data[c].tsteps
-        ) for k in 1:K for c in 1:ncells
+        _initialize_td_sufficient_statistics(T, cell_slds[c].LDSs[k], cell_data[c].tsteps)
+        for k in 1:K for c in 1:ncells
     ]
 
     for k in 1:K
