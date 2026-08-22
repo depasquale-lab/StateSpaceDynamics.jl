@@ -168,10 +168,11 @@ function Random.rand(
         obs_params = fill(_extract_obs_params(lds.obs_model), ntrials)
     else
         cell_state = [
-            _extract_state_params(_cell_lds(lds, grp, c).state_model) for c in 1:grp.ncells
+            _extract_state_params(_cell_lds(lds, grp, c).state_model) for
+            c in 1:(grp.ncells)
         ]
         cell_obs = [
-            _extract_obs_params(_cell_lds(lds, grp, c).obs_model) for c in 1:grp.ncells
+            _extract_obs_params(_cell_lds(lds, grp, c).obs_model) for c in 1:(grp.ncells)
         ]
         state_params = [cell_state[grp.trial_cell[n]] for n in 1:ntrials]
         obs_params = [cell_obs[grp.trial_cell[n]] for n in 1:ntrials]

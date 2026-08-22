@@ -144,9 +144,7 @@ function test_depends_on_trial_count_and_override()
     y2 = y3[1:2]
 
     # Labels are written for 3 trials; 2 trials is a mismatch.
-    @test_throws SSD.DimensionMismatchError fit!(
-        lds, y2; max_iter=1, progress=false
-    )
+    @test_throws SSD.DimensionMismatchError fit!(lds, y2; max_iter=1, progress=false)
 
     # ... unless the call supplies its own labels.
     @test fit!(lds, y2; depends_on=(C=[:a, :b],), max_iter=1, progress=false) isa Vector
