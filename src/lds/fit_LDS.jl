@@ -904,7 +904,7 @@ function _grouped_estep_elbo_gaussian!(
     L<:LinearDynamicalSystem{T,<:GaussianStateModel{T},<:GaussianObservationModel{T}},
 }
     total = zero(T)
-    for c in 1:grp.ncells
+    for c in 1:(grp.ncells)
         lds_c = state.cell_lds[c]
         suf_c = state.sufs[c]
         _prepare_cell!(sws_pool[1], state, c)
@@ -1236,7 +1236,7 @@ function StatsAPI.loglikelihood(
     =#
     if grp !== nothing
         total_ll = zero(T)
-        for c in 1:grp.ncells
+        for c in 1:(grp.ncells)
             trials = grp.cell_trials[c]
             lds_c = _cell_lds(lds, grp, c)
             S_chol, K = _filter_cov_pass(lds_c, maximum(data.tsteps[n] for n in trials))
