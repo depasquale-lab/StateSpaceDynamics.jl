@@ -209,22 +209,29 @@ function Random.rand(
     chunksize = cld(ntrials, ntasks)
     task_rngs = [MersenneTwister(rand(rng, UInt64)) for _ in 1:ntasks]
 
-    tforeach(1:ntasks) do i
-        lo = (i - 1) * chunksize + 1
-        hi = min(i * chunksize, ntrials)
-        lo > hi && return nothing
-        trng = task_rngs[i]
-        for trial in lo:hi
-            _sample_trial!(
-                trng,
-                x[trial],
-                y[trial],
-                state_params[trial],
-                obs_params[trial],
-                lds.obs_model,
-                ux_seq[trial],
-                uy_seq[trial],
-            )
+    #=
+    `state_params` / `obs_params` are assigned in both arms of the grouping
+    branch above, so sharing those bindings with the closure would box them,
+    which OhMyThreads rejects (same idiom as `fit_SLDS.jl`'s parallel E-step).
+    =#
+    let state_params = state_params, obs_params = obs_params
+        tforeach(1:ntasks) do i
+            lo = (i - 1) * chunksize + 1
+            hi = min(i * chunksize, ntrials)
+            lo > hi && return nothing
+            trng = task_rngs[i]
+            for trial in lo:hi
+                _sample_trial!(
+                    trng,
+                    x[trial],
+                    y[trial],
+                    state_params[trial],
+                    obs_params[trial],
+                    lds.obs_model,
+                    ux_seq[trial],
+                    uy_seq[trial],
+                )
+            end
         end
     end
 
