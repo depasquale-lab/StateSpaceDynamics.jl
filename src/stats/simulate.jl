@@ -60,14 +60,17 @@ function _sample_trial!(
     # Initial state. The observation at t=1 includes the obs-input term D·v_1
     # when uy_trial has nonzero rows; zero-row matmul is a no-op.
     x_trial[:, 1] = rand(rng, MvNormal(state_params.x0, state_params.P0))
-    y_trial[:, 1] = rand.(
-        rng,
-        Poisson.(
-            exp.(
-                obs_params.C * x_trial[:, 1] + obs_params.d + obs_params.D * uy_trial[:, 1]
+    y_trial[:, 1] =
+        rand.(
+            rng,
+            Poisson.(
+                exp.(
+                    obs_params.C * x_trial[:, 1] +
+                    obs_params.d +
+                    obs_params.D * uy_trial[:, 1]
+                ),
             ),
-        ),
-    )
+        )
 
     # Subsequent states. The dynamics input B·u_{t-1} kicks the state forward.
     for t in 2:tsteps
@@ -80,16 +83,17 @@ function _sample_trial!(
                 state_params.Q,
             ),
         )
-        y_trial[:, t] = rand.(
-            rng,
-            Poisson.(
-                exp.(
-                    obs_params.C * x_trial[:, t] +
-                    obs_params.d +
-                    obs_params.D * uy_trial[:, t],
+        y_trial[:, t] =
+            rand.(
+                rng,
+                Poisson.(
+                    exp.(
+                        obs_params.C * x_trial[:, t] +
+                        obs_params.d +
+                        obs_params.D * uy_trial[:, t],
+                    ),
                 ),
-            ),
-        )
+            )
     end
 end
 
@@ -143,6 +147,34 @@ function Random.rand(
     return x, y
 end
 
+#=
+Per-trial `(state_params, obs_params)` for a multi-trial draw. Ungrouped, every
+trial points at the same two NamedTuples (which themselves reference the model's
+arrays); grouped, a trial points at its cell's. Either way the sampler is one
+code path.
+=#
+function _per_trial_sample_params(lds::LinearDynamicalSystem, ::Nothing, ntrials::Int)
+    return (
+        fill(_extract_state_params(lds.state_model), ntrials),
+        fill(_extract_obs_params(lds.obs_model), ntrials),
+    )
+end
+
+function _per_trial_sample_params(
+    lds::LinearDynamicalSystem, grp::ParameterGrouping, ntrials::Int
+)
+    cell_state = [
+        _extract_state_params(_cell_lds(lds, grp, c).state_model) for c in 1:(grp.ncells)
+    ]
+    cell_obs = [
+        _extract_obs_params(_cell_lds(lds, grp, c).obs_model) for c in 1:(grp.ncells)
+    ]
+    return (
+        [cell_state[grp.trial_cell[n]] for n in 1:ntrials],
+        [cell_obs[grp.trial_cell[n]] for n in 1:ntrials],
+    )
+end
+
 function Random.rand(
     rng::AbstractRNG,
     lds::LinearDynamicalSystem{T,S,O},
@@ -155,23 +187,11 @@ function Random.rand(
     grp = parameter_grouping(lds, ntrials; depends_on=depends_on)
 
     #=
-    Per-trial parameter sets. Ungrouped, every trial points at the same two
-    NamedTuples (which themselves reference the model's arrays); grouped, a
-    trial points at its cell's. Either way the sampler below is one code path.
+    Per-trial parameter sets, built in a helper so each name is assigned exactly
+    once here: the sampling loop below captures them in a closure, and a local
+    written from two branches of an `if` is boxed, which OhMyThreads rejects.
     =#
-    if grp === nothing
-        state_params = fill(_extract_state_params(lds.state_model), ntrials)
-        obs_params = fill(_extract_obs_params(lds.obs_model), ntrials)
-    else
-        cell_state = [
-            _extract_state_params(_cell_lds(lds, grp, c).state_model) for c in 1:grp.ncells
-        ]
-        cell_obs = [
-            _extract_obs_params(_cell_lds(lds, grp, c).obs_model) for c in 1:grp.ncells
-        ]
-        state_params = [cell_state[grp.trial_cell[n]] for n in 1:ntrials]
-        obs_params = [cell_obs[grp.trial_cell[n]] for n in 1:ntrials]
-    end
+    state_params, obs_params = _per_trial_sample_params(lds, grp, ntrials)
 
     x = Vector{Matrix{T}}(undef, ntrials)
     y = Vector{Matrix{T}}(undef, ntrials)

@@ -970,7 +970,7 @@ function _grouped_estep_elbo_poisson!(
     T<:Real,L<:LinearDynamicalSystem{T,<:GaussianStateModel{T},<:PoissonObservationModel{T}}
 }
     total = zero(T)
-    for c in 1:grp.ncells
+    for c in 1:(grp.ncells)
         lds_c = state.cell_lds[c]
         suf_c = state.sufs[c]
         tfs_c = state.cell_tfs[c]

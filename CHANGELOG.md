@@ -175,6 +175,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `P0` now fails.
 
 ### Fixed
+- Multi-trial `rand(lds, tsteps_per_trial)` threw
+  `Attempted to capture and modify outer local variables` instead of sampling.
+  The per-trial parameter vectors were assigned from two branches of an `if`
+  and then captured by the `tforeach` sampling closure, so Julia boxed them and
+  OhMyThreads rejected the closure outright. They are now built in a helper, so
+  each name is assigned once
+- `fit!(slds, y; tie_emissions=true)` fitted the shared Gaussian emission from an
+  uninitialized workspace, usually throwing `PosDefException` from the Cholesky
+  in `_aggregate_td_suff_stats!` and otherwise returning nonsense. The
+  unit-weight aggregator seeds its buffers from the data-only constant blocks
+  (`Σ y y'`, `Σ y`, the observation count, the `uy` blocks), which only the
+  LDS/PLDS `fit!` entry points fill — the SLDS never reaches them, because its
+  own M-step goes through the weighted aggregator, which needs no constants.
+  Both the plain and the grouped tied-emission updates now fill them first
 - SLDS `forward_backward` could produce `NaN`s when a regime received ~no
   responsibility at trial starts: its initial-state effective count `init_n`
   underflowed toward zero, so `x0 = init_xy/init_n` and `P0 = S0/init_n` blew up

@@ -301,16 +301,17 @@ function _sample_continuous_given_discrete!(
     # Initial state
     k1 = z_trial[1]
     x_trial[:, 1] = rand(rng, MvNormal(state_params[k1].x0, state_params[k1].P0))
-    y_trial[:, 1] = rand.(
-        rng,
-        Poisson.(
-            exp.(
-                obs_params[k1].C * x_trial[:, 1] +
-                obs_params[k1].d +
-                obs_params[k1].D * uy_trial[:, 1],
+    y_trial[:, 1] =
+        rand.(
+            rng,
+            Poisson.(
+                exp.(
+                    obs_params[k1].C * x_trial[:, 1] +
+                    obs_params[k1].d +
+                    obs_params[k1].D * uy_trial[:, 1],
+                ),
             ),
-        ),
-    )
+        )
 
     # Subsequent states
     for t in 2:tsteps
@@ -326,16 +327,17 @@ function _sample_continuous_given_discrete!(
             ),
         )
 
-        y_trial[:, t] = rand.(
-            rng,
-            Poisson.(
-                exp.(
-                    obs_params[k_curr].C * x_trial[:, t] +
-                    obs_params[k_curr].d +
-                    obs_params[k_curr].D * uy_trial[:, t],
+        y_trial[:, t] =
+            rand.(
+                rng,
+                Poisson.(
+                    exp.(
+                        obs_params[k_curr].C * x_trial[:, t] +
+                        obs_params[k_curr].d +
+                        obs_params[k_curr].D * uy_trial[:, t],
+                    ),
                 ),
-            ),
-        )
+            )
     end
 end
 
@@ -978,7 +980,7 @@ function _slds_fill_logL!(
         return nothing
     end
 
-    for c in 1:grp.ncells
+    for c in 1:(grp.ncells)
         slds_c = cell_slds[c]
         ws_c = _slds_ws_for(cell_ws, slds_ws, c)
         refresh_slds_constants!(ws_c, slds_c)
@@ -1032,7 +1034,7 @@ function _slds_smooth_all!(
         return nothing
     end
 
-    for c in 1:grp.ncells
+    for c in 1:(grp.ncells)
         _slds_smooth_cell!(
             cell_slds,
             grp,
@@ -1340,8 +1342,15 @@ function _slds_trial_elbo(
     trial_elbo = zero(T)
     x_smooth_trial = fs.x_smooth
 
-    # Per-regime log-density scratch, built once rather than per regime.
-    ll = view(slds_ws.ll_tmp, 1:Tsteps)
+    #=
+    Per-regime log-density scratch, built once rather than per regime. The
+    `::AbstractVector{T}` is what keeps JET quiet: analysed at the unspecialized
+    signature, `T` is only known to be `<:Real`, so `view` over the workspace
+    field widens to a union carrying an `Any`-eltype branch, and no
+    `joint_loglikelihood!` method matches that. Asserting the element type drops
+    the branch; it always held.
+    =#
+    ll = view(slds_ws.ll_tmp, 1:Tsteps)::AbstractVector{T}
 
     # E_q[log p(y, x | z)], plug-in at the posterior mean, weighted by γ.
     for k in 1:K
@@ -1657,6 +1666,15 @@ function _update_tied_emission!(
         it also fills are simply not read here.
         =#
         suf = _initialize_td_sufficient_statistics(T, lds1, data.tsteps)
+        #=
+        The unit-weight aggregator seeds its buffers from the data-only constant
+        blocks (Σ y y', Σ y, the observation count, the `uy` blocks). Only the
+        LDS/PLDS `fit!` entry points fill those, and the SLDS never reaches them
+        — its own M-step goes through the weighted aggregator, which rebuilds
+        the data-side sums every E-step and so needs no constants. Fill them
+        here, or the tied emission is fitted from an uninitialized workspace.
+        =#
+        _td_init_const_blocks!(sws, lds1, data)
         _aggregate_td_suff_stats!(suf, tfs, lds1, data, sws)
         update_C_d!(lds1, suf, sws)
         update_R!(lds1, suf, sws)
@@ -2100,7 +2118,7 @@ function _slds_cell_sldss(
     K = length(slds.LDSs)
     return [
         SLDS{T,S,O,TM,ISV}(slds.A, slds.πₖ, [_cell_lds(slds.LDSs[k], grp, c) for k in 1:K])
-        for c in 1:grp.ncells
+        for c in 1:(grp.ncells)
     ]
 end
 
@@ -2290,7 +2308,7 @@ function _grouped_slds_prior_logdensity(
     K = length(cell_slds[1].LDSs)
     total = zero(T)
     for k in 1:K
-        ldss = [cell_slds[c].LDSs[k] for c in 1:grp.ncells]
+        ldss = [cell_slds[c].LDSs[k] for c in 1:(grp.ncells)]
         total += _grouped_state_prior_logdensity(ldss, grp.cell_slot, T)
         if ldss[1].obs_model isa GaussianObservationModel
             total += _grouped_gaussian_obs_prior_logdensity(ldss, grp.cell_slot, T)
@@ -2320,7 +2338,7 @@ function _elbo_grouped!(
     cell_ws::Union{Nothing,AbstractVector}=nothing,
 ) where {T<:Real}
     total_elbo = zero(T)
-    for c in 1:grp.ncells
+    for c in 1:(grp.ncells)
         slds_c = cell_slds[c]
         ws_c = _slds_ws_for(cell_ws, slds_ws, c)
         refresh_slds_constants!(ws_c, slds_c)
@@ -2544,9 +2562,12 @@ function _update_tied_emission_grouped!(
             c in 1:ncells
         ]
         for c in 1:ncells
-            _aggregate_td_suff_stats!(
-                sufs_1[c], cell_tfs[c], ldss_1[c], cell_data[c], _unit_ws(cell_sws, sws, c)
-            )
+            # Constants are per-cell data; see `_update_tied_emission!`. When
+            # every cell shares `sws` they are rebuilt each pass, and the
+            # aggregate below consumes them before the next cell overwrites.
+            ws_c = _unit_ws(cell_sws, sws, c)
+            _td_init_const_blocks!(ws_c, ldss_1[c], cell_data[c])
+            _aggregate_td_suff_stats!(sufs_1[c], cell_tfs[c], ldss_1[c], cell_data[c], ws_c)
         end
         bufs = GroupedSufBuffers(T, lds1, data.tsteps)
         _grouped_update_C_d!(

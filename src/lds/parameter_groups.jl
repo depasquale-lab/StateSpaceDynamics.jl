@@ -1087,7 +1087,7 @@ One `_cell_lds` per occupied cell.
 function _cell_ldss(
     lds::LinearDynamicalSystem{T,S,O}, grp::ParameterGrouping
 ) where {T<:Real,S<:AbstractStateModel{T},O<:AbstractObservationModel{T}}
-    return [_cell_lds(lds, grp, c) for c in 1:grp.ncells]
+    return [_cell_lds(lds, grp, c) for c in 1:(grp.ncells)]
 end
 
 """

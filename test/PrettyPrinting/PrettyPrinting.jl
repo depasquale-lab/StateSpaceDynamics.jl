@@ -6,7 +6,7 @@ function test_pretty_printing()
 
     # SPD helper — `validate_LDS` rejects non-symmetric Q/P0/R, so any matrix
     # destined for those slots must be built symmetrically.
-    spd(n) = (X=rand(n, n); X * X' + I)
+    spd(n) = (X = rand(n, n); X * X' + I)
 
     # Filter Smooth object
     fs = StateSpaceDynamics.FilterSmooth(

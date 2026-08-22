@@ -146,53 +146,18 @@ p_elbo = plot(
 
 # ## Decoding the mode sequence
 #
-# After fitting, one more E-step gives us both the smoothed continuous states
-# and the per-timestep mode posterior ``\gamma_{k,t} = P(z_t = k \mid y_{1:T})``.
-#
-# !!! warning
-#     This section reaches into non-exported internals (`initialize_FilterSmooth`,
-#     `SLDSDiscreteLayer`, `estep!`, and friends) because the package does not
-#     yet expose a public posterior-decoding API for SLDS. These names may
-#     change between releases. The `obs_seq`/`control_seq` values below
-#     are HiddenMarkovModels.jl plumbing: the "observation" fed to the discrete
-#     layer is just the timestep index used to look up pre-computed
-#     log-likelihoods, and there are no control inputs.
+# [`smooth`](@ref) infers the posterior of the fitted model with its parameters
+# held fixed: the smoothed continuous states, the per-timestep mode posterior
+# ``\gamma_{k,t} = P(z_t = k \mid y_{1:T})``, and the ELBO at those posteriors.
+# It alternates the discrete forward-backward pass with the continuous smoother
+# until ``\gamma`` converges. Unlike the single-sample E-step `fit!` runs during
+# learning, the discrete layer is scored at the smoothed posterior mean, so the
+# result is deterministic — there is no `rng` to pass.
 
-ld = learned_model.LDSs[1]
-seq_ends = [T]
-obs_seq = collect(1:T)
-control_seq = fill(nothing, T)
+post = smooth(learned_model, y)
 
-tfs = StateSpaceDynamics.initialize_FilterSmooth(ld, [T])
-dl = StateSpaceDynamics.SLDSDiscreteLayer(
-    learned_model.A, learned_model.πₖ, zeros(Float64, K, T)
-)
-fb_storage = StateSpaceDynamics._make_slds_fb_storage(dl, seq_ends)
-slds_ws = StateSpaceDynamics.SLDSSmoothWorkspace(Float64, learned_model, T)
-
-# The warm-start smooth draws the first posterior sample into `x_samples`; the
-# E-step then fills the mode posterior from it and re-smooths.
-x_samples = [Matrix{Float64}(undef, ld.latent_dim, T)]
-w_uniform = fill(1.0 / K, K, T)
-StateSpaceDynamics.smooth!(
-    learned_model, tfs[1], y, w_uniform; ws=slds_ws, x_sample=x_samples[1], rng=rng
-)
-StateSpaceDynamics.estep!(
-    learned_model,
-    tfs,
-    fb_storage,
-    dl,
-    [y],
-    x_samples,
-    slds_ws;
-    rng=rng,
-    obs_seq=obs_seq,
-    control_seq=control_seq,
-    seq_ends=seq_ends,
-)
-
-x_learned = tfs[1].x_smooth
-responsibilities = fb_storage.γ
+x_learned = post.x
+responsibilities = post.γ
 z_decoded = [argmax(responsibilities[:, t]) for t in 1:T];
 
 # Modes are identifiable only up to a permutation of the labels.
