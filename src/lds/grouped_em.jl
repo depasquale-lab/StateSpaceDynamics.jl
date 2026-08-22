@@ -311,7 +311,7 @@ function _grouped_smooth(
     Ps = Vector{Array{T,3}}(undef, ntrials)
     sws_pool = _grouped_sws_pool(lds, data)
 
-    for c in 1:grp.ncells
+    for c in 1:(grp.ncells)
         trials = grp.cell_trials[c]
         cell_data = _subset_data(data, trials)
         tfs = initialize_FilterSmooth(lds, cell_data.tsteps)::TrialFilterSmooth{T}
