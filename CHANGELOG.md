@@ -19,12 +19,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   group (each session keeps its own emission, shared by every regime), and
   leaves a frozen emission (`fit_bool`) untouched. Default `false`, so existing
   fits are unchanged
-- `posterior(slds, y; ux, uy, depends_on, max_iter, rng)`: the variational
-  posteriors of a fitted SLDS — `x_smooth`, `p_smooth`, the discrete
-  responsibilities `γ` and the ELBO trace — at fixed parameters. `fit!` runs the
-  same E-step but keeps its forward-backward storage private, so this is the way
-  to get `q(z)` (regime occupancy, a Viterbi-style `argmax` path, a rate
-  averaged over regimes) out of a model, on training or held-out data
+- `smooth(slds, y; ux, uy, depends_on, smoothing_iters, tol, return_cov,
+  progress)`: the variational posteriors of a fitted SLDS at fixed parameters,
+  returned as one `NamedTuple` `(; x, γ, elbo, p)` — the continuous states
+  `q(x)`, the discrete responsibilities `γₜ(k) = q(zₜ = k)`, the ELBO at those
+  posteriors, and (opt-in via `return_cov`) the smoothed covariances. It
+  alternates forward-backward over the switching chain with the Laplace/Kalman
+  smoother over the continuous states (Ghahramani & Hinton, 1996) until `γ`
+  converges (`tol`) or `smoothing_iters` alternations are spent. Unlike the
+  single-Monte-Carlo-sample E-step `fit!` runs during learning, the coupling
+  here is deterministic — the discrete layer is scored at the smoothed
+  posterior mean — so the result is reproducible with no `rng` to pass. `fit!`
+  runs the same alternation but keeps its forward-backward storage private, so
+  this is the way to get `q(z)` (regime occupancy, a Viterbi-style `argmax`
+  path, a rate averaged over regimes) out of a model, on training or held-out
+  data
+- `fit!(slds, y; smoothing_iters=n)`: run `n` discrete↔continuous alternations
+  per E-step instead of one. The default of 1 is the standard vLEM update;
+  larger values hand the M-step a better-converged posterior at proportional
+  cost per iteration
 - Ancillary parameter dependencies: every
   `AbstractStateModel` and `AbstractObservationModel` now carries a
   `depends_on` field (default `nothing`). Setting it to a `NamedTuple` of
@@ -109,6 +122,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path and all three observation shapes on both the Gaussian and Poisson
   paths; multi-trial input returns per-trial vectors, matrix input returns
   matrices as before (#139)
+- **Breaking:** `elbo(slds, y)` is now deterministic. It infers `q(x)` and
+  `q(z)` by the same coordinate ascent as `smooth(slds, y)` and returns that
+  call's `elbo` field, rather than running one Monte-Carlo E-step off a joint
+  draw from `q(x)`. It no longer takes an `rng`, and takes `smoothing_iters` /
+  `tol` / `progress` instead; the value is a converged bound rather than one
+  matching `fit!`'s first noisy trace entry
+- **Breaking:** `loglikelihood(slds, y)` returns the ELBO instead of throwing.
+  The exact marginal `log p(y)` is still intractable for a switching model
+  (it needs a sum over all `K^T` regime sequences), so the returned value is a
+  variational lower bound — comparable across models fit to the same data, but
+  not a likelihood
 - **Breaking:** renamed the control-input arguments `latent_inputs`/`obs_inputs`
   to `ux`/`uy` across the public API (keywords on `fit!`/`rand`, positional on
   `smooth!`/`estep!`) (#139)

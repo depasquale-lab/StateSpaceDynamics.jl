@@ -111,6 +111,14 @@ using SSDTest
                 test_SLDS_estep_elbo_components()
                 test_SLDS_elbo_matches_LDS_marginal_K1()
                 test_SLDS_public_elbo()
+                test_SLDS_smooth_infer_basic()
+                test_SLDS_smooth_infer_shapes()
+                test_SLDS_smooth_infer_deterministic_and_modes()
+                test_SLDS_smooth_infer_K1()
+                test_SLDS_smooth_infer_recovers_distinct_regimes()
+                test_SLDS_smooth_infer_cov_and_elbo()
+                test_SLDS_loglikelihood_returns_elbo()
+                test_SLDS_fit_smoothing_iters()
                 test_SLDS_no_priors_zero_prior_logdensity()
                 test_SLDS_x0_niw_prior()
                 test_SLDS_joint_sample_reproduces_cross_covariance()
@@ -135,8 +143,8 @@ using SSDTest
                 test_SLDS_tied_emissions_poisson()
                 test_SLDS_tied_emissions_gaussian()
                 test_SLDS_tied_emissions_respects_fit_bool()
-                test_SLDS_posterior_poisson()
-                test_SLDS_posterior_recovers_regimes()
+                test_SLDS_smooth_poisson()
+                test_SLDS_smooth_recovers_regimes()
             end
 
             @testset "Control inputs (ux/uy)" begin
@@ -296,7 +304,7 @@ using SSDTest
             @testset "SLDS fitting" begin
                 test_grouped_slds_fit()
                 test_grouped_slds_tied_emissions()
-                test_grouped_slds_posterior()
+                test_grouped_slds_smooth()
                 test_grouped_slds_requires_matching_labels()
             end
         end

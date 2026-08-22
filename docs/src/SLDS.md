@@ -91,6 +91,10 @@ The sampling process follows the generative model:
 fit!(slds::SLDS{T,S,O}, y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}}; max_iter::Int=50, progress::Bool=true) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
 ```
 
+Each E-step runs `smoothing_iters` discrete↔continuous alternations before the M-step.
+The default of 1 is the standard vLEM update; larger values hand the M-step a
+better-converged posterior at proportional cost per iteration.
+
 ## The vLEM Algorithm
 
 The vLEM algorithm maximizes the **Evidence Lower Bound (ELBO)** instead of the intractable marginal likelihood. The key insight is to use a structured variational approximation that factorizes as:
@@ -174,20 +178,42 @@ This is the usual setup for neural recordings, where the array does not change
 when the animal's dynamics do, and it divides the emission's parameter count —
 usually the bulk of the model — by `K`.
 
-## Reading the posteriors back out
+## Post-fit inference
 
-`fit!` returns the ELBO trace; `posterior` returns the variational posteriors
-themselves, at fixed parameters, on the fitted data or on held-out data:
+`fit!` returns the ELBO trace; [`smooth`](@ref) returns the posteriors themselves. Once
+an SLDS has been fit, `smooth` infers the full posterior for a dataset with the
+parameters held fixed: the continuous states ``q(x)``, the discrete-state
+responsibilities ``\gamma_t(k) = q(z_t = k) \approx p(z_t = k \mid y_{1:T})``, and the
+ELBO at those posteriors. It alternates the forward-backward pass over the discrete
+chain with the Kalman/Laplace smoother over the continuous states, following the classic
+coordinate-ascent scheme of Ghahramani & Hinton (1996), stopping once ``\gamma``
+converges (`tol`) or after `smoothing_iters` alternations.
 
-```@docs
-posterior
+Unlike the single-Monte-Carlo-sample E-step that `fit!` uses during learning, the
+coupling here is deterministic — the discrete-layer log-likelihoods are evaluated at the
+smoothed posterior mean — so the result is reproducible.
+
+Because a converged alternation is expensive, `smooth` returns everything it computed in
+one `NamedTuple`; read its `elbo` field rather than calling [`elbo`](@ref) separately.
+
+```@docs; canonical = false
+smooth(slds::SLDS{T,S,O}, y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}}) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
 ```
 
 ```julia
-post = posterior(fitted, y; ux=ux, uy=uy)
+post = smooth(fitted, y; ux=ux, uy=uy)
 occupancy = post.γ[trial]                    # K × T, columns summing to 1
 path = [argmax(view(occupancy, :, t)) for t in axes(occupancy, 2)]
+bound = post.elbo                            # scalar ELBO at these posteriors
 ```
+
+Pass `depends_on` when reading posteriors for a held-out set whose trial count differs
+from the one the regimes' stored labels were written for.
+
+[`loglikelihood`](@ref) and [`elbo`](@ref) both return that same ELBO. The exact
+marginal ``\log p(y)`` is intractable for a switching model — it requires summing over
+all ``K^T`` regime sequences — so `loglikelihood(slds, y)` reports the variational lower
+bound.
 
 ## Evidence Lower Bound (ELBO)
 

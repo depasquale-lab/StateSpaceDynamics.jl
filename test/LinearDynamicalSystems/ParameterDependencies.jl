@@ -587,7 +587,7 @@ function test_grouped_slds_fit()
     @test fitted.LDSs[2].state_model.x0 ≈ fitted.LDSs[1].state_model.x0
     @test fitted.LDSs[2].state_model.P0 ≈ fitted.LDSs[1].state_model.P0
 
-    @test isfinite(elbo(fitted, y; rng=StableRNG(12)))
+    @test isfinite(elbo(fitted, y; smoothing_iters=5, tol=0))
 
     return nothing
 end
@@ -631,7 +631,7 @@ function test_grouped_slds_tied_emissions()
     return nothing
 end
 
-function test_grouped_slds_posterior()
+function test_grouped_slds_smooth()
     rng = StableRNG(2021)
     labels = vcat(fill(:s1, 3), fill(:s2, 3))
     truth = pd_slds(labels)
@@ -639,18 +639,31 @@ function test_grouped_slds_posterior()
 
     # A held-out subset has its own trial count, so it needs its own labels.
     subset = y[1:4]
-    post = posterior(
+    post = smooth(
         truth,
         subset;
         depends_on=(C=labels[1:4], R=labels[1:4]),
-        max_iter=3,
-        rng=StableRNG(22),
+        smoothing_iters=50,
+        tol=1e-8,
     )
     @test length(post.γ) == 4
+    @test length(post.x) == 4
+    @test isfinite(post.elbo)
     for n in 1:4
         @test size(post.γ[n]) == (2, size(subset[n], 2))
         @test all(≈(1.0), vec(sum(post.γ[n]; dims=1)))
     end
+
+    # Deterministic: no rng in play, so a repeat call agrees exactly.
+    repeat = smooth(
+        truth,
+        subset;
+        depends_on=(C=labels[1:4], R=labels[1:4]),
+        smoothing_iters=50,
+        tol=1e-8,
+    )
+    @test repeat.elbo == post.elbo
+    @test repeat.γ[1] == post.γ[1]
 
     return nothing
 end
