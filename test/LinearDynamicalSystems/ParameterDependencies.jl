@@ -26,9 +26,7 @@ end
 
 function pd_obs_model(::Type{T}=Float64) where {T<:Real}
     return GaussianObservationModel(;
-        C=T[1.0 0.2; -0.3 1.0],
-        d=zeros(T, PD_OBS_DIM),
-        R=Matrix{T}(0.20 * I(PD_OBS_DIM)),
+        C=T[1.0 0.2; -0.3 1.0], d=zeros(T, PD_OBS_DIM), R=Matrix{T}(0.20 * I(PD_OBS_DIM))
     )
 end
 

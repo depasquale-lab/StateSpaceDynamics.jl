@@ -171,9 +171,8 @@ function _resolve_dependence(model::DependentModel)
                 "got a $(typeof(supplied))",
             ),
         )
-        isempty(supplied) && throw(
-            ArgumentError("depends_on[:$key] is empty; expected one label per trial")
-        )
+        isempty(supplied) &&
+            throw(ArgumentError("depends_on[:$key] is empty; expected one label per trial"))
         current = collect(Any, supplied)
         if varies[g]
             _same_labels(current, trial_labels[g]) || throw(
@@ -429,13 +428,15 @@ function _validate_override_keys(
     for key in keys(override)
         cs = _try_canonical_param(sm, key)
         co = _try_canonical_param(om, key)
-        cs === nothing && co === nothing && throw(
-            ArgumentError(
-                "depends_on override: `:$key` is not a parameter of either sub-model " *
-                "(state: $(_valid_param_names(sm)); " *
-                "observation: $(_valid_param_names(om)))",
-            ),
-        )
+        cs === nothing &&
+            co === nothing &&
+            throw(
+                ArgumentError(
+                    "depends_on override: `:$key` is not a parameter of either sub-model " *
+                    "(state: $(_valid_param_names(sm)); " *
+                    "observation: $(_valid_param_names(om)))",
+                ),
+            )
         declared =
             (cs !== nothing && dep_s.varies[findfirst(isequal(cs), dep_s.names)::Int]) ||
             (co !== nothing && dep_o.varies[findfirst(isequal(co), dep_o.names)::Int])
