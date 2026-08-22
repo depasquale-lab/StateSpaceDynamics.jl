@@ -19,9 +19,11 @@ are shared across regimes; the active regime `zₜ` selects which per-regime
 
     M-Step:         mstep!(slds, tfs, fb_storage, dl, y, sws; ux, uy)
 
-    Fit:            fit!(slds, y; ux, uy)
+    Fit:            fit!(slds, y; ux, uy, smoothing_iters)
 
-    Posterior:      posterior(slds, y; ux, uy)
+    Infer:          smooth(slds, y; ux, uy, smoothing_iters, tol)  # -> (; x, γ, elbo, p)
+
+    ELBO:           elbo(slds, y; ux, uy) == loglikelihood(slds, y; ux, uy)
 =============================================================================#
 
 """
@@ -158,7 +160,7 @@ function Random.rand(slds::SLDS, tsteps_per_trial::AbstractVector{<:Integer}; kw
     return rand(Random.default_rng(), slds, tsteps_per_trial; kwargs...)
 end
 
-# Core SLDS trial sampling logic. `ux_trial` / `uy_trial` are the canonicalized
+# Core SLDS trial sampling logic.
 function _sample_slds_trial!(
     rng,
     z_trial,
@@ -362,9 +364,8 @@ end
 """
     joint_loglikelihood!(ws, slds, x, y, w[, ux, uy])
 
-Compute weighted complete-data log-likelihood for SLDS.
-Returns vector of per-timestep log-likelihoods. `ux` / `uy` are the per-trial
-control-input matrices (`nothing` or zero-row skips the `Bₖ u` / `Dₖ v` terms).
+Weighted complete-data log-likelihood for the SLDS. Returns a vector of
+per-timestep log-likelihoods.
 """
 function joint_loglikelihood!(
     ws::SLDSSmoothWorkspace{T},
@@ -399,9 +400,7 @@ end
 
 In-place SLDS gradient: each component's complete-data gradient is scaled
 per-timestep by the responsibility `w[k, t]` and accumulated. Writes into
-`ws.opt.grad_buf` and returns it. `ux` (dynamics input, feeds `-Q⁻¹` /
-`A'Q⁻¹` residuals via `Bₖ u`) and `uy` (observation input, feeds the emission
-gradient via `Dₖ v`) are per-trial matrices; `nothing` or zero-row skips them.
+`ws.opt.grad_buf` and returns it.
 """
 function gradient!(
     ws::SLDSSmoothWorkspace{T},
@@ -688,7 +687,13 @@ function smooth!(
     return fs
 end
 
-# Public API wrapper
+"""
+    smooth(slds, y, w; ux=nothing, uy=nothing)
+
+Smooth a single trial under **given** discrete responsibilities `w` (`K × T`), without
+inferring them. Returns `(x_smooth, p_smooth)`. To infer the responsibilities as well,
+call [`smooth(slds, y)`](@ref) with no `w`.
+"""
 function smooth(
     slds::SLDS,
     y::AbstractMatrix{T},
@@ -706,29 +711,288 @@ function smooth(
 end
 
 """
-    estep!(slds, tfs, fb_storage, dl, y, x_samples, slds_ws; rng, obs_seq, control_seq, seq_ends)
+    smooth(slds, y; ux=nothing, uy=nothing, smoothing_iters=100, tol=1e-6,
+           return_cov=false, progress=false)
 
-E-step for SLDS using a single sample from the continuous posterior. Updates both
-variational posteriors in coordinate-ascent order:
+Infer the joint posterior of a **fitted** `SLDS` with the parameters held fixed: the
+continuous states q(x), the discrete responsibilities `γₜ(k) = q(zₜ = k)`, and the ELBO
+at those posteriors.
 
-- Fills `dl.logL` (`K × sum(T_i)`) with per-state log-likelihoods from the continuous
-  trajectory sampled at the end of the previous smooth (`x_samples`, filled either by the
-  `fit!` warm-start or by the prior E-step iteration)
-- Updates the discrete posterior q(z) via forward-backward (HiddenMarkovModels.jl, one
-  storage covers all trials; HMMs.jl `@threads` across trials internally)
-- Updates the continuous posterior q(x) by running the Laplace/Newton smoother on each
-  trial with the freshly-updated discrete weights `γ`, filling `tfs[*].x_smooth`,
-  `tfs[*].p_smooth`, and `tfs[*].entropy`, and drawing the next joint posterior sample
-  into `x_samples[trial]` for the following iteration (an exact draw from q(x) via the
-  smoother's precision factors, see `block_tridiagonal_sample!`).
+Alternates forward-backward over the switching chain with the Laplace/Kalman smoother
+over the continuous states (Ghahramani & Hinton, 1996). The coupling is deterministic —
+the discrete layer is scored at the smoothed posterior mean, not at a sample — so the
+result is reproducible.
 
-`x_samples` is thus read (to fill `dl.logL`) then overwritten (with the fresh draw) within
-each call. `obs_seq`/`control_seq` are the HMMs.jl placeholder sequences built in `fit!`
-(timestep indices / `nothing`s) — unrelated to the LDS control-input kwargs
-`ux`/`uy`. The latter, when supplied, are per-trial vectors of input matrices
-(`ux[trial]` is `(ux_dim, T_trial)`, `uy[trial]` is `(uy_dim, T_trial)`); they
-feed the per-regime `Bₖ u` / `Dₖ v` terms of every trial's smoother and
-log-likelihood fill. `nothing` (the default) means no inputs.
+# Keywords
+- `smoothing_iters::Int=100`: maximum discrete↔continuous alternations.
+- `tol::Real=1e-6`: stop once `max|Δγ| < tol`; `tol=0` runs exactly `smoothing_iters`
+  alternations with no stopping test.
+- `return_cov::Bool=false`: also return the smoothed covariances (`latent_dim² × T` per
+  trial — large, hence opt-in).
+- `progress::Bool=false`: show a progress bar.
+
+# Returns
+A `NamedTuple` `(; x, γ, elbo, p)`. For a single-trial matrix `y`, `x` is
+`latent_dim × T`, `γ` is `K × T`, and `p` is `latent_dim × latent_dim × T`; for a 3-D
+array or a vector of matrices, each is a `Vector` with one entry per trial. `elbo` is
+always a scalar, and `p` is `nothing` unless `return_cov=true`.
+"""
+function smooth(
+    slds::SLDS{T,S,O},
+    y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
+    ux=nothing,
+    uy=nothing,
+    smoothing_iters::Int=100,
+    tol::Real=1e-6,
+    return_cov::Bool=false,
+    progress::Bool=false,
+) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
+    # `Data` validates shapes and canonicalizes the three observation/input forms.
+    # Regime dims are uniform, so validating against LDSs[1] covers all regimes.
+    data = Data(slds.LDSs[1], y; ux=ux, uy=uy)
+    y_seq, ux_seq, uy_seq = data.y, data.ux, data.uy
+
+    K = length(slds.LDSs)
+    ntrials = length(y_seq)
+    seq_ends = cumsum(data.tsteps)
+
+    tfs = initialize_FilterSmooth(slds.LDSs[1], data.tsteps)::TrialFilterSmooth{T}
+    dl = SLDSDiscreteLayer(slds.A, slds.πₖ, zeros(T, K, last(seq_ends)))
+    fb_storage = _make_slds_fb_storage(dl, seq_ends)
+    obs_seq = collect(1:last(seq_ends))
+    control_seq = fill(nothing, last(seq_ends))
+    slds_ws = SLDSSmoothWorkspace(T, slds, maximum(data.tsteps))
+
+    # No M-step runs, so the per-regime constants cached by the workspace stay
+    # valid for every alternation.
+    _vem_warmstart!(slds, tfs, y_seq, slds_ws; ux_seq=ux_seq, uy_seq=uy_seq)
+
+    prog = if progress
+        Progress(smoothing_iters; desc="Smoothing SLDS...", barlen=50, showspeed=true)
+    else
+        nothing
+    end
+
+    iters, converged = _vem_alternate!(
+        slds,
+        tfs,
+        fb_storage,
+        dl,
+        y_seq,
+        slds_ws;
+        obs_seq=obs_seq,
+        control_seq=control_seq,
+        seq_ends=seq_ends,
+        ux_seq=ux_seq,
+        uy_seq=uy_seq,
+        smoothing_iters=smoothing_iters,
+        tol=T(tol),
+        prog=prog,
+    )
+    prog !== nothing && finish!(prog)
+
+    if tol > 0 && !converged
+        @warn "SLDS smoothing did not converge" smoothing_iters tol
+    end
+
+    total_elbo = elbo!(
+        slds, tfs, fb_storage, y_seq, slds_ws; seq_ends=seq_ends, ux=ux_seq, uy=uy_seq
+    )
+
+    γ_trials = Vector{Matrix{T}}(undef, ntrials)
+    x_trials = Vector{Matrix{T}}(undef, ntrials)
+    p_trials = return_cov ? Vector{Array{T,3}}(undef, ntrials) : nothing
+    for trial in 1:ntrials
+        t1, t2 = HMMs.seq_limits(seq_ends, trial)
+        γ_trials[trial] = copy(view(fb_storage.γ, :, t1:t2))
+        x_trials[trial] = copy(tfs[trial].x_smooth)
+        return_cov && (p_trials[trial] = copy(tfs[trial].p_smooth))
+    end
+
+    return _collect_slds_smooth_output(x_trials, γ_trials, p_trials, total_elbo, y)
+end
+
+#=
+Public-shape return convention, mirroring `_collect_smooth_output` in fit_LDS.jl:
+matrix in → per-trial arrays out (single trial); vector / 3-D array in → vectors out.
+`y` is only inspected for its container type.
+=#
+function _collect_slds_smooth_output(x, γ, p, total_elbo, ::AbstractMatrix)
+    return (; x=x[1], γ=γ[1], elbo=total_elbo, p=(p === nothing ? nothing : p[1]))
+end
+
+function _collect_slds_smooth_output(x, γ, p, total_elbo, _)
+    return (; x=x, γ=γ, elbo=total_elbo, p=p)
+end
+
+#=
+Uniform-weight warm-start: smooth each trial once with γ ≡ 1/K so the first
+discrete update has a continuous trajectory to score. Draws the first joint
+sample into `x_samples` when sampling (`nothing` for the deterministic path).
+=#
+function _vem_warmstart!(
+    slds::SLDS{T},
+    tfs::TrialFilterSmooth{T},
+    y_seq::AbstractVector{<:AbstractMatrix{T}},
+    slds_ws::SLDSSmoothWorkspace{T};
+    ux_seq,
+    uy_seq,
+    x_samples::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
+    rng::AbstractRNG=Random.default_rng(),
+) where {T<:Real}
+    K = length(slds.LDSs)
+    for trial in eachindex(y_seq)
+        w_uniform = fill(one(T) / K, K, size(y_seq[trial], 2))
+        smooth!(
+            slds,
+            tfs[trial],
+            y_seq[trial],
+            w_uniform;
+            ws=slds_ws,
+            x_sample=(x_samples === nothing ? nothing : x_samples[trial]),
+            rng=rng,
+            ux=ux_seq[trial],
+            uy=uy_seq[trial],
+        )
+    end
+    return nothing
+end
+
+"""
+    _vem_alternate!(slds, tfs, fb_storage, dl, y_seq, slds_ws; smoothing_iters, tol, x_samples, ...)
+
+Run `smoothing_iters` discrete↔continuous alternations of the structured-variational
+E-step. One alternation is:
+
+1. fill `dl.logL` (`K × sum(T_i)`) with per-regime log-likelihoods of the current
+   continuous trajectory,
+2. refresh q(z) = γ by forward-backward over the switching chain (HMMs.jl threads
+   across trials), and
+3. refresh q(x) by re-running the Laplace/Newton smoother on each trial under the new
+   γ, filling `tfs[*].x_smooth`, `tfs[*].p_smooth`, and `tfs[*].entropy`.
+
+`x_samples` selects how step 1 reads the continuous trajectory, and is the only
+difference between the two callers:
+
+- `x_samples === nothing` — plug in the smoothed mean `E_q[x]`. Deterministic and
+  reproducible; used by [`smooth`](@ref) for post-fit inference.
+- `x_samples !== nothing` — plug in a joint draw from q(x), and draw the next one in
+  step 3. This is the vLEM Monte-Carlo E-step used by [`fit!`](@ref); `x_samples` is
+  read then overwritten within each alternation.
+
+`tol` selects the stopping rule. `tol == 0` runs exactly `smoothing_iters`
+alternations; `tol > 0` stops early once `max|Δγ| < tol` and warns if
+`smoothing_iters` is exhausted first.
+
+Returns `(iters, converged)`.
+"""
+function _vem_alternate!(
+    slds::SLDS{T},
+    tfs::TrialFilterSmooth{T},
+    fb_storage::HMMs.ForwardBackwardStorage,
+    dl::SLDSDiscreteLayer{T},
+    y_seq::AbstractVector{<:AbstractMatrix{T}},
+    slds_ws::SLDSSmoothWorkspace{T};
+    obs_seq::AbstractVector,
+    control_seq::AbstractVector,
+    seq_ends::AbstractVector{Int},
+    ux_seq,
+    uy_seq,
+    smoothing_iters::Int,
+    tol::T=zero(T),
+    x_samples::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
+    rng::AbstractRNG=Random.default_rng(),
+    prog=nothing,
+) where {T<:Real}
+    smoothing_iters >= 1 ||
+        throw(ArgumentError("smoothing_iters must be ≥ 1, got $smoothing_iters"))
+
+    K = length(slds.LDSs)
+    ntrials = length(y_seq)
+
+    # Previous-iteration γ snapshot; only allocated when there is a stopping test.
+    γ_prev = tol > 0 ? fill(T(Inf), K, last(seq_ends)) : nothing
+    converged = false
+    iters = 0
+
+    for iter in 1:smoothing_iters
+        iters = iter
+
+        # (1) Score the current continuous trajectory under each regime.
+        for trial in 1:ntrials
+            t1, t2 = HMMs.seq_limits(seq_ends, trial)
+            x_src = x_samples === nothing ? tfs[trial].x_smooth : x_samples[trial]
+            for k in 1:K
+                joint_loglikelihood!(
+                    view(dl.logL, k, t1:t2),
+                    slds_ws,
+                    slds_ws.consts[k],
+                    slds.LDSs[k],
+                    x_src,
+                    y_seq[trial],
+                    ux_seq[trial],
+                    uy_seq[trial],
+                )
+            end
+        end
+
+        # (2) Update q(z).
+        HMMs.forward_backward!(
+            fb_storage,
+            dl,
+            obs_seq,
+            control_seq;
+            seq_ends=seq_ends,
+            transition_marginals=true,
+        )
+
+        # (3) Update q(x) under the fresh γ, drawing the next sample on the way out.
+        for trial in 1:ntrials
+            t1, t2 = HMMs.seq_limits(seq_ends, trial)
+            smooth!(
+                slds,
+                tfs[trial],
+                y_seq[trial],
+                view(fb_storage.γ, :, t1:t2);
+                ws=slds_ws,
+                x_sample=(x_samples === nothing ? nothing : x_samples[trial]),
+                rng=rng,
+                ux=ux_seq[trial],
+                uy=uy_seq[trial],
+            )
+        end
+
+        prog !== nothing && next!(prog)
+
+        if γ_prev !== nothing
+            if iter > 1
+                Δγ = zero(T)
+                @inbounds for i in eachindex(fb_storage.γ)
+                    d = abs(fb_storage.γ[i] - γ_prev[i])
+                    d > Δγ && (Δγ = d)
+                end
+                if Δγ < tol
+                    converged = true
+                    break
+                end
+            end
+            copyto!(γ_prev, fb_storage.γ)
+        end
+    end
+
+    return iters, converged
+end
+
+"""
+    estep!(slds, tfs, fb_storage, dl, y, x_samples, slds_ws; rng, obs_seq, control_seq, seq_ends, smoothing_iters=1)
+
+Monte-Carlo E-step for the SLDS: `smoothing_iters` coordinate-ascent alternations of
+[`_vem_alternate!`](@ref), each scoring the discrete layer against a joint draw from
+q(x) and drawing the next one. `smoothing_iters=1` is the standard vLEM E-step.
+
+`obs_seq`/`control_seq` are the HMMs.jl placeholder sequences built in `fit!` (timestep
+indices / `nothing`s) — unrelated to the LDS control-input kwargs `ux`/`uy`, which are
+per-trial vectors of input matrices.
 """
 function estep!(
     slds::SLDS{T,S,O},
@@ -744,60 +1008,30 @@ function estep!(
     seq_ends::AbstractVector{Int},
     ux::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
     uy::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
+    smoothing_iters::Int=1,
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
-    ntrials = length(y)
-    K = length(slds.LDSs)
-
-    # Fill per-trial slices of dl.logL from the previously-sampled trajectory.
-    for trial in 1:ntrials
-        t1, t2 = HMMs.seq_limits(seq_ends, trial)
-        y_trial = y[trial]
-        x_sample = x_samples[trial]
-        ux_trial = ux === nothing ? nothing : ux[trial]
-        uy_trial = uy === nothing ? nothing : uy[trial]
-        for k in 1:K
-            ll_view = view(dl.logL, k, t1:t2)
-            joint_loglikelihood!(
-                ll_view,
-                slds_ws,
-                slds_ws.consts[k],
-                slds.LDSs[k],
-                x_sample,
-                y_trial,
-                ux_trial,
-                uy_trial,
-            )
-        end
-    end
-
-    # Update q(z): single batched forward-backward (HMMs.jl threads across trials).
-    HMMs.forward_backward!(
-        fb_storage, dl, obs_seq, control_seq; seq_ends=seq_ends, transition_marginals=true
+    _vem_alternate!(
+        slds,
+        tfs,
+        fb_storage,
+        dl,
+        y,
+        slds_ws;
+        obs_seq=obs_seq,
+        control_seq=control_seq,
+        seq_ends=seq_ends,
+        ux_seq=_input_seq(ux, y),
+        uy_seq=_input_seq(uy, y),
+        smoothing_iters=smoothing_iters,
+        x_samples=x_samples,
+        rng=rng,
     )
-
-    #=
-    Update q(x): re-smooth each trial with the new weights γ, and draw the next
-    sample into x_samples[trial] on the way out. Overwriting x_samples here is
-    fine — the fill loop above already used the previous draw.
-    =#
-    for trial in 1:ntrials
-        t1, t2 = HMMs.seq_limits(seq_ends, trial)
-        w = view(fb_storage.γ, :, t1:t2)  # K × Tsteps
-        smooth!(
-            slds,
-            tfs[trial],
-            y[trial],
-            w;
-            ws=slds_ws,
-            x_sample=x_samples[trial],
-            rng=rng,
-            ux=(ux === nothing ? nothing : ux[trial]),
-            uy=(uy === nothing ? nothing : uy[trial]),
-        )
-    end
-
     return nothing
 end
+
+# `estep!` accepts `nothing` for absent inputs; `_vem_alternate!` indexes per trial.
+_input_seq(::Nothing, y) = fill(nothing, length(y))
+_input_seq(u, y) = u
 
 # tr(A·B) without forming the product: Σ_ij A[i,j]·B[j,i].
 @inline function _tr_prod(A::AbstractMatrix, B::AbstractMatrix)
@@ -1003,111 +1237,52 @@ function elbo!(
 end
 
 """
-    elbo(slds, y; ux=nothing, uy=nothing, rng=Random.default_rng())
+    elbo(slds, y; ux=nothing, uy=nothing, smoothing_iters=100, tol=1e-6, progress=false)
 
-Evidence lower bound of an `SLDS` at the current parameters (allocating
-convenience wrapper around the workspace-based [`elbo!`](@ref)): warm-starts
-the continuous posterior with uniform discrete weights, runs one variational
-E-step (forward-backward for `q(z)`, Laplace smoothing for `q(x)`), and
-evaluates the ELBO at the resulting posteriors.
+Evidence lower bound of an `SLDS` at the current parameters — the `elbo` field of
+[`smooth`](@ref)`(slds, y)`, which infers q(x) and q(z) by deterministic
+coordinate ascent before evaluating the bound. Deterministic and reproducible.
 
-The E-step consumes a joint sample from `q(x)` to build the discrete-layer
-log-likelihoods, so the returned value is **stochastic** — pass `rng` for
-reproducibility. This matches the first entry of the ELBO trace returned by
-`fit!` when given the same `rng`.
+Accepts the same observation and input forms as [`smooth`](@ref), and the same
+`smoothing_iters` / `tol` controls over the alternation. Returns a scalar.
 
-# Arguments
-- `y`: observations — a `(obs_dim, T)` matrix, a `(obs_dim, T, ntrials)`
-  array, or a `Vector{<:AbstractMatrix}` of per-trial `(obs_dim, T_i)`
-  matrices (ragged lengths allowed).
-- `ux` / `uy`: optional control inputs in the same shape family as `y`
-  (`nothing` when the regimes carry no `B` / `D`). See [`fit!`](@ref).
-
-Returns a scalar.
+If you also want the posteriors that produced it, call [`smooth`](@ref) once and read
+its `elbo` field rather than paying for the alternation twice.
 """
 function elbo(
     slds::SLDS{T,S,O},
     y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
     ux=nothing,
     uy=nothing,
-    rng::AbstractRNG=Random.default_rng(),
+    smoothing_iters::Int=100,
+    tol::Real=1e-6,
+    progress::Bool=false,
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
-    # `Data` centralizes shape validation and canonicalizes the three
-    # observation/input forms (regime dims are uniform, so validating against
-    # LDSs[1] covers all regimes). Absent ux/uy become zero-row matrices.
-    data = Data(slds.LDSs[1], y; ux=ux, uy=uy)
-    y_seq = data.y
-    ux_seq = data.ux
-    uy_seq = data.uy
-
-    K = length(slds.LDSs)
-    ntrials = length(y_seq)
-    seq_ends = cumsum(data.tsteps)
-    total_T = last(seq_ends)
-    T_max = maximum(data.tsteps)
-
-    tfs = initialize_FilterSmooth(slds.LDSs[1], data.tsteps)::TrialFilterSmooth{T}
-    dl = SLDSDiscreteLayer(slds.A, slds.πₖ, zeros(T, K, total_T))
-    fb_storage = _make_slds_fb_storage(dl, seq_ends)
-    obs_seq = collect(1:total_T)
-    control_seq = fill(nothing, total_T)
-    slds_ws = SLDSSmoothWorkspace(T, slds, T_max)
-    x_samples = [Matrix{T}(undef, slds.LDSs[1].latent_dim, Ti) for Ti in data.tsteps]
-
-    # Warm-start q(x) with uniform weights, drawing the sample the E-step's
-    # discrete update consumes (mirrors the fit! warm-start).
-    for trial in 1:ntrials
-        w_uniform = fill(one(T) / K, K, data.tsteps[trial])
-        smooth!(
-            slds,
-            tfs[trial],
-            y_seq[trial],
-            w_uniform;
-            ws=slds_ws,
-            x_sample=x_samples[trial],
-            rng=rng,
-            ux=ux_seq[trial],
-            uy=uy_seq[trial],
-        )
-    end
-
-    estep!(
+    return smooth(
         slds,
-        tfs,
-        fb_storage,
-        dl,
-        y_seq,
-        x_samples,
-        slds_ws;
-        rng=rng,
-        obs_seq=obs_seq,
-        control_seq=control_seq,
-        seq_ends=seq_ends,
-        ux=ux_seq,
-        uy=uy_seq,
-    )
-
-    return elbo!(
-        slds, tfs, fb_storage, y_seq, slds_ws; seq_ends=seq_ends, ux=ux_seq, uy=uy_seq
-    )
+        y;
+        ux=ux,
+        uy=uy,
+        smoothing_iters=smoothing_iters,
+        tol=tol,
+        return_cov=false,
+        progress=progress,
+    ).elbo
 end
 
 """
-    loglikelihood(slds, y)
+    loglikelihood(slds, y; kwargs...)
 
-Marginal (observed-data) log-likelihood for an SLDS — **not implemented**.
+Variational lower bound on the marginal log-likelihood of an `SLDS`, i.e.
+[`elbo`](@ref)`(slds, y)`.
 
-The marginal `log p(y)` requires summing over all `K^T` discrete regime
-sequences (the switching model has no closed-form filter). Use
-[`elbo`](@ref)`(slds, y)` for a variational lower bound on `log p(y)`, or the
-ELBO trace returned by `fit!`.
+The exact marginal `log p(y)` is intractable for a switching model — it requires
+summing over all `K^T` discrete regime sequences — so this returns the ELBO instead.
+Values are comparable across models fit to the same data, but are lower bounds, not
+likelihoods. Accepts the same keywords as [`elbo`](@ref).
 """
-function StatsAPI.loglikelihood(slds::SLDS, y)
-    return error(
-        "marginal loglikelihood is not implemented for the SLDS (marginalizing the " *
-        "discrete regime sequence requires summing over K^T paths). Use " *
-        "elbo(slds, y) for a variational lower bound, or the ELBO trace from fit!.",
-    )
+function StatsAPI.loglikelihood(slds::SLDS, y; kwargs...)
+    return elbo(slds, y; kwargs...)
 end
 
 """
@@ -1124,10 +1299,8 @@ M-step for SLDS.
   via the existing LBFGS routine (Poisson is non-conjugate and cannot be
   folded into the regression).
 
-`ux` / `uy` are the per-trial control-input sequences; when present, the weighted
-aggregator folds `Bₖ u` / `Dₖ v` into the regression targets so `Bₖ` (Gaussian
-and Poisson dynamics) and `Dₖ` (Gaussian emission, and Poisson emission via the
-LBFGS routine) are re-estimated alongside `Aₖ` / `Cₖ`.
+When inputs are present the weighted aggregator folds `Bₖ u` / `Dₖ v` into the
+regression targets, so `Bₖ` and `Dₖ` are re-estimated alongside `Aₖ` / `Cₖ`.
 """
 function mstep!(
     slds::SLDS{T,S,O},
@@ -1227,12 +1400,17 @@ function _update_shared_initial_state!(
 end
 
 """
-    fit!(slds::SLDS, y; ux=nothing, uy=nothing, max_iter=50, progress=true)
+    fit!(slds::SLDS, y; ux=nothing, uy=nothing, max_iter=50, smoothing_iters=1, progress=true)
 
 Fit SLDS using variational Laplace EM. Runs for exactly `max_iter` iterations
 (no early-stopping criterion: the E-step's posterior sampling makes the ELBO
 trace noisy across iterations, so a tolerance check on successive differences
 would fire spuriously). Returns the per-iteration ELBO trace.
+
+`smoothing_iters` sets how many discrete↔continuous alternations each E-step runs
+before the M-step. The default of 1 is the standard vLEM update; larger values give
+the E-step a better-converged posterior at proportional cost per iteration. Each
+alternation redraws from q(x), so the Monte-Carlo estimator stays unbiased.
 
 `y` is a single trial `(obs_dim × T)` matrix, a `(obs_dim, T, ntrials)` array,
 or a vector of per-trial matrices (ragged `T_i` allowed). Internally a single
@@ -1251,14 +1429,12 @@ function fit!(
     ux=nothing,
     uy=nothing,
     max_iter::Int=50,
+    smoothing_iters::Int=1,
     progress::Bool=true,
     rng::AbstractRNG=Random.default_rng(),
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
-    #=
-    `Data` centralizes shape validation and canonicalizes the three
-    observation/input forms (regime dims are uniform, so validating against
-    LDSs[1] covers all regimes). Absent ux/uy become zero-row matrices.
-    =#
+    # `Data` validates shapes and canonicalizes the three observation/input forms.
+    # Regime dims are uniform, so validating against LDSs[1] covers all regimes.
     data = Data(slds.LDSs[1], y; ux=ux, uy=uy)
     y_seq = data.y
     ux_seq = data.ux
@@ -1269,7 +1445,6 @@ function fit!(
     obs_dim = slds.LDSs[1].obs_dim
 
     tsteps_per_trial = data.tsteps
-    ntrials = length(y_seq)
     seq_ends = cumsum(tsteps_per_trial)
     total_T = last(seq_ends)
     T_max = maximum(tsteps_per_trial)
@@ -1308,32 +1483,19 @@ function fit!(
     end
     elbos = Vector{T}(undef, max_iter)
 
-    #=
-    Warm-start: smooth each trial once with uniform weights, drawing the first
-    sample into x_samples for the first E-step to consume.
-    =#
-    for trial in 1:ntrials
-        Ti = tsteps_per_trial[trial]
-        w_uniform = fill(one(T) / K, K, Ti)
-        smooth!(
-            slds,
-            tfs[trial],
-            y_seq[trial],
-            w_uniform;
-            ws=slds_ws,
-            x_sample=x_samples[trial],
-            rng=rng,
-            ux=ux_seq[trial],
-            uy=uy_seq[trial],
-        )
-    end
+    # Draws the first sample into x_samples for the first E-step to consume.
+    _vem_warmstart!(
+        slds,
+        tfs,
+        y_seq,
+        slds_ws;
+        ux_seq=ux_seq,
+        uy_seq=uy_seq,
+        x_samples=x_samples,
+        rng=rng,
+    )
 
     for iter in 1:max_iter
-
-        #=
-        E-step: fill q(z) from the current samples, run forward-backward,
-        re-smooth q(x), and draw the next samples for the following iteration.
-        =#
         estep!(
             slds,
             tfs,
@@ -1348,6 +1510,7 @@ function fit!(
             seq_ends=seq_ends,
             ux=ux_seq,
             uy=uy_seq,
+            smoothing_iters=smoothing_iters,
         )
 
         # Compute the ELBO at the current posteriors.
@@ -1377,273 +1540,4 @@ function fit!(
         finish!(prog)
     end
     return elbos
-end
-
-"""
-    posterior(slds, y; max_iter=100, tol=1e-6, check_convergence=true, progress=false)
-
-Infer the discrete-state responsibilities `γₜ(k) = q(zₜ = k) ≈ p(zₜ = k ∣ y₁:T)`
-of a **fitted** `SLDS`, holding all model parameters fixed.
-
-This is a post-fit *inference* routine: it estimates the discrete posterior for a
-model whose parameters are already learned, and does **not** update them (there is
-no M-step). 
-
-It runs the structured-variational E-step, alternating between:
-
-1. **discrete smoothing** — a forward-backward pass over the switching chain that
-   refreshes `q(z)` from the current per-regime log-likelihoods, and
-2. **continuous smoothing** — the Laplace/Kalman smoother that refreshes `q(x)`
-   under the updated responsibilities `γ`,
-
-until either the responsibilities converge or for a fixed number of iterations.
-
-# Arguments
-- `y`: observations — a `(obs_dim, T)` matrix (single trial), a
-  `(obs_dim, T, ntrials)` array, or a `Vector` of per-trial `(obs_dim, T_i)`
-  matrices (ragged trial lengths allowed).
-
-# Keywords
-- `max_iter::Int=100`: maximum number of E-step (forward-backward + smoother)
-  iterations.
-- `tol::Real=1e-6`: convergence tolerance on `max|Δγ|`, the largest absolute change
-  in any responsibility between successive iterations (used only when
-  `check_convergence=true`).
-- `check_convergence::Bool=true`: the mode flag. `true` iterates *until
-  convergence* (`max|Δγ| < tol`), capped at `max_iter` iterations; `false` runs
-  *exactly* `max_iter` iterations.
-- `progress::Bool=false`: show a progress bar.
-
-# Returns
-The responsibilities `γ`:
-- for a single-trial matrix `y`, a `K × T` matrix; and
-- otherwise (3-D array or vector-of-matrices input), a `Vector` of per-trial
-  `K × T_i` matrices, one per trial.
-
-Each column is a probability vector over the `K` discrete states (sums to 1).
-"""
-function posterior(
-    slds::SLDS{T,S,O},
-    y::AbstractMatrix{T};
-    ux=nothing,
-    uy=nothing,
-    return_γ::Bool=true,
-    return_elbo::Bool=true,
-    return_x::Bool=false,
-    max_iter::Int=100,
-    tol::Real=1e-6,
-    check_convergence::Bool=true,
-    progress::Bool=false,
-) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
-    data = Data(slds.LDSs[1], y; ux=ux, uy=uy)
-    return posterior(
-        slds,
-        data;
-        return_γ=return_γ,
-        return_elbo=return_elbo,
-        return_x=return_x,
-        max_iter=max_iter,
-        tol=T(tol),
-        check_convergence=check_convergence,
-        progress=progress,
-    )
-end
-
-function posterior(
-    slds::SLDS{T,S,O},
-    y::Union{AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
-    ux=nothing,
-    uy=nothing,
-    return_γ::Bool=true,
-    return_elbo::Bool=true,
-    return_x::Bool=false,
-    max_iter::Int=100,
-    tol::Real=1e-6,
-    check_convergence::Bool=true,
-    progress::Bool=false,
-) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
-    data = Data(slds.LDSs[1], y; ux=ux, uy=uy)
-    return posterior(
-        slds,
-        data;
-        return_γ=return_γ,
-        return_elbo=return_elbo,
-        return_x=return_x,
-        max_iter=max_iter,
-        tol=T(tol),
-        check_convergence=check_convergence,
-        progress=progress,
-    )
-end
-
-"""
-    posterior(slds, y_seq; max_iter, tol, check_convergence, progress)
-
-Core deterministic variational-E-step iteration behind [`posterior`](@ref). Operates
-on the canonicalized per-trial observation sequence `y_seq` (a `Vector` of
-`(obs_dim, T_i)` matrices) and returns one `K × T_i` responsibility matrix per
-trial. Holds the `SLDS` parameters fixed (no M-step); the per-regime constants are
-cached once and reused every iteration.
-"""
-function posterior(
-    slds::SLDS{T,S,O},
-    data::Data{T};
-    return_γ::Bool=true,
-    return_elbo::Bool=true,
-    return_x::Bool=false,
-    max_iter::Int,
-    tol::T,
-    check_convergence::Bool,
-    progress::Bool,
-) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
-    K = length(slds.LDSs)
-
-    y_seq = data.y
-    ux_seq = data.ux
-    uy_seq = data.uy
-
-    tsteps_per_trial = data.tsteps #Int[size(yt, 2) for yt in y_seq]
-    ntrials = length(y_seq)
-    seq_ends = cumsum(tsteps_per_trial)
-    total_T = last(seq_ends)
-    T_max = maximum(tsteps_per_trial)
-
-    # Continuous smoother storage, discrete-layer wrapper, and one batched
-    # forward-backward storage covering all trials (mirrors fit!).
-    tfs = initialize_FilterSmooth(slds.LDSs[1], tsteps_per_trial)::TrialFilterSmooth{T}
-    dl = SLDSDiscreteLayer(slds.A, slds.πₖ, zeros(T, K, total_T))
-    fb_storage = _make_slds_fb_storage(dl, seq_ends)
-    obs_seq = collect(1:total_T)
-    control_seq = fill(nothing, total_T)
-    slds_ws = SLDSSmoothWorkspace(T, slds, T_max)
-
-    #=
-    Warm-start q(x) with uniform discrete weights (mirrors fit!/elbo); the
-    smoothed mean this fills seeds the first discrete update. No M-step runs, so
-    the per-regime constants cached by `SLDSSmoothWorkspace` stay valid for every
-    iteration.
-    =#
-    for trial in 1:ntrials
-        w_uniform = fill(one(T) / K, K, tsteps_per_trial[trial])
-        smooth!(
-            slds,
-            tfs[trial],
-            y_seq[trial],
-            w_uniform;
-            ws=slds_ws,
-            ux=ux_seq[trial],
-            uy=uy_seq[trial],
-        )
-    end
-
-    prog = if progress
-        Progress(max_iter; desc="Inferring SLDS responsibilities...", barlen=50, showspeed=true)
-    else
-        nothing
-    end
-
-    # Previous-iteration γ snapshot for the convergence test (only read/written
-    # when check_convergence=true).
-    γ_prev = fill(T(Inf), K, total_T)
-
-    for iter in 1:max_iter
-        #=
-        (1) Discrete smoothing. Fill the per-regime log-likelihoods from the
-        current smoothed mean (plug-in E_q[x]), then run forward-backward to
-        refresh q(z) = γ. HMMs.jl threads across trials internally.
-        =#
-        @views for trial in 1:ntrials
-            t1, t2 = HMMs.seq_limits(seq_ends, trial)
-            x_mean = tfs[trial].x_smooth
-            for k in 1:K
-                ll_view = view(dl.logL, k, t1:t2)
-                joint_loglikelihood!(
-                    ll_view,
-                    slds_ws,
-                    slds_ws.consts[k],
-                    slds.LDSs[k],
-                    x_mean,
-                    y_seq[trial],
-                    ux_seq[trial],
-                    uy_seq[trial],
-                )
-            end
-        end
-
-        HMMs.forward_backward!(
-            fb_storage,
-            dl,
-            obs_seq,
-            control_seq;
-            seq_ends=seq_ends,
-            transition_marginals=true,
-        )
-
-        #=
-        (2) Continuous smoothing. Re-run the Laplace/Kalman smoother on each
-        trial under the fresh weights γ, updating the smoothed mean q(x) that
-        seeds the next discrete update.
-        =#
-        for trial in 1:ntrials
-            t1, t2 = HMMs.seq_limits(seq_ends, trial)
-            w = view(fb_storage.γ, :, t1:t2)  # K × Tsteps
-            smooth!(
-                slds,
-                tfs[trial],
-                y_seq[trial],
-                w;
-                ws=slds_ws,
-                ux=ux_seq[trial],
-                uy=uy_seq[trial],
-            )
-        end
-
-        prog !== nothing && next!(prog)
-
-        # Stop once γ stops changing (mode 1); skipped entirely in fixed-iters mode.
-        if check_convergence
-            if iter > 1
-                Δγ = zero(T)
-                @inbounds for i in eachindex(fb_storage.γ)
-                    d = abs(fb_storage.γ[i] - γ_prev[i])
-                    d > Δγ && (Δγ = d)
-                end
-                Δγ < tol && break
-            end
-            copyto!(γ_prev, fb_storage.γ)
-        end
-    end
-
-    prog !== nothing && finish!(prog)
-
-    # Slice the batched γ into per-trial K × T_i responsibility matrices.
-    γ_trials = Vector{Matrix{T}}(undef, ntrials)
-    if return_γ
-        for trial in 1:ntrials
-            t1, t2 = HMMs.seq_limits(seq_ends, trial)
-            γ_trials[trial] = copy(view(fb_storage.γ, :, t1:t2))
-        end
-    end
-
-    # return a tuple of requested outputs (γ, ELBO, smoothed x) with `nothing` for
-    # the unrequested ones.
-    return (
-        # γ=return_γ ? fb_storage.γ : nothing,
-        γ=return_γ ? γ_trials : nothing,
-        elbo=if return_elbo
-            elbo!(
-                slds,
-                tfs,
-                fb_storage,
-                y_seq,
-                slds_ws;
-                seq_ends=seq_ends,
-                ux=ux_seq,
-                uy=uy_seq,
-            )
-        else
-            nothing
-        end,
-        x=return_x ? [tfs[trial].x_smooth for trial in 1:ntrials] : nothing,
-    )
 end
