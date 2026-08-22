@@ -1604,7 +1604,7 @@ function _slds_warmstart!(
         return nothing
     end
 
-    for c in 1:grp.ncells
+    for c in 1:(grp.ncells)
         _slds_smooth_cell!(
             cell_slds, grp, c, tfs, y, x_samples, slds_ws, w_of; rng=rng, ux=ux, uy=uy
         )
@@ -1655,9 +1655,8 @@ function _slds_cell_sldss(
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel,TM,ISV}
     K = length(slds.LDSs)
     return [
-        SLDS{T,S,O,TM,ISV}(
-            slds.A, slds.πₖ, [_cell_lds(slds.LDSs[k], grp, c) for k in 1:K]
-        ) for c in 1:grp.ncells
+        SLDS{T,S,O,TM,ISV}(slds.A, slds.πₖ, [_cell_lds(slds.LDSs[k], grp, c) for k in 1:K])
+        for c in 1:(grp.ncells)
     ]
 end
 
@@ -1724,7 +1723,7 @@ function _estep_grouped!(
 ) where {T<:Real}
     K = length(cell_slds[1].LDSs)
 
-    for c in 1:grp.ncells
+    for c in 1:(grp.ncells)
         slds_c = cell_slds[c]
         refresh_slds_constants!(slds_ws, slds_c)
         for trial in grp.cell_trials[c]
@@ -1753,7 +1752,7 @@ function _estep_grouped!(
         return view(fb_storage.γ, :, t1:t2)
     end
 
-    for c in 1:grp.ncells
+    for c in 1:(grp.ncells)
         _slds_smooth_cell!(
             cell_slds, grp, c, tfs, y, x_samples, slds_ws, w_of; rng=rng, ux=ux, uy=uy
         )
@@ -1775,7 +1774,7 @@ function _grouped_slds_prior_logdensity(
     K = length(cell_slds[1].LDSs)
     total = zero(T)
     for k in 1:K
-        ldss = [cell_slds[c].LDSs[k] for c in 1:grp.ncells]
+        ldss = [cell_slds[c].LDSs[k] for c in 1:(grp.ncells)]
         total += _grouped_state_prior_logdensity(ldss, grp.cell_slot, T)
         if ldss[1].obs_model isa GaussianObservationModel
             total += _grouped_gaussian_obs_prior_logdensity(ldss, grp.cell_slot, T)
@@ -1804,7 +1803,7 @@ function _elbo_grouped!(
     uy::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
 ) where {T<:Real}
     total_elbo = zero(T)
-    for c in 1:grp.ncells
+    for c in 1:(grp.ncells)
         slds_c = cell_slds[c]
         refresh_slds_constants!(slds_ws, slds_c)
         for trial in grp.cell_trials[c]
@@ -1882,9 +1881,7 @@ function _mstep_grouped!(
     StatsAPI.fit!(dl, fb_storage, obs_seq; seq_ends=seq_ends)
 
     cell_data = [_subset_data(data, grp.cell_trials[c]) for c in 1:ncells]
-    cell_tfs = [
-        TrialFilterSmooth([tfs[n] for n in grp.cell_trials[c]]) for c in 1:ncells
-    ]
+    cell_tfs = [TrialFilterSmooth([tfs[n] for n in grp.cell_trials[c]]) for c in 1:ncells]
     bufs = GroupedSufBuffers(T, lds1, data.tsteps)
 
     function γ_view(k, trial)
