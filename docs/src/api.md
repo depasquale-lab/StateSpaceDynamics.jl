@@ -86,8 +86,8 @@ methods built on them.
 
 ```@docs
 AffineNullModel
-fit!(null::StateSpaceDynamics.AffineNullModel{T}, y) where {T<:Real}
-loglikelihood(null::StateSpaceDynamics.AffineNullModel{T}, y) where {T<:Real}
+fit!(null::StateSpaceDynamics.AffineNullModel, y)
+loglikelihood(null::StateSpaceDynamics.AffineNullModel, y)
 r2(lds::LinearDynamicalSystem{T,SM,OM}, y, variant::Symbol) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
 nullloglikelihood(lds::LinearDynamicalSystem{T,SM,OM}, y) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
 nobs(lds::LinearDynamicalSystem{T}, y) where {T<:Real}
