@@ -45,8 +45,10 @@ function sufficient_statistics!(tfs::TrialFilterSmooth{T}) where {T<:Real}
     if ntrials == 1
         sufficient_statistics!(tfs[1])
     else
+        # `return` exits this closure for one `i`, not the enclosing function —
+        # every trial is still processed. Required by `always_use_return`.
         tforeach(1:ntrials) do i
-            sufficient_statistics!(tfs[i])
+            return sufficient_statistics!(tfs[i])
         end
     end
 end
