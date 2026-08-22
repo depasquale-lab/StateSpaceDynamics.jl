@@ -270,16 +270,17 @@ function _sample_continuous_given_discrete!(
     # Initial state
     k1 = z_trial[1]
     x_trial[:, 1] = rand(rng, MvNormal(state_params[k1].x0, state_params[k1].P0))
-    y_trial[:, 1] = rand.(
-        rng,
-        Poisson.(
-            exp.(
-                obs_params[k1].C * x_trial[:, 1] +
-                obs_params[k1].d +
-                obs_params[k1].D * uy_trial[:, 1],
+    y_trial[:, 1] =
+        rand.(
+            rng,
+            Poisson.(
+                exp.(
+                    obs_params[k1].C * x_trial[:, 1] +
+                    obs_params[k1].d +
+                    obs_params[k1].D * uy_trial[:, 1],
+                ),
             ),
-        ),
-    )
+        )
 
     # Subsequent states
     for t in 2:tsteps
@@ -295,16 +296,17 @@ function _sample_continuous_given_discrete!(
             ),
         )
 
-        y_trial[:, t] = rand.(
-            rng,
-            Poisson.(
-                exp.(
-                    obs_params[k_curr].C * x_trial[:, t] +
-                    obs_params[k_curr].d +
-                    obs_params[k_curr].D * uy_trial[:, t],
+        y_trial[:, t] =
+            rand.(
+                rng,
+                Poisson.(
+                    exp.(
+                        obs_params[k_curr].C * x_trial[:, t] +
+                        obs_params[k_curr].d +
+                        obs_params[k_curr].D * uy_trial[:, t],
+                    ),
                 ),
-            ),
-        )
+            )
     end
 end
 
@@ -1185,10 +1187,10 @@ function elbo!(
         H_sub = slds_ws.btd.H_sub
         H_super = slds_ws.btd.H_super
         for t in 1:Tsteps
-            trial_elbo += T(0.5) * _tr_prod(H_diag[t], view(fs.p_smooth,:,:,t))
+            trial_elbo += T(0.5) * _tr_prod(H_diag[t], view(fs.p_smooth, :, :, t))
         end
         for t in 2:Tsteps
-            Σ_ttm1 = view(fs.p_smooth_tt1,:,:,t)  # Cov(x_t, x_{t-1})
+            Σ_ttm1 = view(fs.p_smooth_tt1, :, :, t)  # Cov(x_t, x_{t-1})
             trial_elbo += T(0.5) * _tr_prod(H_super[t - 1], Σ_ttm1)
             trial_elbo += T(0.5) * _tr_prod(H_sub[t - 1], transpose(Σ_ttm1))
         end

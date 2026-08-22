@@ -1785,7 +1785,7 @@ function test_SLDS_fit_smoothing_iters(; rng=MersenneTwister(0xACE7))
             st.xs,
             st.ws;
             rng=st.r,
-            obs_seq=collect(1:st.total_T),
+            obs_seq=collect(1:(st.total_T)),
             control_seq=fill(nothing, st.total_T),
             seq_ends=st.seq_ends,
             smoothing_iters=iters,
