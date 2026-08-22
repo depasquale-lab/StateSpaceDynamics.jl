@@ -773,7 +773,7 @@ function smooth(
         nothing
     end
 
-    iters, converged = _vem_alternate!(
+    _, converged = _vem_alternate!(
         slds,
         tfs,
         fb_storage,
