@@ -53,6 +53,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     declarations raise an `ArgumentError`; `x0`/`P0` stay tied across regimes
     as they are for an ungrouped SLDS
   * With `depends_on` unset, every entry point takes its original code path
+  * `set_group_seeds!(model, Dict(label => (C = ..., d = ...)))` gives individual
+    groups their own starting values. Nothing in the package knows which channel
+    is which, so an unseeded slot starts from the template group's emission —
+    copied when the widths agree, row-cycled when they do not — which is only
+    right when the groups share one channel list. A caller that stitched each
+    group's loadings onto shared factors before building the model already knows
+    the answer and can hand it over. Any subset of `:C`/`:d`/`:D`/`:R` per label;
+    unnamed parameters and unnamed labels keep the existing seeding, so a model
+    without seeds is unaffected. Labels are checked when set and shapes when the
+    variants are built
 - Public allocating `elbo(model, y; ...)` for all three models (Gaussian LDS
   with `ux`/`uy` keywords, Poisson LDS with Newton-smoother keywords, SLDS
   with an `rng` keyword since its E-step consumes a posterior sample). Runs
