@@ -1012,11 +1012,8 @@ function _grouped_update_observation_model!(
         end
         sort!(trials)
         tfs = TrialFilterSmooth([state.tfs_all[n] for n in trials])
-
-        # solve using the pooled workspace for each cell
-        cell_pool = _prepare_cell!(sws_pool, state, units[1])
         update_observation_model!(
-            state.cell_lds[units[1]], tfs, data.y[trials], cell_pool; uy=data.uy[trials]
+            state.cell_lds[units[1]], tfs, data.y[trials], sws_pool; uy=data.uy[trials]
         )
     end
     return nothing
