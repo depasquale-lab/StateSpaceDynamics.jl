@@ -682,6 +682,9 @@ function test_group_seeds_reject_ambiguous_shared_width()
     end
     @test err isa ArgumentError
     @test occursin("both", sprint(showerror, err))
+    return nothing
+end
+
 #=
 Stitching with a Poisson emission. The tests above are Gaussian throughout, but
 the per-session sizing is emission-agnostic and the seeding is not: `d` starts
