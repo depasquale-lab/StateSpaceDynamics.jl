@@ -62,8 +62,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     the answer and can hand it over. Any subset of `:C`/`:d`/`:D`/`:R` per label;
     unnamed parameters and unnamed labels keep the existing seeding, so a model
     without seeds is unaffected. Labels are checked when set and shapes when the
-    variants are built, and a seed that would give one group a `[C d D]` and an
-    `:R` of different channel counts is rejected rather than built
+    variants are built
+  * A seed states its group's channel count through whichever parameter it
+    names, so a group whose emission a seed widened can be read back before the
+    first fit. The other half of the emission follows it — `C` is
+    `p × latent_dim` where `R` is `p × p`, and they have to agree — so seeding
+    `:C` alone is enough; only a group shared across genuinely different widths
+    is an error
 - Public allocating `elbo(model, y; ...)` for all three models (Gaussian LDS
   with `ux`/`uy` keywords, Poisson LDS with Newton-smoother keywords, SLDS
   with an `rng` keyword since its E-step consumes a posterior sample). Runs

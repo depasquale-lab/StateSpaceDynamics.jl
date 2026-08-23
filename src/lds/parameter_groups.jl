@@ -540,38 +540,109 @@ function _slot_label(dep::ParameterDependence, g::Int, slot::Int)
 end
 
 """
-    _check_seeded_widths_agree(dep, dims_C, dims_R)
+    _slot_of_trial(dep, g, n) -> Int
 
-A Gaussian emission's `[C d D]` and its `:R` have to describe the same channels
-— `C` is `p × latent_dim` where `R` is `p × p`. A dataset pins both from the
-same trials, so they agree by construction; seeds can disagree, because a caller
-may name `:d` for one group and leave that group's `:R` alone.
-
-Only the slot pairings the trials actually produce are checked. `variants` is
-the full cross product of the groups' slots, so it also holds combinations no
-trial selects — one session's `[C d D]` against another's `:R` — and those
-mismatch routinely whenever the sessions differ in width. Walking the trials
-instead compares each group against its own `:R`.
+Which slot of group `g` trial `n` selects; slot 1 when the group is pooled.
 """
-function _check_seeded_widths_agree(
-    dep::ParameterDependence, dims_C::AbstractVector{Int}, dims_R::AbstractVector{Int}
-)
-    (dep.varies[1] || dep.varies[2]) || return nothing
-    trial_labels = dep.varies[1] ? dep.trial_labels[1] : dep.trial_labels[2]
-    for n in eachindex(trial_labels)
-        i = dep.varies[1] ? _slot_of(dep, 1, dep.trial_labels[1][n]) : 1
-        j = dep.varies[2] ? _slot_of(dep, 2, dep.trial_labels[2][n]) : 1
-        dims_C[i] == dims_R[j] && continue
-        throw(
-            ArgumentError(
-                "group_seeds imply a $(dims_C[i])-channel `[C d D]` for group " *
-                "$(_slot_label(dep, 1, i)) but a $(dims_R[j])-channel `:R` for group " *
-                "$(_slot_label(dep, 2, j)); one emission cannot have both. Seed `:R` " *
-                "for that group as well, or leave the widths to the data at `fit!`.",
-            ),
-        )
+function _slot_of_trial(dep::ParameterDependence, g::Int, n::Int)
+    dep.varies[g] || return 1
+    return _slot_of(dep, g, dep.trial_labels[g][n])
+end
+
+function _ntrials(dep::ParameterDependence)
+    return length(dep.varies[1] ? dep.trial_labels[1] : dep.trial_labels[2])
+end
+
+"""
+    _pinned_width(seed, names) -> Int or nothing
+
+The channel count a seed states, read off the first of `names` it carries.
+`nothing` when it names none of them, which is a seed that says nothing about
+how wide its group is.
+"""
+function _pinned_width(seed, names)
+    seed === nothing && return nothing
+    for name in names
+        v = _seed_entry(seed, name)
+        v === nothing || return size(v, 1)
     end
     return nothing
+end
+
+"""
+    _propagate_width!(dims, dep, from, to, other)
+
+Give every slot of group `to` that nothing has pinned (`dims[j] === nothing`)
+the width its own trials carry in group `from`. The two halves of one Gaussian
+emission have to agree — `C` is `p × latent_dim` where `R` is `p × p` — so a
+seed that widens one and leaves the other silent would otherwise build a variant
+that cannot be multiplied together. A dataset pins both from the same trials, so
+this only ever fires on a model no dataset has reached yet.
+
+Throws when the trials of one slot disagree: a group shared across widths has no
+single shape it could take.
+"""
+function _propagate_width!(dims, dep::ParameterDependence, from::Int, to::Int, other)
+    for n in 1:_ntrials(dep)
+        j = _slot_of_trial(dep, to, n)
+        dims[j] === nothing || continue
+        w = other[_slot_of_trial(dep, from, n)]
+        w === nothing && continue
+        for m in 1:_ntrials(dep)
+            _slot_of_trial(dep, to, m) == j || continue
+            w2 = other[_slot_of_trial(dep, from, m)]
+            w2 === nothing ||
+                w2 == w ||
+                throw(
+                    ArgumentError(
+                        "group_seeds give `:$(dep.names[to])` group " *
+                        "$(_slot_label(dep, to, j)) trials whose " *
+                        "`:$(dep.names[from])` widths differ ($w and $w2); one " *
+                        "parameter cannot cover both. Group the two the same way, or " *
+                        "seed `:$(dep.names[to])` directly.",
+                    ),
+                )
+        end
+        dims[j] = w
+    end
+    return dims
+end
+
+"""
+    _obs_slot_dims(dep, om, spec_C, spec_R, p0) -> (dims_C, dims_R, seeds_C, seeds_R)
+
+Channel counts for both observation groups. A dataset pins every slot it covers,
+and a seed pins its own group by whichever parameter it names. What is left is a
+group nobody mentioned: it takes the width its trials carry in the *other* group
+— which is what the data would have given it — and the template's width only
+when that is silent too.
+"""
+function _obs_slot_dims(dep::ParameterDependence, om, spec_C, spec_R, p0::Int)
+    nC, nR = dep.nslots[1], dep.nslots[2]
+    seeds_C = [_group_seed(om, dep, 1, i) for i in 1:nC]
+    seeds_R = [_group_seed(om, dep, 2, j) for j in 1:nR]
+
+    dims_C = Union{Nothing,Int}[
+        if spec_C === nothing
+            _pinned_width(seeds_C[i], (:C, :d, :D))
+        else
+            _spec_dim(spec_C, i, p0)
+        end for i in 1:nC
+    ]
+    dims_R = Union{Nothing,Int}[
+        spec_R === nothing ? _pinned_width(seeds_R[j], (:R,)) : _spec_dim(spec_R, j, p0) for
+        j in 1:nR
+    ]
+
+    _propagate_width!(dims_R, dep, 1, 2, dims_C)
+    _propagate_width!(dims_C, dep, 2, 1, dims_R)
+
+    return (
+        Int[d === nothing ? p0 : d for d in dims_C],
+        Int[d === nothing ? p0 : d for d in dims_R],
+        seeds_C,
+        seeds_R,
+    )
 end
 
 """Copy a seed into a slot's storage, refusing one that is the wrong shape."""
@@ -731,14 +802,10 @@ function _build_variants!(
     end
 
     p0 = size(om.C, 1)
-    seeds_C = [_group_seed(om, dep, 1, i) for i in 1:(dep.nslots[1])]
-    dims_C = [_slot_dim(spec_C, i, p0, seeds_C[i]) for i in 1:(dep.nslots[1])]
+    dims_C, dims_R, seeds_C, seeds_R = _obs_slot_dims(dep, om, spec_C, spec_R, p0)
     Cs = [_seed_slot_C(om.C, i, dims_C[i], seeds_C[i]) for i in 1:(dep.nslots[1])]
     ds = [_seed_slot_d(om.d, i, dims_C[i], spec_C, seeds_C[i]) for i in 1:(dep.nslots[1])]
     Ds = [_seed_slot_D(om.D, i, dims_C[i], seeds_C[i]) for i in 1:(dep.nslots[1])]
-    seeds_R = [_group_seed(om, dep, 2, j) for j in 1:(dep.nslots[2])]
-    dims_R = [_slot_dim_R(spec_R, j, p0, seeds_R[j]) for j in 1:(dep.nslots[2])]
-    _check_seeded_widths_agree(dep, dims_C, dims_R)
     Rs = [_seed_slot_R(om.R, j, dims_R[j], spec_R, seeds_R[j]) for j in 1:(dep.nslots[2])]
 
     variants = Vector{GaussianObservationModel{T,M,V}}(undef, ncells)

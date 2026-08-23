@@ -313,7 +313,8 @@ using SSDTest
                 test_group_seeds_dim_read_from_d()
                 test_group_seeds_dim_read_from_D()
                 test_group_seeds_dim_falls_back_to_template()
-                test_group_seeds_reject_inconsistent_widths()
+                test_group_seeds_widths_follow_across_groups()
+                test_group_seeds_reject_ambiguous_shared_width()
             end
 
             @testset "Workspaces" begin
