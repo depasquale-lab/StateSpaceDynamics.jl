@@ -361,3 +361,111 @@ function test_stitching_slds_fit()
     @test size(slds.A) == (2, 2)
     return nothing
 end
+
+#=
+Stitching with a Poisson emission. The tests above are Gaussian throughout, but
+the per-session sizing is emission-agnostic and the seeding is not: `d` starts
+at the per-channel mean for a Gaussian emission and at its *log* for a Poisson
+one, since `λ = exp(Cx + d)`.
+=#
+function st_poisson_lds(p::Int; seed::Int=0)
+    C = Float64.(randn(StableRNG(700 + seed), p, ST_LATENT_DIM)) .* 0.4
+    om = PoissonObservationModel(C, fill(-0.2, p))
+    return LinearDynamicalSystem(;
+        state_model=pd_state_model(),
+        obs_model=om,
+        latent_dim=ST_LATENT_DIM,
+        obs_dim=p,
+        fit_bool=fill(true, 5),
+    )
+end
+
+function st_poisson_two_session_data(; p1::Int=3, p2::Int=5, ntrials::Int=4, tsteps::Int=25)
+    _, y1 = rand(StableRNG(71), st_poisson_lds(p1; seed=1), fill(tsteps, ntrials))
+    _, y2 = rand(StableRNG(72), st_poisson_lds(p2; seed=2), fill(tsteps, ntrials))
+    session = vcat(fill(:a, ntrials), fill(:b, ntrials))
+    return vcat(y1, y2), session, p1, p2
+end
+
+function test_stitching_poisson_fit()
+    y, session, p1, p2 = st_poisson_two_session_data()
+
+    om = PoissonObservationModel(
+        Float64.(randn(StableRNG(73), p1, ST_LATENT_DIM)) .* 0.3, zeros(p1)
+    )
+    om.depends_on = (C=session,)
+    fitted = LinearDynamicalSystem(;
+        state_model=pd_state_model(),
+        obs_model=om,
+        latent_dim=ST_LATENT_DIM,
+        obs_dim=p1,
+        fit_bool=fill(true, 5),
+    )
+
+    elbos = fit!(fitted, y; max_iter=6, progress=false)
+    @test all(isfinite, elbos)
+    @test pd_is_monotone(elbos)
+
+    # Each session's emission is sized from its own channel count.
+    @test size(group_parameter(om, :C, :a)) == (p1, ST_LATENT_DIM)
+    @test size(group_parameter(om, :C, :b)) == (p2, ST_LATENT_DIM)
+    @test length(group_parameter(om, :d, :a)) == p1
+    @test length(group_parameter(om, :d, :b)) == p2
+    @test all(isfinite, group_parameter(om, :C, :b))
+    @test all(isfinite, group_parameter(om, :d, :b))
+
+    # The shared latent process is recovered at one width for every trial.
+    xs, Ps = smooth(fitted, y)
+    @test length(xs) == length(y)
+    @test all(x -> size(x, 1) == ST_LATENT_DIM, xs)
+    @test size(Ps[1]) == (ST_LATENT_DIM, ST_LATENT_DIM, size(y[1], 2))
+    # The marginal `log p(y)` is intractable for a Poisson emission, so the
+    # ELBO from the fit is the available scalar summary.
+    @test isfinite(elbo(fitted, y))
+    return nothing
+end
+
+#=
+A parameter that is shared across trials has no per-session size to derive, so
+it takes the one width the dataset has. That is only well defined when the
+widths agree — the mixed case is what `test_stitching_requires_grouped_R`
+rejects — and this is the accepting side of the same check.
+=#
+function test_shared_obs_parameter_at_uniform_width()
+    ntrials = 4
+    session = [:a, :a, :b, :b]
+
+    # The dataset's width matches the template's: nothing to resize.
+    lds = st_lds(3)
+    _, y = rand(StableRNG(74), lds, fill(20, ntrials))
+    om = lds.obs_model
+    om.depends_on = (C=session,)          # `:R` stays shared
+    fitted = st_build_lds(pd_state_model(), om)
+
+    elbos = fit!(fitted, y; max_iter=5, progress=false)
+    @test all(isfinite, elbos)
+    @test pd_is_monotone(elbos)
+    @test length(om.variants) == 2
+    @test om.variants[1].R === om.variants[2].R
+    @test size(om.variants[1].R) == (3, 3)
+    @test !(group_parameter(om, :C, :a) ≈ group_parameter(om, :C, :b))
+
+    #=
+    The dataset is wider than the template everywhere. The width is still
+    unambiguous, so the shared `:R` takes the data's rather than the template's
+    — and `[C d]` is resized to match even though it varies.
+    =#
+    wide = 5
+    _, y_wide = rand(StableRNG(75), st_lds(wide), fill(20, 2 * ntrials))
+    om2 = st_obs_model(3)
+    om2.depends_on = (C=vcat(fill(:a, ntrials), fill(:b, ntrials)),)
+    fitted2 = st_build_lds(pd_state_model(), om2)
+
+    elbos2 = fit!(fitted2, y_wide; max_iter=5, progress=false)
+    @test all(isfinite, elbos2)
+    @test size(group_parameter(om2, :C, :a)) == (wide, ST_LATENT_DIM)
+    @test size(group_parameter(om2, :C, :b)) == (wide, ST_LATENT_DIM)
+    @test om2.variants[1].R === om2.variants[2].R
+    @test size(om2.variants[1].R) == (wide, wide)
+    return nothing
+end

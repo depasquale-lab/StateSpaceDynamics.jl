@@ -310,6 +310,7 @@ using SSDTest
 
             @testset "Non-breaking" begin
                 test_uniform_obs_dim_is_unchanged()
+                test_shared_obs_parameter_at_uniform_width()
             end
 
             @testset "Workspaces" begin
@@ -319,6 +320,7 @@ using SSDTest
 
             @testset "Fitting" begin
                 test_stitching_fit_runs_and_improves()
+                test_stitching_poisson_fit()
                 test_stitching_smooth_shapes()
             end
 
