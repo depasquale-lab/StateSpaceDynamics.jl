@@ -1551,33 +1551,101 @@ regimes" and "free per regime" the same code path.
 _tie_slots(tied::Bool, n::Int) = tied ? ones(Int, n) : collect(1:n)
 
 """
+    _validate_tied_params(lds, tied, grouped)
+
+Reject the `tied_params` combinations the M-step has no estimator for.
+
+A partial tie — some but not all columns of `[A b B]` or `[C d D]` — is fitted
+by residualizing the free columns out and solving the shared block by
+generalized least squares (`_partial_tied_regression`). That needs the group to
+*be* a least-squares regression fitted from one set of sufficient statistics per
+regime, which rules out two cases:
+
+- a **Poisson** emission, whose `[C d D]` has no sufficient-statistic form and
+  is fitted by LBFGS; and
+- a fit that also groups trials with `depends_on`, where a regime's regression
+  is several versions across cells rather than one, and a partial tie would have
+  to partition columns and cells at once.
+
+Both are fine with the whole regression tied.
+"""
+function _validate_tied_params(
+    lds::LinearDynamicalSystem, tied::AbstractVector{Symbol}, grouped::Bool
+)
+    isempty(tied) && return nothing
+    D = lds.latent_dim
+    dyn = _tied_dyn_cols(tied, D, lds.ux_dim)
+    obs = _tied_obs_cols(tied, D, lds.uy_dim)
+    partial_dyn = !isempty(dyn) && length(dyn) < D + 1 + lds.ux_dim
+    partial_obs = !isempty(obs) && length(obs) < D + 1 + lds.uy_dim
+
+    if partial_obs && lds.obs_model isa PoissonObservationModel
+        throw(
+            ArgumentError(
+                "tied_params: a Poisson emission's `[C d D]` is fitted by LBFGS, not " *
+                "from sufficient statistics, so there is no way to share part of it " *
+                "across regimes. Tie $(_join_names(_group_members(lds.obs_model, :C))) " *
+                "together, or none of them.",
+            ),
+        )
+    end
+
+    if grouped && (partial_dyn || partial_obs)
+        which = partial_dyn ? "`[A b B]`" : "`[C d D]`"
+        throw(
+            ArgumentError(
+                "tied_params: sharing part of $which across regimes is not supported " *
+                "alongside `depends_on`, which already splits that regression into one " *
+                "version per group of trials. Tie the whole regression, or drop " *
+                "`depends_on`.",
+            ),
+        )
+    end
+    return nothing
+end
+
+"""
     _broadcast_tied_params!(slds, tied)
 
-Copy `LDSs[1]`'s tied parameter groups into every other regime.
+Copy `LDSs[1]`'s tied parameters into every other regime.
 
-The grouped updates fit one shared version on the first unit that uses it, and
-an `SLDS`'s regimes hold separate arrays rather than aliasing one (unlike the
-`depends_on` variants, which share by reference), so the fitted value has to be
-copied out. Honours `fit_bool`: a frozen group is left exactly as the caller
-set it, per regime.
+The updates fit a shared value on the first regime that uses it, and an `SLDS`'s
+regimes hold separate arrays rather than aliasing one (unlike the `depends_on`
+variants, which share by reference), so the fitted value has to be copied out.
+Copies by *column* for the stacked regressions, so a partial tie moves only the
+shared columns and leaves each regime's free ones alone. Honours `fit_bool`: a
+frozen group is left exactly as the caller set it, per regime.
 """
-function _broadcast_tied_params!(slds::SLDS, tied::AbstractVector{Symbol})
+function _broadcast_tied_params!(
+    slds::SLDS{T}, tied::AbstractVector{Symbol}
+) where {T<:Real}
     isempty(tied) && return nothing
     src = slds.LDSs[1]
+    D, p = src.latent_dim, src.obs_dim
+    dyn_cols = _tied_dyn_cols(tied, D, src.ux_dim)
+    obs_cols = _tied_obs_cols(tied, D, src.uy_dim)
+
+    W_src = Matrix{T}(undef, D, D + 1 + src.ux_dim)
+    W_dst = similar(W_src)
+    V_src = Matrix{T}(undef, p, D + 1 + src.uy_dim)
+    V_dst = similar(V_src)
+    isempty(dyn_cols) || _pack_dyn_W!(W_src, src)
+    isempty(obs_cols) || _pack_obs_V!(V_src, src)
+
     for k in 2:length(slds.LDSs)
         dst = slds.LDSs[k]
-        if :A in tied && dst.fit_bool[_G_AB]
-            copyto!(dst.state_model.A, src.state_model.A)
-            copyto!(dst.state_model.b, src.state_model.b)
-            copyto!(dst.state_model.B, src.state_model.B)
+        if !isempty(dyn_cols) && dst.fit_bool[_G_AB]
+            _pack_dyn_W!(W_dst, dst)
+            @views W_dst[:, dyn_cols] .= W_src[:, dyn_cols]
+            _unpack_dyn_W!(dst, W_dst)
         end
         if :Q in tied && dst.fit_bool[_G_Q]
             copyto!(dst.state_model.Q, src.state_model.Q)
         end
-        if :C in tied && dst.fit_bool[_G_CD]
-            copyto!(dst.obs_model.C, src.obs_model.C)
-            copyto!(dst.obs_model.d, src.obs_model.d)
-            copyto!(dst.obs_model.D, src.obs_model.D)
+        if !isempty(obs_cols) && dst.fit_bool[_G_CD]
+            _pack_obs_V!(V_dst, dst)
+            @views V_dst[:, obs_cols] .= V_src[:, obs_cols]
+            _unpack_obs_V!(dst, V_dst)
         end
         if :R in tied && dst.fit_bool[_G_R]
             copyto!(dst.obs_model.R, src.obs_model.R)
@@ -1591,7 +1659,7 @@ end
 
 Poisson emission M-step for an `SLDS`. Non-conjugate, so it is one LBFGS solve
 per distinct `[C d D]`: `K` of them at the regimes' own responsibilities, or a
-single unit-weight one when `[C d D]` is tied — summing the per-regime weighted
+single unit-weight one when `[C d D]` is tied whole — summing the per-regime weighted
 objectives collapses to the unit-weight one, because the emission term does not
 depend on `k` and `Σₖ γₖ(t) = 1`.
 """
@@ -1601,9 +1669,9 @@ function _tied_poisson_emission!(
     data::Data{T},
     sws::SmoothWorkspace{T},
     weights_of,
-    tied::AbstractVector{Symbol},
+    tie_emission::Bool,
 ) where {T<:Real}
-    if :C in tied
+    if tie_emission
         update_observation_model!(slds.LDSs[1], tfs, data.y, [sws], nothing; uy=data.uy)
         return nothing
     end
@@ -1613,6 +1681,91 @@ function _tied_poisson_emission!(
         )
     end
     return nothing
+end
+
+#=
+Which stacked regression an update is for. The two differ only in which blocks
+of the sufficient statistics, which noise covariance and which prior they read,
+so the tie logic is written once and dispatched on these.
+=#
+struct _DynBlock end
+struct _ObsBlock end
+
+_block_stats(::_DynBlock, suf) = (suf.dyn_xx[].mat, suf.dyn_xy)
+_block_stats(::_ObsBlock, suf) = (suf.obs_xx[].mat, suf.obs_xy)
+
+_block_noise(::_DynBlock, lds) = lds.state_model.Q
+_block_noise(::_ObsBlock, lds) = lds.obs_model.R
+
+_block_prior(::_DynBlock, lds) = lds.state_model.AB_prior
+_block_prior(::_ObsBlock, lds) = lds.obs_model.CD_prior
+
+_block_group(::_DynBlock) = _G_AB
+_block_group(::_ObsBlock) = _G_CD
+
+_block_width(::_DynBlock, lds) = lds.latent_dim + 1 + lds.ux_dim
+_block_width(::_ObsBlock, lds) = lds.latent_dim + 1 + lds.uy_dim
+
+_block_write!(::_DynBlock, lds, W) = _unpack_dyn_W!(lds, W)
+_block_write!(::_ObsBlock, lds, W) = _unpack_obs_V!(lds, W)
+
+function _block_grouped_update!(::_DynBlock, ldss, sufs, slots, noise_slots, sws, bufs)
+    return _grouped_update_A_b!(ldss, sufs, slots, noise_slots, sws, bufs)
+end
+
+function _block_grouped_update!(::_ObsBlock, ldss, sufs, slots, noise_slots, sws, bufs)
+    return _grouped_update_C_d!(ldss, sufs, slots, noise_slots, sws, bufs)
+end
+
+"""
+    _slds_update_regression!(block, slds, sufs, tied_cols, noise_slots, sws, bufs, K)
+        -> Vector{Int}
+
+Fit one stacked regression across the regimes and return its slot vector — which
+regimes ended up sharing a value, for the covariance update that follows.
+
+Free or shared whole, the fit is the grouped update the `depends_on` path uses,
+which picks the pooled or the generalized-least-squares estimator from whether
+the regimes also share the covariance. A partial tie goes to
+[`_partial_tied_regression`](@ref), which writes every regime's stacked matrix
+directly — so its slots are all distinct: the regimes agree on the tied columns
+and differ everywhere else.
+"""
+function _slds_update_regression!(
+    block,
+    slds::SLDS{T},
+    sufs::AbstractVector,
+    tied_cols::AbstractVector{Int},
+    noise_slots::AbstractVector{Int},
+    sws::SmoothWorkspace{T},
+    bufs::GroupedSufBuffers{T},
+    K::Int,
+) where {T<:Real}
+    lds1 = slds.LDSs[1]
+
+    if isempty(tied_cols) || length(tied_cols) == _block_width(block, lds1)
+        slots = _tie_slots(!isempty(tied_cols), K)
+        _block_grouped_update!(block, slds.LDSs, sufs, slots, noise_slots, sws, bufs)
+        return slots
+    end
+
+    slots = collect(1:K)
+    lds1.fit_bool[_block_group(block)] || return slots
+
+    stats = [_block_stats(block, sufs[k]) for k in 1:K]
+    Ws = _partial_tied_regression(
+        [st[1] for st in stats],
+        [st[2] for st in stats],
+        [_block_noise(block, slds.LDSs[k]) for k in 1:K],
+        [_block_prior(block, slds.LDSs[k]) for k in 1:K],
+        tied_cols,
+        "tied_params",
+    )
+    for k in 1:K
+        slds.LDSs[k].fit_bool[_block_group(block)] &&
+            _block_write!(block, slds.LDSs[k], Ws[k])
+    end
+    return slots
 end
 
 """
@@ -1689,25 +1842,37 @@ function mstep!(
         )
     end
 
-    slots_ab = _tie_slots(:A in tied, K)
+    lds1 = slds.LDSs[1]
+    D = lds1.latent_dim
+    dyn_cols = _tied_dyn_cols(tied, D, lds1.ux_dim)
+    obs_cols = _tied_obs_cols(tied, D, lds1.uy_dim)
+
     slots_q = _tie_slots(:Q in tied, K)
-    slots_cd = _tie_slots(:C in tied, K)
     slots_r = _tie_slots(:R in tied, K)
+    bufs = GroupedSufBuffers(T, lds1, data.tsteps)
 
-    bufs = GroupedSufBuffers(T, slds.LDSs[1], data.tsteps)
-
-    _grouped_update_A_b!(slds.LDSs, sufs, slots_ab, slots_q, sws, bufs)
+    #=
+    `[A b B]` then `Q`, `[C d D]` then `R`: the covariance updates read the
+    regression that was just written. The returned slots also tell those updates
+    how many distinct regressions there are, so a partial tie counts as `K` of
+    them — every regime's stacked matrix differs, in its free columns.
+    =#
+    slots_ab = _slds_update_regression!(
+        _DynBlock(), slds, sufs, dyn_cols, slots_q, sws, bufs, K
+    )
     _grouped_update_Q!(slds.LDSs, sufs, slots_q, slots_ab, sws)
 
-    if slds.LDSs[1].obs_model isa GaussianObservationModel{T}
-        _grouped_update_C_d!(slds.LDSs, sufs, slots_cd, slots_r, sws, bufs)
-        _grouped_update_R!(slds.LDSs, sufs, slots_r, slots_cd, sws)
-    elseif slds.LDSs[1].obs_model isa PoissonObservationModel{T}
-        _tied_poisson_emission!(slds, tfs, data, sws, weights_of, tied)
-    else
-        throw(
-            ArgumentError("Unsupported observation model $(typeof(slds.LDSs[1].obs_model))")
+    if lds1.obs_model isa GaussianObservationModel{T}
+        slots_cd = _slds_update_regression!(
+            _ObsBlock(), slds, sufs, obs_cols, slots_r, sws, bufs, K
         )
+        _grouped_update_R!(slds.LDSs, sufs, slots_r, slots_cd, sws)
+    elseif lds1.obs_model isa PoissonObservationModel{T}
+        _tied_poisson_emission!(
+            slds, tfs, data, sws, weights_of, length(obs_cols) == D + 1 + lds1.uy_dim
+        )
+    else
+        throw(ArgumentError("Unsupported observation model $(typeof(lds1.obs_model))"))
     end
 
     _broadcast_tied_params!(slds, tied)
@@ -1784,27 +1949,34 @@ Pass `depends_on` (a `NamedTuple` of per-trial label vectors) to override the
 must declare the same labels — the grouping of trials is a property of the data
 — and `x0`/`P0` stay tied across regimes as usual.
 
-Pass `tied_params` — a `Symbol` or a collection of them — to share parameter
-groups across regimes instead of fitting one per regime. Names follow the same
-convention as `depends_on` and `fit_bool`: `[A b B]` is fit as one regression so
-any of `:A`, `:b`, `:B` names the whole group, and likewise `:C`, `:d`, `:D` for
-`[C d D]`; `:Q` and `:R` are their own groups. `tied_params = (:C, :R)` is the
-usual setup for neural data — the recording does not change when the dynamics
-do, so only `[A b B Q]` and the discrete chain switch, and the emission's
-parameter count is divided by `K`. `tied_params = (:A, :Q)` is the mirror image:
-one set of dynamics, switching emissions.
+Pass `tied_params` — a `Symbol` or a collection of them — to share parameters
+across regimes instead of fitting one per regime. Names are the literal
+parameter names `depends_on` and `fit_bool` use, and each means itself: `:C` is
+`C`, not `[C d D]`. `tied_params = (:C, :d, :D, :R)` is the usual setup for
+neural data — the recording does not change when the dynamics do, so only
+`[A b B Q]` and the discrete chain switch, and the emission's parameter count is
+divided by `K`. `tied_params = (:A, :b, :B, :Q)` is the mirror image: one set of
+dynamics, switching emissions.
 
 `:x0` / `:P0` are accepted and ignored — an SLDS ties its initial state across
 regimes unconditionally. Combined with `depends_on` the tie is *within* a group:
-each session keeps its own version of the parameter, shared by every regime.
-Tied groups are broadcast before the first E-step, so no regime ever infers
-`q(x)` / `q(z)` through a parameter the model does not have, and a frozen group
-(`fit_bool`) is left exactly as the caller set it.
+each session keeps its own version, shared by every regime. Tied parameters are
+broadcast before the first E-step, so no regime ever infers `q(x)` / `q(z)`
+through a value the model does not have, and a frozen group (`fit_bool`) is left
+exactly as the caller set it.
 
-Tying a regression without its noise covariance (`:C` without `:R`, `:A`
-without `:Q`) is supported but costs more: the shared regression is then a
-generalized least-squares problem coupling the output rows, an `O((p·m)³)`
-solve where the pooled fit is `O(m³)`. Tie the pair when you can.
+`[A b B]` and `[C d D]` are each fitted as one regression, so how much of one
+you tie decides the cost. Tying it together with its covariance is the ordinary
+pooled M-step (`O(m³)`), and so is tying a covariance on its own. Tying a
+regression while its covariance still switches makes the shared fit a
+generalized least-squares problem coupling the output rows (`O((p·m)³)`), and
+tying only *part* of one adds a Frisch–Waugh projection in front of that. Both
+are exact; tie the covariance alongside its regression when you can.
+
+A partial tie has no reduction for a Poisson `[C d D]`, which is fitted by
+LBFGS rather than from sufficient statistics, or alongside `depends_on`, which
+already splits the regression per group of trials — those throw rather than
+guess.
 """
 function fit!(
     slds::SLDS{T,S,O},
@@ -1818,7 +1990,7 @@ function fit!(
     depends_on::Union{Nothing,NamedTuple}=nothing,
     tied_params=nothing,
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
-    tied = _canonical_tied_groups(
+    tied = _resolve_tied_params(
         slds.LDSs[1].state_model, slds.LDSs[1].obs_model, tied_params
     )
     #=
@@ -1847,6 +2019,7 @@ function fit!(
     =#
     grp = _slds_parameter_grouping(slds, ntrials; depends_on=depends_on, y=y_seq)
     cell_slds = grp === nothing ? nothing : _slds_cell_sldss(slds, grp)
+    _validate_tied_params(slds.LDSs[1], tied, grp !== nothing)
 
     # Continuous-state smoother storage (per-trial sized).
     tfs = initialize_FilterSmooth(slds.LDSs[1], tsteps_per_trial)::TrialFilterSmooth{T}
@@ -2482,9 +2655,18 @@ function _mstep_grouped!(
     =#
     unit_sws = cell_sws === nothing ? nothing : repeat(cell_sws, K)
 
-    slots_ab = _grouped_unit_slots(grp.cell_slot[_G_AB], K, :A in tied)
+    #=
+    A stacked regression is either shared whole across regimes or not at all
+    here: `_validate_tied_params` rejects a partial tie alongside `depends_on`,
+    which already splits the regression into one version per group of trials.
+    =#
+    D = lds1.latent_dim
+    tie_dyn = length(_tied_dyn_cols(tied, D, lds1.ux_dim)) == D + 1 + lds1.ux_dim
+    tie_obs = length(_tied_obs_cols(tied, D, lds1.uy_dim)) == D + 1 + lds1.uy_dim
+
+    slots_ab = _grouped_unit_slots(grp.cell_slot[_G_AB], K, tie_dyn)
     slots_q = _grouped_unit_slots(grp.cell_slot[_G_Q], K, :Q in tied)
-    slots_cd = _grouped_unit_slots(grp.cell_slot[_G_CD], K, :C in tied)
+    slots_cd = _grouped_unit_slots(grp.cell_slot[_G_CD], K, tie_obs)
     slots_r = _grouped_unit_slots(grp.cell_slot[_G_R], K, :R in tied)
 
     _grouped_update_A_b!(unit_lds, unit_suf, slots_ab, slots_q, sws, bufs)

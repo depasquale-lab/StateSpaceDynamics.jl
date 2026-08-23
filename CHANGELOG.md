@@ -22,19 +22,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   version, shared by every regime — and leaves a frozen group (`fit_bool`)
   untouched. Tied groups are broadcast before the first E-step, so no regime
   ever infers `q(x)`/`q(z)` through a parameter the model does not have
-  * Tying a group alongside its noise covariance (`(:C, :R)`, `(:A, :Q)`) is the
-    ordinary M-step on pooled statistics: the shared term does not depend on the
-    regime and `Σₖ γₖ(t) = 1`, so the summed per-regime weighted objectives
-    collapse to the unit-weight one. Tying only the noise is equally cheap —
-    each regime contributes its own residual scatter and they are summed before
-    the covariance is formed
-  * Tying only the regression (`:C` without `:R`, `:A` without `:Q`) is exact
-    but costs more. The residual covariance no longer divides out of `∂/∂W`, so
-    the output rows couple and the shared fit becomes a generalized
-    least-squares solve of size `p·m` — `O((p·m)³)` against the pooled fit's
-    `O(m³)`. The solver (`_tied_gls_regression`) is written against a flat list
-    of units and reduces exactly to the pooled `mn_map` when the covariances
-    agree, so it is available to any future caller with the same shape
+  * Tying a regression alongside its noise covariance (`(:C, :d, :D, :R)`,
+    `(:A, :b, :B, :Q)`) is the ordinary M-step on pooled statistics: the shared
+    term does not depend on the regime and `Σₖ γₖ(t) = 1`, so the summed
+    per-regime weighted objectives collapse to the unit-weight one. Tying only
+    the noise is equally cheap — each regime contributes its own residual
+    scatter and they are summed before the covariance is formed
+  * Tying only the regression (`(:C, :d, :D)` without `:R`) is exact but costs
+    more. The residual covariance no longer divides out of `∂/∂W`, so the output
+    rows couple and the shared fit becomes a generalized least-squares solve of
+    size `p·m` — `O((p·m)³)` against the pooled fit's `O(m³)`. The solver
+    (`_tied_gls_regression`) is written against a flat list of units and reduces
+    exactly to the pooled `mn_map` when the covariances agree, so it is
+    available to any future caller with the same shape
+  * Tying *part* of a regression (`:C` without `:d`) is exact too: each regime's
+    free columns are projected out of its statistics, the shared block is solved
+    by the same GLS over what remains, and the free columns come back by
+    back-substitution (`_partial_tied_regression`, Frisch–Waugh–Lovell). Two
+    cases have no such reduction and throw: a Poisson `[C d D]`, which is fitted
+    by LBFGS rather than from sufficient statistics, and a partial tie alongside
+    `depends_on`, which already splits the regression per group of trials. A
+    matrix-normal prior is split between the shared and free blocks when its
+    column precision `Λ` does not couple them (a diagonal `Λ` always qualifies),
+    and throws when it does
 - `smooth(slds, y; ux, uy, depends_on, smoothing_iters, tol, return_cov,
   progress)`: the variational posteriors of a fitted SLDS at fixed parameters,
   returned as one `NamedTuple` `(; x, γ, elbo, p)` — the continuous states
@@ -120,6 +130,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   update
 
 ### Changed
+- **Breaking:** parameter names no longer stand in for the group they are fitted
+  with. `depends_on = (C = session, R = session)` was shorthand for grouping the
+  whole `[C d D]` regression; it is now an error, and the members must be named
+  — `(C = session, d = session, D = session, R = session)`. `:A`/`:b`/`:B` the
+  same. A model with no observation input has no `D` to fit, so `(C, d)` is the
+  whole group there. The old spelling reads as a claim about `C` alone while
+  quietly fitting `d` and `D` per group as well, which is exactly the kind of
+  mistake the check now catches. `group_labels` / `group_parameter` /
+  `set_group_seeds!` are unaffected: they look a parameter up rather than
+  declaring anything, so an individual name is still what they want
 - **Breaking:** the previously exported (but unused) `Data` struct is now a
   private, validated container for multi-trial observations + `ux`/`uy` inputs.
   Public entry points (`fit!`, `smooth`, `loglikelihood`) accept plain arrays —

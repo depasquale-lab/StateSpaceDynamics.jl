@@ -394,7 +394,7 @@ session = vcat(fill(:day1, 20), fill(:day2, 15))   # one label per trial
 
 gsm = GaussianStateModel(A = A, Q = Q, b = b, x0 = x0, P0 = P0)
 gom = GaussianObservationModel(C = C, R = R, d = d)
-gom.depends_on = (C = session, R = session)        # C, d, D and R per session
+gom.depends_on = (C = session, d = session, D = session, R = session)        # C, d, D and R per session
 
 lds = LinearDynamicalSystem(gsm, gom)
 fit!(lds, Y; max_iter = 50)
@@ -406,10 +406,10 @@ group_parameter(gom, :R, :day2)      # that session's observation noise
 
 ### Which names are valid
 
-Keys are canonicalized to the same groups `fit_bool` uses, because those
-parameters are fit jointly as one regression:
+Keys are literal parameter names. They resolve to the groups `fit_bool` uses,
+because those parameters are fit jointly as one regression:
 
-| Key(s)           | Group                  | `fit_bool` index    |
+| Name(s)          | Group                  | `fit_bool` index    |
 |:-----------------|:-----------------------|:--------------------|
 | `:x0`            | initial state mean     | 1                   |
 | `:P0`            | initial state cov      | 2                   |
@@ -418,15 +418,22 @@ parameters are fit jointly as one regression:
 | `:C`, `:d`, `:D` | emission `[C d D]`     | 5                   |
 | `:R`             | observation noise      | 6 (Gaussian only)   |
 
-`:d` is therefore an alias for `:C`: naming either makes the whole `[C d D]`
-regression group-dependent. Naming two aliases of one group with different
-label vectors is an error.
+A name never stands in for its group. `depends_on = (C = session,)` is an
+error, not shorthand for grouping `[C d D]`: "`C` depends on the session" reads
+as a claim about `C` alone, and the regression can only be fitted whole. Name
+every member of the group or none of them — and members given different label
+vectors are an error too.
+
+A model with no observation input has no `D` to fit, so `(C = session, d =
+session)` is the whole group there; add `D = session` once the model carries a
+`D` with columns.
 
 Labels can be `Symbol`s, integers or strings — anything comparable. Groups are
 ordered by first appearance in the vector set on the model.
 
-Different parameters may use different label vectors: `(Q = condition, C =
-session)` fits one `Q` per condition and one `[C d D]` per session.
+Different groups may use different label vectors: `(Q = condition, C = session,
+d = session, D = session)` fits one `Q` per condition and one `[C d D]` per
+session.
 
 ### Held-out data
 
@@ -436,7 +443,11 @@ scoring a held-out set with a different trial count needs its own labels.
 keyword that overrides the stored labels for that call:
 
 ```julia
-ll = loglikelihood(lds, Y_test; depends_on = (C = session_test, R = session_test))
+ll = loglikelihood(
+    lds, Y_test;
+    depends_on = (C = session_test, d = session_test, D = session_test,
+                  R = session_test),
+)
 ```
 
 An override re-assigns trials to groups the model already declares; it cannot

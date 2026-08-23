@@ -149,6 +149,8 @@ using SSDTest
                 test_SLDS_tied_params_gls_path()
                 test_SLDS_tied_params_x0_P0_noop()
                 test_SLDS_tied_params_frozen_group()
+                test_SLDS_tied_params_partial_errors()
+                test_SLDS_tied_params_partial_prior()
                 test_SLDS_smooth_poisson()
                 test_SLDS_smooth_recovers_regimes()
             end

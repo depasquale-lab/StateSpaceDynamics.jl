@@ -157,52 +157,71 @@ The weights are given by the discrete posterior probabilities ``\gamma_t(k)``.
 ## Tying parameters across regimes
 
 By default every parameter is fitted per regime, from that regime's share of the
-data. Pass `tied_params` to `fit!` to share a group across all of them instead.
-Names follow the same convention as `depends_on` and `fit_bool`: `[A b B]` is fit
-as one regression, so any of `:A`, `:b`, `:B` names the whole group, and likewise
-`:C`, `:d`, `:D` for `[C d D]`; `:Q` and `:R` are groups of their own.
+data. Pass `tied_params` to `fit!` to share one across all of them instead. Names
+are literal parameter names, the same ones `depends_on` and `fit_bool` use, and
+each means itself: `:C` is `C`, not `[C d D]`.
 
 ```julia
 # The system's dynamics switch; the measurement does not.
-elbos = fit!(slds, y; ux=ux, uy=uy, max_iter=50, tied_params=(:C, :R))
+elbos = fit!(slds, y; ux=ux, uy=uy, max_iter=50, tied_params=(:C, :d, :D, :R))
 
 # The mirror image: one set of dynamics, switching emissions.
-elbos = fit!(slds, y; max_iter=50, tied_params=(:A, :Q))
+elbos = fit!(slds, y; max_iter=50, tied_params=(:A, :b, :B, :Q))
 ```
 
-Tying `[C d D]` and `R` is the usual setup for neural recordings, where the array
-does not change when the animal's dynamics do; it also divides the emission's
-parameter count — usually the bulk of the model — by `K`.
+Tying the emission is the usual setup for neural recordings, where the array does
+not change when the animal's dynamics do; it also divides the emission's parameter
+count — usually the bulk of the model — by `K`.
 
-A tied group is fitted once and copied into every regime, before the first E-step
-as well, so no regime ever infers `q(x)`/`q(z)` through a parameter the model does
-not have. Combined with `depends_on` the tie is *within* a group: each session
-keeps its own version, shared by every regime. A frozen group (`fit_bool`) is left
-exactly as the caller set it. `:x0` and `:P0` are accepted and ignored — an SLDS
-ties its initial state across regimes unconditionally.
+A tied parameter is fitted once and copied into every regime, before the first
+E-step as well, so no regime ever infers `q(x)`/`q(z)` through a value the model
+does not have. Combined with `depends_on` the tie is *within* a group: each
+session keeps its own version, shared by every regime. A frozen group
+(`fit_bool`) is left exactly as the caller set it. `:x0` and `:P0` are accepted
+and ignored — an SLDS ties its initial state across regimes unconditionally.
 
 ### What the tied update costs
 
-When the group's noise covariance is tied alongside its regression — `(:C, :R)`
-or `(:A, :Q)` — the update is the ordinary LDS M-step on pooled statistics.
-Summing the per-regime weighted objectives over `k` collapses to the unit-weight
-one, because the shared term does not depend on `k` and ``\sum_k \gamma_t(k) = 1``.
+`[A b B]` and `[C d D]` are each fitted as one regression, so how much of one you
+tie decides which estimator runs.
 
-Tying only the noise (`:Q` or `:R` alone, with the regression still switching) is
-just as cheap: each regime contributes its own residual scatter and they are
-summed before the covariance is formed.
+| Tied | Estimator | Cost |
+|:-----|:----------|:-----|
+| the regression **and** its covariance — `(:C, :d, :D, :R)` | ordinary M-step on pooled statistics | `O(m³)` |
+| the covariance alone — `:Q`, `:R` | per-regime residual scatters, summed | `O(m³)` |
+| the regression alone — `(:C, :d, :D)` without `:R` | generalized least squares | `O((p·m)³)` |
+| **part** of a regression — `:C` without `:d` | the free columns projected out, then the same GLS | `O((p·m′)³)` |
 
-Tying only the regression (`:C` without `:R`, `:A` without `:Q`) is exact but not
-cheap. With the residual covariance still switching it no longer divides out of
+The first is cheap because the shared term does not depend on `k` and
+``\sum_k \gamma_t(k) = 1``, so the summed per-regime weighted objectives collapse
+to the unit-weight one. The second is cheap for the same reason from the other
+side: each regime contributes its own residual scatter and they are summed before
+the covariance is formed.
+
+The third is not. With the covariance still switching it no longer divides out of
 ``\partial/\partial W``, and the output rows couple:
 
 ```math
 \sum_k \Sigma_k^{-1}\big(S_{zy,k}^\top - W S_{zz,k}\big) = 0
 ```
 
-which is a generalized-least-squares problem of size ``p \cdot m`` — an
-``O((p\,m)^3)`` solve where the pooled fit is ``O(m^3)``. For a wide emission
-that dominates the M-step, so tie the pair when you can.
+That is a generalized-least-squares problem of size ``p \cdot m``, which for a
+wide emission dominates the M-step. Tie the covariance alongside its regression
+when you can.
+
+The fourth — a *partial* tie, some columns of a regression shared and the rest
+free — is the third with a Frisch–Waugh step in front: each regime's free columns
+are projected out of its statistics, the shared block is solved as above over what
+remains, and the free columns are recovered by back-substitution. Exact, and it
+costs one extra solve per regime. Two cases have no such reduction and throw
+instead of guessing: a Poisson `[C d D]`, which is fitted by LBFGS rather than
+from sufficient statistics, and a partial tie alongside `depends_on`, which
+already splits the regression into one version per group of trials.
+
+A matrix-normal prior on a partially tied regression is split between the shared
+block and the free ones, which is available exactly when its column precision
+``\Lambda`` does not couple the two. A diagonal ``\Lambda`` always qualifies; one
+that does not throws rather than dropping the cross term.
 
 ## Post-fit inference
 

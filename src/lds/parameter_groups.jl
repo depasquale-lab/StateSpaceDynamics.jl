@@ -9,7 +9,7 @@ are estimated separately for each group of trials:
 
     session = [:a, :a, :b, :b, :b]          # one label per trial
     obs = GaussianObservationModel(C, R, d)
-    obs.depends_on = (C = session, R = session)
+    obs.depends_on = (C = session, d = session, D = session, R = session)
 
 Trials labelled `:a` then contribute to one `[C d D]` / `R` estimate and trials
 labelled `:b` to another, while the latent dynamics `A`, `b`, `B`, `Q` and the
@@ -17,8 +17,8 @@ initial state `x0`, `P0` stay shared. That is the "stitching" setup for pooling
 recording sessions that observe different neurons in the same animal: latent
 dynamics common to the animal, emission parameters specific to the session.
 
-Keys are canonicalized to the same groups `fit_bool` uses, because those
-parameters are fit jointly as one regression:
+Keys are literal parameter names. They resolve to the groups `fit_bool` uses,
+because those parameters are fit jointly as one regression:
 
     :x0             -> initial state mean      (fit_bool[1])
     :P0             -> initial state cov       (fit_bool[2])
@@ -27,9 +27,12 @@ parameters are fit jointly as one regression:
     :C, :d, :D      -> emission [C d D]        (fit_bool[5])
     :R              -> observation noise       (fit_bool[6], Gaussian only)
 
-So `:d` is an alias for `:C`; naming either makes the whole `[C d D]`
-regression group-dependent, and naming two aliases of one group with different
-label vectors is an error.
+A name never stands in for its group: `depends_on = (C = session,)` is an error,
+not shorthand for grouping `[C d D]`, because "`C` depends on the session" reads
+as a claim about `C` alone and the regression can only be fitted whole. Name
+every member — `(C = session, d = session, D = session)` — or none. A model with
+no observation input has no `D` to fit, so `(C = session, d = session)` is the
+whole group there. Members given different label vectors are an error too.
 
 Implementation shape: a *cell* is a maximal set of trials sharing every
 parameter — one element of the common refinement of all the label vectors.
@@ -67,29 +70,55 @@ _group_names(::GaussianObservationModel) = (:C, :R)
 _group_names(::PoissonObservationModel) = (:C,)
 
 #=
-Alias resolution: `[A b B]` and `[C d D]` are each fit as a single regression,
-so naming any member of a group makes the whole group group-dependent.
+Group membership. `[A b B]` and `[C d D]` are each fit as a single regression,
+so they form one group for `fit_bool` and for the M-step. Parameter *names*
+stay literal, though: naming one member does not stand in for the group. A
+declaration that covers only part of one is rejected (`_require_whole_groups`),
+because "`A` depends on session" reads as a claim about `A` alone while the
+regression can only be fitted whole.
 
-`_try_canonical_param` returns `nothing` for a name the model does not own,
-which is what a *shared* `depends_on` needs: a call-site override is one
-NamedTuple resolved against both sub-models, so each has to be able to ignore
-the other's keys rather than reject them.
+`_param_group` returns `nothing` for a name the model does not own, which is
+what a *shared* `depends_on` needs: a call-site override is one NamedTuple
+resolved against both sub-models, so each has to be able to ignore the other's
+keys rather than reject them.
 =#
-function _try_canonical_param(::GaussianStateModel, name::Symbol)
+function _param_group(::GaussianStateModel, name::Symbol)
     name in (:A, :b, :B) && return :A
     name in (:x0, :P0, :Q) && return name
     return nothing
 end
 
-function _try_canonical_param(::GaussianObservationModel, name::Symbol)
+function _param_group(::GaussianObservationModel, name::Symbol)
     name in (:C, :d, :D) && return :C
     name === :R && return :R
     return nothing
 end
 
-function _try_canonical_param(::PoissonObservationModel, name::Symbol)
+function _param_group(::PoissonObservationModel, name::Symbol)
     name in (:C, :d, :D) && return :C
     return nothing
+end
+
+"""
+    _group_members(model, group) -> Tuple{Vararg{Symbol}}
+
+The parameters making up one jointly-fitted group *on this model*. A zero-column
+`B` / `D` — the model carries no input of that kind — is not a member: there is
+nothing of it to fit, so requiring the caller to name it would be noise.
+"""
+function _group_members(sm::GaussianStateModel, group::Symbol)
+    group === :A || return (group,)
+    return size(sm.B, 2) > 0 ? (:A, :b, :B) : (:A, :b)
+end
+
+function _group_members(om::GaussianObservationModel, group::Symbol)
+    group === :C || return (group,)
+    return size(om.D, 2) > 0 ? (:C, :d, :D) : (:C, :d)
+end
+
+function _group_members(om::PoissonObservationModel, group::Symbol)
+    group === :C || return (group,)
+    return size(om.D, 2) > 0 ? (:C, :d, :D) : (:C, :d)
 end
 
 _valid_param_names(::GaussianStateModel) = ":x0, :P0, :A, :b, :B, :Q"
@@ -98,16 +127,47 @@ function _valid_param_names(::PoissonObservationModel)
     return ":C, :d, :D (a Poisson emission has no noise covariance)"
 end
 
-function _canonical_param(model::DependentModel, name::Symbol)
-    canonical = _try_canonical_param(model, name)
-    canonical === nothing && throw(
+function _param_group_checked(model::DependentModel, name::Symbol)
+    group = _param_group(model, name)
+    group === nothing && throw(
         ArgumentError(
-            "depends_on: `:$name` is not a parameter of a $(nameof(typeof(model))); " *
+            "`:$name` is not a parameter of a $(nameof(typeof(model))); " *
             "valid names are $(_valid_param_names(model))",
         ),
     )
-    return canonical
+    return group
 end
+
+"""
+    _require_whole_groups(model, named, context)
+
+Reject a declaration covering only part of a jointly-fitted group. `named` is
+the collection of parameter names the caller supplied; only those this model
+owns are considered, so a NamedTuple shared between the two sub-models still
+validates against each.
+"""
+function _require_whole_groups(model::DependentModel, named, context::AbstractString)
+    owned = [n for n in named if _param_group(model, n) !== nothing]
+    for group in unique(_param_group(model, n) for n in owned)
+        members = _group_members(model, group)
+        missing_members = [m for m in members if !(m in owned)]
+        isempty(missing_members) && continue
+        given = [m for m in members if m in owned]
+        throw(
+            ArgumentError(
+                "$context: $(_join_names(given)) " *
+                "$(length(given) == 1 ? "is" : "are") fitted jointly with " *
+                "$(_join_names(missing_members)) as the single regression " *
+                "`[$(join(String.(members), " "))]`, which cannot be split. Name " *
+                "$(length(missing_members) == 1 ? "it" : "them") too, or drop " *
+                "$(_join_names(given)).",
+            ),
+        )
+    end
+    return nothing
+end
+
+_join_names(names) = join(("`:" * String(n) * "`" for n in names), ", ", " and ")
 
 #=
 Parameter groups that an SLDS always shares across its regimes, whatever the
@@ -118,20 +178,20 @@ it imply a choice it does not actually control.
 const _ALWAYS_TIED = (:x0, :P0)
 
 """
-    _canonical_tied_groups(sm, om, tied_params) -> Vector{Symbol}
+    _resolve_tied_params(sm, om, tied_params) -> Vector{Symbol}
 
-Canonicalize the `tied_params` keyword into the parameter-group names
-`fit_bool` and `depends_on` use: `:A` for `[A b B]`, `:C` for `[C d D]`, and
-`:Q` / `:R` for the covariances. Accepts `nothing`, a single `Symbol`, or an
-iterable of them, and resolves each name against whichever sub-model owns it —
-the same alias rules `depends_on` applies, so naming any member of a jointly
-fitted regression names the whole group.
+Canonicalize the `tied_params` keyword into a deduplicated list of literal
+parameter names. Accepts `nothing`, a single `Symbol`, or an iterable of them,
+and checks each against whichever sub-model owns it.
+
+Names mean themselves: `:A` is `A`, not `[A b B]`. Naming part of a jointly
+fitted regression is a *partial tie*, which the M-step either solves or rejects
+(`_validate_tied_params`) — it never silently widens to the whole group.
 
 `:x0` / `:P0` are accepted and dropped: an SLDS ties its initial state across
-regimes unconditionally (see `_ALWAYS_TIED`). Duplicates and aliases of one
-group collapse to a single entry; order is the caller's, deduplicated.
+regimes unconditionally (see `_ALWAYS_TIED`).
 """
-function _canonical_tied_groups(
+function _resolve_tied_params(
     sm::AbstractStateModel, om::AbstractObservationModel, tied_params
 )
     tied_params === nothing && return Symbol[]
@@ -145,20 +205,45 @@ function _canonical_tied_groups(
                 "of type $(typeof(name))",
             ),
         )
-        canonical = something(
-            _try_canonical_param(sm, name), _try_canonical_param(om, name), Some(nothing)
-        )
-        canonical === nothing && throw(
-            ArgumentError(
-                "tied_params: `:$name` is not a parameter of this model; valid names " *
-                "are $(_valid_param_names(sm)) (dynamics) and $(_valid_param_names(om)) " *
-                "(emission)",
-            ),
-        )
-        canonical in _ALWAYS_TIED && continue   # already shared; nothing to request
-        canonical in out || push!(out, canonical)
+        if _param_group(sm, name) === nothing && _param_group(om, name) === nothing
+            throw(
+                ArgumentError(
+                    "tied_params: `:$name` is not a parameter of this model; valid " *
+                    "names are $(_valid_param_names(sm)) (dynamics) and " *
+                    "$(_valid_param_names(om)) (emission)",
+                ),
+            )
+        end
+        name in _ALWAYS_TIED && continue   # already shared; nothing to request
+        name in out || push!(out, name)
     end
     return out
+end
+
+"""
+    _tied_dyn_cols(tied, D, ux_dim) -> Vector{Int}
+    _tied_obs_cols(tied, D, uy_dim) -> Vector{Int}
+
+Columns of the stacked regression (`[A b B]`, `[C d D]`) that `tied` shares
+across regimes. Empty means the regression is free per regime, all of them
+means it is shared whole, and anything between is a partial tie. A named `:B` /
+`:D` the model has no inputs for contributes no columns, so it neither ties
+anything nor makes an otherwise-whole tie partial.
+"""
+function _tied_dyn_cols(tied::AbstractVector{Symbol}, D::Int, ux_dim::Int)
+    cols = Int[]
+    :A in tied && append!(cols, 1:D)
+    :b in tied && push!(cols, D + 1)
+    (:B in tied && ux_dim > 0) && append!(cols, (D + 2):(D + 1 + ux_dim))
+    return sort!(cols)
+end
+
+function _tied_obs_cols(tied::AbstractVector{Symbol}, D::Int, uy_dim::Int)
+    cols = Int[]
+    :C in tied && append!(cols, 1:D)
+    :d in tied && push!(cols, D + 1)
+    (:D in tied && uy_dim > 0) && append!(cols, (D + 2):(D + 1 + uy_dim))
+    return sort!(cols)
 end
 
 """
@@ -192,9 +277,9 @@ end
     _resolve_dependence(model) -> ParameterDependence
 
 Validate `model.depends_on` and resolve it against the model's parameter groups.
-Throws `ArgumentError` on unknown parameter names or on aliases of one group
-carrying different label vectors, and `DimensionMismatchError` on label vectors
-of unequal length.
+Throws `ArgumentError` on unknown parameter names, on a jointly fitted group
+named only in part, or on members of one group carrying different label
+vectors, and `DimensionMismatchError` on label vectors of unequal length.
 """
 function _resolve_dependence(model::DependentModel)
     names = collect(Symbol, _group_names(model))
@@ -207,14 +292,15 @@ function _resolve_dependence(model::DependentModel)
 
     spec = model.depends_on
     spec === nothing && return dep
+    _require_whole_groups(model, keys(spec), "depends_on")
 
     #=
-    Track which user-facing key first claimed each group so a conflicting alias
+    Track which user-facing key first claimed each group so a conflicting member
     (`(C = s1, d = s2)`) can report both names rather than silently keeping one.
     =#
     claimed = Vector{Symbol}(undef, ngroups)
     for key in keys(spec)
-        canonical = _canonical_param(model, key)
+        canonical = _param_group_checked(model, key)
         g = findfirst(isequal(canonical), names)::Int
         supplied = getproperty(spec, key)
         supplied isa AbstractVector || throw(
@@ -307,14 +393,15 @@ end
     _trial_labels_for(dep, g, model, override) -> Vector{Any}
 
 Per-trial labels for group `g`, taken from `override` when it names the group
-(under any alias) and from the model's own `depends_on` otherwise.
+(under any of its members' names) and from the model's own `depends_on`
+otherwise.
 """
 function _trial_labels_for(
     dep::ParameterDependence, g::Int, model::DependentModel, override
 )
     if override !== nothing
         for key in keys(override)
-            _try_canonical_param(model, key) === dep.names[g] || continue
+            _param_group(model, key) === dep.names[g] || continue
             supplied = getproperty(override, key)
             supplied isa AbstractVector || throw(
                 ArgumentError(
@@ -401,7 +488,8 @@ function _slot_obs_dims(
                     "observations have $p and $q channels in the same dataset, but " *
                     "`:$name` is shared across all trials, so it has no well-defined " *
                     "size. Make `:$name` depend on the same ancillary variable as the " *
-                    "emission, e.g. `depends_on = (C = session, R = session)`.",
+                    "emission, e.g. `depends_on = (C = session, d = session, " *
+                    "R = session)`.",
                 ),
             )
         end
@@ -497,7 +585,7 @@ the wrong size is an error, never a silent reshape.
 Labels are validated here rather than at fit time, because the cost of a
 mistyped one is invisible: it would simply never be read.
 
-    om.depends_on = (C = session,)
+    om.depends_on = (C = session, d = session, D = session)
     set_group_seeds!(om, Dict(s => (C = loadings[s],) for s in sessions))
 """
 function set_group_seeds!(model::DependentModel, seeds::Union{Nothing,AbstractDict})
@@ -524,7 +612,7 @@ function set_group_seeds!(model::DependentModel, seeds::Union{Nothing,AbstractDi
             ),
         )
         for name in keys(seed)
-            _canonical_param(model, name)   # throws on a name the model does not own
+            _param_group_checked(model, name)   # throws on a name the model does not own
         end
     end
     model.group_seeds = seeds
@@ -850,9 +938,11 @@ function _validate_override_keys(
     override::Union{Nothing,NamedTuple},
 )
     override === nothing && return nothing
+    _require_whole_groups(sm, keys(override), "depends_on override")
+    _require_whole_groups(om, keys(override), "depends_on override")
     for key in keys(override)
-        cs = _try_canonical_param(sm, key)
-        co = _try_canonical_param(om, key)
+        cs = _param_group(sm, key)
+        co = _param_group(om, key)
         cs === nothing &&
             co === nothing &&
             throw(
@@ -1102,7 +1192,8 @@ function _single_trial_group_error(what::AbstractString)
         ArgumentError(
             "rand(rng, $what, tsteps) samples a single trial, but this model's " *
             "parameters depend on an ancillary variable — say which group the trial " *
-            "belongs to, e.g. `depends_on=(C=[:session_a],)`, or sample several trials " *
+            "belongs to, e.g. `depends_on = (C=[:session_a], d=[:session_a])`, or " *
+            "sample several trials " *
             "at once with `rand(rng, $what, fill(tsteps, ntrials))`.",
         ),
     )
@@ -1167,12 +1258,12 @@ that parameter does not depend on an ancillary variable.
 group_labels(obs_model, :C)   # [:session_a, :session_b]
 ```
 
-Members of a jointly-fitted group are aliases, so `group_labels(m, :d)` is the
-same as `group_labels(m, :C)`.
+`[C d D]` is fitted as one regression and grouped as one unit, so the labels are
+a property of the group: `group_labels(m, :d)` is `group_labels(m, :C)`.
 """
 function group_labels(model::DependentModel, name::Symbol)
     dep = _resolve_dependence(model)
-    canonical = _canonical_param(model, name)
+    canonical = _param_group_checked(model, name)
     g = findfirst(isequal(canonical), dep.names)::Int
     return dep.varies[g] ? copy(dep.labels[g]) : Any[]
 end
@@ -1192,7 +1283,7 @@ directly in that case) or when `label` is not one of its groups.
 """
 function group_parameter(model::DependentModel, name::Symbol, label)
     dep = _resolve_dependence(model)
-    canonical = _canonical_param(model, name)
+    canonical = _param_group_checked(model, name)
     g = findfirst(isequal(canonical), dep.names)::Int
     dep.varies[g] || throw(
         ArgumentError(

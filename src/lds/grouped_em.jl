@@ -600,6 +600,137 @@ function _tied_gls_regression(
     return reshape(Symmetric(lhs) \ vec(rhs), p, m)
 end
 
+"""
+    _split_mn_prior(prior, tied, free, context) -> (prior_tied, prior_free)
+
+Split a matrix-normal prior on a regression across a column partition, for a
+regression whose `tied` columns are shared and whose `free` columns are not.
+
+The prior term is `−½ tr(Σ⁻¹ (W − M₀) Λ (W − M₀)')`, which separates into a
+tied part and a free part exactly when `Λ[tied, free]` is zero — true for the
+ridge and per-column priors that make up the common cases. When it is not, the
+prior ties the two blocks together and there is no split to make: that throws
+rather than quietly dropping the cross term.
+
+`nothing` in, `(nothing, nothing)` out.
+"""
+_split_mn_prior(::Nothing, ::AbstractVector{Int}, ::AbstractVector{Int}, ::AbstractString) =
+    (nothing, nothing)
+
+function _split_mn_prior(
+    prior::MNPrior,
+    tied::AbstractVector{Int},
+    free::AbstractVector{Int},
+    context::AbstractString,
+)
+    Λ = prior.Λ
+    coupling = @views maximum(abs, Λ[tied, free]; init=zero(eltype(Λ)))
+    iszero(coupling) || throw(
+        ArgumentError(
+            "$context: the matrix-normal prior on this regression has a column " *
+            "precision `Λ` that couples the tied columns to the free ones " *
+            "(`maximum(abs, Λ[tied, free]) = $coupling`), so the prior cannot be " *
+            "split between the shared block and the per-regime ones. Tie the whole " *
+            "regression, use a prior whose `Λ` is block-diagonal across the split " *
+            "(a diagonal `Λ` always is), or drop the prior.",
+        ),
+    )
+    return (
+        MNPrior(prior.M₀[:, tied], Λ[tied, tied]), MNPrior(prior.M₀[:, free], Λ[free, free])
+    )
+end
+
+"""
+    _partial_tied_regression(Szz, Szy, Σ, priors, tied, context) -> Vector{Matrix}
+
+Fit one regression per unit under a *column* tie: the `tied` columns of `W` are
+shared by every unit, the rest stay free. Returns each unit's full `p × m` `W`,
+with the shared columns identical across them.
+
+Sharing part of a regression is still a linear problem, and it reduces to the
+whole-regression one. Stationarity in a unit's free block gives
+
+```math
+Wᶠᵤ = (Szyᵤ[free,:]' − Wᵗ Szzᵤ[tied,free]') Szzᵤ[free,free]⁻¹
+```
+
+with the unit's own noise cancelling, since only that unit's term involves it.
+Substituting it into the shared block's condition leaves the same system
+[`_tied_gls_regression`](@ref) solves, over statistics with the free columns
+projected out — Frisch–Waugh–Lovell, once per unit:
+
+```math
+S̃zzᵤ = Szzᵤ[tied,tied] − Szzᵤ[tied,free] Szzᵤ[free,free]⁻¹ Szzᵤ[free,tied]
+```
+
+So the cheap pooled path, the whole-regression GLS and this one are the same
+estimator seen at three levels of sharing, and a partial tie costs one extra
+`|free|`-square solve per unit on top of the tied fit.
+
+A per-unit matrix-normal `prior` is folded into that unit's statistics for the
+free block and passed through for the shared one (from unit 1, the unit the
+shared value is stored on) — see [`_split_mn_prior`](@ref) for when that split
+is available.
+"""
+function _partial_tied_regression(
+    Szz::AbstractVector{<:AbstractMatrix{T}},
+    Szy::AbstractVector{<:AbstractMatrix{T}},
+    Σ::AbstractVector{<:AbstractMatrix{T}},
+    priors::AbstractVector,
+    tied::AbstractVector{Int},
+    context::AbstractString,
+) where {T<:Real}
+    m = size(Szz[1], 1)
+    U = length(Szz)
+    free = setdiff(1:m, tied)
+
+    # Whole-regression tie: no free block to project out.
+    if isempty(free)
+        W = _tied_gls_regression(Szz, Szy, Σ, priors[1], Σ[1])
+        return [copy(W) for _ in 1:U]
+    end
+
+    prior_tied = nothing
+    Sff = Vector{Matrix{T}}(undef, U)   # free Gram, prior-augmented
+    Sfy = Vector{Matrix{T}}(undef, U)   # free cross-product, prior-augmented
+    Sft = Vector{Matrix{T}}(undef, U)   # free × tied block
+    Szz_r = Vector{Matrix{T}}(undef, U)
+    Szy_r = Vector{Matrix{T}}(undef, U)
+
+    for u in 1:U
+        pt, pf = _split_mn_prior(priors[u], tied, free, context)
+        u == 1 && (prior_tied = pt)
+
+        Aff = Matrix(@view Szz[u][free, free])
+        Aft = Matrix(@view Szz[u][free, tied])
+        Att = Matrix(@view Szz[u][tied, tied])
+        Yf = Matrix(@view Szy[u][free, :])
+        Yt = Matrix(@view Szy[u][tied, :])
+        if pf !== nothing
+            Aff .+= pf.Λ
+            Yf .+= pf.Λ * transpose(pf.M₀)
+        end
+
+        Fchol = cholesky(Symmetric(Aff))
+        Szz_r[u] = Att - transpose(Aft) * (Fchol \ Aft)
+        Szy_r[u] = Yt - transpose(Aft) * (Fchol \ Yf)
+        Sff[u], Sfy[u], Sft[u] = Aff, Yf, Aft
+    end
+
+    W_tied = _tied_gls_regression(Szz_r, Szy_r, Σ, prior_tied, Σ[1])
+
+    p = size(W_tied, 1)
+    out = Vector{Matrix{T}}(undef, U)
+    for u in 1:U
+        W_free = (transpose(Sfy[u]) - W_tied * transpose(Sft[u])) / Symmetric(Sff[u])
+        W = Matrix{T}(undef, p, m)
+        W[:, tied] .= W_tied
+        W[:, free] .= W_free
+        out[u] = W
+    end
+    return out
+end
+
 # ============================================================================
 # Grouped parameter updates
 # ============================================================================

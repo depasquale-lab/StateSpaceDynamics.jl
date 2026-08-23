@@ -2670,7 +2670,7 @@ function test_SLDS_tied_params_poisson(; rng=MersenneTwister(0x71ED))
     @test !(fitted.LDSs[2].obs_model.C ≈ fitted.LDSs[1].obs_model.C)
 
     elbos = fit!(
-        fitted, y; max_iter=4, progress=false, tied_params=:C, rng=MersenneTwister(1)
+        fitted, y; max_iter=4, progress=false, tied_params=(:C, :d), rng=MersenneTwister(1)
     )
     @test length(elbos) == 4
     @test all(isfinite, elbos)
@@ -2697,7 +2697,12 @@ function test_SLDS_tied_params_gaussian(; rng=MersenneTwister(0x71EE))
 
     fitted = _distinct_gaussian_slds(K, latent_dim, obs_dim)
     elbos = fit!(
-        fitted, y; max_iter=4, progress=false, tied_params=(:C, :R), rng=MersenneTwister(2)
+        fitted,
+        y;
+        max_iter=4,
+        progress=false,
+        tied_params=(:C, :d, :R),
+        rng=MersenneTwister(2),
     )
     @test all(isfinite, elbos)
 
@@ -2724,7 +2729,9 @@ function test_SLDS_tied_params_respects_fit_bool(; rng=MersenneTwister(0x71EF))
     end
     C1, C2 = copy(frozen.LDSs[1].obs_model.C), copy(frozen.LDSs[2].obs_model.C)
 
-    fit!(frozen, y; max_iter=2, progress=false, tied_params=:C, rng=MersenneTwister(3))
+    fit!(
+        frozen, y; max_iter=2, progress=false, tied_params=(:C, :d), rng=MersenneTwister(3)
+    )
 
     # A frozen emission is the caller's, per regime: the tie neither fits it nor
     # overwrites regime 2's with regime 1's.
@@ -2732,6 +2739,25 @@ function test_SLDS_tied_params_respects_fit_bool(; rng=MersenneTwister(0x71EF))
     @test frozen.LDSs[2].obs_model.C ≈ C2
 
     return nothing
+end
+
+"""The canonical groups a `tied_params` spec covers (these models carry no inputs)."""
+function _group_of(tied)
+    names = tied isa Symbol ? (tied,) : tied
+    groups = Symbol[]
+    (:A in names && :b in names) && push!(groups, :A)
+    (:C in names && :d in names) && push!(groups, :C)
+    :Q in names && push!(groups, :Q)
+    :R in names && push!(groups, :R)
+    return groups
+end
+
+"""Whether the two regimes agree on one individual parameter."""
+function _regimes_agree_on(slds, name::Symbol)
+    a, b = slds.LDSs[1], slds.LDSs[2]
+    name in (:A, :b, :Q) &&
+        return getfield(a.state_model, name) ≈ getfield(b.state_model, name)
+    return getfield(a.obs_model, name) ≈ getfield(b.obs_model, name)
 end
 
 """Whether the two regimes agree on one canonical parameter group."""
@@ -2746,37 +2772,35 @@ function _regimes_agree(slds, group::Symbol)
 end
 
 function test_SLDS_tied_params_canonicalization()
-    @testset "tied_params canonicalization" begin
+    @testset "tied_params names" begin
         sm = _make_gaussian_lds_dense(2, 3; seed=1).state_model
         gom = _make_gaussian_lds_dense(2, 3; seed=1).obs_model
         pom = _make_poisson_lds_dense(2, 3; seed=1).obs_model
-        canon(om, tp) = StateSpaceDynamics._canonical_tied_groups(sm, om, tp)
+        resolve(om, tp) = StateSpaceDynamics._resolve_tied_params(sm, om, tp)
 
-        @test canon(gom, nothing) == Symbol[]
-        @test canon(gom, :C) == [:C]
+        @test resolve(gom, nothing) == Symbol[]
 
-        # `[A b B]` and `[C d D]` are each fit as one regression, so naming any
-        # member names the whole group — the `depends_on` alias rules.
-        @test canon(gom, :b) == [:A]
-        @test canon(gom, :B) == [:A]
-        @test canon(gom, :d) == [:C]
-        @test canon(gom, :D) == [:C]
+        # Names mean themselves: `:C` is `C`, not `[C d D]`.
+        @test resolve(gom, :C) == [:C]
+        @test resolve(gom, :d) == [:d]
+        @test resolve(gom, :A) == [:A]
+        @test resolve(gom, :b) == [:b]
 
-        # Collections, in the caller's order, deduplicated across aliases.
-        @test canon(gom, (:C, :R)) == [:C, :R]
-        @test canon(gom, [:R, :A]) == [:R, :A]
-        @test canon(gom, (:C, :d, :D)) == [:C]
+        # Collections, in the caller's order, deduplicated.
+        @test resolve(gom, (:C, :d, :R)) == [:C, :d, :R]
+        @test resolve(gom, [:R, :A]) == [:R, :A]
+        @test resolve(gom, (:C, :C, :d)) == [:C, :d]
 
         # x0/P0 are always tied, so they are accepted and dropped.
-        @test canon(gom, :x0) == Symbol[]
-        @test canon(gom, (:x0, :P0, :Q)) == [:Q]
+        @test resolve(gom, :x0) == Symbol[]
+        @test resolve(gom, (:x0, :P0, :Q)) == [:Q]
 
         # A Poisson emission has no noise covariance.
-        @test canon(pom, :C) == [:C]
-        @test_throws ArgumentError canon(pom, :R)
+        @test resolve(pom, :C) == [:C]
+        @test_throws ArgumentError resolve(pom, :R)
 
-        @test_throws ArgumentError canon(gom, :nope)
-        @test_throws ArgumentError canon(gom, ("C",))
+        @test_throws ArgumentError resolve(gom, :nope)
+        @test_throws ArgumentError resolve(gom, ("C",))
     end
     return nothing
 end
@@ -2795,7 +2819,7 @@ function test_SLDS_tied_params_each_group(; rng=MersenneTwister(0x71F0))
             @test !_regimes_agree(free, g)
         end
 
-        for tied in (:A, :Q, :C, :R)
+        for tied in ((:A, :b), :Q, (:C, :d), :R)
             fitted = _distinct_gaussian_slds(K, latent_dim, obs_dim)
             elbos = fit!(
                 fitted,
@@ -2807,12 +2831,12 @@ function test_SLDS_tied_params_each_group(; rng=MersenneTwister(0x71F0))
             )
             @test all(isfinite, elbos)
             for g in (:A, :Q, :C, :R)
-                @test _regimes_agree(fitted, g) == (g === tied)
+                @test _regimes_agree(fitted, g) == (g in _group_of(tied))
             end
         end
 
         # Pairs, and the everything-tied case.
-        for tied in ((:A, :Q), (:C, :R), (:A, :Q, :C, :R))
+        for tied in ((:A, :b, :Q), (:C, :d, :R), (:A, :b, :Q, :C, :d, :R))
             fitted = _distinct_gaussian_slds(K, latent_dim, obs_dim)
             fit!(
                 fitted,
@@ -2842,7 +2866,9 @@ function test_SLDS_tied_params_elbo_monotone(; rng=MersenneTwister(0x71F1))
         truth = _distinct_gaussian_slds(K, latent_dim, obs_dim)
         _, _, y = rand(rng, truth, fill(40, 6))
 
-        for tied in (nothing, :A, :Q, :C, :R, (:A, :Q), (:C, :R))
+        for tied in (
+            nothing, :A, :b, :Q, :C, :d, :R, (:A, :b), (:A, :b, :Q), (:C, :d), (:C, :d, :R)
+        )
             fitted = _distinct_gaussian_slds(K, latent_dim, obs_dim)
             elbos = fit!(
                 fitted,
@@ -2866,18 +2892,32 @@ function test_SLDS_tied_params_gls_path(; rng=MersenneTwister(0x71F2))
         truth = _distinct_gaussian_slds(K, latent_dim, obs_dim)
         _, _, y = rand(rng, truth, fill(30, 4))
 
-        # `[C d D]` shared while `R` still switches: the GLS path.
+        # `[C d]` shared while `R` still switches: the GLS path.
         fitted = _distinct_gaussian_slds(K, latent_dim, obs_dim)
-        fit!(fitted, y; max_iter=4, progress=false, tied_params=:C, rng=MersenneTwister(9))
+        fit!(
+            fitted,
+            y;
+            max_iter=4,
+            progress=false,
+            tied_params=(:C, :d),
+            rng=MersenneTwister(9),
+        )
         @test _regimes_agree(fitted, :C)
         @test !_regimes_agree(fitted, :R)
         for k in 1:K
             @test isposdef(fitted.LDSs[k].obs_model.R)
         end
 
-        # `[A b B]` shared while `Q` switches.
+        # `[A b]` shared while `Q` switches.
         fitted = _distinct_gaussian_slds(K, latent_dim, obs_dim)
-        fit!(fitted, y; max_iter=4, progress=false, tied_params=:A, rng=MersenneTwister(9))
+        fit!(
+            fitted,
+            y;
+            max_iter=4,
+            progress=false,
+            tied_params=(:A, :b),
+            rng=MersenneTwister(9),
+        )
         @test _regimes_agree(fitted, :A)
         @test !_regimes_agree(fitted, :Q)
         for k in 1:K
@@ -2932,6 +2972,84 @@ function test_SLDS_tied_params_frozen_group(; rng=MersenneTwister(0x71F4))
     @test frozen.LDSs[1].state_model.Q ≈ Q1
     @test frozen.LDSs[2].state_model.Q ≈ Q2
 
+    return nothing
+end
+
+function test_SLDS_tied_params_partial_errors(; rng=MersenneTwister(0x71F5))
+    @testset "tied_params partial ties the M-step cannot fit" begin
+        K, latent_dim, obs_dim = 2, 2, 3
+
+        #=
+        A Poisson `[C d D]` is fitted by LBFGS, not from sufficient statistics,
+        so there is no shared-block solve to run — only the whole regression can
+        be tied.
+        =#
+        pslds = _distinct_poisson_slds(K, latent_dim, obs_dim)
+        _, _, yp = rand(rng, _distinct_poisson_slds(K, latent_dim, obs_dim), fill(20, 3))
+        @test_throws ArgumentError fit!(
+            pslds, yp; max_iter=1, progress=false, tied_params=:C
+        )
+        @test_throws ArgumentError fit!(
+            pslds, yp; max_iter=1, progress=false, tied_params=:d
+        )
+        elbos = fit!(pslds, yp; max_iter=2, progress=false, tied_params=(:C, :d))
+        @test all(isfinite, elbos)
+
+        # `depends_on` already splits the regression per group of trials, so a
+        # partial tie would have to partition columns and cells at once.
+        gslds = _distinct_gaussian_slds(K, latent_dim, obs_dim)
+        _, _, y = rand(rng, _distinct_gaussian_slds(K, latent_dim, obs_dim), fill(25, 4))
+        labels = [:s1, :s1, :s2, :s2]
+        for k in 1:K
+            gslds.LDSs[k].obs_model.depends_on = (C=labels, d=labels)
+        end
+        @test_throws ArgumentError fit!(
+            gslds, y; max_iter=1, progress=false, tied_params=:C
+        )
+        @test fit!(gslds, y; max_iter=2, progress=false, tied_params=(:C, :d)) isa Vector
+    end
+    return nothing
+end
+
+function test_SLDS_tied_params_partial_prior(; rng=MersenneTwister(0x71F6))
+    @testset "tied_params partial tie under an MN prior" begin
+        K, latent_dim, obs_dim = 2, 2, 3
+        truth = _distinct_gaussian_slds(K, latent_dim, obs_dim)
+        _, _, y = rand(rng, truth, fill(30, 4))
+
+        m = latent_dim + 1     # [A b], these models carry no dynamics input
+
+        #=
+        A diagonal `Λ` splits between the shared block and the free ones, so the
+        partial tie is available and still maximizes the MAP objective.
+        =#
+        ridge = _distinct_gaussian_slds(K, latent_dim, obs_dim)
+        for lds in ridge.LDSs
+            lds.state_model.AB_prior = MNPrior(zeros(latent_dim, m), Matrix(2.0 * I(m)))
+        end
+        elbos = fit!(
+            ridge, y; max_iter=6, progress=false, tied_params=:A, rng=MersenneTwister(3)
+        )
+        slack = 1e-8 * max(1.0, maximum(abs, elbos))
+        @test all(>=(-slack), diff(elbos))
+        # `A` alone is shared; `b` and `Q` are still per regime.
+        @test _regimes_agree_on(ridge, :A)
+        @test !_regimes_agree_on(ridge, :b)
+        @test !_regimes_agree_on(ridge, :Q)
+
+        # A `Λ` coupling the tied column block to the free one has no split.
+        Λ = Matrix(2.0 * I(m))
+        Λ[1, m] = Λ[m, 1] = 0.5
+        coupled = _distinct_gaussian_slds(K, latent_dim, obs_dim)
+        for lds in coupled.LDSs
+            lds.state_model.AB_prior = MNPrior(zeros(latent_dim, m), copy(Λ))
+        end
+        @test_throws ArgumentError fit!(
+            coupled, y; max_iter=1, progress=false, tied_params=:A
+        )
+        # Tying the whole regression needs no split, so it is fine.
+        @test fit!(coupled, y; max_iter=2, progress=false, tied_params=(:A, :b)) isa Vector
+    end
     return nothing
 end
 
