@@ -155,6 +155,22 @@ function update_C_d!(
         V = mn_map(suf.obs_xx[], suf.obs_xy, CD_prior)
     end
 
+    _unpack_obs_V!(lds, V)
+    return nothing
+end
+
+"""
+    _unpack_obs_V!(lds, V)
+
+Write a stacked emission regression `V = [C d D]` back into `lds`. The inverse
+of [`_pack_obs_V!`](@ref); shared by the ordinary M-step and by callers that
+solve for `V` themselves (see `_tied_gls_regression`).
+"""
+function _unpack_obs_V!(
+    lds::LinearDynamicalSystem{T,S,O}, V::AbstractMatrix{T}
+) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+    D = lds.latent_dim
+    uy_dim = lds.uy_dim
     copyto!(lds.obs_model.C, view(V, :, 1:D))
     copyto!(lds.obs_model.d, view(V, :, D + 1))
     if uy_dim > 0

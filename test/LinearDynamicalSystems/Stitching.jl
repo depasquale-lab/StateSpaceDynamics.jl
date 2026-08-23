@@ -62,7 +62,7 @@ Per-slot shapes come from the data, and each cell's LDS reports its own width.
 function test_stitching_variant_shapes()
     y, session, p1, p2 = st_two_session_data()
     lds = st_grouped_lds(p1)
-    lds.obs_model.depends_on = (C=session, R=session)
+    lds.obs_model.depends_on = (C=session, d=session, R=session)
 
     grp = SSD.parameter_grouping(lds, length(y); y=y)
     @test grp !== nothing
@@ -103,7 +103,7 @@ session-dependent `:C` has no well-defined size.
 function test_stitching_requires_grouped_R()
     y, session, p1, _ = st_two_session_data()
     lds = st_grouped_lds(p1)
-    lds.obs_model.depends_on = (C=session,)
+    lds.obs_model.depends_on = (C=session, d=session)
     @test_throws ArgumentError SSD.parameter_grouping(lds, length(y); y=y)
     return nothing
 end
@@ -116,7 +116,7 @@ function test_stitching_rejects_mixed_widths_in_slot()
     lds = st_grouped_lds(p1)
     # Collapse both sessions onto one label while the data still has two widths.
     same = fill(:only, length(y))
-    lds.obs_model.depends_on = (C=same, R=same)
+    lds.obs_model.depends_on = (C=same, d=same, R=same)
     @test_throws ArgumentError SSD.parameter_grouping(lds, length(y); y=y)
     return nothing
 end
@@ -131,7 +131,7 @@ function test_stitching_data_validation()
     @test_throws SSD.DimensionMismatchError SSD.Data(plain, y)
 
     grouped = st_grouped_lds(p1)
-    grouped.obs_model.depends_on = (C=session, R=session)
+    grouped.obs_model.depends_on = (C=session, d=session, R=session)
     data = SSD.Data(grouped, y)
     @test length(data.y) == length(y)
     return nothing
@@ -146,7 +146,7 @@ function test_uniform_obs_dim_is_unchanged()
     lds = st_lds(3)
     _, y = rand(StableRNG(7), lds, fill(20, ntrials))
     session = [:a, :a, :b, :b]
-    lds.obs_model.depends_on = (C=session, R=session)
+    lds.obs_model.depends_on = (C=session, d=session, R=session)
 
     dep = SSD._resolve_dependence(lds.obs_model)
     labels = [dep.trial_labels[g] for g in eachindex(dep.names)]
@@ -199,7 +199,7 @@ The grouped pool is sized at the widest session, so every cell fits in it.
 function test_grouped_pool_sized_at_widest_session()
     y, session, p1, p2 = st_two_session_data()
     lds = st_grouped_lds(p1)
-    lds.obs_model.depends_on = (C=session, R=session)
+    lds.obs_model.depends_on = (C=session, d=session, R=session)
     data = SSD.Data(lds, y)
     pool = SSD._grouped_sws_pool(lds, data)
     @test size(pool[1].agg.obs_yy_const, 1) == max(p1, p2)
@@ -213,7 +213,7 @@ session's emission at its own width with the shared dynamics still shared.
 function test_stitching_fit_runs_and_improves()
     y, session, p1, p2 = st_two_session_data(; ntrials=4, tsteps=30)
     lds = st_grouped_lds(p1)
-    lds.obs_model.depends_on = (C=session, R=session)
+    lds.obs_model.depends_on = (C=session, d=session, R=session)
 
     elbos = fit!(lds, y; max_iter=8, progress=false)
     @test all(isfinite, elbos)
@@ -244,7 +244,7 @@ dimension regardless of each trial's channel count.
 function test_stitching_smooth_shapes()
     y, session, _, _ = st_two_session_data(; ntrials=3, tsteps=20)
     lds = st_grouped_lds(3)
-    lds.obs_model.depends_on = (C=session, R=session)
+    lds.obs_model.depends_on = (C=session, d=session, R=session)
 
     xs, Ps = smooth(lds, y)
     @test length(xs) == length(y)
@@ -268,7 +268,7 @@ function st_slds(labels; p_template::Int=3, K::Int=2)
         sm.A .= k == 1 ? [0.95 0.05; -0.05 0.95] : [0.60 0.30; -0.30 0.60]
         om = st_obs_model(p_template; seed=10 + k)
         # `nothing` builds the ungrouped model each session is sampled from.
-        labels === nothing || (om.depends_on = (C=labels, R=labels))
+        labels === nothing || (om.depends_on = (C=labels, d=labels, R=labels))
         return st_build_lds(sm, om)
     end
     return SLDS(; A=[0.9 0.1; 0.1 0.9], πₖ=[0.5, 0.5], LDSs=ldss)
@@ -393,7 +393,7 @@ function test_stitching_poisson_fit()
     om = PoissonObservationModel(
         Float64.(randn(StableRNG(73), p1, ST_LATENT_DIM)) .* 0.3, zeros(p1)
     )
-    om.depends_on = (C=session,)
+    om.depends_on = (C=session, d=session)
     fitted = LinearDynamicalSystem(;
         state_model=pd_state_model(),
         obs_model=om,
@@ -439,7 +439,7 @@ function test_shared_obs_parameter_at_uniform_width()
     lds = st_lds(3)
     _, y = rand(StableRNG(74), lds, fill(20, ntrials))
     om = lds.obs_model
-    om.depends_on = (C=session,)          # `:R` stays shared
+    om.depends_on = (C=session, d=session)          # `:R` stays shared
     fitted = st_build_lds(pd_state_model(), om)
 
     elbos = fit!(fitted, y; max_iter=5, progress=false)
@@ -458,7 +458,10 @@ function test_shared_obs_parameter_at_uniform_width()
     wide = 5
     _, y_wide = rand(StableRNG(75), st_lds(wide), fill(20, 2 * ntrials))
     om2 = st_obs_model(3)
-    om2.depends_on = (C=vcat(fill(:a, ntrials), fill(:b, ntrials)),)
+    om2.depends_on = (
+        C=vcat(fill(:a, ntrials), fill(:b, ntrials)),
+        d=vcat(fill(:a, ntrials), fill(:b, ntrials)),
+    )
     fitted2 = st_build_lds(pd_state_model(), om2)
 
     elbos2 = fit!(fitted2, y_wide; max_iter=5, progress=false)
