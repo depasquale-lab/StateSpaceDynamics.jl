@@ -154,29 +154,55 @@ Using weighted sufficient statistics from the smoothed posteriors:
 
 The weights are given by the discrete posterior probabilities ``\gamma_t(k)``.
 
-## Tying the emission across regimes
+## Tying parameters across regimes
 
-By default every regime carries its own emission, so `C_k`, `d_k`, `D_k` (and
-`R_k`) are fitted from that regime's share of the data. Pass
-`tie_emissions=true` to `fit!` for the other common reading of a switching
-model: the system's *dynamics* switch while the measurement does not.
+By default every parameter is fitted per regime, from that regime's share of the
+data. Pass `tied_params` to `fit!` to share a group across all of them instead.
+Names follow the same convention as `depends_on` and `fit_bool`: `[A b B]` is fit
+as one regression, so any of `:A`, `:b`, `:B` names the whole group, and likewise
+`:C`, `:d`, `:D` for `[C d D]`; `:Q` and `:R` are groups of their own.
 
 ```julia
-elbos = fit!(slds, y; ux=ux, uy=uy, max_iter=50, tie_emissions=true)
+# The system's dynamics switch; the measurement does not.
+elbos = fit!(slds, y; ux=ux, uy=uy, max_iter=50, tied_params=(:C, :R))
+
+# The mirror image: one set of dynamics, switching emissions.
+elbos = fit!(slds, y; max_iter=50, tied_params=(:A, :Q))
 ```
 
-The tied update is the ordinary LDS emission M-step. Summing the per-regime
-weighted objectives over `k` collapses to the unit-weight one, because the
-emission term does not depend on `k` and ``\sum_k \gamma_t(k) = 1`` — so
-`[C d D]` is fitted once from the whole trajectory and copied into every regime
-(before the first E-step as well, so no regime ever infers through an emission
-the model does not have). Combined with `depends_on` the tie is *within* a
-group: each session keeps its own emission, shared by every regime. A frozen
-emission (`fit_bool`) is left exactly as the caller set it.
+Tying `[C d D]` and `R` is the usual setup for neural recordings, where the array
+does not change when the animal's dynamics do; it also divides the emission's
+parameter count — usually the bulk of the model — by `K`.
 
-This is the usual setup for neural recordings, where the array does not change
-when the animal's dynamics do, and it divides the emission's parameter count —
-usually the bulk of the model — by `K`.
+A tied group is fitted once and copied into every regime, before the first E-step
+as well, so no regime ever infers `q(x)`/`q(z)` through a parameter the model does
+not have. Combined with `depends_on` the tie is *within* a group: each session
+keeps its own version, shared by every regime. A frozen group (`fit_bool`) is left
+exactly as the caller set it. `:x0` and `:P0` are accepted and ignored — an SLDS
+ties its initial state across regimes unconditionally.
+
+### What the tied update costs
+
+When the group's noise covariance is tied alongside its regression — `(:C, :R)`
+or `(:A, :Q)` — the update is the ordinary LDS M-step on pooled statistics.
+Summing the per-regime weighted objectives over `k` collapses to the unit-weight
+one, because the shared term does not depend on `k` and ``\sum_k \gamma_t(k) = 1``.
+
+Tying only the noise (`:Q` or `:R` alone, with the regression still switching) is
+just as cheap: each regime contributes its own residual scatter and they are
+summed before the covariance is formed.
+
+Tying only the regression (`:C` without `:R`, `:A` without `:Q`) is exact but not
+cheap. With the residual covariance still switching it no longer divides out of
+``\partial/\partial W``, and the output rows couple:
+
+```math
+\sum_k \Sigma_k^{-1}\big(S_{zy,k}^\top - W S_{zz,k}\big) = 0
+```
+
+which is a generalized-least-squares problem of size ``p \cdot m`` — an
+``O((p\,m)^3)`` solve where the pooled fit is ``O(m^3)``. For a wide emission
+that dominates the M-step, so tie the pair when you can.
 
 ## Post-fit inference
 

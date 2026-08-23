@@ -1541,7 +1541,83 @@ function StatsAPI.loglikelihood(slds::SLDS, y; kwargs...)
 end
 
 """
-    mstep!(slds, tfs, fb_storage, y, sws; obs_seq, seq_ends, ux=nothing, uy=nothing)
+    _tie_slots(tied::Bool, n) -> Vector{Int}
+
+Slot vector over `n` units for one parameter group: every unit on slot 1 when
+the group is tied, one slot each when it is not. Feeding these to the grouped
+updates (`_grouped_update_A_b!` and friends) is what makes "tied across
+regimes" and "free per regime" the same code path.
+"""
+_tie_slots(tied::Bool, n::Int) = tied ? ones(Int, n) : collect(1:n)
+
+"""
+    _broadcast_tied_params!(slds, tied)
+
+Copy `LDSs[1]`'s tied parameter groups into every other regime.
+
+The grouped updates fit one shared version on the first unit that uses it, and
+an `SLDS`'s regimes hold separate arrays rather than aliasing one (unlike the
+`depends_on` variants, which share by reference), so the fitted value has to be
+copied out. Honours `fit_bool`: a frozen group is left exactly as the caller
+set it, per regime.
+"""
+function _broadcast_tied_params!(slds::SLDS, tied::AbstractVector{Symbol})
+    isempty(tied) && return nothing
+    src = slds.LDSs[1]
+    for k in 2:length(slds.LDSs)
+        dst = slds.LDSs[k]
+        if :A in tied && dst.fit_bool[_G_AB]
+            copyto!(dst.state_model.A, src.state_model.A)
+            copyto!(dst.state_model.b, src.state_model.b)
+            copyto!(dst.state_model.B, src.state_model.B)
+        end
+        if :Q in tied && dst.fit_bool[_G_Q]
+            copyto!(dst.state_model.Q, src.state_model.Q)
+        end
+        if :C in tied && dst.fit_bool[_G_CD]
+            copyto!(dst.obs_model.C, src.obs_model.C)
+            copyto!(dst.obs_model.d, src.obs_model.d)
+            copyto!(dst.obs_model.D, src.obs_model.D)
+        end
+        if :R in tied && dst.fit_bool[_G_R]
+            copyto!(dst.obs_model.R, src.obs_model.R)
+        end
+    end
+    return nothing
+end
+
+"""
+    _tied_poisson_emission!(slds, tfs, data, sws, weights, tied)
+
+Poisson emission M-step for an `SLDS`. Non-conjugate, so it is one LBFGS solve
+per distinct `[C d D]`: `K` of them at the regimes' own responsibilities, or a
+single unit-weight one when `[C d D]` is tied — summing the per-regime weighted
+objectives collapses to the unit-weight one, because the emission term does not
+depend on `k` and `Σₖ γₖ(t) = 1`.
+"""
+function _tied_poisson_emission!(
+    slds::SLDS{T},
+    tfs::TrialFilterSmooth{T},
+    data::Data{T},
+    sws::SmoothWorkspace{T},
+    weights_of,
+    tied::AbstractVector{Symbol},
+) where {T<:Real}
+    if :C in tied
+        update_observation_model!(slds.LDSs[1], tfs, data.y, [sws], nothing; uy=data.uy)
+        return nothing
+    end
+    for k in eachindex(slds.LDSs)
+        update_observation_model!(
+            slds.LDSs[k], tfs, data.y, [sws], weights_of(k); uy=data.uy
+        )
+    end
+    return nothing
+end
+
+"""
+    mstep!(slds, tfs, fb_storage, dl, y, sws; obs_seq, seq_ends, ux=nothing, uy=nothing,
+           tied=Symbol[])
 
 M-step for SLDS.
 
@@ -1558,6 +1634,12 @@ M-step for SLDS.
 aggregator folds `Bₖ u` / `Dₖ v` into the regression targets so `Bₖ` (Gaussian
 and Poisson dynamics) and `Dₖ` (Gaussian emission, and Poisson emission via the
 LBFGS routine) are re-estimated alongside `Aₖ` / `Cₖ`.
+
+`tied` names the parameter groups (canonical `:A` / `:Q` / `:C` / `:R`, from
+`tied_params`) that every regime shares. Each becomes a one-slot group over the
+`K` regimes and goes through the same `_grouped_update_*!` helpers the
+`depends_on` path uses, then `_broadcast_tied_params!` copies the fitted value
+into the other regimes. `x0`/`P0` are tied unconditionally, below.
 """
 function mstep!(
     slds::SLDS{T,S,O},
@@ -1570,7 +1652,7 @@ function mstep!(
     seq_ends::AbstractVector{Int},
     ux::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
     uy::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
-    tie_emissions::Bool=false,
+    tied::AbstractVector{Symbol}=Symbol[],
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
     K = length(slds.LDSs)
     ntrials = length(y)
@@ -1585,149 +1667,71 @@ function mstep!(
     =#
     data = Data(slds.LDSs[1], y; ux=ux, uy=uy)
 
-    # One reusable SufficientStatistics; overwritten per regime by the
-    # weighted aggregator.
-    suf = _initialize_td_sufficient_statistics(T, slds.LDSs[1], data.tsteps)
+    function weights_of(k)
+        return [
+            begin
+                t1, t2 = HMMs.seq_limits(seq_ends, trial)
+                view(fb_storage.γ, k, t1:t2)
+            end for trial in 1:ntrials
+        ]
+    end
+
+    #=
+    One γ-weighted sufficient statistic per regime, all built before any update
+    runs: a tied group is fitted from several regimes at once, and `Q` / `R`
+    read the regression that was just written, so the updates cannot be
+    interleaved with the aggregation the way a fully per-regime M-step can.
+    =#
+    sufs = [_initialize_td_sufficient_statistics(T, slds.LDSs[1], data.tsteps) for _ in 1:K]
+    for k in 1:K
+        _aggregate_td_suff_stats_weighted!(
+            sufs[k], tfs, slds.LDSs[k], data, weights_of(k), sws
+        )
+    end
+
+    slots_ab = _tie_slots(:A in tied, K)
+    slots_q = _tie_slots(:Q in tied, K)
+    slots_cd = _tie_slots(:C in tied, K)
+    slots_r = _tie_slots(:R in tied, K)
+
+    bufs = GroupedSufBuffers(T, slds.LDSs[1], data.tsteps)
+
+    _grouped_update_A_b!(slds.LDSs, sufs, slots_ab, slots_q, sws, bufs)
+    _grouped_update_Q!(slds.LDSs, sufs, slots_q, slots_ab, sws)
+
+    if slds.LDSs[1].obs_model isa GaussianObservationModel{T}
+        _grouped_update_C_d!(slds.LDSs, sufs, slots_cd, slots_r, sws, bufs)
+        _grouped_update_R!(slds.LDSs, sufs, slots_r, slots_cd, sws)
+    elseif slds.LDSs[1].obs_model isa PoissonObservationModel{T}
+        _tied_poisson_emission!(slds, tfs, data, sws, weights_of, tied)
+    else
+        throw(
+            ArgumentError("Unsupported observation model $(typeof(slds.LDSs[1].obs_model))")
+        )
+    end
+
+    _broadcast_tied_params!(slds, tied)
 
     #=
     x0/P0 are tied across modes. Since the smoother gives one q(x) per trial
     and Σₖ γₖ(t=1) = 1, the pooled unit-weight init stats are exactly the sum
-    over modes of the per-mode init stats the aggregator already computes —
-    so accumulate them across the loop instead of recomputing.
+    over modes of the per-mode init stats the aggregator already computed.
     =#
     D = slds.LDSs[1].latent_dim
+    suf = sufs[1]
     init_xy = zeros(T, 1, D)
     init_yy = zeros(T, D, D)
-
-    weights = Vector{AbstractVector{T}}(undef, ntrials)
+    init_n = zero(T)
     for k in 1:K
-        lds_k = slds.LDSs[k]
-        for trial in 1:ntrials
-            t1, t2 = HMMs.seq_limits(seq_ends, trial)
-            weights[trial] = view(fb_storage.γ, k, t1:t2)
-        end
-
-        _aggregate_td_suff_stats_weighted!(suf, tfs, lds_k, data, weights, sws)
-        init_xy .+= suf.init_xy
-        init_yy .+= suf.init_yy[]
-
-        # Per-regime updates cover only dynamics + emissions (init is tied, and
-        # so is the emission under `tie_emissions`, fitted once below).
-        if lds_k.obs_model isa GaussianObservationModel{T}
-            update_A_b!(lds_k, suf, sws)
-            update_Q!(lds_k, suf, sws)
-            if !tie_emissions
-                update_C_d!(lds_k, suf, sws)
-                update_R!(lds_k, suf, sws)
-            end
-        elseif lds_k.obs_model isa PoissonObservationModel{T}
-            update_A_b!(lds_k, suf, sws)
-            update_Q!(lds_k, suf, sws)
-            # Single sws wrapped as a pool of one; maybe thread in future
-            if !tie_emissions
-                update_observation_model!(lds_k, tfs, y, [sws], weights; uy=data.uy)
-            end
-        else
-            throw(ArgumentError("Unsupported observation model $(typeof(lds_k.obs_model))"))
-        end
+        init_xy .+= sufs[k].init_xy
+        init_yy .+= sufs[k].init_yy[]
+        init_n += T(sufs[k].init_n)
     end
-
-    tie_emissions && _update_tied_emission!(slds, tfs, data, sws)
-
-    # Fit the single shared x0/P0 from the pooled stats, then broadcast.
     copyto!(suf.init_xy, init_xy)
-    copyto!(suf.init_yy[], init_yy)
-    suf.init_n = T(ntrials)
+    suf.init_yy[] = init_yy
+    suf.init_n = init_n
     _update_shared_initial_state!(slds, suf, sws)
 
-    return nothing
-end
-
-"""
-    _update_tied_emission!(slds, tfs, data, sws)
-
-Fit the one emission every regime shares and copy it into all of them.
-
-Under `tie_emissions` only the dynamics switch, so `[C d D]` (and `R`) is fitted
-from the whole trajectory rather than from regime `k`'s share of it. Summing the
-per-regime weighted emission objectives over `k` collapses to the unit-weight
-one — the emission term does not depend on `k` and `Σₖ γₖ(t) = 1` — so the tied
-update is exactly the ordinary LDS emission M-step, run once on `LDSs[1]` and
-broadcast to the rest.
-"""
-function _update_tied_emission!(
-    slds::SLDS{T,S,O}, tfs::TrialFilterSmooth{T}, data::Data{T}, sws::SmoothWorkspace{T}
-) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
-    lds1 = slds.LDSs[1]
-    if lds1.obs_model isa GaussianObservationModel{T}
-        #=
-        The conjugate updates read the emission block of the sufficient
-        statistics, which the unit-weight aggregator fills; the dynamics blocks
-        it also fills are simply not read here.
-        =#
-        suf = _initialize_td_sufficient_statistics(T, lds1, data.tsteps)
-        #=
-        The unit-weight aggregator seeds its buffers from the data-only constant
-        blocks (Σ y y', Σ y, the observation count, the `uy` blocks). Only the
-        LDS/PLDS `fit!` entry points fill those, and the SLDS never reaches them
-        — its own M-step goes through the weighted aggregator, which rebuilds
-        the data-side sums every E-step and so needs no constants. Fill them
-        here, or the tied emission is fitted from an uninitialized workspace.
-        =#
-        _td_init_const_blocks!(sws, lds1, data)
-        _aggregate_td_suff_stats!(suf, tfs, lds1, data, sws)
-        update_C_d!(lds1, suf, sws)
-        update_R!(lds1, suf, sws)
-    elseif lds1.obs_model isa PoissonObservationModel{T}
-        # `nothing` weights are the unit weights the tie collapses to.
-        update_observation_model!(lds1, tfs, data.y, [sws], nothing; uy=data.uy)
-    else
-        throw(ArgumentError("Unsupported observation model $(typeof(lds1.obs_model))"))
-    end
-    _broadcast_emission!(slds)
-    return nothing
-end
-
-"""
-    _broadcast_emission!(slds)
-
-Copy `LDSs[1]`'s emission into every other regime, honouring `fit_bool`: a
-frozen emission is left as the caller set it, per regime.
-"""
-function _broadcast_emission!(slds::SLDS)
-    lds1 = slds.LDSs[1]
-    for k in 2:length(slds.LDSs)
-        _copy_emission!(slds.LDSs[k], lds1)
-    end
-    return nothing
-end
-
-"""
-    _copy_emission!(dst, src)
-
-Overwrite `dst`'s emission parameters with `src`'s. Split by observation model
-so the Gaussian noise covariance travels with the emission it belongs to, and
-so `fit_bool` is indexed within its own layout (length 5 for Poisson).
-"""
-function _copy_emission!(
-    dst::LinearDynamicalSystem{T,S,O}, src::LinearDynamicalSystem{T,S,O}
-) where {T<:Real,S<:AbstractStateModel{T},O<:PoissonObservationModel{T}}
-    dst.fit_bool[_G_CD] || return nothing
-    copyto!(dst.obs_model.C, src.obs_model.C)
-    copyto!(dst.obs_model.d, src.obs_model.d)
-    copyto!(dst.obs_model.D, src.obs_model.D)
-    return nothing
-end
-
-function _copy_emission!(
-    dst::LinearDynamicalSystem{T,S,O}, src::LinearDynamicalSystem{T,S,O}
-) where {T<:Real,S<:AbstractStateModel{T},O<:GaussianObservationModel{T}}
-    if dst.fit_bool[_G_CD]
-        copyto!(dst.obs_model.C, src.obs_model.C)
-        copyto!(dst.obs_model.d, src.obs_model.d)
-        copyto!(dst.obs_model.D, src.obs_model.D)
-    end
-    dst.fit_bool[_G_R] && copyto!(dst.obs_model.R, src.obs_model.R)
     return nothing
 end
 
@@ -1780,14 +1784,27 @@ Pass `depends_on` (a `NamedTuple` of per-trial label vectors) to override the
 must declare the same labels — the grouping of trials is a property of the data
 — and `x0`/`P0` stay tied across regimes as usual.
 
-Pass `tie_emissions=true` to give every regime one shared emission — `[C d D]`
-(and `R`) fitted once from the whole trajectory and copied across regimes, so
-only `[A b B Q]` and the discrete chain switch. This is the usual setup for
-neural data, where the recording does not change when the dynamics do; it also
-divides the emission's parameter count by `K`. Combined with `depends_on` the
-tie is *within* a session: each group keeps its own emission, shared by every
-regime. The emission is tied before the first E-step, and a frozen emission
+Pass `tied_params` — a `Symbol` or a collection of them — to share parameter
+groups across regimes instead of fitting one per regime. Names follow the same
+convention as `depends_on` and `fit_bool`: `[A b B]` is fit as one regression so
+any of `:A`, `:b`, `:B` names the whole group, and likewise `:C`, `:d`, `:D` for
+`[C d D]`; `:Q` and `:R` are their own groups. `tied_params = (:C, :R)` is the
+usual setup for neural data — the recording does not change when the dynamics
+do, so only `[A b B Q]` and the discrete chain switch, and the emission's
+parameter count is divided by `K`. `tied_params = (:A, :Q)` is the mirror image:
+one set of dynamics, switching emissions.
+
+`:x0` / `:P0` are accepted and ignored — an SLDS ties its initial state across
+regimes unconditionally. Combined with `depends_on` the tie is *within* a group:
+each session keeps its own version of the parameter, shared by every regime.
+Tied groups are broadcast before the first E-step, so no regime ever infers
+`q(x)` / `q(z)` through a parameter the model does not have, and a frozen group
 (`fit_bool`) is left exactly as the caller set it.
+
+Tying a regression without its noise covariance (`:C` without `:R`, `:A`
+without `:Q`) is supported but costs more: the shared regression is then a
+generalized least-squares problem coupling the output rows, an `O((p·m)³)`
+solve where the pooled fit is `O(m³)`. Tie the pair when you can.
 """
 function fit!(
     slds::SLDS{T,S,O},
@@ -1799,8 +1816,11 @@ function fit!(
     progress::Bool=true,
     rng::AbstractRNG=Random.default_rng(),
     depends_on::Union{Nothing,NamedTuple}=nothing,
-    tie_emissions::Bool=false,
+    tied_params=nothing,
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
+    tied = _canonical_tied_groups(
+        slds.LDSs[1].state_model, slds.LDSs[1].obs_model, tied_params
+    )
     #=
     `Data` centralizes shape validation and canonicalizes the three
     observation/input forms (regime dims are uniform, so validating against
@@ -1868,18 +1888,17 @@ function fit!(
     x_samples = [Matrix{T}(undef, latent_dim, Ti) for Ti in tsteps_per_trial]
 
     #=
-    Tie the emission before the first E-step rather than only after the first
-    M-step, so no regime ever infers `q(x)` / `q(z)` through an emission the
-    model does not have. Regimes seeded from one warm start already agree, and
-    this makes that a property of the fit instead of an accident of the caller.
+    Broadcast the tied groups before the first E-step rather than only after the
+    first M-step, so no regime ever infers `q(x)` / `q(z)` through a parameter
+    the model does not have. Regimes seeded from one warm start already agree,
+    and this makes that a property of the fit instead of an accident of the
+    caller.
     =#
-    if tie_emissions
-        if cell_slds === nothing
-            _broadcast_emission!(slds)
-        else
-            for slds_c in cell_slds
-                _broadcast_emission!(slds_c)
-            end
+    if cell_slds === nothing
+        _broadcast_tied_params!(slds, tied)
+    else
+        for slds_c in cell_slds
+            _broadcast_tied_params!(slds_c, tied)
         end
     end
 
@@ -1957,7 +1976,7 @@ function fit!(
                 seq_ends=seq_ends,
                 ux=ux_seq,
                 uy=uy_seq,
-                tie_emissions=tie_emissions,
+                tied=tied,
             )
             refresh_slds_constants!(slds_ws, slds)
         else
@@ -2006,7 +2025,7 @@ function fit!(
                 obs_seq=obs_seq,
                 seq_ends=seq_ends,
                 cell_sws=cell_mstep_sws,
-                tie_emissions=tie_emissions,
+                tied=tied,
             )
         end
 
@@ -2384,23 +2403,26 @@ function _broadcast_initial_state!(
 end
 
 """
-    _mstep_grouped!(cell_slds, grp, tfs, fb_storage, dl, data, sws; obs_seq, seq_ends)
+    _mstep_grouped!(cell_slds, grp, tfs, fb_storage, dl, data, sws; obs_seq, seq_ends,
+                    tied=Symbol[])
 
 Grouped SLDS M-step.
 
 The discrete layer and the trial partition are shared, so the work is one
-γ-weighted sufficient statistic per (regime, cell). Dynamics and emissions are
-per regime, so they are pooled across the cells that share a version *within* a
-regime; `x0`/`P0` are tied across regimes, so they are pooled across every
-(regime, cell) unit that shares a version.
+γ-weighted sufficient statistic per (regime, cell). Every parameter update then
+runs over that flat unit list, driven by a slot vector per group:
 
-Units are laid out regime-major, which makes the first unit of any parameter
-version belong to regime 1 — the update writes there and
-`_broadcast_initial_state!` restores the tie.
+- a group that is neither grouped nor tied gets one slot per unit — the plain
+  per-(regime, cell) fit;
+- `depends_on` makes cells sharing a version share a slot *within* a regime;
+- naming the group in `tied_params` drops the regime out of the slot, so the
+  cells' versions are shared across regimes as well. A tied `[C d D]` is then a
+  property of the cell alone: each session keeps its own emission, shared by
+  every regime, which is the usual reading for neural data.
 
-With `tie_emissions` the emission is a property of the cell rather than of the
-(regime, cell) pair: each `[C d D]` version is fitted once from the unit-weight
-statistics of the cells sharing it and copied across regimes.
+Units are laid out regime-major, so the first unit of any version belongs to
+regime 1; the update writes there and the broadcasters restore the tie. `x0`/`P0`
+are tied across regimes unconditionally.
 """
 function _mstep_grouped!(
     cell_slds::AbstractVector,
@@ -2413,7 +2435,7 @@ function _mstep_grouped!(
     obs_seq::AbstractVector,
     seq_ends::AbstractVector{Int},
     cell_sws::Union{Nothing,AbstractVector}=nothing,
-    tie_emissions::Bool=false,
+    tied::AbstractVector{Symbol}=Symbol[],
 ) where {T<:Real}
     K = length(cell_slds[1].LDSs)
     ncells = grp.ncells
@@ -2442,74 +2464,76 @@ function _mstep_grouped!(
         for k in 1:K for c in 1:ncells
     ]
 
-    for k in 1:K
-        for c in 1:ncells
-            u = (k - 1) * ncells + c
-            weights = [γ_view(k, n) for n in grp.cell_trials[c]]
-            _aggregate_td_suff_stats_weighted!(
-                unit_suf[u],
-                cell_tfs[c],
-                unit_lds[u],
-                cell_data[c],
-                weights,
-                _unit_ws(cell_sws, sws, c),
-            )
-        end
-
-        rows = ((k - 1) * ncells + 1):(k * ncells)
-        ldss_k = view(unit_lds, rows)
-        sufs_k = view(unit_suf, rows)
-
-        _grouped_update_A_b!(ldss_k, sufs_k, grp.cell_slot[_G_AB], sws, bufs)
-        _grouped_update_Q!(ldss_k, sufs_k, grp.cell_slot[_G_Q], grp.cell_slot[_G_AB], sws)
-
-        #=
-        The emission is per (regime, cell) by default; under `tie_emissions`
-        it belongs to the cell alone and is fitted once, after this loop.
-        =#
-        if !tie_emissions
-            if lds1.obs_model isa GaussianObservationModel{T}
-                _grouped_update_C_d!(
-                    ldss_k, sufs_k, grp.cell_slot[_G_CD], sws, bufs; unit_sws=cell_sws
-                )
-                _grouped_update_R!(
-                    ldss_k,
-                    sufs_k,
-                    grp.cell_slot[_G_R],
-                    grp.cell_slot[_G_CD],
-                    sws;
-                    unit_sws=cell_sws,
-                )
-            elseif lds1.obs_model isa PoissonObservationModel{T}
-                # Non-conjugate: one LBFGS solve per `[C d D]` version, over the
-                # γ-weighted trials of every cell sharing that version.
-                for units in _units_by_slot(grp.cell_slot[_G_CD])
-                    trials = Int[]
-                    for c in units
-                        append!(trials, grp.cell_trials[c])
-                    end
-                    sort!(trials)
-                    update_observation_model!(
-                        ldss_k[units[1]],
-                        TrialFilterSmooth([tfs[n] for n in trials]),
-                        data.y[trials],
-                        [_unit_ws(cell_sws, sws, units[1])],
-                        [γ_view(k, n) for n in trials];
-                        uy=data.uy[trials],
-                    )
-                end
-            else
-                throw(
-                    ArgumentError("Unsupported observation model $(typeof(lds1.obs_model))")
-                )
-            end
-        end
+    for k in 1:K, c in 1:ncells
+        u = (k - 1) * ncells + c
+        _aggregate_td_suff_stats_weighted!(
+            unit_suf[u],
+            cell_tfs[c],
+            unit_lds[u],
+            cell_data[c],
+            [γ_view(k, n) for n in grp.cell_trials[c]],
+            _unit_ws(cell_sws, sws, c),
+        )
     end
 
-    if tie_emissions
-        _update_tied_emission_grouped!(
-            cell_slds, grp, tfs, cell_tfs, data, cell_data, sws, K; cell_sws=cell_sws
+    #=
+    A cell's workspace, indexed by flat unit: `repeat` tiles the per-cell vector
+    once per regime, so unit `(k-1)·ncells + c` lands on cell `c`'s entry.
+    =#
+    unit_sws = cell_sws === nothing ? nothing : repeat(cell_sws, K)
+
+    slots_ab = _grouped_unit_slots(grp.cell_slot[_G_AB], K, :A in tied)
+    slots_q = _grouped_unit_slots(grp.cell_slot[_G_Q], K, :Q in tied)
+    slots_cd = _grouped_unit_slots(grp.cell_slot[_G_CD], K, :C in tied)
+    slots_r = _grouped_unit_slots(grp.cell_slot[_G_R], K, :R in tied)
+
+    _grouped_update_A_b!(unit_lds, unit_suf, slots_ab, slots_q, sws, bufs)
+    _grouped_update_Q!(unit_lds, unit_suf, slots_q, slots_ab, sws)
+
+    if lds1.obs_model isa GaussianObservationModel{T}
+        _grouped_update_C_d!(
+            unit_lds, unit_suf, slots_cd, slots_r, sws, bufs; unit_sws=unit_sws
         )
+        _grouped_update_R!(unit_lds, unit_suf, slots_r, slots_cd, sws; unit_sws=unit_sws)
+    elseif lds1.obs_model isa PoissonObservationModel{T}
+        #=
+        Non-conjugate: one LBFGS solve per `[C d D]` version, over the trials of
+        every (regime, cell) unit sharing it. A version tied across regimes sees
+        each of its trials once per regime, and `Σₖ γₖ(t) = 1`, so its weights
+        collapse to the unit weights `nothing`.
+        =#
+        for units in _units_by_slot(slots_cd)
+            trials = Int[]
+            weights = Vector{SubArray{T,1}}()
+            for u in units
+                k, c = fldmod1(u, ncells)
+                for n in grp.cell_trials[c]
+                    push!(trials, n)
+                    push!(weights, γ_view(k, n))
+                end
+            end
+            order = sortperm(trials)
+            unit_weights = _spans_all_regimes(units, ncells, K) ? nothing : weights[order]
+            update_observation_model!(
+                unit_lds[units[1]],
+                TrialFilterSmooth([tfs[n] for n in trials[order]]),
+                data.y[trials[order]],
+                [_unit_ws(unit_sws, sws, units[1])],
+                unit_weights;
+                uy=data.uy[trials[order]],
+            )
+        end
+    else
+        throw(ArgumentError("Unsupported observation model $(typeof(lds1.obs_model))"))
+    end
+
+    #=
+    Cells sharing a version share its arrays, so copying per cell is idempotent;
+    doing it per cell rather than per version keeps this correct for any slot
+    layout.
+    =#
+    for slds_c in cell_slds
+        _broadcast_tied_params!(slds_c, tied)
     end
 
     #=
@@ -2528,87 +2552,30 @@ function _mstep_grouped!(
 end
 
 """
-    _update_tied_emission_grouped!(cell_slds, grp, tfs, cell_tfs, data, cell_data, sws, K;
-                                   cell_sws)
+    _grouped_unit_slots(cell_slot, K, tied) -> Vector{Int}
 
-Grouped counterpart of [`_update_tied_emission!`](@ref): one emission per
-`[C d D]` version, fitted from the unit-weight statistics of the cells sharing
-that version and copied into every regime.
+Slot vector over the `K · ncells` regime-major units for one parameter group,
+from the group's per-cell slots.
 
-The cells are the trial groups `depends_on` declares — one per session in a
-stitching fit — so this leaves each session its own emission and ties only
-across the regimes, which is the whole point of the option: the recording does
-not change when the dynamics do.
+Untied, a regime's cells get slots of their own, so no version is shared across
+regimes. Tied, the cell's slot is used as-is and the same version spans every
+regime — which is what makes a tied group a property of the cell rather than of
+the (regime, cell) pair.
 """
-function _update_tied_emission_grouped!(
-    cell_slds::AbstractVector,
-    grp::ParameterGrouping,
-    tfs::TrialFilterSmooth{T},
-    cell_tfs::AbstractVector,
-    data::Data{T},
-    cell_data::AbstractVector,
-    sws::SmoothWorkspace{T},
-    K::Int;
-    cell_sws::Union{Nothing,AbstractVector}=nothing,
-) where {T<:Real}
-    ncells = grp.ncells
-    # Regime 1's cells hold the arrays every other regime is copied from.
-    ldss_1 = [cell_slds[c].LDSs[1] for c in 1:ncells]
-    lds1 = ldss_1[1]
+function _grouped_unit_slots(cell_slot::AbstractVector{Int}, K::Int, tied::Bool)
+    tied && return repeat(cell_slot, K)
+    stride = maximum(cell_slot)
+    return [(k - 1) * stride + s for k in 1:K for s in cell_slot]
+end
 
-    if lds1.obs_model isa GaussianObservationModel{T}
-        sufs_1 = [
-            _initialize_td_sufficient_statistics(T, ldss_1[c], cell_data[c].tsteps) for
-            c in 1:ncells
-        ]
-        for c in 1:ncells
-            # Constants are per-cell data; see `_update_tied_emission!`. When
-            # every cell shares `sws` they are rebuilt each pass, and the
-            # aggregate below consumes them before the next cell overwrites.
-            ws_c = _unit_ws(cell_sws, sws, c)
-            _td_init_const_blocks!(ws_c, ldss_1[c], cell_data[c])
-            _aggregate_td_suff_stats!(sufs_1[c], cell_tfs[c], ldss_1[c], cell_data[c], ws_c)
-        end
-        bufs = GroupedSufBuffers(T, lds1, data.tsteps)
-        _grouped_update_C_d!(
-            ldss_1, sufs_1, grp.cell_slot[_G_CD], sws, bufs; unit_sws=cell_sws
-        )
-        _grouped_update_R!(
-            ldss_1,
-            sufs_1,
-            grp.cell_slot[_G_R],
-            grp.cell_slot[_G_CD],
-            sws;
-            unit_sws=cell_sws,
-        )
-    elseif lds1.obs_model isa PoissonObservationModel{T}
-        for units in _units_by_slot(grp.cell_slot[_G_CD])
-            trials = Int[]
-            for c in units
-                append!(trials, grp.cell_trials[c])
-            end
-            sort!(trials)
-            # `nothing` weights: the unit weights the tie over regimes collapses to.
-            update_observation_model!(
-                ldss_1[units[1]],
-                TrialFilterSmooth([tfs[n] for n in trials]),
-                data.y[trials],
-                [_unit_ws(cell_sws, sws, units[1])],
-                nothing;
-                uy=data.uy[trials],
-            )
-        end
-    else
-        throw(ArgumentError("Unsupported observation model $(typeof(lds1.obs_model))"))
-    end
+"""
+    _spans_all_regimes(units, ncells, K) -> Bool
 
-    #=
-    Cells sharing a `[C d D]` version share its arrays, so copying per cell is
-    idempotent; doing it per cell rather than per version keeps this correct for
-    any slot layout.
-    =#
-    for c in 1:ncells, k in 2:K
-        _copy_emission!(cell_slds[c].LDSs[k], cell_slds[c].LDSs[1])
-    end
-    return nothing
+Whether the flat regime-major `units` cover every regime for each cell they
+touch — i.e. the version is tied across regimes, so `Σₖ γₖ(t) = 1` collapses its
+responsibilities to unit weights.
+"""
+function _spans_all_regimes(units::AbstractVector{Int}, ncells::Int, K::Int)
+    cells = unique(mod1.(units, ncells))
+    return length(units) == K * length(cells)
 end

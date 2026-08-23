@@ -109,6 +109,58 @@ function _canonical_param(model::DependentModel, name::Symbol)
     return canonical
 end
 
+#=
+Parameter groups that an SLDS always shares across its regimes, whatever the
+caller asks for. Naming one in `tied_params` is accepted and then dropped: it
+keeps the keyword's vocabulary the model's full parameter list without letting
+it imply a choice it does not actually control.
+=#
+const _ALWAYS_TIED = (:x0, :P0)
+
+"""
+    _canonical_tied_groups(sm, om, tied_params) -> Vector{Symbol}
+
+Canonicalize the `tied_params` keyword into the parameter-group names
+`fit_bool` and `depends_on` use: `:A` for `[A b B]`, `:C` for `[C d D]`, and
+`:Q` / `:R` for the covariances. Accepts `nothing`, a single `Symbol`, or an
+iterable of them, and resolves each name against whichever sub-model owns it —
+the same alias rules `depends_on` applies, so naming any member of a jointly
+fitted regression names the whole group.
+
+`:x0` / `:P0` are accepted and dropped: an SLDS ties its initial state across
+regimes unconditionally (see `_ALWAYS_TIED`). Duplicates and aliases of one
+group collapse to a single entry; order is the caller's, deduplicated.
+"""
+function _canonical_tied_groups(
+    sm::AbstractStateModel, om::AbstractObservationModel, tied_params
+)
+    tied_params === nothing && return Symbol[]
+    names = tied_params isa Symbol ? (tied_params,) : tied_params
+
+    out = Symbol[]
+    for name in names
+        name isa Symbol || throw(
+            ArgumentError(
+                "tied_params takes a Symbol or a collection of Symbols; got an entry " *
+                "of type $(typeof(name))",
+            ),
+        )
+        canonical = something(
+            _try_canonical_param(sm, name), _try_canonical_param(om, name), Some(nothing)
+        )
+        canonical === nothing && throw(
+            ArgumentError(
+                "tied_params: `:$name` is not a parameter of this model; valid names " *
+                "are $(_valid_param_names(sm)) (dynamics) and $(_valid_param_names(om)) " *
+                "(emission)",
+            ),
+        )
+        canonical in _ALWAYS_TIED && continue   # already shared; nothing to request
+        canonical in out || push!(out, canonical)
+    end
+    return out
+end
+
 """
     ParameterDependence
 

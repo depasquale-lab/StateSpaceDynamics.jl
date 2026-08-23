@@ -8,17 +8,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `fit!(slds, y; tie_emissions=true)`: one emission shared by every regime.
-  `[C d D]` (and the Gaussian `R`) is then fitted once from the whole
-  trajectory and copied across regimes, so only `[A b B Q]` and the discrete
-  chain switch — the usual reading for neural data, where the recording does
-  not change when the dynamics do, and `K` times fewer emission parameters.
-  Valid because the emission term does not depend on the regime and
-  `Σₖ γₖ(t) = 1`, which collapses the summed per-regime weighted objectives to
-  the unit-weight one. Works with `depends_on`, where the tie is *within* a
-  group (each session keeps its own emission, shared by every regime), and
-  leaves a frozen emission (`fit_bool`) untouched. Default `false`, so existing
-  fits are unchanged
+- `fit!(slds, y; tied_params=...)`: share any parameter group across every
+  regime instead of fitting one per regime. Takes a `Symbol` or a collection of
+  them, named the way `depends_on` and `fit_bool` name parameters — `[A b B]` is
+  fit as one regression so any of `:A`/`:b`/`:B` names the whole group, likewise
+  `:C`/`:d`/`:D` for `[C d D]`, with `:Q` and `:R` groups of their own.
+  `tied_params = (:C, :R)` is the usual reading for neural data, where the
+  recording does not change when the dynamics do (and `K` times fewer emission
+  parameters); `tied_params = (:A, :Q)` is the mirror image, one set of dynamics
+  with switching emissions. `:x0`/`:P0` are accepted and ignored, since an SLDS
+  ties its initial state across regimes unconditionally. Works with
+  `depends_on`, where the tie is *within* a group — each session keeps its own
+  version, shared by every regime — and leaves a frozen group (`fit_bool`)
+  untouched. Tied groups are broadcast before the first E-step, so no regime
+  ever infers `q(x)`/`q(z)` through a parameter the model does not have
+  * Tying a group alongside its noise covariance (`(:C, :R)`, `(:A, :Q)`) is the
+    ordinary M-step on pooled statistics: the shared term does not depend on the
+    regime and `Σₖ γₖ(t) = 1`, so the summed per-regime weighted objectives
+    collapse to the unit-weight one. Tying only the noise is equally cheap —
+    each regime contributes its own residual scatter and they are summed before
+    the covariance is formed
+  * Tying only the regression (`:C` without `:R`, `:A` without `:Q`) is exact
+    but costs more. The residual covariance no longer divides out of `∂/∂W`, so
+    the output rows couple and the shared fit becomes a generalized
+    least-squares solve of size `p·m` — `O((p·m)³)` against the pooled fit's
+    `O(m³)`. The solver (`_tied_gls_regression`) is written against a flat list
+    of units and reduces exactly to the pooled `mn_map` when the covariances
+    agree, so it is available to any future caller with the same shape
 - `smooth(slds, y; ux, uy, depends_on, smoothing_iters, tol, return_cov,
   progress)`: the variational posteriors of a fitted SLDS at fixed parameters,
   returned as one `NamedTuple` `(; x, γ, elbo, p)` — the continuous states
@@ -175,6 +191,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `P0` now fails.
 
 ### Fixed
+- A grouped (`depends_on`) fit that pooled a regression over units with
+  *different* noise versions — e.g. `depends_on = (R = session,)` with one
+  emission over all sessions — solved the ordinary pooled normal equations,
+  which do not maximize the ELBO when the residual covariance is not shared.
+  Those cases now go through the generalized-least-squares solve described
+  under Added; a version whose units do share a covariance keeps the cheap
+  pooled path, which is the same estimator
+- The documentation build failed: `set_group_seeds!` is exported and carries a
+  docstring but was not in any `@docs` block, so Documenter raised both
+  `missing_docs` and the unresolved `@ref`s pointing at it
 - Multi-trial `rand(lds, tsteps_per_trial)` threw
   `Attempted to capture and modify outer local variables` instead of sampling.
   The per-trial parameter vectors were assigned from two branches of an `if`

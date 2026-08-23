@@ -592,7 +592,7 @@ function test_grouped_slds_fit()
     return nothing
 end
 
-function test_grouped_slds_tied_emissions()
+function test_grouped_slds_tied_params()
     rng = StableRNG(2020)
     labels = vcat(fill(:s1, 3), fill(:s2, 3))
 
@@ -608,7 +608,7 @@ function test_grouped_slds_tied_emissions()
     group_parameter(fitted.LDSs[2].obs_model, :C, :s2) .= [0.9 0.1; -0.2 0.7]
 
     elbos = fit!(
-        fitted, y; max_iter=5, progress=false, rng=StableRNG(21), tie_emissions=true
+        fitted, y; max_iter=5, progress=false, rng=StableRNG(21), tied_params=(:C, :R)
     )
     @test all(isfinite, elbos)
 
@@ -628,6 +628,81 @@ function test_grouped_slds_tied_emissions()
     # Dynamics still differ per regime.
     @test !(fitted.LDSs[2].state_model.A ≈ fitted.LDSs[1].state_model.A)
 
+    return nothing
+end
+
+function test_tied_gls_regression()
+    @testset "tied GLS regression" begin
+        #=
+        `_tied_gls_regression` is the shared-regression fit for units whose
+        residual covariances differ. The anchor is that it degenerates: with one
+        covariance for every unit, it must return exactly what pooling the
+        statistics and calling `mn_map` returns, prior or no prior. That is what
+        makes the cheap pooled path a special case rather than a second
+        estimator.
+        =#
+        rng = StableRNG(4242)
+        m, p, U = 4, 3, 3
+        Szz = [(X = randn(rng, 20, m); X'X) for _ in 1:U]
+        Szy = [randn(rng, m, p) for _ in 1:U]
+        Σ_shared = fill(Matrix(0.7I(p)) + 0.1 * ones(p, p), U)
+
+        W = StateSpaceDynamics._tied_gls_regression(
+            Szz, Szy, Σ_shared, nothing, Σ_shared[1]
+        )
+        @test W ≈ StateSpaceDynamics.mn_map(sum(Szz), sum(Szy), nothing)
+
+        Λ = (L = randn(rng, m, m); L * L' + m * I)
+        prior = MNPrior(randn(rng, p, m), Matrix(Λ))
+        W_prior = StateSpaceDynamics._tied_gls_regression(
+            Szz, Szy, Σ_shared, prior, Σ_shared[1]
+        )
+        @test W_prior ≈ StateSpaceDynamics.mn_map(sum(Szz), sum(Szy), prior)
+
+        #=
+        With the covariances genuinely different it is a different answer, and
+        the right one: it zeroes the stationarity condition
+        `Σᵤ Σᵤ⁻¹ (Szyᵤ' − W Szzᵤ) + Σ₁⁻¹ (M₀ − W) Λ = 0`, which pooling does not.
+        =#
+        Σ_diff = [Matrix(Diagonal(0.2 .+ rand(rng, p))) for _ in 1:U]
+        W_gls = StateSpaceDynamics._tied_gls_regression(Szz, Szy, Σ_diff, prior, Σ_diff[1])
+        resid = inv(Σ_diff[1]) * ((prior.M₀ - W_gls) * prior.Λ)
+        for u in 1:U
+            resid .+= inv(Σ_diff[u]) * (Szy[u]' - W_gls * Szz[u])
+        end
+        @test maximum(abs, resid) < 1e-8
+        @test !(W_gls ≈ StateSpaceDynamics.mn_map(sum(Szz), sum(Szy), prior))
+    end
+    return nothing
+end
+
+function test_grouped_pooled_regression_under_grouped_noise()
+    @testset "grouped regression with grouped noise" begin
+        #=
+        `R` grouped by session while `[C d D]` is pooled: the shared emission is
+        then a GLS fit, not the pooled ordinary one. The check is the same as
+        everywhere else — EM on the MAP objective is monotone only if the M-step
+        maximizes it.
+        =#
+        rng = StableRNG(777)
+        truth, labels = pd_two_session_truth(; ntrials_per_session=4)
+        _, y = rand(rng, truth, fill(30, length(labels)))
+
+        sm = pd_state_model()
+        om = pd_obs_model()
+        om.depends_on = (R=labels,)          # noise per session, emission pooled
+        fitted = pd_lds(sm, om)
+        elbos = fit!(fitted, y; max_iter=8, progress=false)
+
+        @test all(isfinite, elbos)
+        @test pd_is_monotone(elbos)
+        # One emission over both sessions, two noise covariances.
+        @test length(group_labels(fitted.obs_model, :R)) == 2
+        @test !(
+            group_parameter(fitted.obs_model, :R, :s1) ≈
+            group_parameter(fitted.obs_model, :R, :s2)
+        )
+    end
     return nothing
 end
 

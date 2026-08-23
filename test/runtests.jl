@@ -139,10 +139,16 @@ using SSDTest
                 test_SLDS_gradient_weight_normalization_poisson()
             end
 
-            @testset "Tied emissions and posteriors" begin
-                test_SLDS_tied_emissions_poisson()
-                test_SLDS_tied_emissions_gaussian()
-                test_SLDS_tied_emissions_respects_fit_bool()
+            @testset "Tied parameters and posteriors" begin
+                test_SLDS_tied_params_canonicalization()
+                test_SLDS_tied_params_poisson()
+                test_SLDS_tied_params_gaussian()
+                test_SLDS_tied_params_respects_fit_bool()
+                test_SLDS_tied_params_each_group()
+                test_SLDS_tied_params_elbo_monotone()
+                test_SLDS_tied_params_gls_path()
+                test_SLDS_tied_params_x0_P0_noop()
+                test_SLDS_tied_params_frozen_group()
                 test_SLDS_smooth_poisson()
                 test_SLDS_smooth_recovers_regimes()
             end
@@ -303,8 +309,10 @@ using SSDTest
 
             @testset "SLDS fitting" begin
                 test_grouped_slds_fit()
-                test_grouped_slds_tied_emissions()
+                test_grouped_slds_tied_params()
                 test_grouped_slds_smooth()
+                test_tied_gls_regression()
+                test_grouped_pooled_regression_under_grouped_noise()
                 test_grouped_slds_requires_matching_labels()
             end
         end
