@@ -275,6 +275,10 @@ using SSDTest
             end
 
             @testset "Gaussian fitting" begin
+                test_grouped_pools_obs_stats_across_cells()
+                test_grouped_smooth_accepts_a_single_trial_matrix()
+                test_grouped_matrix_normal_priors()
+                test_grouped_fit_stops_early_and_reports_progress()
                 test_grouped_elbo_increases_and_recovers_noise()
                 test_grouped_smooth_loglikelihood_and_heldout()
                 test_grouped_integer_labels_and_priors()
