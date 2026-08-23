@@ -532,6 +532,48 @@ function _slot_dim_R(spec, slot::Int, fallback::Int, seed)
     return R === nothing ? fallback : size(R, 1)
 end
 
+"""Name a slot's label for an error message; `"(shared)"` when the group is pooled."""
+function _slot_label(dep::ParameterDependence, g::Int, slot::Int)
+    dep.varies[g] || return "(shared)"
+    slot <= length(dep.labels[g]) || return "(shared)"
+    return repr(dep.labels[g][slot])
+end
+
+"""
+    _check_seeded_widths_agree(dep, dims_C, dims_R)
+
+A Gaussian emission's `[C d D]` and its `:R` have to describe the same channels
+— `C` is `p × latent_dim` where `R` is `p × p`. A dataset pins both from the
+same trials, so they agree by construction; seeds can disagree, because a caller
+may name `:d` for one group and leave that group's `:R` alone.
+
+Only the slot pairings the trials actually produce are checked. `variants` is
+the full cross product of the groups' slots, so it also holds combinations no
+trial selects — one session's `[C d D]` against another's `:R` — and those
+mismatch routinely whenever the sessions differ in width. Walking the trials
+instead compares each group against its own `:R`.
+"""
+function _check_seeded_widths_agree(
+    dep::ParameterDependence, dims_C::AbstractVector{Int}, dims_R::AbstractVector{Int}
+)
+    (dep.varies[1] || dep.varies[2]) || return nothing
+    trial_labels = dep.varies[1] ? dep.trial_labels[1] : dep.trial_labels[2]
+    for n in eachindex(trial_labels)
+        i = dep.varies[1] ? _slot_of(dep, 1, dep.trial_labels[1][n]) : 1
+        j = dep.varies[2] ? _slot_of(dep, 2, dep.trial_labels[2][n]) : 1
+        dims_C[i] == dims_R[j] && continue
+        throw(
+            ArgumentError(
+                "group_seeds imply a $(dims_C[i])-channel `[C d D]` for group " *
+                "$(_slot_label(dep, 1, i)) but a $(dims_R[j])-channel `:R` for group " *
+                "$(_slot_label(dep, 2, j)); one emission cannot have both. Seed `:R` " *
+                "for that group as well, or leave the widths to the data at `fit!`.",
+            ),
+        )
+    end
+    return nothing
+end
+
 """Copy a seed into a slot's storage, refusing one that is the wrong shape."""
 function _apply_seed!(out, supplied, name::Symbol, slot::Int)
     size(out) == size(supplied) || throw(
@@ -695,10 +737,9 @@ function _build_variants!(
     ds = [_seed_slot_d(om.d, i, dims_C[i], spec_C, seeds_C[i]) for i in 1:(dep.nslots[1])]
     Ds = [_seed_slot_D(om.D, i, dims_C[i], seeds_C[i]) for i in 1:(dep.nslots[1])]
     seeds_R = [_group_seed(om, dep, 2, j) for j in 1:(dep.nslots[2])]
-    Rs = [
-        _seed_slot_R(om.R, j, _slot_dim_R(spec_R, j, p0, seeds_R[j]), spec_R, seeds_R[j])
-        for j in 1:(dep.nslots[2])
-    ]
+    dims_R = [_slot_dim_R(spec_R, j, p0, seeds_R[j]) for j in 1:(dep.nslots[2])]
+    _check_seeded_widths_agree(dep, dims_C, dims_R)
+    Rs = [_seed_slot_R(om.R, j, dims_R[j], spec_R, seeds_R[j]) for j in 1:(dep.nslots[2])]
 
     variants = Vector{GaussianObservationModel{T,M,V}}(undef, ncells)
     for cell in 1:ncells

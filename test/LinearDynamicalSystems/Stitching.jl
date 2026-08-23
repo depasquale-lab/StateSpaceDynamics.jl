@@ -517,3 +517,115 @@ function test_group_seeds_start_a_stitched_fit_higher()
     @test first(seeded_elbos) > first(plain_elbos)
     return nothing
 end
+
+#=
+`_slot_dim` reads a group's channel count off whichever of `:C`, `:d`, `:D` the
+seed happens to name, so that a group's emission can be read back between
+`set_group_seeds!` and the first fit — before any dataset has pinned a width.
+The tests above all seed `:C`, which settles the width on the first branch;
+these take the other three.
+=#
+
+# A Poisson emission has no `:R`, so a `:d`/`:D` seed alone fixes the width.
+function st_poisson_grouped(p::Int, session; uy_dim::Int=0)
+    C = Float64.(randn(StableRNG(1234), p, ST_LATENT_DIM))
+    om = PoissonObservationModel(;
+        C=C, d=zeros(p), D=zeros(p, uy_dim), depends_on=(C=session,)
+    )
+    return om
+end
+
+function test_group_seeds_dim_read_from_d()
+    session = vcat(fill(:a, 3), fill(:b, 3))
+    p, wide = 3, 5
+    om = st_poisson_grouped(p, session)
+    dep = SSD._resolve_dependence(om)
+
+    d_b = collect(1.0:wide)
+    set_group_seeds!(om, Dict(:b => (d=d_b,)))
+    variants = SSD._build_variants!(om, dep, nothing, nothing)
+
+    # `:d` alone settled the width, and `[C D]` were sized to match it.
+    seeded = variants[findfirst(v -> length(v.d) == wide, variants)]
+    @test seeded.d == d_b
+    @test size(seeded.C) == (wide, ST_LATENT_DIM)
+    # No `:C` seed, so its rows are still the template's, cycled to the width.
+    for r in 1:wide
+        @test seeded.C[r, :] == om.C[mod1(r, p), :]
+    end
+    @test any(v -> v.C === om.C, variants)
+    return nothing
+end
+
+function test_group_seeds_dim_read_from_D()
+    session = vcat(fill(:a, 3), fill(:b, 3))
+    p, wide, uy = 3, 4, 2
+    om = st_poisson_grouped(p, session; uy_dim=uy)
+    dep = SSD._resolve_dependence(om)
+
+    D_b = Float64.(randn(StableRNG(77), wide, uy))
+    set_group_seeds!(om, Dict(:b => (D=D_b,)))
+    variants = SSD._build_variants!(om, dep, nothing, nothing)
+
+    seeded = variants[findfirst(v -> size(v.D, 1) == wide, variants)]
+    @test seeded.D == D_b
+    @test size(seeded.C) == (wide, ST_LATENT_DIM)
+    @test length(seeded.d) == wide
+    return nothing
+end
+
+function test_group_seeds_dim_falls_back_to_template()
+    ntrials = 4
+    lds = st_lds(3)
+    _, y = rand(StableRNG(43), lds, fill(20, ntrials))
+    om = lds.obs_model
+    om.depends_on = (C=[:a, :a, :b, :b], R=[:a, :a, :b, :b])
+    dep, spec_C, spec_R = st_slot_specs(om, y)
+    @test (spec_C, spec_R) === (nothing, nothing)
+
+    # A seed naming none of `:C`/`:d`/`:D` leaves the `[C d D]` width to the
+    # template; only the `:R` group hears about it.
+    R_b = Matrix{Float64}(0.9I, 3, 3)
+    set_group_seeds!(om, Dict(:b => (R=R_b,)))
+    variants = SSD._build_variants!(om, dep, spec_C, spec_R)
+
+    @test any(v -> v.R == R_b, variants)
+    @test all(v -> size(v.C, 1) == 3, variants)
+    @test any(v -> v.C === om.C, variants)
+    return nothing
+end
+
+#=
+A Gaussian variant pairs one `[C d D]` slot with one `:R` slot, so the widths
+the seeds imply for the two have to agree. A dataset pins both from the same
+trials; seeds can disagree, and that is caught while the labels can still name
+the offending group.
+=#
+function test_group_seeds_reject_inconsistent_widths()
+    ntrials = 4
+    lds = st_lds(3)
+    _, y = rand(StableRNG(44), lds, fill(20, ntrials))
+    om = lds.obs_model
+    om.depends_on = (C=[:a, :a, :b, :b], R=[:a, :a, :b, :b])
+    dep, spec_C, spec_R = st_slot_specs(om, y)
+
+    # `:d` widens `[C d D]` for :b, but :b's `:R` is left at the template width.
+    set_group_seeds!(om, Dict(:b => (d=zeros(5),)))
+    om.variants = nothing
+    @test_throws ArgumentError SSD._build_variants!(om, dep, spec_C, spec_R)
+
+    # The mirror image: `:R` widens, `[C d D]` does not.
+    set_group_seeds!(om, Dict(:b => (R=Matrix{Float64}(0.5I, 5, 5),)))
+    om.variants = nothing
+    @test_throws ArgumentError SSD._build_variants!(om, dep, spec_C, spec_R)
+
+    # Seeding both consistently is accepted.
+    set_group_seeds!(
+        om,
+        Dict(:b => (C=zeros(5, ST_LATENT_DIM), d=zeros(5), R=Matrix{Float64}(0.5I, 5, 5))),
+    )
+    om.variants = nothing
+    variants = SSD._build_variants!(om, dep, spec_C, spec_R)
+    @test any(v -> size(v.C, 1) == 5 && size(v.R, 1) == 5, variants)
+    return nothing
+end

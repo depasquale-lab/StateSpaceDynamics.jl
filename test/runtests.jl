@@ -310,6 +310,10 @@ using SSDTest
                 test_group_seeds_apply_at_uniform_width()
                 test_group_seeds_validation()
                 test_group_seeds_start_a_stitched_fit_higher()
+                test_group_seeds_dim_read_from_d()
+                test_group_seeds_dim_read_from_D()
+                test_group_seeds_dim_falls_back_to_template()
+                test_group_seeds_reject_inconsistent_widths()
             end
 
             @testset "Workspaces" begin

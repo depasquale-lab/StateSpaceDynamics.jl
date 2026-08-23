@@ -62,7 +62,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     the answer and can hand it over. Any subset of `:C`/`:d`/`:D`/`:R` per label;
     unnamed parameters and unnamed labels keep the existing seeding, so a model
     without seeds is unaffected. Labels are checked when set and shapes when the
-    variants are built
+    variants are built, and a seed that would give one group a `[C d D]` and an
+    `:R` of different channel counts is rejected rather than built
 - Public allocating `elbo(model, y; ...)` for all three models (Gaussian LDS
   with `ux`/`uy` keywords, Poisson LDS with Newton-smoother keywords, SLDS
   with an `rng` keyword since its E-step consumes a posterior sample). Runs
