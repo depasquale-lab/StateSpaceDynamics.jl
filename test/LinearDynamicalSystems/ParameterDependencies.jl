@@ -628,3 +628,297 @@ function test_grouped_show()
 
     return nothing
 end
+
+#=
+A parameter that does *not* vary is fit from every trial that carries it, even
+when the trials fall in different cells. Grouping `:R` alone is the case that
+exercises it: `[C d D]` stays pooled, so both cells share one emission slot and
+their observation sufficient statistics have to be summed before the M-step
+solves for it.
+=#
+function test_grouped_pools_obs_stats_across_cells()
+    rng = StableRNG(808)
+    labels = [:a, :a, :a, :b, :b, :b]
+    _, y = rand(rng, pd_fresh_lds(), fill(40, length(labels)))
+
+    om = pd_obs_model()
+    om.depends_on = (R=labels,)
+    fitted = pd_lds(pd_state_model(), om)
+    elbos = fit!(fitted, y; max_iter=15, tol=1e-9, progress=false)
+
+    @test all(isfinite, elbos)
+    @test pd_is_monotone(elbos)
+    @test length(om.variants) == 2
+    # One `[C d D]`, shared by reference across both cells...
+    @test om.variants[1].C === om.variants[2].C
+    @test om.variants[1].d === om.variants[2].d
+    # ... while each cell keeps its own noise covariance.
+    @test !(om.variants[1].R ≈ om.variants[2].R)
+    @test isposdef(group_parameter(om, :R, :a))
+    @test isposdef(group_parameter(om, :R, :b))
+    return nothing
+end
+
+#=
+`smooth` keeps the shape convention of its input: a single trial handed over as
+a plain matrix comes back as one `x`/`P` pair rather than one-element vectors.
+Grouped models go through their own smoother, so the convention is re-asserted
+here.
+=#
+function test_grouped_smooth_accepts_a_single_trial_matrix()
+    rng = StableRNG(809)
+    labels = [:a, :a, :a, :b, :b, :b]
+    _, y = rand(rng, pd_fresh_lds(), fill(30, length(labels)))
+
+    om = pd_obs_model()
+    om.depends_on = (C=labels,)
+    fitted = pd_lds(pd_state_model(), om)
+    fit!(fitted, y; max_iter=3, progress=false)
+
+    x1, P1 = smooth(fitted, y[1]; depends_on=(C=[:a],))
+    @test x1 isa AbstractMatrix
+    @test size(x1) == (PD_LATENT_DIM, size(y[1], 2))
+    @test size(P1) == (PD_LATENT_DIM, PD_LATENT_DIM, size(y[1], 2))
+
+    # The vector form of the same trial agrees, and keeps the vector shape.
+    xs, Ps = smooth(fitted, [y[1]]; depends_on=(C=[:a],))
+    @test xs isa AbstractVector
+    @test xs[1] ≈ x1
+    @test Ps[1] ≈ P1
+    return nothing
+end
+
+#=
+The matrix-normal priors contribute a term per *pair* of slots — `[A b B]` with
+`Q`, `[C d D]` with `R`, `x0` with `P0` — because each term needs both halves.
+`test_grouped_integer_labels_and_priors` covers the inverse-Wishart ones, which
+are indexed by a single slot; these are the paired ones.
+=#
+function test_grouped_matrix_normal_priors()
+    rng = StableRNG(810)
+    labels = [:a, :a, :a, :b, :b, :b]
+    _, y = rand(rng, pd_fresh_lds(), fill(40, length(labels)))
+
+    sm = pd_state_model()
+    sm.x0_prior = x0_mean_prior(zeros(PD_LATENT_DIM); κ₀=1.0)
+    sm.AB_prior = StateSpaceDynamics.MNPrior(;
+        M₀=zeros(PD_LATENT_DIM, PD_LATENT_DIM + 1), Λ=Matrix(0.1 * I(PD_LATENT_DIM + 1))
+    )
+    om = pd_obs_model()
+    om.CD_prior = StateSpaceDynamics.MNPrior(;
+        M₀=zeros(PD_OBS_DIM, PD_LATENT_DIM + 1), Λ=Matrix(0.1 * I(PD_LATENT_DIM + 1))
+    )
+    om.depends_on = (C=labels, R=labels)
+    fitted = pd_lds(sm, om)
+
+    elbos = fit!(fitted, y; max_iter=15, tol=1e-9, progress=false)
+    @test all(isfinite, elbos)
+    @test pd_is_monotone(elbos)
+
+    # The prior terms are part of the objective, so the ELBO stays below the
+    # unpenalised one on the same data.
+    om_free = pd_obs_model()
+    om_free.depends_on = (C=labels, R=labels)
+    free = pd_lds(pd_state_model(), om_free)
+    free_elbos = fit!(free, y; max_iter=15, tol=1e-9, progress=false)
+    @test isfinite(free_elbos[end])
+    @test elbos[end] < free_elbos[end]
+    return nothing
+end
+
+#=
+The EM loop returns as soon as the ELBO stops moving, and the vector it hands
+back is truncated to the iterations actually run rather than padded to
+`max_iter`. `progress=true` drives the meter alongside it.
+=#
+function test_grouped_fit_stops_early_and_reports_progress()
+    rng = StableRNG(811)
+    labels = [:a, :a, :a, :b, :b, :b]
+    _, y = rand(rng, pd_fresh_lds(), fill(40, length(labels)))
+
+    om = pd_obs_model()
+    om.depends_on = (C=labels,)
+    fitted = pd_lds(pd_state_model(), om)
+    max_iter = 50
+    elbos = fit!(fitted, y; max_iter=max_iter, tol=1e-1, progress=true)
+
+    @test length(elbos) < max_iter
+    @test all(isfinite, elbos)
+    @test pd_is_monotone(elbos)
+    # It really did stop on the tolerance, not on an accident of length.
+    @test abs(elbos[end] - elbos[end - 1]) < 1e-1
+
+    # Running to `max_iter` instead returns the full vector.
+    om2 = pd_obs_model()
+    om2.depends_on = (C=labels,)
+    fitted2 = pd_lds(pd_state_model(), om2)
+    @test length(fit!(fitted2, y; max_iter=4, tol=0.0, progress=false)) == 4
+    return nothing
+end
+
+# A grouped Poisson truth: two sessions sharing dynamics, each with its own
+# emission, matching `test_grouped_poisson_fit`'s setup.
+function pd_grouped_poisson_data(seed::Int; ntrials_per::Int=3, tsteps::Int=40)
+    labels = vcat(fill(:s1, ntrials_per), fill(:s2, ntrials_per))
+    om = PoissonObservationModel([0.6 0.1; -0.2 0.5], [1.0, 0.8])
+    om.depends_on = (C=labels,)
+    truth = LinearDynamicalSystem(;
+        state_model=pd_state_model(),
+        obs_model=om,
+        latent_dim=PD_LATENT_DIM,
+        obs_dim=PD_OBS_DIM,
+        fit_bool=fill(true, 5),
+    )
+    group_parameter(om, :C, :s2) .= [-0.4 0.7; 0.5 -0.3]
+    group_parameter(om, :d, :s2) .= [0.2, 1.4]
+    _, y = rand(StableRNG(seed), truth, fill(tsteps, length(labels)))
+    return labels, y
+end
+
+function pd_grouped_poisson_lds(labels; Λ::Real=0.0)
+    om = PoissonObservationModel([0.6 0.1; -0.2 0.5], [1.0, 0.8])
+    if Λ > 0
+        om.CD_prior = StateSpaceDynamics.MNPrior(;
+            M₀=zeros(PD_OBS_DIM, PD_LATENT_DIM + 1), Λ=Matrix(Λ * I(PD_LATENT_DIM + 1))
+        )
+    end
+    om.depends_on = (C=labels,)
+    return LinearDynamicalSystem(;
+        state_model=pd_state_model(),
+        obs_model=om,
+        latent_dim=PD_LATENT_DIM,
+        obs_dim=PD_OBS_DIM,
+        fit_bool=fill(true, 5),
+    )
+end
+
+#=
+A Poisson emission has no noise covariance, so its `[C d D]` prior cannot be the
+conjugate matrix-normal update the Gaussian side uses; it enters the objective
+as a bare quadratic penalty, once per version of `[C d D]`. The test drives it
+from the outside: with `M₀ = 0`, tightening `Λ` has to pull every group's
+emission towards zero and cost ELBO for doing so.
+=#
+function test_grouped_poisson_cd_prior()
+    labels, y = pd_grouped_poisson_data(909)
+
+    function emission_norm(om)
+        return sum(
+            norm(hcat(group_parameter(om, :C, l), group_parameter(om, :d, l))) for
+            l in group_labels(om, :C)
+        )
+    end
+
+    results = map((0.0, 10.0, 200.0)) do Λ
+        fitted = pd_grouped_poisson_lds(labels; Λ=Λ)
+        elbos = fit!(fitted, y; max_iter=25, tol=0.0, progress=false)
+        @test all(isfinite, elbos)
+        @test pd_is_monotone(elbos)
+        (elbos[end], emission_norm(fitted.obs_model))
+    end
+
+    # Tighter prior, emission pulled harder towards `M₀ = 0`.
+    @test results[1][2] > results[2][2] > results[3][2]
+    # ... and the penalty it pays shows up in the objective.
+    @test results[1][1] > results[2][1] > results[3][1]
+    return nothing
+end
+
+#=
+The Laplace-EM loop returns as soon as the ELBO stops moving, truncating the
+vector to the iterations actually run rather than padding to `max_iter`.
+`progress=true` drives the meter alongside it. The Gaussian driver has its own
+copy of this loop, covered separately.
+=#
+function test_grouped_poisson_stops_early_and_reports_progress()
+    labels, y = pd_grouped_poisson_data(910)
+    fitted = pd_grouped_poisson_lds(labels)
+
+    max_iter = 40
+    elbos = fit!(fitted, y; max_iter=max_iter, tol=1e-1, progress=true)
+    @test length(elbos) < max_iter
+    @test all(isfinite, elbos)
+    @test pd_is_monotone(elbos)
+    @test abs(elbos[end] - elbos[end - 1]) < 1e-1
+
+    # Running to `max_iter` instead returns the full vector.
+    full = fit!(pd_grouped_poisson_lds(labels), y; max_iter=4, tol=0.0, progress=false)
+    @test length(full) == 4
+    return nothing
+end
+
+# A Poisson-emission SLDS, the counterpart of `pd_slds`. Only `[C d]` can be
+# grouped — a Poisson emission has no `:R`.
+function pd_poisson_slds(labels; K::Int=2)
+    ldss = map(1:K) do k
+        sm = pd_state_model()
+        sm.A .= k == 1 ? [0.95 0.05; -0.05 0.95] : [0.60 0.30; -0.30 0.60]
+        om = PoissonObservationModel([0.6 0.1; -0.2 0.5], [0.5, 0.3])
+        labels === nothing || (om.depends_on = (C=labels,))
+        return LinearDynamicalSystem(;
+            state_model=sm,
+            obs_model=om,
+            latent_dim=PD_LATENT_DIM,
+            obs_dim=PD_OBS_DIM,
+            fit_bool=fill(true, 5),
+        )
+    end
+    return SLDS(; A=[0.9 0.1; 0.1 0.9], πₖ=[0.5, 0.5], LDSs=ldss)
+end
+
+#=
+The SLDS carries its own grouped emission M-step, dispatched on the observation
+model. `test_grouped_slds_fit` takes the Gaussian branch; this one takes the
+Poisson branch, where the emission solve runs once per version of `[C d D]` over
+the trials of every cell sharing it, and the prior term is the bare quadratic
+rather than the conjugate update.
+=#
+function test_grouped_poisson_slds_fit()
+    rng = StableRNG(1011)
+    labels = vcat(fill(:s1, 3), fill(:s2, 3))
+
+    truth = pd_poisson_slds(labels)
+    for k in 1:2
+        group_parameter(truth.LDSs[k].obs_model, :C, :s2) .= [0.2 -0.9; 1.0 0.3]
+        group_parameter(truth.LDSs[k].obs_model, :d, :s2) .= [0.4, -0.2]
+    end
+    _, _, y = rand(rng, truth, fill(35, length(labels)))
+
+    fitted = pd_poisson_slds(labels)
+    elbos = fit!(fitted, y; max_iter=5, progress=false, rng=StableRNG(11))
+    @test length(elbos) == 5
+    @test all(isfinite, elbos)
+
+    # Each regime keeps a separate emission per session.
+    for k in 1:2
+        om = fitted.LDSs[k].obs_model
+        @test !(group_parameter(om, :C, :s1) ≈ group_parameter(om, :C, :s2))
+        @test !(group_parameter(om, :d, :s1) ≈ group_parameter(om, :d, :s2))
+        @test all(isfinite, group_parameter(om, :C, :s1))
+        @test all(isfinite, group_parameter(om, :d, :s2))
+    end
+
+    # x0/P0 stay tied across regimes, as they are for an ungrouped SLDS.
+    @test fitted.LDSs[2].state_model.x0 ≈ fitted.LDSs[1].state_model.x0
+    @test fitted.LDSs[2].state_model.P0 ≈ fitted.LDSs[1].state_model.P0
+
+    @test isfinite(elbo(fitted, y; rng=StableRNG(12)))
+    return nothing
+end
+
+#=
+`rand(rng, slds, tsteps)` draws one trial, which a grouped model cannot place in
+a group on its own — the same guard the LDS entry points carry.
+=#
+function test_grouped_slds_rand_needs_a_label_for_one_trial()
+    labels = vcat(fill(:s1, 3), fill(:s2, 3))
+    slds = pd_slds(labels)
+    @test_throws ArgumentError rand(StableRNG(1012), slds, 30)
+
+    # Saying which group the trial belongs to is enough.
+    z, x, y = rand(StableRNG(1012), slds, 30; depends_on=(C=[:s2], R=[:s2]))
+    @test size(y) == (PD_OBS_DIM, 30)
+    @test size(x) == (PD_LATENT_DIM, 30)
+    @test length(z) == 30
+    return nothing
+end

@@ -275,6 +275,10 @@ using SSDTest
             end
 
             @testset "Gaussian fitting" begin
+                test_grouped_pools_obs_stats_across_cells()
+                test_grouped_smooth_accepts_a_single_trial_matrix()
+                test_grouped_matrix_normal_priors()
+                test_grouped_fit_stops_early_and_reports_progress()
                 test_grouped_elbo_increases_and_recovers_noise()
                 test_grouped_smooth_loglikelihood_and_heldout()
                 test_grouped_integer_labels_and_priors()
@@ -283,11 +287,15 @@ using SSDTest
 
             @testset "Poisson fitting" begin
                 test_grouped_poisson_fit()
+                test_grouped_poisson_cd_prior()
+                test_grouped_poisson_stops_early_and_reports_progress()
             end
 
             @testset "SLDS fitting" begin
                 test_grouped_slds_fit()
                 test_grouped_slds_requires_matching_labels()
+                test_grouped_poisson_slds_fit()
+                test_grouped_slds_rand_needs_a_label_for_one_trial()
             end
         end
 
@@ -302,6 +310,7 @@ using SSDTest
 
             @testset "Non-breaking" begin
                 test_uniform_obs_dim_is_unchanged()
+                test_shared_obs_parameter_at_uniform_width()
             end
 
             @testset "Group seeds" begin
@@ -324,6 +333,7 @@ using SSDTest
 
             @testset "Fitting" begin
                 test_stitching_fit_runs_and_improves()
+                test_stitching_poisson_fit()
                 test_stitching_smooth_shapes()
             end
 
