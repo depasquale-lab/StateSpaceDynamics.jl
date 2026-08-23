@@ -127,7 +127,7 @@ end
 # VAR(1) parameter recovery
 function test_null_var_recovers_true_F(rng=MersenneTwister(4))
     T = Float64
-    obs_dim, tsteps, ntrials = 2, 200, 8
+    obs_dim, tsteps, ntrials = 2, 200, 24
     F_true = T[0.6 0.2; -0.1 0.5]
     d_true = T[0.3, -0.2]
     R_true = Matrix{T}(0.05 * I, obs_dim, obs_dim)
@@ -167,11 +167,12 @@ function test_null_capacity_ordering(rng=MersenneTwister(5))
 
     ll = Dict{Symbol,Float64}()
     for baseline in (:intercept, :inputs, :var, :var_inputs)
-        null = AffineNullModel{T}(baseline, obs_dim; input_dim=v_dim)
-        if null.input_dim > 0
+        if baseline in (:inputs, :var_inputs)
+            null = AffineNullModel{T}(baseline, obs_dim; input_dim=v_dim)
             fit!(null, y; inputs=v)
             ll[baseline] = loglikelihood(null, y; inputs=v)
         else
+            null = AffineNullModel{T}(baseline, obs_dim)
             fit!(null, y)
             ll[baseline] = loglikelihood(null, y)
         end
@@ -212,9 +213,9 @@ function test_null_input_shift_alignment(rng=MersenneTwister(6))
     fit!(plain, y; inputs=v)
     @test !isapprox(lagged.D, plain.D; rtol=1e-6)
 
-    @test SSD._shifted_inputs(v[1], Val(1))[:, 1] == zeros(T, v_dim)
-    @test SSD._shifted_inputs(v[1], Val(1))[:, 2:end] == v[1][:, 1:(end - 1)]
-    @test SSD._shifted_inputs(v[1], Val(0)) === v[1]
+    @test SSD._shifted_inputs(v[1], 1)[:, 1] == zeros(T, v_dim)
+    @test SSD._shifted_inputs(v[1], 1)[:, 2:end] == v[1][:, 1:(end - 1)]
+    @test SSD._shifted_inputs(v[1], 0) === v[1]
 end
 
 #=
@@ -358,10 +359,76 @@ function test_null_construction_validates_arguments()
     @test_throws ArgumentError AffineNullModel{T}(2; input_shift=2)
     @test_throws ArgumentError AffineNullModel{T}(:nonsense, 2)
 
-    # `input_dim` is forced to 0 for the input-free baselines.
-    @test AffineNullModel{T}(:intercept, 2; input_dim=3).input_dim == 0
-    @test AffineNullModel{T}(:var, 2; input_dim=3).input_dim == 0
-    @test AffineNullModel{T}(:inputs, 2; input_dim=3).input_dim == 3
+    # An input lag needs an input block to act on.
+    @test_throws ArgumentError AffineNullModel{T}(2; input_shift=1)
+
+    # `R₀` only exists on a lagged baseline, so its prior needs one.
+    R₀_prior = IWPrior(; Ψ=Matrix{T}(I, 2, 2), ν=T(5))
+    @test_throws ArgumentError AffineNullModel{T}(2; R₀_prior=R₀_prior)
+    @test_throws ArgumentError AffineNullModel{T}(:intercept, 2; R₀_prior=R₀_prior)
+
+    # Priors are checked against the shapes the baseline will actually fit.
+    @test_throws DimensionMismatchError AffineNullModel{T}(
+        2; R_prior=IWPrior(; Ψ=Matrix{T}(I, 3, 3), ν=T(6))
+    )
+    @test_throws DimensionMismatchError AffineNullModel{T}(
+        2; W_prior=MNPrior(; M₀=zeros(T, 2, 4), Λ=Matrix{T}(I, 4, 4))
+    )
+end
+
+# The baseline name is the single source of truth for the model's structure:
+# contradicting it through a keyword throws instead of silently winning.
+function test_null_baseline_name_rejects_contradicting_keywords()
+    T = Float64
+
+    # `lag=true` would silently turn a requested :intercept into a VAR.
+    @test_throws ArgumentError AffineNullModel{T}(:intercept, 3; lag=true)
+    @test_throws ArgumentError AffineNullModel{T}(:var, 3; lag=false)
+    @test_throws ArgumentError AffineNullModel{T}(:var, 3; lag=true)
+
+    # Input keywords on the input-free baselines.
+    @test_throws ArgumentError AffineNullModel{T}(:intercept, 3; input_dim=2)
+    @test_throws ArgumentError AffineNullModel{T}(:var, 3; input_dim=2)
+    @test_throws ArgumentError AffineNullModel{T}(:intercept, 3; input_shift=1)
+
+    # The low-level constructor still takes `lag` directly.
+    @test AffineNullModel{T}(3; lag=true).lag
+    @test AffineNullModel{T}(:var, 3).lag
+    @test !AffineNullModel{T}(:intercept, 3).lag
+    @test AffineNullModel{T}(:inputs, 3; input_dim=2).input_dim == 2
+end
+
+# Structural fields are `const`, so a fitted model cannot be desynced from the
+# parameter shapes it was built with.
+function test_null_structural_fields_are_immutable()
+    null = AffineNullModel{Float64}(:intercept, 3)
+    @test_throws ErrorException null.lag = true
+    @test_throws ErrorException null.obs_dim = 5
+    @test_throws ErrorException null.input_dim = 2
+    @test_throws ErrorException null.input_shift = 1
+end
+
+# `y` is checked against the model's own `obs_dim` before anything is fit.
+function test_null_observation_shape_mismatch_throws(rng=MersenneTwister(15))
+    T = Float64
+    null = AffineNullModel{T}(:intercept, 3)
+
+    @test_throws DimensionMismatchError fit!(null, _null_make_y(rng, 4, [10, 10]))
+    @test_throws DimensionMismatchError loglikelihood(null, _null_make_y(rng, 2, [10]))
+    @test_throws DimensionMismatchError nobs(null, _null_make_y(rng, 2, [10]))
+
+    @test_throws ArgumentError fit!(null, Matrix{T}[])
+    @test_throws ArgumentError fit!(null, [zeros(T, 3, 0)])
+
+    # Mixing precisions silently would change the fit, so it throws.
+    @test_throws ArgumentError fit!(null, _null_make_y(rng, 3, [10]; T=Float32))
+
+    with_inputs = AffineNullModel{T}(:inputs, 3; input_dim=2)
+    @test_throws ArgumentError fit!(
+        with_inputs,
+        _null_make_y(rng, 3, [10]);
+        inputs=_null_make_inputs(rng, 2, [10]; T=Float32),
+    )
 end
 
 function test_null_input_shape_mismatch_throws(rng=MersenneTwister(12))
