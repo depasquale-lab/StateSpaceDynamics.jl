@@ -278,6 +278,9 @@ using SSDTest
             end
 
             @testset "Gaussian fitting" begin
+                test_tied_gls_reduces_to_pooled_ols()
+                test_grouped_gls_when_emission_and_noise_disagree()
+                test_grouped_gls_when_dynamics_and_noise_disagree()
                 test_grouped_pools_obs_stats_across_cells()
                 test_grouped_smooth_accepts_a_single_trial_matrix()
                 test_grouped_matrix_normal_priors()

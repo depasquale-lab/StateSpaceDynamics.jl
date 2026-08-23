@@ -712,7 +712,8 @@ function _single_trial_group_error(what::AbstractString)
         ArgumentError(
             "rand(rng, $what, tsteps) samples a single trial, but this model's " *
             "parameters depend on an ancillary variable — say which group the trial " *
-            "belongs to, e.g. `depends_on=(C=[:session_a],)`, or sample several trials " *
+            "belongs to, e.g. `depends_on=(C=[:session_a], d=[:session_a])`, or sample " *
+            "several trials " *
             "at once with `rand(rng, $what, fill(tsteps, ntrials))`.",
         ),
     )

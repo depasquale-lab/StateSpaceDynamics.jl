@@ -55,6 +55,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     throw an `ArgumentError` on a model that declares `depends_on` rather than
     silently fitting one pooled parameter set
   * With `depends_on` unset, every entry point takes its original code path
+  * A regression pooled over groups whose noise covariance differs — `(R =
+    session,)` with one emission over every session, or `(Q = session,)` with
+    one set of dynamics — is fitted by generalized least squares. Held fixed,
+    the covariance divides out of the score only when the units share it; when
+    they do not the output rows couple, and solving the pooled normal equations
+    walks the ELBO downhill. The GLS solve reduces to exactly the pooled answer
+    when the covariances agree, so the cheap path stays a special case rather
+    than a second estimator, and is only reached when they genuinely differ
 - Public allocating `elbo(model, y; ...)` for all three models (Gaussian LDS
   with `ux`/`uy` keywords, Poisson LDS with Newton-smoother keywords, SLDS
   with an `rng` keyword since its E-step consumes a posterior sample). Runs

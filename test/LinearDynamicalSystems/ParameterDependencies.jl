@@ -147,11 +147,16 @@ function test_depends_on_trial_count_and_override()
     @test_throws SSD.DimensionMismatchError fit!(lds, y2; max_iter=1, progress=false)
 
     # ... unless the call supplies its own labels.
-    @test fit!(lds, y2; depends_on=(C=[:a, :b], d=[:a, :b]), max_iter=1, progress=false) isa Vector
+    @test fit!(lds, y2; depends_on=(C=[:a, :b], d=[:a, :b]), max_iter=1, progress=false) isa
+        Vector
 
     # An override may only re-assign trials to groups the model already knows.
     @test_throws ArgumentError fit!(
-        lds, y3; depends_on=(C=[:a, :a, :unseen], d=[:a, :a, :unseen]), max_iter=1, progress=false
+        lds,
+        y3;
+        depends_on=(C=[:a, :a, :unseen], d=[:a, :a, :unseen]),
+        max_iter=1,
+        progress=false,
     )
 
     # An override is meaningless without a declared dependence.
@@ -162,11 +167,19 @@ function test_depends_on_trial_count_and_override()
 
     # A typo'd override key is rejected rather than silently ignored ...
     @test_throws ArgumentError fit!(
-        lds, y3; depends_on=(C=[:a, :a, :b], d=[:a, :a, :b], nope=[:a, :a, :b]), max_iter=1, progress=false
+        lds,
+        y3;
+        depends_on=(C=[:a, :a, :b], d=[:a, :a, :b], nope=[:a, :a, :b]),
+        max_iter=1,
+        progress=false,
     )
     # ... as is naming a parameter the model never declared as grouped.
     @test_throws ArgumentError fit!(
-        lds, y3; depends_on=(C=[:a, :a, :b], d=[:a, :a, :b], R=[:a, :a, :b]), max_iter=1, progress=false
+        lds,
+        y3;
+        depends_on=(C=[:a, :a, :b], d=[:a, :a, :b], R=[:a, :a, :b]),
+        max_iter=1,
+        progress=false,
     )
 
     #=
@@ -179,7 +192,11 @@ function test_depends_on_trial_count_and_override()
     om2.depends_on = (C=[:a, :a, :b], d=[:a, :a, :b])
     both = pd_lds(sm, om2)
     @test fit!(
-        both, y2; depends_on=(Q=[:a, :b], C=[:a, :b], d=[:a, :b]), max_iter=1, progress=false
+        both,
+        y2;
+        depends_on=(Q=[:a, :b], C=[:a, :b], d=[:a, :b]),
+        max_iter=1,
+        progress=false,
     ) isa Vector
 
     return nothing
@@ -448,7 +465,9 @@ function test_grouped_smooth_loglikelihood_and_heldout()
     y_new = y[[1, 5, 6]]
     lab_new = labels[[1, 5, 6]]
     @test_throws SSD.DimensionMismatchError loglikelihood(fitted, y_new)
-    @test isfinite(loglikelihood(fitted, y_new; depends_on=(C=lab_new, d=lab_new, R=lab_new)))
+    @test isfinite(
+        loglikelihood(fitted, y_new; depends_on=(C=lab_new, d=lab_new, R=lab_new))
+    )
     xs_new, _ = smooth(fitted, y_new; depends_on=(C=lab_new, d=lab_new, R=lab_new))
     @test length(xs_new) == 3
 
@@ -681,6 +700,10 @@ function test_grouped_fit_stops_early_and_reports_progress()
     om2.depends_on = (C=labels, d=labels)
     fitted2 = pd_lds(pd_state_model(), om2)
     @test length(fit!(fitted2, y; max_iter=4, tol=0.0, progress=false)) == 4
+    return nothing
+end
+
+#=
 `[A b B]` and `[C d D]` are each fit as one regression, so grouping any member
 groups them all. Naming one and leaving the rest out reads as though only that
 one varies — the opposite of what happens — so it is rejected rather than
@@ -703,7 +726,7 @@ function test_depends_on_requires_the_whole_group()
 
     # The message names what is missing and shows the complete form.
     om = pd_obs_model()
-    om.depends_on = (C=labels, d=labels)
+    om.depends_on = (C=labels,)
     msg = try
         SSD._resolve_dependence(om)
         ""
@@ -777,8 +800,120 @@ function test_depends_on_override_requires_the_whole_group()
     lds = pd_lds(pd_state_model(), om)
 
     swapped = [:b, :b, :a, :a]
-    @test_throws ArgumentError SSD.parameter_grouping(lds, 4; depends_on=(C=swapped, d=swapped))
+    @test_throws ArgumentError SSD.parameter_grouping(lds, 4; depends_on=(C=swapped,))
     @test_throws ArgumentError SSD.parameter_grouping(lds, 4; depends_on=(d=swapped,))
     @test SSD.parameter_grouping(lds, 4; depends_on=(C=swapped, d=swapped)) !== nothing
+    return nothing
+end
+
+#=
+Pooling several units' statistics and solving the ordinary normal equations
+maximizes the objective only when those units also share the residual
+covariance — held fixed, it divides out of the score. `_tied_gls_regression`
+handles the case where it does not, and reduces to exactly the pooled answer
+when it does, so the cheap path is a special case rather than a second
+estimator.
+=#
+function test_tied_gls_reduces_to_pooled_ols()
+    rng = StableRNG(5)
+    p, m = 3, 4
+    function stats()
+        Z = randn(rng, m, 60)
+        return (Matrix(Symmetric(Z * Z' + 5I)), randn(rng, m, p))
+    end
+    Szz1, Szy1 = stats()
+    Szz2, Szy2 = stats()
+    A = randn(rng, p, p)
+    Σ = Matrix(Symmetric(A * A' + 2I))
+
+    # One unit is the ordinary solve, whatever its covariance.
+    @test SSD._tied_gls_regression([Szz1], [Szy1], [Σ], nothing, Σ) ≈
+        SSD.mn_map(PDMat(Szz1), Szy1, nothing)
+
+    # Several units sharing one covariance is the pooled solve.
+    pooled_zz = PDMat(Matrix(Symmetric(Szz1 + Szz2)))
+    @test SSD._tied_gls_regression([Szz1, Szz2], [Szy1, Szy2], [Σ, Σ], nothing, Σ) ≈
+        SSD.mn_map(pooled_zz, Szy1 + Szy2, nothing)
+
+    # ... including under a matrix-normal prior.
+    prior = SSD.MNPrior(; M₀=randn(rng, p, m), Λ=Matrix(0.3I, m, m))
+    @test SSD._tied_gls_regression([Szz1, Szz2], [Szy1, Szy2], [Σ, Σ], prior, Σ) ≈
+        SSD.mn_map(pooled_zz, Szy1 + Szy2, prior)
+
+    # With covariances that genuinely differ it is a different estimate.
+    B = randn(rng, p, p)
+    Σ2 = Matrix(Symmetric(B * B' + 0.05I))
+    @test !isapprox(
+        SSD._tied_gls_regression([Szz1, Szz2], [Szy1, Szy2], [Σ, Σ2], nothing, Σ),
+        SSD.mn_map(pooled_zz, Szy1 + Szy2, nothing);
+        rtol=1e-3,
+    )
+
+    # `_shared_noise` is what picks between the two.
+    @test SSD._shared_noise([1, 1, 2], [1, 2])
+    @test SSD._shared_noise([1, 1, 2], [3])
+    @test !SSD._shared_noise([1, 1, 2], [1, 3])
+    return nothing
+end
+
+#=
+Grouping `:R` but not `[C d D]` is the configuration where the two disagree:
+one emission is fit from sessions whose noise levels differ, so the pooled
+normal equations do not maximize the ELBO and the fit walks downhill. The
+load-bearing assertion is monotonicity — that is what a wrong estimator breaks.
+=#
+function test_grouped_gls_when_emission_and_noise_disagree()
+    labels = vcat(fill(:a, 4), fill(:b, 4))
+    quiet, loud = 0.02, 2.0
+
+    om_q = pd_obs_model()
+    om_q.R = Matrix(quiet * I(PD_OBS_DIM))
+    om_l = pd_obs_model()
+    om_l.R = Matrix(loud * I(PD_OBS_DIM))
+    _, y_q = rand(StableRNG(21), pd_lds(pd_state_model(), om_q), fill(40, 4))
+    _, y_l = rand(StableRNG(22), pd_lds(pd_state_model(), om_l), fill(40, 4))
+    y = vcat(y_q, y_l)
+
+    om = pd_obs_model()
+    om.depends_on = (R=labels,)
+    fitted = pd_lds(pd_state_model(), om)
+    elbos = fit!(fitted, y; max_iter=30, tol=0.0, progress=false)
+
+    @test all(isfinite, elbos)
+    @test pd_is_monotone(elbos)
+    # One emission shared by both sessions...
+    @test om.variants[1].C === om.variants[2].C
+    # ... and each session's noise recovered on its own scale.
+    R_a = group_parameter(om, :R, :a)
+    R_b = group_parameter(om, :R, :b)
+    @test tr(R_a) / PD_OBS_DIM < tr(R_b) / PD_OBS_DIM
+    @test isposdef(R_a)
+    @test isposdef(R_b)
+    return nothing
+end
+
+#=
+The same disagreement on the state side: `:Q` grouped with `[A b B]` pooled.
+=#
+function test_grouped_gls_when_dynamics_and_noise_disagree()
+    labels = vcat(fill(:a, 4), fill(:b, 4))
+
+    sm_q = pd_state_model()
+    sm_q.Q = Matrix(0.005 * I(PD_LATENT_DIM))
+    sm_l = pd_state_model()
+    sm_l.Q = Matrix(0.5 * I(PD_LATENT_DIM))
+    _, y_q = rand(StableRNG(23), pd_lds(sm_q, pd_obs_model()), fill(40, 4))
+    _, y_l = rand(StableRNG(24), pd_lds(sm_l, pd_obs_model()), fill(40, 4))
+    y = vcat(y_q, y_l)
+
+    sm = pd_state_model()
+    sm.depends_on = (Q=labels,)
+    fitted = pd_lds(sm, pd_obs_model())
+    elbos = fit!(fitted, y; max_iter=30, tol=0.0, progress=false)
+
+    @test all(isfinite, elbos)
+    @test pd_is_monotone(elbos)
+    @test sm.variants[1].A === sm.variants[2].A
+    @test tr(group_parameter(sm, :Q, :a)) < tr(group_parameter(sm, :Q, :b))
     return nothing
 end
