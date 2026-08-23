@@ -11,19 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ancillary parameter dependencies, declaration side: every
   `AbstractStateModel` and `AbstractObservationModel` now carries a
   `depends_on` field (default `nothing`). Setting it to a `NamedTuple` of
-  per-trial label vectors — e.g. `obs_model.depends_on = (C = session, R =
-  session)` — declares that those parameters are to be estimated separately for
+  per-trial label vectors — e.g. `obs_model.depends_on = (C = session, d =
+  session, R = session)` — declares that those parameters are to be estimated separately for
   each group of trials, while everything else stays pooled. This is the
   "stitching" setup for combining recording sessions that observe different
   neurons in the same animal: shared latent dynamics, session-specific
   emissions
-  * Keys are canonicalized to the same groups `fit_bool` uses, since those
-    parameters are fit jointly as one regression — `:A`/`:b`/`:B` name one
-    group and `:C`/`:d`/`:D` another. Labels may be `Symbol`s, integers or
-    strings. Different parameters may use different label vectors; the trial
-    partition is their common refinement
-  * A malformed declaration (unknown parameter name, aliases of one group
-    carrying different labels, label vectors of unequal length) is rejected by
+  * Keys are grouped the same way `fit_bool` groups them, since those
+    parameters are fit jointly as one regression — `[A b B]` is one group and
+    `[C d D]` another. Grouping any member groups them all, so a declaration
+    has to name **every** member of a group it touches: `(C = s, d = s)`, not
+    `(C = s,)`. `B` and `D` are zero-column when the model takes no inputs and
+    are then not part of the group; give the model inputs and they must be
+    named too. `:x0`, `:P0`, `:Q` and `:R` are groups of one. Labels may be
+    `Symbol`s, integers or strings. Different groups may use different label
+    vectors; the trial partition is their common refinement
+  * A malformed declaration (unknown parameter name, a group named only in
+    part, members of one group carrying different labels, label vectors of
+    unequal length) is rejected by
     `validate_LDS` — so by the positional `LinearDynamicalSystem(state_model,
     obs_model)` constructor, not at the first `fit!`
   * Per-group values live in a new `variants` field holding one model object
@@ -53,6 +58,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `ArgumentError` on a model that declares `depends_on` rather than silently
     fitting one pooled parameter set
   * With `depends_on` unset, every entry point takes its original code path
+  * A regression pooled over groups whose noise covariance differs — `(R =
+    session,)` with one emission over every session, or `(Q = session,)` with
+    one set of dynamics — is fitted by generalized least squares. Held fixed,
+    the covariance divides out of the score only when the units share it; when
+    they do not the output rows couple, and solving the pooled normal equations
+    walks the ELBO downhill. The GLS solve reduces to exactly the pooled answer
+    when the covariances agree, so the cheap path stays a special case rather
+    than a second estimator, and is only reached when they genuinely differ
 - Public allocating `elbo(model, y; ...)` for all three models (Gaussian LDS
   with `ux`/`uy` keywords, Poisson LDS with Newton-smoother keywords, SLDS
   with an `rng` keyword since its E-step consumes a posterior sample). Runs

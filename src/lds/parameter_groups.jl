@@ -9,7 +9,7 @@ are estimated separately for each group of trials:
 
     session = [:a, :a, :b, :b, :b]          # one label per trial
     obs = GaussianObservationModel(C, R, d)
-    obs.depends_on = (C = session, R = session)
+    obs.depends_on = (C = session, d = session, R = session)
 
 Trials labelled `:a` then contribute to one `[C d D]` / `R` estimate and trials
 labelled `:b` to another, while the latent dynamics `A`, `b`, `B`, `Q` and the
@@ -27,9 +27,14 @@ parameters are fit jointly as one regression:
     :C, :d, :D      -> emission [C d D]        (fit_bool[5])
     :R              -> observation noise       (fit_bool[6], Gaussian only)
 
-So `:d` is an alias for `:C`; naming either makes the whole `[C d D]`
-regression group-dependent, and naming two aliases of one group with different
-label vectors is an error.
+Because those parameters are fit jointly, grouping any one of them groups them
+all. Naming one on its own would read as though only that one varies, so a
+`depends_on` has to name **every** member of a group it touches: `(C = s, d =
+s)` rather than `(C = s,)`, and `(A = s, b = s)` rather than `(A = s,)`. `B`
+and `D` are zero-column when the model takes no inputs, and are then not part
+of the group; give the model inputs and they have to be named too. `:x0`,
+`:P0`, `:Q` and `:R` are groups of one and stand alone. Naming two members of
+one group with different label vectors is an error.
 
 Implementation shape: a *cell* is a maximal set of trials sharing every
 parameter — one element of the common refinement of all the label vectors.
@@ -67,8 +72,11 @@ _group_names(::GaussianObservationModel) = (:C, :R)
 _group_names(::PoissonObservationModel) = (:C,)
 
 #=
-Alias resolution: `[A b B]` and `[C d D]` are each fit as a single regression,
-so naming any member of a group makes the whole group group-dependent.
+Group resolution: `[A b B]` and `[C d D]` are each fit as a single regression,
+so grouping any member groups them all. Because that is not what naming one of
+them looks like, a `depends_on` must name every member the model carries —
+see `_check_group_naming_complete`. These functions map a member to the group
+it belongs to once that check has passed.
 
 `_try_canonical_param` returns `nothing` for a name the model does not own,
 which is what a *shared* `depends_on` needs: a call-site override is one
@@ -96,6 +104,61 @@ _valid_param_names(::GaussianStateModel) = ":x0, :P0, :A, :b, :B, :Q"
 _valid_param_names(::GaussianObservationModel) = ":C, :d, :D, :R"
 function _valid_param_names(::PoissonObservationModel)
     return ":C, :d, :D (a Poisson emission has no noise covariance)"
+end
+
+"""
+    _group_members(model, canonical) -> Tuple{Vararg{Symbol}}
+
+The parameters the group `canonical` covers, restricted to the ones this model
+actually carries. `B` and `D` default to zero-column matrices when the model
+takes no inputs; there is nothing to group there, so they are left out.
+"""
+_group_members(m::GaussianStateModel, c::Symbol) =
+    c === :A ? (size(m.B, 2) > 0 ? (:A, :b, :B) : (:A, :b)) : (c,)
+function _group_members(m::GaussianObservationModel, c::Symbol)
+    return c === :C ? (size(m.D, 2) > 0 ? (:C, :d, :D) : (:C, :d)) : (c,)
+end
+function _group_members(m::PoissonObservationModel, c::Symbol)
+    return c === :C ? (size(m.D, 2) > 0 ? (:C, :d, :D) : (:C, :d)) : (c,)
+end
+
+"""
+    _check_group_naming_complete(model, spec, what)
+
+`[A b B]` and `[C d D]` are each fit as one regression, so grouping any member
+groups them all. Naming one and leaving the others out reads as though only
+that one varies, which is the opposite of what happens — so it is rejected
+rather than quietly widened. Name every member the model carries.
+
+Keys this model does not own are skipped: one `depends_on` is resolved against
+both sub-models, so each has to ignore the other's.
+"""
+function _check_group_naming_complete(
+    model::DependentModel, spec::NamedTuple, what::AbstractString
+)
+    named = Dict{Symbol,Vector{Symbol}}()
+    for key in keys(spec)
+        canonical = _try_canonical_param(model, key)
+        canonical === nothing && continue
+        push!(get!(named, canonical, Symbol[]), key)
+    end
+    for canonical in sort!(collect(keys(named)))
+        used = named[canonical]
+        members = _group_members(model, canonical)
+        absent = [m for m in members if !(m in used)]
+        isempty(absent) && continue
+        given = join(("`:$k`" for k in used), ", ")
+        want = join(("$m = ..." for m in members), ", ")
+        throw(
+            ArgumentError(
+                "$what: $given names part of `[$(join(members, " "))]`, which is fit " *
+                "jointly as one regression — grouping one member groups them all. " *
+                "Say so explicitly by naming every member: `($want)`. " *
+                "Missing $(join(("`:$m`" for m in absent), ", ")).",
+            ),
+        )
+    end
+    return nothing
 end
 
 function _canonical_param(model::DependentModel, name::Symbol)
@@ -155,6 +218,7 @@ function _resolve_dependence(model::DependentModel)
 
     spec = model.depends_on
     spec === nothing && return dep
+    _check_group_naming_complete(model, spec, "depends_on")
 
     #=
     Track which user-facing key first claimed each group so a conflicting alias
@@ -448,6 +512,13 @@ function _validate_override_keys(
             ),
         )
     end
+    #=
+    An override is a `depends_on` like any other, and re-labels the whole
+    regression group, so it has to name the group as completely as the
+    declaration did.
+    =#
+    _check_group_naming_complete(sm, override, "depends_on override")
+    _check_group_naming_complete(om, override, "depends_on override")
     return nothing
 end
 
@@ -641,7 +712,8 @@ function _single_trial_group_error(what::AbstractString)
         ArgumentError(
             "rand(rng, $what, tsteps) samples a single trial, but this model's " *
             "parameters depend on an ancillary variable — say which group the trial " *
-            "belongs to, e.g. `depends_on=(C=[:session_a],)`, or sample several trials " *
+            "belongs to, e.g. `depends_on=(C=[:session_a], d=[:session_a])`, or sample " *
+            "several trials " *
             "at once with `rand(rng, $what, fill(tsteps, ntrials))`.",
         ),
     )
