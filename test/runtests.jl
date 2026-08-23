@@ -287,6 +287,8 @@ using SSDTest
 
             @testset "Poisson fitting" begin
                 test_grouped_poisson_fit()
+                test_grouped_poisson_cd_prior()
+                test_grouped_poisson_stops_early_and_reports_progress()
             end
 
             @testset "Not yet honoured by fitting" begin

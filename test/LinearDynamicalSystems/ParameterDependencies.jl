@@ -710,3 +710,94 @@ function test_grouped_fit_stops_early_and_reports_progress()
     @test length(fit!(fitted2, y; max_iter=4, tol=0.0, progress=false)) == 4
     return nothing
 end
+
+# A grouped Poisson truth: two sessions sharing dynamics, each with its own
+# emission, matching `test_grouped_poisson_fit`'s setup.
+function pd_grouped_poisson_data(seed::Int; ntrials_per::Int=3, tsteps::Int=40)
+    labels = vcat(fill(:s1, ntrials_per), fill(:s2, ntrials_per))
+    om = PoissonObservationModel([0.6 0.1; -0.2 0.5], [1.0, 0.8])
+    om.depends_on = (C=labels,)
+    truth = LinearDynamicalSystem(;
+        state_model=pd_state_model(),
+        obs_model=om,
+        latent_dim=PD_LATENT_DIM,
+        obs_dim=PD_OBS_DIM,
+        fit_bool=fill(true, 5),
+    )
+    group_parameter(om, :C, :s2) .= [-0.4 0.7; 0.5 -0.3]
+    group_parameter(om, :d, :s2) .= [0.2, 1.4]
+    _, y = rand(StableRNG(seed), truth, fill(tsteps, length(labels)))
+    return labels, y
+end
+
+function pd_grouped_poisson_lds(labels; Λ::Real=0.0)
+    om = PoissonObservationModel([0.6 0.1; -0.2 0.5], [1.0, 0.8])
+    if Λ > 0
+        om.CD_prior = StateSpaceDynamics.MNPrior(;
+            M₀=zeros(PD_OBS_DIM, PD_LATENT_DIM + 1), Λ=Matrix(Λ * I(PD_LATENT_DIM + 1))
+        )
+    end
+    om.depends_on = (C=labels,)
+    return LinearDynamicalSystem(;
+        state_model=pd_state_model(),
+        obs_model=om,
+        latent_dim=PD_LATENT_DIM,
+        obs_dim=PD_OBS_DIM,
+        fit_bool=fill(true, 5),
+    )
+end
+
+#=
+A Poisson emission has no noise covariance, so its `[C d D]` prior cannot be the
+conjugate matrix-normal update the Gaussian side uses; it enters the objective
+as a bare quadratic penalty, once per version of `[C d D]`. The test drives it
+from the outside: with `M₀ = 0`, tightening `Λ` has to pull every group's
+emission towards zero and cost ELBO for doing so.
+=#
+function test_grouped_poisson_cd_prior()
+    labels, y = pd_grouped_poisson_data(909)
+
+    function emission_norm(om)
+        return sum(
+            norm(hcat(group_parameter(om, :C, l), group_parameter(om, :d, l))) for
+            l in group_labels(om, :C)
+        )
+    end
+
+    results = map((0.0, 10.0, 200.0)) do Λ
+        fitted = pd_grouped_poisson_lds(labels; Λ=Λ)
+        elbos = fit!(fitted, y; max_iter=25, tol=0.0, progress=false)
+        @test all(isfinite, elbos)
+        @test pd_is_monotone(elbos)
+        (elbos[end], emission_norm(fitted.obs_model))
+    end
+
+    # Tighter prior, emission pulled harder towards `M₀ = 0`.
+    @test results[1][2] > results[2][2] > results[3][2]
+    # ... and the penalty it pays shows up in the objective.
+    @test results[1][1] > results[2][1] > results[3][1]
+    return nothing
+end
+
+#=
+The Laplace-EM loop returns as soon as the ELBO stops moving, truncating the
+vector to the iterations actually run rather than padding to `max_iter`.
+`progress=true` drives the meter alongside it. The Gaussian driver has its own
+copy of this loop, covered separately.
+=#
+function test_grouped_poisson_stops_early_and_reports_progress()
+    labels, y = pd_grouped_poisson_data(910)
+    fitted = pd_grouped_poisson_lds(labels)
+
+    max_iter = 40
+    elbos = fit!(fitted, y; max_iter=max_iter, tol=1e-1, progress=true)
+    @test length(elbos) < max_iter
+    @test all(isfinite, elbos)
+    @test pd_is_monotone(elbos)
+    @test abs(elbos[end] - elbos[end - 1]) < 1e-1
+
+    # Running to `max_iter` instead returns the full vector.
+    full = fit!(pd_grouped_poisson_lds(labels), y; max_iter=4, tol=0.0, progress=false)
+    @test length(full) == 4
+    return nothing
+end
