@@ -1908,11 +1908,15 @@ function _mstep_grouped!(
         ldss_k = view(unit_lds, rows)
         sufs_k = view(unit_suf, rows)
 
-        _grouped_update_A_b!(ldss_k, sufs_k, grp.cell_slot[_G_AB], sws, bufs)
+        _grouped_update_A_b!(
+            ldss_k, sufs_k, grp.cell_slot[_G_AB], grp.cell_slot[_G_Q], sws, bufs
+        )
         _grouped_update_Q!(ldss_k, sufs_k, grp.cell_slot[_G_Q], grp.cell_slot[_G_AB], sws)
 
         if lds1.obs_model isa GaussianObservationModel{T}
-            _grouped_update_C_d!(ldss_k, sufs_k, grp.cell_slot[_G_CD], sws, bufs)
+            _grouped_update_C_d!(
+                ldss_k, sufs_k, grp.cell_slot[_G_CD], grp.cell_slot[_G_R], sws, bufs
+            )
             _grouped_update_R!(
                 ldss_k, sufs_k, grp.cell_slot[_G_R], grp.cell_slot[_G_CD], sws
             )

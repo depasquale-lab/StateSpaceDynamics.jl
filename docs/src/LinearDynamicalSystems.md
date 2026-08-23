@@ -394,7 +394,7 @@ session = vcat(fill(:day1, 20), fill(:day2, 15))   # one label per trial
 
 gsm = GaussianStateModel(A = A, Q = Q, b = b, x0 = x0, P0 = P0)
 gom = GaussianObservationModel(C = C, R = R, d = d)
-gom.depends_on = (C = session, R = session)        # C, d, D and R per session
+gom.depends_on = (C = session, d=session, R = session)        # C, d, D and R per session
 
 lds = LinearDynamicalSystem(gsm, gom)
 fit!(lds, Y; max_iter = 50)
@@ -436,7 +436,7 @@ scoring a held-out set with a different trial count needs its own labels.
 keyword that overrides the stored labels for that call:
 
 ```julia
-ll = loglikelihood(lds, Y_test; depends_on = (C = session_test, R = session_test))
+ll = loglikelihood(lds, Y_test; depends_on = (C = session_test, d=session_test, R = session_test))
 ```
 
 An override re-assigns trials to groups the model already declares; it cannot
