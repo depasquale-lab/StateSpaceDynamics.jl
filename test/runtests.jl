@@ -260,6 +260,9 @@ using SSDTest
                 test_depends_on_validated_at_construction()
                 test_override_key_validation()
                 test_depends_on_trial_count_and_override()
+                test_depends_on_requires_the_whole_group()
+                test_depends_on_group_membership_follows_inputs()
+                test_depends_on_override_requires_the_whole_group()
             end
 
             @testset "Accessors and partition" begin

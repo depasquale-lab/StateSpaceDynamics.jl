@@ -60,7 +60,7 @@ function pd_two_session_truth(; ntrials_per_session::Int=6)
     labels = vcat(fill(:s1, ntrials_per_session), fill(:s2, ntrials_per_session))
     sm = pd_state_model()
     om = pd_obs_model()
-    om.depends_on = (C=labels, R=labels)
+    om.depends_on = (C=labels, d=labels, R=labels)
     lds = pd_lds(sm, om)
 
     # Session 2 sees different "neurons" and is much noisier.
@@ -88,10 +88,10 @@ function test_depends_on_validation()
     om.depends_on = (C=[:a, :b], d=[:a, :a])
     @test_throws ArgumentError SSD._resolve_dependence(om)
 
-    om.depends_on = (C=[:a, :b], R=[:a, :b, :b])
+    om.depends_on = (C=[:a, :b], d=[:a, :b], R=[:a, :b, :b])
     @test_throws SSD.DimensionMismatchError SSD._resolve_dependence(om)
 
-    om.depends_on = (C=Symbol[],)
+    om.depends_on = (C=Symbol[], d=Symbol[])
     @test_throws ArgumentError SSD._resolve_dependence(om)
 
     # A Poisson emission has no `R`.
@@ -101,7 +101,7 @@ function test_depends_on_validation()
 
     # A state model has no `C`.
     sm = pd_state_model()
-    sm.depends_on = (C=[:a, :b],)
+    sm.depends_on = (C=[:a, :b], d=[:a, :b])
     @test_throws ArgumentError SSD._resolve_dependence(sm)
 
     return nothing
@@ -124,7 +124,7 @@ function test_depends_on_validated_at_construction()
     @test_throws ArgumentError LinearDynamicalSystem(bad_state, pd_obs_model())
 
     ok_obs = pd_obs_model()
-    ok_obs.depends_on = (C=[:a, :b],)
+    ok_obs.depends_on = (C=[:a, :b], d=[:a, :b])
     @test LinearDynamicalSystem(pd_state_model(), ok_obs) isa LinearDynamicalSystem
 
     # A model built through the keyword constructor is still rejected when
@@ -136,7 +136,7 @@ end
 
 function test_depends_on_trial_count_and_override()
     om = pd_obs_model()
-    om.depends_on = (C=[:a, :a, :b],)
+    om.depends_on = (C=[:a, :a, :b], d=[:a, :a, :b])
     lds = pd_lds(pd_state_model(), om)
 
     rng = StableRNG(101)
@@ -147,26 +147,26 @@ function test_depends_on_trial_count_and_override()
     @test_throws SSD.DimensionMismatchError fit!(lds, y2; max_iter=1, progress=false)
 
     # ... unless the call supplies its own labels.
-    @test fit!(lds, y2; depends_on=(C=[:a, :b],), max_iter=1, progress=false) isa Vector
+    @test fit!(lds, y2; depends_on=(C=[:a, :b], d=[:a, :b]), max_iter=1, progress=false) isa Vector
 
     # An override may only re-assign trials to groups the model already knows.
     @test_throws ArgumentError fit!(
-        lds, y3; depends_on=(C=[:a, :a, :unseen],), max_iter=1, progress=false
+        lds, y3; depends_on=(C=[:a, :a, :unseen], d=[:a, :a, :unseen]), max_iter=1, progress=false
     )
 
     # An override is meaningless without a declared dependence.
     plain = pd_fresh_lds()
     @test_throws ArgumentError fit!(
-        plain, y2; depends_on=(C=[:a, :b],), max_iter=1, progress=false
+        plain, y2; depends_on=(C=[:a, :b], d=[:a, :b]), max_iter=1, progress=false
     )
 
     # A typo'd override key is rejected rather than silently ignored ...
     @test_throws ArgumentError fit!(
-        lds, y3; depends_on=(C=[:a, :a, :b], nope=[:a, :a, :b]), max_iter=1, progress=false
+        lds, y3; depends_on=(C=[:a, :a, :b], d=[:a, :a, :b], nope=[:a, :a, :b]), max_iter=1, progress=false
     )
     # ... as is naming a parameter the model never declared as grouped.
     @test_throws ArgumentError fit!(
-        lds, y3; depends_on=(C=[:a, :a, :b], R=[:a, :a, :b]), max_iter=1, progress=false
+        lds, y3; depends_on=(C=[:a, :a, :b], d=[:a, :a, :b], R=[:a, :a, :b]), max_iter=1, progress=false
     )
 
     #=
@@ -176,10 +176,10 @@ function test_depends_on_trial_count_and_override()
     sm = pd_state_model()
     sm.depends_on = (Q=[:a, :a, :b],)
     om2 = pd_obs_model()
-    om2.depends_on = (C=[:a, :a, :b],)
+    om2.depends_on = (C=[:a, :a, :b], d=[:a, :a, :b])
     both = pd_lds(sm, om2)
     @test fit!(
-        both, y2; depends_on=(Q=[:a, :b], C=[:a, :b]), max_iter=1, progress=false
+        both, y2; depends_on=(Q=[:a, :b], C=[:a, :b], d=[:a, :b]), max_iter=1, progress=false
     ) isa Vector
 
     return nothing
@@ -192,7 +192,7 @@ end
 function test_group_accessors_and_aliasing()
     labels = [:s1, :s1, :s2, :s2]
     om = pd_obs_model()
-    om.depends_on = (C=labels,)
+    om.depends_on = (C=labels, d=labels)
     lds = pd_lds(pd_state_model(), om)
 
     @test group_labels(om, :C) == [:s1, :s2]
@@ -235,7 +235,7 @@ function test_grouping_is_the_join_of_label_vectors()
     sm = pd_state_model()
     sm.depends_on = (Q=condition,)
     om = pd_obs_model()
-    om.depends_on = (C=session,)
+    om.depends_on = (C=session, d=session)
     lds = pd_lds(sm, om)
 
     grp = SSD.parameter_grouping(lds, 4)
@@ -260,17 +260,21 @@ model that declares nothing.
 """
 function test_override_key_validation()
     om = pd_obs_model()
-    om.depends_on = (C=[:a, :a, :b],)
+    om.depends_on = (C=[:a, :a, :b], d=[:a, :a, :b])
     lds = pd_lds(pd_state_model(), om)
 
-    @test SSD.parameter_grouping(lds, 2; depends_on=(C=[:a, :b],)) !== nothing
-    @test_throws ArgumentError SSD.parameter_grouping(lds, 3; depends_on=(C=[:a, :a, :x],))
+    @test SSD.parameter_grouping(lds, 2; depends_on=(C=[:a, :b], d=[:a, :b])) !== nothing
+    @test_throws ArgumentError SSD.parameter_grouping(
+        lds, 3; depends_on=(C=[:a, :a, :x], d=[:a, :a, :x])
+    )
     @test_throws ArgumentError SSD.parameter_grouping(lds, 3; depends_on=(nope=[:a],))
     # `:R` is a real parameter name, but this model does not group by it.
     @test_throws ArgumentError SSD.parameter_grouping(lds, 3; depends_on=(R=[:a, :b],))
 
     plain = pd_fresh_lds()
-    @test_throws ArgumentError SSD.parameter_grouping(plain, 2; depends_on=(C=[:a, :b],))
+    @test_throws ArgumentError SSD.parameter_grouping(
+        plain, 2; depends_on=(C=[:a, :b], d=[:a, :b])
+    )
     @test SSD.parameter_grouping(plain, 2) === nothing
 
     return nothing
@@ -293,7 +297,7 @@ function test_single_group_matches_ungrouped()
     elbos_plain = fit!(plain, y; max_iter=8, tol=0.0, progress=false)
 
     om = pd_obs_model()
-    om.depends_on = (C=fill(:only, 5), R=fill(:only, 5))
+    om.depends_on = (C=fill(:only, 5), d=fill(:only, 5), R=fill(:only, 5))
     grouped = pd_lds(pd_state_model(), om)
     elbos_grouped = fit!(grouped, y; max_iter=8, tol=0.0, progress=false)
 
@@ -336,9 +340,9 @@ function test_fully_grouped_matches_independent_fits()
     elbos2 = fit!(lds2, y2; fit_kwargs...)
 
     sm = pd_state_model()
-    sm.depends_on = (x0=labels, P0=labels, A=labels, Q=labels)
+    sm.depends_on = (x0=labels, P0=labels, A=labels, b=labels, Q=labels)
     om = pd_obs_model()
-    om.depends_on = (C=labels, R=labels)
+    om.depends_on = (C=labels, d=labels, R=labels)
     grouped = pd_lds(sm, om)
     elbos_g = fit!(grouped, y; fit_kwargs...)
 
@@ -368,7 +372,7 @@ function test_grouped_handles_ragged_trial_lengths()
     _, y = rand(rng, lds, [30, 41, 27, 33, 30, 38])
 
     fitted = pd_lds(pd_state_model(), pd_obs_model())
-    fitted.obs_model.depends_on = (C=labels, R=labels)
+    fitted.obs_model.depends_on = (C=labels, d=labels, R=labels)
     elbos = fit!(fitted, y; max_iter=10, tol=0.0, progress=false)
 
     @test all(isfinite, elbos)
@@ -387,7 +391,7 @@ function test_grouped_elbo_increases_and_recovers_noise()
     _, y = rand(rng, truth, fill(80, length(labels)))
 
     fitted = pd_lds(pd_state_model(), pd_obs_model())
-    fitted.obs_model.depends_on = (C=labels, R=labels)
+    fitted.obs_model.depends_on = (C=labels, d=labels, R=labels)
     elbos = fit!(fitted, y; max_iter=60, tol=1e-8, progress=false)
 
     @test all(isfinite, elbos)
@@ -420,7 +424,7 @@ function test_grouped_smooth_loglikelihood_and_heldout()
     _, y = rand(rng, truth, fill(45, length(labels)))
 
     fitted = pd_lds(pd_state_model(), pd_obs_model())
-    fitted.obs_model.depends_on = (C=labels, R=labels)
+    fitted.obs_model.depends_on = (C=labels, d=labels, R=labels)
     fit!(fitted, y; max_iter=15, tol=1e-8, progress=false)
 
     xs, Ps = smooth(fitted, y)
@@ -444,8 +448,8 @@ function test_grouped_smooth_loglikelihood_and_heldout()
     y_new = y[[1, 5, 6]]
     lab_new = labels[[1, 5, 6]]
     @test_throws SSD.DimensionMismatchError loglikelihood(fitted, y_new)
-    @test isfinite(loglikelihood(fitted, y_new; depends_on=(C=lab_new, R=lab_new)))
-    xs_new, _ = smooth(fitted, y_new; depends_on=(C=lab_new, R=lab_new))
+    @test isfinite(loglikelihood(fitted, y_new; depends_on=(C=lab_new, d=lab_new, R=lab_new)))
+    xs_new, _ = smooth(fitted, y_new; depends_on=(C=lab_new, d=lab_new, R=lab_new))
     @test length(xs_new) == 3
 
     return nothing
@@ -461,7 +465,7 @@ function test_grouped_integer_labels_and_priors()
     sm.Q_prior = IWPrior(; Ψ=Matrix(0.01 * I(PD_LATENT_DIM)), ν=6.0)
     om = pd_obs_model()
     om.R_prior = IWPrior(; Ψ=Matrix(0.05 * I(PD_OBS_DIM)), ν=6.0)
-    om.depends_on = (C=labels, R=labels)
+    om.depends_on = (C=labels, d=labels, R=labels)
     fitted = pd_lds(sm, om)
 
     elbos = fit!(fitted, y; max_iter=25, tol=1e-9, progress=false)
@@ -482,7 +486,7 @@ function test_grouped_rand_needs_a_label_for_one_trial()
 
     # A single trial cannot be assigned to a group on its own.
     @test_throws ArgumentError rand(rng, truth, 20)
-    x, y = rand(rng, truth, 20; depends_on=(C=[:s2], R=[:s2]))
+    x, y = rand(rng, truth, 20; depends_on=(C=[:s2], d=[:s2], R=[:s2]))
     @test size(y) == (PD_OBS_DIM, 20)
 
     # Multi-trial sampling uses the model's own labels.
@@ -502,10 +506,10 @@ function test_depends_on_rejected_until_supported()
     y = [randn(rng, PD_OBS_DIM, 20) for _ in 1:3]
 
     om = pd_obs_model()
-    om.depends_on = (C=labels,)
+    om.depends_on = (C=labels, d=labels)
 
     pom = PoissonObservationModel([0.6 0.1; -0.2 0.5], [1.0, 0.8])
-    pom.depends_on = (C=labels,)
+    pom.depends_on = (C=labels, d=labels)
     plds = LinearDynamicalSystem(;
         state_model=pd_state_model(),
         obs_model=pom,
@@ -541,7 +545,7 @@ end
 function test_grouped_show()
     labels = [:s1, :s1, :s2]
     om = pd_obs_model()
-    om.depends_on = (C=labels, R=labels)
+    om.depends_on = (C=labels, d=labels, R=labels)
     out = sprint(show, om)
     @test occursin("Depends on:", out)
     @test occursin("C, d, D", out)
@@ -595,17 +599,17 @@ function test_grouped_smooth_accepts_a_single_trial_matrix()
     _, y = rand(rng, pd_fresh_lds(), fill(30, length(labels)))
 
     om = pd_obs_model()
-    om.depends_on = (C=labels,)
+    om.depends_on = (C=labels, d=labels)
     fitted = pd_lds(pd_state_model(), om)
     fit!(fitted, y; max_iter=3, progress=false)
 
-    x1, P1 = smooth(fitted, y[1]; depends_on=(C=[:a],))
+    x1, P1 = smooth(fitted, y[1]; depends_on=(C=[:a], d=[:a]))
     @test x1 isa AbstractMatrix
     @test size(x1) == (PD_LATENT_DIM, size(y[1], 2))
     @test size(P1) == (PD_LATENT_DIM, PD_LATENT_DIM, size(y[1], 2))
 
     # The vector form of the same trial agrees, and keeps the vector shape.
-    xs, Ps = smooth(fitted, [y[1]]; depends_on=(C=[:a],))
+    xs, Ps = smooth(fitted, [y[1]]; depends_on=(C=[:a], d=[:a]))
     @test xs isa AbstractVector
     @test xs[1] ≈ x1
     @test Ps[1] ≈ P1
@@ -632,7 +636,7 @@ function test_grouped_matrix_normal_priors()
     om.CD_prior = StateSpaceDynamics.MNPrior(;
         M₀=zeros(PD_OBS_DIM, PD_LATENT_DIM + 1), Λ=Matrix(0.1 * I(PD_LATENT_DIM + 1))
     )
-    om.depends_on = (C=labels, R=labels)
+    om.depends_on = (C=labels, d=labels, R=labels)
     fitted = pd_lds(sm, om)
 
     elbos = fit!(fitted, y; max_iter=15, tol=1e-9, progress=false)
@@ -642,7 +646,7 @@ function test_grouped_matrix_normal_priors()
     # The prior terms are part of the objective, so the ELBO stays below the
     # unpenalised one on the same data.
     om_free = pd_obs_model()
-    om_free.depends_on = (C=labels, R=labels)
+    om_free.depends_on = (C=labels, d=labels, R=labels)
     free = pd_lds(pd_state_model(), om_free)
     free_elbos = fit!(free, y; max_iter=15, tol=1e-9, progress=false)
     @test isfinite(free_elbos[end])
@@ -661,7 +665,7 @@ function test_grouped_fit_stops_early_and_reports_progress()
     _, y = rand(rng, pd_fresh_lds(), fill(40, length(labels)))
 
     om = pd_obs_model()
-    om.depends_on = (C=labels,)
+    om.depends_on = (C=labels, d=labels)
     fitted = pd_lds(pd_state_model(), om)
     max_iter = 50
     elbos = fit!(fitted, y; max_iter=max_iter, tol=1e-1, progress=true)
@@ -674,8 +678,107 @@ function test_grouped_fit_stops_early_and_reports_progress()
 
     # Running to `max_iter` instead returns the full vector.
     om2 = pd_obs_model()
-    om2.depends_on = (C=labels,)
+    om2.depends_on = (C=labels, d=labels)
     fitted2 = pd_lds(pd_state_model(), om2)
     @test length(fit!(fitted2, y; max_iter=4, tol=0.0, progress=false)) == 4
+`[A b B]` and `[C d D]` are each fit as one regression, so grouping any member
+groups them all. Naming one and leaving the rest out reads as though only that
+one varies — the opposite of what happens — so it is rejected rather than
+quietly widened.
+=#
+function test_depends_on_requires_the_whole_group()
+    labels = [:a, :a, :b, :b]
+
+    # Naming part of a regression group is an error, whichever part.
+    for spec in ((C=labels,), (d=labels,))
+        om = pd_obs_model()
+        om.depends_on = spec
+        @test_throws ArgumentError SSD._resolve_dependence(om)
+    end
+    for spec in ((A=labels,), (b=labels,))
+        sm = pd_state_model()
+        sm.depends_on = spec
+        @test_throws ArgumentError SSD._resolve_dependence(sm)
+    end
+
+    # The message names what is missing and shows the complete form.
+    om = pd_obs_model()
+    om.depends_on = (C=labels, d=labels)
+    msg = try
+        SSD._resolve_dependence(om)
+        ""
+    catch e
+        sprint(showerror, e)
+    end
+    @test occursin("[C d]", msg)
+    @test occursin(":d", msg)
+
+    # Naming the whole group is accepted.
+    om2 = pd_obs_model()
+    om2.depends_on = (C=labels, d=labels)
+    @test SSD._resolve_dependence(om2).varies[1]
+    sm2 = pd_state_model()
+    sm2.depends_on = (A=labels, b=labels)
+    @test SSD._resolve_dependence(sm2) isa SSD.ParameterDependence
+
+    # A group of one is complete on its own.
+    for (model, spec) in (
+        (pd_obs_model(), (R=labels,)),
+        (pd_state_model(), (Q=labels,)),
+        (pd_state_model(), (x0=labels, P0=labels)),
+    )
+        model.depends_on = spec
+        @test SSD._resolve_dependence(model) isa SSD.ParameterDependence
+    end
+    return nothing
+end
+
+#=
+`B` and `D` are zero-column when the model takes no inputs, so there is nothing
+to group and naming them is not required. Give the emission an input and `:D`
+joins the group.
+=#
+function test_depends_on_group_membership_follows_inputs()
+    labels = [:a, :a, :b, :b]
+
+    # No observation inputs: `(C, d)` is the whole group.
+    om = pd_obs_model()
+    @test size(om.D, 2) == 0
+    om.depends_on = (C=labels, d=labels)
+    @test SSD._resolve_dependence(om) isa SSD.ParameterDependence
+
+    # With an observation input, `:D` is part of it too.
+    om2 = pd_obs_model()
+    om2.D = zeros(PD_OBS_DIM, 1)
+    om2.depends_on = (C=labels, d=labels)
+    @test_throws ArgumentError SSD._resolve_dependence(om2)
+    om2.depends_on = (C=labels, d=labels, D=labels)
+    @test SSD._resolve_dependence(om2) isa SSD.ParameterDependence
+
+    # Same on the state side, via `B`.
+    sm = pd_state_model()
+    sm.B = zeros(PD_LATENT_DIM, 1)
+    sm.depends_on = (A=labels, b=labels)
+    @test_throws ArgumentError SSD._resolve_dependence(sm)
+    sm.depends_on = (A=labels, b=labels, B=labels)
+    @test SSD._resolve_dependence(sm) isa SSD.ParameterDependence
+    return nothing
+end
+
+#=
+A call-site override is a `depends_on` like any other and re-labels the whole
+regression group, so it has to name the group as completely as the declaration
+did.
+=#
+function test_depends_on_override_requires_the_whole_group()
+    labels = [:a, :a, :b, :b]
+    om = pd_obs_model()
+    om.depends_on = (C=labels, d=labels)
+    lds = pd_lds(pd_state_model(), om)
+
+    swapped = [:b, :b, :a, :a]
+    @test_throws ArgumentError SSD.parameter_grouping(lds, 4; depends_on=(C=swapped, d=swapped))
+    @test_throws ArgumentError SSD.parameter_grouping(lds, 4; depends_on=(d=swapped,))
+    @test SSD.parameter_grouping(lds, 4; depends_on=(C=swapped, d=swapped)) !== nothing
     return nothing
 end
