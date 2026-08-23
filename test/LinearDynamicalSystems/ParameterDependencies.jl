@@ -846,3 +846,79 @@ function test_grouped_poisson_stops_early_and_reports_progress()
     @test length(full) == 4
     return nothing
 end
+
+# A Poisson-emission SLDS, the counterpart of `pd_slds`. Only `[C d]` can be
+# grouped — a Poisson emission has no `:R`.
+function pd_poisson_slds(labels; K::Int=2)
+    ldss = map(1:K) do k
+        sm = pd_state_model()
+        sm.A .= k == 1 ? [0.95 0.05; -0.05 0.95] : [0.60 0.30; -0.30 0.60]
+        om = PoissonObservationModel([0.6 0.1; -0.2 0.5], [0.5, 0.3])
+        labels === nothing || (om.depends_on = (C=labels,))
+        return LinearDynamicalSystem(;
+            state_model=sm,
+            obs_model=om,
+            latent_dim=PD_LATENT_DIM,
+            obs_dim=PD_OBS_DIM,
+            fit_bool=fill(true, 5),
+        )
+    end
+    return SLDS(; A=[0.9 0.1; 0.1 0.9], πₖ=[0.5, 0.5], LDSs=ldss)
+end
+
+#=
+The SLDS carries its own grouped emission M-step, dispatched on the observation
+model. `test_grouped_slds_fit` takes the Gaussian branch; this one takes the
+Poisson branch, where the emission solve runs once per version of `[C d D]` over
+the trials of every cell sharing it, and the prior term is the bare quadratic
+rather than the conjugate update.
+=#
+function test_grouped_poisson_slds_fit()
+    rng = StableRNG(1011)
+    labels = vcat(fill(:s1, 3), fill(:s2, 3))
+
+    truth = pd_poisson_slds(labels)
+    for k in 1:2
+        group_parameter(truth.LDSs[k].obs_model, :C, :s2) .= [0.2 -0.9; 1.0 0.3]
+        group_parameter(truth.LDSs[k].obs_model, :d, :s2) .= [0.4, -0.2]
+    end
+    _, _, y = rand(rng, truth, fill(35, length(labels)))
+
+    fitted = pd_poisson_slds(labels)
+    elbos = fit!(fitted, y; max_iter=5, progress=false, rng=StableRNG(11))
+    @test length(elbos) == 5
+    @test all(isfinite, elbos)
+
+    # Each regime keeps a separate emission per session.
+    for k in 1:2
+        om = fitted.LDSs[k].obs_model
+        @test !(group_parameter(om, :C, :s1) ≈ group_parameter(om, :C, :s2))
+        @test !(group_parameter(om, :d, :s1) ≈ group_parameter(om, :d, :s2))
+        @test all(isfinite, group_parameter(om, :C, :s1))
+        @test all(isfinite, group_parameter(om, :d, :s2))
+    end
+
+    # x0/P0 stay tied across regimes, as they are for an ungrouped SLDS.
+    @test fitted.LDSs[2].state_model.x0 ≈ fitted.LDSs[1].state_model.x0
+    @test fitted.LDSs[2].state_model.P0 ≈ fitted.LDSs[1].state_model.P0
+
+    @test isfinite(elbo(fitted, y; rng=StableRNG(12)))
+    return nothing
+end
+
+#=
+`rand(rng, slds, tsteps)` draws one trial, which a grouped model cannot place in
+a group on its own — the same guard the LDS entry points carry.
+=#
+function test_grouped_slds_rand_needs_a_label_for_one_trial()
+    labels = vcat(fill(:s1, 3), fill(:s2, 3))
+    slds = pd_slds(labels)
+    @test_throws ArgumentError rand(StableRNG(1012), slds, 30)
+
+    # Saying which group the trial belongs to is enough.
+    z, x, y = rand(StableRNG(1012), slds, 30; depends_on=(C=[:s2], R=[:s2]))
+    @test size(y) == (PD_OBS_DIM, 30)
+    @test size(x) == (PD_LATENT_DIM, 30)
+    @test length(z) == 30
+    return nothing
+end

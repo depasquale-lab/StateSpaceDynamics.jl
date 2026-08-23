@@ -294,6 +294,8 @@ using SSDTest
             @testset "SLDS fitting" begin
                 test_grouped_slds_fit()
                 test_grouped_slds_requires_matching_labels()
+                test_grouped_poisson_slds_fit()
+                test_grouped_slds_rand_needs_a_label_for_one_trial()
             end
         end
     end
