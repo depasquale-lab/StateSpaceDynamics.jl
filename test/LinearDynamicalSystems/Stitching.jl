@@ -792,3 +792,41 @@ function test_shared_obs_parameter_at_uniform_width()
     @test size(om2.variants[1].R) == (wide, wide)
     return nothing
 end
+
+#=
+Pooling writes into a scratch `obs_xy` whose column count is the slot's channel
+count. The preallocated one is sized from the model's own `obs_dim`, so a slot
+shared across cells at some *other* width needs its own — built on first use and
+cached for the rest of the fit.
+
+Reaching it takes a shared `[C d D]` pooled over more than one cell at a width
+the model was not built at: group `:R` so there are two cells, leave `[C d D]`
+shared so they pool into one slot, and give the data a width the template does
+not have.
+=#
+function test_pooled_slot_at_a_width_the_model_was_not_built_at()
+    ntrials, wide, template = 4, 5, 3
+    _, y = rand(StableRNG(76), st_lds(wide), fill(20, 2 * ntrials))
+
+    om = st_obs_model(template)
+    om.depends_on = (R=vcat(fill(:a, ntrials), fill(:b, ntrials)),)
+    fitted = st_build_lds(pd_state_model(), om)
+    @test size(om.C, 1) == template     # the model really does start narrower
+
+    elbos = fit!(fitted, y; max_iter=5, progress=false)
+    @test all(isfinite, elbos)
+    @test pd_is_monotone(elbos)
+
+    # Two cells pooling into one `[C d]`, at the data's width rather than the
+    # template's...
+    @test length(om.variants) == 2
+    @test om.variants[1].C === om.variants[2].C
+    @test size(om.variants[1].C) == (wide, ST_LATENT_DIM)
+    @test length(om.variants[1].d) == wide
+    # ... while each keeps its own noise covariance, also resized.
+    @test size(group_parameter(om, :R, :a)) == (wide, wide)
+    @test !(group_parameter(om, :R, :a) ≈ group_parameter(om, :R, :b))
+    @test isposdef(group_parameter(om, :R, :a))
+    @test isposdef(group_parameter(om, :R, :b))
+    return nothing
+end

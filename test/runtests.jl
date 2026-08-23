@@ -311,6 +311,7 @@ using SSDTest
             @testset "Non-breaking" begin
                 test_uniform_obs_dim_is_unchanged()
                 test_shared_obs_parameter_at_uniform_width()
+                test_pooled_slot_at_a_width_the_model_was_not_built_at()
             end
 
             @testset "Group seeds" begin
