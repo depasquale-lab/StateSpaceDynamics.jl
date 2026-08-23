@@ -52,10 +52,10 @@ function test_depends_on_validation()
     om.depends_on = (C=[:a, :b], d=[:a, :a])
     @test_throws ArgumentError SSD._resolve_dependence(om)
 
-    om.depends_on = (C=[:a, :b], R=[:a, :b, :b])
+    om.depends_on = (C=[:a, :b], d=[:a, :b], R=[:a, :b, :b])
     @test_throws SSD.DimensionMismatchError SSD._resolve_dependence(om)
 
-    om.depends_on = (C=Symbol[],)
+    om.depends_on = (C=Symbol[], d=Symbol[])
     @test_throws ArgumentError SSD._resolve_dependence(om)
 
     # A Poisson emission has no `R`.
@@ -65,7 +65,7 @@ function test_depends_on_validation()
 
     # A state model has no `C`.
     sm = pd_state_model()
-    sm.depends_on = (C=[:a, :b],)
+    sm.depends_on = (C=[:a, :b], d=[:a, :b])
     @test_throws ArgumentError SSD._resolve_dependence(sm)
 
     return nothing
@@ -88,7 +88,7 @@ function test_depends_on_validated_at_construction()
     @test_throws ArgumentError LinearDynamicalSystem(bad_state, pd_obs_model())
 
     ok_obs = pd_obs_model()
-    ok_obs.depends_on = (C=[:a, :b],)
+    ok_obs.depends_on = (C=[:a, :b], d=[:a, :b])
     @test LinearDynamicalSystem(pd_state_model(), ok_obs) isa LinearDynamicalSystem
 
     # A model built through the keyword constructor is still rejected when
@@ -105,7 +105,7 @@ end
 function test_group_accessors_and_aliasing()
     labels = [:s1, :s1, :s2, :s2]
     om = pd_obs_model()
-    om.depends_on = (C=labels,)
+    om.depends_on = (C=labels, d=labels)
     lds = pd_lds(pd_state_model(), om)
 
     @test group_labels(om, :C) == [:s1, :s2]
@@ -148,7 +148,7 @@ function test_grouping_is_the_join_of_label_vectors()
     sm = pd_state_model()
     sm.depends_on = (Q=condition,)
     om = pd_obs_model()
-    om.depends_on = (C=session,)
+    om.depends_on = (C=session, d=session)
     lds = pd_lds(sm, om)
 
     grp = SSD.parameter_grouping(lds, 4)
@@ -173,17 +173,21 @@ model that declares nothing.
 """
 function test_override_key_validation()
     om = pd_obs_model()
-    om.depends_on = (C=[:a, :a, :b],)
+    om.depends_on = (C=[:a, :a, :b], d=[:a, :a, :b])
     lds = pd_lds(pd_state_model(), om)
 
-    @test SSD.parameter_grouping(lds, 2; depends_on=(C=[:a, :b],)) !== nothing
-    @test_throws ArgumentError SSD.parameter_grouping(lds, 3; depends_on=(C=[:a, :a, :x],))
+    @test SSD.parameter_grouping(lds, 2; depends_on=(C=[:a, :b], d=[:a, :b])) !== nothing
+    @test_throws ArgumentError SSD.parameter_grouping(
+        lds, 3; depends_on=(C=[:a, :a, :x], d=[:a, :a, :x])
+    )
     @test_throws ArgumentError SSD.parameter_grouping(lds, 3; depends_on=(nope=[:a],))
     # `:R` is a real parameter name, but this model does not group by it.
     @test_throws ArgumentError SSD.parameter_grouping(lds, 3; depends_on=(R=[:a, :b],))
 
     plain = pd_fresh_lds()
-    @test_throws ArgumentError SSD.parameter_grouping(plain, 2; depends_on=(C=[:a, :b],))
+    @test_throws ArgumentError SSD.parameter_grouping(
+        plain, 2; depends_on=(C=[:a, :b], d=[:a, :b])
+    )
     @test SSD.parameter_grouping(plain, 2) === nothing
 
     return nothing
@@ -199,7 +203,7 @@ function test_depends_on_rejected_until_supported()
     y = [randn(rng, PD_OBS_DIM, 20) for _ in 1:3]
 
     om = pd_obs_model()
-    om.depends_on = (C=labels,)
+    om.depends_on = (C=labels, d=labels)
     lds = pd_lds(pd_state_model(), om)
 
     @test_throws ArgumentError fit!(lds, y; max_iter=1, progress=false)
@@ -214,7 +218,7 @@ function test_depends_on_rejected_until_supported()
     @test fit!(plain, y; max_iter=1, progress=false) isa Vector
 
     pom = PoissonObservationModel([0.6 0.1; -0.2 0.5], [1.0, 0.8])
-    pom.depends_on = (C=labels,)
+    pom.depends_on = (C=labels, d=labels)
     plds = LinearDynamicalSystem(;
         state_model=pd_state_model(),
         obs_model=pom,
@@ -246,7 +250,7 @@ end
 function test_grouped_show()
     labels = [:s1, :s1, :s2]
     om = pd_obs_model()
-    om.depends_on = (C=labels, R=labels)
+    om.depends_on = (C=labels, d=labels, R=labels)
     out = sprint(show, om)
     @test occursin("Depends on:", out)
     @test occursin("C, d, D", out)
@@ -255,5 +259,108 @@ function test_grouped_show()
     plain = sprint(show, pd_obs_model())
     @test !occursin("Depends on:", plain)
 
+    return nothing
+end
+
+#=
+`[A b B]` and `[C d D]` are each fit as one regression, so grouping any member
+groups them all. Naming one and leaving the rest out reads as though only that
+one varies — the opposite of what happens — so it is rejected rather than
+quietly widened.
+=#
+function test_depends_on_requires_the_whole_group()
+    labels = [:a, :a, :b, :b]
+
+    # Naming part of a regression group is an error, whichever part.
+    for spec in ((C=labels,), (d=labels,))
+        om = pd_obs_model()
+        om.depends_on = spec
+        @test_throws ArgumentError SSD._resolve_dependence(om)
+    end
+    for spec in ((A=labels,), (b=labels,))
+        sm = pd_state_model()
+        sm.depends_on = spec
+        @test_throws ArgumentError SSD._resolve_dependence(sm)
+    end
+
+    # The message names what is missing and shows the complete form.
+    om = pd_obs_model()
+    om.depends_on = (C=labels,)
+    msg = try
+        SSD._resolve_dependence(om)
+        ""
+    catch e
+        sprint(showerror, e)
+    end
+    @test occursin("[C d]", msg)
+    @test occursin(":d", msg)
+
+    # Naming the whole group is accepted.
+    om2 = pd_obs_model()
+    om2.depends_on = (C=labels, d=labels)
+    @test SSD._resolve_dependence(om2).varies[1]
+    sm2 = pd_state_model()
+    sm2.depends_on = (A=labels, b=labels)
+    @test SSD._resolve_dependence(sm2) isa SSD.ParameterDependence
+
+    # A group of one is complete on its own.
+    for (model, spec) in (
+        (pd_obs_model(), (R=labels,)),
+        (pd_state_model(), (Q=labels,)),
+        (pd_state_model(), (x0=labels, P0=labels)),
+    )
+        model.depends_on = spec
+        @test SSD._resolve_dependence(model) isa SSD.ParameterDependence
+    end
+    return nothing
+end
+
+#=
+`B` and `D` are zero-column when the model takes no inputs, so there is nothing
+to group and naming them is not required. Give the emission an input and `:D`
+joins the group.
+=#
+function test_depends_on_group_membership_follows_inputs()
+    labels = [:a, :a, :b, :b]
+
+    # No observation inputs: `(C, d)` is the whole group.
+    om = pd_obs_model()
+    @test size(om.D, 2) == 0
+    om.depends_on = (C=labels, d=labels)
+    @test SSD._resolve_dependence(om) isa SSD.ParameterDependence
+
+    # With an observation input, `:D` is part of it too.
+    om2 = pd_obs_model()
+    om2.D = zeros(PD_OBS_DIM, 1)
+    om2.depends_on = (C=labels, d=labels)
+    @test_throws ArgumentError SSD._resolve_dependence(om2)
+    om2.depends_on = (C=labels, d=labels, D=labels)
+    @test SSD._resolve_dependence(om2) isa SSD.ParameterDependence
+
+    # Same on the state side, via `B`.
+    sm = pd_state_model()
+    sm.B = zeros(PD_LATENT_DIM, 1)
+    sm.depends_on = (A=labels, b=labels)
+    @test_throws ArgumentError SSD._resolve_dependence(sm)
+    sm.depends_on = (A=labels, b=labels, B=labels)
+    @test SSD._resolve_dependence(sm) isa SSD.ParameterDependence
+    return nothing
+end
+
+#=
+A call-site override is a `depends_on` like any other and re-labels the whole
+regression group, so it has to name the group as completely as the declaration
+did.
+=#
+function test_depends_on_override_requires_the_whole_group()
+    labels = [:a, :a, :b, :b]
+    om = pd_obs_model()
+    om.depends_on = (C=labels, d=labels)
+    lds = pd_lds(pd_state_model(), om)
+
+    swapped = [:b, :b, :a, :a]
+    @test_throws ArgumentError SSD.parameter_grouping(lds, 4; depends_on=(C=swapped,))
+    @test_throws ArgumentError SSD.parameter_grouping(lds, 4; depends_on=(d=swapped,))
+    @test SSD.parameter_grouping(lds, 4; depends_on=(C=swapped, d=swapped)) !== nothing
     return nothing
 end
