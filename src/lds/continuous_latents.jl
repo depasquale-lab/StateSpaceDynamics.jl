@@ -703,6 +703,22 @@ function update_A_b!(
         W = mn_map(suf.dyn_xx[], suf.dyn_xy, AB_prior)
     end
 
+    _unpack_dyn_W!(lds, W)
+    return nothing
+end
+
+"""
+    _unpack_dyn_W!(lds, W)
+
+Write a stacked dynamics regression `W = [A b B]` back into `lds`. The inverse
+of [`_pack_dyn_W!`](@ref); shared by the ordinary M-step and by callers that
+solve for `W` themselves (see `_tied_gls_regression`).
+"""
+function _unpack_dyn_W!(
+    lds::LinearDynamicalSystem{T,S,O}, W::AbstractMatrix{T}
+) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+    D = lds.latent_dim
+    ux_dim = lds.ux_dim
     copyto!(lds.state_model.A, view(W, :, 1:D))
     copyto!(lds.state_model.b, view(W, :, D + 1))
     if ux_dim > 0

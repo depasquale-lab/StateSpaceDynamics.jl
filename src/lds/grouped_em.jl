@@ -517,6 +517,80 @@ function _distinct_by_slot(slots::AbstractVector{Int}, units::AbstractVector{Int
     return reps
 end
 
+"""
+    _shared_noise(noise_slots, units) -> Bool
+
+Whether every unit of a regression slot draws on the same noise version. When
+it does, that covariance is a common factor of the score and divides out, so
+pooling the units' statistics and solving the ordinary normal equations is
+exact. When it does not, the rows couple and the estimate has to come from
+[`_tied_gls_regression`](@ref).
+"""
+function _shared_noise(noise_slots::AbstractVector{Int}, units::AbstractVector{Int})
+    length(units) == 1 && return true
+    s = noise_slots[units[1]]
+    return all(u -> noise_slots[u] == s, units)
+end
+
+"""
+    _tied_gls_regression(Szz, Szy, Sigma, prior, Sigma_prior) -> W
+
+Fit one regression matrix `W` (`p x m`) shared by several units whose residual
+covariances `Sigma[u]` (`p x p`) differ. `Szz[u]` is the unit's `m x m`
+regressor Gram matrix and `Szy[u]` its `m x p` cross-product — the `*_xx` /
+`*_xy` blocks of a `SufficientStatistics`.
+
+Pooling the units' statistics and solving the ordinary normal equations
+maximizes the objective only when the units also share `Sigma`: held fixed, it
+divides out of the score. When it does not, the output rows couple,
+
+    sum_u Sigma_u^-1 (Szy_u' - W Szz_u) = 0
+
+which vectorizes to the `(p*m)`-square system
+
+    [sum_u (Szz_u kron Sigma_u^-1)] vec(W) = vec(sum_u Sigma_u^-1 Szy_u')
+
+A matrix-normal `prior` on `W` contributes `Lambda kron Sigma_prior^-1` on the
+left and `Sigma_prior^-1 M0 Lambda` on the right. Its row scale is a residual
+covariance and there is no single one here, so the caller passes the
+representative it stores the fitted `W` on.
+
+With every `Sigma[u]` equal this returns exactly [`mn_map`](@ref)'s answer — the
+common factor cancels from both sides — so the cheap pooled path is a special
+case of this one rather than a second estimator.
+
+Costs `O((p*m)^3)` time and `O((p*m)^2)` memory. For a wide emission that
+dominates the whole M-step, so callers reach for it only when the residual
+covariance genuinely is not shared.
+"""
+function _tied_gls_regression(
+    Szz::AbstractVector{<:AbstractMatrix{T}},
+    Szy::AbstractVector{<:AbstractMatrix{T}},
+    Sigma::AbstractVector{<:AbstractMatrix{T}},
+    prior::Union{Nothing,MNPrior},
+    Sigma_prior::AbstractMatrix{T},
+) where {T<:Real}
+    m = size(Szz[1], 1)
+    p = size(Szy[1], 2)
+
+    lhs = zeros(T, m * p, m * p)
+    rhs = zeros(T, p, m)
+    for u in eachindex(Szz)
+        Sinv = inv(cholesky(Symmetric(Sigma[u])))
+        # vec(Sigma^-1 W Szz) = (Szz kron Sigma^-1) vec(W), Szz symmetric.
+        lhs .+= kron(Szz[u], Sinv)
+        mul!(rhs, Sinv, transpose(Szy[u]), one(T), one(T))
+    end
+
+    if prior !== nothing
+        Sinv0 = inv(cholesky(Symmetric(Sigma_prior)))
+        lhs .+= kron(prior.Λ, Sinv0)
+        mul!(rhs, Sinv0, prior.M₀ * prior.Λ, one(T), one(T))
+    end
+
+    return reshape(Symmetric(lhs) \ vec(rhs), p, m)
+end
+
 # ============================================================================
 # Grouped parameter updates
 # ============================================================================
@@ -562,11 +636,26 @@ function _grouped_update_A_b!(
     ldss::AbstractVector,
     sufs::AbstractVector,
     slots::AbstractVector{Int},
+    slots_q::AbstractVector{Int},
     sws::SmoothWorkspace,
     bufs::GroupedSufBuffers,
 )
     for units in _units_by_slot(slots)
-        update_A_b!(ldss[units[1]], _pool_dyn!(bufs, sufs, units), sws)
+        lds = ldss[units[1]]
+        if _shared_noise(slots_q, units)
+            # One `Q` over these units, so it divides out and pooled OLS is exact.
+            update_A_b!(lds, _pool_dyn!(bufs, sufs, units), sws)
+        else
+            lds.fit_bool[_G_AB] || continue
+            W = _tied_gls_regression(
+                [sufs[u].dyn_xx[].mat for u in units],
+                [sufs[u].dyn_xy for u in units],
+                [ldss[u].state_model.Q for u in units],
+                lds.state_model.AB_prior,
+                lds.state_model.Q,
+            )
+            _unpack_dyn_W!(lds, W)
+        end
     end
     return nothing
 end
@@ -607,14 +696,29 @@ function _grouped_update_C_d!(
     ldss::AbstractVector,
     sufs::AbstractVector,
     slots::AbstractVector{Int},
+    slots_r::AbstractVector{Int},
     sws::SmoothWorkspace,
     bufs::GroupedSufBuffers;
     unit_sws::Union{Nothing,AbstractVector}=nothing,
 )
     for units in _units_by_slot(slots)
-        update_C_d!(
-            ldss[units[1]], _pool_obs!(bufs, sufs, units), _unit_ws(unit_sws, sws, units[1])
-        )
+        lds = ldss[units[1]]
+        if _shared_noise(slots_r, units)
+            # One `R` over these units, so it divides out and pooled OLS is exact.
+            update_C_d!(
+                lds, _pool_obs!(bufs, sufs, units), _unit_ws(unit_sws, sws, units[1])
+            )
+        else
+            lds.fit_bool[_G_CD] || continue
+            V = _tied_gls_regression(
+                [sufs[u].obs_xx[].mat for u in units],
+                [sufs[u].obs_xy for u in units],
+                [ldss[u].obs_model.R for u in units],
+                lds.obs_model.CD_prior,
+                lds.obs_model.R,
+            )
+            _unpack_obs_V!(lds, V)
+        end
     end
     return nothing
 end
@@ -662,7 +766,7 @@ function _grouped_state_mstep!(
 )
     _grouped_update_x0!(ldss, sufs, slots[_G_X0], bufs)
     _grouped_update_P0!(ldss, sufs, slots[_G_P0], slots[_G_X0], sws)
-    _grouped_update_A_b!(ldss, sufs, slots[_G_AB], sws, bufs)
+    _grouped_update_A_b!(ldss, sufs, slots[_G_AB], slots[_G_Q], sws, bufs)
     _grouped_update_Q!(ldss, sufs, slots[_G_Q], slots[_G_AB], sws)
     return nothing
 end
@@ -680,7 +784,9 @@ function _grouped_gaussian_obs_mstep!(
     bufs::GroupedSufBuffers;
     unit_sws::Union{Nothing,AbstractVector}=nothing,
 )
-    _grouped_update_C_d!(ldss, sufs, slots[_G_CD], sws, bufs; unit_sws=unit_sws)
+    _grouped_update_C_d!(
+        ldss, sufs, slots[_G_CD], slots[_G_R], sws, bufs; unit_sws=unit_sws
+    )
     _grouped_update_R!(ldss, sufs, slots[_G_R], slots[_G_CD], sws; unit_sws=unit_sws)
     return nothing
 end
