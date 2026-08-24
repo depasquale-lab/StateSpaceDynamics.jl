@@ -252,6 +252,28 @@ using SSDTest
                 test_poisson_gradient_shape_and_finiteness()
             end
         end
+
+        include("LinearDynamicalSystems/ParameterDependencies.jl")
+        @testset "Ancillary parameter dependencies" begin
+            @testset "Validation" begin
+                test_depends_on_validation()
+                test_depends_on_validated_at_construction()
+                test_override_key_validation()
+                test_depends_on_requires_the_whole_group()
+                test_depends_on_group_membership_follows_inputs()
+                test_depends_on_override_requires_the_whole_group()
+            end
+
+            @testset "Accessors and partition" begin
+                test_group_accessors_and_aliasing()
+                test_grouping_is_the_join_of_label_vectors()
+                test_grouped_show()
+            end
+
+            @testset "Not yet honoured by fitting" begin
+                test_depends_on_rejected_until_supported()
+            end
+        end
     end
 
     # Optimization primitives (line search + Newton)

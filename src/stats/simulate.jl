@@ -124,6 +124,7 @@ function Random.rand(
     ux::Union{Nothing,AbstractMatrix{T}}=nothing,
     uy::Union{Nothing,AbstractMatrix{T}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+    _reject_unsupported_dependence(lds)
     state_params = _extract_state_params(lds.state_model)
     obs_params = _extract_obs_params(lds.obs_model)
     Ti = Int(tsteps)
@@ -144,6 +145,7 @@ function Random.rand(
     ux::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
     uy::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+    _reject_unsupported_dependence(lds)
     state_params = _extract_state_params(lds.state_model)
     obs_params = _extract_obs_params(lds.obs_model)
 

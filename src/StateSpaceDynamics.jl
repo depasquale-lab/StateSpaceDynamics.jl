@@ -33,6 +33,7 @@ include("stats/priors.jl")
 # Model definitions + inference-state containers.
 include("lds/types.jl")                             # abstract types, model structs, SLDS
 include("lds/workspaces.jl")                        # FilterSmooth / SufficientStatistics / workspaces
+include("lds/parameter_groups.jl")                  # `depends_on` -> per-group parameter variants
 include("utils/show.jl")
 include("utils/validation.jl")
 
@@ -64,6 +65,9 @@ export AbstractStateModel, AbstractObservationModel
 export GaussianStateModel, GaussianObservationModel, PoissonObservationModel
 export IWPrior, MNPrior, x0_mean_prior
 export CovUpdateCache
+
+# Ancillary parameter dependencies (`depends_on`)
+export group_labels, group_parameter
 
 # Utilities
 export block_tridgm

@@ -123,6 +123,7 @@ function smooth(
     ux=nothing,
     uy=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+    _reject_unsupported_dependence(lds)
     data = Data(lds, y; ux=ux, uy=uy)
     tfs = _smooth_data(lds, data)
     return _collect_smooth_output(tfs, y)
@@ -773,6 +774,7 @@ function elbo(
     ux=nothing,
     uy=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+    _reject_unsupported_dependence(lds)
     data = Data(lds, y; ux=ux, uy=uy)
     tfs = initialize_FilterSmooth(lds, data.tsteps)::TrialFilterSmooth{T}
     npool = min(Threads.maxthreadid(), length(data.y))
@@ -849,6 +851,7 @@ function fit!(
     ux=nothing,
     uy=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+    _reject_unsupported_dependence(lds)
     data = Data(lds, y; ux=ux, uy=uy)
     return _fit_tridiag!(lds, data; max_iter=max_iter, tol=tol, progress=progress)
 end
@@ -1098,6 +1101,7 @@ function StatsAPI.loglikelihood(
     ux=nothing,
     uy=nothing,
 ) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
+    _reject_unsupported_dependence(lds)
     data = Data(lds, y; ux=ux, uy=uy)
 
     S_chol, K = _filter_cov_pass(lds, maximum(data.tsteps))

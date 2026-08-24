@@ -8,6 +8,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Ancillary parameter dependencies, declaration side: every
+  `AbstractStateModel` and `AbstractObservationModel` now carries a
+  `depends_on` field (default `nothing`). Setting it to a `NamedTuple` of
+  per-trial label vectors — e.g. `obs_model.depends_on = (C = session, d =
+  session, R = session)` — declares that those parameters are to be estimated separately for
+  each group of trials, while everything else stays pooled. This is the
+  "stitching" setup for combining recording sessions that observe different
+  neurons in the same animal: shared latent dynamics, session-specific
+  emissions
+  * Keys are grouped the same way `fit_bool` groups them, since those
+    parameters are fit jointly as one regression — `[A b B]` is one group and
+    `[C d D]` another. Grouping any member groups them all, so a declaration
+    has to name **every** member of a group it touches: `(C = s, d = s)`, not
+    `(C = s,)`. `B` and `D` are zero-column when the model takes no inputs and
+    are then not part of the group; give the model inputs and they must be
+    named too. `:x0`, `:P0`, `:Q` and `:R` are groups of one. Labels may be
+    `Symbol`s, integers or strings. Different groups may use different label
+    vectors; the trial partition is their common refinement
+  * A malformed declaration (unknown parameter name, a group named only in
+    part, members of one group carrying different labels, label vectors of
+    unequal length) is rejected by
+    `validate_LDS` — so by the positional `LinearDynamicalSystem(state_model,
+    obs_model)` constructor, not at the first `fit!`
+  * Per-group values live in a new `variants` field holding one model object
+    per parameter-group combination, with non-varying parameters shared **by
+    reference** so a single M-step write covers all of them. They are read back
+    with the new exported `group_labels(model, name)` and
+    `group_parameter(model, name, label)`
+  * `show` reports the declared groups for a model that has any
+  * **Not yet honoured by fitting.** The grouped E/M-step lands in a follow-up;
+    until it does, `fit!`, `smooth`, `elbo`, `loglikelihood` and `rand` throw
+    an `ArgumentError` on a model that declares `depends_on` rather than
+    silently fitting one pooled parameter set
 - Public allocating `elbo(model, y; ...)` for all three models (Gaussian LDS
   with `ux`/`uy` keywords, Poisson LDS with Newton-smoother keywords, SLDS
   with an `rng` keyword since its E-step consumes a posterior sample). Runs

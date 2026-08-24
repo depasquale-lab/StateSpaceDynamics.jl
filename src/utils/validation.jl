@@ -321,6 +321,12 @@ function validate_LDS(lds::LinearDynamicalSystem{T,S,O}) where {T,S,O}
     # Check observation model dimensions and properties
     _validate_obs_model(lds.obs_model, lds.obs_dim, lds.latent_dim)
 
+    # Resolve `depends_on` so a malformed declaration is reported here rather
+    # than at the first `fit!`. The result is discarded; the fitting entry
+    # points re-resolve against the actual trial count.
+    _resolve_dependence(lds.state_model)
+    _resolve_dependence(lds.obs_model)
+
     #=
     Check fit_bool length. The Gaussian path uses length 6 — the regression
     M-step fits A&b&B and C&d&D jointly.
