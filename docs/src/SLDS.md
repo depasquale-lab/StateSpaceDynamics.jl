@@ -95,6 +95,19 @@ Each E-step runs `smoothing_iters` discrete↔continuous alternations before the
 The default of 1 is the standard vLEM update; larger values hand the M-step a
 better-converged posterior at proportional cost per iteration.
 
+The discrete update scores each regime against a **draw** from ``q(x)`` rather than the
+posterior mean, so it carries Monte-Carlo noise. `num_samples` controls that noise: the
+update averages ``\log p_k`` over that many independent draws, giving an estimate of
+``\mathbb{E}_{q(x)}[\log p_k]`` with `1/num_samples` the variance of a single draw. It
+costs `num_samples` extra log-likelihood passes per alternation, while the smoother --
+which dominates the cost -- still runs once.
+
+Note `smoothing_iters` is *not* a variance knob. Each alternation does redraw from
+``q(x)``, which stops the loop from sharpening ``\gamma`` against one fixed noise
+realisation, but nothing is averaged across alternations: only the last one's
+``\gamma`` reaches the M-step. Use `num_samples` to reduce noise and `smoothing_iters`
+to converge the posterior.
+
 ## Post-fit inference
 
 Once an SLDS has been fit, [`smooth`](@ref) infers the full posterior for a dataset with

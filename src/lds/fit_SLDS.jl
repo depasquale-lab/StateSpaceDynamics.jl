@@ -19,7 +19,7 @@ are shared across regimes; the active regime `zₜ` selects which per-regime
 
     M-Step:         mstep!(slds, tfs, fb_storage, dl, data, suf, sws; obs_seq, seq_ends)
 
-    Fit:            fit!(slds, y; ux, uy, smoothing_iters)
+    Fit:            fit!(slds, y; ux, uy, smoothing_iters, num_samples)
 
     Infer:          smooth(slds, y; ux, uy, smoothing_iters, tol)  # -> (; x, γ, elbo, p)
 
@@ -589,7 +589,7 @@ function smooth!(
     max_iter::Int=20,
     tol::T=T(1e-6),
     linesearch::Union{Nothing,AbstractLineSearch}=BackTrackingLS{T}(),
-    x_sample::Union{Nothing,AbstractMatrix{T}}=nothing,
+    x_sample::Union{Nothing,AbstractArray{T,3}}=nothing,
     rng::AbstractRNG=Random.default_rng(),
     ux::Union{Nothing,AbstractMatrix{T}}=nothing,
     uy::Union{Nothing,AbstractMatrix{T}}=nothing,
@@ -672,14 +672,19 @@ function smooth!(
     fs.entropy = gaussian_entropy_from_logdet(logdet_precision, n_active)
 
     #=
-    Optional joint draw from q(x), while `btd` still holds the precision factors.
-    `ws.opt.X0` is free after Newton; reuse it for the standard-normal input.
+    Optional joint draws from q(x), taken while `btd` still holds the precision
+    factors. `ws.opt.X0` is free after Newton; reuse it for the standard-normal
+    input. `block_tridiagonal_sample!` only reads the factors, so every one of
+    the `size(x_sample, 3)` draws comes from the same factorisation — and with
+    one draw the RNG stream is identical to the single-sample version.
     =#
     if x_sample !== nothing
         z = view(ws.opt.X0, 1:n_active)
-        randn!(rng, z)
-        block_tridiagonal_sample!(z, btd, tsteps)
-        @views x_sample .= fs.x_smooth .+ reshape(z, latent_dim, tsteps)
+        for s in axes(x_sample, 3)
+            randn!(rng, z)
+            block_tridiagonal_sample!(z, btd, tsteps)
+            @views x_sample[:, :, s] .= fs.x_smooth .+ reshape(z, latent_dim, tsteps)
+        end
     end
 
     @views for t in 1:tsteps
@@ -859,7 +864,7 @@ function _vem_warmstart!(
     slds_ws::SLDSSmoothWorkspace{T};
     ux_seq,
     uy_seq,
-    x_samples::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
+    x_samples::Union{Nothing,AbstractVector{<:AbstractArray{T,3}}}=nothing,
     rng::AbstractRNG=Random.default_rng(),
 ) where {T<:Real}
     K = length(slds.LDSs)
@@ -898,9 +903,19 @@ difference between the two callers:
 
 - `x_samples === nothing` — plug in the smoothed mean `E_q[x]`. Deterministic and
   reproducible; used by [`smooth`](@ref) for post-fit inference.
-- `x_samples !== nothing` — plug in a joint draw from q(x), and draw the next one in
+- `x_samples !== nothing` — plug in joint draws from q(x), averaging `log p_k` over
+  the `size(x_samples[trial], 3)` draws held per trial, and draw the next batch in
   step 3. This is the vLEM Monte-Carlo E-step used by [`fit!`](@ref); `x_samples` is
   read then overwritten within each alternation.
+
+  Averaging over draws is the variance knob (ssm's `num_samples`); running more
+  alternations is not, since only the last one's γ reaches the M-step.
+
+  Note the draws consumed by step 1 of an E-step were taken in step 3 of the
+  previous one, so they come from q(x) under the parameters in force *before* the
+  intervening M-step. ssm has the same one-M-step lag — it stores the posterior
+  and samples lazily where this stores the realised draw — and the lag vanishes as
+  EM converges and the M-step stops moving θ.
 
 `tol` selects the stopping rule. `tol == 0` runs exactly `smoothing_iters`
 alternations; `tol > 0` stops early once `max|Δγ| < tol`. Whether an exhausted
@@ -923,7 +938,7 @@ function _vem_alternate!(
     uy_seq,
     smoothing_iters::Int,
     tol::T=zero(T),
-    x_samples::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
+    x_samples::Union{Nothing,AbstractVector{<:AbstractArray{T,3}}}=nothing,
     rng::AbstractRNG=Random.default_rng(),
     prog=nothing,
 ) where {T<:Real}
@@ -944,18 +959,62 @@ function _vem_alternate!(
         # (1) Score the current continuous trajectory under each regime.
         for trial in 1:ntrials
             t1, t2 = HMMs.seq_limits(seq_ends, trial)
-            x_src = x_samples === nothing ? tfs[trial].x_smooth : x_samples[trial]
-            for k in 1:K
-                joint_loglikelihood!(
-                    view(dl.logL, k, t1:t2),
-                    slds_ws,
-                    slds_ws.consts[k],
-                    slds.LDSs[k],
-                    x_src,
-                    y_seq[trial],
-                    ux_seq[trial],
-                    uy_seq[trial],
-                )
+            Ts = t2 - t1 + 1
+            y_t, ux_t, uy_t = y_seq[trial], ux_seq[trial], uy_seq[trial]
+
+            #=
+            The two paths are split rather than sharing an `x_src` variable so
+            each stays type-stable: a `Matrix`/`SubArray` union at this call
+            site would make every kernel call a dynamic dispatch.
+            =#
+            if x_samples === nothing
+                x_mean = tfs[trial].x_smooth
+                for k in 1:K
+                    joint_loglikelihood!(
+                        view(dl.logL, k, t1:t2),
+                        slds_ws,
+                        slds_ws.consts[k],
+                        slds.LDSs[k],
+                        x_mean,
+                        y_t,
+                        ux_t,
+                        uy_t,
+                    )
+                end
+            else
+                #=
+                Monte-Carlo estimate of E_q(x)[log p_k], averaged over the
+                `nsamp` independent draws held for this trial. The first draw
+                writes `dl.logL` directly and the rest accumulate through
+                `ll_tmp`, which carries nothing live at this point.
+                =#
+                draws = x_samples[trial]
+                nsamp = size(draws, 3)
+                for k in 1:K
+                    llv = view(dl.logL, k, t1:t2)
+                    cc = slds_ws.consts[k]
+                    lds_k = slds.LDSs[k]
+                    joint_loglikelihood!(
+                        llv, slds_ws, cc, lds_k, view(draws, :, :, 1), y_t, ux_t, uy_t
+                    )
+                    if nsamp > 1
+                        acc = view(slds_ws.ll_tmp, 1:Ts)
+                        for smp in 2:nsamp
+                            joint_loglikelihood!(
+                                acc,
+                                slds_ws,
+                                cc,
+                                lds_k,
+                                view(draws, :, :, smp),
+                                y_t,
+                                ux_t,
+                                uy_t,
+                            )
+                            llv .+= acc
+                        end
+                        llv ./= nsamp
+                    end
+                end
             end
         end
 
@@ -1009,8 +1068,11 @@ end
     estep!(slds, tfs, fb_storage, dl, y, x_samples, slds_ws; rng, obs_seq, control_seq, seq_ends, smoothing_iters=1)
 
 Monte-Carlo E-step for the SLDS: `smoothing_iters` coordinate-ascent alternations of
-[`_vem_alternate!`](@ref), each scoring the discrete layer against a joint draw from
-q(x) and drawing the next one. `smoothing_iters=1` is the standard vLEM E-step.
+[`_vem_alternate!`](@ref), each scoring the discrete layer against joint draws from
+q(x) and drawing the next batch. `smoothing_iters=1` is the standard vLEM E-step.
+
+`x_samples[trial]` is `latent_dim × T_trial × num_samples`; its third dimension sets
+how many draws the discrete update averages over.
 
 `obs_seq`/`control_seq` are the HMMs.jl placeholder sequences built in `fit!` (timestep
 indices / `nothing`s) — unrelated to the LDS control-input kwargs `ux`/`uy`, which are
@@ -1022,7 +1084,7 @@ function estep!(
     fb_storage::HMMs.ForwardBackwardStorage,
     dl::SLDSDiscreteLayer{T},
     y::AbstractVector{<:AbstractMatrix{T}},
-    x_samples::AbstractVector{<:AbstractMatrix{T}},
+    x_samples::AbstractVector{<:AbstractArray{T,3}},
     slds_ws::SLDSSmoothWorkspace{T};
     rng::AbstractRNG=Random.default_rng(),
     obs_seq::AbstractVector,
@@ -1444,7 +1506,8 @@ function _update_shared_initial_state!(
 end
 
 """
-    fit!(slds::SLDS, y; ux=nothing, uy=nothing, max_iter=50, smoothing_iters=1, progress=true)
+    fit!(slds::SLDS, y; ux=nothing, uy=nothing, max_iter=50, smoothing_iters=1,
+         num_samples=1, progress=true)
 
 Fit SLDS using variational Laplace EM. Runs for exactly `max_iter` iterations
 (no early-stopping criterion: the E-step's posterior sampling makes the ELBO
@@ -1454,7 +1517,15 @@ would fire spuriously). Returns the per-iteration ELBO trace.
 `smoothing_iters` sets how many discrete↔continuous alternations each E-step runs
 before the M-step. The default of 1 is the standard vLEM update; larger values give
 the E-step a better-converged posterior at proportional cost per iteration. Each
-alternation redraws from q(x), so the Monte-Carlo estimator stays unbiased.
+alternation redraws from q(x), which keeps the alternation from sharpening γ against
+a single fixed noise realisation — but note it does **not** reduce Monte-Carlo
+variance, since only the final alternation's γ reaches the M-step.
+
+`num_samples` is the variance knob. The discrete update averages `log p_k` over that
+many independent draws from q(x) (ssm's `num_samples`), so the estimate of
+`E_q(x)[log p_k]` has variance `1/num_samples` of the single-draw version. Cost is
+`num_samples` extra log-likelihood passes per alternation; the smoother, which
+dominates, runs once regardless.
 
 `y` is a single trial `(obs_dim × T)` matrix, a `(obs_dim, T, ntrials)` array,
 or a vector of per-trial matrices (ragged `T_i` allowed). Internally a single
@@ -1474,6 +1545,7 @@ function fit!(
     uy=nothing,
     max_iter::Int=50,
     smoothing_iters::Int=1,
+    num_samples::Int=1,
     progress::Bool=true,
     rng::AbstractRNG=Random.default_rng(),
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
@@ -1518,7 +1590,8 @@ function fit!(
         uy_dim=slds.LDSs[1].uy_dim,
     )
     slds_ws = SLDSSmoothWorkspace(T, slds, T_max)
-    x_samples = [Matrix{T}(undef, latent_dim, Ti) for Ti in tsteps_per_trial]
+    num_samples >= 1 || throw(ArgumentError("num_samples must be ≥ 1, got $num_samples"))
+    x_samples = [Array{T,3}(undef, latent_dim, Ti, num_samples) for Ti in tsteps_per_trial]
 
     # One reusable SufficientStatistics for the M-step; the weighted aggregator
     # overwrites it per regime, so it is allocated here rather than per iteration.
