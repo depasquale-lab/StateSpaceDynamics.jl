@@ -910,11 +910,8 @@ function _grouped_estep_elbo_gaussian!(
         _prepare_cell!(sws_pool[1], state, c)
         estep!(lds_c, suf_c, state.cell_tfs[c], state.cell_data[c], sws_pool)
 
-        #=
-        `estep!` leaves the cell's constants on `sws_pool[1]` already, but the
-        parallel per-trial fallback reaches that state through a task, so
-        recompute explicitly rather than rely on which chunk ran last.
-        =#
+        # The parallel fallback reaches this state through a task, so recompute
+        # rather than rely on which chunk ran last.
         compute_smooth_constants!(sws_pool[1], lds_c)
         total += Q_state!(sws_pool[1], lds_c, suf_c)
         total += Q_obs!(sws_pool[1], lds_c, suf_c)
@@ -1229,11 +1226,8 @@ function StatsAPI.loglikelihood(
     data = Data(lds, y; ux=ux, uy=uy)
     grp = parameter_grouping(lds, length(data.y); depends_on=depends_on)
 
-    #=
-    The filter's covariance pass depends only on the parameters and the trial
-    length, so it is shared across the trials of one cell exactly as it is
-    shared across all trials of an ungrouped model.
-    =#
+    # The covariance pass depends only on parameters and trial length, so it is
+    # shared within a cell as it is across an ungrouped model.
     if grp !== nothing
         total_ll = zero(T)
         for c in 1:(grp.ncells)
