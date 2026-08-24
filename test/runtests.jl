@@ -292,7 +292,6 @@ using SSDTest
         test_mn_prior_helpers()
     end
 
-    # Latent-free baselines + StatsAPI model comparison
     @testset verbose = true "Null Models" begin
         include("NullModels/NullModels.jl")
         test_null_intercept_matches_mvnormal_loglik()

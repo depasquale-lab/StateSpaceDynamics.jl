@@ -1,9 +1,3 @@
-#=============================================================================
-Tests for the latent-free baselines (`AffineNullModel`) and the StatsAPI model
-comparison methods built on them (`nobs`, `nullloglikelihood`, `r2`).
-=============================================================================#
-
-# Per-trial observation matrices, the shape family the baselines canonicalize to.
 function _null_make_y(rng::AbstractRNG, obs_dim, tsteps_per_trial; T::Type=Float64)
     return [randn(rng, T, obs_dim, Ti) for Ti in tsteps_per_trial]
 end
@@ -12,7 +6,6 @@ function _null_make_inputs(rng::AbstractRNG, v_dim, tsteps_per_trial; T::Type=Fl
     return [randn(rng, T, v_dim, Ti) for Ti in tsteps_per_trial]
 end
 
-# Simulate a VAR(1) process with a known (F, d, R, μ₀, R₀).
 function _null_make_var_y(
     rng::AbstractRNG,
     F::AbstractMatrix{T},
@@ -38,7 +31,6 @@ function _null_make_var_y(
     return y
 end
 
-# Closed-form Gaussian log-density of `Y` under `y ~ N(W X, R)`.
 function _null_ref_ll(Y, X, W, R)
     obs_dim, n = size(Y)
     E = Y .- W * X
@@ -46,10 +38,6 @@ function _null_ref_ll(Y, X, W, R)
 end
 
 _null_stack(y) = reduce(hcat, y)
-
-#=
-Baseline fitting and scoring
-=#
 
 function test_null_intercept_matches_mvnormal_loglik(rng=MersenneTwister(0xC0FFEE))
     obs_dim, tsteps, ntrials = 3, 20, 5
@@ -74,7 +62,6 @@ function test_null_intercept_matches_mvnormal_loglik(rng=MersenneTwister(0xC0FFE
     @test loglikelihood(null, y) ≈ ref atol = 1e-8
 end
 
-# Scoring data other than the fit data is the plug-in (held-out) log-likelihood.
 function test_null_heldout_ll_matches_plugin_gaussian(rng=MersenneTwister(1))
     obs_dim, tsteps, ntrials = 3, 15, 4
     y_train = _null_make_y(rng, obs_dim, fill(tsteps, ntrials))
@@ -88,7 +75,6 @@ function test_null_heldout_ll_matches_plugin_gaussian(rng=MersenneTwister(1))
     @test loglikelihood(null, y_test) ≈ ref atol = 1e-8
 end
 
-# Collapse identities
 function test_null_inputs_collapses_to_intercept_when_no_inputs(rng=MersenneTwister(2))
     obs_dim, tsteps, ntrials = 3, 20, 4
     y = _null_make_y(rng, obs_dim, fill(tsteps, ntrials))
@@ -104,7 +90,6 @@ function test_null_inputs_collapses_to_intercept_when_no_inputs(rng=MersenneTwis
         1e-8
 end
 
-# Signal recovery + LL ordering
 function test_null_inputs_recovers_signal(rng=MersenneTwister(3))
     T = Float64
     obs_dim, v_dim, tsteps, ntrials = 3, 2, 40, 6
@@ -124,7 +109,6 @@ function test_null_inputs_recovers_signal(rng=MersenneTwister(3))
     @test loglikelihood(null, y; inputs=v) > loglikelihood(intercept, y)
 end
 
-# VAR(1) parameter recovery
 function test_null_var_recovers_true_F(rng=MersenneTwister(4))
     T = Float64
     obs_dim, tsteps, ntrials = 2, 200, 24
@@ -148,7 +132,6 @@ function test_null_var_recovers_true_F(rng=MersenneTwister(4))
     @test loglikelihood(null, y) > loglikelihood(intercept, y)
 end
 
-# Adding capacity cannot lower the in-sample plug-in log-likelihood.
 function test_null_capacity_ordering(rng=MersenneTwister(5))
     T = Float64
     obs_dim, v_dim, tsteps, ntrials = 3, 2, 60, 5
@@ -183,10 +166,6 @@ function test_null_capacity_ordering(rng=MersenneTwister(5))
     @test ll[:var_inputs] >= ll[:var] - 1e-8
 end
 
-#=
-Input alignment
-=#
-
 # `input_shift=1` scores `v_{t-1}`, `input_shift=0` scores `v_t`; a lagged input
 # predating the trial is zero, mirroring the LDS's input-free `x_1`.
 function test_null_input_shift_alignment(rng=MersenneTwister(6))
@@ -208,7 +187,6 @@ function test_null_input_shift_alignment(rng=MersenneTwister(6))
     @test loglikelihood(lagged, y; inputs=v) ≈ loglikelihood(contemp, y; inputs=v_shifted) atol =
         1e-8
 
-    # The two alignments genuinely differ on the same inputs.
     plain = AffineNullModel{T}(:inputs, obs_dim; input_dim=v_dim, input_shift=0)
     fit!(plain, y; inputs=v)
     @test !isapprox(lagged.D, plain.D; rtol=1e-6)
@@ -217,10 +195,6 @@ function test_null_input_shift_alignment(rng=MersenneTwister(6))
     @test SSD._shifted_inputs(v[1], 1)[:, 2:end] == v[1][:, 1:(end - 1)]
     @test SSD._shifted_inputs(v[1], 0) === v[1]
 end
-
-#=
-Ragged trials and rank-deficient initial covariance
-=#
 
 function test_null_ragged_trials(rng=MersenneTwister(7))
     T = Float64
@@ -260,11 +234,6 @@ function test_null_single_trial_var_falls_back_to_R(rng=MersenneTwister(8))
     @test isfinite(loglikelihood(with_prior, y))
 end
 
-#=
-Prior contributions to the MAP objective
-=#
-
-# IW-prior LL shift identity
 function test_null_R_prior_shifts_logmap_by_iw_term(rng=MersenneTwister(9))
     T = Float64
     obs_dim, tsteps, ntrials = 3, 20, 5
@@ -312,7 +281,6 @@ function test_null_mn_prior_shifts_logmap_by_mn_term(rng=MersenneTwister(10))
     @test norm(hcat(strong.d, strong.D)) < norm(W)
 end
 
-# All-priors path finite
 function test_null_all_priors_active_returns_finite_lls(rng=MersenneTwister(11))
     T = Float64
     obs_dim, v_dim, tsteps, ntrials = 3, 2, 30, 6
@@ -348,10 +316,6 @@ function test_null_all_priors_active_returns_finite_lls(rng=MersenneTwister(11))
     @test isposdef(Symmetric(null.R₀))
 end
 
-#=
-Error paths
-=#
-
 function test_null_construction_validates_arguments()
     T = Float64
     @test_throws ArgumentError AffineNullModel{T}(0)
@@ -359,15 +323,12 @@ function test_null_construction_validates_arguments()
     @test_throws ArgumentError AffineNullModel{T}(2; input_shift=2)
     @test_throws ArgumentError AffineNullModel{T}(:nonsense, 2)
 
-    # An input lag needs an input block to act on.
     @test_throws ArgumentError AffineNullModel{T}(2; input_shift=1)
 
-    # `R₀` only exists on a lagged baseline, so its prior needs one.
     R₀_prior = IWPrior(; Ψ=Matrix{T}(I, 2, 2), ν=T(5))
     @test_throws ArgumentError AffineNullModel{T}(2; R₀_prior=R₀_prior)
     @test_throws ArgumentError AffineNullModel{T}(:intercept, 2; R₀_prior=R₀_prior)
 
-    # Priors are checked against the shapes the baseline will actually fit.
     @test_throws DimensionMismatchError AffineNullModel{T}(
         2; R_prior=IWPrior(; Ψ=Matrix{T}(I, 3, 3), ν=T(6))
     )
@@ -376,22 +337,17 @@ function test_null_construction_validates_arguments()
     )
 end
 
-# The baseline name is the single source of truth for the model's structure:
-# contradicting it through a keyword throws instead of silently winning.
 function test_null_baseline_name_rejects_contradicting_keywords()
     T = Float64
 
-    # `lag=true` would silently turn a requested :intercept into a VAR.
     @test_throws ArgumentError AffineNullModel{T}(:intercept, 3; lag=true)
     @test_throws ArgumentError AffineNullModel{T}(:var, 3; lag=false)
     @test_throws ArgumentError AffineNullModel{T}(:var, 3; lag=true)
 
-    # Input keywords on the input-free baselines.
     @test_throws ArgumentError AffineNullModel{T}(:intercept, 3; input_dim=2)
     @test_throws ArgumentError AffineNullModel{T}(:var, 3; input_dim=2)
     @test_throws ArgumentError AffineNullModel{T}(:intercept, 3; input_shift=1)
 
-    # The low-level constructor still takes `lag` directly.
     @test AffineNullModel{T}(3; lag=true).lag
     @test AffineNullModel{T}(:var, 3).lag
     @test !AffineNullModel{T}(:intercept, 3).lag
@@ -408,7 +364,6 @@ function test_null_structural_fields_are_immutable()
     @test_throws ErrorException null.input_shift = 1
 end
 
-# `y` is checked against the model's own `obs_dim` before anything is fit.
 function test_null_observation_shape_mismatch_throws(rng=MersenneTwister(15))
     T = Float64
     null = AffineNullModel{T}(:intercept, 3)
@@ -420,7 +375,6 @@ function test_null_observation_shape_mismatch_throws(rng=MersenneTwister(15))
     @test_throws ArgumentError fit!(null, Matrix{T}[])
     @test_throws ArgumentError fit!(null, [zeros(T, 3, 0)])
 
-    # Mixing precisions silently would change the fit, so it throws.
     @test_throws ArgumentError fit!(null, _null_make_y(rng, 3, [10]; T=Float32))
 
     with_inputs = AffineNullModel{T}(:inputs, 3; input_dim=2)
@@ -437,7 +391,6 @@ function test_null_input_shape_mismatch_throws(rng=MersenneTwister(12))
     y = _null_make_y(rng, obs_dim, fill(tsteps, ntrials))
     null = AffineNullModel{T}(:inputs, obs_dim; input_dim=v_dim)
 
-    # A baseline with an input block requires inputs.
     @test_throws ArgumentError fit!(null, y)
 
     wrong_rows = _null_make_inputs(rng, v_dim + 1, fill(tsteps, ntrials))
@@ -470,7 +423,6 @@ function test_null_rank_deficient_design_throws(rng=MersenneTwister(23))
     lagged = AffineNullModel{T}(:inputs, obs_dim; input_dim=v_dim, input_shift=1)
     @test isfinite(loglikelihood(fit!(lagged, y; inputs=v_bias), y; inputs=v_bias))
 
-    # An `MNPrior` regularizes the same design back to full rank.
     ncoef = 1 + v_dim
     prior = MNPrior(; M₀=zeros(T, obs_dim, ncoef), Λ=Matrix{T}(I, ncoef, ncoef))
     regularized = AffineNullModel{T}(
@@ -493,15 +445,9 @@ function test_null_var_requires_tsteps_ge_2(rng=MersenneTwister(13))
     y = [randn(rng, T, obs_dim, 1) for _ in 1:3]
     @test_throws ArgumentError fit!(AffineNullModel{T}(:var, obs_dim), y)
 
-    # The no-lag baselines are happy with length-1 trials.
     @test isfinite(loglikelihood(fit!(AffineNullModel{T}(:intercept, obs_dim), y), y))
 end
 
-#=
-StatsAPI model comparison against a fitted LDS
-=#
-
-# Gaussian LDS with oscillatory dynamics and optional ux / uy inputs.
 function _r2_make_lds(
     rng::AbstractRNG;
     latent_dim::Int=2,
@@ -552,7 +498,6 @@ function test_nullloglikelihood_matches_intercept_baseline(rng=MersenneTwister(1
     @test nullloglikelihood(lds, y) ≈ loglikelihood(null, y) atol = 1e-10
 end
 
-# The returned R² equals the closed-form value built from the two LLs and `nobs`.
 function test_r2_cox_snell_formula(rng=MersenneTwister(16))
     obs_dim, tsteps, ntrials = 4, 30, 6
     lds = _r2_make_lds(rng; latent_dim=2, obs_dim=obs_dim)
@@ -581,7 +526,6 @@ function test_r2_variants(rng=MersenneTwister(17))
     @test r2(lds, y, :CoxSnell) ≈ cox_snell atol = 1e-12
     @test r2(lds, y, :Nagelkerke) ≈ cox_snell / (1 - exp(2 * ll₀ / n)) atol = 1e-12
 
-    # Nagelkerke rescales Cox–Snell to a larger value on the same fit.
     @test r2(lds, y, :Nagelkerke) > r2(lds, y, :CoxSnell)
     @test_throws ArgumentError r2(lds, y, :nonsense)
 end
@@ -629,7 +573,6 @@ function test_r2_null_inputs_ux_vs_uy(rng=MersenneTwister(19))
     @test isfinite(r2_ux) && isfinite(r2_uy)
     @test r2_ux != r2_uy
 
-    # The `:intercept` baseline has no input block, so the channel is inert.
     @test r2(lds, y; ux=ux, uy=uy, null=:intercept, null_inputs=:ux) ≈
         r2(lds, y; ux=ux, uy=uy, null=:intercept, null_inputs=:uy) atol = 1e-12
 
@@ -642,7 +585,6 @@ function test_r2_input_baselines_collapse_without_inputs(rng=MersenneTwister(21)
     T = Float64
     obs_dim, tsteps, ntrials = 4, 40, 5
 
-    # Neither channel carries inputs.
     lds = _r2_make_lds(rng; latent_dim=2, obs_dim=obs_dim)
     _, y = rand(rng, lds, fill(tsteps, ntrials))
 
@@ -654,7 +596,6 @@ function test_r2_input_baselines_collapse_without_inputs(rng=MersenneTwister(21)
     end
     @test isfinite(nullloglikelihood(lds, y))
 
-    # Only `ux` carries inputs, so `:uy` is the degenerate channel.
     ux_dim = 3
     lds_ux = _r2_make_lds(rng; latent_dim=2, obs_dim=obs_dim, ux_dim=ux_dim)
     ux = [randn(rng, T, ux_dim, tsteps) for _ in 1:ntrials]
@@ -665,7 +606,6 @@ function test_r2_input_baselines_collapse_without_inputs(rng=MersenneTwister(21)
     @test isfinite(r2(lds_ux, y_ux; ux=ux, null=:inputs, null_inputs=:ux))
 end
 
-# Same collapse at the baseline level, where `input_shift` has nothing to act on.
 function test_null_zero_input_dim_baselines(rng=MersenneTwister(22))
     T = Float64
     obs_dim, tsteps, ntrials = 3, 25, 4
@@ -685,7 +625,6 @@ function test_null_zero_input_dim_baselines(rng=MersenneTwister(22))
         @test loglikelihood(with, y; inputs=zero_inputs) ≈ loglikelihood(without, y) atol =
             1e-8
 
-        # Zero-row inputs and `nothing` are the same thing here.
         @test loglikelihood(with, y) ≈ loglikelihood(with, y; inputs=zero_inputs) atol =
             1e-10
 
@@ -693,7 +632,6 @@ function test_null_zero_input_dim_baselines(rng=MersenneTwister(22))
     end
 end
 
-# The baseline inherits the LDS's observation-noise prior by default.
 function test_r2_forwards_R_prior(rng=MersenneTwister(20))
     T = Float64
     obs_dim, tsteps, ntrials = 4, 40, 8
@@ -706,8 +644,6 @@ function test_r2_forwards_R_prior(rng=MersenneTwister(20))
     @test nullloglikelihood(lds, y) ≈ nullloglikelihood(lds, y; R_prior=Rp) atol = 1e-12
 end
 
-# The data-generating LDS out-predicts every baseline on held-out data. Held-out
-# R² is the documented two-call recipe: fit the baseline on train, score test.
 function test_r2_ground_truth_beats_null_heldout(rng=MersenneTwister(21))
     T = Float64
     latent_dim, obs_dim = 2, 6
@@ -729,8 +665,6 @@ function test_r2_ground_truth_beats_null_heldout(rng=MersenneTwister(21))
     end
 end
 
-# `r2` / `nullloglikelihood` are defined only for the Gaussian LDS: Poisson
-# observations and the SLDS type fall through to a `MethodError`.
 function test_r2_rejects_plds_and_slds(rng=MersenneTwister(22))
     T = Float64
     latent_dim, obs_dim = 2, 3

@@ -40,7 +40,7 @@ include("utils/validation.jl")
 include("stats/preprocessing.jl")           # PPCA (standalone model)
 include("stats/sufficient_statistics.jl")
 include("stats/simulate.jl")
-include("stats/null_models.jl")             # latent-free baselines + model comparison
+include("stats/null_models.jl")
 
 # latents models (LDS, PLDS, SLDS) + inference machinery (E-step).
 include("lds/continuous_latents.jl")                # state-model Q-term + state M-step
@@ -77,7 +77,6 @@ export tview
 # Common functions
 export rand, smooth, fit!, loglikelihood, elbo, elbo!
 
-# Model comparison against latent-free baselines
 export AffineNullModel
 export r2, nobs, nullloglikelihood
 

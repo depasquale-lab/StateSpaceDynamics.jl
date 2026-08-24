@@ -8,25 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Latent-free baselines to score a fitted model against, via a new
-  `AffineNullModel{T}`: `:intercept` (`y_t ~ N(d, R)`), `:inputs`
-  (`y_t ~ N(d + D v_{t-shift}, R)`), `:var` (`y_t ~ N(F y_{t-1} + d, R)`, with
-  `(μ₀, R₀)` scoring the first step) and `:var_inputs` are configurations of one
-  type rather than four implementations. Fit with `fit!(null, y; inputs)`, score
-  with `loglikelihood(null, y; inputs)` — the plug-in log-likelihood, so passing
-  held-out data gives a held-out score. Optional `MNPrior` on the stacked
-  regression matrix `[F d D]` and `IWPrior`s on `R`/`R₀` mirror the LDS M-step
-  (#126)
+- Latent-free `AffineNullModel` baselines (`:intercept`, `:inputs`, `:var`, and
+  `:var_inputs`) with optional MN/IW priors. Use `fit!` on training data and
+  `loglikelihood` to score training or held-out data (#126)
 - StatsAPI model comparison for a fitted Gaussian LDS:
   `r2(lds, y, variant; null=:intercept, null_inputs=:ux)` with all three
-  StatsBase pseudo-R² variants (`:CoxSnell` default, `:McFadden`,
-  `:Nagelkerke`), plus `nullloglikelihood(lds, y)` (the intercept baseline's
-  plug-in log-likelihood) and `nobs(lds, y)` (`obs_dim * sum(tsteps)`, the scale
-  both log-likelihoods live on). The comparison is the LDS *marginal*
-  log-likelihood against the baseline's plug-in log-likelihood on the same data,
-  and the baseline inherits the LDS's `R_prior` by default. Gaussian LDS only —
-  a Poisson LDS has no tractable marginal and an `SLDS` is a different type, so
-  both raise a `MethodError` (#126)
+  StatsBase pseudo-R² variants, plus `nullloglikelihood` and `nobs`. The baseline
+  inherits the LDS observation-noise prior by default (#126)
 - Public allocating `elbo(model, y; ...)` for all three models (Gaussian LDS
   with `ux`/`uy` keywords, Poisson LDS with Newton-smoother keywords, SLDS
   with an `rng` keyword since its E-step consumes a posterior sample). Runs

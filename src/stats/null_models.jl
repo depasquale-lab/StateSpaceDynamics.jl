@@ -1,23 +1,3 @@
-#=============================================================================
-Latent-free affine-Gaussian baselines for LDS comparison.
-
-`AffineNullModel` covers four configurations:
-
-  :intercept   y_t ~ N(d, R)
-  :inputs      y_t ~ N(d + D v_{t-shift}, R)
-  :var         y_1 ~ N(μ₀, R₀); y_t ~ N(F y_{t-1} + d, R)
-  :var_inputs  y_1 ~ N(μ₀, R₀); y_t ~ N(F y_{t-1} + d + D v_{t-shift}, R)
-
-Here `lag` enables the autoregressive term and `input_shift` matches the
-corresponding LDS input timing: lagged for dynamics inputs and contemporaneous
-for observation inputs. Pretrial inputs are zero. For VAR models, `(μ₀, R₀)`
-scores the first observation analogously to the LDS initial-state layer.
-
-Use `fit!` and `loglikelihood`; `r2`, `nullloglikelihood`, and `nobs` compare a
-fitted LDS against a baseline. Optional priors are an `MNPrior` on the stacked
-regression matrix and `IWPrior`s on `R` and `R₀`.
-=============================================================================#
-
 const NULL_BASELINES = (:intercept, :inputs, :var, :var_inputs)
 
 _null_has_lag(baseline::Symbol) = baseline === :var || baseline === :var_inputs
@@ -26,34 +6,20 @@ _null_has_inputs(baseline::Symbol) = baseline === :inputs || baseline === :var_i
 """
     AffineNullModel{T}
 
-Affine-Gaussian null model for a fitted [`LinearDynamicalSystem`](@ref). `lag`
-controls whether the model includes the autoregressive term `F y_{t-1}`, and
-`input_shift` (`0` or `1`) gives the input lag. When the model has no inputs,
-`D` has zero columns, consistent with the LDS representation.
+Affine-Gaussian baseline for comparison with a fitted
+[`LinearDynamicalSystem`](@ref).
 
 # Constructors
     AffineNullModel{T}(obs_dim; input_dim=0, lag=false, input_shift=0, priors...)
     AffineNullModel{T}(baseline::Symbol, obs_dim; input_dim=0, input_shift=0, priors...)
 
-The second form selects one of `$(NULL_BASELINES)` and sets `lag`. It rejects
-`lag`, and rejects `input_dim` / `input_shift` on the input-free baselines
-`:intercept` and `:var`. Set `input_shift=0` to score `v_t` (the LDS observation
-input) or `input_shift=1` to score `v_{t-1}` (the LDS dynamics input).
+The named baselines are `$(NULL_BASELINES)`. Set `input_shift=0` for the LDS
+observation-input timing (`v_t`) or `input_shift=1` for the dynamics-input timing
+(`v_{t-1}`); inputs before the first timestep are zero. VAR baselines score the
+first observation separately with `N(μ₀, R₀)`.
 
-`obs_dim`, `input_dim`, `lag` and `input_shift` are `const`; they fix the
-parameter shapes at construction.
-
-# Fields
-- `obs_dim::Int`: observation dimension.
-- `input_dim::Int`: input dimension (`0` when the baseline takes no inputs).
-- `lag::Bool`: whether the autoregressive term is present.
-- `input_shift::Int`: input lag, `0` or `1`.
-- `d::Vector{T}`: intercept.
-- `D::Matrix{T}`: input matrix (`obs_dim × input_dim`).
-- `F::Matrix{T}`: autoregressive matrix (`obs_dim × obs_dim`, empty when `!lag`).
-- `R::Matrix{T}`: innovation covariance.
-- `μ₀::Vector{T}`, `R₀::Matrix{T}`: initial-step mean/covariance (empty when `!lag`).
-- `W_prior`, `R_prior`, `R₀_prior`: optional MN/IW priors, mirroring the LDS M-step.
+`W_prior` is an optional `MNPrior` on `[F d D]`; `R_prior` and `R₀_prior` are
+optional `IWPrior`s.
 
 See also [`r2`](@ref), [`nullloglikelihood`](@ref).
 """
@@ -73,7 +39,6 @@ mutable struct AffineNullModel{T<:Real}
     R₀_prior::Union{Nothing,IWPrior{T}}
 end
 
-# Number of columns the stacked regression matrix `[F d D]` carries.
 _null_ncoef(lag::Bool, obs_dim::Int, input_dim::Int) = (lag ? obs_dim : 0) + 1 + input_dim
 
 function _check_iw_prior(::Nothing, ::Int, ::String) end
@@ -109,8 +74,7 @@ function AffineNullModel{T}(
         throw(ArgumentError("input_shift must be 0 or 1; got $input_shift"))
     (input_dim == 0 && input_shift != 0) && throw(
         ArgumentError(
-            "input_shift=$input_shift shifts an input block the model does not have; " *
-            "set input_dim > 0 or leave input_shift at 0",
+            "input_shift requires input_dim > 0; got input_shift=$input_shift",
         ),
     )
 
@@ -151,22 +115,20 @@ function AffineNullModel{T}(
         throw(ArgumentError("baseline must be one of $(NULL_BASELINES); got :$baseline"))
     lag === nothing || throw(
         ArgumentError(
-            "the baseline name already sets lag, so lag=$lag cannot be passed " *
-            "alongside :$baseline; name the baseline you want ($(NULL_BASELINES)), or " *
-            "use the AffineNullModel{T}(obs_dim; lag=...) form",
+            "lag is determined by baseline=:$baseline; use the unnamed constructor " *
+            "to set lag directly",
         ),
     )
     if !_null_has_inputs(baseline)
         input_dim == 0 || throw(
             ArgumentError(
-                "baseline :$baseline has no input block, so input_dim must be 0; got " *
-                "$input_dim. Use :$(_null_has_lag(baseline) ? :var_inputs : :inputs) instead",
+                "baseline :$baseline requires input_dim=0; use " *
+                ":$(_null_has_lag(baseline) ? :var_inputs : :inputs) for inputs",
             ),
         )
         input_shift == 0 || throw(
             ArgumentError(
-                "baseline :$baseline has no input block, so input_shift must be 0; got " *
-                "$input_shift",
+                "baseline :$baseline requires input_shift=0; got $input_shift",
             ),
         )
     end
@@ -179,26 +141,18 @@ function AffineNullModel{T}(
     )
 end
 
-#=
-Normalize the supported trial formats: an (obs_dim, T) matrix, an
-(obs_dim, T, ntrials) array, or a vector of per-trial matrices (which may have
-different lengths). The baseline cannot use Data(lds, y; ux, uy), because that
-constructor validates the data against an LDS.
-=#
+# Keep baseline validation independent of `Data`, which requires an LDS.
 _null_trials(y::AbstractVector{<:AbstractMatrix}) = y
 _null_trials(y::AbstractMatrix) = [y]
 _null_trials(y::AbstractArray{<:Any,3}) = [view(y, :, :, n) for n in axes(y, 3)]
 
-# Normalize and check `y` against the model's own shape and element type.
 function _null_obs_trials(null::AffineNullModel{T}, y) where {T<:Real}
     trials = _null_trials(y)
     isempty(trials) && throw(ArgumentError("y must hold at least one trial"))
     for (i, yn) in enumerate(trials)
         eltype(yn) === T || throw(
             ArgumentError(
-                "y[$i] has eltype $(eltype(yn)), but the baseline is " *
-                "AffineNullModel{$T}; convert the data or build the baseline at " *
-                "the data's precision",
+                "y[$i] has eltype $(eltype(yn)); expected $T",
             ),
         )
         size(yn, 1) == null.obs_dim ||
@@ -209,7 +163,6 @@ function _null_obs_trials(null::AffineNullModel{T}, y) where {T<:Real}
     return trials
 end
 
-# Normalize `y` and `inputs` together. Every public method enters here.
 function _null_prepare(null::AffineNullModel{T}, y, inputs) where {T<:Real}
     trials = _null_obs_trials(null, y)
     tsteps = Int[size(yn, 2) for yn in trials]
@@ -221,8 +174,7 @@ function _null_input_trials(
 ) where {T<:Real}
     input_dim == 0 || throw(
         ArgumentError(
-            "inputs=nothing is only valid for a baseline with no input block; " *
-            "got input_dim=$input_dim",
+            "inputs are required when input_dim=$input_dim",
         ),
     )
     return [zeros(T, 0, Ti) for Ti in tsteps]
@@ -231,8 +183,6 @@ end
 function _null_input_trials(
     ::Type{T}, v, tsteps::Vector{Int}, input_dim::Int
 ) where {T<:Real}
-    # A zero-`input_dim` model takes zero-row inputs; the row check below rejects
-    # anything carrying a signal.
     trials = _null_trials(v)
     length(trials) == length(tsteps) ||
         throw(DimensionMismatchError("inputs ntrials", length(tsteps), length(trials)))
@@ -247,10 +197,6 @@ function _null_input_trials(
     end
     return trials
 end
-
-#=
-Design assembly
-=#
 
 # `v_{t-shift}` aligned with `y`'s columns; entries predating the trial are zero.
 function _shifted_inputs(v::AbstractMatrix{T}, shift::Int) where {T<:Real}
@@ -290,7 +236,6 @@ function _null_design(
         push!(designs, reduce(vcat, blocks))
     end
 
-    # Only reachable with `lag`: a lag-free design keeps every trial.
     isempty(responses) &&
         throw(ArgumentError("a VAR baseline needs at least one trial with tsteps ≥ 2"))
     return reduce(hcat, responses), reduce(hcat, designs)
@@ -325,15 +270,9 @@ function _unpack_W!(null::AffineNullModel{T}, W::AbstractMatrix{T}) where {T<:Re
 end
 
 #=
-Regression + scoring kernels
-=#
-
-#=
 The Gram matrix `mn_map` inverts is singular whenever the design is
-rank-deficient. The usual cause is an input block carrying its own constant row,
-which duplicates the intercept the baseline always fits; too few timesteps for
-the coefficient count does it too. `mn_map` would throw a bare
-`SingularException`, so check here and name the cause.
+rank-deficient. Check here to replace `mn_map`'s `SingularException` with an
+actionable error.
 =#
 function _null_check_design(
     XX::AbstractMatrix{T}, W_prior::Union{Nothing,MNPrior{T,Matrix{T}}}, n::Int
@@ -344,10 +283,8 @@ function _null_check_design(
         NumericalStabilityError(
             "null design matrix",
             "the regression is rank-deficient ($(size(XX, 1)) coefficients, $n " *
-            "observations), so the baseline's parameters are not identifiable. The " *
-            "common cause is an input block with a constant row, which duplicates the " *
-            "intercept the baseline always fits: drop that row from `inputs`. " *
-            "Otherwise supply more timesteps, or set a `W_prior` to regularize",
+            "observations). A constant input row duplicates the intercept; remove " *
+            "collinear inputs, add observations, or set `W_prior`",
         ),
     )
 end
@@ -392,8 +329,6 @@ function _null_fit_regression(
     return W, R
 end
 
-# Plug-in Gaussian log-density of `Y` under `y ~ N(W X, R)`, shared by
-# `loglikelihood` and the MAP objective.
 function _null_plugin_ll(
     Y::AbstractMatrix{T}, X::AbstractMatrix{T}, W::AbstractMatrix{T}, R::AbstractMatrix{T}
 ) where {T<:Real}
@@ -427,19 +362,11 @@ function _null_init_cov(
     return R₀
 end
 
-#=
-StatsAPI methods on a baseline
-=#
-
 """
     fit!(null::AffineNullModel, y; inputs=nothing)
 
-Fit `null` in closed form on `y` and return it. `inputs` takes the same trial
-formats as `y`, and is required when the baseline has an input block.
-
-Throws a `NumericalStabilityError` when the design is rank-deficient — most often
-an input block carrying a constant row, which duplicates the intercept the
-baseline already fits.
+Fit `null` in closed form on `y` and return it. `inputs` uses the same trial
+format as `y` and is required when `null` has an input block.
 """
 function StatsAPI.fit!(null::AffineNullModel, y; inputs=nothing)
     return _null_fit!(null, _null_prepare(null, y, inputs)...)
@@ -489,7 +416,6 @@ function _null_loglikelihood(
     return ll
 end
 
-# Number of scalar observations in `y`: `obs_dim * sum(tsteps)`.
 function StatsAPI.nobs(null::AffineNullModel, y)
     return null.obs_dim * sum(size(yn, 2) for yn in _null_obs_trials(null, y))
 end
@@ -517,10 +443,6 @@ function _null_logmap(
     return ll
 end
 
-#=
-StatsAPI methods on a fitted LDS
-=#
-
 # Per-trial input matrices for the requested LDS channel, plus the lag that
 # channel implies: dynamics inputs act on `x_{t-1}`, observation inputs on `y_t`.
 function _null_channel(data::Data, channel::Symbol)
@@ -537,8 +459,7 @@ function _null_baseline_ll(
     v, shift = _null_channel(data, channel)
     obs_dim = size(first(data.y), 1)
 
-    # An input baseline on a channel the LDS does not use collapses to its
-    # input-free counterpart. There is nothing to shift then, so drop the shift.
+    # An unused LDS channel makes an input baseline collapse to its input-free form.
     input_dim = _null_has_inputs(baseline) ? size(first(v), 1) : 0
     null = AffineNullModel{T}(
         baseline,
@@ -595,7 +516,6 @@ function _pseudo_r2(variant::Symbol, ll::T, ll₀::T, n::Int) where {T<:Real}
     )
     variant === :McFadden && return one(T) - ll / ll₀
 
-    # Nagelkerke is Cox–Snell rescaled by its attainable maximum.
     cox_snell = one(T) - exp(2 * (ll₀ - ll) / n)
     variant === :CoxSnell && return cox_snell
     return cox_snell / (one(T) - exp(2 * ll₀ / n))
@@ -613,16 +533,16 @@ to the baseline's plug-in log-likelihood `ℓ₀` on the same data:
 - `:McFadden` — ``1 - \\ell/\\ell_0``
 - `:Nagelkerke` — Cox–Snell rescaled by its attainable maximum
 
-with `n = nobs(lds, y)`. A larger value means the LDS out-predicts the baseline.
+with `n = nobs(lds, y)`.
 
 For a held-out R², fit an [`AffineNullModel`](@ref) on the training split and
 apply the formula above to the two log-likelihoods on the test split.
 
-Gaussian LDS only: a Poisson LDS has no tractable marginal likelihood and an
-`SLDS` is a different type, so both raise a `MethodError`.
+This method is limited to Gaussian LDS models because a Poisson LDS has no
+tractable marginal likelihood.
 
 # Keyword Arguments
-- `null::Symbol = :intercept`: baseline to score against, one of `$(NULL_BASELINES)`.
+- `null::Symbol = :intercept`: one of `$(NULL_BASELINES)`.
 - `null_inputs::Symbol = :ux`: LDS input channel the input baselines consume.
   `:ux` enters lagged, `:uy` contemporaneous. A channel the LDS does not use
   gives the baseline no input block.
