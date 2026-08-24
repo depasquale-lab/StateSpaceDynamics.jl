@@ -448,6 +448,12 @@ All versions of a parameter share the model's prior (`Q_prior`, `R_prior`,
 `CD_prior`, …), and each version contributes its own log-prior term to the
 ELBO.
 
+A Poisson LDS supports the same field on its emission — `(C = session,)` fits
+one `[C d D]` per session. The Poisson emission is not conjugate, so its M-step
+runs one LBFGS solve per version of `[C d D]`, over the trials of every group
+that shares that version; the state side flows through the pooled sufficient
+statistics exactly as in the Gaussian case.
+
 Grouping does not give up the efficiency of equal-length epochs. Trials that
 share every parameter form a *cell*, and the smoother computes one covariance
 per cell and shares it across that cell's trials, exactly as it does across all

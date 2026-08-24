@@ -37,10 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     with the new exported `group_labels(model, name)` and
     `group_parameter(model, name, label)`
   * `show` reports the declared groups for a model that has any
-  * Honoured by the **Gaussian LDS** across `fit!`, `smooth`, `elbo`,
-    `loglikelihood` and `rand`, each of which also accepts a `depends_on`
-    keyword overriding the model's stored labels so a held-out set with a
-    different trial count can be scored without mutating the model. All
+  * Honoured by the **Gaussian LDS** and the **Poisson LDS** across `fit!`,
+    `smooth`, `elbo`, `loglikelihood` and `rand`, each of which also accepts a
+    `depends_on` keyword overriding the model's stored labels so a held-out set
+    with a different trial count can be scored without mutating the model. All
     versions of a parameter share the model's prior; each version contributes
     its own log-prior term to the ELBO
   * The efficiency of same-length epochs is preserved *within* each group:
@@ -50,10 +50,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     storage is allocated once and reused across cells, so a grouped fit's
     memory tracks an ungrouped one's instead of scaling with the number of
     groups
-  * **The Poisson LDS and the SLDS are not wired up yet.** Their grouped
-    E/M-steps land in follow-ups; until then their `fit!`, `smooth` and `elbo`
-    throw an `ArgumentError` on a model that declares `depends_on` rather than
-    silently fitting one pooled parameter set
+  * For the Poisson emission there is no sufficient-statistic form, so the
+    M-step runs one LBFGS solve per version of `[C d D]`, over the trials of
+    every cell that shares that version
+  * **The SLDS is not wired up yet.** Its grouped E/M-step lands in a
+    follow-up; until then its `fit!`, `elbo` and `rand` throw an
+    `ArgumentError` on a model that declares `depends_on` rather than silently
+    fitting one pooled parameter set
   * With `depends_on` unset, every entry point takes its original code path
   * A regression pooled over groups whose noise covariance differs — `(R =
     session,)` with one emission over every session, or `(Q = session,)` with
