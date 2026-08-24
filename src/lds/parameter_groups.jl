@@ -633,33 +633,6 @@ function _has_parameter_dependence(lds::LinearDynamicalSystem)
 end
 
 """
-    _reject_unsupported_dependence(model)
-
-**Internal, temporary.** Refuse to run an entry point that does not yet honour
-`depends_on`. The grouped E/M-step lands one model family at a time, so in the
-interim a declared dependence must be an error rather than a silently pooled
-fit. Each entry point drops this call as its grouped path lands.
-"""
-function _reject_unsupported_dependence(lds::LinearDynamicalSystem)
-    _has_parameter_dependence(lds) || return nothing
-    return throw(
-        ArgumentError(
-            "this model declares `depends_on`, but fitting and inference with " *
-            "condition-dependent parameters are not implemented yet for this model " *
-            "family — the grouped E/M-step lands in a follow-up. Unset `depends_on` " *
-            "to fit the model with one parameter set shared by every trial.",
-        ),
-    )
-end
-
-function _reject_unsupported_dependence(slds::SLDS)
-    for lds in slds.LDSs
-        _reject_unsupported_dependence(lds)
-    end
-    return nothing
-end
-
-"""
     _single_trial_group_error(what)
 
 `rand` with a scalar `tsteps` draws one trial, which a grouped model cannot

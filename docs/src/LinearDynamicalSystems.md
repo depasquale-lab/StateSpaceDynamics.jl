@@ -442,7 +442,7 @@ ll = loglikelihood(lds, Y_test; depends_on = (C = session_test, d=session_test, 
 An override re-assigns trials to groups the model already declares; it cannot
 introduce a new parameter set.
 
-### Priors and cost
+### Priors, SLDS, and cost
 
 All versions of a parameter share the model's prior (`Q_prior`, `R_prior`,
 `CD_prior`, …), and each version contributes its own log-prior term to the
@@ -453,6 +453,11 @@ one `[C d D]` per session. The Poisson emission is not conjugate, so its M-step
 runs one LBFGS solve per version of `[C d D]`, over the trials of every group
 that shares that version; the state side flows through the pooled sufficient
 statistics exactly as in the Gaussian case.
+
+An `SLDS` supports the same field on each regime's sub-models. The grouping of
+trials is a property of the data, so every regime must declare the same labels;
+only the fitted values differ per regime. `x0` and `P0` stay tied across
+regimes, as they are for an ungrouped SLDS.
 
 Grouping does not give up the efficiency of equal-length epochs. Trials that
 share every parameter form a *cell*, and the smoother computes one covariance

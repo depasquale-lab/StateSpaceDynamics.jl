@@ -297,8 +297,11 @@ using SSDTest
                 test_grouped_poisson_stops_early_and_reports_progress()
             end
 
-            @testset "Not yet honoured by fitting" begin
-                test_depends_on_rejected_until_supported()
+            @testset "SLDS fitting" begin
+                test_grouped_slds_fit()
+                test_grouped_slds_requires_matching_labels()
+                test_grouped_poisson_slds_fit()
+                test_grouped_slds_rand_needs_a_label_for_one_trial()
             end
         end
     end
