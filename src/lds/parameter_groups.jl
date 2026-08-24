@@ -314,6 +314,189 @@ end
 # M-step write updates all of them.
 _slot_arrays(base, nslots::Int) = [i == 1 ? base : copy(base) for i in 1:nslots]
 
+"""
+    ObsSlotSpec{T}
+
+**Internal.** Per-slot observation shape and data-derived seed for one
+observation-model parameter group. `dims[s]` is slot `s`'s channel count;
+`mean[s]` / `var[s]` are that slot's per-channel statistics, used only to seed
+a slot whose shape differs from the template.
+"""
+struct ObsSlotSpec{T<:Real}
+    dims::Vector{Int}
+    mean::Vector{Vector{T}}
+    var::Vector{Vector{T}}
+end
+
+_spec_dim(::Nothing, slot::Int, fallback::Int) = fallback
+_spec_dim(spec::ObsSlotSpec, slot::Int, ::Int) = spec.dims[slot]
+
+#=============================================================================
+Per-session observation dimensions ("stitching")
+
+`obs_dim` belongs to the `[C d D]` group, not to the model: `C` is
+`obs_dim × latent_dim`, `d` is `obs_dim`, `D` is `obs_dim × uy_dim`, `R` is
+`obs_dim × obs_dim`. Each slot's `obs_dim` is the row count of the trials
+assigned to it, so a group must be constant in `obs_dim` within a slot; a
+shared `:R` alongside a per-session `:C` has no well-defined size and is
+rejected. The latent dimension stays shared.
+
+`variants` is the Cartesian product of the groups' slots, so it also holds
+cross terms pairing one session's `C` with another's `R`. Those are
+inconsistent but unreachable — `_cell_lds` only indexes `grp.cell_obs`.
+=============================================================================#
+
+"""
+    _slot_obs_dims(dep, g, labels_g, obs_dims, template_dim) -> Vector{Int}
+
+Observation dimension of each slot of observation-model group `g`.
+
+`obs_dims[n]` is trial `n`'s channel count. A group that does not vary gets a
+single slot, which then requires every trial to share one dimension.
+"""
+function _slot_obs_dims(
+    dep::ParameterDependence,
+    g::Int,
+    labels_g::AbstractVector,
+    obs_dims::AbstractVector{Int},
+    template_dim::Int,
+)
+    name = dep.names[g]
+    if !dep.varies[g]
+        p = first(obs_dims)
+        for q in obs_dims
+            q == p || throw(
+                ArgumentError(
+                    "observations have $p and $q channels in the same dataset, but " *
+                    "`:$name` is shared across all trials, so it has no well-defined " *
+                    "size. Make `:$name` depend on the same ancillary variable as the " *
+                    "emission, e.g. `depends_on = (C = session, R = session)`.",
+                ),
+            )
+        end
+        return [p]
+    end
+
+    dims = Vector{Int}(undef, dep.nslots[g])
+    seen = falses(dep.nslots[g])
+    for (n, label) in enumerate(labels_g)
+        s = _slot_of(dep, g, label)
+        p = obs_dims[n]
+        if !seen[s]
+            dims[s] = p
+            seen[s] = true
+        elseif dims[s] != p
+            throw(
+                ArgumentError(
+                    "trials grouped under `:$name = $(repr(dep.labels[g][s]))` have " *
+                    "differing channel counts ($(dims[s]) and $p). A parameter version " *
+                    "is one matrix, so every trial sharing it must have the same number " *
+                    "of channels.",
+                ),
+            )
+        end
+    end
+
+    # A slot with no trials in this dataset keeps whatever the template implies.
+    for s in eachindex(dims)
+        seen[s] || (dims[s] = template_dim)
+    end
+    return dims
+end
+
+#=
+Initializing a slot whose shape differs from the template; same-sized slots
+still copy it, so agreeing `obs_dim`s stay bit-identical. A differently-sized
+slot is seeded from its data: `d` at the per-channel mean, `R` at the
+per-channel variance, `C` by cycling the template's rows (zero would be a fixed
+point of the M-step).
+=#
+_obs_stats(::Nothing, p::Int, ::Type{T}) where {T} = (zeros(T, p), ones(T, p))
+
+function _obs_stats(ys::AbstractVector, p::Int, ::Type{T}) where {T}
+    mean_y = zeros(T, p)
+    var_y = zeros(T, p)
+    n = 0
+    for y in ys
+        n += size(y, 2)
+        for t in axes(y, 2), i in 1:p
+            mean_y[i] += y[i, t]
+        end
+    end
+    n == 0 && return (mean_y, fill!(var_y, one(T)))
+    mean_y ./= n
+    for y in ys
+        for t in axes(y, 2), i in 1:p
+            var_y[i] += abs2(y[i, t] - mean_y[i])
+        end
+    end
+    var_y ./= max(n - 1, 1)
+    for i in 1:p
+        var_y[i] > 0 || (var_y[i] = one(T))
+    end
+    return (mean_y, var_y)
+end
+
+# Slot 1 aliases the parent's array, as `_slot_arrays` does; a shape-matching
+# slot is still a plain copy, so the equal-`obs_dim` path is unchanged.
+function _seed_slot_C(base::AbstractMatrix{T}, i::Int, p::Int) where {T}
+    size(base, 1) == p && return i == 1 ? base : copy(base)
+    out = similar(base, p, size(base, 2))
+    nrows = size(base, 1)
+    for r in 1:p
+        out[r, :] .= @view base[mod1(r, nrows), :]
+    end
+    return out
+end
+
+function _seed_slot_D(base::AbstractMatrix{T}, i::Int, p::Int) where {T}
+    size(base, 1) == p && return i == 1 ? base : copy(base)
+    out = similar(base, p, size(base, 2))
+    return fill!(out, zero(T))
+end
+
+function _seed_slot_d(
+    base::AbstractVector{T}, i::Int, p::Int, spec::Union{Nothing,ObsSlotSpec{T}}
+) where {T}
+    length(base) == p && return i == 1 ? base : copy(base)
+    out = similar(base, p)
+    spec === nothing ? fill!(out, zero(T)) : copyto!(out, spec.mean[i])
+    return out
+end
+
+function _seed_slot_R(
+    base::AbstractMatrix{T}, j::Int, p::Int, spec::Union{Nothing,ObsSlotSpec{T}}
+) where {T}
+    size(base, 1) == p && return j == 1 ? base : copy(base)
+    out = similar(base, p, p)
+    fill!(out, zero(T))
+    for k in 1:p
+        out[k, k] = spec === nothing ? one(T) : spec.var[j][k]
+    end
+    return out
+end
+
+# Skip the rebuild only when the cached variants already have this dataset's
+# shapes; otherwise a re-fit against different channel counts reuses the wrong
+# sizes.
+function _variants_match(
+    variants::AbstractVector,
+    dep::ParameterDependence,
+    spec_C::Union{Nothing,ObsSlotSpec},
+    spec_R::Union{Nothing,ObsSlotSpec},
+)
+    spec_C === nothing && spec_R === nothing && return true
+    for cell in eachindex(variants)
+        s = _variant_slots(dep.nslots, cell)
+        v = variants[cell]
+        spec_C === nothing || size(v.C, 1) == spec_C.dims[s[1]] || return false
+        if spec_R !== nothing && hasproperty(v, :R)
+            size(v.R, 1) == spec_R.dims[s[2]] || return false
+        end
+    end
+    return true
+end
+
 function _build_variants!(
     sm::GaussianStateModel{T,M,V}, dep::ParameterDependence
 ) where {T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}}
@@ -351,18 +534,28 @@ function _build_variants!(
 end
 
 function _build_variants!(
-    om::GaussianObservationModel{T,M,V}, dep::ParameterDependence
+    om::GaussianObservationModel{T,M,V},
+    dep::ParameterDependence,
+    spec_C::Union{Nothing,ObsSlotSpec{T}}=nothing,
+    spec_R::Union{Nothing,ObsSlotSpec{T}}=nothing,
 ) where {T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}}
     ncells = prod(dep.nslots)
     existing = om.variants
-    if existing !== nothing && length(existing) == ncells
+    if existing !== nothing &&
+        length(existing) == ncells &&
+        _variants_match(existing, dep, spec_C, spec_R)
         return existing
     end
 
-    Cs = _slot_arrays(om.C, dep.nslots[1])
-    ds = _slot_arrays(om.d, dep.nslots[1])
-    Ds = _slot_arrays(om.D, dep.nslots[1])
-    Rs = _slot_arrays(om.R, dep.nslots[2])
+    p0 = size(om.C, 1)
+    Cs = [_seed_slot_C(om.C, i, _spec_dim(spec_C, i, p0)) for i in 1:(dep.nslots[1])]
+    ds = [
+        _seed_slot_d(om.d, i, _spec_dim(spec_C, i, p0), spec_C) for i in 1:(dep.nslots[1])
+    ]
+    Ds = [_seed_slot_D(om.D, i, _spec_dim(spec_C, i, p0)) for i in 1:(dep.nslots[1])]
+    Rs = [
+        _seed_slot_R(om.R, j, _spec_dim(spec_R, j, p0), spec_R) for j in 1:(dep.nslots[2])
+    ]
 
     variants = Vector{GaussianObservationModel{T,M,V}}(undef, ncells)
     for cell in 1:ncells
@@ -381,17 +574,25 @@ function _build_variants!(
 end
 
 function _build_variants!(
-    om::PoissonObservationModel{T,M,V}, dep::ParameterDependence
+    om::PoissonObservationModel{T,M,V},
+    dep::ParameterDependence,
+    spec_C::Union{Nothing,ObsSlotSpec{T}}=nothing,
+    ::Union{Nothing,ObsSlotSpec{T}}=nothing,
 ) where {T<:Real,M<:AbstractMatrix{T},V<:AbstractVector{T}}
     ncells = prod(dep.nslots)
     existing = om.variants
-    if existing !== nothing && length(existing) == ncells
+    if existing !== nothing &&
+        length(existing) == ncells &&
+        _variants_match(existing, dep, spec_C, nothing)
         return existing
     end
 
-    Cs = _slot_arrays(om.C, dep.nslots[1])
-    ds = _slot_arrays(om.d, dep.nslots[1])
-    Ds = _slot_arrays(om.D, dep.nslots[1])
+    p0 = size(om.C, 1)
+    Cs = [_seed_slot_C(om.C, i, _spec_dim(spec_C, i, p0)) for i in 1:(dep.nslots[1])]
+    ds = [
+        _seed_slot_d(om.d, i, _spec_dim(spec_C, i, p0), spec_C) for i in 1:(dep.nslots[1])
+    ]
+    Ds = [_seed_slot_D(om.D, i, _spec_dim(spec_C, i, p0)) for i in 1:(dep.nslots[1])]
 
     variants = Vector{PoissonObservationModel{T,M,V}}(undef, ncells)
     for cell in 1:ncells
@@ -493,7 +694,10 @@ when no parameter of either sub-model depends on an ancillary variable.
 scoring a dataset whose trial count differs from the fitted one.
 """
 function parameter_grouping(
-    lds::LinearDynamicalSystem, ntrials::Int; depends_on::Union{Nothing,NamedTuple}=nothing
+    lds::LinearDynamicalSystem,
+    ntrials::Int;
+    depends_on::Union{Nothing,NamedTuple}=nothing,
+    y=nothing,
 )
     sm = lds.state_model
     om = lds.obs_model
@@ -515,7 +719,6 @@ function parameter_grouping(
     _validate_override_keys(sm, om, dep_s, dep_o, depends_on)
 
     _build_variants!(sm, dep_s)
-    _build_variants!(om, dep_o)
 
     ngroups_s = length(dep_s.names)
     ngroups_o = length(dep_o.names)
@@ -540,6 +743,12 @@ function parameter_grouping(
             ),
         )
     end
+
+    # Built after the labels are known, since each slot's `obs_dim` comes from
+    # its own trials. `y === nothing` reproduces the template's shapes.
+    labels_o = [trial_labels[ngroups_s + g] for g in 1:ngroups_o]
+    spec_C, spec_R = _obs_slot_specs(om, dep_o, labels_o, ntrials, y)
+    _build_variants!(om, dep_o, spec_C, spec_R)
 
     # Per-trial slot indices, then the per-trial variant index of each sub-model.
     state_idx = Vector{Int}(undef, ntrials)
@@ -616,6 +825,57 @@ function parameter_grouping(
     )
 end
 
+#=
+`d` is seeded on the emission's natural scale: the per-channel mean for a
+Gaussian emission, its log for a Poisson one (`λ = exp(Cx + d)`).
+=#
+_natural_seed(::GaussianObservationModel, m::AbstractVector) = m
+function _natural_seed(::PoissonObservationModel, m::AbstractVector{T}) where {T<:Real}
+    return T[log(max(mi, eps(T))) for mi in m]
+end
+
+"""
+    _obs_slot_specs(om, dep_o, labels_o, ntrials, y) -> (spec_C, spec_R)
+
+Per-slot observation shapes for this dataset, or `(nothing, nothing)` when
+every trial carries the template's channel count — the ordinary single-`obs_dim`
+case, which must keep its existing arrays untouched.
+"""
+function _obs_slot_specs(
+    om::AbstractObservationModel{T},
+    dep_o::ParameterDependence,
+    labels_o::AbstractVector,
+    ntrials::Int,
+    y,
+) where {T<:Real}
+    y === nothing && return (nothing, nothing)
+    length(y) == ntrials || return (nothing, nothing)
+    obs_dims = [size(yi, 1) for yi in y]
+    p0 = size(om.C, 1)
+    all(isequal(p0), obs_dims) && return (nothing, nothing)
+
+    specs = Vector{ObsSlotSpec{T}}(undef, length(dep_o.names))
+    for g in eachindex(dep_o.names)
+        dims = _slot_obs_dims(dep_o, g, labels_o[g], obs_dims, p0)
+        nslots = length(dims)
+        means = Vector{Vector{T}}(undef, nslots)
+        vars = Vector{Vector{T}}(undef, nslots)
+        for s in 1:nslots
+            trials = [
+                n for n in 1:ntrials if
+                (dep_o.varies[g] ? _slot_of(dep_o, g, labels_o[g][n]) : 1) == s
+            ]
+            m, v = _obs_stats(
+                isempty(trials) ? nothing : [y[n] for n in trials], dims[s], T
+            )
+            means[s] = _natural_seed(om, m)
+            vars[s] = v
+        end
+        specs[g] = ObsSlotSpec{T}(dims, means, vars)
+    end
+    return (specs[1], length(specs) > 1 ? specs[2] : nothing)
+end
+
 """
     _has_parameter_dependence(model) -> Bool
 
@@ -663,8 +923,10 @@ function _cell_lds(
 ) where {T<:Real,S<:AbstractStateModel{T},O<:AbstractObservationModel{T}}
     sm = (lds.state_model.variants::Vector{S})[grp.cell_state[cell]]
     om = (lds.obs_model.variants::Vector{O})[grp.cell_obs[cell]]
+    # The cell's `obs_dim` comes from its own emission; the parent's is only
+    # the template's.
     return LinearDynamicalSystem{T,S,O}(
-        sm, om, lds.latent_dim, lds.obs_dim, lds.ux_dim, lds.uy_dim, lds.fit_bool
+        sm, om, lds.latent_dim, size(om.C, 1), lds.ux_dim, lds.uy_dim, lds.fit_bool
     )
 end
 

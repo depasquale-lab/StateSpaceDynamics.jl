@@ -425,9 +425,13 @@ function Data(
     uy::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
 ) where {T<:Real}
     isempty(y) && throw(ArgumentError("y must contain at least one trial"))
-    for (i, yt) in enumerate(y)
-        size(yt, 1) == lds.obs_dim ||
-            throw(DimensionMismatchError("y[$i] rows", lds.obs_dim, size(yt, 1)))
+    # A group-dependent emission may bring a channel count per session, so rows
+    # are checked per version in `_slot_obs_dims` once the partition is known.
+    if !_has_parameter_dependence(lds.obs_model)
+        for (i, yt) in enumerate(y)
+            size(yt, 1) == lds.obs_dim ||
+                throw(DimensionMismatchError("y[$i] rows", lds.obs_dim, size(yt, 1)))
+        end
     end
     tsteps = Int[size(yt, 2) for yt in y]
     ux_seq = _normalize_multitrial_ux(ux, lds.ux_dim, tsteps, T, "ux")

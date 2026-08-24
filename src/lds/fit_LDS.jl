@@ -129,7 +129,7 @@ function smooth(
     depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     data = Data(lds, y; ux=ux, uy=uy)
-    grp = parameter_grouping(lds, length(data.y); depends_on=depends_on)
+    grp = parameter_grouping(lds, length(data.y); depends_on=depends_on, y=data.y)
     grp === nothing || return _grouped_smooth(lds, data, grp, y)
     tfs = _smooth_data(lds, data)
     return _collect_smooth_output(tfs, y)
@@ -786,10 +786,10 @@ function elbo(
     depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     data = Data(lds, y; ux=ux, uy=uy)
-    grp = parameter_grouping(lds, length(data.y); depends_on=depends_on)
+    grp = parameter_grouping(lds, length(data.y); depends_on=depends_on, y=data.y)
     if grp !== nothing
         sws_pool = _grouped_sws_pool(lds, data)
-        state = _grouped_fit_state(lds, data, grp, sws_pool[1]; batched=true)
+        state = _grouped_fit_state(lds, data, grp, sws_pool; batched=true)
         return _grouped_estep_elbo_gaussian!(state, grp, sws_pool)
     end
     tfs = initialize_FilterSmooth(lds, data.tsteps)::TrialFilterSmooth{T}
@@ -874,7 +874,7 @@ function fit!(
     depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     data = Data(lds, y; ux=ux, uy=uy)
-    grp = parameter_grouping(lds, length(data.y); depends_on=depends_on)
+    grp = parameter_grouping(lds, length(data.y); depends_on=depends_on, y=data.y)
     grp === nothing || return _fit_tridiag_grouped!(
         lds, data, grp; max_iter=max_iter, tol=tol, progress=progress
     )
@@ -907,14 +907,14 @@ function _grouped_estep_elbo_gaussian!(
     for c in 1:(grp.ncells)
         lds_c = state.cell_lds[c]
         suf_c = state.sufs[c]
-        _prepare_cell!(sws_pool[1], state, c)
-        estep!(lds_c, suf_c, state.cell_tfs[c], state.cell_data[c], sws_pool)
+        cell_pool = _prepare_cell!(sws_pool, state, c)
+        estep!(lds_c, suf_c, state.cell_tfs[c], state.cell_data[c], cell_pool)
 
         # The parallel fallback reaches this state through a task, so recompute
         # rather than rely on which chunk ran last.
-        compute_smooth_constants!(sws_pool[1], lds_c)
-        total += Q_state!(sws_pool[1], lds_c, suf_c)
-        total += Q_obs!(sws_pool[1], lds_c, suf_c)
+        compute_smooth_constants!(cell_pool[1], lds_c)
+        total += Q_state!(cell_pool[1], lds_c, suf_c)
+        total += Q_obs!(cell_pool[1], lds_c, suf_c)
         for fs in state.cell_tfs[c].FilterSmooths
             total += fs.entropy
         end
@@ -941,7 +941,10 @@ function _fit_tridiag_grouped!(
     progress::Bool=true,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     sws_pool = _grouped_sws_pool(lds, data)
-    state = _grouped_fit_state(lds, data, grp, sws_pool[1]; batched=true)
+    state = _grouped_fit_state(lds, data, grp, sws_pool; batched=true)
+    # `[C d D]` / `R` are `obs_dim`-shaped, so the emission M-step needs each
+    # cell's own workspace. At uniform widths every entry is `sws_pool[1]`.
+    cell_ws1 = [p[1] for p in state.cell_sws]
     elbos = Vector{T}(undef, max_iter)
 
     prog = if progress
@@ -957,7 +960,12 @@ function _fit_tridiag_grouped!(
             state.cell_lds, state.sufs, grp.cell_slot, sws_pool[1], state.bufs
         )
         _grouped_gaussian_obs_mstep!(
-            state.cell_lds, state.sufs, grp.cell_slot, sws_pool[1], state.bufs
+            state.cell_lds,
+            state.sufs,
+            grp.cell_slot,
+            sws_pool[1],
+            state.bufs;
+            unit_sws=cell_ws1,
         )
 
         prog !== nothing && next!(prog)
@@ -1224,7 +1232,7 @@ function StatsAPI.loglikelihood(
     depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
     data = Data(lds, y; ux=ux, uy=uy)
-    grp = parameter_grouping(lds, length(data.y); depends_on=depends_on)
+    grp = parameter_grouping(lds, length(data.y); depends_on=depends_on, y=data.y)
 
     # The covariance pass depends only on parameters and trial length, so it is
     # shared within a cell as it is across an ungrouped model.

@@ -304,6 +304,39 @@ using SSDTest
                 test_grouped_slds_rand_needs_a_label_for_one_trial()
             end
         end
+
+        include("LinearDynamicalSystems/Stitching.jl")
+        @testset "Stitching (per-session obs_dim)" begin
+            @testset "Shapes and validation" begin
+                test_stitching_variant_shapes()
+                test_stitching_requires_grouped_R()
+                test_stitching_rejects_mixed_widths_in_slot()
+                test_stitching_data_validation()
+            end
+
+            @testset "Non-breaking" begin
+                test_uniform_obs_dim_is_unchanged()
+                test_shared_obs_parameter_at_uniform_width()
+                test_pooled_slot_at_a_width_the_model_was_not_built_at()
+            end
+
+            @testset "Workspaces" begin
+                test_cell_workspace_shares_big_buffers()
+                test_grouped_pool_sized_at_widest_session()
+            end
+
+            @testset "Fitting" begin
+                test_stitching_fit_runs_and_improves()
+                test_stitching_poisson_fit()
+                test_stitching_smooth_shapes()
+            end
+
+            @testset "SLDS" begin
+                test_stitching_slds_shapes()
+                test_slds_cell_workspace_sharing()
+                test_stitching_slds_fit()
+            end
+        end
     end
 
     # Optimization primitives (line search + Newton)

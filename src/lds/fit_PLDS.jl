@@ -766,10 +766,10 @@ function elbo(
     depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     data = Data(plds, y; ux=ux, uy=uy)
-    grp = parameter_grouping(plds, length(data.y); depends_on=depends_on)
+    grp = parameter_grouping(plds, length(data.y); depends_on=depends_on, y=data.y)
     if grp !== nothing
         sws_pool = _grouped_sws_pool(plds, data)
-        state = _grouped_fit_state(plds, data, grp, sws_pool[1])
+        state = _grouped_fit_state(plds, data, grp, sws_pool)
         return _grouped_estep_elbo_poisson!(
             state, grp, sws_pool; max_iter=newton_max_iter, tol=T(newton_tol)
         )
@@ -825,7 +825,7 @@ function smooth(
     depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     data = Data(plds, y; ux=ux, uy=uy)
-    grp = parameter_grouping(plds, length(data.y); depends_on=depends_on)
+    grp = parameter_grouping(plds, length(data.y); depends_on=depends_on, y=data.y)
     grp === nothing || return _grouped_smooth(plds, data, grp, y)
     tfs = initialize_FilterSmooth(plds, data.tsteps)::TrialFilterSmooth{T}
     # Cap the pool at the trial count — workspaces beyond ntrials are never
@@ -888,7 +888,7 @@ function fit!(
     depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     data = Data(plds, y; ux=ux, uy=uy)
-    grp = parameter_grouping(plds, length(data.y); depends_on=depends_on)
+    grp = parameter_grouping(plds, length(data.y); depends_on=depends_on, y=data.y)
     grp === nothing || return _fit_plds_grouped!(
         plds,
         data,
@@ -974,14 +974,14 @@ function _grouped_estep_elbo_poisson!(
         lds_c = state.cell_lds[c]
         suf_c = state.sufs[c]
         tfs_c = state.cell_tfs[c]
-        _prepare_cell!(sws_pool[1], state, c)
+        cell_pool = _prepare_cell!(sws_pool, state, c)
         estep!(
-            lds_c, suf_c, tfs_c, state.cell_data[c], sws_pool; max_iter=max_iter, tol=tol
+            lds_c, suf_c, tfs_c, state.cell_data[c], cell_pool; max_iter=max_iter, tol=tol
         )
 
-        compute_smooth_constants!(sws_pool[1], lds_c)
-        total += Q_state!(sws_pool[1], lds_c, suf_c)
-        total += _poisson_q_obs_total(lds_c, tfs_c, state.cell_data[c], sws_pool)
+        compute_smooth_constants!(cell_pool[1], lds_c)
+        total += Q_state!(cell_pool[1], lds_c, suf_c)
+        total += _poisson_q_obs_total(lds_c, tfs_c, state.cell_data[c], cell_pool)
         for fs in tfs_c.FilterSmooths
             total += fs.entropy
         end
@@ -1011,8 +1011,11 @@ function _grouped_update_observation_model!(
         end
         sort!(trials)
         tfs = TrialFilterSmooth([state.tfs_all[n] for n in trials])
+
+        # solve using the pooled workspace for each cell
+        cell_pool = _prepare_cell!(sws_pool, state, units[1])
         update_observation_model!(
-            state.cell_lds[units[1]], tfs, data.y[trials], sws_pool; uy=data.uy[trials]
+            state.cell_lds[units[1]], tfs, data.y[trials], cell_pool; uy=data.uy[trials]
         )
     end
     return nothing
@@ -1037,7 +1040,7 @@ function _fit_plds_grouped!(
     newton_tol::Float64=1e-6,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     sws_pool = _grouped_sws_pool(plds, data)
-    state = _grouped_fit_state(plds, data, grp, sws_pool[1])
+    state = _grouped_fit_state(plds, data, grp, sws_pool)
     elbos = Vector{T}(undef, max_iter)
 
     prog = if progress
