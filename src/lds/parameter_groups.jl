@@ -1,24 +1,9 @@
 #=============================================================================
 Ancillary parameter dependencies (`depends_on`)
 
-`AbstractStateModel` and `AbstractObservationModel` each carry a `depends_on`
-field. When it is `nothing` (the default) the model behaves exactly as before:
-one parameter set shared by every trial, and every entry point takes its
-original ungrouped code path. When it is a `NamedTuple`, the named parameters
-are estimated separately for each group of trials:
-
-    session = [:a, :a, :b, :b, :b]          # one label per trial
-    obs = GaussianObservationModel(C, R, d)
-    obs.depends_on = (C = session, d = session, R = session)
-
-Trials labelled `:a` then contribute to one `[C d D]` / `R` estimate and trials
-labelled `:b` to another, while the latent dynamics `A`, `b`, `B`, `Q` and the
-initial state `x0`, `P0` stay shared. That is the "stitching" setup for pooling
-recording sessions that observe different neurons in the same animal: latent
-dynamics common to the animal, emission parameters specific to the session.
-
-Keys are canonicalized to the same groups `fit_bool` uses, because those
-parameters are fit jointly as one regression:
+A `NamedTuple` of per-trial label vectors declares that the named parameters
+are estimated separately for each group of trials. Keys map to the groups
+`fit_bool` uses, since those parameters are fit jointly as one regression:
 
     :x0             -> initial state mean      (fit_bool[1])
     :P0             -> initial state cov       (fit_bool[2])
@@ -27,32 +12,22 @@ parameters are fit jointly as one regression:
     :C, :d, :D      -> emission [C d D]        (fit_bool[5])
     :R              -> observation noise       (fit_bool[6], Gaussian only)
 
-Because those parameters are fit jointly, grouping any one of them groups them
-all. Naming one on its own would read as though only that one varies, so a
-`depends_on` has to name **every** member of a group it touches: `(C = s, d =
-s)` rather than `(C = s,)`, and `(A = s, b = s)` rather than `(A = s,)`. `B`
-and `D` are zero-column when the model takes no inputs, and are then not part
-of the group; give the model inputs and they have to be named too. `:x0`,
-`:P0`, `:Q` and `:R` are groups of one and stand alone. Naming two members of
-one group with different label vectors is an error.
+Grouping one member of a group groups them all, so a `depends_on` must name
+every member the model carries. `B`/`D` are zero-column, and not part of the
+group, when the model takes no inputs.
 
-Implementation shape: a *cell* is a maximal set of trials sharing every
-parameter — one element of the common refinement of all the label vectors.
-Trials in a cell are governed by a single `LinearDynamicalSystem`, so the E-step
-runs on them completely unchanged (which is what keeps the equal-length
-shared-covariance fast path alive within each group), and only the M-step and
-the ELBO need to know about groups.
+A *cell* is a maximal set of trials sharing every parameter — one element of
+the common refinement of the label vectors — and is governed by a single
+`LinearDynamicalSystem`, so the E-step runs on it unchanged.
 
-This file holds the declaration side of that design: validating `depends_on`,
-resolving it into per-parameter versions, building the `variants` storage, and
-computing the trial partition. The grouped M-step and ELBO that consume the
-partition live in `grouped_em.jl`.
+This file is the declaration side: validation, resolution into per-parameter
+versions, `variants` storage, and the trial partition. The grouped M-step and
+ELBO live in `grouped_em.jl`.
 =============================================================================#
 
 #=
-Any model that carries a `depends_on` field. Spelling it out (rather than
-leaving these helpers untyped) lets inference union-split over the three
-concrete model types instead of dispatching dynamically on `Any`.
+Any model carrying a `depends_on` field. Named rather than untyped so inference
+union-splits over the three concrete model types.
 =#
 const DependentModel = Union{AbstractStateModel,AbstractObservationModel}
 
@@ -72,16 +47,10 @@ _group_names(::GaussianObservationModel) = (:C, :R)
 _group_names(::PoissonObservationModel) = (:C,)
 
 #=
-Group resolution: `[A b B]` and `[C d D]` are each fit as a single regression,
-so grouping any member groups them all. Because that is not what naming one of
-them looks like, a `depends_on` must name every member the model carries —
-see `_check_group_naming_complete`. These functions map a member to the group
-it belongs to once that check has passed.
-
-`_try_canonical_param` returns `nothing` for a name the model does not own,
-which is what a *shared* `depends_on` needs: a call-site override is one
-NamedTuple resolved against both sub-models, so each has to be able to ignore
-the other's keys rather than reject them.
+Map a member to its group; completeness is checked by
+`_check_group_naming_complete`. `_try_canonical_param` returns `nothing` for a
+name the model does not own, since one `depends_on` is resolved against both
+sub-models and each must ignore the other's keys.
 =#
 function _try_canonical_param(::GaussianStateModel, name::Symbol)
     name in (:A, :b, :B) && return :A
@@ -220,10 +189,7 @@ function _resolve_dependence(model::DependentModel)
     spec === nothing && return dep
     _check_group_naming_complete(model, spec, "depends_on")
 
-    #=
-    Track which user-facing key first claimed each group so a conflicting alias
-    (`(C = s1, d = s2)`) can report both names rather than silently keeping one.
-    =#
+    # First key to claim each group, so a conflicting alias can name both.
     claimed = Vector{Symbol}(undef, ngroups)
     for key in keys(spec)
         canonical = _canonical_param(model, key)
@@ -273,9 +239,8 @@ function _resolve_dependence(model::DependentModel)
 end
 
 #=
-Mixed-radix (column-major) index of a variant from its per-group slot indices,
-and its inverse. Written out rather than going through `LinearIndices` so the
-`nslots` vector never has to be splatted into a tuple.
+Mixed-radix (column-major) variant index from per-group slots, and its inverse.
+Written out so `nslots` never has to be splatted into a tuple.
 =#
 function _variant_index(nslots::AbstractVector{Int}, slots::AbstractVector{Int})
     idx = 0
@@ -341,12 +306,12 @@ function _trial_labels_for(
 end
 
 # ============================================================================
-# Variant construction. Parameters that do not vary are shared *by reference*
-# across every variant, so one M-step write updates all of them; parameters
-# that do vary get one independent copy per slot, with slot 1 aliasing the base
-# model's own array so `model.C` keeps its original meaning.
+# Variant construction
 # ============================================================================
 
+# Slot 1 aliases `base`, so `model.C` keeps its meaning; other slots get a copy.
+# A non-varying parameter has one slot, shared by every variant, so a single
+# M-step write updates all of them.
 _slot_arrays(base, nslots::Int) = [i == 1 ? base : copy(base) for i in 1:nslots]
 
 function _build_variants!(
@@ -512,11 +477,7 @@ function _validate_override_keys(
             ),
         )
     end
-    #=
-    An override is a `depends_on` like any other, and re-labels the whole
-    regression group, so it has to name the group as completely as the
-    declaration did.
-    =#
+    # An override re-labels the whole group, so it must name it as completely.
     _check_group_naming_complete(sm, override, "depends_on override")
     _check_group_naming_complete(om, override, "depends_on override")
     return nothing
@@ -539,11 +500,8 @@ function parameter_grouping(
     dep_s = _resolve_dependence(sm)
     dep_o = _resolve_dependence(om)
 
-    #=
-    An override may only re-assign trials to groups the model already knows, so
-    a model with no `depends_on` at all has nothing to override and stays on the
-    ungrouped path.
-    =#
+    # An override only re-assigns trials to existing groups; a model with no
+    # `depends_on` stays ungrouped.
     if !_any_varies(dep_s) && !_any_varies(dep_o)
         depends_on === nothing || throw(
             ArgumentError(

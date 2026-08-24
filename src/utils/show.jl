@@ -21,13 +21,9 @@ end
 print_full(obj) = print_full(stdout, obj)
 
 #=
-One line per parameter group that depends on an ancillary variable, e.g.
-
-  Depends on:
-   C, d, D  ->  2 groups (:session_a, :session_b)
-
-Prints nothing when `depends_on` is unset, so the display of an ordinary model
-is unchanged.
+One line per group that depends on an ancillary variable, e.g.
+`C, d, D  ->  2 groups (:session_a, :session_b)`. Prints nothing when
+`depends_on` is unset.
 =#
 function _show_depends_on(io::IO, model::DependentModel; gap="")
     model.depends_on === nothing && return nothing
