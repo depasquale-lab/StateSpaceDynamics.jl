@@ -134,10 +134,8 @@ function Random.rand(
     x = Vector{Matrix{T}}(undef, ntrials)
     y = Vector{Matrix{T}}(undef, ntrials)
 
-    #=
-    Per-trial, per-regime parameter sets: one entry per trial, each a vector
-    over regimes. Ungrouped, every trial shares the same vector.
-    =#
+    # One entry per trial, each a vector over regimes; ungrouped, every trial
+    # shares the same vector.
     grp = _slds_parameter_grouping(slds, ntrials; depends_on=depends_on)
     if grp === nothing
         base_state = [_extract_state_params(lds.state_model) for lds in slds.LDSs]
@@ -1143,10 +1141,7 @@ function elbo(
     )
 
     if grp !== nothing
-        #=
-        Narrow the `Union{Nothing,...}` locals so the grouped helpers below are
-        called at their declared argument types.
-        =#
+        # Narrow the `Union{Nothing,...}` locals to the helpers' argument types.
         grouping = grp::ParameterGrouping
         cells = cell_slds::Vector
         _estep_grouped!(
@@ -1387,10 +1382,8 @@ function fit!(
     total_T = last(seq_ends)
     T_max = maximum(tsteps_per_trial)
 
-    #=
-    Ancillary parameter dependencies. `grp === nothing` (no regime declares
-    `depends_on`) keeps every step on its original code path.
-    =#
+    # `grp === nothing` (no regime declares `depends_on`) keeps every step on
+    # its original code path.
     grp = _slds_parameter_grouping(slds, ntrials; depends_on=depends_on)
     cell_slds = grp === nothing ? nothing : _slds_cell_sldss(slds, grp)
 
@@ -1943,11 +1936,8 @@ function _mstep_grouped!(
         end
     end
 
-    #=
-    Tied initial state, pooled over every (regime, cell) unit. Since
-    Σₖ γₖ(t=1) = 1, summing the per-regime weighted init stats reproduces the
-    unit-weight pooled statistic the ungrouped path uses.
-    =#
+    # Tied initial state, pooled over every (regime, cell) unit: Σₖ γₖ(t=1) = 1,
+    # so summing the weighted init stats gives the unit-weight statistic.
     slots_x0 = repeat(grp.cell_slot[_G_X0], K)
     slots_P0 = repeat(grp.cell_slot[_G_P0], K)
     _grouped_update_x0!(unit_lds, unit_suf, slots_x0, bufs)
