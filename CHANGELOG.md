@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Latent-free `AffineNullModel` baselines (`:intercept`, `:inputs`, `:var`, and
+  `:var_inputs`) with optional MN/IW priors. Use `fit!` on training data and
+  `loglikelihood` to score training or held-out data (#126)
+- StatsAPI model comparison for a fitted Gaussian LDS:
+  `r2(lds, y, variant; null=:intercept, null_inputs=:ux)` with all three
+  StatsBase pseudo-R² variants, plus `nullloglikelihood` and `nobs`. The baseline
+  inherits the LDS observation-noise prior by default (#126)
 - Public allocating `elbo(model, y; ...)` for all three models (Gaussian LDS
   with `ux`/`uy` keywords, Poisson LDS with Newton-smoother keywords, SLDS
   with an `rng` keyword since its E-step consumes a posterior sample). Runs
