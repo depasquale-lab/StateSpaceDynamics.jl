@@ -73,9 +73,7 @@ function AffineNullModel{T}(
     input_shift in (0, 1) ||
         throw(ArgumentError("input_shift must be 0 or 1; got $input_shift"))
     (input_dim == 0 && input_shift != 0) && throw(
-        ArgumentError(
-            "input_shift requires input_dim > 0; got input_shift=$input_shift",
-        ),
+        ArgumentError("input_shift requires input_dim > 0; got input_shift=$input_shift"),
     )
 
     _check_mn_prior(W_prior, obs_dim, _null_ncoef(lag, obs_dim, input_dim))
@@ -127,9 +125,7 @@ function AffineNullModel{T}(
             ),
         )
         input_shift == 0 || throw(
-            ArgumentError(
-                "baseline :$baseline requires input_shift=0; got $input_shift",
-            ),
+            ArgumentError("baseline :$baseline requires input_shift=0; got $input_shift"),
         )
     end
     return AffineNullModel{T}(
@@ -150,11 +146,8 @@ function _null_obs_trials(null::AffineNullModel{T}, y) where {T<:Real}
     trials = _null_trials(y)
     isempty(trials) && throw(ArgumentError("y must hold at least one trial"))
     for (i, yn) in enumerate(trials)
-        eltype(yn) === T || throw(
-            ArgumentError(
-                "y[$i] has eltype $(eltype(yn)); expected $T",
-            ),
-        )
+        eltype(yn) === T ||
+            throw(ArgumentError("y[$i] has eltype $(eltype(yn)); expected $T"))
         size(yn, 1) == null.obs_dim ||
             throw(DimensionMismatchError("y[$i] rows", null.obs_dim, size(yn, 1)))
         size(yn, 2) > 0 ||
@@ -172,11 +165,7 @@ end
 function _null_input_trials(
     ::Type{T}, ::Nothing, tsteps::Vector{Int}, input_dim::Int
 ) where {T<:Real}
-    input_dim == 0 || throw(
-        ArgumentError(
-            "inputs are required when input_dim=$input_dim",
-        ),
-    )
+    input_dim == 0 || throw(ArgumentError("inputs are required when input_dim=$input_dim"))
     return [zeros(T, 0, Ti) for Ti in tsteps]
 end
 
