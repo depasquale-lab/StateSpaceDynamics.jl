@@ -1,24 +1,9 @@
 #=============================================================================
 Ancillary parameter dependencies (`depends_on`)
 
-`AbstractStateModel` and `AbstractObservationModel` each carry a `depends_on`
-field. When it is `nothing` (the default) the model behaves exactly as before:
-one parameter set shared by every trial, and every entry point takes its
-original ungrouped code path. When it is a `NamedTuple`, the named parameters
-are estimated separately for each group of trials:
-
-    session = [:a, :a, :b, :b, :b]          # one label per trial
-    obs = GaussianObservationModel(C, R, d)
-    obs.depends_on = (C = session, d = session, R = session)
-
-Trials labelled `:a` then contribute to one `[C d D]` / `R` estimate and trials
-labelled `:b` to another, while the latent dynamics `A`, `b`, `B`, `Q` and the
-initial state `x0`, `P0` stay shared. That is the "stitching" setup for pooling
-recording sessions that observe different neurons in the same animal: latent
-dynamics common to the animal, emission parameters specific to the session.
-
-Keys are canonicalized to the same groups `fit_bool` uses, because those
-parameters are fit jointly as one regression:
+A `NamedTuple` of per-trial label vectors declares that the named parameters
+are estimated separately for each group of trials. Keys map to the groups
+`fit_bool` uses, since those parameters are fit jointly as one regression:
 
     :x0             -> initial state mean      (fit_bool[1])
     :P0             -> initial state cov       (fit_bool[2])
@@ -27,32 +12,22 @@ parameters are fit jointly as one regression:
     :C, :d, :D      -> emission [C d D]        (fit_bool[5])
     :R              -> observation noise       (fit_bool[6], Gaussian only)
 
-Because those parameters are fit jointly, grouping any one of them groups them
-all. Naming one on its own would read as though only that one varies, so a
-`depends_on` has to name **every** member of a group it touches: `(C = s, d =
-s)` rather than `(C = s,)`, and `(A = s, b = s)` rather than `(A = s,)`. `B`
-and `D` are zero-column when the model takes no inputs, and are then not part
-of the group; give the model inputs and they have to be named too. `:x0`,
-`:P0`, `:Q` and `:R` are groups of one and stand alone. Naming two members of
-one group with different label vectors is an error.
+Grouping one member of a group groups them all, so a `depends_on` must name
+every member the model carries. `B`/`D` are zero-column, and not part of the
+group, when the model takes no inputs.
 
-Implementation shape: a *cell* is a maximal set of trials sharing every
-parameter — one element of the common refinement of all the label vectors.
-Trials in a cell are governed by a single `LinearDynamicalSystem`, so the E-step
-runs on them completely unchanged (which is what keeps the equal-length
-shared-covariance fast path alive within each group), and only the M-step and
-the ELBO need to know about groups.
+A *cell* is a maximal set of trials sharing every parameter — one element of
+the common refinement of the label vectors — and is governed by a single
+`LinearDynamicalSystem`, so the E-step runs on it unchanged.
 
-This file holds the declaration side of that design: validating `depends_on`,
-resolving it into per-parameter versions, building the `variants` storage, and
-computing the trial partition. The grouped M-step and ELBO that consume the
-partition live in `grouped_em.jl`.
+This file is the declaration side: validation, resolution into per-parameter
+versions, `variants` storage, and the trial partition. The grouped M-step and
+ELBO live in `grouped_em.jl`.
 =============================================================================#
 
 #=
-Any model that carries a `depends_on` field. Spelling it out (rather than
-leaving these helpers untyped) lets inference union-split over the three
-concrete model types instead of dispatching dynamically on `Any`.
+Any model carrying a `depends_on` field. Named rather than untyped so inference
+union-splits over the three concrete model types.
 =#
 const DependentModel = Union{AbstractStateModel,AbstractObservationModel}
 
@@ -72,16 +47,10 @@ _group_names(::GaussianObservationModel) = (:C, :R)
 _group_names(::PoissonObservationModel) = (:C,)
 
 #=
-Group resolution: `[A b B]` and `[C d D]` are each fit as a single regression,
-so grouping any member groups them all. Because that is not what naming one of
-them looks like, a `depends_on` must name every member the model carries —
-see `_check_group_naming_complete`. These functions map a member to the group
-it belongs to once that check has passed.
-
-`_try_canonical_param` returns `nothing` for a name the model does not own,
-which is what a *shared* `depends_on` needs: a call-site override is one
-NamedTuple resolved against both sub-models, so each has to be able to ignore
-the other's keys rather than reject them.
+Map a member to its group; completeness is checked by
+`_check_group_naming_complete`. `_try_canonical_param` returns `nothing` for a
+name the model does not own, since one `depends_on` is resolved against both
+sub-models and each must ignore the other's keys.
 =#
 function _try_canonical_param(::GaussianStateModel, name::Symbol)
     name in (:A, :b, :B) && return :A
@@ -220,10 +189,7 @@ function _resolve_dependence(model::DependentModel)
     spec === nothing && return dep
     _check_group_naming_complete(model, spec, "depends_on")
 
-    #=
-    Track which user-facing key first claimed each group so a conflicting alias
-    (`(C = s1, d = s2)`) can report both names rather than silently keeping one.
-    =#
+    # First key to claim each group, so a conflicting alias can name both.
     claimed = Vector{Symbol}(undef, ngroups)
     for key in keys(spec)
         canonical = _canonical_param(model, key)
@@ -273,9 +239,8 @@ function _resolve_dependence(model::DependentModel)
 end
 
 #=
-Mixed-radix (column-major) index of a variant from its per-group slot indices,
-and its inverse. Written out rather than going through `LinearIndices` so the
-`nslots` vector never has to be splatted into a tuple.
+Mixed-radix (column-major) variant index from per-group slots, and its inverse.
+Written out so `nslots` never has to be splatted into a tuple.
 =#
 function _variant_index(nslots::AbstractVector{Int}, slots::AbstractVector{Int})
     idx = 0
@@ -341,12 +306,12 @@ function _trial_labels_for(
 end
 
 # ============================================================================
-# Variant construction. Parameters that do not vary are shared *by reference*
-# across every variant, so one M-step write updates all of them; parameters
-# that do vary get one independent copy per slot, with slot 1 aliasing the base
-# model's own array so `model.C` keeps its original meaning.
+# Variant construction
 # ============================================================================
 
+# Slot 1 aliases `base`, so `model.C` keeps its meaning; other slots get a copy.
+# A non-varying parameter has one slot, shared by every variant, so a single
+# M-step write updates all of them.
 _slot_arrays(base, nslots::Int) = [i == 1 ? base : copy(base) for i in 1:nslots]
 
 """
@@ -369,24 +334,16 @@ _spec_dim(spec::ObsSlotSpec, slot::Int, ::Int) = spec.dims[slot]
 #=============================================================================
 Per-session observation dimensions ("stitching")
 
-`obs_dim` is a property of the `[C d D]` group, not of the model as a whole:
-`C` is `obs_dim × latent_dim`, `d` is `obs_dim`, `D` is `obs_dim × uy_dim` and
-`R` is `obs_dim × obs_dim`. So when sessions observe different numbers of
-channels, every observation-model group has to be constant in `obs_dim` within
-each of its slots. A shared `:R` alongside a per-session `:C` has no
-well-defined size, and is rejected here rather than left to a downstream shape
-error.
+`obs_dim` belongs to the `[C d D]` group, not to the model: `C` is
+`obs_dim × latent_dim`, `d` is `obs_dim`, `D` is `obs_dim × uy_dim`, `R` is
+`obs_dim × obs_dim`. Each slot's `obs_dim` is the row count of the trials
+assigned to it, so a group must be constant in `obs_dim` within a slot; a
+shared `:R` alongside a per-session `:C` has no well-defined size and is
+rejected. The latent dimension stays shared.
 
-The dimensions come from the data: each slot's `obs_dim` is the row count of
-the trials assigned to it. The latent dimension stays shared.
-
-`variants` is indexed by the Cartesian product of every group's slots, so with
-both `:C` and `:R` varying over two sessions it holds four entries while only
-two describe a real cell. Under stitching the two cross terms pair one
-session's `C` with another session's `R` and are therefore inconsistent — but
-they are unreachable: `_cell_lds` only ever indexes `grp.cell_obs`, and both
-groups take their width from the same per-trial data, so every combination an
-occupied cell names has matching `C` and `R` widths.
+`variants` is the Cartesian product of the groups' slots, so it also holds
+cross terms pairing one session's `C` with another's `R`. Those are
+inconsistent but unreachable — `_cell_lds` only indexes `grp.cell_obs`.
 =============================================================================#
 
 """
@@ -448,16 +405,11 @@ function _slot_obs_dims(
 end
 
 #=
-Initialization of a variant whose shape differs from the template. Same-sized
-slots keep copying the template, so a fit whose sessions happen to agree on
-`obs_dim` is bit-identical to before this feature existed.
-
-A differently-sized slot cannot copy anything, so it is seeded from the data
-it will be fitted to: `d` at the per-channel mean and `R` at the per-channel
-variance put the emission on the right scale immediately, and `C` cycles the
-template's rows so that the loading matrix starts at the template's magnitude
-rather than at zero (which the M-step could not move off of). One M-step
-replaces all three.
+Initializing a slot whose shape differs from the template; same-sized slots
+still copy it, so agreeing `obs_dim`s stay bit-identical. A differently-sized
+slot is seeded from its data: `d` at the per-channel mean, `R` at the
+per-channel variance, `C` by cycling the template's rows (zero would be a fixed
+point of the M-step).
 =#
 _obs_stats(::Nothing, p::Int, ::Type{T}) where {T} = (zeros(T, p), ones(T, p))
 
@@ -490,26 +442,21 @@ end
 
 Give individual `depends_on` groups their own starting values:
 `Dict(label => (C=..., d=..., D=..., R=...))`, any subset of those keys per
-label. A label with no entry, or an entry naming only some parameters, keeps the
-defaults for the rest.
+label. Anything left unnamed keeps the default seeding.
 
-This matters when the groups observe different channel *sets*. Nothing here
-knows which channel is which, so an unseeded slot starts from the template's
-emission — copied when the widths agree, its rows cycled when they do not. Both
-pair a group's channel with whatever channel sits at the same row of the
-template, which is only right when the groups share one channel list. A caller
-that already knows each group's loadings, because it stitched them onto shared
-factors before building the model, should hand them over here instead.
+Use this when the groups observe different channel *sets*. An unseeded slot
+starts from the template's emission — copied when the widths agree, its rows
+cycled when they do not — which pairs each channel with whatever sits at the
+same row of the template, and is only right when the groups share one channel
+list. A caller that stitched each group's loadings onto shared factors already
+knows better.
 
-Seeds are *initial* values: they are read when the per-group variants are built
-and ignored by a later `fit!` that reuses the cached ones, exactly as `model.C`
-is. Shapes are checked against the data when the variants are built — a seed of
-the wrong size is an error, never a silent reshape.
+Seeds are *initial* values, read when the variants are built and ignored by a
+later `fit!` that reuses the cached ones, exactly as `model.C` is. A seed of the
+wrong size is an error, never a silent reshape. Labels are checked here rather
+than at fit time, since a mistyped one would simply never be read.
 
-Labels are validated here rather than at fit time, because the cost of a
-mistyped one is invisible: it would simply never be read.
-
-    om.depends_on = (C = session,)
+    om.depends_on = (C = session, d = session)
     set_group_seeds!(om, Dict(s => (C = loadings[s],) for s in sessions))
 """
 function set_group_seeds!(model::DependentModel, seeds::Union{Nothing,AbstractDict})
@@ -722,13 +669,9 @@ function _apply_seed!(out, supplied, name::Symbol, slot::Int)
     return out
 end
 
-#=
-Slot 1 aliases the parent's array (as `_slot_arrays` has always done) so the
-model object stays in sync with its first version; every other slot gets its
-own storage. A slot whose shape matches the template is still a plain copy, so
-nothing about the equal-`obs_dim` path changes. A seed is written *into* that
-storage rather than replacing it, which keeps slot 1's aliasing intact.
-=#
+# Slot 1 aliases the parent's array, as `_slot_arrays` does; a shape-matching
+# slot is still a plain copy. A seed is written into that storage rather than
+# replacing it, so slot 1 stays aliased.
 function _slot_storage(base::AbstractMatrix, i::Int, dims::Tuple{Int,Int})
     size(base) == dims || return similar(base, dims...)
     return i == 1 ? base : copy(base)
@@ -792,11 +735,9 @@ function _seed_slot_R(
     return out
 end
 
-#=
-A rebuild is skipped only when the cached variants already have the shapes this
-dataset asks for; otherwise re-fitting the same model against a dataset with
-different channel counts would silently reuse the wrong-sized arrays.
-=#
+# Skip the rebuild only when the cached variants already have this dataset's
+# shapes; otherwise a re-fit against different channel counts reuses the wrong
+# sizes.
 function _variants_match(
     variants::AbstractVector,
     dep::ParameterDependence,
@@ -993,11 +934,7 @@ function _validate_override_keys(
             ),
         )
     end
-    #=
-    An override is a `depends_on` like any other, and re-labels the whole
-    regression group, so it has to name the group as completely as the
-    declaration did.
-    =#
+    # An override re-labels the whole group, so it must name it as completely.
     _check_group_naming_complete(sm, override, "depends_on override")
     _check_group_naming_complete(om, override, "depends_on override")
     return nothing
@@ -1023,11 +960,8 @@ function parameter_grouping(
     dep_s = _resolve_dependence(sm)
     dep_o = _resolve_dependence(om)
 
-    #=
-    An override may only re-assign trials to groups the model already knows, so
-    a model with no `depends_on` at all has nothing to override and stays on the
-    ungrouped path.
-    =#
+    # An override only re-assigns trials to existing groups; a model with no
+    # `depends_on` stays ungrouped.
     if !_any_varies(dep_s) && !_any_varies(dep_o)
         depends_on === nothing || throw(
             ArgumentError(
@@ -1066,12 +1000,8 @@ function parameter_grouping(
         )
     end
 
-    #=
-    Observation variants are built after the labels are known, because a
-    stitching dataset fixes each slot's `obs_dim` from the trials assigned to
-    it. `y === nothing`, or a dataset whose trials all have the template's
-    channel count, reproduces the previous shapes exactly.
-    =#
+    # Built after the labels are known, since each slot's `obs_dim` comes from
+    # its own trials. `y === nothing` reproduces the template's shapes.
     labels_o = [trial_labels[ngroups_s + g] for g in 1:ngroups_o]
     spec_C, spec_R = _obs_slot_specs(om, dep_o, labels_o, ntrials, y)
     _build_variants!(om, dep_o, spec_C, spec_R)
@@ -1249,11 +1179,8 @@ function _cell_lds(
 ) where {T<:Real,S<:AbstractStateModel{T},O<:AbstractObservationModel{T}}
     sm = (lds.state_model.variants::Vector{S})[grp.cell_state[cell]]
     om = (lds.obs_model.variants::Vector{O})[grp.cell_obs[cell]]
-    #=
-    The cell's `obs_dim` comes from its own emission, not from the parent: under
-    stitching each session contributes a different number of channels, and the
-    parent's `obs_dim` is only the template's.
-    =#
+    # The cell's `obs_dim` comes from its own emission; the parent's is only
+    # the template's.
     return LinearDynamicalSystem{T,S,O}(
         sm, om, lds.latent_dim, size(om.C, 1), lds.ux_dim, lds.uy_dim, lds.fit_bool
     )

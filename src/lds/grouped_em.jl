@@ -1,20 +1,15 @@
 #=============================================================================
 Grouped M-step and ELBO for models with `depends_on` set.
 
-The E-step needs no group-specific code: the trials of one cell share every
-parameter, so the ordinary smoother + sufficient-statistics aggregator runs on
-each cell's sub-`Data` unchanged (see `parameter_groups.jl`). What is left is
+The E-step needs no group-specific code — a cell's trials share every parameter,
+so the ordinary smoother runs on its sub-`Data` unchanged. What is left is
+pooling the per-cell sufficient statistics per parameter version, and evaluating
+the prior terms once per version rather than once per cell.
 
-  * pooling the per-cell sufficient statistics per parameter *version*, and
-  * evaluating the prior terms once per parameter version rather than once per
-    cell.
-
-Both are written against a flat list of "units". A unit is one thing that
-produced a `SufficientStatistics`: a cell for a `LinearDynamicalSystem`, or a
-(regime, cell) pair for an `SLDS`. Each unit carries the `LinearDynamicalSystem`
-holding its parameter arrays and, per parameter group, the slot index it uses.
-Parameters shared by several units are the *same array object*, so writing
-through any one of those units updates all of them.
+Both are written against a flat list of *units*: one thing that produced a
+`SufficientStatistics` — a cell for an LDS, a (regime, cell) pair for an SLDS.
+Parameters shared by several units are the same array object, so writing
+through any one updates all of them.
 =============================================================================#
 
 """
@@ -32,13 +27,9 @@ struct GroupedSufBuffers{T<:Real}
     init_yy::Matrix{T}
     dyn_xx::Matrix{T}
     obs_xx::Matrix{T}
-    #=
-    Pooling writes `obs_xy`, whose column count is the slot's channel count. A
-    stitching fit has more than one of those, so the odd-width scratch is built
-    on first use and cached for the rest of the fit — bounded by the number of
-    distinct widths, and never re-allocated per iteration. Stays empty whenever
-    every slot has the model's own `obs_dim`.
-    =#
+    # `obs_xy`'s column count is the slot's channel count, so a stitching fit
+    # needs scratch per distinct width: built on first use, cached for the fit,
+    # empty when every slot has the model's own `obs_dim`.
     obs_alt::Dict{Int,SufficientStatistics{T}}
     proto::LinearDynamicalSystem{T}
     tsteps::Vector{Int}
@@ -61,10 +52,8 @@ function GroupedSufBuffers(
     )
 end
 
-#=
-The pooling target for a slot of width `p`: the preallocated one when it
-already matches, otherwise this fit's cached scratch for that width.
-=#
+# Pooling target for a slot of width `p`: the preallocated buffer when it
+# matches, otherwise this fit's cached scratch for that width.
 function _obs_pool_target(bufs::GroupedSufBuffers{T}, p::Int) where {T<:Real}
     size(bufs.suf.obs_xy, 2) == p && return bufs.suf
     return get!(bufs.obs_alt, p) do
@@ -77,11 +66,8 @@ function _obs_pool_target(bufs::GroupedSufBuffers{T}, p::Int) where {T<:Real}
     end
 end
 
-#=
-Pooling. A version backed by a single unit reuses that unit's statistics
-verbatim, which keeps a fit whose groups happen to be singletons numerically
-identical to the corresponding ungrouped fit.
-=#
+# Pooling. A version backed by one unit reuses its statistics verbatim, so
+# singleton groups stay numerically identical to the ungrouped fit.
 function _pool_init!(
     bufs::GroupedSufBuffers{T}, sufs::AbstractVector, units::AbstractVector{Int}
 ) where {T<:Real}
@@ -240,11 +226,8 @@ function _grouped_fit_state(
     cell_lds = _cell_ldss(lds, grp)
     cell_data = [_subset_data(data, grp.cell_trials[c]) for c in 1:ncells]
 
-    #=
-    Per-trial smoother storage. `cov_alias` is decided per cell: the smoother
-    aliases every equal-length trial's `p_smooth` to the shared cache, so those
-    trials would otherwise each carry a dead (D, D, T) allocation.
-    =#
+    # `cov_alias` per cell: equal-length trials alias `p_smooth` to the shared
+    # cache, which would otherwise be a dead (D, D, T) allocation each.
     fs_all = Vector{FilterSmooth{T}}(undef, ntrials)
     cell_batched = Vector{Union{Nothing,BatchedBuffers{T}}}(undef, ncells)
     for c in 1:ncells
@@ -256,12 +239,8 @@ function _grouped_fit_state(
             fs_all[n] = initialize_FilterSmooth(lds, tsteps[i]; cov_alias=alias)
         end
         cell_batched[c] = if batched && equal_len
-            #=
-            The cell's own channel count, not the parent's: these buffers hold
-            that cell's `y`, which under stitching is one session's channels.
-            Identical to `lds.obs_dim` whenever every session has the same
-            width, so the uniform case is unchanged.
-            =#
+            # The cell's own channel count: these buffers hold its `y`.
+            # Identical to `lds.obs_dim` at uniform widths.
             BatchedBuffers(
                 T,
                 lds.latent_dim,
@@ -520,11 +499,9 @@ end
 """
     _shared_noise(noise_slots, units) -> Bool
 
-Whether every unit of a regression slot draws on the same noise version. When
-it does, that covariance is a common factor of the score and divides out, so
-pooling the units' statistics and solving the ordinary normal equations is
-exact. When it does not, the rows couple and the estimate has to come from
-[`_tied_gls_regression`](@ref).
+Whether every unit of a regression slot uses the same noise version. If so the
+covariance divides out of the score and pooled OLS is exact; otherwise the rows
+couple and the estimate comes from [`_tied_gls_regression`](@ref).
 """
 function _shared_noise(noise_slots::AbstractVector{Int}, units::AbstractVector{Int})
     length(units) == 1 && return true
@@ -535,32 +512,25 @@ end
 """
     _tied_gls_regression(Szz, Szy, Sigma, prior, Sigma_prior) -> W
 
-Fit one regression matrix `W` (`p x m`) shared by several units whose residual
-covariances `Sigma[u]` (`p x p`) differ. `Szz[u]` is the unit's `m x m`
-regressor Gram matrix and `Szy[u]` its `m x p` cross-product — the `*_xx` /
-`*_xy` blocks of a `SufficientStatistics`.
+One regression matrix `W` (`p x m`) shared by several units whose residual
+covariances `Sigma[u]` (`p x p`) differ. `Szz[u]` / `Szy[u]` are the unit's
+`*_xx` / `*_xy` sufficient-statistic blocks.
 
-Pooling the units' statistics and solving the ordinary normal equations
-maximizes the objective only when the units also share `Sigma`: held fixed, it
-divides out of the score. When it does not, the output rows couple,
+Pooled normal equations maximize the objective only when the units share
+`Sigma`, which then divides out of the score. Otherwise the rows couple,
 
     sum_u Sigma_u^-1 (Szy_u' - W Szz_u) = 0
 
-which vectorizes to the `(p*m)`-square system
+vectorizing to the `(p*m)`-square system
 
     [sum_u (Szz_u kron Sigma_u^-1)] vec(W) = vec(sum_u Sigma_u^-1 Szy_u')
 
-A matrix-normal `prior` on `W` contributes `Lambda kron Sigma_prior^-1` on the
-left and `Sigma_prior^-1 M0 Lambda` on the right. Its row scale is a residual
-covariance and there is no single one here, so the caller passes the
-representative it stores the fitted `W` on.
+An MN `prior` adds `Lambda kron Sigma_prior^-1` on the left and
+`Sigma_prior^-1 M0 Lambda` on the right; `Sigma_prior` is the representative
+covariance the caller stores `W` on.
 
-With every `Sigma[u]` equal this returns exactly [`mn_map`](@ref)'s answer — the
-common factor cancels from both sides — so the cheap pooled path is a special
-case of this one rather than a second estimator.
-
-Costs `O((p*m)^3)` time and `O((p*m)^2)` memory. For a wide emission that
-dominates the whole M-step, so callers reach for it only when the residual
+Reduces to [`mn_map`](@ref) exactly when every `Sigma[u]` is equal. Costs
+`O((p*m)^3)` time and `O((p*m)^2)` memory, so callers use it only when the
 covariance genuinely is not shared.
 """
 function _tied_gls_regression(

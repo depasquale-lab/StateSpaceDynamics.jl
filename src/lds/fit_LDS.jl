@@ -910,11 +910,8 @@ function _grouped_estep_elbo_gaussian!(
         cell_pool = _prepare_cell!(sws_pool, state, c)
         estep!(lds_c, suf_c, state.cell_tfs[c], state.cell_data[c], cell_pool)
 
-        #=
-        `estep!` leaves the cell's constants on `cell_pool[1]` already, but the
-        parallel per-trial fallback reaches that state through a task, so
-        recompute explicitly rather than rely on which chunk ran last.
-        =#
+        # The parallel fallback reaches this state through a task, so recompute
+        # rather than rely on which chunk ran last.
         compute_smooth_constants!(cell_pool[1], lds_c)
         total += Q_state!(cell_pool[1], lds_c, suf_c)
         total += Q_obs!(cell_pool[1], lds_c, suf_c)
@@ -945,11 +942,8 @@ function _fit_tridiag_grouped!(
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     sws_pool = _grouped_sws_pool(lds, data)
     state = _grouped_fit_state(lds, data, grp, sws_pool; batched=true)
-    #=
-    The emission M-step regresses per parameter version, and `[C d D]` / `R` are
-    `obs_dim`-shaped, so each cell's own workspace has to be used. With uniform
-    widths every entry is `sws_pool[1]` itself.
-    =#
+    # `[C d D]` / `R` are `obs_dim`-shaped, so the emission M-step needs each
+    # cell's own workspace. At uniform widths every entry is `sws_pool[1]`.
     cell_ws1 = [p[1] for p in state.cell_sws]
     elbos = Vector{T}(undef, max_iter)
 
@@ -1240,11 +1234,8 @@ function StatsAPI.loglikelihood(
     data = Data(lds, y; ux=ux, uy=uy)
     grp = parameter_grouping(lds, length(data.y); depends_on=depends_on, y=data.y)
 
-    #=
-    The filter's covariance pass depends only on the parameters and the trial
-    length, so it is shared across the trials of one cell exactly as it is
-    shared across all trials of an ungrouped model.
-    =#
+    # The covariance pass depends only on parameters and trial length, so it is
+    # shared within a cell as it is across an ungrouped model.
     if grp !== nothing
         total_ll = zero(T)
         for c in 1:(grp.ncells)
