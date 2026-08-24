@@ -582,18 +582,24 @@ function update_initial_state_mean!(
     return nothing
 end
 
-function update_initial_state_covariance!(
-    lds::LinearDynamicalSystem{T,S,O}, suf::SufficientStatistics{T}, sws::SmoothWorkspace{T}
+"""
+    _accumulate_init_scatter!(S0, lds, suf)
+
+Add this model's initial-state scatter `Σγ(x₁-x0)(x₁-x0)' + Σγ P₁` to `S0`.
+
+`S0` is accumulated into rather than overwritten, so a caller fitting one `P0`
+from several models can sum their scatter — each contributing with *its own*
+`x0`. `update_initial_state_covariance!` is the single-model case.
+"""
+function _accumulate_init_scatter!(
+    S0::AbstractMatrix{T}, lds::LinearDynamicalSystem{T,S,O}, suf::SufficientStatistics{T}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
-    lds.fit_bool[2] || return nothing
     D = lds.latent_dim
     x0 = lds.state_model.x0
     N = suf.init_n
 
-    S0 = sws.reg.S0_sum                              # D × D scratch
-    copyto!(S0, suf.init_yy[])
+    S0 .+= suf.init_yy[]
 
-    # Scatter of the initial state around x0: S0 = Σγ(x₁-x0)(x₁-x0)' + Σγ P₁.
     # Rank-1 updates inline (BLAS.ger! would need a contiguous μ vector and
     # `view(init_xy, 1, :)` allocates a SubArray header — small but nonzero).
     for j in 1:D
@@ -605,35 +611,71 @@ function update_initial_state_covariance!(
             S0[i, j] += T(N) * x0_i * x0_j - x0_i * μ_j - μ_i * x0_j
         end
     end
+    return S0
+end
 
-    #=
-    Matrix-normal prior on x0 (the mean half of the NIW): fold κ₀(x0-μ₀)(x0-μ₀)'
-    into the IW scale, exactly as update_Q!/update_R! fold in their `Wm Λ Wm'`
-    term. Together with `P0_prior` (the IW half) this yields the NIW posterior
-    scale Ψₙ = Ψ + Σγ(x₁x₁'+P₁) + κ₀μ₀μ₀' - κₙ x0 x0'. `x0` must already hold the
-    NIW mean μₙ here (update_initial_state_mean! runs first in the M-step).
-    =#
+"""
+    _accumulate_x0_prior_scatter!(S0, lds)
+
+Add the mean half of the NIW prior, `κ₀(x0-μ₀)(x0-μ₀)'`, to the IW scale —
+exactly as `update_Q!`/`update_R!` fold in their `Wm Λ Wm'` term. Together with
+`P0_prior` (the IW half) this yields the NIW posterior scale
+`Ψₙ = Ψ + Σγ(x₁x₁'+P₁) + κ₀μ₀μ₀' - κₙ x0 x0'`. `x0` must already hold the NIW
+mean μₙ (`update_initial_state_mean!` runs first in the M-step).
+
+One call per distinct `x0`: when several `x0` versions share a `P0`, each
+contributes its own prior term.
+"""
+function _accumulate_x0_prior_scatter!(
+    S0::AbstractMatrix{T}, lds::LinearDynamicalSystem{T,S,O}
+) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     x0_prior = lds.state_model.x0_prior
-    if x0_prior !== nothing
-        κ₀ = x0_prior.Λ[1, 1]
-        μ₀ = x0_prior.M₀
-        for j in 1:D, i in 1:D
-            S0[i, j] += κ₀ * (x0[i] - μ₀[i, 1]) * (x0[j] - μ₀[j, 1])
-        end
+    x0_prior === nothing && return S0
+    D = lds.latent_dim
+    x0 = lds.state_model.x0
+    κ₀ = x0_prior.Λ[1, 1]
+    μ₀ = x0_prior.M₀
+    for j in 1:D, i in 1:D
+        S0[i, j] += κ₀ * (x0[i] - μ₀[i, 1]) * (x0[j] - μ₀[j, 1])
     end
-    Symmetrize!(S0)
+    return S0
+end
 
+"""
+    _finalize_P0!(lds, S0, N)
+
+Turn an accumulated initial-state scatter into `P0`: MLE `S0 / N`, or the IW MAP
+`(Ψ + S0) / (ν + N + D + 1)` when a `P0_prior` is set.
+"""
+function _finalize_P0!(
+    lds::LinearDynamicalSystem{T,S,O}, S0::AbstractMatrix{T}, N::T
+) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+    D = lds.latent_dim
     if lds.state_model.P0_prior === nothing
-        S0 ./= T(N)
+        S0 ./= N
     else
         Ψ, ν = lds.state_model.P0_prior.Ψ, lds.state_model.P0_prior.ν
         # iw_map inlined: (Ψ + S0) / (ν + N + D + 1)
-        denom = ν + T(N) + T(D + 1)
+        denom = ν + N + T(D + 1)
         for i in eachindex(S0)
             S0[i] = (Ψ[i] + S0[i]) / denom
         end
     end
     copyto!(lds.state_model.P0, S0)
+    return nothing
+end
+
+function update_initial_state_covariance!(
+    lds::LinearDynamicalSystem{T,S,O}, suf::SufficientStatistics{T}, sws::SmoothWorkspace{T}
+) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+    lds.fit_bool[2] || return nothing
+
+    S0 = sws.reg.S0_sum                              # D × D scratch
+    fill!(S0, zero(T))
+    _accumulate_init_scatter!(S0, lds, suf)
+    _accumulate_x0_prior_scatter!(S0, lds)
+    Symmetrize!(S0)
+    _finalize_P0!(lds, S0, T(suf.init_n))
     return nothing
 end
 
@@ -669,27 +711,49 @@ function update_A_b!(
     return nothing
 end
 
-function update_Q!(
-    lds::LinearDynamicalSystem{T,S,O}, suf::SufficientStatistics{T}, sws::SmoothWorkspace{T}
+"""
+    _pack_dyn_W!(W, lds)
+
+Write the stacked dynamics regression `[A b B]` into `W`
+(`latent_dim × (latent_dim + 1 + ux_dim)`).
+"""
+function _pack_dyn_W!(
+    W::AbstractMatrix{T}, lds::LinearDynamicalSystem{T,S,O}
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
-    lds.fit_bool[4] || return nothing
     D = lds.latent_dim
     ux_dim = lds.ux_dim
-
-    # sws.reg.AB is exactly (D × dyn_reg_dim); no view needed.
-    W = sws.reg.AB
     copyto!(view(W, :, 1:D), lds.state_model.A)
     copyto!(view(W, :, D + 1), lds.state_model.b)
     if ux_dim > 0
         copyto!(view(W, :, (D + 2):(D + 1 + ux_dim)), lds.state_model.B)
     end
+    return W
+end
 
-    # Residual scatter S = dyn_yy - W·dyn_xy - dyn_xy'·W' + W·dyn_xx·W'
+"""
+    _accumulate_dyn_scatter!(S_res, lds, suf, sws)
+
+Add this model's dynamics residual scatter
+`dyn_yy - W·dyn_xy - dyn_xy'·W' + W·dyn_xx·W'` (with `W = [A b B]`) to `S_res`.
+
+`S_res` is accumulated into rather than overwritten, so a caller fitting one `Q`
+from several models can sum their scatter — each contributing with its own
+`[A b B]`. Does **not** include the `AB_prior` term: that is one term per
+distinct `[A b B]`, added by `_accumulate_ab_prior_scatter!`.
+"""
+function _accumulate_dyn_scatter!(
+    S_res::AbstractMatrix{T},
+    lds::LinearDynamicalSystem{T,S,O},
+    suf::SufficientStatistics{T},
+    sws::SmoothWorkspace{T},
+) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+    # sws.reg.AB is exactly (D × dyn_reg_dim); no view needed.
+    W = _pack_dyn_W!(sws.reg.AB, lds)
+
     Wxy = sws.elbo.temp                        # D × D scratch (free post-Q_state!)
     mul!(Wxy, W, suf.dyn_xy)
 
-    S_res = sws.reg.Q_sum                      # D × D scratch
-    copyto!(S_res, suf.dyn_yy[].mat)
+    S_res .+= suf.dyn_yy[].mat
     S_res .-= Wxy
     S_res .-= Wxy'
     #=
@@ -714,13 +778,36 @@ function update_Q!(
     copyto!(WL, W)
     BLAS.trmm!('R', 'U', 'T', 'N', one(T), suf.dyn_xx[].chol.factors, WL)
     mul!(S_res, WL, transpose(WL), one(T), one(T))
+    return S_res
+end
 
-    # MN-prior contribution to the IW posterior scale.
+"""
+    _accumulate_ab_prior_scatter!(S_res, lds, sws)
+
+Add the `AB_prior` contribution `Wm Λ Wm'` (`Wm = [A b B] - M₀`) to the IW
+posterior scale of `Q`. One call per distinct `[A b B]`.
+"""
+function _accumulate_ab_prior_scatter!(
+    S_res::AbstractMatrix{T}, lds::LinearDynamicalSystem{T,S,O}, sws::SmoothWorkspace{T}
+) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
     AB_prior = lds.state_model.AB_prior
-    if AB_prior !== nothing
-        Wm = W .- AB_prior.M₀
-        S_res .+= Wm * AB_prior.Λ * Wm'
-    end
+    AB_prior === nothing && return S_res
+    W = _pack_dyn_W!(sws.reg.AB, lds)
+    Wm = W .- AB_prior.M₀
+    S_res .+= Wm * AB_prior.Λ * Wm'
+    return S_res
+end
+
+"""
+    _finalize_Q!(lds, S_res, N)
+
+Symmetrize an accumulated dynamics residual scatter and turn it into `Q`: MLE
+`S_res / N`, or the IW MAP `(Ψ + S_res) / (ν + N + D + 1)` under a `Q_prior`.
+"""
+function _finalize_Q!(
+    lds::LinearDynamicalSystem{T,S,O}, S_res::AbstractMatrix{T}, N::T
+) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+    D = lds.latent_dim
     #=
     Reflect upper → lower so the matrix is exactly symmetric. (`mul!`
     of `WL · WL'` above can give 1-ULP-asymmetric output; mirroring
@@ -733,7 +820,7 @@ function update_Q!(
 
     Q_prior = lds.state_model.Q_prior
     if Q_prior === nothing
-        S_res ./= T(suf.dyn_n)
+        S_res ./= N
     else
         #=
         iw_map(Ψ, ν, S, N, d) = (Ψ + S) / (ν + N + d + 1), inlined to
@@ -742,12 +829,25 @@ function update_Q!(
         `state_model.Q_prior` field), so we assert the concrete type
         locally to keep the loop type-stable.
         =#
-        denom = Q_prior.ν + T(suf.dyn_n) + T(D + 1)
+        denom = Q_prior.ν + N + T(D + 1)
         Ψ = Q_prior.Ψ::Matrix{T}
         for i in eachindex(S_res)
             S_res[i] = (Ψ[i] + S_res[i]) / denom
         end
     end
     copyto!(lds.state_model.Q, S_res)
+    return nothing
+end
+
+function update_Q!(
+    lds::LinearDynamicalSystem{T,S,O}, suf::SufficientStatistics{T}, sws::SmoothWorkspace{T}
+) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+    lds.fit_bool[4] || return nothing
+
+    S_res = sws.reg.Q_sum                      # D × D scratch
+    fill!(S_res, zero(T))
+    _accumulate_dyn_scatter!(S_res, lds, suf, sws)
+    _accumulate_ab_prior_scatter!(S_res, lds, sws)
+    _finalize_Q!(lds, S_res, T(suf.dyn_n))
     return nothing
 end

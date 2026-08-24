@@ -868,6 +868,111 @@ function _slds_prior_logdensity(slds::SLDS{T}) where {T<:Real}
 end
 
 """
+    _slds_trial_elbo(slds, fs, fb_storage, y_trial, slds_ws, t1, t2, ux_trial, uy_trial)
+
+One trial's contribution to the SLDS ELBO (everything except the parameter
+log-prior). Split out of `elbo!` so a caller can evaluate a trial against a
+different parameter set than its neighbours, after refreshing the regime
+constants.
+
+Assumes `slds_ws.consts` already holds the constants of `slds`.
+"""
+function _slds_trial_elbo(
+    slds::SLDS{T,S,O},
+    fs::FilterSmooth{T},
+    fb_storage::HMMs.ForwardBackwardStorage,
+    y_trial::AbstractMatrix{T},
+    slds_ws::SLDSSmoothWorkspace{T},
+    t1::Int,
+    t2::Int,
+    ux_trial::Union{Nothing,AbstractMatrix{T}},
+    uy_trial::Union{Nothing,AbstractMatrix{T}},
+) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
+    K = length(slds.LDSs)
+    Tsteps = t2 - t1 + 1
+    w = view(fb_storage.γ, :, t1:t2)  # K × Tsteps
+
+    trial_elbo = zero(T)
+    x_smooth_trial = fs.x_smooth
+
+    # E_q[log p(y, x | z)], plug-in at the posterior mean, weighted by γ.
+    for k in 1:K
+        ll = view(slds_ws.ll_tmp, 1:Tsteps)::AbstractVector{T}
+        joint_loglikelihood!(
+            ll,
+            slds_ws,
+            slds_ws.consts[k],
+            slds.LDSs[k],
+            x_smooth_trial,
+            y_trial,
+            ux_trial,
+            uy_trial,
+        )
+        for t in 1:Tsteps
+            trial_elbo += w[k, t] * ll[t]
+        end
+    end
+
+    #=
+    ½ tr(H Σ) covariance correction. H = weighted Hessian (hessian! writes
+    it un-negated into slds_ws.btd); Σ = p_smooth on the diagonal,
+    p_smooth_tt1[:,:,t] = Cov(x_t, x_{t-1}) off it. Sum both off-diagonal
+    traces rather than doubling one — don't assume exact block symmetry.
+    =#
+    hessian!(slds_ws, slds, x_smooth_trial, y_trial, w, uy_trial)
+    H_diag = slds_ws.btd.H_diag
+    H_sub = slds_ws.btd.H_sub
+    H_super = slds_ws.btd.H_super
+    for t in 1:Tsteps
+        trial_elbo += T(0.5) * _tr_prod(H_diag[t], view(fs.p_smooth, :, :, t))
+    end
+    for t in 2:Tsteps
+        Σ_ttm1 = view(fs.p_smooth_tt1, :, :, t)  # Cov(x_t, x_{t-1})
+        trial_elbo += T(0.5) * _tr_prod(H_super[t - 1], Σ_ttm1)
+        trial_elbo += T(0.5) * _tr_prod(H_sub[t - 1], transpose(Σ_ttm1))
+    end
+
+    # E_q[log p(z_1)].
+    for k in 1:K
+        trial_elbo += w[k, 1] * log(slds.πₖ[k] + T(1e-12))
+    end
+
+    #=
+    E_q[log p(z_t | z_{t-1})] = Σ_t Σ_ij ξ_t[i,j] log A[i,j]. ξ is global-
+    indexed; ξ[t2] is zero by FB convention, so iterate t1..t2-1.
+    =#
+    for t in t1:(t2 - 1)
+        ξt = fb_storage.ξ[t]
+        for i in 1:K, j in 1:K
+            trial_elbo += ξt[i, j] * log(slds.A[i, j] + T(1e-12))
+        end
+    end
+
+    # + H[q(x)] (filled by `smooth!` from the BT log-determinant).
+    trial_elbo += fs.entropy
+
+    #=
+    + H[q(z)], the FB chain entropy
+    −Σ_k γ₁ log γ₁ − Σ_t Σ_ij ξ_t[i,j] (log ξ_t[i,j] − log γ_t[i]).
+    ξ_t[i,j] > 0 ⇒ γ_t[i] > 0, so both logs are safe.
+    =#
+    for k in 1:K
+        wk1 = w[k, 1]
+        wk1 > 0 && (trial_elbo -= wk1 * log(wk1))
+    end
+    for t in t1:(t2 - 1)
+        ξt = fb_storage.ξ[t]
+        tloc = t - t1 + 1
+        for i in 1:K, j in 1:K
+            ξij = ξt[i, j]
+            ξij > 0 && (trial_elbo -= ξij * (log(ξij) - log(w[i, tloc])))
+        end
+    end
+
+    return trial_elbo
+end
+
+"""
     elbo!(slds, tfs, fb_storage, y, slds_ws; seq_ends)
 
 Evidence lower bound for the SLDS at the current variational posteriors —
@@ -908,95 +1013,20 @@ function elbo!(
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
     total_elbo = zero(T)
     ntrials = length(y)
-    K = length(slds.LDSs)
 
     for trial in 1:ntrials
         t1, t2 = HMMs.seq_limits(seq_ends, trial)
-        Tsteps = t2 - t1 + 1
-        y_trial = y[trial]
-        ux_trial = ux === nothing ? nothing : ux[trial]
-        uy_trial = uy === nothing ? nothing : uy[trial]
-        w = view(fb_storage.γ, :, t1:t2)  # K × Tsteps
-
-        trial_elbo = zero(T)
-        fs = tfs[trial]
-        x_smooth_trial = fs.x_smooth
-
-        # E_q[log p(y, x | z)], plug-in at the posterior mean, weighted by γ.
-        for k in 1:K
-            ll = view(slds_ws.ll_tmp, 1:Tsteps)
-            joint_loglikelihood!(
-                ll,
-                slds_ws,
-                slds_ws.consts[k],
-                slds.LDSs[k],
-                x_smooth_trial,
-                y_trial,
-                ux_trial,
-                uy_trial,
-            )
-            for t in 1:Tsteps
-                trial_elbo += w[k, t] * ll[t]
-            end
-        end
-
-        #=
-        ½ tr(H Σ) covariance correction. H = weighted Hessian (hessian! writes
-        it un-negated into slds_ws.btd); Σ = p_smooth on the diagonal,
-        p_smooth_tt1[:,:,t] = Cov(x_t, x_{t-1}) off it. Sum both off-diagonal
-        traces rather than doubling one — don't assume exact block symmetry.
-        =#
-        hessian!(slds_ws, slds, x_smooth_trial, y_trial, w, uy_trial)
-        H_diag = slds_ws.btd.H_diag
-        H_sub = slds_ws.btd.H_sub
-        H_super = slds_ws.btd.H_super
-        for t in 1:Tsteps
-            trial_elbo += T(0.5) * _tr_prod(H_diag[t], view(fs.p_smooth, :, :, t))
-        end
-        for t in 2:Tsteps
-            Σ_ttm1 = view(fs.p_smooth_tt1, :, :, t)  # Cov(x_t, x_{t-1})
-            trial_elbo += T(0.5) * _tr_prod(H_super[t - 1], Σ_ttm1)
-            trial_elbo += T(0.5) * _tr_prod(H_sub[t - 1], transpose(Σ_ttm1))
-        end
-
-        # E_q[log p(z_1)].
-        for k in 1:K
-            trial_elbo += w[k, 1] * log(slds.πₖ[k] + T(1e-12))
-        end
-
-        #=
-        E_q[log p(z_t | z_{t-1})] = Σ_t Σ_ij ξ_t[i,j] log A[i,j]. ξ is global-
-        indexed; ξ[t2] is zero by FB convention, so iterate t1..t2-1.
-        =#
-        for t in t1:(t2 - 1)
-            ξt = fb_storage.ξ[t]
-            for i in 1:K, j in 1:K
-                trial_elbo += ξt[i, j] * log(slds.A[i, j] + T(1e-12))
-            end
-        end
-
-        # + H[q(x)] (filled by `smooth!` from the BT log-determinant).
-        trial_elbo += fs.entropy
-
-        #=
-        + H[q(z)], the FB chain entropy
-        −Σ_k γ₁ log γ₁ − Σ_t Σ_ij ξ_t[i,j] (log ξ_t[i,j] − log γ_t[i]).
-        ξ_t[i,j] > 0 ⇒ γ_t[i] > 0, so both logs are safe.
-        =#
-        for k in 1:K
-            wk1 = w[k, 1]
-            wk1 > 0 && (trial_elbo -= wk1 * log(wk1))
-        end
-        for t in t1:(t2 - 1)
-            ξt = fb_storage.ξ[t]
-            tloc = t - t1 + 1
-            for i in 1:K, j in 1:K
-                ξij = ξt[i, j]
-                ξij > 0 && (trial_elbo -= ξij * (log(ξij) - log(w[i, tloc])))
-            end
-        end
-
-        total_elbo += trial_elbo
+        total_elbo += _slds_trial_elbo(
+            slds,
+            tfs[trial],
+            fb_storage,
+            y[trial],
+            slds_ws,
+            t1,
+            t2,
+            ux === nothing ? nothing : ux[trial],
+            uy === nothing ? nothing : uy[trial],
+        )
     end
 
     return total_elbo + _slds_prior_logdensity(slds)
