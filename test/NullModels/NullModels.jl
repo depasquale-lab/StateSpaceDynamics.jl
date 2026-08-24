@@ -599,6 +599,63 @@ function test_r2_null_inputs_ux_vs_uy(rng=MersenneTwister(19))
     @test_throws ArgumentError r2(lds, y; ux=ux, uy=uy, null_inputs=:nope)
 end
 
+# An input baseline on a channel the LDS does not use collapses to its input-free
+# counterpart.
+function test_r2_input_baselines_collapse_without_inputs(rng=MersenneTwister(21))
+    T = Float64
+    obs_dim, tsteps, ntrials = 4, 40, 5
+
+    # Neither channel carries inputs.
+    lds = _r2_make_lds(rng; latent_dim=2, obs_dim=obs_dim)
+    _, y = rand(rng, lds, fill(tsteps, ntrials))
+
+    for channel in (:ux, :uy)
+        @test r2(lds, y; null=:inputs, null_inputs=channel) ≈
+            r2(lds, y; null=:intercept, null_inputs=channel) atol = 1e-12
+        @test r2(lds, y; null=:var_inputs, null_inputs=channel) ≈
+            r2(lds, y; null=:var, null_inputs=channel) atol = 1e-12
+    end
+    @test isfinite(nullloglikelihood(lds, y))
+
+    # Only `ux` carries inputs, so `:uy` is the degenerate channel.
+    ux_dim = 3
+    lds_ux = _r2_make_lds(rng; latent_dim=2, obs_dim=obs_dim, ux_dim=ux_dim)
+    ux = [randn(rng, T, ux_dim, tsteps) for _ in 1:ntrials]
+    _, y_ux = rand(rng, lds_ux, fill(tsteps, ntrials); ux=ux)
+
+    @test r2(lds_ux, y_ux; ux=ux, null=:inputs, null_inputs=:uy) ≈
+        r2(lds_ux, y_ux; ux=ux, null=:intercept, null_inputs=:uy) atol = 1e-12
+    @test isfinite(r2(lds_ux, y_ux; ux=ux, null=:inputs, null_inputs=:ux))
+end
+
+# Same collapse at the baseline level, where `input_shift` has nothing to act on.
+function test_null_zero_input_dim_baselines(rng=MersenneTwister(22))
+    T = Float64
+    obs_dim, tsteps, ntrials = 3, 25, 4
+    y = _null_make_y(rng, obs_dim, fill(tsteps, ntrials))
+    zero_inputs = [zeros(T, 0, tsteps) for _ in 1:ntrials]
+
+    for (baseline, plain) in ((:inputs, :intercept), (:var_inputs, :var))
+        with = fit!(
+            AffineNullModel{T}(baseline, obs_dim; input_dim=0), y; inputs=zero_inputs
+        )
+        without = fit!(AffineNullModel{T}(plain, obs_dim), y)
+
+        @test with.input_dim == 0
+        @test size(with.D) == (obs_dim, 0)
+        @test with.d ≈ without.d atol = 1e-10
+        @test with.R ≈ without.R atol = 1e-10
+        @test loglikelihood(with, y; inputs=zero_inputs) ≈ loglikelihood(without, y) atol =
+            1e-8
+
+        # Zero-row inputs and `nothing` are the same thing here.
+        @test loglikelihood(with, y) ≈ loglikelihood(with, y; inputs=zero_inputs) atol =
+            1e-10
+
+        @test_throws ArgumentError AffineNullModel{T}(baseline, obs_dim; input_shift=1)
+    end
+end
+
 # The baseline inherits the LDS's observation-noise prior by default.
 function test_r2_forwards_R_prior(rng=MersenneTwister(20))
     T = Float64

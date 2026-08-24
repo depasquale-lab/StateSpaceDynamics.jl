@@ -35,16 +35,13 @@ controls whether the model includes the autoregressive term `F y_{t-1}`, and
     AffineNullModel{T}(obs_dim; input_dim=0, lag=false, input_shift=0, priors...)
     AffineNullModel{T}(baseline::Symbol, obs_dim; input_dim=0, input_shift=0, priors...)
 
-The second form selects one of `$(NULL_BASELINES)` and sets `lag`. It rejects a
-`lag` keyword, and rejects `input_dim` / `input_shift` for the input-free
-baselines `:intercept` and `:var`, so the baseline name is the only thing that
-sets the model's structure. Set `input_shift=0` to score `v_t` (the LDS
-observation input) or `input_shift=1` to score `v_{t-1}` (the LDS dynamics
-input).
+The second form selects one of `$(NULL_BASELINES)` and sets `lag`. It rejects
+`lag`, and rejects `input_dim` / `input_shift` on the input-free baselines
+`:intercept` and `:var`. Set `input_shift=0` to score `v_t` (the LDS observation
+input) or `input_shift=1` to score `v_{t-1}` (the LDS dynamics input).
 
-`obs_dim`, `input_dim`, `lag` and `input_shift` are `const`. They fix the
-parameter shapes at construction, so a fitted model cannot be desynced from its
-own structure.
+`obs_dim`, `input_dim`, `lag` and `input_shift` are `const`; they fix the
+parameter shapes at construction.
 
 # Fields
 - `obs_dim::Int`: observation dimension.
@@ -234,8 +231,8 @@ end
 function _null_input_trials(
     ::Type{T}, v, tsteps::Vector{Int}, input_dim::Int
 ) where {T<:Real}
-    # A zero-`input_dim` model accepts zero-row inputs (the collapse case); the
-    # per-trial row check below rejects anything that actually carries a signal.
+    # A zero-`input_dim` model takes zero-row inputs; the row check below rejects
+    # anything carrying a signal.
     trials = _null_trials(v)
     length(trials) == length(tsteps) ||
         throw(DimensionMismatchError("inputs ntrials", length(tsteps), length(trials)))
@@ -333,8 +330,7 @@ Regression + scoring kernels
 
 #=
 MAP fit of `Y = W X + ε`, `ε ~ N(0, R)`, with an optional `MNPrior` on `W` and
-`IWPrior` on `R`. Mirrors the `(mn_map, iw_map)` M-step machinery behind
-`update_R!` in `lds/gaussian_observations.jl`.
+`IWPrior` on `R`. Mirrors `update_R!` in `lds/gaussian_observations.jl`.
 =#
 function _null_fit_regression(
     Y::AbstractMatrix{T},
@@ -388,11 +384,9 @@ function _null_plugin_ll(
 end
 
 #=
-`R₀` is estimated from one initial observation per trial, so its residual scatter
-has rank ≤ ntrials - 1 and is singular whenever `ntrials ≤ obs_dim`, including
-every single-trial dataset. An `R₀_prior` keeps it positive definite through the
-IW scale. Without one, fall back to the innovation covariance `R` so the baseline
-scores instead of throwing a `PosDefException`.
+`R₀` is fit to one observation per trial, so its scatter is singular whenever
+`ntrials ≤ obs_dim`, including every single-trial dataset. An `R₀_prior` keeps it
+positive definite; without one, fall back to `R` rather than throwing.
 =#
 function _null_init_cov(
     R₀::AbstractMatrix{T},
@@ -412,9 +406,8 @@ StatsAPI methods on a baseline
 """
     fit!(null::AffineNullModel, y; inputs=nothing)
 
-Fit `null` in closed form on `y` and return it. `y` is a `(obs_dim, T)` matrix, an
-`(obs_dim, T, ntrials)` array, or a vector of per-trial matrices; `inputs` follows
-the same shape family and is required when the baseline has an input block.
+Fit `null` in closed form on `y` and return it. `inputs` takes the same trial
+formats as `y`, and is required when the baseline has an input block.
 """
 function StatsAPI.fit!(null::AffineNullModel, y; inputs=nothing)
     return _null_fit!(null, _null_prepare(null, y, inputs)...)
@@ -470,10 +463,9 @@ function StatsAPI.nobs(null::AffineNullModel, y)
 end
 
 #=
-MAP objective at the fitted parameters: the plug-in data log-likelihood plus the
-IW/MN log-prior terms `elbo!` carries at the EM fixed point. This is not a
-likelihood, so it stays internal. It puts a prior-regularized baseline on the
-same footing as a prior-regularized SSM ELBO.
+MAP objective at the fitted parameters: the plug-in log-likelihood plus the IW/MN
+log-prior terms `elbo!` carries at the EM fixed point. Not a likelihood, so it
+stays internal; it compares a regularized baseline against a regularized ELBO.
 =#
 function _null_logmap(null::AffineNullModel, y; inputs=nothing)
     return _null_logmap(null, _null_prepare(null, y, inputs)...)
@@ -505,7 +497,6 @@ function _null_channel(data::Data, channel::Symbol)
     return channel === :ux ? (data.ux, 1) : (data.uy, 0)
 end
 
-# Build the named baseline for `data`, fit it, and return its plug-in LL.
 function _null_baseline_ll(
     data::Data{T}, baseline::Symbol, channel::Symbol, R_prior::Union{Nothing,IWPrior{T}}
 ) where {T<:Real}
@@ -514,21 +505,17 @@ function _null_baseline_ll(
     v, shift = _null_channel(data, channel)
     obs_dim = size(first(data.y), 1)
 
-    # The input-free baselines reject an input block, so build them without one
-    # and hand them matching zero-row inputs.
-    null, inputs = if _null_has_inputs(baseline)
-        AffineNullModel{T}(
-            baseline,
-            obs_dim;
-            input_dim=size(first(v), 1),
-            input_shift=shift,
-            R_prior=R_prior,
-        ),
-        v
-    else
-        AffineNullModel{T}(baseline, obs_dim; R_prior=R_prior),
-        [zeros(T, 0, Ti) for Ti in data.tsteps]
-    end
+    # An input baseline on a channel the LDS does not use collapses to its
+    # input-free counterpart. There is nothing to shift then, so drop the shift.
+    input_dim = _null_has_inputs(baseline) ? size(first(v), 1) : 0
+    null = AffineNullModel{T}(
+        baseline,
+        obs_dim;
+        input_dim=input_dim,
+        input_shift=input_dim > 0 ? shift : 0,
+        R_prior=R_prior,
+    )
+    inputs = input_dim > 0 ? v : [zeros(T, 0, Ti) for Ti in data.tsteps]
 
     _null_fit!(null, data.y, inputs)
     return _null_loglikelihood(null, data.y, inputs)
@@ -597,19 +584,18 @@ to the baseline's plug-in log-likelihood `ℓ₀` on the same data:
 with `n = nobs(lds, y)`. A larger value means the LDS out-predicts the baseline.
 
 For a held-out R², fit an [`AffineNullModel`](@ref) on the training split and
-apply the formula above to `loglikelihood(lds, y_test)` and
-`loglikelihood(null, y_test)`.
+apply the formula above to the two log-likelihoods on the test split.
 
-Restricted to the Gaussian LDS: a Poisson LDS has no tractable marginal
-likelihood and an `SLDS` is a different type, so both raise a `MethodError`.
+Gaussian LDS only: a Poisson LDS has no tractable marginal likelihood and an
+`SLDS` is a different type, so both raise a `MethodError`.
 
 # Keyword Arguments
 - `null::Symbol = :intercept`: baseline to score against, one of `$(NULL_BASELINES)`.
-- `null_inputs::Symbol = :ux`: LDS input channel the input-bearing baselines
-  consume. `:ux` enters lagged, `:uy` contemporaneous, matching each channel's
-  role in the LDS.
-- `R_prior`: IW prior on the baseline's `R`, defaulting to the LDS observation-noise
-  prior so both are regularized alike.
+- `null_inputs::Symbol = :ux`: LDS input channel the input baselines consume.
+  `:ux` enters lagged, `:uy` contemporaneous. A channel the LDS does not use
+  gives the baseline no input block.
+- `R_prior`: IW prior on the baseline's `R`. Defaults to the LDS
+  observation-noise prior.
 
 See also [`nullloglikelihood`](@ref), [`nobs`](@ref), [`AffineNullModel`](@ref).
 """

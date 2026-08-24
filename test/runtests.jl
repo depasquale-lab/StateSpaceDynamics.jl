@@ -319,6 +319,8 @@ using SSDTest
         test_r2_variants()
         test_r2_baseline_selection()
         test_r2_null_inputs_ux_vs_uy()
+        test_r2_input_baselines_collapse_without_inputs()
+        test_null_zero_input_dim_baselines()
         test_r2_forwards_R_prior()
         test_r2_ground_truth_beats_null_heldout()
         test_r2_rejects_plds_and_slds()
