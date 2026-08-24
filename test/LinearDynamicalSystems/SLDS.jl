@@ -1433,12 +1433,12 @@ function test_SLDS_public_elbo(; rng=MersenneTwister(0xE1B0))
         slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=[lds, deepcopy(lds)])
         z, x, y = rand(rng, slds, fill(tsteps, ntrials))
 
-        # Deterministic: no rng, so repeated calls agree exactly.
+        # Post-fit inference is deterministic.
         e = StateSpaceDynamics.elbo(slds, y)
         @test isfinite(e)
         @test e == StateSpaceDynamics.elbo(slds, y)
 
-        # Shape invariance (single trial: matrix == [matrix]).
+        # Matrix and one-element vector inputs describe the same trial.
         e_mat = StateSpaceDynamics.elbo(slds, y[1])
         e_vec = StateSpaceDynamics.elbo(slds, [y[1]])
         @test isapprox(e_mat, e_vec; rtol=1e-10)
@@ -1482,7 +1482,7 @@ function test_SLDS_fit_shapes_and_validation(; rng=MersenneTwister(0xE1B1))
             deepcopy(slds), y_bad; max_iter=1, progress=false
         )
 
-        # Marginal loglikelihood is intractable for an SLDS, so this is the ELBO.
+        # SLDS loglikelihood reports the variational bound.
         @test loglikelihood(slds, y) == StateSpaceDynamics.elbo(slds, y)
     end
     return nothing
@@ -1503,18 +1503,18 @@ function test_SLDS_smooth_infer_basic(; rng=MersenneTwister(0xACE0))
 
     post = smooth(slds, y; smoothing_iters=50, tol=1e-8)
 
-    # Multi-trial input ⇒ one K × T responsibility matrix per trial.
+    # Multi-trial input returns one responsibility matrix per trial.
     @test post.γ isa Vector{Matrix{Float64}}
     @test length(post.γ) == ntrials
     for trial in 1:ntrials
         @test size(post.γ[trial]) == (K, tsteps)
         @test all(isfinite, post.γ[trial])
         @test all(post.γ[trial] .>= 0)
-        # Each column is a probability vector over the K discrete states.
+        # Each column is a probability vector over regimes.
         @test all(isapprox.(sum(post.γ[trial]; dims=1), 1.0; atol=1e-10))
     end
 
-    # Smoothed means come back per trial; covariances are opt-in.
+    # Covariances are opt-in.
     @test post.x isa Vector{Matrix{Float64}}
     @test all(size(post.x[trial]) == (latent_dim, tsteps) for trial in 1:ntrials)
     @test post.p === nothing
@@ -1533,7 +1533,7 @@ function test_SLDS_smooth_infer_shapes(; rng=MersenneTwister(0xACE1))
     slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=[lds, deepcopy(lds)])
     z, x, y = rand(rng, slds, fill(tsteps, ntrials))
 
-    # Single-trial matrix ⇒ bare arrays; wrapping in a vector ⇒ 1-element vectors.
+    # A single-trial matrix returns bare arrays.
     post_mat = smooth(slds, y[1])
     @test post_mat.γ isa Matrix{Float64}
     @test size(post_mat.γ) == (K, tsteps)
@@ -1547,7 +1547,7 @@ function test_SLDS_smooth_infer_shapes(; rng=MersenneTwister(0xACE1))
     @test post_vec1.x[1] ≈ post_mat.x
     @test post_vec1.elbo ≈ post_mat.elbo
 
-    # 3-D array and vector-of-matrices forms agree (equal trial lengths).
+    # 3-D arrays and vectors of matrices agree for equal-length trials.
     Y3 = cat(y...; dims=3)
     post_v = smooth(slds, y)
     post_a = smooth(slds, Y3)
@@ -1558,7 +1558,7 @@ function test_SLDS_smooth_infer_shapes(; rng=MersenneTwister(0xACE1))
     end
     @test post_v.elbo ≈ post_a.elbo
 
-    # Positional destructuring still works, mirroring `smooth(lds, y)`.
+    # NamedTuple outputs can still be destructured positionally.
     x_out, γ_out = smooth(slds, y[1])
     @test x_out ≈ post_mat.x
     @test γ_out ≈ post_mat.γ
@@ -1576,22 +1576,19 @@ function test_SLDS_smooth_infer_deterministic_and_modes(; rng=MersenneTwister(0x
     slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=[lds1, lds2])
     z, x, y = rand(rng, slds, fill(tsteps, 1))
 
-    # Deterministic: repeated calls give bit-identical results (no RNG involved).
+    # Repeated calls are bit-identical.
     p1 = smooth(slds, y[1]; smoothing_iters=50, tol=1e-10)
     p2 = smooth(slds, y[1]; smoothing_iters=50, tol=1e-10)
     @test p1.γ == p2.γ
     @test p1.x == p2.x
     @test p1.elbo == p2.elbo
 
-    # tol=0 runs exactly `smoothing_iters` alternations and returns valid γ.
+    # `tol=0` disables early stopping.
     γ_fixed = smooth(slds, y[1]; smoothing_iters=3, tol=0).γ
     @test size(γ_fixed) == (K, tsteps)
     @test all(isapprox.(sum(γ_fixed; dims=1), 1.0; atol=1e-10))
 
-    #=
-    Early-stopping soundness: iterating "until convergence" must land on the
-    same fixed point as running many fixed iterations without a stopping test.
-    =#
+    # Early stopping and a fixed iteration budget should reach the same fixed point.
     γ_conv = smooth(slds, y[1]; smoothing_iters=500, tol=1e-12).γ
     γ_full = smooth(slds, y[1]; smoothing_iters=500, tol=0).γ
     @test maximum(abs.(γ_conv .- γ_full)) < 1e-8
@@ -1599,7 +1596,7 @@ function test_SLDS_smooth_infer_deterministic_and_modes(; rng=MersenneTwister(0x
 end
 
 function test_SLDS_smooth_infer_K1(; rng=MersenneTwister(0xACE3))
-    # K = 1: q(z) is degenerate, so every responsibility must be exactly 1.
+    # With one regime every responsibility is one.
     latent_dim = 2
     obs_dim = 3
     tsteps = 15
@@ -1618,9 +1615,7 @@ function test_SLDS_smooth_infer_K1(; rng=MersenneTwister(0xACE3))
 end
 
 function test_SLDS_smooth_infer_recovers_distinct_regimes(; rng=MersenneTwister(0xACE4))
-    # Two regimes with well-separated emission offsets d so the observation
-    # distributions barely overlap; passing the true (i.e. "fitted") model,
-    # smooth should recover the discrete states almost perfectly.
+    # Separate the regimes with large, opposite emission offsets.
     K = 2
     latent_dim = 2
     obs_dim = 3
@@ -1631,7 +1626,7 @@ function test_SLDS_smooth_infer_recovers_distinct_regimes(; rng=MersenneTwister(
     b = zeros(latent_dim)
     x0 = zeros(latent_dim)
     P0 = Matrix(1.0 * I(latent_dim))
-    C = Matrix{Float64}(0.1I, obs_dim, latent_dim)  # small C: emission dominated by d
+    C = Matrix{Float64}(0.1I, obs_dim, latent_dim)
     R = Matrix(0.05 * I(obs_dim))
 
     sm1 = GaussianStateModel(; A=A, Q=Q, b=b, x0=x0, P0=P0)
@@ -1654,7 +1649,6 @@ function test_SLDS_smooth_infer_recovers_distinct_regimes(; rng=MersenneTwister(
         fit_bool=fill(true, 6),
     )
 
-    # Sticky discrete transitions so regimes persist over several timesteps.
     A_disc = [0.95 0.05; 0.05 0.95]
     slds = SLDS(; A=A_disc, πₖ=[0.5, 0.5], LDSs=[lds1, lds2])
 
@@ -1680,7 +1674,7 @@ function test_SLDS_smooth_infer_cov_and_elbo(; rng=MersenneTwister(0xACE5))
         slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=[lds1, lds2])
         z, x, y = rand(rng, slds, fill(tsteps, ntrials))
 
-        # Covariances are opt-in, and valid when requested.
+        # Covariances are returned only when requested.
         post = smooth(slds, y; smoothing_iters=25, tol=1e-9, return_cov=true)
         @test post.p isa Vector{Array{Float64,3}}
         @test length(post.p) == ntrials
@@ -1693,13 +1687,9 @@ function test_SLDS_smooth_infer_cov_and_elbo(; rng=MersenneTwister(0xACE5))
             end
         end
 
-        # Single-trial matrix ⇒ bare 3-D array.
+        # A single trial returns one covariance array rather than a vector.
         @test smooth(slds, y[1]; return_cov=true).p isa Array{Float64,3}
 
-        #=
-        There is one ELBO implementation: `elbo` is exactly `smooth(...).elbo`
-        under matching settings, and `loglikelihood` is exactly `elbo`.
-        =#
         e = StateSpaceDynamics.elbo(slds, y; smoothing_iters=25, tol=1e-9)
         @test e == post.elbo
         @test loglikelihood(slds, y; smoothing_iters=25, tol=1e-9) == e
@@ -1720,8 +1710,7 @@ function test_SLDS_num_samples(; rng=MersenneTwister(0xACEB))
     z, x, y = rand(rng, slds, fill(tsteps, ntrials))
 
     @testset "num_samples" begin
-        # num_samples=1 must reproduce the previous single-draw path bit for bit:
-        # one draw per trial, in the same RNG order.
+        # The default preserves the one-sample path and RNG order.
         e1 = fit!(deepcopy(slds), y; max_iter=3, progress=false, rng=MersenneTwister(5))
         e1b = fit!(
             deepcopy(slds),
@@ -1733,7 +1722,7 @@ function test_SLDS_num_samples(; rng=MersenneTwister(0xACEB))
         )
         @test e1 == e1b
 
-        # More draws still fits, and the ELBO trace stays finite.
+        # Averaging more draws still produces a finite fit.
         e4 = fit!(
             deepcopy(slds),
             y;
@@ -1749,12 +1738,7 @@ function test_SLDS_num_samples(; rng=MersenneTwister(0xACEB))
         @test_throws ArgumentError fit!(deepcopy(slds), y; max_iter=1, num_samples=0)
     end
 
-    #=
-    The point of `num_samples` is variance reduction in the discrete update.
-    Hold the model and q(x) fixed, and measure the spread of γ across rng seeds
-    for S = 1 vs S = 16; averaging S independent draws should shrink the
-    standard deviation of the resulting γ by roughly sqrt(S).
-    =#
+    # Hold q(x) fixed and compare the spread across RNG seeds.
     @testset "num_samples reduces E-step variance" begin
         data = StateSpaceDynamics.Data(slds.LDSs[1], y)
         seq_ends = cumsum(data.tsteps)
@@ -1796,33 +1780,15 @@ function test_SLDS_num_samples(; rng=MersenneTwister(0xACEB))
         s1, s16 = spread(g1), spread(g16)
 
         @test s16 < s1
-        # sqrt(16) = 4x; allow a wide band for 40 seeds and the FB nonlinearity.
+        # sqrt(16) = 4; allow for 40 seeds and the nonlinear forward-backward update.
         @test s1 / s16 > 2
     end
     return nothing
 end
 
 function test_SLDS_smooth_elbo_monotone(; rng=MersenneTwister(0xACE8))
-    #=
-    `smooth` is deterministic coordinate ascent (no Monte-Carlo draw in the
-    loop), so the reported ELBO should be non-decreasing in the number of
-    alternations. It is not: after the first alternation the bound converges to
-    its fixed point from ABOVE, so `smoothing_iters=2` reports a *higher* ELBO
-    than `smoothing_iters=100`.
-
-    Measured on this model: +2.8e-3 on the first step, then
-    -1.8e-4, -5.2e-5, -9.7e-6, -1.7e-6, ... a clean geometric decay. Ruled out
-    as the cause: floating-point noise (the decay is too regular), the inner
-    Newton tolerance (the deficit is identical at tol = 1e-6, 1e-9, 1e-12 and
-    0), and a missing per-regime ½ tr(H_k Σ) term in the q(z) update (adding it
-    makes the drift worse, not better). So the discrete update and `elbo!`
-    disagree about the objective somewhere else.
-
-    The gap is ~1e-6 relative here and does not stop the alternation from
-    converging, so what this test pins is the behaviour that actually holds —
-    convergence, and a bounded overshoot — with the monotonicity that *should*
-    hold marked broken.
-    =#
+    # The bound has a small, known overshoot as the updates converge. Monotonicity
+    # remains a broken test until the discrete update and `elbo!` agree exactly.
     K = 2
     latent_dim = 2
     obs_dim = 3
@@ -1837,28 +1803,17 @@ function test_SLDS_smooth_elbo_monotone(; rng=MersenneTwister(0xACE8))
     elbos = [StateSpaceDynamics.elbo(slds, y; smoothing_iters=i, tol=0) for i in 1:10]
     @test all(isfinite, elbos)
 
-    # The alternation does something, and then settles.
     @test elbos[2] > elbos[1]
     @test abs(elbos[end] - elbos[end - 1]) < 1e-9
 
-    #=
-    The overshoot is real but negligible on the scale of the bound: here it is
-    2.4e-4 nats against an ELBO of -256 (~1e-6 relative), though that is a
-    sizeable 9% of the 2.8e-3 the first alternation gained.
-    =#
     @test maximum(elbos) - elbos[end] < 1e-3 * abs(elbos[end])
 
-    # Coordinate ascent on a fixed objective would give this outright.
     @test_broken all(diff(elbos) .>= -1e-9)
     return nothing
 end
 
 function test_SLDS_smooth_infer_poisson(; rng=MersenneTwister(0xACE9))
-    #=
-    The ½ tr(H Σ) term in `elbo!` is exact for Gaussian emissions but a Laplace
-    approximation for Poisson, so the Gaussian coverage above cannot detect a
-    Poisson-specific problem in it. Drive the same public path on counts.
-    =#
+    # The ELBO covariance correction is approximate for Poisson emissions.
     K = 2
     latent_dim = 2
     obs_dim = 3
@@ -1890,10 +1845,6 @@ function test_SLDS_smooth_infer_poisson(; rng=MersenneTwister(0xACE9))
 end
 
 function test_SLDS_smooth_given_w_validation(; rng=MersenneTwister(0xACEA))
-    #=
-    The weighted kernels read `w[k, t]` without inspecting its shape, so an
-    unchecked `w` returns a silently wrong posterior rather than erroring.
-    =#
     K = 2
     latent_dim = 2
     obs_dim = 3
@@ -1907,11 +1858,9 @@ function test_SLDS_smooth_given_w_validation(; rng=MersenneTwister(0xACEA))
     w_ok = fill(1.0 / K, K, tsteps)
     @test size(smooth(slds, y[1], w_ok)[1]) == (latent_dim, tsteps)
 
-    # Extra regime row: previously ignored in silence.
+    # Extra regimes, wrong trial lengths, and unnormalized columns are rejected.
     @test_throws DimensionMismatchError smooth(slds, y[1], fill(1.0 / K, K + 1, tsteps))
-    # Wrong trial length.
     @test_throws DimensionMismatchError smooth(slds, y[1], fill(1.0 / K, K, tsteps - 3))
-    # Unnormalised columns: previously rescaled the posterior in silence.
     @test_throws ArgumentError smooth(slds, y[1], fill(5.0, K, tsteps))
     return nothing
 end
@@ -1957,10 +1906,7 @@ function test_SLDS_fit_smoothing_iters(; rng=MersenneTwister(0xACE7))
     slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=[lds1, lds2])
     z, x, y = rand(rng, slds, fill(tsteps, ntrials))
 
-    #=
-    Build a fresh E-step state (storages + warm-start) from a fixed seed, so two
-    runs are comparable. Returns the pieces `estep!` needs.
-    =#
+    # Fixed seeds give both paths the same warm start and samples.
     function fresh_estep_state(seed)
         r = MersenneTwister(seed)
         seq_ends = cumsum(fill(tsteps, ntrials))
@@ -2007,11 +1953,7 @@ function test_SLDS_fit_smoothing_iters(; rng=MersenneTwister(0xACE7))
     end
 
     @testset "smoothing_iters" begin
-        #=
-        The alternation is a clean repetition of the single-alternation E-step:
-        `smoothing_iters=2` must land exactly where two successive
-        `smoothing_iters=1` calls do, given the same starting state and rng.
-        =#
+        # Two alternations at once equal two successive one-step calls.
         one_then_one = fresh_estep_state(4242)
         run_estep!(one_then_one, 1)
         run_estep!(one_then_one, 1)
@@ -2025,7 +1967,7 @@ function test_SLDS_fit_smoothing_iters(; rng=MersenneTwister(0xACE7))
             @test two_at_once.xs[trial] == one_then_one.xs[trial]
         end
 
-        # `fit!` threads the option through and still produces a finite trace.
+        # The default remains one alternation.
         e_default = fit!(
             deepcopy(slds), y; max_iter=3, progress=false, rng=MersenneTwister(99)
         )
@@ -2862,13 +2804,13 @@ end
 
 function test_SLDS_input_dim_validation()
     K, D, N = 2, 2, 3
-    # Uniform input dims across regimes → valid.
+    # Uniform input dimensions are valid.
     lds = [_make_gaussian_input_lds(D, N, 2, 2; seed=k) for k in 1:K]
     s = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=lds)
     @test validate_SLDS(s) === nothing
     @test lds[1].ux_dim == 2 && lds[1].uy_dim == 2
 
-    # Mismatched ux_dim across regimes → DimensionMismatchError.
+    # Dynamics input dimensions must agree across regimes.
     lds_bad_ux = [
         _make_gaussian_input_lds(D, N, 2, 2; seed=1),
         _make_gaussian_input_lds(D, N, 3, 2; seed=2),
@@ -2876,7 +2818,7 @@ function test_SLDS_input_dim_validation()
     s_bad_ux = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=lds_bad_ux)
     @test_throws DimensionMismatchError validate_SLDS(s_bad_ux)
 
-    # Mismatched uy_dim across regimes → DimensionMismatchError.
+    # Observation input dimensions must also agree.
     lds_bad_uy = [
         _make_gaussian_input_lds(D, N, 2, 2; seed=1),
         _make_gaussian_input_lds(D, N, 2, 1; seed=2),
@@ -2900,19 +2842,19 @@ function test_SLDS_sampling_with_inputs(; rng=MersenneTwister(0xBEEF))
     @test all(all(isfinite, xn) for xn in x)
     @test all(all(isfinite, yn) for yn in y)
 
-    # Reproducible given the same RNG and inputs.
+    # Sampling is reproducible for fixed inputs and RNG state.
     z1, x1, y1 = rand(MersenneTwister(11), slds, fill(tsteps, ntrials); ux=ux, uy=uy)
     z2, x2, y2 = rand(MersenneTwister(11), slds, fill(tsteps, ntrials); ux=ux, uy=uy)
     @test z1 == z2 && all(x1 .≈ x2) && all(y1 .≈ y2)
 
-    # Inputs move the trajectory: zero inputs vs the drawn inputs differ
+    # Nonzero inputs change the sampled trajectory.
     zux = [zeros(ux_dim, tsteps) for _ in 1:ntrials]
     zuy = [zeros(uy_dim, tsteps) for _ in 1:ntrials]
     _, x0, y0 = rand(MersenneTwister(11), slds, fill(tsteps, ntrials); ux=zux, uy=zuy)
     @test !all(x0[1] .≈ x1[1])
     @test !all(y0[1] .≈ y1[1])
 
-    # Single-integer overload with inputs returns bare arrays.
+    # The integer overload returns bare arrays.
     zi, xi, yi = rand(MersenneTwister(3), slds, tsteps; ux=ux[1], uy=uy[1])
     @test size(xi) == (D, tsteps) && size(yi) == (N, tsteps)
 end
@@ -2927,7 +2869,7 @@ function test_SLDS_missing_input_throws(; rng=MersenneTwister(0xFEED))
     uy = [randn(rng, 2, tsteps)]
     _, _, y = rand(rng, slds, fill(tsteps, 1); ux=ux, uy=uy)
 
-    # Model requires inputs (nonzero-column B / D) but none supplied.
+    # Models with nonempty B or D require their inputs.
     @test_throws ArgumentError rand(rng, slds, tsteps)
     @test_throws ArgumentError fit!(slds, y; max_iter=1, progress=false)
     @test_throws ArgumentError elbo(slds, y)
@@ -2952,6 +2894,7 @@ function test_SLDS_gradient_numerical_with_inputs(; rng=MersenneTwister(0xC0FFEE
     StateSpaceDynamics.gradient!(ws, slds, x_trial, y_trial, w, ux_t, uy_t)
     grad_analytical = copy(view(ws.opt.grad_buf, :, 1:tsteps))
 
+    # Compare the analytical gradient with automatic differentiation.
     function weighted_ll(x_flat)
         x_mat = reshape(x_flat, size(x_trial))
         ll = zero(eltype(x_flat))
@@ -3006,8 +2949,7 @@ function test_SLDS_hessian_numerical_with_inputs_poisson(; rng=MersenneTwister(0
     StateSpaceDynamics.hessian!(ws, slds, x_trial, y_trial, w, uy_t)
     H_diag = [copy(ws.btd.H_diag[t]) for t in 1:tsteps]
 
-    # Full weighted joint log-likelihood as a function of vec(x); its Hessian's
-    # diagonal blocks must match hessian!'s (Poisson curvature depends on uy_t).
+    # Compare the block implementation with the full numerical Hessian.
     function weighted_ll(x_flat)
         x_mat = reshape(x_flat, size(x_trial))
         ll = zero(eltype(x_flat))
@@ -3055,15 +2997,15 @@ function test_SLDS_fit_with_inputs_gaussian(; rng=MersenneTwister(0xC0FFEE))
     uy = [randn(rng, uy_dim, tsteps) for _ in 1:ntrials]
     _, _, y = rand(rng, slds, fill(tsteps, ntrials); ux=ux, uy=uy)
 
-    # Fit a fresh model (distinct inits) with the same inputs.
+    # Fit from distinct initial parameters.
     fit_lds = [_make_gaussian_input_lds(D, N, ux_dim, uy_dim; seed=100 + k) for k in 1:K]
     fit_slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=fit_lds)
     elbos = fit!(fit_slds, y; ux=ux, uy=uy, max_iter=max_iter, progress=false)
 
     @test length(elbos) == max_iter
     @test all(isfinite, elbos)
-    @test mean(elbos[(end - 2):end]) > mean(elbos[1:3]) - 100  # don't fail CI on noise
-    # B / D remained finite through the regression M-step.
+    @test mean(elbos[(end - 2):end]) > mean(elbos[1:3]) - 100  # Allow Monte-Carlo noise.
+    # The input parameters remain finite through the regression M-step.
     @test all(all(isfinite, l.state_model.B) for l in fit_slds.LDSs)
     @test all(all(isfinite, l.obs_model.D) for l in fit_slds.LDSs)
 end

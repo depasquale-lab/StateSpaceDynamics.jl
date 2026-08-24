@@ -160,7 +160,6 @@ function Random.rand(slds::SLDS, tsteps_per_trial::AbstractVector{<:Integer}; kw
     return rand(Random.default_rng(), slds, tsteps_per_trial; kwargs...)
 end
 
-# Core SLDS trial sampling logic.
 function _sample_slds_trial!(
     rng,
     z_trial,
@@ -177,13 +176,13 @@ function _sample_slds_trial!(
     tsteps = length(z_trial)
     K = size(A, 1)
 
-    # Sample discrete state sequence using forward sampling
+    # Sample the discrete state sequence.
     z_trial[1] = rand(rng, Categorical(πₖ))
     for t in 2:tsteps
         z_trial[t] = rand(rng, Categorical(A[z_trial[t - 1], :]))
     end
 
-    # Sample continuous states and observations given discrete sequence
+    # Sample continuous states and observations given the discrete sequence.
     return _sample_continuous_given_discrete!(
         rng,
         x_trial,
@@ -197,7 +196,6 @@ function _sample_slds_trial!(
     )
 end
 
-# Sample continuous dynamics given discrete state sequence
 function _sample_continuous_given_discrete!(
     rng,
     x_trial,
@@ -211,7 +209,7 @@ function _sample_continuous_given_discrete!(
 )
     tsteps = length(z_trial)
 
-    # Initial state from the selected LDS
+    # Initial state and observation use the first regime.
     k1 = z_trial[1]
     x_trial[:, 1] = rand(rng, MvNormal(state_params[k1].x0, state_params[k1].P0))
     y_trial[:, 1] = rand(
@@ -224,13 +222,10 @@ function _sample_continuous_given_discrete!(
         ),
     )
 
-    # Subsequent states - switch dynamics based on discrete state
     for t in 2:tsteps
         k_curr = z_trial[t]
 
-        # Continuous state follows the current discrete state's dynamics
-        # (x_t | x_{t-1}, z_t=k ~ N(A_k x_{t-1} + b_k + B_k u_{t-1}, Q_k),
-        # matching `hessian!`)
+        # x_t | x_{t-1}, z_t=k ~ N(A_k x_{t-1} + b_k + B_k u_{t-1}, Q_k)
         x_trial[:, t] = rand(
             rng,
             MvNormal(
@@ -241,7 +236,6 @@ function _sample_continuous_given_discrete!(
             ),
         )
 
-        # Observation follows current discrete state's model
         y_trial[:, t] = rand(
             rng,
             MvNormal(
@@ -267,7 +261,7 @@ function _sample_continuous_given_discrete!(
 )
     tsteps = length(z_trial)
 
-    # Initial state
+    # Initial state and observation use the first regime.
     k1 = z_trial[1]
     x_trial[:, 1] = rand(rng, MvNormal(state_params[k1].x0, state_params[k1].P0))
     y_trial[:, 1] =
@@ -282,7 +276,6 @@ function _sample_continuous_given_discrete!(
             ),
         )
 
-    # Subsequent states
     for t in 2:tsteps
         k_curr = z_trial[t]
 
@@ -478,21 +471,9 @@ end
 """
     hessian!(ws, slds, x, y, w)
 
-Fill `ws.btd.H_diag`, `ws.btd.H_sub`, `ws.btd.H_super` with the weighted Hessian blocks
-for the Laplace/Newton step over `x₁:T` matching Zoltowski et al. Appendix B.
-
-Convention matched:
-    x_t | x_{t-1}, z_t=k ~ N(A_k x_{t-1} + b_k, Q_k)
-so the dynamics factor that couples (x_{t-1}, x_t) is weighted by w[k,t] = q(z_t=k).
-
-Weights:
-- emission curvature at time t uses w[k,t]
-- dynamics curvature from factor at time t uses w[k,t]
-- off-diagonal block coupling (t-1,t) uses w[k,t]
-
-`uy` (optional observation input) is forwarded to `observation_hessian!`: the
-Gaussian curvature ignores it, the Poisson curvature depends on it through the
-rate `λ = exp(Cx + d + Dₖ v)`. The state-side blocks never depend on inputs.
+Fill the weighted Hessian blocks for the Laplace/Newton step over `x₁:T`.
+The factor coupling `(x[t-1], x[t])` is weighted by `w[k, t]`. Observation
+inputs affect the Poisson curvature through its rate but not the state blocks.
 """
 function hessian!(
     ws::SLDSSmoothWorkspace{T},
@@ -517,8 +498,7 @@ function hessian!(
         fill!(H_super[t], zero(T))
     end
 
-    # Two obs_dim scratch vectors for observation_hessian! (Poisson writes the
-    # linear predictor and rate into them; Gaussian ignores both).
+    # Poisson Hessians use both scratch vectors; Gaussian Hessians ignore them.
     z = ws.opt.dyt
     λ = ws.opt.temp_dy
 
@@ -661,7 +641,7 @@ function smooth!(
         tol=tol,
     )
 
-    # Posterior covariances at the MAP via Laplace approx.
+    # Posterior covariance at the MAP under the Laplace approximation.
     hessian!(ws, slds, x, y, w, uy)
     _negate_blocks!(btd, tsteps)
 
@@ -671,13 +651,8 @@ function smooth!(
 
     fs.entropy = gaussian_entropy_from_logdet(logdet_precision, n_active)
 
-    #=
-    Optional joint draws from q(x), taken while `btd` still holds the precision
-    factors. `ws.opt.X0` is free after Newton; reuse it for the standard-normal
-    input. `block_tridiagonal_sample!` only reads the factors, so every one of
-    the `size(x_sample, 3)` draws comes from the same factorisation — and with
-    one draw the RNG stream is identical to the single-sample version.
-    =#
+    # Draw before `btd` loses the precision factorization. Reusing `X0`
+    # preserves the previous RNG stream for one sample.
     if x_sample !== nothing
         z = view(ws.opt.X0, 1:n_active)
         for s in axes(x_sample, 3)
@@ -712,12 +687,7 @@ function smooth(
     tsteps = size(y, 2)
     K = length(slds.LDSs)
 
-    #=
-    The weighted kernels index `w[k, t]` for k in 1:K without inspecting its
-    shape, so a `w` with extra rows or unnormalised columns would otherwise
-    return a silently wrong posterior. Checked here, at the public entry point,
-    rather than in `smooth!`, which runs inside the alternation loop.
-    =#
+    # Check `w` once before the repeated smoothing calls.
     size(w) == (K, tsteps) ||
         throw(DimensionMismatchError("w (responsibilities)", (K, tsteps), size(w)))
     for t in 1:tsteps
@@ -741,21 +711,18 @@ end
     smooth(slds, y; ux=nothing, uy=nothing, smoothing_iters=100, tol=1e-6,
            return_cov=false, progress=false)
 
-Infer the joint posterior of a **fitted** `SLDS` with the parameters held fixed: the
-continuous states q(x), the discrete responsibilities `γₜ(k) = q(zₜ = k)`, and the ELBO
-at those posteriors.
+Infer the continuous states, discrete responsibilities `γₜ(k) = q(zₜ = k)`,
+and ELBO of a fitted `SLDS` with its parameters held fixed.
 
-Alternates forward-backward over the switching chain with the Laplace/Kalman smoother
-over the continuous states (Ghahramani & Hinton, 1996). The coupling is deterministic —
-the discrete layer is scored at the smoothed posterior mean, not at a sample — so the
-result is reproducible.
+The forward-backward and Laplace/Kalman updates alternate until `γ` converges or
+`smoothing_iters` is reached. The discrete likelihood is evaluated at the
+smoothed mean, so the result is deterministic.
 
 # Keywords
 - `smoothing_iters::Int=100`: maximum discrete↔continuous alternations.
 - `tol::Real=1e-6`: stop once `max|Δγ| < tol`; `tol=0` runs exactly `smoothing_iters`
   alternations with no stopping test.
-- `return_cov::Bool=false`: also return the smoothed covariances
-  (`latent_dim × latent_dim × T` per trial — large, hence opt-in).
+- `return_cov::Bool=false`: include the smoothed covariances.
 - `progress::Bool=false`: show a progress bar.
 
 # Returns
@@ -774,8 +741,8 @@ function smooth(
     return_cov::Bool=false,
     progress::Bool=false,
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
-    # `Data` validates shapes and canonicalizes the three observation/input forms.
-    # Regime dims are uniform, so validating against LDSs[1] covers all regimes.
+    # `Data` validates shapes and canonicalizes the observation/input forms.
+    # Regime dimensions are uniform, so checking against LDSs[1] covers all regimes.
     data = Data(slds.LDSs[1], y; ux=ux, uy=uy)
     y_seq, ux_seq, uy_seq = data.y, data.ux, data.uy
 
@@ -790,8 +757,7 @@ function smooth(
     control_seq = fill(nothing, last(seq_ends))
     slds_ws = SLDSSmoothWorkspace(T, slds, maximum(data.tsteps))
 
-    # No M-step runs, so the per-regime constants cached by the workspace stay
-    # valid for every alternation.
+    # No M-step runs, so the cached per-regime constants remain valid.
     _vem_warmstart!(slds, tfs, y_seq, slds_ws; ux_seq=ux_seq, uy_seq=uy_seq)
 
     prog = if progress
@@ -839,11 +805,7 @@ function smooth(
     return _collect_slds_smooth_output(x_trials, γ_trials, p_trials, total_elbo, y)
 end
 
-#=
-Public-shape return convention, mirroring `_collect_smooth_output` in fit_LDS.jl:
-matrix in → per-trial arrays out (single trial); vector / 3-D array in → vectors out.
-`y` is only inspected for its container type.
-=#
+# Match the return shape to the observation container, as `smooth(::LDS, ...)` does.
 function _collect_slds_smooth_output(x, γ, p, total_elbo, ::AbstractMatrix)
     return (; x=x[1], γ=γ[1], elbo=total_elbo, p=(p === nothing ? nothing : p[1]))
 end
@@ -852,11 +814,7 @@ function _collect_slds_smooth_output(x, γ, p, total_elbo, _)
     return (; x=x, γ=γ, elbo=total_elbo, p=p)
 end
 
-#=
-Uniform-weight warm-start: smooth each trial once with γ ≡ 1/K so the first
-discrete update has a continuous trajectory to score. Draws the first joint
-sample into `x_samples` when sampling (`nothing` for the deterministic path).
-=#
+# Smooth once at `γ ≡ 1/K` to initialize the continuous trajectory.
 function _vem_warmstart!(
     slds::SLDS{T},
     tfs::TrialFilterSmooth{T},
@@ -888,39 +846,21 @@ end
 """
     _vem_alternate!(slds, tfs, fb_storage, dl, y_seq, slds_ws; smoothing_iters, tol, x_samples, ...)
 
-Run `smoothing_iters` discrete↔continuous alternations of the structured-variational
-E-step. One alternation is:
+Run `smoothing_iters` structured-variational E-step alternations:
 
-1. fill `dl.logL` (`K × sum(T_i)`) with per-regime log-likelihoods of the current
-   continuous trajectory,
-2. refresh q(z) = γ by forward-backward over the switching chain (HMMs.jl threads
-   across trials), and
-3. refresh q(x) by re-running the Laplace/Newton smoother on each trial under the new
-   γ, filling `tfs[*].x_smooth`, `tfs[*].p_smooth`, and `tfs[*].entropy`.
+1. score the current continuous trajectory under each regime,
+2. update q(z) by forward-backward, and
+3. update q(x) with the Laplace/Newton smoother.
 
-`x_samples` selects how step 1 reads the continuous trajectory, and is the only
-difference between the two callers:
+When `x_samples` is `nothing`, scoring uses the smoothed mean. Otherwise it
+averages over the stored draws and replaces them during step 3. The latter is
+the Monte-Carlo E-step used by [`fit!`](@ref).
 
-- `x_samples === nothing` — plug in the smoothed mean `E_q[x]`. Deterministic and
-  reproducible; used by [`smooth`](@ref) for post-fit inference.
-- `x_samples !== nothing` — plug in joint draws from q(x), averaging `log p_k` over
-  the `size(x_samples[trial], 3)` draws held per trial, and draw the next batch in
-  step 3. This is the vLEM Monte-Carlo E-step used by [`fit!`](@ref); `x_samples` is
-  read then overwritten within each alternation.
+The stored draws precede the latest M-step. This one-step lag disappears as the
+parameter updates converge.
 
-  Averaging over draws is the variance knob (ssm's `num_samples`); running more
-  alternations is not, since only the last one's γ reaches the M-step.
-
-  Note the draws consumed by step 1 of an E-step were taken in step 3 of the
-  previous one, so they come from q(x) under the parameters in force *before* the
-  intervening M-step. ssm has the same one-M-step lag — it stores the posterior
-  and samples lazily where this stores the realised draw — and the lag vanishes as
-  EM converges and the M-step stops moving θ.
-
-`tol` selects the stopping rule. `tol == 0` runs exactly `smoothing_iters`
-alternations; `tol > 0` stops early once `max|Δγ| < tol`. Whether an exhausted
-iteration budget is worth warning about is left to the caller, which has the
-returned `converged` flag ([`smooth`](@ref) warns; [`estep!`](@ref) does not).
+`tol == 0` runs exactly `smoothing_iters`; otherwise the loop stops when
+`max|Δγ| < tol`.
 
 Returns `(iters, converged)`.
 """
@@ -948,7 +888,7 @@ function _vem_alternate!(
     K = length(slds.LDSs)
     ntrials = length(y_seq)
 
-    # Previous-iteration γ snapshot; only allocated when there is a stopping test.
+    # Only allocate a snapshot when convergence is checked.
     γ_prev = tol > 0 ? fill(T(Inf), K, last(seq_ends)) : nothing
     converged = false
     iters = 0
@@ -982,12 +922,8 @@ function _vem_alternate!(
                     )
                 end
             else
-                #=
-                Monte-Carlo estimate of E_q(x)[log p_k], averaged over the
-                `nsamp` independent draws held for this trial. The first draw
-                writes `dl.logL` directly and the rest accumulate through
-                `ll_tmp`, which carries nothing live at this point.
-                =#
+                # Write the first draw to `dl.logL`, then use `ll_tmp` to
+                # accumulate the rest.
                 draws = x_samples[trial]
                 nsamp = size(draws, 3)
                 for k in 1:K
@@ -1047,7 +983,7 @@ function _vem_alternate!(
         prog !== nothing && next!(prog)
 
         if γ_prev !== nothing
-            # `γ_prev` starts at `Inf`, so the first pass can never converge.
+            # `γ_prev` starts at `Inf`, so the first pass cannot converge.
             Δγ = zero(T)
             for i in eachindex(fb_storage.γ)
                 d = abs(fb_storage.γ[i] - γ_prev[i])
@@ -1067,12 +1003,8 @@ end
 """
     estep!(slds, tfs, fb_storage, dl, y, x_samples, slds_ws; rng, obs_seq, control_seq, seq_ends, smoothing_iters=1)
 
-Monte-Carlo E-step for the SLDS: `smoothing_iters` coordinate-ascent alternations of
-[`_vem_alternate!`](@ref), each scoring the discrete layer against joint draws from
-q(x) and drawing the next batch. `smoothing_iters=1` is the standard vLEM E-step.
-
-`x_samples[trial]` is `latent_dim × T_trial × num_samples`; its third dimension sets
-how many draws the discrete update averages over.
+Monte-Carlo E-step for an SLDS. `x_samples[trial]` has shape
+`latent_dim × T_trial × num_samples`.
 
 `obs_seq`/`control_seq` are the HMMs.jl placeholder sequences built in `fit!` (timestep
 indices / `nothing`s) — unrelated to the LDS control-input kwargs `ux`/`uy`, which are
@@ -1129,11 +1061,8 @@ end
 """
     _slds_prior_logdensity(slds)
 
-Sum of the per-regime parameter log-prior contributions (IW on `Q`/`P0`/`R`,
-MN on `[A b B]`/`[C d D]`, and the MN-only `[C d]` term for Poisson emissions,
-matching the PLDS LBFGS objective). Zero when no priors are set. Needed so the
-ELBO tracks the same MAP objective the M-step optimizes; without it the
-displayed ELBO can appear non-monotone under priors.
+Sum the per-regime prior contributions included in the M-step objective. This
+keeps the reported ELBO consistent with MAP fitting.
 """
 function _slds_prior_logdensity(slds::SLDS{T}) where {T<:Real}
     prior_term = zero(T)
@@ -1332,15 +1261,13 @@ end
 """
     elbo(slds, y; ux=nothing, uy=nothing, smoothing_iters=100, tol=1e-6, progress=false)
 
-Evidence lower bound of an `SLDS` at the current parameters — the `elbo` field of
-[`smooth`](@ref)`(slds, y)`, which infers q(x) and q(z) by deterministic
-coordinate ascent before evaluating the bound. Deterministic and reproducible.
+Evidence lower bound of an `SLDS` at the current parameters. This is the `elbo`
+field returned by [`smooth`](@ref)`(slds, y)`.
 
 Accepts the same observation and input forms as [`smooth`](@ref), and the same
 `smoothing_iters` / `tol` controls over the alternation. Returns a scalar.
 
-If you also want the posteriors that produced it, call [`smooth`](@ref) once and read
-its `elbo` field rather than paying for the alternation twice.
+Call [`smooth`](@ref) directly when the posteriors are also needed.
 """
 function elbo(
     slds::SLDS{T,S,O},
@@ -1381,24 +1308,8 @@ end
 """
     mstep!(slds, tfs, fb_storage, dl, data, suf, sws; obs_seq, seq_ends)
 
-M-step for SLDS.
-
-`data` and `suf` are built once by [`fit!`](@ref) and reused every iteration:
-`Data` revalidates the observations and inputs on construction, and `suf` is
-overwritten per regime by the weighted aggregator, so neither belongs inside
-the EM loop.
-
-- Updates discrete parameters (`slds.A`, `slds.πₖ`) via `StatsAPI.fit!` on the discrete
-  layer (uses HMMs.jl's `ξ[t2]` scratch trick).
-- Updates each LDS component using γ-weighted sufficient statistics aggregated
-  by `_aggregate_td_suff_stats_weighted!`. For Gaussian sub-LDSs this is the
-  full suf-based M-step (regression + IW MAP). For Poisson sub-LDSs the state-
-  side updates flow through the same suf path; the emission [C d] is updated
-  via the existing LBFGS routine (Poisson is non-conjugate and cannot be
-  folded into the regression).
-
-When inputs are present the weighted aggregator folds `Bₖ u` / `Dₖ v` into the
-regression targets, so `Bₖ` and `Dₖ` are re-estimated alongside `Aₖ` / `Cₖ`.
+Update the transition probabilities and each regime's parameters from
+γ-weighted sufficient statistics. Poisson emissions use their LBFGS update.
 """
 function mstep!(
     slds::SLDS{T,S,O},
@@ -1415,7 +1326,7 @@ function mstep!(
     y = data.y
     ntrials = length(y)
 
-    # Discrete-layer M-step (slds.A, slds.πₖ are updated in place via dl).
+    # Update the discrete transition and initial probabilities.
     StatsAPI.fit!(dl, fb_storage, obs_seq; seq_ends=seq_ends)
 
     #=
@@ -1463,7 +1374,6 @@ function mstep!(
         elseif lds_k.obs_model isa PoissonObservationModel{T}
             update_A_b!(lds_k, suf, sws)
             update_Q!(lds_k, suf, sws)
-            # Pool of one; maybe thread in future.
             update_observation_model!(lds_k, tfs, y, sws_pool, weights; uy=data.uy)
         else
             throw(ArgumentError("Unsupported observation model $(typeof(lds_k.obs_model))"))
@@ -1509,34 +1419,19 @@ end
     fit!(slds::SLDS, y; ux=nothing, uy=nothing, max_iter=50, smoothing_iters=1,
          num_samples=1, progress=true)
 
-Fit SLDS using variational Laplace EM. Runs for exactly `max_iter` iterations
-(no early-stopping criterion: the E-step's posterior sampling makes the ELBO
-trace noisy across iterations, so a tolerance check on successive differences
-would fire spuriously). Returns the per-iteration ELBO trace.
+Fit an SLDS using variational Laplace EM and return the per-iteration ELBO.
+Fitting always runs `max_iter` iterations because posterior sampling makes the
+trace noisy.
 
-`smoothing_iters` sets how many discrete↔continuous alternations each E-step runs
-before the M-step. The default of 1 is the standard vLEM update; larger values give
-the E-step a better-converged posterior at proportional cost per iteration. Each
-alternation redraws from q(x), which keeps the alternation from sharpening γ against
-a single fixed noise realisation — but note it does **not** reduce Monte-Carlo
-variance, since only the final alternation's γ reaches the M-step.
+`smoothing_iters` controls the discrete↔continuous updates per E-step.
+`num_samples` controls how many draws from q(x) are averaged in each discrete
+update; increasing it reduces Monte-Carlo variance.
 
-`num_samples` is the variance knob. The discrete update averages `log p_k` over that
-many independent draws from q(x) (ssm's `num_samples`), so the estimate of
-`E_q(x)[log p_k]` has variance `1/num_samples` of the single-draw version. Cost is
-`num_samples` extra log-likelihood passes per alternation; the smoother, which
-dominates, runs once regardless.
+`y` accepts a matrix, a 3-D array, or a vector of matrices with possibly
+different trial lengths.
 
-`y` is a single trial `(obs_dim × T)` matrix, a `(obs_dim, T, ntrials)` array,
-or a vector of per-trial matrices (ragged `T_i` allowed). Internally a single
-batched `HMMs.ForwardBackwardStorage` of length `sum(T_i)` is allocated, with
-`seq_ends = cumsum(T_i)` to demarcate trials.
-
-Optional control inputs `ux` / `uy` accept the same shape family as `y`
-(`nothing` when the regimes carry no `B` / `D`). They are shared across regimes
-— the active regime `zₜ` selects which per-regime `Bₖ` / `Dₖ` multiplies the
-input — and are re-estimated per regime alongside the other parameters. The
-input dimensions must match across regimes (enforced by `validate_SLDS`).
+`ux` and `uy` use the same trial containers as `y`. Input dimensions must agree
+across regimes.
 """
 function fit!(
     slds::SLDS{T,S,O},
@@ -1549,8 +1444,6 @@ function fit!(
     progress::Bool=true,
     rng::AbstractRNG=Random.default_rng(),
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
-    # `Data` validates shapes and canonicalizes the three observation/input forms.
-    # Regime dims are uniform, so validating against LDSs[1] covers all regimes.
     data = Data(slds.LDSs[1], y; ux=ux, uy=uy)
     y_seq = data.y
     ux_seq = data.ux
@@ -1565,22 +1458,15 @@ function fit!(
     total_T = last(seq_ends)
     T_max = maximum(tsteps_per_trial)
 
-    # Continuous-state smoother storage (per-trial sized).
     tfs = initialize_FilterSmooth(slds.LDSs[1], tsteps_per_trial)::TrialFilterSmooth{T}
 
-    # Discrete-layer wrapper (logL sized for the batched timestep sequence).
     dl = SLDSDiscreteLayer(slds.A, slds.πₖ, zeros(T, K, total_T))
 
-    # Single batched fb_storage covering all trials.
     fb_storage = _make_slds_fb_storage(dl, seq_ends)
 
-    # Cached batched HMMs.jl placeholder sequences (timestep indices / nothings).
     obs_seq = collect(1:total_T)
     control_seq = fill(nothing, total_T)
 
-    # Workspaces — allocated once at max trial length, reused each iteration.
-    # `sws` sizes its regression buffers for the (uniform) input dims so the
-    # weighted aggregator can fit `[Aₖ bₖ Bₖ]` / `[Cₖ dₖ Dₖ]`.
     sws = SmoothWorkspace(
         T,
         latent_dim,
@@ -1593,8 +1479,6 @@ function fit!(
     num_samples >= 1 || throw(ArgumentError("num_samples must be ≥ 1, got $num_samples"))
     x_samples = [Array{T,3}(undef, latent_dim, Ti, num_samples) for Ti in tsteps_per_trial]
 
-    # One reusable SufficientStatistics for the M-step; the weighted aggregator
-    # overwrites it per regime, so it is allocated here rather than per iteration.
     suf = _initialize_td_sufficient_statistics(T, slds.LDSs[1], data.tsteps)
 
     prog = if progress
@@ -1604,7 +1488,6 @@ function fit!(
     end
     elbos = Vector{T}(undef, max_iter)
 
-    # Draws the first sample into x_samples for the first E-step to consume.
     _vem_warmstart!(
         slds,
         tfs,
@@ -1634,12 +1517,10 @@ function fit!(
             smoothing_iters=smoothing_iters,
         )
 
-        # Compute the ELBO at the current posteriors.
         elbos[iter] = elbo!(
             slds, tfs, fb_storage, y_seq, slds_ws; seq_ends=seq_ends, ux=ux_seq, uy=uy_seq
         )
 
-        # M-step: update discrete and continuous parameters.
         mstep!(
             slds, tfs, fb_storage, dl, data, suf, sws; obs_seq=obs_seq, seq_ends=seq_ends
         )

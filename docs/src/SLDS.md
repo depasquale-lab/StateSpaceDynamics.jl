@@ -91,47 +91,25 @@ The sampling process follows the generative model:
 fit!(slds::SLDS{T,S,O}, y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}}; max_iter::Int=50, progress::Bool=true) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
 ```
 
-Each E-step runs `smoothing_iters` discrete↔continuous alternations before the M-step.
-The default of 1 is the standard vLEM update; larger values hand the M-step a
-better-converged posterior at proportional cost per iteration.
-
-The discrete update scores each regime against a **draw** from ``q(x)`` rather than the
-posterior mean, so it carries Monte-Carlo noise. `num_samples` controls that noise: the
-update averages ``\log p_k`` over that many independent draws, giving an estimate of
-``\mathbb{E}_{q(x)}[\log p_k]`` with `1/num_samples` the variance of a single draw. It
-costs `num_samples` extra log-likelihood passes per alternation, while the smoother --
-which dominates the cost -- still runs once.
-
-Note `smoothing_iters` is *not* a variance knob. Each alternation does redraw from
-``q(x)``, which stops the loop from sharpening ``\gamma`` against one fixed noise
-realisation, but nothing is averaged across alternations: only the last one's
-``\gamma`` reaches the M-step. Use `num_samples` to reduce noise and `smoothing_iters`
-to converge the posterior.
+Each E-step runs `smoothing_iters` discrete↔continuous updates before the M-step.
+The discrete update averages over `num_samples` draws from ``q(x)``. Increasing
+`num_samples` reduces Monte-Carlo noise; increasing `smoothing_iters` gives the
+posterior more time to converge but does not average away that noise.
 
 ## Post-fit inference
 
-Once an SLDS has been fit, [`smooth`](@ref) infers the full posterior for a dataset with
-the parameters held fixed: the continuous states ``q(x)``, the discrete-state
-responsibilities ``\gamma_t(k) = q(z_t = k) \approx p(z_t = k \mid y_{1:T})``, and the
-ELBO at those posteriors. It alternates the forward-backward pass over the discrete chain
-with the Kalman/Laplace smoother over the continuous states, following the classic
-coordinate-ascent scheme of Ghahramani & Hinton (1996), stopping once ``\gamma``
-converges (`tol`) or after `smoothing_iters` alternations.
-
-Unlike the single-Monte-Carlo-sample E-step that `fit!` uses during learning, the
-coupling here is deterministic — the discrete-layer log-likelihoods are evaluated at the
-smoothed posterior mean — so the result is reproducible.
-
-Because a converged alternation is expensive, `smooth` returns everything it computed in
-one `NamedTuple`; read its `elbo` field rather than calling [`elbo`](@ref) separately.
+[`smooth`](@ref) infers the continuous states, discrete-state responsibilities,
+and ELBO with the fitted parameters held fixed. It alternates forward-backward
+with the Kalman/Laplace smoother until the responsibilities converge or
+`smoothing_iters` is reached. It evaluates the discrete likelihoods at the
+smoothed mean, so repeated calls are deterministic.
 
 ```@docs; canonical = false
 smooth(slds::SLDS{T,S,O}, y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}}) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
 ```
 
-[`loglikelihood`](@ref) and [`elbo`](@ref) both return that same ELBO. The exact marginal
-``\log p(y)`` is intractable for a switching model — it requires summing over all ``K^T``
-regime sequences — so `loglikelihood(slds, y)` reports the variational lower bound.
+[`loglikelihood`](@ref) and [`elbo`](@ref) return the same ELBO because the exact
+marginal likelihood would require summing over all ``K^T`` regime sequences.
 
 ## The vLEM Algorithm
 
