@@ -158,11 +158,8 @@ function Random.rand(
     ntrials = length(tsteps_per_trial)
     grp = parameter_grouping(lds, ntrials; depends_on=depends_on)
 
-    #=
-    Per-trial parameter sets. Ungrouped, every trial points at the same two
-    NamedTuples (which themselves reference the model's arrays); grouped, a
-    trial points at its cell's. Either way the sampler below is one code path.
-    =#
+    # Per-trial parameter sets: one shared pair when ungrouped, the cell's when
+    # grouped. Either way the sampler below is one code path.
     if grp === nothing
         state_params = fill(_extract_state_params(lds.state_model), ntrials)
         obs_params = fill(_extract_obs_params(lds.obs_model), ntrials)
@@ -210,11 +207,8 @@ function Random.rand(
     chunksize = cld(ntrials, ntasks)
     task_rngs = [MersenneTwister(rand(rng, UInt64)) for _ in 1:ntasks]
 
-    #=
-    `state_params` / `obs_params` are assigned in both arms of the grouping
-    branch above, so sharing those bindings with the closure would box them,
-    which OhMyThreads rejects (same idiom as `fit_SLDS.jl`'s parallel E-step).
-    =#
+    # Assigned in both arms above, so sharing the bindings with the closure
+    # would box them, which OhMyThreads rejects.
     let state_params = state_params, obs_params = obs_params
         tforeach(1:ntasks) do i
             lo = (i - 1) * chunksize + 1

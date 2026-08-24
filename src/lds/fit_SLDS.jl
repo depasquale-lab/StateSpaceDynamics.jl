@@ -134,10 +134,8 @@ function Random.rand(
     x = Vector{Matrix{T}}(undef, ntrials)
     y = Vector{Matrix{T}}(undef, ntrials)
 
-    #=
-    Per-trial, per-regime parameter sets: one entry per trial, each a vector
-    over regimes. Ungrouped, every trial shares the same vector.
-    =#
+    # One entry per trial, each a vector over regimes; ungrouped, every trial
+    # shares the same vector.
     grp = _slds_parameter_grouping(slds, ntrials; depends_on=depends_on)
     if grp === nothing
         base_state = [_extract_state_params(lds.state_model) for lds in slds.LDSs]
@@ -1149,10 +1147,7 @@ function elbo(
     )
 
     if grp !== nothing
-        #=
-        Narrow the `Union{Nothing,...}` locals so the grouped helpers below are
-        called at their declared argument types.
-        =#
+        # Narrow the `Union{Nothing,...}` locals to the helpers' argument types.
         grouping = grp::ParameterGrouping
         cells = cell_slds::Vector
         _estep_grouped!(
@@ -1395,10 +1390,8 @@ function fit!(
     total_T = last(seq_ends)
     T_max = maximum(tsteps_per_trial)
 
-    #=
-    Ancillary parameter dependencies. `grp === nothing` (no regime declares
-    `depends_on`) keeps every step on its original code path.
-    =#
+    # `grp === nothing` (no regime declares `depends_on`) keeps every step on
+    # its original code path.
     grp = _slds_parameter_grouping(slds, ntrials; depends_on=depends_on, y=y_seq)
     cell_slds = grp === nothing ? nothing : _slds_cell_sldss(slds, grp)
 
@@ -1432,12 +1425,9 @@ function fit!(
     base workspace itself when every session has the same channel count.
     =#
     cell_ws = _slds_cell_workspaces(slds, cell_slds, slds_ws, T_max)
-    #=
-    The M-step's regression buffers are shaped by `obs_dim` too, so a stitching
-    fit needs one per cell. `_cell_workspace` shares the block-tridiagonal and
-    smoothed-covariance storage, and `nothing` here keeps the single-workspace
-    path for every fit whose cells have the parent's width.
-    =#
+    # The M-step's regression buffers are `obs_dim`-shaped, so a stitching fit
+    # needs one per cell; `_cell_workspace` shares the expensive storage.
+    # `nothing` keeps the single-workspace path at the parent's width.
     cell_mstep_sws = _slds_cell_mstep_workspaces(slds, cell_slds, sws, T_max)
     x_samples = [Matrix{T}(undef, latent_dim, Ti) for Ti in tsteps_per_trial]
 
@@ -2025,11 +2015,8 @@ function _mstep_grouped!(
     end
 
     unit_lds = [cell_slds[c].LDSs[k] for k in 1:K for c in 1:ncells]
-    #=
-    Sized from the unit's own LDS rather than cell 1's: under stitching each
-    cell contributes a different number of channels, so `obs_xy` / `obs_yy`
-    differ per unit. Identical to `lds1` whenever the widths agree.
-    =#
+    # Sized from the unit's own LDS, since `obs_xy` / `obs_yy` differ per unit
+    # under stitching. Identical to `lds1` when the widths agree.
     unit_suf = [
         _initialize_td_sufficient_statistics(T, cell_slds[c].LDSs[k], cell_data[c].tsteps)
         for k in 1:K for c in 1:ncells
@@ -2099,11 +2086,8 @@ function _mstep_grouped!(
         end
     end
 
-    #=
-    Tied initial state, pooled over every (regime, cell) unit. Since
-    Σₖ γₖ(t=1) = 1, summing the per-regime weighted init stats reproduces the
-    unit-weight pooled statistic the ungrouped path uses.
-    =#
+    # Tied initial state, pooled over every (regime, cell) unit: Σₖ γₖ(t=1) = 1,
+    # so summing the weighted init stats gives the unit-weight statistic.
     slots_x0 = repeat(grp.cell_slot[_G_X0], K)
     slots_P0 = repeat(grp.cell_slot[_G_P0], K)
     _grouped_update_x0!(unit_lds, unit_suf, slots_x0, bufs)
