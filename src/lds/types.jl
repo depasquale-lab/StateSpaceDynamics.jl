@@ -129,6 +129,11 @@ Represents the observation model of a Linear Dynamical System with Gaussian nois
     parameters are estimated separately per group of trials. Keys are parameter names
     (`:C`/`:d`/`:D`, `:R`), values are per-trial label vectors; `nothing` (the default)
     means one parameter set shared by every trial.
+- `group_seeds::Union{Nothing,AbstractDict} = nothing`: Optional starting values for
+    individual `depends_on` groups, as `label => (C=..., R=..., d=..., D=...)` with any
+    subset of those keys. Only the groups a label names are seeded; the rest keep the
+    defaults described under `variants`. Set it with [`set_group_seeds!`](@ref), which
+    checks the labels.
 - `variants::Union{Nothing,Vector{GaussianObservationModel{T,M,V}}} = nothing`: Derived
     storage for the per-group parameter sets; populated from `depends_on` by the fitting
     entry points. Parameters that do not vary are shared **by reference** across variants.
@@ -143,6 +148,7 @@ Base.@kwdef mutable struct GaussianObservationModel{
     R_prior::Union{Nothing,IWPrior{T}} = nothing
     CD_prior::Union{Nothing,MNPrior{T,Matrix{T}}} = nothing
     depends_on::Union{Nothing,NamedTuple} = nothing
+    group_seeds::Union{Nothing,AbstractDict} = nothing
     variants::Union{Nothing,Vector{GaussianObservationModel{T,M,V}}} = nothing
 end
 
@@ -230,6 +236,11 @@ model reduces to the canonical `λ_t = exp(C x_t + d)`.
     is estimated separately per group of trials. Keys are parameter names (`:C`/`:d`/`:D`),
     values are per-trial label vectors; `nothing` (the default) means one parameter set
     shared by every trial.
+- `group_seeds::Union{Nothing,AbstractDict} = nothing`: Optional starting values for
+    individual `depends_on` groups, as `label => (C=..., d=..., D=...)` with any subset of
+    those keys. Only the groups a label names are seeded; the rest keep the defaults
+    described under `variants`. Set it with [`set_group_seeds!`](@ref), which checks
+    the labels.
 - `variants::Union{Nothing,Vector{PoissonObservationModel{T,M,V}}} = nothing`: Derived
     storage for the per-group parameter sets; populated from `depends_on` by the fitting
     entry points.
@@ -242,6 +253,7 @@ Base.@kwdef mutable struct PoissonObservationModel{
     D::M = zeros(eltype(C), size(C, 1), 0)  # eltype-preserving default (no obs inputs)
     CD_prior::Union{Nothing,MNPrior{T,Matrix{T}}} = nothing
     depends_on::Union{Nothing,NamedTuple} = nothing
+    group_seeds::Union{Nothing,AbstractDict} = nothing
     variants::Union{Nothing,Vector{PoissonObservationModel{T,M,V}}} = nothing
 end
 

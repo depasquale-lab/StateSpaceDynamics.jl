@@ -44,6 +44,7 @@ x0_mean_prior
 ```@docs
 group_labels
 group_parameter
+set_group_seeds!
 ```
 
 ## Sampling

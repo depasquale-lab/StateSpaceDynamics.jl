@@ -320,6 +320,19 @@ using SSDTest
                 test_pooled_slot_at_a_width_the_model_was_not_built_at()
             end
 
+            @testset "Group seeds" begin
+                test_group_seeds_replace_slot_seeding()
+                test_group_seeds_keep_slot_one_aliased()
+                test_group_seeds_apply_at_uniform_width()
+                test_group_seeds_validation()
+                test_group_seeds_start_a_stitched_fit_higher()
+                test_group_seeds_dim_read_from_d()
+                test_group_seeds_dim_read_from_D()
+                test_group_seeds_dim_falls_back_to_template()
+                test_group_seeds_widths_follow_across_groups()
+                test_group_seeds_reject_ambiguous_shared_width()
+            end
+
             @testset "Workspaces" begin
                 test_cell_workspace_shares_big_buffers()
                 test_grouped_pool_sized_at_widest_session()

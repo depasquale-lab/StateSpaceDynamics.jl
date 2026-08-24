@@ -362,6 +362,330 @@ function test_stitching_slds_fit()
     return nothing
 end
 
+#=============================================================================
+`group_seeds`: starting values a caller already knows
+
+Without them a slot whose `obs_dim` differs from the template has nothing to
+copy and gets the template's rows cycled — a magnitude for the M-step to move
+off, pairing each channel with an unrelated channel of the template. A caller
+that stitched every session's loadings onto shared factors before building the
+model can supply them instead.
+=============================================================================#
+
+"""Per-slot `(dep, spec_C, spec_R)` for an emission and its data, as `fit!` resolves
+them."""
+function st_slot_specs(om, y)
+    dep = SSD._resolve_dependence(om)
+    labels = [dep.trial_labels[g] for g in eachindex(dep.names)]
+    spec_C, spec_R = SSD._obs_slot_specs(om, dep, labels, length(y), y)
+    return dep, spec_C, spec_R
+end
+
+"""
+A seeded slot starts at exactly what it was given; an unseeded one still gets
+the row-cycled template, and slot 1 still shares storage with the parent.
+"""
+function test_group_seeds_replace_slot_seeding()
+    y, session, p1, p2 = st_two_session_data()
+    lds = st_grouped_lds(p1)
+    om = lds.obs_model
+    om.depends_on = (C=session, d=session, R=session)
+    dep, spec_C, spec_R = st_slot_specs(om, y)
+
+    # Baseline: no seeds, the wide session's C is the template's rows cycled.
+    plain = SSD._build_variants!(om, dep, spec_C, spec_R)
+    wide = plain[findfirst(v -> size(v.C, 1) == p2, plain)]
+    for r in 1:p2
+        @test wide.C[r, :] == om.C[mod1(r, p1), :]
+    end
+
+    om.variants = nothing
+    C_b = randn(StableRNG(31), p2, ST_LATENT_DIM)
+    R_b = Matrix{Float64}(0.7I, p2, p2)
+    set_group_seeds!(om, Dict(:b => (C=C_b, R=R_b)))
+    seeded = SSD._build_variants!(om, dep, spec_C, spec_R)
+
+    cell = findfirst(v -> size(v.C, 1) == p2 && size(v.R, 1) == p2, seeded)
+    @test seeded[cell].C == C_b
+    @test seeded[cell].R == R_b
+    # The unseeded session is untouched, and slot 1 still aliases the parent.
+    @test any(v -> v.C === om.C, seeded)
+    return nothing
+end
+
+"""
+Seeding slot 1 writes through the aliased array, so `model.C` keeps agreeing
+with its first version rather than being left behind by it.
+"""
+function test_group_seeds_keep_slot_one_aliased()
+    y, session, p1, _ = st_two_session_data()
+    lds = st_grouped_lds(p1)
+    om = lds.obs_model
+    om.depends_on = (C=session, d=session, R=session)
+    dep, spec_C, spec_R = st_slot_specs(om, y)
+
+    C_a = randn(StableRNG(32), p1, ST_LATENT_DIM)
+    set_group_seeds!(om, Dict(:a => (C=C_a,)))
+    variants = SSD._build_variants!(om, dep, spec_C, spec_R)
+    @test any(v -> v.C === om.C, variants)
+    @test om.C == C_a
+    return nothing
+end
+
+"""
+Seeds are read on the equal-`obs_dim` path too, where there is no spec at all —
+a caller may want different starting loadings per session even with matched
+channels.
+"""
+function test_group_seeds_apply_at_uniform_width()
+    ntrials = 4
+    lds = st_lds(3)
+    _, y = rand(StableRNG(41), lds, fill(20, ntrials))
+    om = lds.obs_model
+    om.depends_on = (C=[:a, :a, :b, :b], d=[:a, :a, :b, :b], R=[:a, :a, :b, :b])
+    dep, spec_C, spec_R = st_slot_specs(om, y)
+    @test (spec_C, spec_R) === (nothing, nothing)
+
+    C_b = randn(StableRNG(42), 3, ST_LATENT_DIM)
+    set_group_seeds!(om, Dict(:b => (C=C_b,)))
+    variants = SSD._build_variants!(om, dep, spec_C, spec_R)
+    @test any(v -> v.C == C_b, variants)
+    @test any(v -> v.C === om.C, variants)
+    return nothing
+end
+
+"""
+A mistyped label would cost nothing visible — the seed would simply never be
+read — so it is refused when set, and a wrong-shaped seed when the variants are
+built.
+"""
+function test_group_seeds_validation()
+    y, session, p1, p2 = st_two_session_data()
+    lds = st_grouped_lds(p1)
+    om = lds.obs_model
+    om.depends_on = (C=session, d=session, R=session)
+    dep, spec_C, spec_R = st_slot_specs(om, y)
+
+    missing_label = Dict(:c => (C=zeros(p2, ST_LATENT_DIM),))
+    @test_throws ArgumentError set_group_seeds!(om, missing_label)
+    @test_throws ArgumentError set_group_seeds!(om, Dict(:b => (Q=zeros(2, 2),)))
+    # `depends_on` first: with no groups there are no labels to seed
+    bare = st_obs_model(p1)
+    ungrouped = Dict(:a => (C=zeros(p1, ST_LATENT_DIM),))
+    @test_throws ArgumentError set_group_seeds!(bare, ungrouped)
+
+    # A seed of the wrong width is an error, not a silent reshape
+    om.group_seeds = Dict(:b => (C=zeros(p2 + 1, ST_LATENT_DIM),))
+    om.variants = nothing
+    @test_throws ArgumentError SSD._build_variants!(om, dep, spec_C, spec_R)
+
+    @test set_group_seeds!(om, nothing).group_seeds === nothing
+    return nothing
+end
+
+"""
+The point of the feature: seeding each session's own loadings starts the fit
+above where the row-cycled default does, and the fit still runs to a monotone
+ELBO from there.
+"""
+function test_group_seeds_start_a_stitched_fit_higher()
+    ntrials, tsteps = 4, 30
+    lds1 = st_lds(3; seed=1)
+    lds2 = st_lds(5; seed=2)
+    _, y1 = rand(StableRNG(51), lds1, fill(tsteps, ntrials))
+    _, y2 = rand(StableRNG(52), lds2, fill(tsteps, ntrials))
+    y = vcat(y1, y2)
+    session = vcat(fill(:a, ntrials), fill(:b, ntrials))
+
+    #=
+    Both models start from session `a`'s emission as the template; the seeded
+    one is additionally told session `b`'s, which is what a caller that stitched
+    the two onto shared factors would know.
+    =#
+    plain = st_build_lds(pd_state_model(), st_obs_model(3; seed=1))
+    plain.obs_model.depends_on = (C=session, d=session, R=session)
+    seeded = st_build_lds(pd_state_model(), st_obs_model(3; seed=1))
+    seeded.obs_model.depends_on = (C=session, d=session, R=session)
+    set_group_seeds!(
+        seeded.obs_model, Dict(:b => (C=copy(lds2.obs_model.C), R=copy(lds2.obs_model.R)))
+    )
+
+    plain_elbos = fit!(plain, y; max_iter=3, progress=false)
+    seeded_elbos = fit!(seeded, y; max_iter=3, progress=false)
+    @test all(isfinite, seeded_elbos)
+    @test pd_is_monotone(seeded_elbos)
+    @test first(seeded_elbos) > first(plain_elbos)
+    return nothing
+end
+
+#=
+`_slot_dim` reads a group's channel count off whichever of `:C`, `:d`, `:D` the
+seed happens to name, so that a group's emission can be read back between
+`set_group_seeds!` and the first fit — before any dataset has pinned a width.
+The tests above all seed `:C`, which settles the width on the first branch;
+these take the other three.
+=#
+
+# A Poisson emission has no `:R`, so a `:d`/`:D` seed alone fixes the width.
+function st_poisson_grouped(p::Int, session; uy_dim::Int=0)
+    C = Float64.(randn(StableRNG(1234), p, ST_LATENT_DIM))
+    # `:D` is part of `[C d D]` exactly when the emission takes inputs, and a
+    # `depends_on` has to name every member the model carries.
+    dep = uy_dim > 0 ? (C=session, d=session, D=session) : (C=session, d=session)
+    om = PoissonObservationModel(; C=C, d=zeros(p), D=zeros(p, uy_dim), depends_on=dep)
+    return om
+end
+
+function test_group_seeds_dim_read_from_d()
+    session = vcat(fill(:a, 3), fill(:b, 3))
+    p, wide = 3, 5
+    om = st_poisson_grouped(p, session)
+    dep = SSD._resolve_dependence(om)
+
+    d_b = collect(1.0:wide)
+    set_group_seeds!(om, Dict(:b => (d=d_b,)))
+    variants = SSD._build_variants!(om, dep, nothing, nothing)
+
+    # `:d` alone settled the width, and `[C D]` were sized to match it.
+    seeded = variants[findfirst(v -> length(v.d) == wide, variants)]
+    @test seeded.d == d_b
+    @test size(seeded.C) == (wide, ST_LATENT_DIM)
+    # No `:C` seed, so its rows are still the template's, cycled to the width.
+    for r in 1:wide
+        @test seeded.C[r, :] == om.C[mod1(r, p), :]
+    end
+    @test any(v -> v.C === om.C, variants)
+    return nothing
+end
+
+function test_group_seeds_dim_read_from_D()
+    session = vcat(fill(:a, 3), fill(:b, 3))
+    p, wide, uy = 3, 4, 2
+    om = st_poisson_grouped(p, session; uy_dim=uy)
+    dep = SSD._resolve_dependence(om)
+
+    D_b = Float64.(randn(StableRNG(77), wide, uy))
+    set_group_seeds!(om, Dict(:b => (D=D_b,)))
+    variants = SSD._build_variants!(om, dep, nothing, nothing)
+
+    seeded = variants[findfirst(v -> size(v.D, 1) == wide, variants)]
+    @test seeded.D == D_b
+    @test size(seeded.C) == (wide, ST_LATENT_DIM)
+    @test length(seeded.d) == wide
+    return nothing
+end
+
+function test_group_seeds_dim_falls_back_to_template()
+    session = vcat(fill(:a, 3), fill(:b, 3))
+    p = 3
+    om = st_poisson_grouped(p, session)
+    dep = SSD._resolve_dependence(om)
+
+    # A seed that names none of `:C` / `:d` / `:D` says nothing about the
+    # group's width, so the template's stands.
+    set_group_seeds!(om, Dict(:b => NamedTuple()))
+    variants = SSD._build_variants!(om, dep, nothing, nothing)
+    @test all(v -> size(v.C, 1) == p, variants)
+    @test all(v -> length(v.d) == p, variants)
+    @test any(v -> v.C === om.C, variants)
+    return nothing
+end
+
+#=
+The variant a given trial actually uses. `variants` is the full cross product of
+the groups' slots, so it also holds combinations no trial selects — one
+session's `[C d D]` against another's `:R`. Only the cells a trial resolves to
+are meaningful, and these are the ones the fitting code reaches through
+`trial_cell`.
+=#
+function st_variant_for_trial(om, dep, n::Int)
+    slots = [SSD._slot_of_trial(dep, g, n) for g in eachindex(dep.nslots)]
+    return om.variants[SSD._variant_index(dep.nslots, slots)]
+end
+
+#=
+The two halves of one Gaussian emission have to agree: `C` is `p × latent_dim`
+where `R` is `p × p`. A dataset pins both from the same trials. Seeds need not
+mention both, so a group nobody pinned takes the width its own trials carry in
+the other group — the width the data would have given it.
+=#
+function test_group_seeds_widths_follow_across_groups()
+    session = [:a, :a, :b, :b]
+    narrow, wide = 3, 5
+    a_trial, b_trial = 1, 4
+
+    # `:d` states :b's width; :b's `:R` was never mentioned and follows it.
+    om = st_obs_model(narrow)
+    om.depends_on = (C=session, d=session, R=session)
+    dep = SSD._resolve_dependence(om)
+    set_group_seeds!(om, Dict(:b => (d=collect(1.0:wide),)))
+    SSD._build_variants!(om, dep, nothing, nothing)
+
+    v_b = st_variant_for_trial(om, dep, b_trial)
+    @test v_b.d == collect(1.0:wide)
+    @test size(v_b.C) == (wide, ST_LATENT_DIM)
+    @test size(v_b.R) == (wide, wide)
+    # The group nobody seeded is untouched, and stays square on the template.
+    v_a = st_variant_for_trial(om, dep, a_trial)
+    @test size(v_a.C) == (narrow, ST_LATENT_DIM)
+    @test size(v_a.R) == (narrow, narrow)
+
+    # The mirror image: `:R` states the width, `[C d D]` follows.
+    om2 = st_obs_model(narrow)
+    om2.depends_on = (C=session, d=session, R=session)
+    dep2 = SSD._resolve_dependence(om2)
+    R_b = Matrix{Float64}(0.5I, wide, wide)
+    set_group_seeds!(om2, Dict(:b => (R=R_b,)))
+    SSD._build_variants!(om2, dep2, nothing, nothing)
+
+    w_b = st_variant_for_trial(om2, dep2, b_trial)
+    @test w_b.R == R_b
+    @test size(w_b.C) == (wide, ST_LATENT_DIM)
+    @test length(w_b.d) == wide
+    @test size(st_variant_for_trial(om2, dep2, a_trial).C) == (narrow, ST_LATENT_DIM)
+
+    # A group left silent by both stays at the template's width.
+    om3 = st_obs_model(narrow)
+    om3.depends_on = (C=session, d=session, R=session)
+    dep3 = SSD._resolve_dependence(om3)
+    v3 = SSD._build_variants!(om3, dep3, nothing, nothing)
+    @test all(v -> size(v.C, 1) == narrow && size(v.R, 1) == narrow, v3)
+    return nothing
+end
+
+#=
+One `:R` shared across `[C d D]` groups the seeds gave different widths has no
+single shape it could take, and is rejected rather than silently picking one.
+=#
+function test_group_seeds_reject_ambiguous_shared_width()
+    session = [:a, :a, :b, :b]
+    om = st_obs_model(3)
+    om.depends_on = (C=session, d=session)          # `:R` is pooled across both groups
+    dep = SSD._resolve_dependence(om)
+    set_group_seeds!(
+        om, Dict(:a => (C=zeros(4, ST_LATENT_DIM),), :b => (C=zeros(5, ST_LATENT_DIM),))
+    )
+    @test_throws ArgumentError SSD._build_variants!(om, dep, nothing, nothing)
+
+    # Same clash, but with `:R` declared as one named group rather than pooled,
+    # so the message can name which group has no consistent width.
+    om2 = st_obs_model(3)
+    om2.depends_on = (C=session, d=session, R=fill(:both, length(session)))
+    dep2 = SSD._resolve_dependence(om2)
+    set_group_seeds!(
+        om2, Dict(:a => (C=zeros(4, ST_LATENT_DIM),), :b => (C=zeros(5, ST_LATENT_DIM),))
+    )
+    err = try
+        SSD._build_variants!(om2, dep2, nothing, nothing)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ArgumentError
+    @test occursin("both", sprint(showerror, err))
+    return nothing
+end
+
 #=
 Stitching with a Poisson emission. The tests above are Gaussian throughout, but
 the per-session sizing is emission-agnostic and the seeding is not: `d` starts
