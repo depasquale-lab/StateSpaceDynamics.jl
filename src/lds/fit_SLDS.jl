@@ -17,7 +17,7 @@ are shared across regimes; the active regime `zₜ` selects which per-regime
 
     E-Step:         estep!(slds, tfs, fb_storage, dl, y, x_samples, slds_ws; ux, uy)
 
-    M-Step:         mstep!(slds, tfs, fb_storage, dl, y, sws; ux, uy)
+    M-Step:         mstep!(slds, tfs, fb_storage, dl, data, suf, sws; obs_seq, seq_ends)
 
     Fit:            fit!(slds, y; ux, uy, smoothing_iters)
 
@@ -607,7 +607,7 @@ function smooth!(
     Warm-start the Newton iteration from the previous EM iteration's smoothed
     mean. If the smoothed mean is all zeros, use the first LDS's prior mean.
     =#
-    if all(x .== 0)
+    if all(iszero, x)
         x .= slds.LDSs[1].state_model.x0
     end
 
@@ -683,7 +683,7 @@ function smooth!(
     end
 
     @views for t in 1:tsteps
-        fs.p_smooth[:, :, t] .= Symmetrize!(fs.p_smooth[:, :, t])
+        Symmetrize!(fs.p_smooth[:, :, t])
     end
 
     return fs
@@ -705,6 +705,26 @@ function smooth(
 ) where {T<:Real}
     lds1 = slds.LDSs[1]
     tsteps = size(y, 2)
+    K = length(slds.LDSs)
+
+    #=
+    The weighted kernels index `w[k, t]` for k in 1:K without inspecting its
+    shape, so a `w` with extra rows or unnormalised columns would otherwise
+    return a silently wrong posterior. Checked here, at the public entry point,
+    rather than in `smooth!`, which runs inside the alternation loop.
+    =#
+    size(w) == (K, tsteps) ||
+        throw(DimensionMismatchError("w (responsibilities)", (K, tsteps), size(w)))
+    for t in 1:tsteps
+        col_sum = sum(view(w, :, t))
+        isapprox(col_sum, one(T); atol=sqrt(eps(T))) || throw(
+            ArgumentError(
+                "responsibilities `w` must sum to 1 over the K regimes; " *
+                "column $t sums to $col_sum",
+            ),
+        )
+    end
+
     ux_m = _check_ux(ux, lds1.ux_dim, tsteps, "ux", T)
     uy_m = _check_uy(uy, lds1.uy_dim, tsteps, lds1.obs_model)
     fs = initialize_FilterSmooth(lds1, tsteps)::FilterSmooth{T}
@@ -729,8 +749,8 @@ result is reproducible.
 - `smoothing_iters::Int=100`: maximum discrete↔continuous alternations.
 - `tol::Real=1e-6`: stop once `max|Δγ| < tol`; `tol=0` runs exactly `smoothing_iters`
   alternations with no stopping test.
-- `return_cov::Bool=false`: also return the smoothed covariances (`latent_dim² × T` per
-  trial — large, hence opt-in).
+- `return_cov::Bool=false`: also return the smoothed covariances
+  (`latent_dim × latent_dim × T` per trial — large, hence opt-in).
 - `progress::Bool=false`: show a progress bar.
 
 # Returns
@@ -883,8 +903,9 @@ difference between the two callers:
   read then overwritten within each alternation.
 
 `tol` selects the stopping rule. `tol == 0` runs exactly `smoothing_iters`
-alternations; `tol > 0` stops early once `max|Δγ| < tol` and warns if
-`smoothing_iters` is exhausted first.
+alternations; `tol > 0` stops early once `max|Δγ| < tol`. Whether an exhausted
+iteration budget is worth warning about is left to the caller, which has the
+returned `converged` flag ([`smooth`](@ref) warns; [`estep!`](@ref) does not).
 
 Returns `(iters, converged)`.
 """
@@ -967,16 +988,15 @@ function _vem_alternate!(
         prog !== nothing && next!(prog)
 
         if γ_prev !== nothing
-            if iter > 1
-                Δγ = zero(T)
-                @inbounds for i in eachindex(fb_storage.γ)
-                    d = abs(fb_storage.γ[i] - γ_prev[i])
-                    d > Δγ && (Δγ = d)
-                end
-                if Δγ < tol
-                    converged = true
-                    break
-                end
+            # `γ_prev` starts at `Inf`, so the first pass can never converge.
+            Δγ = zero(T)
+            for i in eachindex(fb_storage.γ)
+                d = abs(fb_storage.γ[i] - γ_prev[i])
+                d > Δγ && (Δγ = d)
+            end
+            if Δγ < tol
+                converged = true
+                break
             end
             copyto!(γ_prev, fb_storage.γ)
         end
@@ -1195,19 +1215,28 @@ function elbo!(
             trial_elbo += T(0.5) * _tr_prod(H_sub[t - 1], transpose(Σ_ttm1))
         end
 
-        # E_q[log p(z_1)].
+        #=
+        E_q[log p(z_1)] = Σ_k γ₁(k) log πₖ. A zero-probability regime cannot
+        carry posterior mass at t=1, so γ₁(k) > 0 ⇒ πₖ[k] > 0 and the log is
+        safe; the k-th term is exactly zero otherwise. Same reasoning as the
+        H[q(z)] block below.
+        =#
         for k in 1:K
-            trial_elbo += w[k, 1] * log(slds.πₖ[k] + T(1e-12))
+            wk1 = w[k, 1]
+            wk1 > 0 && (trial_elbo += wk1 * log(slds.πₖ[k]))
         end
 
         #=
         E_q[log p(z_t | z_{t-1})] = Σ_t Σ_ij ξ_t[i,j] log A[i,j]. ξ is global-
         indexed; ξ[t2] is zero by FB convention, so iterate t1..t2-1.
+        ξ_t[i,j] > 0 ⇒ A[i,j] > 0 (forward-backward cannot put mass on a
+        forbidden transition), so the log is safe under the guard.
         =#
         for t in t1:(t2 - 1)
             ξt = fb_storage.ξ[t]
             for i in 1:K, j in 1:K
-                trial_elbo += ξt[i, j] * log(slds.A[i, j] + T(1e-12))
+                ξij = ξt[i, j]
+                ξij > 0 && (trial_elbo += ξij * log(slds.A[i, j]))
             end
         end
 
@@ -1288,9 +1317,14 @@ function StatsAPI.loglikelihood(slds::SLDS, y; kwargs...)
 end
 
 """
-    mstep!(slds, tfs, fb_storage, y, sws; obs_seq, seq_ends, ux=nothing, uy=nothing)
+    mstep!(slds, tfs, fb_storage, dl, data, suf, sws; obs_seq, seq_ends)
 
 M-step for SLDS.
+
+`data` and `suf` are built once by [`fit!`](@ref) and reused every iteration:
+`Data` revalidates the observations and inputs on construction, and `suf` is
+overwritten per regime by the weighted aggregator, so neither belongs inside
+the EM loop.
 
 - Updates discrete parameters (`slds.A`, `slds.πₖ`) via `StatsAPI.fit!` on the discrete
   layer (uses HMMs.jl's `ξ[t2]` scratch trick).
@@ -1309,29 +1343,18 @@ function mstep!(
     tfs::TrialFilterSmooth{T},
     fb_storage::HMMs.ForwardBackwardStorage,
     dl::SLDSDiscreteLayer{T},
-    y::AbstractVector{<:AbstractMatrix{T}},
+    data::Data{T},
+    suf::SufficientStatistics{T},
     sws::SmoothWorkspace{T};
     obs_seq::AbstractVector,
     seq_ends::AbstractVector{Int},
-    ux::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
-    uy::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
     K = length(slds.LDSs)
+    y = data.y
     ntrials = length(y)
 
     # Discrete-layer M-step (slds.A, slds.πₖ are updated in place via dl).
     StatsAPI.fit!(dl, fb_storage, obs_seq; seq_ends=seq_ends)
-
-    #=
-    `Data` canonicalizes absent ux/uy to zero-row matrices and validates the
-    supplied ones. All regimes share the same input dims (enforced by
-    `validate_SLDS`), so one `Data` serves every `lds_k`.
-    =#
-    data = Data(slds.LDSs[1], y; ux=ux, uy=uy)
-
-    # One reusable SufficientStatistics; overwritten per regime by the
-    # weighted aggregator.
-    suf = _initialize_td_sufficient_statistics(T, slds.LDSs[1], data.tsteps)
 
     #=
     x0/P0 are tied across modes. Since the smoother gives one q(x) per trial
@@ -1343,12 +1366,26 @@ function mstep!(
     init_xy = zeros(T, 1, D)
     init_yy = zeros(T, D, D)
 
-    weights = Vector{AbstractVector{T}}(undef, ntrials)
+    #=
+    Per-trial views onto regime k's responsibility row, repointed each k. Built
+    by `map` so the eltype is the concrete `SubArray`: an abstract eltype here
+    turns every access inside the aggregator into a dynamic dispatch.
+    =#
+    γ = fb_storage.γ
+    weights = map(1:ntrials) do trial
+        t1, t2 = HMMs.seq_limits(seq_ends, trial)
+        return view(γ, 1, t1:t2)
+    end
+
+    # `update_observation_model!` takes a workspace pool; wrap our single `sws`
+    # once rather than re-allocating the one-element vector per regime.
+    sws_pool = [sws]
+
     for k in 1:K
         lds_k = slds.LDSs[k]
         for trial in 1:ntrials
             t1, t2 = HMMs.seq_limits(seq_ends, trial)
-            weights[trial] = view(fb_storage.γ, k, t1:t2)
+            weights[trial] = view(γ, k, t1:t2)
         end
 
         _aggregate_td_suff_stats_weighted!(suf, tfs, lds_k, data, weights, sws)
@@ -1364,8 +1401,8 @@ function mstep!(
         elseif lds_k.obs_model isa PoissonObservationModel{T}
             update_A_b!(lds_k, suf, sws)
             update_Q!(lds_k, suf, sws)
-            # Single sws wrapped as a pool of one; maybe thread in future
-            update_observation_model!(lds_k, tfs, y, [sws], weights; uy=data.uy)
+            # Pool of one; maybe thread in future.
+            update_observation_model!(lds_k, tfs, y, sws_pool, weights; uy=data.uy)
         else
             throw(ArgumentError("Unsupported observation model $(typeof(lds_k.obs_model))"))
         end
@@ -1390,11 +1427,16 @@ from the pooled init stats in `suf` (see `mstep!`) and copy it into every
 function _update_shared_initial_state!(
     slds::SLDS{T}, suf::SufficientStatistics{T}, sws::SmoothWorkspace{T}
 ) where {T<:Real}
-    lds1 = deepcopy(slds.LDSs[1])
+    #=
+    Fit regime 1 in place and broadcast to the rest. Both updates already
+    no-op on their `fit_bool` flag, so an unfitted x0/P0 is left untouched
+    everywhere — the same guard the copy loop applies.
+    =#
+    lds1 = slds.LDSs[1]
     update_initial_state_mean!(lds1, suf)
     update_initial_state_covariance!(lds1, suf, sws)
     fit_x0, fit_P0 = lds1.fit_bool[1], lds1.fit_bool[2]
-    for k in eachindex(slds.LDSs)
+    for k in 2:length(slds.LDSs)
         fit_x0 && copyto!(slds.LDSs[k].state_model.x0, lds1.state_model.x0)
         fit_P0 && copyto!(slds.LDSs[k].state_model.P0, lds1.state_model.P0)
     end
@@ -1478,6 +1520,10 @@ function fit!(
     slds_ws = SLDSSmoothWorkspace(T, slds, T_max)
     x_samples = [Matrix{T}(undef, latent_dim, Ti) for Ti in tsteps_per_trial]
 
+    # One reusable SufficientStatistics for the M-step; the weighted aggregator
+    # overwrites it per regime, so it is allocated here rather than per iteration.
+    suf = _initialize_td_sufficient_statistics(T, slds.LDSs[1], data.tsteps)
+
     prog = if progress
         Progress(max_iter; desc="Fitting SLDS via EM...", barlen=50, showspeed=true)
     else
@@ -1522,16 +1568,7 @@ function fit!(
 
         # M-step: update discrete and continuous parameters.
         mstep!(
-            slds,
-            tfs,
-            fb_storage,
-            dl,
-            y_seq,
-            sws;
-            obs_seq=obs_seq,
-            seq_ends=seq_ends,
-            ux=ux_seq,
-            uy=uy_seq,
+            slds, tfs, fb_storage, dl, data, suf, sws; obs_seq=obs_seq, seq_ends=seq_ends
         )
         refresh_slds_constants!(slds_ws, slds)
 

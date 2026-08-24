@@ -1158,8 +1158,12 @@ function test_SLDS_mstep_updates_parameters(; rng=MersenneTwister(0xC0FFEE))
 
     A_old = copy(slds.A)
 
+    data = StateSpaceDynamics.Data(slds.LDSs[1], y)
+    suf = StateSpaceDynamics._initialize_td_sufficient_statistics(
+        Float64, slds.LDSs[1], data.tsteps
+    )
     StateSpaceDynamics.mstep!(
-        slds, tfs, fb_storage, dl, y, sws; obs_seq=obs_seq, seq_ends=seq_ends
+        slds, tfs, fb_storage, dl, data, suf, sws; obs_seq=obs_seq, seq_ends=seq_ends
     )
 
     # Check parameters changed (with high probability)
@@ -1700,6 +1704,120 @@ function test_SLDS_smooth_infer_cov_and_elbo(; rng=MersenneTwister(0xACE5))
         @test e == post.elbo
         @test loglikelihood(slds, y; smoothing_iters=25, tol=1e-9) == e
     end
+    return nothing
+end
+
+function test_SLDS_smooth_elbo_monotone(; rng=MersenneTwister(0xACE8))
+    #=
+    `smooth` is deterministic coordinate ascent (no Monte-Carlo draw in the
+    loop), so the reported ELBO should be non-decreasing in the number of
+    alternations. It is not: after the first alternation the bound converges to
+    its fixed point from ABOVE, so `smoothing_iters=2` reports a *higher* ELBO
+    than `smoothing_iters=100`.
+
+    Measured on this model: +2.8e-3 on the first step, then
+    -1.8e-4, -5.2e-5, -9.7e-6, -1.7e-6, ... a clean geometric decay. Ruled out
+    as the cause: floating-point noise (the decay is too regular), the inner
+    Newton tolerance (the deficit is identical at tol = 1e-6, 1e-9, 1e-12 and
+    0), and a missing per-regime ½ tr(H_k Σ) term in the q(z) update (adding it
+    makes the drift worse, not better). So the discrete update and `elbo!`
+    disagree about the objective somewhere else.
+
+    The gap is ~1e-6 relative here and does not stop the alternation from
+    converging, so what this test pins is the behaviour that actually holds —
+    convergence, and a bounded overshoot — with the monotonicity that *should*
+    hold marked broken.
+    =#
+    K = 2
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 30
+    ntrials = 2
+
+    lds1 = _make_gaussian_lds_dense(latent_dim, obs_dim; seed=41)
+    lds2 = _make_gaussian_lds_dense(latent_dim, obs_dim; seed=42)
+    slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=[lds1, lds2])
+    z, x, y = rand(rng, slds, fill(tsteps, ntrials))
+
+    elbos = [StateSpaceDynamics.elbo(slds, y; smoothing_iters=i, tol=0) for i in 1:10]
+    @test all(isfinite, elbos)
+
+    # The alternation does something, and then settles.
+    @test elbos[2] > elbos[1]
+    @test abs(elbos[end] - elbos[end - 1]) < 1e-9
+
+    #=
+    The overshoot is real but negligible on the scale of the bound: here it is
+    2.4e-4 nats against an ELBO of -256 (~1e-6 relative), though that is a
+    sizeable 9% of the 2.8e-3 the first alternation gained.
+    =#
+    @test maximum(elbos) - elbos[end] < 1e-3 * abs(elbos[end])
+
+    # Coordinate ascent on a fixed objective would give this outright.
+    @test_broken all(diff(elbos) .>= -1e-9)
+    return nothing
+end
+
+function test_SLDS_smooth_infer_poisson(; rng=MersenneTwister(0xACE9))
+    #=
+    The ½ tr(H Σ) term in `elbo!` is exact for Gaussian emissions but a Laplace
+    approximation for Poisson, so the Gaussian coverage above cannot detect a
+    Poisson-specific problem in it. Drive the same public path on counts.
+    =#
+    K = 2
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 25
+    ntrials = 2
+
+    lds1 = _make_poisson_lds_dense(latent_dim, obs_dim; seed=51)
+    lds2 = _make_poisson_lds_dense(latent_dim, obs_dim; seed=52)
+    slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=[lds1, lds2])
+    z, x, y = rand(rng, slds, fill(tsteps, ntrials))
+
+    post = smooth(slds, y; smoothing_iters=30, tol=1e-9, return_cov=true)
+
+    @test length(post.γ) == ntrials
+    for trial in 1:ntrials
+        @test size(post.γ[trial]) == (K, tsteps)
+        @test all(isapprox.(sum(post.γ[trial]; dims=1), 1.0; atol=1e-10))
+        @test size(post.x[trial]) == (latent_dim, tsteps)
+        @test all(isfinite, post.x[trial])
+        for t in 1:tsteps
+            Pt = post.p[trial][:, :, t]
+            @test isapprox(Pt, Pt'; atol=1e-10)
+            @test all(eigvals(Symmetric(Pt)) .> 0)
+        end
+    end
+    @test isfinite(post.elbo)
+    @test loglikelihood(slds, y; smoothing_iters=30, tol=1e-9) == post.elbo
+    return nothing
+end
+
+function test_SLDS_smooth_given_w_validation(; rng=MersenneTwister(0xACEA))
+    #=
+    The weighted kernels read `w[k, t]` without inspecting its shape, so an
+    unchecked `w` returns a silently wrong posterior rather than erroring.
+    =#
+    K = 2
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 12
+
+    lds1 = _make_gaussian_lds_dense(latent_dim, obs_dim; seed=61)
+    lds2 = _make_gaussian_lds_dense(latent_dim, obs_dim; seed=62)
+    slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=[lds1, lds2])
+    z, x, y = rand(rng, slds, fill(tsteps, 1))
+
+    w_ok = fill(1.0 / K, K, tsteps)
+    @test size(smooth(slds, y[1], w_ok)[1]) == (latent_dim, tsteps)
+
+    # Extra regime row: previously ignored in silence.
+    @test_throws DimensionMismatchError smooth(slds, y[1], fill(1.0 / K, K + 1, tsteps))
+    # Wrong trial length.
+    @test_throws DimensionMismatchError smooth(slds, y[1], fill(1.0 / K, K, tsteps - 3))
+    # Unnormalised columns: previously rescaled the posterior in silence.
+    @test_throws ArgumentError smooth(slds, y[1], fill(5.0, K, tsteps))
     return nothing
 end
 
@@ -2473,8 +2591,12 @@ function test_SLDS_mstep_updates_parameters_poisson(; rng=MersenneTwister(0xC0FF
         seq_ends=seq_ends,
     )
 
+    data = StateSpaceDynamics.Data(slds.LDSs[1], y)
+    suf = StateSpaceDynamics._initialize_td_sufficient_statistics(
+        Float64, slds.LDSs[1], data.tsteps
+    )
     StateSpaceDynamics.mstep!(
-        slds, tfs, fb_storage, dl, y, sws; obs_seq=obs_seq, seq_ends=seq_ends
+        slds, tfs, fb_storage, dl, data, suf, sws; obs_seq=obs_seq, seq_ends=seq_ends
     )
 
     for k in 1:K
