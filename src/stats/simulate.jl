@@ -116,6 +116,10 @@ Optional input sequences:
 - `uy`: same shape for the observation input `D`. Required when
   `size(obs_model.D, 2) > 0`. Supported for both Gaussian and Poisson
   observation models.
+- `depends_on`: optional `NamedTuple` of per-trial label vectors overriding the
+  models' stored `depends_on` for this call. When the model declares ancillary
+  parameter dependencies, each trial is sampled from its own group's parameters
+  — which is how you generate a synthetic multi-session dataset.
 """
 function Random.rand(
     rng::AbstractRNG,
@@ -123,10 +127,15 @@ function Random.rand(
     tsteps::Integer;
     ux::Union{Nothing,AbstractMatrix{T}}=nothing,
     uy::Union{Nothing,AbstractMatrix{T}}=nothing,
+    depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
-    _reject_unsupported_dependence(lds)
-    state_params = _extract_state_params(lds.state_model)
-    obs_params = _extract_obs_params(lds.obs_model)
+    if depends_on === nothing && _has_parameter_dependence(lds)
+        _single_trial_group_error("lds")
+    end
+    grp = parameter_grouping(lds, 1; depends_on=depends_on)
+    lds1 = grp === nothing ? lds : _cell_lds(lds, grp, grp.trial_cell[1])
+    state_params = _extract_state_params(lds1.state_model)
+    obs_params = _extract_obs_params(lds1.obs_model)
     Ti = Int(tsteps)
 
     ux_trial = _check_ux(ux, lds.ux_dim, Ti, "ux", T)
@@ -144,12 +153,28 @@ function Random.rand(
     tsteps_per_trial::AbstractVector{<:Integer};
     ux::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
     uy::Union{Nothing,AbstractVector{<:AbstractMatrix{T}}}=nothing,
+    depends_on::Union{Nothing,NamedTuple}=nothing,
 ) where {T<:Real,S<:GaussianStateModel{T},O<:AbstractObservationModel{T}}
-    _reject_unsupported_dependence(lds)
-    state_params = _extract_state_params(lds.state_model)
-    obs_params = _extract_obs_params(lds.obs_model)
-
     ntrials = length(tsteps_per_trial)
+    grp = parameter_grouping(lds, ntrials; depends_on=depends_on)
+
+    # Per-trial parameter sets: one shared pair when ungrouped, the cell's when
+    # grouped. Either way the sampler below is one code path.
+    if grp === nothing
+        state_params = fill(_extract_state_params(lds.state_model), ntrials)
+        obs_params = fill(_extract_obs_params(lds.obs_model), ntrials)
+    else
+        cell_state = [
+            _extract_state_params(_cell_lds(lds, grp, c).state_model) for
+            c in 1:(grp.ncells)
+        ]
+        cell_obs = [
+            _extract_obs_params(_cell_lds(lds, grp, c).obs_model) for c in 1:(grp.ncells)
+        ]
+        state_params = [cell_state[grp.trial_cell[n]] for n in 1:ntrials]
+        obs_params = [cell_obs[grp.trial_cell[n]] for n in 1:ntrials]
+    end
+
     x = Vector{Matrix{T}}(undef, ntrials)
     y = Vector{Matrix{T}}(undef, ntrials)
     for i in 1:ntrials
@@ -166,7 +191,14 @@ function Random.rand(
     # gets its own child RNG, indexed by chunk (not `threadid()`).
     if ntrials == 1
         _sample_trial!(
-            rng, x[1], y[1], state_params, obs_params, lds.obs_model, ux_seq[1], uy_seq[1]
+            rng,
+            x[1],
+            y[1],
+            state_params[1],
+            obs_params[1],
+            lds.obs_model,
+            ux_seq[1],
+            uy_seq[1],
         )
         return x, y
     end
@@ -175,22 +207,26 @@ function Random.rand(
     chunksize = cld(ntrials, ntasks)
     task_rngs = [MersenneTwister(rand(rng, UInt64)) for _ in 1:ntasks]
 
-    tforeach(1:ntasks) do i
-        lo = (i - 1) * chunksize + 1
-        hi = min(i * chunksize, ntrials)
-        lo > hi && return nothing
-        trng = task_rngs[i]
-        for trial in lo:hi
-            _sample_trial!(
-                trng,
-                x[trial],
-                y[trial],
-                state_params,
-                obs_params,
-                lds.obs_model,
-                ux_seq[trial],
-                uy_seq[trial],
-            )
+    # Assigned in both arms above, so sharing the bindings with the closure
+    # would box them, which OhMyThreads rejects.
+    let state_params = state_params, obs_params = obs_params
+        tforeach(1:ntasks) do i
+            lo = (i - 1) * chunksize + 1
+            hi = min(i * chunksize, ntrials)
+            lo > hi && return nothing
+            trng = task_rngs[i]
+            for trial in lo:hi
+                _sample_trial!(
+                    trng,
+                    x[trial],
+                    y[trial],
+                    state_params[trial],
+                    obs_params[trial],
+                    lds.obs_model,
+                    ux_seq[trial],
+                    uy_seq[trial],
+                )
+            end
         end
     end
 

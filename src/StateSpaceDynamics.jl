@@ -49,6 +49,9 @@ include("lds/continuous_latents.jl")                # state-model Q-term + state
 include("lds/gaussian_observations.jl")
 include("lds/poisson_observations.jl")
 
+# Grouped (`depends_on`) M-step + ELBO machinery, shared by LDS / PLDS / SLDS.
+include("lds/grouped_em.jl")
+
 # Fitting Functions
 include("lds/fit_LDS.jl")
 include("lds/fit_PLDS.jl")
