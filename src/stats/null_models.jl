@@ -329,6 +329,30 @@ Regression + scoring kernels
 =#
 
 #=
+The Gram matrix `mn_map` inverts is singular whenever the design is
+rank-deficient. The usual cause is an input block carrying its own constant row,
+which duplicates the intercept the baseline always fits; too few timesteps for
+the coefficient count does it too. `mn_map` would throw a bare
+`SingularException`, so check here and name the cause.
+=#
+function _null_check_design(
+    XX::AbstractMatrix{T}, W_prior::Union{Nothing,MNPrior{T,Matrix{T}}}, n::Int
+) where {T<:Real}
+    A = W_prior === nothing ? copy(XX) : XX .+ W_prior.Λ
+    issuccess(cholesky!(Symmetric(A); check=false)) && return nothing
+    throw(
+        NumericalStabilityError(
+            "null design matrix",
+            "the regression is rank-deficient ($(size(XX, 1)) coefficients, $n " *
+            "observations), so the baseline's parameters are not identifiable. The " *
+            "common cause is an input block with a constant row, which duplicates the " *
+            "intercept the baseline always fits: drop that row from `inputs`. " *
+            "Otherwise supply more timesteps, or set a `W_prior` to regularize",
+        ),
+    )
+end
+
+#=
 MAP fit of `Y = W X + ε`, `ε ~ N(0, R)`, with an optional `MNPrior` on `W` and
 `IWPrior` on `R`. Mirrors `update_R!` in `lds/gaussian_observations.jl`.
 =#
@@ -341,9 +365,13 @@ function _null_fit_regression(
     obs_dim, n = size(Y)
     size(X, 2) == n || throw(DimensionMismatchError("X cols vs Y cols", n, size(X, 2)))
 
+    XX = X * transpose(X)
+    Symmetrize!(XX)
+    _null_check_design(XX, W_prior, n)
+
     # `mn_map` returns a `Transpose` view; materialize so downstream BLAS calls
     # hit the concrete-matrix code paths.
-    W = Matrix(mn_map(X * transpose(X), X * transpose(Y), W_prior))
+    W = Matrix(mn_map(XX, X * transpose(Y), W_prior))
 
     E = Y .- W * X
     S = E * transpose(E)
@@ -408,6 +436,10 @@ StatsAPI methods on a baseline
 
 Fit `null` in closed form on `y` and return it. `inputs` takes the same trial
 formats as `y`, and is required when the baseline has an input block.
+
+Throws a `NumericalStabilityError` when the design is rank-deficient — most often
+an input block carrying a constant row, which duplicates the intercept the
+baseline already fits.
 """
 function StatsAPI.fit!(null::AffineNullModel, y; inputs=nothing)
     return _null_fit!(null, _null_prepare(null, y, inputs)...)

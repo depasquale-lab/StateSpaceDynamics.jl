@@ -450,6 +450,43 @@ function test_null_input_shape_mismatch_throws(rng=MersenneTwister(12))
     @test_throws DimensionMismatchError fit!(null, y; inputs=wrong_ntrials)
 end
 
+# A rank-deficient design is named, not left to `SingularException`. The common
+# case is an input block with its own constant row, which duplicates the
+# intercept every baseline fits.
+function test_null_rank_deficient_design_throws(rng=MersenneTwister(23))
+    T = Float64
+    obs_dim, v_dim, tsteps, ntrials = 3, 2, 20, 4
+    y = _null_make_y(rng, obs_dim, fill(tsteps, ntrials); T=T)
+    v_bias = [vcat(ones(T, 1, tsteps), randn(rng, T, v_dim - 1, tsteps)) for _ in 1:ntrials]
+
+    contemp = AffineNullModel{T}(:inputs, obs_dim; input_dim=v_dim, input_shift=0)
+    @test_throws NumericalStabilityError fit!(contemp, y; inputs=v_bias)
+
+    var_contemp = AffineNullModel{T}(:var_inputs, obs_dim; input_dim=v_dim, input_shift=0)
+    @test_throws NumericalStabilityError fit!(var_contemp, y; inputs=v_bias)
+
+    # Shifting the input block breaks the collinearity: `v_{t-1}`'s constant row
+    # starts at zero, so the design is full rank again.
+    lagged = AffineNullModel{T}(:inputs, obs_dim; input_dim=v_dim, input_shift=1)
+    @test isfinite(loglikelihood(fit!(lagged, y; inputs=v_bias), y; inputs=v_bias))
+
+    # An `MNPrior` regularizes the same design back to full rank.
+    ncoef = 1 + v_dim
+    prior = MNPrior(; M₀=zeros(T, obs_dim, ncoef), Λ=Matrix{T}(I, ncoef, ncoef))
+    regularized = AffineNullModel{T}(
+        :inputs, obs_dim; input_dim=v_dim, input_shift=0, W_prior=prior
+    )
+    fit!(regularized, y; inputs=v_bias)
+    @test isfinite(loglikelihood(regularized, y; inputs=v_bias))
+
+    # Fewer observations than coefficients is rank-deficient for the same reason.
+    wide_dim = 6
+    y_short = _null_make_y(rng, obs_dim, fill(3, 2); T=T)
+    v_short = _null_make_inputs(rng, wide_dim, fill(3, 2); T=T)
+    short = AffineNullModel{T}(:inputs, obs_dim; input_dim=wide_dim)
+    @test_throws NumericalStabilityError fit!(short, y_short; inputs=v_short)
+end
+
 function test_null_var_requires_tsteps_ge_2(rng=MersenneTwister(13))
     T = Float64
     obs_dim = 2

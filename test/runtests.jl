@@ -313,6 +313,7 @@ using SSDTest
         test_null_observation_shape_mismatch_throws()
         test_null_input_shape_mismatch_throws()
         test_null_var_requires_tsteps_ge_2()
+        test_null_rank_deficient_design_throws()
         test_nobs_counts_scalar_observations()
         test_nullloglikelihood_matches_intercept_baseline()
         test_r2_cox_snell_formula()
