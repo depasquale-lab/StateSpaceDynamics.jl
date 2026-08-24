@@ -733,7 +733,7 @@ always a scalar, and `p` is `nothing` unless `return_cov=true`.
 """
 function smooth(
     slds::SLDS{T,S,O},
-    y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
+    y::Observations{T};
     ux=nothing,
     uy=nothing,
     smoothing_iters::Int=100,
@@ -1271,7 +1271,7 @@ Call [`smooth`](@ref) directly when the posteriors are also needed.
 """
 function elbo(
     slds::SLDS{T,S,O},
-    y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
+    y::Observations{T};
     ux=nothing,
     uy=nothing,
     smoothing_iters::Int=100,
@@ -1435,7 +1435,7 @@ across regimes.
 """
 function fit!(
     slds::SLDS{T,S,O},
-    y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
+    y::Observations{T};
     ux=nothing,
     uy=nothing,
     max_iter::Int=50,

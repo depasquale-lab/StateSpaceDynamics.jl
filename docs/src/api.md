@@ -54,12 +54,12 @@ Random.rand(rng::AbstractRNG, ppca::ProbabilisticPCA, n::Int)
 
 ```@docs; canonical = false
 smooth
-fit!(lds::LinearDynamicalSystem{T,S,O}, y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}}; max_iter::Int=100, tol::Float64=1e-6, progress::Bool=true) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
-fit!(slds::SLDS{T,S,O}, y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}}; max_iter::Int=50, progress::Bool=true) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
+fit!(lds::LinearDynamicalSystem{T,S,O}, y::StateSpaceDynamics.Observations{T}; max_iter::Int=100, tol::Float64=1e-6, progress::Bool=true) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
+fit!(slds::SLDS{T,S,O}, y::StateSpaceDynamics.Observations{T}; max_iter::Int=50, progress::Bool=true) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
 ```
 
 ```@docs
-fit!(plds::LinearDynamicalSystem{T,S,O}, y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}}) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
+fit!(plds::LinearDynamicalSystem{T,S,O}, y::StateSpaceDynamics.Observations{T}) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
 fit!(ppca::ProbabilisticPCA, X::AbstractMatrix{T}, max_iters::Int=100, tol::Float64=1e-6) where {T<:Real}
 ```
 
@@ -70,7 +70,7 @@ variants are the workspace-based internals it wraps.
 
 ```@docs
 elbo
-loglikelihood(lds::LinearDynamicalSystem{T,SM,OM}, y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}}) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
+loglikelihood(lds::LinearDynamicalSystem{T,SM,OM}, y::StateSpaceDynamics.Observations{T}) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
 loglikelihood(plds::LinearDynamicalSystem{T,S,O}, y) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
 loglikelihood(slds::SLDS, y)
 loglikelihood(ppca::ProbabilisticPCA, X::AbstractMatrix{T}) where {T<:Real}

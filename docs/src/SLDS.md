@@ -88,7 +88,7 @@ The sampling process follows the generative model:
 `StateSpaceDynamics.jl` implements a **Variational Laplace Expectation-Maximization (vLEM)** algorithm for parameter estimation in SLDS. This approach efficiently handles the challenging interaction between discrete and continuous latent variables through a structured variational approximation.
 
 ```@docs
-fit!(slds::SLDS{T,S,O}, y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}}; max_iter::Int=50, progress::Bool=true) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
+fit!(slds::SLDS{T,S,O}, y::StateSpaceDynamics.Observations{T}; max_iter::Int=50, progress::Bool=true) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
 ```
 
 Each E-step runs `smoothing_iters` discrete↔continuous updates before the M-step.
@@ -105,7 +105,7 @@ with the Kalman/Laplace smoother until the responsibilities converge or
 smoothed mean, so repeated calls are deterministic.
 
 ```@docs; canonical = false
-smooth(slds::SLDS{T,S,O}, y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}}) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
+smooth(slds::SLDS{T,S,O}, y::StateSpaceDynamics.Observations{T}) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
 ```
 
 [`loglikelihood`](@ref) and [`elbo`](@ref) return the same ELBO because the exact
