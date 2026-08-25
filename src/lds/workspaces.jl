@@ -722,12 +722,15 @@ Workspace for SLDS smoothing that matches the LDS backend shape:
   single-LDS and SLDS paths use one set of field paths
 - `ll_tmp`: per-component log-likelihood scratch; the weighted accumulation
   across components needs a second `tsteps` buffer beside `opt.ll_vec`
+- `H_obs`: one regime's emission curvature for `_add_cov_correction!`; `btd`
+  holds the responsibility-weighted sum.
 """
 struct SLDSSmoothWorkspace{T<:Real}
     btd::BlockTridiagonalWorkspace{T}
     consts::Vector{SmoothConstants{T}}
     opt::NewtonBuffers{T}
     ll_tmp::Vector{T}   # per-component scratch (length tsteps)
+    H_obs::Matrix{T}    # per-component emission curvature (latent_dim × latent_dim)
 end
 
 function SLDSSmoothWorkspace(::Type{T}, slds::SLDS, tsteps::Int) where {T<:Real}
@@ -739,7 +742,8 @@ function SLDSSmoothWorkspace(::Type{T}, slds::SLDS, tsteps::Int) where {T<:Real}
         BlockTridiagonalWorkspace(T, latent_dim, tsteps),
         [SmoothConstants(T, latent_dim, obs_dim) for _ in 1:K],
         NewtonBuffers(T, latent_dim, obs_dim, tsteps),
-        zeros(T, tsteps),                # ll_tmp
+        zeros(T, tsteps),                  # ll_tmp
+        zeros(T, latent_dim, latent_dim),  # H_obs
     )
 
     # Cache constants once

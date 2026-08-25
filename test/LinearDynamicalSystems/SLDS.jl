@@ -1787,8 +1787,9 @@ function test_SLDS_num_samples(; rng=MersenneTwister(0xACEB))
 end
 
 function test_SLDS_smooth_elbo_monotone(; rng=MersenneTwister(0xACE8))
-    # The bound has a small, known overshoot as the updates converge. Monotonicity
-    # remains a broken test until the discrete update and `elbo!` agree exactly.
+    # With Gaussian emissions the discrete update scores `E_q(x)[log p]` exactly
+    # (`_add_cov_correction!`) and the Laplace update of q(x) is the exact
+    # coordinate step, so the alternation ascends `elbo!` to roundoff.
     K = 2
     latent_dim = 2
     obs_dim = 3
@@ -1804,11 +1805,94 @@ function test_SLDS_smooth_elbo_monotone(; rng=MersenneTwister(0xACE8))
     @test all(isfinite, elbos)
 
     @test elbos[2] > elbos[1]
-    @test abs(elbos[end] - elbos[end - 1]) < 1e-9
+    @test all(diff(elbos) .>= -1e-12 * abs(elbos[end]))
+    @test maximum(elbos) - elbos[end] <= 1e-12 * abs(elbos[end])
 
-    @test maximum(elbos) - elbos[end] < 1e-3 * abs(elbos[end])
+    @test abs(elbos[end] - elbos[end - 1]) < 1e-7 * abs(elbos[end])
+    return nothing
+end
 
-    @test_broken all(diff(elbos) .>= -1e-9)
+function test_SLDS_cov_correction_matches_elbo_hessian(; rng=MersenneTwister(0xACEF))
+    # The weighted per-factor corrections must equal elbo!'s ½ tr(HΣ) term.
+    K = 2
+    latent_dim = 2
+    obs_dim = 3
+    tsteps = 20
+    ntrials = 2
+
+    for make_lds in (_make_gaussian_lds_dense, _make_poisson_lds_dense)
+        lds1 = make_lds(latent_dim, obs_dim; seed=71)
+        lds2 = make_lds(latent_dim, obs_dim; seed=72)
+        slds = SLDS(; A=_rowstochastic(K), πₖ=_probvec(K), LDSs=[lds1, lds2])
+        z, x, y = rand(rng, slds, fill(tsteps, ntrials))
+
+        data = StateSpaceDynamics.Data(slds.LDSs[1], y)
+        seq_ends = cumsum(data.tsteps)
+        total_T = last(seq_ends)
+        tfs = StateSpaceDynamics.initialize_FilterSmooth(slds.LDSs[1], data.tsteps)
+        dl = StateSpaceDynamics.SLDSDiscreteLayer(slds.A, slds.πₖ, zeros(K, total_T))
+        fb = StateSpaceDynamics._make_slds_fb_storage(dl, seq_ends)
+        ws = StateSpaceDynamics.SLDSSmoothWorkspace(Float64, slds, maximum(data.tsteps))
+
+        StateSpaceDynamics._vem_warmstart!(
+            slds, tfs, data.y, ws; ux_seq=data.ux, uy_seq=data.uy
+        )
+        StateSpaceDynamics._vem_alternate!(
+            slds,
+            tfs,
+            fb,
+            dl,
+            data.y,
+            ws;
+            obs_seq=collect(1:total_T),
+            control_seq=fill(nothing, total_T),
+            seq_ends=seq_ends,
+            ux_seq=data.ux,
+            uy_seq=data.uy,
+            smoothing_iters=3,
+            tol=0.0,
+        )
+
+        from_hessian = 0.0
+        from_correction = 0.0
+        for trial in 1:ntrials
+            t1 = trial == 1 ? 1 : seq_ends[trial - 1] + 1
+            t2 = seq_ends[trial]
+            Tsteps = t2 - t1 + 1
+            fs = tfs[trial]
+            y_t = data.y[trial]
+            uy_t = data.uy[trial]
+            w = view(fb.γ, :, t1:t2)
+
+            StateSpaceDynamics.hessian!(ws, slds, fs.x_smooth, y_t, w, uy_t)
+            H_diag = ws.btd.H_diag
+            H_sub = ws.btd.H_sub
+            H_super = ws.btd.H_super
+            for t in 1:Tsteps
+                from_hessian +=
+                    0.5 * StateSpaceDynamics._tr_prod(H_diag[t], view(fs.p_smooth, :, :, t))
+            end
+            for t in 2:Tsteps
+                Σ = view(fs.p_smooth_tt1, :, :, t)
+                from_hessian += 0.5 * StateSpaceDynamics._tr_prod(H_super[t - 1], Σ)
+                from_hessian +=
+                    0.5 * StateSpaceDynamics._tr_prod(H_sub[t - 1], transpose(Σ))
+            end
+
+            c = zeros(Tsteps)
+            for k in 1:K
+                fill!(c, 0.0)
+                StateSpaceDynamics._add_cov_correction!(
+                    c, ws, ws.consts[k], slds.LDSs[k], fs.x_smooth, y_t, fs, uy_t
+                )
+                for t in 1:Tsteps
+                    from_correction += w[k, t] * c[t]
+                end
+            end
+        end
+
+        @test isapprox(from_correction, from_hessian; rtol=1e-10)
+    end
     return nothing
 end
 

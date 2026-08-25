@@ -119,6 +119,7 @@ using SSDTest
                 test_SLDS_smooth_infer_cov_and_elbo()
                 test_SLDS_num_samples()
                 test_SLDS_smooth_elbo_monotone()
+                test_SLDS_cov_correction_matches_elbo_hessian()
                 test_SLDS_smooth_given_w_validation()
                 test_SLDS_loglikelihood_returns_elbo()
                 test_SLDS_fit_smoothing_iters()

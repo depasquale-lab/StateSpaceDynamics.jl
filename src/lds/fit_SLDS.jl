@@ -708,20 +708,26 @@ function smooth(
 end
 
 """
-    smooth(slds, y; ux=nothing, uy=nothing, smoothing_iters=100, tol=1e-6,
+    smooth(slds, y; ux=nothing, uy=nothing, smoothing_iters=1, tol=1e-6,
            return_cov=false, progress=false)
 
 Infer the continuous states, discrete responsibilities `γₜ(k) = q(zₜ = k)`,
 and ELBO of a fitted `SLDS` with its parameters held fixed.
 
-The forward-backward and Laplace/Kalman updates alternate until `γ` converges or
-`smoothing_iters` is reached. The discrete likelihood is evaluated at the
-smoothed mean, so the result is deterministic.
+One discrete↔continuous alternation runs by default. Raise `smoothing_iters` to
+alternate until `γ` converges.
+
+Unlike [`fit!`](@ref)'s E-step, the discrete update takes no draws from `q(x)`:
+it expands `E_q(x)[log p]` about the smoothed mean and adds the second-order
+term `½ tr(H Σ)`, so repeated calls are deterministic. For Gaussian emissions
+that expansion is exact and both updates ascend the same bound, so the returned
+ELBO increases monotonically in `smoothing_iters` up to roundoff; for Poisson
+emissions it is second-order and small excursions remain.
 
 # Keywords
-- `smoothing_iters::Int=100`: maximum discrete↔continuous alternations.
-- `tol::Real=1e-6`: stop once `max|Δγ| < tol`; `tol=0` runs exactly `smoothing_iters`
-  alternations with no stopping test.
+- `smoothing_iters::Int=1`: maximum discrete↔continuous alternations.
+- `tol::Real=1e-6`: stop once `max|Δγ| < tol`; ignored when `smoothing_iters == 1`.
+  `tol=0` runs exactly `smoothing_iters` alternations with no stopping test.
 - `return_cov::Bool=false`: include the smoothed covariances.
 - `progress::Bool=false`: show a progress bar.
 
@@ -736,7 +742,7 @@ function smooth(
     y::Observations{T};
     ux=nothing,
     uy=nothing,
-    smoothing_iters::Int=100,
+    smoothing_iters::Int=1,
     tol::Real=1e-6,
     return_cov::Bool=false,
     progress::Bool=false,
@@ -784,7 +790,8 @@ function smooth(
     )
     prog !== nothing && finish!(prog)
 
-    if tol > 0 && !converged
+    # A single requested alternation cannot converge because `γ_prev` starts at `Inf`.
+    if tol > 0 && !converged && smoothing_iters > 1
         @warn "SLDS smoothing did not converge" smoothing_iters tol
     end
 
@@ -844,6 +851,73 @@ function _vem_warmstart!(
 end
 
 """
+    _add_cov_correction!(ll, ws, cc, lds_k, x, y, fs[, uy])
+
+Add the second-order term that turns a plug-in per-timestep log-likelihood into
+`E_q(x)[log p_k(y_t, x_t | x_{t-1})]`, in place on `ll`.
+
+For a factor Hessian `H^{(k,t)}` and smoothed covariance `Σ`, the correction is
+`½ tr(H^{(k,t)} Σ)`. Summing it against `γ` reproduces the covariance term
+in [`elbo!`](@ref). The expansion is exact for Gaussian emissions and
+second-order for Poisson emissions.
+
+Uses the same factor-at-`t` convention as `joint_loglikelihood!` and `hessian!`:
+`ll[t]` covers the emission at `t` plus the dynamics factor coupling
+`(x_{t-1}, x_t)`, or the prior at `t == 1`. The covariances in `fs` must
+correspond to `x`.
+
+Overwrites `ws.H_obs` and the emission scratch in `ws.opt`.
+"""
+function _add_cov_correction!(
+    ll::AbstractVector{T},
+    ws::SLDSSmoothWorkspace{T},
+    cc::SmoothConstants{T},
+    lds_k::LinearDynamicalSystem{T},
+    x::AbstractMatrix{T},
+    y::AbstractMatrix{T},
+    fs::FilterSmooth{T},
+    uy::Union{Nothing,AbstractMatrix}=nothing,
+) where {T<:Real}
+    Tsteps = size(y, 2)
+
+    # Cached state-model templates for regime k, matching `hessian!`.
+    neg_Q_inv = cc.xt_given_xt_1     # -Q⁻¹
+    neg_AtQinvA = cc.xt1_given_xt    # -A'Q⁻¹A
+    neg_P0_inv = cc.x_t              # -P0⁻¹
+    sub_entry = cc.H_sub_entry       #  Q⁻¹A
+    super_entry = cc.H_super_entry   # (Q⁻¹A)'
+
+    H_obs = ws.H_obs
+    # Poisson curvature uses both scratch vectors; Gaussian ignores them.
+    z = ws.opt.dyt
+    λ = ws.opt.temp_dy
+
+    @views for t in 1:Tsteps
+        Σ_tt = fs.p_smooth[:, :, t]
+
+        # Use unit weight to get this regime's emission curvature alone.
+        fill!(H_obs, zero(T))
+        observation_hessian!(H_obs, cc, z, λ, lds_k, x, y, t, one(T), uy)
+        corr = _tr_prod(H_obs, Σ_tt)
+
+        if t == 1
+            corr += _tr_prod(neg_P0_inv, Σ_tt)
+        else
+            # Sum both cross-covariance traces; do not assume exact block symmetry.
+            Σ_ttm1 = fs.p_smooth_tt1[:, :, t]  # Cov(x_t, x_{t-1})
+            corr += _tr_prod(neg_Q_inv, Σ_tt)
+            corr += _tr_prod(neg_AtQinvA, fs.p_smooth[:, :, t - 1])
+            corr += _tr_prod(super_entry, Σ_ttm1)
+            corr += _tr_prod(sub_entry, transpose(Σ_ttm1))
+        end
+
+        ll[t] += T(0.5) * corr
+    end
+
+    return ll
+end
+
+"""
     _vem_alternate!(slds, tfs, fb_storage, dl, y_seq, slds_ws; smoothing_iters, tol, x_samples, ...)
 
 Run `smoothing_iters` structured-variational E-step alternations:
@@ -852,9 +926,10 @@ Run `smoothing_iters` structured-variational E-step alternations:
 2. update q(z) by forward-backward, and
 3. update q(x) with the Laplace/Newton smoother.
 
-When `x_samples` is `nothing`, scoring uses the smoothed mean. Otherwise it
-averages over the stored draws and replaces them during step 3. The latter is
-the Monte-Carlo E-step used by [`fit!`](@ref).
+When `x_samples` is `nothing`, scoring expands about the smoothed mean and adds
+the covariance correction from `_add_cov_correction!`. Otherwise it averages
+over stored draws and replaces them during step 3, as in [`fit!`](@ref); adding
+the correction there would count the covariance twice.
 
 The stored draws precede the latest M-step. This one-step lag disappears as the
 parameter updates converge.
@@ -908,10 +983,12 @@ function _vem_alternate!(
             site would make every kernel call a dynamic dispatch.
             =#
             if x_samples === nothing
-                x_mean = tfs[trial].x_smooth
+                fs = tfs[trial]
+                x_mean = fs.x_smooth
                 for k in 1:K
+                    llv = view(dl.logL, k, t1:t2)
                     joint_loglikelihood!(
-                        view(dl.logL, k, t1:t2),
+                        llv,
                         slds_ws,
                         slds_ws.consts[k],
                         slds.LDSs[k],
@@ -919,6 +996,9 @@ function _vem_alternate!(
                         y_t,
                         ux_t,
                         uy_t,
+                    )
+                    _add_cov_correction!(
+                        llv, slds_ws, slds_ws.consts[k], slds.LDSs[k], x_mean, y_t, fs, uy_t
                     )
                 end
             else
@@ -1128,7 +1208,8 @@ forward-backward chain posterior:
   weighted Hessian over `x₁:T` and `Σ` the block-tridiagonal posterior
   covariance. Exact for Gaussian emissions (the weighted log-density is
   quadratic in `x`); the standard second-order/Laplace approximation for
-  Poisson.
+  Poisson. `_add_cov_correction!` applies the same term per regime and timestep
+  during the deterministic discrete update.
 - `E_q[log p(z)]` uses the FB marginals `γ` (initial) and pairwise `ξ`
   (transitions).
 - `H[q(z)]` is the Markov-chain entropy of the FB posterior,
@@ -1259,13 +1340,15 @@ function elbo!(
 end
 
 """
-    elbo(slds, y; ux=nothing, uy=nothing, smoothing_iters=100, tol=1e-6, progress=false)
+    elbo(slds, y; ux=nothing, uy=nothing, smoothing_iters=1, tol=1e-6, progress=false)
 
 Evidence lower bound of an `SLDS` at the current parameters. This is the `elbo`
 field returned by [`smooth`](@ref)`(slds, y)`.
 
 Accepts the same observation and input forms as [`smooth`](@ref), and the same
-`smoothing_iters` / `tol` controls over the alternation. Returns a scalar.
+`smoothing_iters` / `tol` controls. For Gaussian emissions the bound is
+monotone in `smoothing_iters` up to roundoff; Poisson emissions may have small
+non-monotone changes. Returns a scalar.
 
 Call [`smooth`](@ref) directly when the posteriors are also needed.
 """
@@ -1274,7 +1357,7 @@ function elbo(
     y::Observations{T};
     ux=nothing,
     uy=nothing,
-    smoothing_iters::Int=100,
+    smoothing_iters::Int=1,
     tol::Real=1e-6,
     progress::Bool=false,
 ) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}

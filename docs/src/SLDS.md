@@ -99,10 +99,13 @@ posterior more time to converge but does not average away that noise.
 ## Post-fit inference
 
 [`smooth`](@ref) infers the continuous states, discrete-state responsibilities,
-and ELBO with the fitted parameters held fixed. It alternates forward-backward
-with the Kalman/Laplace smoother until the responsibilities converge or
-`smoothing_iters` is reached. It evaluates the discrete likelihoods at the
-smoothed mean, so repeated calls are deterministic.
+and ELBO with the fitted parameters held fixed. By default it runs one
+forward-backward/smoother alternation. Unlike `fit!`, its discrete update uses a
+second-order expansion about the smoothed mean, so repeated calls are deterministic.
+
+The correction is ``\tfrac12 \mathrm{tr}(H\Sigma)``. It is exact for Gaussian
+emissions, making the ELBO monotone in `smoothing_iters` up to roundoff. For
+Poisson emissions it is approximate, so small non-monotone changes may remain.
 
 ```@docs; canonical = false
 smooth(slds::SLDS{T,S,O}, y::StateSpaceDynamics.Observations{T}) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
