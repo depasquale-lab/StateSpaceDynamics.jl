@@ -118,10 +118,7 @@ For a single-trial (matrix) `y`:
 For multi-trial `y`: `Vector`s of the above, one entry per trial.
 """
 function smooth(
-    lds::LinearDynamicalSystem{T,S,O},
-    y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
-    ux=nothing,
-    uy=nothing,
+    lds::LinearDynamicalSystem{T,S,O}, y::Observations{T}; ux=nothing, uy=nothing
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     data = Data(lds, y; ux=ux, uy=uy)
     tfs = _smooth_data(lds, data)
@@ -768,10 +765,7 @@ objective the M-step optimizes).
 Returns a scalar.
 """
 function elbo(
-    lds::LinearDynamicalSystem{T,S,O},
-    y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
-    ux=nothing,
-    uy=nothing,
+    lds::LinearDynamicalSystem{T,S,O}, y::Observations{T}; ux=nothing, uy=nothing
 ) where {T<:Real,S<:GaussianStateModel{T},O<:GaussianObservationModel{T}}
     data = Data(lds, y; ux=ux, uy=uy)
     tfs = initialize_FilterSmooth(lds, data.tsteps)::TrialFilterSmooth{T}
@@ -842,7 +836,7 @@ Returns a `Vector{T}` of ELBO values, one per iteration.
 """
 function fit!(
     lds::LinearDynamicalSystem{T,S,O},
-    y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
+    y::Observations{T};
     max_iter::Int=100,
     tol::Float64=1e-6,
     progress::Bool=true,
@@ -1093,10 +1087,7 @@ Returns the **total** log-likelihood. Divide by `obs_dim * tsteps * ntrials` for
 per-observation score that is comparable across configurations.
 """
 function StatsAPI.loglikelihood(
-    lds::LinearDynamicalSystem{T,SM,OM},
-    y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
-    ux=nothing,
-    uy=nothing,
+    lds::LinearDynamicalSystem{T,SM,OM}, y::Observations{T}; ux=nothing, uy=nothing
 ) where {T<:Real,SM<:GaussianStateModel{T},OM<:GaussianObservationModel{T}}
     data = Data(lds, y; ux=ux, uy=uy)
 

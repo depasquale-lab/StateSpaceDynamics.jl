@@ -171,8 +171,10 @@ fb_storage = StateSpaceDynamics._make_slds_fb_storage(dl, seq_ends)
 slds_ws = StateSpaceDynamics.SLDSSmoothWorkspace(Float64, learned_model, T)
 
 # The warm-start smooth draws the first posterior sample into `x_samples`; the
-# E-step then fills the mode posterior from it and re-smooths.
-x_samples = [Matrix{Float64}(undef, ld.latent_dim, T)]
+# E-step then fills the mode posterior from it and re-smooths. The buffer is
+# `latent_dim x T x num_samples` -- one draw here; more would let the discrete
+# update average over them.
+x_samples = [Array{Float64,3}(undef, ld.latent_dim, T, 1)]
 w_uniform = fill(1.0 / K, K, T)
 StateSpaceDynamics.smooth!(
     learned_model, tfs[1], y, w_uniform; ws=slds_ws, x_sample=x_samples[1], rng=rng

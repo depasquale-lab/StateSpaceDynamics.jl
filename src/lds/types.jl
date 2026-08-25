@@ -18,6 +18,24 @@ data are generated from the latent state.
 abstract type AbstractObservationModel{T<:Real} end
 
 """
+    Observations{T<:Real}
+
+The three observation layouts every public entry point accepts:
+
+- `AbstractMatrix{T}` - a single trial, `(obs_dim, T)`.
+- `AbstractArray{T,3}` - equal-length trials, `(obs_dim, T, ntrials)`.
+- `AbstractVector{<:AbstractMatrix{T}}` - one `(obs_dim, T_i)` matrix per trial,
+  ragged lengths allowed.
+
+**Internal** alias, used only to keep the signatures of `fit!`, `smooth`,
+`elbo` and `loglikelihood` readable. `Data(model, y; ux, uy)` normalizes any of
+the three into the per-trial form everything downstream assumes.
+"""
+const Observations{T} = Union{
+    AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}
+}
+
+"""
     Data{T<:Real}
 
 **Internal** container for a normalized, validated multi-trial dataset:

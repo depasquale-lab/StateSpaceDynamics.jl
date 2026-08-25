@@ -111,6 +111,18 @@ using SSDTest
                 test_SLDS_estep_elbo_components()
                 test_SLDS_elbo_matches_LDS_marginal_K1()
                 test_SLDS_public_elbo()
+                test_SLDS_smooth_infer_basic()
+                test_SLDS_smooth_infer_shapes()
+                test_SLDS_smooth_infer_deterministic_and_modes()
+                test_SLDS_smooth_infer_K1()
+                test_SLDS_smooth_infer_recovers_distinct_regimes()
+                test_SLDS_smooth_infer_cov_and_elbo()
+                test_SLDS_num_samples()
+                test_SLDS_smooth_elbo_monotone()
+                test_SLDS_cov_correction_matches_elbo_hessian()
+                test_SLDS_smooth_given_w_validation()
+                test_SLDS_loglikelihood_returns_elbo()
+                test_SLDS_fit_smoothing_iters()
                 test_SLDS_no_priors_zero_prior_logdensity()
                 test_SLDS_x0_niw_prior()
                 test_SLDS_joint_sample_reproduces_cross_covariance()
@@ -129,6 +141,7 @@ using SSDTest
                 test_SLDS_poisson_count_validation()
                 test_SLDS_poisson_d_interpretation()
                 test_SLDS_gradient_weight_normalization_poisson()
+                test_SLDS_smooth_infer_poisson()
             end
 
             @testset "Control inputs (ux/uy)" begin

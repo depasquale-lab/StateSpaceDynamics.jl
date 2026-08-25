@@ -740,7 +740,7 @@ Returns a scalar.
 """
 function elbo(
     plds::LinearDynamicalSystem{T,S,O},
-    y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
+    y::Observations{T};
     ux=nothing,
     uy=nothing,
     newton_max_iter::Int=20,
@@ -787,10 +787,7 @@ For a single-trial (matrix) `y`:
 For multi-trial `y`: `Vector`s of the above, one entry per trial.
 """
 function smooth(
-    plds::LinearDynamicalSystem{T,S,O},
-    y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
-    ux=nothing,
-    uy=nothing,
+    plds::LinearDynamicalSystem{T,S,O}, y::Observations{T}; ux=nothing, uy=nothing
 ) where {T<:Real,S<:GaussianStateModel{T},O<:PoissonObservationModel{T}}
     data = Data(plds, y; ux=ux, uy=uy)
     tfs = initialize_FilterSmooth(plds, data.tsteps)::TrialFilterSmooth{T}
@@ -839,7 +836,7 @@ Fit a Poisson LDS via Laplace-EM.
 """
 function fit!(
     plds::LinearDynamicalSystem{T,S,O},
-    y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}};
+    y::Observations{T};
     ux=nothing,
     uy=nothing,
     max_iter::Int=100,

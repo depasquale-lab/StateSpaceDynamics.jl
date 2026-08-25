@@ -421,7 +421,7 @@ function validate_SLDS(slds::SLDS)
             throw(DimensionMismatchError("LDS[$i].obs_dim", obs_dim, lds.obs_dim))
         end
 
-        # Input dimensions must be uniform across LDsS models so a single `Data`
+        # One SLDS data object is shared across regimes.
         if lds.ux_dim != ux_dim
             throw(DimensionMismatchError("LDS[$i].ux_dim", ux_dim, lds.ux_dim))
         end

@@ -88,8 +88,31 @@ The sampling process follows the generative model:
 `StateSpaceDynamics.jl` implements a **Variational Laplace Expectation-Maximization (vLEM)** algorithm for parameter estimation in SLDS. This approach efficiently handles the challenging interaction between discrete and continuous latent variables through a structured variational approximation.
 
 ```@docs
-fit!(slds::SLDS{T,S,O}, y::Union{AbstractMatrix{T},AbstractArray{T,3},AbstractVector{<:AbstractMatrix{T}}}; max_iter::Int=50, progress::Bool=true) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
+fit!(slds::SLDS{T,S,O}, y::StateSpaceDynamics.Observations{T}; max_iter::Int=50, progress::Bool=true) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
 ```
+
+Each E-step runs `smoothing_iters` discrete↔continuous updates before the M-step.
+The discrete update averages over `num_samples` draws from ``q(x)``. Increasing
+`num_samples` reduces Monte-Carlo noise; increasing `smoothing_iters` gives the
+posterior more time to converge but does not average away that noise.
+
+## Post-fit inference
+
+[`smooth`](@ref) infers the continuous states, discrete-state responsibilities,
+and ELBO with the fitted parameters held fixed. By default it runs one
+forward-backward/smoother alternation. Unlike `fit!`, its discrete update uses a
+second-order expansion about the smoothed mean, so repeated calls are deterministic.
+
+The correction is ``\tfrac12 \mathrm{tr}(H\Sigma)``. It is exact for Gaussian
+emissions, making the ELBO monotone in `smoothing_iters` up to roundoff. For
+Poisson emissions it is approximate, so small non-monotone changes may remain.
+
+```@docs; canonical = false
+smooth(slds::SLDS{T,S,O}, y::StateSpaceDynamics.Observations{T}) where {T<:Real,S<:AbstractStateModel,O<:AbstractObservationModel}
+```
+
+[`loglikelihood`](@ref) and [`elbo`](@ref) return the same ELBO because the exact
+marginal likelihood would require summing over all ``K^T`` regime sequences.
 
 ## The vLEM Algorithm
 
